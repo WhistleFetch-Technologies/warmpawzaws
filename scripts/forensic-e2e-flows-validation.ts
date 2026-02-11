@@ -116,6 +116,15 @@ function validateVideoCall() {
 
   if (grep(videoBackend, /attendees|video-call.*attendees/)) pass('VideoCall', 'Backend: GET /video-call/:bookingId/attendees');
   else fail('VideoCall', 'Backend: attendees endpoint');
+
+  if (grep(videoBackend, /create-on-join|!activeSession|No active session.*creating meeting/)) pass('VideoCall', 'Backend: join create-on-join when no session');
+  else fail('VideoCall', 'Backend: create-on-join');
+
+  if (grep(videoBackend, /booking_id|participant_id|participant_type|normalizeJoinBody|normalizeCreateMeetingBody/)) pass('VideoCall', 'Backend: snake_case normalization for join/create-meeting');
+  else fail('VideoCall', 'Backend: snake_case');
+
+  if (grep(chime, /participantId.*participantType|bookingId.*participantId/)) pass('VideoCall', 'ChimeVideoCall: join sends bookingId, participantId, participantType');
+  else fail('VideoCall', 'ChimeVideoCall: join payload');
 }
 
 // ---------------------------------------------------------------------------

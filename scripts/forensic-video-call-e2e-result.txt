@@ -1,0 +1,37 @@
+
+========== FORENSIC VIDEO CALL E2E ==========
+
+[PASS] [Backend] handler/index.ts registers registerVideoCallEndpoints
+[PASS] [Backend] POST /video-call/join registered
+[PASS] [Backend] POST /video-call/create-meeting registered
+[PASS] [Backend] POST /video-call/notify-ready registered
+[PASS] [Backend] GET /video-call/:bookingId/attendees registered
+[PASS] [Backend] Join: create-on-join when no session
+[PASS] [Backend] Join: snake_case normalization (booking_id, participant_id, participant_type)
+[PASS] [Backend] Create-meeting: snake_case normalization
+[PASS] [Backend] notify-ready: tele_call_incoming notification
+[PASS] [Backend] End: accepts booking_id in body
+[PASS] [VendorWeb] AppointmentDetailModal: create-meeting with bookingId, customerId, vendorId
+[PASS] [VendorWeb] AppointmentDetailModal: notify-ready before navigate
+[PASS] [VendorWeb] VendorDashboard: notify-ready after create-meeting
+[PASS] [VendorWeb] VideoPageClient: ChimeVideoCall with bookingId, participantId, participantType
+[PASS] [VendorWeb] ChimeVideoCall: POST /video-call/join
+[PASS] [VendorWeb] ChimeVideoCall: POST end
+[PASS] [VendorWeb] ChimeVideoCall: GET attendees
+[PASS] [CustomerWeb] BookingDetailModal: create-meeting
+[PASS] [CustomerWeb] BookingDetailModal: notify-ready
+[PASS] [CustomerWeb] CustomerHomeComplete: Accept navigates to video
+[PASS] [CustomerWeb] Customer VideoPageClient: ChimeVideoCall with participantId
+[PASS] [CustomerWeb] Customer ChimeVideoCall: join with participantId, participantType
+[PASS] [MobileVendor] api-client: join uses /video-call/join with participant_id, participant_type
+[PASS] [MobileVendor] api-client: endVideoCall uses /video-call/end with booking_id
+[PASS] [MobileVendor] VideoCallScreen: does not use CallApi
+[PASS] [MobileVendor] VideoCallScreen: uses vendorApiClient join/end
+[PASS] [MobileCustomer] api-client: join with participant_id, participant_type
+[PASS] [MobileCustomer] VideoConsultationScreen: does not use CallApi
+[PASS] [MobileCustomer] VideoConsultationScreen: uses apiClient join/end
+[PASS] [LiveAPI] Skipped (no API_BASE) — Set API_BASE and TEST_BOOKING_ID to run live tests
+
+-------------------------------------------
+Total: 30 passed, 0 failed
+============================================

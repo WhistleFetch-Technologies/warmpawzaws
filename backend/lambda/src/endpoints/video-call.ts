@@ -110,12 +110,30 @@ async function ensureVideoCallSessionsTable(): Promise<void> {
   }
 }
 
+/** Normalize request body: accept snake_case for backward compatibility with mobile */
+function normalizeCreateMeetingBody(body: any): { bookingId: string; customerId: string; vendorId: string } {
+  const bookingId = body.bookingId ?? body.booking_id;
+  const customerId = body.customerId ?? body.customer_id;
+  const vendorId = body.vendorId ?? body.vendor_id;
+  return { bookingId, customerId, vendorId };
+}
+
+/** Normalize join body: accept snake_case and multiple field names (participantId/userId, participantType/userType) */
+function normalizeJoinBody(body: any): { bookingId: string; userId: string; userType: string } {
+  const bookingId = body.bookingId ?? body.booking_id;
+  const userId = body.userId ?? body.participantId ?? body.participant_id ?? body.user_id;
+  const userType = (body.userType ?? body.participantType ?? body.participant_type ?? body.user_type)?.toLowerCase?.();
+  return { bookingId, userId, userType };
+}
+
 class CreateMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { bookingId, customerId, vendorId } = body;
+    const { bookingId, customerId, vendorId } = normalizeCreateMeetingBody(body);
 
-    this.validateRequired(body, ['bookingId', 'customerId', 'vendorId']);
+    if (!bookingId || !customerId || !vendorId) {
+      return this.error('bookingId, customerId, and vendorId are required (camelCase or snake_case)', 400);
+    }
 
     // ✅ Ensure table schema is correct
     await ensureVideoCallSessionsTable();
@@ -262,22 +280,29 @@ class GetMeetingInfoHandler extends BaseHandler {
 class JoinMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    // Support both old format (userId, userType) and new format (participantId, participantType)
-    const bookingId = body.bookingId;
-    const userId = body.userId || body.participantId;
-    const userType = body.userType || body.participantType; // 'customer' | 'vendor'
+    const { bookingId, userId, userType } = normalizeJoinBody(body);
 
     if (!bookingId || !userId || !userType) {
-      return this.error('bookingId, userId/participantId, and userType/participantType are required', 400);
+      return this.error('bookingId, participantId (or userId), and participantType (or userType) are required', 400);
+    }
+    if (!['customer', 'vendor'].includes(userType)) {
+      return this.error('participantType/userType must be customer or vendor', 400);
     }
 
-    // ✅ Allow only within 10 min before/after schedule and until appointment completed
+    console.log('[VIDEO CALL] join request', { bookingId, participantId: userId, participantType: userType });
+
+    // ✅ Ensure table schema exists before any DB access
+    await ensureVideoCallSessionsTable();
+
+    // ✅ Verify booking exists and allow only within video call window
     const bookings = await select('bookings', { id: bookingId });
-    if (bookings.length > 0) {
-      const windowCheck = isWithinVideoCallWindow(bookings[0]);
-      if (!windowCheck.allowed) {
-        return this.error(windowCheck.reason || 'Video call is not allowed for this appointment at this time.', 400);
-      }
+    if (bookings.length === 0) {
+      return this.error('Booking not found', 404);
+    }
+    const booking = bookings[0] as any;
+    const windowCheck = isWithinVideoCallWindow(booking);
+    if (!windowCheck.allowed) {
+      return this.error(windowCheck.reason || 'Video call is not allowed for this appointment at this time.', 400);
     }
 
     // ✅ SQL: Get meeting session (check for active or waiting status)
@@ -285,16 +310,79 @@ class JoinMeetingHandler extends BaseHandler {
       booking_id: bookingId,
     });
 
-    // Filter for active or waiting sessions
-    const activeSession = sessions.find((s: any) => 
+    const activeSession = sessions.find((s: any) =>
       s.status === 'active' || s.status === 'waiting'
     );
 
-    if (!activeSession) {
-      return this.error('Active meeting not found. Please ask the other participant to start the call.', 404);
-    }
+    // ✅ CREATE-ON-JOIN: If no session exists, create meeting + session so both sides can join without create-meeting first
+    let session = activeSession;
+    if (!session) {
+      const chimeClient = new ChimeSDKMeetingsClient({
+        region: process.env.AWS_REGION || 'ap-south-1',
+      });
+      const customerId = booking.customer_id ?? booking.customerId;
+      const vendorId = booking.vendor_id ?? booking.vendorId;
+      console.log('[VIDEO CALL] No active session; creating meeting on join', { bookingId, participantType: userType, participantId: userId });
 
-    const session = activeSession;
+      const meetingResponse = await chimeClient.send(
+        new CreateMeetingCommand({
+          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+          MediaRegion: process.env.AWS_REGION || 'ap-south-1',
+          ExternalMeetingId: bookingId,
+        })
+      );
+      if (!meetingResponse.Meeting?.MeetingId || !meetingResponse.Meeting?.MediaPlacement) {
+        return this.error('Failed to create meeting', 500);
+      }
+      const newMeetingId = meetingResponse.Meeting.MeetingId;
+
+      const attendeeResponse = await chimeClient.send(
+        new CreateAttendeeCommand({
+          MeetingId: newMeetingId,
+          ExternalUserId: `${userType}-${userId}`,
+        })
+      );
+      const newAttendee = {
+        AttendeeId: attendeeResponse.Attendee?.AttendeeId,
+        JoinToken: attendeeResponse.Attendee?.JoinToken,
+        ExternalUserId: `${userType}-${userId}`,
+      };
+
+      const sessionRow: Record<string, any> = {
+        booking_id: bookingId,
+        meeting_id: newMeetingId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        status: 'waiting',
+        started_at: new Date(),
+      };
+      if (userType === 'customer') {
+        sessionRow.customer_attendee_id = newAttendee.AttendeeId;
+        sessionRow.customer_join_token = newAttendee.JoinToken;
+      } else {
+        sessionRow.vendor_attendee_id = newAttendee.AttendeeId;
+        sessionRow.vendor_join_token = newAttendee.JoinToken;
+      }
+      const inserted = await insert('video_call_sessions', sessionRow);
+      session = inserted[0];
+
+      await update('bookings', { id: bookingId }, {
+        video_call_meeting_id: newMeetingId,
+        video_call_started_at: new Date().toISOString(),
+      });
+
+      return this.success({
+        success: true,
+        meetingId: newMeetingId,
+        meeting: {
+          MeetingId: meetingResponse.Meeting.MeetingId,
+          MediaPlacement: meetingResponse.Meeting.MediaPlacement,
+          MediaRegion: meetingResponse.Meeting.MediaRegion,
+        },
+        attendee: newAttendee,
+        session: { id: session.id, status: session.status },
+      });
+    }
 
     // ✅ AWS Chime client
     const chimeClient = new ChimeSDKMeetingsClient({
@@ -531,8 +619,9 @@ export function registerVideoCallEndpoints(app: Hono) {
 
   app.post('/video-call/notify-ready', async (c) => {
     try {
-      const body = await c.req.json().catch(() => ({})) as { bookingId?: string; participantType?: string; participantId?: string };
-      const { bookingId, participantType } = body;
+      const body = await c.req.json().catch(() => ({})) as Record<string, string>;
+      const bookingId = body.bookingId ?? body.booking_id;
+      const participantType = (body.participantType ?? body.participant_type)?.toLowerCase?.();
       if (!bookingId || !participantType) {
         return c.json({ error: 'bookingId and participantType are required' }, 400);
       }
@@ -614,9 +703,9 @@ export function registerVideoCallEndpoints(app: Hono) {
   });
 
   app.post('/video-call/end', async (c) => {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch(() => ({})) as Record<string, string>;
     const event = createApiGatewayEvent(c.req, body);
-    event.pathParameters = { bookingId: c.req.param('bookingId') || body.bookingId };
+    event.pathParameters = { bookingId: c.req.param('bookingId') || body.bookingId || body.booking_id };
     const context = createLambdaContext();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);

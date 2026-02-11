@@ -514,6 +514,13 @@ class VendorApiClient {
     });
   }
 
+  async notifyVideoCallReady(bookingId: string, participantType: 'vendor' | 'customer'): Promise<void> {
+    await this.post('/video-call/notify-ready', {
+      bookingId,
+      participantType,
+    });
+  }
+
   async endVideoCall(bookingId: string): Promise<void> {
     return this.post('/video-call/end', { booking_id: bookingId });
   }

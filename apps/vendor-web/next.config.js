@@ -8,10 +8,9 @@ const path = require('path');
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Disable static export in development to allow dynamic routes
-  // For production builds, set ENABLE_STATIC_EXPORT=true
-  ...(process.env.NODE_ENV === 'production' && process.env.ENABLE_STATIC_EXPORT === 'true'
-    ? { output: 'export' } 
+  // Static export for S3/CloudFront (same as admin-web). Disable with ENABLE_STATIC_EXPORT=false for local server build.
+  ...(process.env.NODE_ENV === 'production' && process.env.ENABLE_STATIC_EXPORT !== 'false'
+    ? { output: 'export' }
     : {}),
   distDir: 'dist',
   reactStrictMode: true,

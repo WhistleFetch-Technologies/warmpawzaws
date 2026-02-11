@@ -85,6 +85,7 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
     message,
     type: 'otp',
     templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+    senderId: 'WARMPZ',
   });
   if (!result.success) {
     console.error('[SMS] SNS send failed');
@@ -152,18 +153,23 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.warn('[AUTH] UAT Mode: Continuing despite database error - OTP will still work');
       }
 
-      // ✅ FIX: Send SMS asynchronously (fire and forget) to prevent blocking the response
-      // Use exact Jio-approved Login OTP template: Warmpawz: Your OTP for logging in is {#number#}. Do not share this OTP with anyone.
+      // Only skip SMS when UAT_MODE is explicitly 'true'. Use Jio-approved Login OTP template.
       if (!isUATMode) {
-        // Don't await - send SMS in background to avoid blocking response
         const message = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
-        sendSmsViaSns(normalizedPhone, message).catch((smsError: any) => {
-          // Log error but don't block response
-          console.warn('[AUTH] Production Mode: SMS send failed (non-blocking):', smsError?.message || smsError);
+        console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
+        const smsResult = await Promise.race([
+          sendSmsViaSns(normalizedPhone, message),
+          new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('SMS send timeout 2.5s')), 2500)),
+        ]).catch((err: any) => {
+          console.warn('[AUTH] SMS send failed:', err?.message || err);
+          if (err?.Code) console.warn('[AUTH] SNS Code:', err.Code);
+          return false;
         });
-        console.log(`[AUTH] Production Mode: SMS sending initiated (non-blocking) to ${normalizedPhone}`);
+        if (smsResult) {
+          console.log('[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)');
+        }
       } else {
-        console.log(`[AUTH] UAT Mode: SMS skipped for ${phone} (using fixed OTP 123456)`);
+        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
       }
 
       const handlerDuration = Date.now() - handlerStartTime;

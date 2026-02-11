@@ -134,6 +134,17 @@ export function BookingDetailScreen({
     }
   };
 
+  const serviceStyle = String(
+    booking?.service_style || booking?.serviceStyle || booking?.service_type || booking?.serviceType || ''
+  ).toLowerCase();
+  const isTeleService = ['tele', 'video_consultation', 'teleconsultation', 'video'].includes(serviceStyle);
+
+  const handleJoinVideo = () => {
+    if (onNavigate) {
+      onNavigate('VideoConsultation', { bookingId });
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -383,6 +394,14 @@ export function BookingDetailScreen({
         {booking.status !== 'completed' &&
           booking.status !== 'cancelled' && (
             <View style={styles.actionsContainer}>
+              {isTeleService && (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.videoCallButton]}
+                  onPress={handleJoinVideo}
+                >
+                  <Text style={[styles.actionButtonText, styles.videoCallButtonText]}>Join Video Call</Text>
+                </TouchableOpacity>
+              )}
               {booking.status === 'confirmed' && (
                 <TouchableOpacity
                   style={styles.actionButton}
@@ -716,6 +735,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
   },
+  videoCallButton: {
+    backgroundColor: colors.primary + '10',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
   cancelButton: {
     backgroundColor: colors.error + 20% opacity,
   },
@@ -723,6 +747,9 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
+  },
+  videoCallButtonText: {
+    color: colors.primary,
   },
   cancelButtonText: {
     color: '#EF4444',
@@ -733,4 +760,3 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 });
-

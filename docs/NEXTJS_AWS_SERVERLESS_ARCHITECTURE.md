@@ -89,6 +89,17 @@ Result: smaller client bundles, fewer round-trips, CDN-friendly caching.
 - **RDS**: DB credentials from **Secrets Manager** (or RDS-managed secret); Lambda connects from VPC.
 - **S3**: Static sites (Next.js `dist/`), uploads bucket; CloudFront OAC for private buckets if needed.
 - **CloudFront**: HTTPS, caching, URL rewrite for Next.js static export; optional custom domain per app.
+
+#### Avoiding "Unexpected token '<'" (JS syntax errors on load)
+
+If the vendor (or admin/customer) app shows a loading spinner and the console reports **`Uncaught SyntaxError: Unexpected token '<'`** for `webpack-*.js`, `vendors-*.js`, `main-app-*.js`, etc., the browser is receiving **HTML** (e.g. `index.html`) instead of JavaScript. That happens when:
+
+1. **404 → index.html**: The distribution is configured to return `index.html` (and 200) for 404/403 so that client-side routes like `/dashboard` work. When a request is made for `/_next/static/chunks/…/somefile.js` and that file is missing (e.g. old cached `index.html` pointing to old chunk names after a new deploy), the origin returns 404 and CloudFront serves the custom error document (`index.html`). The browser then tries to parse that HTML as JS and throws "Unexpected token '<'".
+
+2. **Fix in CloudFront**: Add a **Cache Behavior** for path pattern **`/_next/*`** with **higher precedence** (lower order number) than the default behavior. For this `/_next/*` behavior, **do not** set a custom error response that returns `index.html` for 404/403. Let 404s from the origin be returned as 404 to the client. Page routes (e.g. `/dashboard`) still use the default behavior with 404 → `index.html` for SPA routing; only static assets under `/_next/*` will return real 404 when missing.
+
+3. **Deploy script**: The vendor-web deploy script sets `Cache-Control: public, max-age=0, must-revalidate` on `index.html`, `404.html`, and `runtime-config.js` so the CDN and browsers revalidate HTML after each deploy and don’t serve an old `index.html` that references deleted chunk names.
+
 - **OpenSearch**: Search/indexing; Lambda or background jobs write/query; frontend never talks to OpenSearch directly.
 
 ---

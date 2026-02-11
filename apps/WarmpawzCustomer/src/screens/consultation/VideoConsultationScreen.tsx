@@ -14,8 +14,10 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { colors, spacing, borderRadius } from '../../theme/colors';
-import { CallApi } from '../../services/api';
+import { apiClient } from '../../lib/api-client';
+import { CUSTOMER_WEB_BASE_URL } from '../../config/aws';
 
 interface VideoConsultationScreenProps {
   bookingId: string;
@@ -36,21 +38,14 @@ export function VideoConsultationScreen({
   onNavigate,
   onCallEnd,
 }: VideoConsultationScreenProps) {
-  const [callStatus, setCallStatus] = useState<'connecting' | 'ringing' | 'active' | 'ended'>('connecting');
-  const [muted, setMuted] = useState(false);
-  const [videoOff, setVideoOff] = useState(false);
+  const [callStatus, setCallStatus] = useState<'connecting' | 'active' | 'ended'>('connecting');
   const [callDuration, setCallDuration] = useState(0);
   const [loading, setLoading] = useState(false);
-  const currentCallId = useRef<string | null>(callId || null);
+  const [webUrl, setWebUrl] = useState<string>('');
   const durationInterval = useRef<any>(null);
 
   useEffect(() => {
-    if (!currentCallId.current) {
-      initiateCall();
-    } else {
-      answerCall();
-    }
-
+    openWebVideoCall();
     return () => {
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
@@ -58,37 +53,35 @@ export function VideoConsultationScreen({
     };
   }, []);
 
-  const initiateCall = async () => {
+  /** Open the web video call (uses full Chime SDK in web) */
+  const openWebVideoCall = async () => {
     try {
       setLoading(true);
-      const response = await CallApi.initiateCall(bookingId, 'video', customerId || phone);
-      currentCallId.current = response.callId;
-      setCallStatus('ringing');
-      
-      // Simulate call connection (in real app, this would be WebRTC)
-      setTimeout(() => {
-        setCallStatus('active');
-        startCallTimer();
-      }, 2000);
+      setCallStatus('connecting');
+
+      const participantId = customerId || phone;
+
+      // Best-effort: notify vendor that customer is ready
+      apiClient.notifyVideoCallReady(bookingId, 'customer').catch((err) => {
+        console.warn('notify-ready failed (customer):', err?.message || err);
+      });
+      const params: string[] = [];
+      if (customerId) params.push(`customerId=${encodeURIComponent(customerId)}`);
+      if (phone) params.push(`customerPhone=${encodeURIComponent(phone)}`);
+      if (participantId) params.push(`participantId=${encodeURIComponent(participantId)}`);
+
+      const query = params.length ? `?${params.join('&')}` : '';
+      const url = `${CUSTOMER_WEB_BASE_URL.replace(/\\/$/, '')}/video/${bookingId}${query}`;
+      setWebUrl(url);
+
+      setCallStatus('active');
+      startCallTimer();
     } catch (error: any) {
-      console.error('Error initiating call:', error);
-      Alert.alert('Error', error.message || 'Failed to initiate call');
+      console.error('Error opening video call:', error);
+      Alert.alert('Error', error.message || 'Failed to open video call');
       setCallStatus('ended');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const answerCall = async () => {
-    try {
-      if (currentCallId.current) {
-        await CallApi.answerCall(currentCallId.current);
-        setCallStatus('active');
-        startCallTimer();
-      }
-    } catch (error: any) {
-      console.error('Error answering call:', error);
-      Alert.alert('Error', error.message || 'Failed to answer call');
     }
   };
 
@@ -100,14 +93,11 @@ export function VideoConsultationScreen({
 
   const handleEndCall = async () => {
     try {
-      if (currentCallId.current) {
-        await CallApi.endCall(currentCallId.current);
-      }
+      await apiClient.endVideoCall(bookingId);
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
       }
       setCallStatus('ended');
-      
       Alert.alert(
         'Call Ended',
         `Call duration: ${formatDuration(callDuration)}`,
@@ -131,16 +121,6 @@ export function VideoConsultationScreen({
     }
   };
 
-  const handleToggleMute = () => {
-    setMuted(!muted);
-    // TODO: Implement actual mute functionality with WebRTC
-  };
-
-  const handleToggleVideo = () => {
-    setVideoOff(!videoOff);
-    // TODO: Implement actual video toggle with WebRTC
-  };
-
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -153,90 +133,45 @@ export function VideoConsultationScreen({
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Video View Area */}
-      <View style={styles.videoContainer}>
-        {callStatus === 'connecting' || callStatus === 'ringing' ? (
-          <View style={styles.connectingView}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.connectingText}>
-              {callStatus === 'connecting' ? 'Connecting...' : 'Ringing...'}
-            </Text>
-          </View>
-        ) : callStatus === 'active' ? (
-          <View style={styles.videoView}>
-            {/* TODO: Replace with actual video component (WebRTC) */}
-            <View style={styles.videoPlaceholder}>
-              <Text style={styles.videoPlaceholderText}>📹</Text>
-              <Text style={styles.videoPlaceholderLabel}>Video Call Active</Text>
-              {videoOff && (
-                <View style={styles.videoOffOverlay}>
-                  <Text style={styles.videoOffText}>Video Off</Text>
-                </View>
-              )}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleEndCall} style={styles.endCallButton}>
+          <Text style={styles.endCallButtonText}>End Call</Text>
+        </TouchableOpacity>
+        <View style={styles.callInfo}>
+          <Text style={styles.callDuration}>{formatDuration(callDuration)}</Text>
+          <Text style={styles.callStatus}>
+            {callStatus === 'active' ? 'Connected' : 'Connecting...'}
+          </Text>
+        </View>
+      </View>
+
+      {loading || !webUrl ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.connectingText}>Preparing video call...</Text>
+        </View>
+      ) : (
+        <WebView
+          source={{ uri: webUrl }}
+          originWhitelist={['*']}
+          javaScriptEnabled
+          domStorageEnabled
+          allowsInlineMediaPlayback
+          allowsFullscreenVideo
+          mediaPlaybackRequiresUserAction={false}
+          mixedContentMode="always"
+          startInLoadingState
+          renderLoading={() => (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.connectingText}>Loading call...</Text>
             </View>
-          </View>
-        ) : (
-          <View style={styles.endedView}>
-            <Text style={styles.endedText}>Call Ended</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Call Info */}
-      <View style={styles.callInfo}>
-        <Text style={styles.callDuration}>{formatDuration(callDuration)}</Text>
-        <Text style={styles.callStatus}>
-          {callStatus === 'active' ? 'Connected' : callStatus === 'ringing' ? 'Ringing...' : 'Connecting...'}
-        </Text>
-      </View>
-
-      {/* Control Buttons */}
-      {callStatus === 'active' && (
-        <View style={styles.controls}>
-          <TouchableOpacity
-            style={[styles.controlButton, muted && styles.controlButtonActive]}
-            onPress={handleToggleMute}
-          >
-            <Text style={styles.controlButtonIcon}>
-              {muted ? '🔇' : '🎤'}
-            </Text>
-            <Text style={styles.controlButtonLabel}>
-              {muted ? 'Unmute' : 'Mute'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.controlButton, videoOff && styles.controlButtonActive]}
-            onPress={handleToggleVideo}
-          >
-            <Text style={styles.controlButtonIcon}>
-              {videoOff ? '📹' : '📷'}
-            </Text>
-            <Text style={styles.controlButtonLabel}>
-              {videoOff ? 'Video On' : 'Video Off'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.endCallButton}
-            onPress={handleEndCall}
-          >
-            <Text style={styles.endCallButtonIcon}>📞</Text>
-            <Text style={styles.endCallButtonText}>End Call</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* End Call Button (when not active) */}
-      {callStatus !== 'active' && (
-        <View style={styles.controls}>
-          <TouchableOpacity
-            style={styles.endCallButton}
-            onPress={handleEndCall}
-          >
-            <Text style={styles.endCallButtonText}>End Call</Text>
-          </TouchableOpacity>
-        </View>
+          )}
+          onError={() => {
+            setCallStatus('ended');
+            Alert.alert('Error', 'Failed to load video call');
+          }}
+        />
       )}
     </SafeAreaView>
   );
@@ -247,114 +182,46 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.black,
   },
-  videoContainer: {
-    flex: 1,
+  header: {
+    padding: spacing.md,
+    backgroundColor: colors.black,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  connectingView: {
+  callInfo: {
+    alignItems: 'flex-end',
+  },
+  callDuration: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  callStatus: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
   },
   connectingText: {
     marginTop: spacing.md,
     fontSize: 16,
     color: colors.white,
   },
-  videoView: {
-    flex: 1,
-  },
-  videoPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-  },
-  videoPlaceholderText: {
-    fontSize: 64,
-    marginBottom: spacing.md,
-  },
-  videoPlaceholderLabel: {
-    fontSize: 18,
-    color: colors.white,
-  },
-  videoOffOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoOffText: {
-    fontSize: 24,
-    color: colors.white,
-  },
-  endedView: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-  },
-  endedText: {
-    fontSize: 24,
-    color: colors.white,
-  },
-  callInfo: {
-    padding: spacing.md,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    alignItems: 'center',
-  },
-  callDuration: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.white,
-    marginBottom: spacing.xs,
-  },
-  callStatus: {
-    fontSize: 14,
-    color: '#ccc',
-  },
-  controls: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: spacing.lg,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
-  controlButton: {
-    alignItems: 'center',
-    padding: spacing.md,
-  },
-  controlButtonActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: borderRadius.md,
-  },
-  controlButtonIcon: {
-    fontSize: 32,
-    marginBottom: spacing.xs,
-  },
-  controlButtonLabel: {
-    fontSize: 12,
-    color: colors.white,
-  },
   endCallButton: {
     backgroundColor: colors.error,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: borderRadius.md,
     alignItems: 'center',
-    minWidth: 120,
-  },
-  endCallButtonIcon: {
-    fontSize: 24,
-    marginBottom: spacing.xs,
   },
   endCallButtonText: {
     color: colors.white,
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
-

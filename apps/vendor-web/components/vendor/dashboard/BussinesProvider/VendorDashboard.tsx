@@ -1345,7 +1345,7 @@ export function VendorDashboard({
                                       try {
                                         toast.info('Preparing video call...');
                                         
-                                        // Try to create/join meeting first
+                                        // Create meeting then notify customer (so they see incoming call) before navigating
                                         const createRes = await apiClient.post('/video-call/create-meeting', {
                                           bookingId: bid,
                                           customerId: (appointment as any).customerId || '',
@@ -1357,8 +1357,13 @@ export function VendorDashboard({
                                           return;
                                         }
                                         
-                                        // ✅ CRITICAL FIX: Pass vendorId in URL to avoid localStorage issues
                                         const effectiveVendorId = vendorData?.id || vendorId;
+                                        apiClient.post('/video-call/notify-ready', {
+                                          bookingId: bid,
+                                          participantType: 'vendor',
+                                          participantId: effectiveVendorId,
+                                        }).catch(() => {});
+                                        
                                         window.location.href = `/video/${bid}?vendorId=${encodeURIComponent(effectiveVendorId)}`;
                                       } catch (err: any) {
                                         console.error('Error starting video call:', err);

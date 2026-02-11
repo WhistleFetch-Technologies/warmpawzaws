@@ -2465,19 +2465,40 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Finance Endpoints
   app.get('/admin/finance/settlements', async (c) => {
     try {
-      const result = await query(`
-        SELECT s.*,
-               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-               COALESCE(v.phone, vi.phone) as vendor_phone,
-               r.name as vendor_role,
-               COALESCE(v.category, vi.vendor_type, '') as business_type
-        FROM settlements s
-        LEFT JOIN vendors v ON s.vendor_id = v.id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
-        LEFT JOIN roles r ON v.role_id = r.id
-        ORDER BY s.created_at DESC
-        LIMIT 100
-      `);
+      let result: { rows?: any[] };
+      try {
+        result = await query(`
+          SELECT s.*,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, vi.phone) as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, vi.vendor_type, '') as business_type
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+          LEFT JOIN roles r ON v.role_id = r.id
+          ORDER BY s.created_at DESC
+          LIMIT 100
+        `);
+      } catch (viErr: any) {
+        const msg = String(viErr?.message ?? viErr ?? '');
+        if (msg.includes('vendor_identity') && msg.includes('does not exist')) {
+          result = await query(`
+            SELECT s.*,
+                   COALESCE(v.business_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, '') as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, '') as business_type
+            FROM settlements s
+            LEFT JOIN vendors v ON s.vendor_id = v.id
+            LEFT JOIN roles r ON v.role_id = r.id
+            ORDER BY s.created_at DESC
+            LIMIT 100
+          `);
+        } else {
+          throw viErr;
+        }
+      }
       const rows = result.rows || [];
       const settlements = rows.map((s: any) => {
         const status = s.status || s.settlement_status || 'pending';
@@ -4698,13 +4719,33 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Payment tiers (vendor_tiers table) - CRUD for admin finance tier configuration
   app.get('/admin/payments/tiers', async (c) => {
     try {
-      const result = await query(`
-        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
-               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
-               terms_and_conditions, terms_version, created_at, updated_at
-        FROM vendor_tiers
-        ORDER BY tier_level ASC NULLS LAST, created_at DESC
-      `);
+      let result: { rows?: any[] };
+      try {
+        result = await query(`
+          SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
+                 monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+                 terms_and_conditions, terms_version, created_at, updated_at
+          FROM vendor_tiers
+          ORDER BY tier_level ASC NULLS LAST, created_at DESC
+        `);
+      } catch (colErr: unknown) {
+        const colMsg = String(getErrorMessage(colErr));
+        if (/column "terms_and_conditions" does not exist/i.test(colMsg)) {
+          result = await query(`
+            SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
+                   monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+                   created_at, updated_at
+            FROM vendor_tiers
+            ORDER BY tier_level ASC NULLS LAST, created_at DESC
+          `);
+          (result.rows || []).forEach((r: any) => {
+            r.terms_and_conditions = null;
+            r.terms_version = '1.0';
+          });
+        } else {
+          throw colErr;
+        }
+      }
       const rows = (result.rows || []).map((row: Record<string, unknown>) => ({
         id: row.id,
         name: row.tier_name,
@@ -4974,20 +5015,42 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payouts', async (c) => {
     try {
-      const payouts = await query(`
-        SELECT p.*,
-               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-               COALESCE(v.phone, vi.phone) as vendor_phone,
-               r.name as vendor_role,
-               COALESCE(v.category, vi.vendor_type, '') as business_type,
-               to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
-        FROM payouts p
-        LEFT JOIN vendors v ON p.vendor_id = v.id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = p.vendor_id
-        LEFT JOIN roles r ON v.role_id = r.id
-        ORDER BY p.created_at DESC
-        LIMIT 50
-      `);
+      let payouts: { rows?: any[] };
+      try {
+        payouts = await query(`
+          SELECT p.*,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, vi.phone) as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, vi.vendor_type, '') as business_type,
+                 to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
+          FROM payouts p
+          LEFT JOIN vendors v ON p.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = p.vendor_id
+          LEFT JOIN roles r ON v.role_id = r.id
+          ORDER BY p.created_at DESC
+          LIMIT 50
+        `);
+      } catch (viErr: any) {
+        const msg = String(viErr?.message ?? viErr ?? '');
+        if (msg.includes('vendor_identity') && msg.includes('does not exist')) {
+          payouts = await query(`
+            SELECT p.*,
+                   COALESCE(v.business_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, '') as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, '') as business_type,
+                   to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
+            FROM payouts p
+            LEFT JOIN vendors v ON p.vendor_id = v.id
+            LEFT JOIN roles r ON v.role_id = r.id
+            ORDER BY p.created_at DESC
+            LIMIT 50
+          `);
+        } else {
+          throw viErr;
+        }
+      }
       const rows = (payouts.rows || []).map((row: Record<string, unknown>) => {
         const raw = row.payout_status ?? row.status ?? 'pending';
         const status = (typeof raw === 'string' && raw.trim()) ? raw.trim().toLowerCase() : 'pending';
@@ -5011,41 +5074,71 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         };
       });
 
-      // Connect pending/processing settlements so Payout Management shows them (support both settlement_status and status column names)
+      // Connect pending/processing settlements so Payout Management shows them (support both settlement_status and status column names; allow missing vendor_identity)
       try {
         let pending: { rows: any[] };
+        const runPendingWithVi = (statusCol: string) => `
+          SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                 ${statusCol === 'settlement_status' ? 's.settlement_status' : 's.status as settlement_status'}, s.created_at,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, vi.phone) as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, vi.vendor_type, '') as business_type
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+          LEFT JOIN roles r ON v.role_id = r.id
+          WHERE s.${statusCol} IN ('pending', 'processing')
+          ORDER BY s.created_at DESC
+          LIMIT 50
+        `;
+        const runPendingNoVi = (statusCol: string) => `
+          SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                 ${statusCol === 'settlement_status' ? 's.settlement_status' : 's.status as settlement_status'}, s.created_at,
+                 COALESCE(v.business_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, '') as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, '') as business_type
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN roles r ON v.role_id = r.id
+          WHERE s.${statusCol} IN ('pending', 'processing')
+          ORDER BY s.created_at DESC
+          LIMIT 50
+        `;
         try {
-          pending = await query(`
-            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
-                   s.settlement_status, s.created_at,
-                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-                   COALESCE(v.phone, vi.phone) as vendor_phone,
-                   r.name as vendor_role,
-                   COALESCE(v.category, vi.vendor_type, '') as business_type
-            FROM settlements s
-            LEFT JOIN vendors v ON s.vendor_id = v.id
-            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
-            LEFT JOIN roles r ON v.role_id = r.id
-            WHERE s.settlement_status IN ('pending', 'processing')
-            ORDER BY s.created_at DESC
-            LIMIT 50
-          `);
-        } catch {
-          pending = await query(`
-            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
-                   s.status as settlement_status, s.created_at,
-                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-                   COALESCE(v.phone, vi.phone) as vendor_phone,
-                   r.name as vendor_role,
-                   COALESCE(v.category, vi.vendor_type, '') as business_type
-            FROM settlements s
-            LEFT JOIN vendors v ON s.vendor_id = v.id
-            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
-            LEFT JOIN roles r ON v.role_id = r.id
-            WHERE s.status IN ('pending', 'processing')
-            ORDER BY s.created_at DESC
-            LIMIT 50
-          `);
+          pending = await query(runPendingWithVi('settlement_status'));
+        } catch (e1: any) {
+          const m1 = String(e1?.message ?? e1 ?? '');
+          if (m1.includes('vendor_identity') && m1.includes('does not exist')) {
+            try {
+              pending = await query(runPendingNoVi('settlement_status'));
+            } catch {
+              pending = await query(runPendingNoVi('status'));
+            }
+          } else if (m1.includes('settlement_status') && m1.includes('does not exist')) {
+            try {
+              pending = await query(runPendingWithVi('status'));
+            } catch (e2: any) {
+              const m2 = String(e2?.message ?? e2 ?? '');
+              if (m2.includes('vendor_identity') && m2.includes('does not exist')) {
+                pending = await query(runPendingNoVi('status'));
+              } else {
+                throw e2;
+              }
+            }
+          } else {
+            try {
+              pending = await query(runPendingWithVi('status'));
+            } catch (e3: any) {
+              const m3 = String(e3?.message ?? e3 ?? '');
+              if (m3.includes('vendor_identity') && m3.includes('does not exist')) {
+                pending = await query(runPendingNoVi('status'));
+              } else {
+                throw e3;
+              }
+            }
+          }
         }
         const periodFmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—';
         for (const s of pending.rows || []) {

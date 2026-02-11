@@ -18,6 +18,13 @@ export const AWS_API_GATEWAY_URL = process.env.AWS_API_GATEWAY_URL ||
 // API Gateway routes are registered directly at root level
 export const API_BASE_URL = AWS_API_GATEWAY_URL;
 
+// Web app base URL for embedded/redirected video calls
+// Priority: ENV VAR > DEV fallback > PROD fallback
+export const VENDOR_WEB_BASE_URL =
+  process.env.VENDOR_WEB_BASE_URL ||
+  process.env.EXPO_PUBLIC_VENDOR_WEB_BASE_URL ||
+  (__DEV__ ? 'https://d1s6ykkj381k58.cloudfront.net' : 'https://d1s6ykkj381k58.cloudfront.net');
+
 // WebSocket URL for real-time updates (if using API Gateway WebSocket API)
 // For HTTP-based real-time, use polling or SSE instead
 export const WS_BASE_URL = process.env.WS_BASE_URL || 
@@ -27,4 +34,3 @@ export const WS_BASE_URL = process.env.WS_BASE_URL ||
 // For now, keep token-based auth using AsyncStorage
 // The publicAnonKey is no longer needed for AWS API Gateway
 // Session tokens will be managed via AsyncStorage until Cognito migration
-

@@ -126,6 +126,10 @@ export function BookingDetailScreen({
   const canAssignStaffToBooking = booking.status === 'pending' || booking.status === 'confirmed';
   const canCheckIn = booking.status === 'confirmed';
   const canStartService = booking.status === 'confirmed';
+  const serviceStyle = String(
+    booking.service_style || booking.serviceStyle || booking.service_type || booking.serviceType || ''
+  ).toLowerCase();
+  const isTeleService = ['tele', 'video_consultation', 'teleconsultation', 'video'].includes(serviceStyle);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -205,6 +209,21 @@ export function BookingDetailScreen({
           {canStartService && (
             <TouchableOpacity style={styles.actionButton} onPress={handleStartService}>
               <Text style={styles.actionButtonText}>Start Service</Text>
+            </TouchableOpacity>
+          )}
+
+          {isTeleService && onNavigate && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.videoCallButton]}
+              onPress={() =>
+                onNavigate('VideoCall', {
+                  bookingId,
+                  customerId: booking.customer_id || booking.customerId || booking.customer?.id || '',
+                  customerName: booking.customerName || booking.customer_name || booking.customer?.name || 'Customer',
+                })
+              }
+            >
+              <Text style={styles.actionButtonText}>Start Video Call</Text>
             </TouchableOpacity>
           )}
 
@@ -339,6 +358,10 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.medium,
     color: colors.text,
   },
+  videoCallButton: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
   completeButton: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
@@ -347,4 +370,3 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 });
-

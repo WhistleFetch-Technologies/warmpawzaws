@@ -988,18 +988,24 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/breaks
-   * Get all breaks for a vendor
+   * Get all breaks for a vendor.
+   * ✅ Resolves vendorId via resolveVendorById so vendor_identity works (breaks persist on refresh).
    */
   app.get("/vendor/:vendorId/breaks", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
 
       const breaksResult = await query(
         `SELECT * FROM vendor_breaks
          WHERE vendor_id = $1
            AND is_active = true
          ORDER BY day_of_week ASC, start_time ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
 
       return c.json({ 
@@ -1023,11 +1029,18 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/breaks
-   * Save breaks for a vendor (replaces all breaks)
+   * Save breaks for a vendor (replaces all breaks).
+   * ✅ Resolves vendorId via resolveVendorById so vendor_identity works (breaks persist on refresh).
    */
   app.post("/vendor/:vendorId/breaks", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
+
       const { breaks } = await c.req.json();
 
       if (!Array.isArray(breaks)) {
@@ -1060,7 +1073,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       // Delete existing breaks
       await query(
         'DELETE FROM vendor_breaks WHERE vendor_id = $1',
-        [vendorId]
+        [actualVendorId]
       ).catch((err) => {
         console.warn('[BREAKS] Delete error (may be OK):', err.message);
       });
@@ -1078,7 +1091,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
             RETURNING id`,
             [
-              vendorId,
+              actualVendorId,
               breakItem.dayOfWeek ?? breakItem.day_of_week ?? null,
               breakItem.breakDate || breakItem.break_date || null,
               breakItem.startTime || breakItem.start_time,
@@ -1097,11 +1110,21 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         }
       }
 
-      return c.json({ 
-        success: true, 
+      if (insertErrors.length > 0) {
+        return c.json({
+          success: false,
+          message: `Some breaks failed to save (${insertedBreaks.length} saved, ${insertErrors.length} failed)`,
+          insertedCount: insertedBreaks.length,
+          errorCount: insertErrors.length,
+          insertErrors,
+        }, 400);
+      }
+
+      return c.json({
+        success: true,
         message: `Breaks saved successfully (${insertedBreaks.length} breaks)`,
         insertedCount: insertedBreaks.length,
-        errorCount: insertErrors.length
+        errorCount: 0,
       });
     } catch (error: any) {
       console.error('Error saving vendor breaks:', error);
@@ -1111,11 +1134,17 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/holidays-enhanced
-   * Get enhanced holidays with vacation support
+   * Get enhanced holidays with vacation support.
+   * Resolves vendorId via resolveVendorById so vendor_identity works (holidays persist on refresh).
    */
   app.get("/vendor/:vendorId/holidays-enhanced", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
 
       const holidaysResult = await query(
         `SELECT * FROM vendor_holidays_enhanced
@@ -1123,7 +1152,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
            AND is_active = true
            AND (end_date >= CURRENT_DATE OR is_recurring_yearly = true)
          ORDER BY start_date ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
 
       return c.json({ 
@@ -1145,11 +1174,18 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/holidays-enhanced
-   * Save enhanced holidays (replaces all holidays)
+   * Save enhanced holidays (replaces all holidays).
+   * Resolves vendorId via resolveVendorById so vendor_identity works (holidays persist on refresh).
    */
   app.post("/vendor/:vendorId/holidays-enhanced", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
+
       const { holidays } = await c.req.json();
 
       if (!Array.isArray(holidays)) {
@@ -1179,7 +1215,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       // Delete existing holidays
       await query(
         'DELETE FROM vendor_holidays_enhanced WHERE vendor_id = $1',
-        [vendorId]
+        [actualVendorId]
       ).catch((err) => {
         console.warn('[HOLIDAYS] Delete error (may be OK):', err.message);
       });
@@ -1196,7 +1232,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
             ) VALUES ($1, $2, $3, $4, $5, $6, true)
             RETURNING id`,
             [
-              vendorId,
+              actualVendorId,
               holiday.startDate || holiday.start_date,
               holiday.endDate || holiday.end_date,
               holiday.holidayType || holiday.holiday_type || 'holiday',

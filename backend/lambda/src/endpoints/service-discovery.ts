@@ -1047,10 +1047,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
         return m[(roleId as string).toLowerCase().trim()] || roleId;
       })() : roleId;
-      const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+      let targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+      // For at_center, exclude solo role names so business/clinic vendors are returned (otherwise r.name NOT LIKE '%solo%' + only vet_solo in list = 0 results)
+      if (serviceStyle === 'at_center' && targetRoles.length > 0) {
+        targetRoles = targetRoles.filter((r) => !r.toLowerCase().includes('solo'));
+        if (targetRoles.length === 0) {
+          targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+          targetRoles = (CATEGORY_ROLE_NAMES[category?.toLowerCase() || ''] || targetRoles).filter((r) => !r.toLowerCase().includes('solo'));
+        }
+      }
       if (targetRoles.length > 0) {
-        vendorQuery += ` AND r.name = ANY($${paramIndex})`;
-        params.push(targetRoles);
+        vendorQuery += ` AND LOWER(r.name) = ANY($${paramIndex}::text[])`;
+        params.push(targetRoles.map((r) => r.toLowerCase()));
         paramIndex++;
       }
 
@@ -1085,7 +1093,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.service_name as name,
               vs.custom_description as description,
               vs.custom_price as price,
-              vs.custom_duration as duration_minutes,
+              COALESCE(vs.custom_duration, vs.duration_minutes) as duration_minutes,
               vs.service_style,
               vs.is_enabled,
               vs.publish_status,
@@ -4154,7 +4162,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vs.service_name,
           vs.service_style,
           vs.price,
-          vs.duration_minutes as duration,
+          COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
           vs.custom_description as description,
           vs.is_enabled,
           vs.publish_status,
@@ -4391,7 +4399,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 vs.service_id,
                 vs.service_name,
                 vs.price,
-                vs.duration_minutes as duration,
+                COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
                 vs.custom_description as description,
                 vs.category as category_name
                FROM vendor_services vs
@@ -4805,7 +4813,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.id,
               vs.service_id,
               vs.price,
-              vs.duration_minutes as duration,
+              COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
               vs.custom_description as description,
               vs.category
@@ -4990,7 +4998,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.id,
               vs.service_id,
               vs.price,
-              vs.duration_minutes as duration,
+              COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
               vs.custom_description as description,
               vs.category
@@ -5154,7 +5162,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.id,
             vs.service_id,
             vs.price,
-            vs.duration_minutes as duration,
+            COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
             vs.custom_description as description,
             vs.category

@@ -17,8 +17,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
-import { getSnsClient } from '../utils/sns-client';
-import { PublishCommand } from '@aws-sdk/client-sns';
+import { sendSMS } from '../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -68,14 +67,11 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
 
       // Send OTP via SMS if customer phone available
       if (customer?.phone) {
-        const snsClient = getSnsClient();
-        await snsClient.send(new PublishCommand({
-          PhoneNumber: customer.phone,
-          Message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
-          MessageAttributes: {
-            'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-          },
-        })).catch(err => console.error('SMS send failed:', err));
+        await sendSMS({
+          to: customer.phone,
+          message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
+          type: 'otp',
+        }).catch(err => console.error('SMS send failed:', err));
       }
 
       return c.json({
@@ -285,4 +281,3 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
     }
   });
 }
-

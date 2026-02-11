@@ -1,32 +1,58 @@
 #!/bin/bash
 # Direct AWS CLI deployment script for admin-web
-# Usage: ./scripts/deploy-admin-web.sh [--deploy-only]
+# Usage: ./scripts/deploy-admin-web.sh [--deploy-only] [--prod] [--yes]
 #   --deploy-only  Skip build; use existing dist (fails if dist missing).
-#   Default: always build. Do NOT use SKIP_BUILD env (ignored).
+#   --prod         Deploy to PRODUCTION (S3 + CloudFront prod).
+#   --yes, -y      Skip confirmation prompt when using --prod.
+#   Default: deploy to dev. Do NOT use SKIP_BUILD env (ignored).
 
 set -e
 
-# Only skip build when explicitly requested via flag (ignore SKIP_BUILD env to avoid cross-agent leaks)
+# Parse flags
 DEPLOY_ONLY=false
+PROD=false
+SKIP_CONFIRM=false
 for arg in "$@"; do
-  if [ "$arg" = "--deploy-only" ] || [ "$arg" = "--skip-build" ]; then
-    DEPLOY_ONLY=true
-    break
-  fi
+  case "$arg" in
+    --deploy-only|--skip-build) DEPLOY_ONLY=true ;;
+    --prod)                     PROD=true ;;
+    --yes|-y)                   SKIP_CONFIRM=true ;;
+  esac
 done
 
-echo "🚀 Deploying admin-web to AWS dev environment..."
+# Support ENVIRONMENT=prod as alternative to --prod
+if [ "${ENVIRONMENT:-}" = "prod" ]; then
+  PROD=true
+fi
 
-# Configuration: read from config/urls.json or env only (no hardcoded URLs)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="admin-web"
-S3_BUCKET="warmpawz-dev-admin-frontend-ap-south-1"
-CLOUDFRONT_DIST_ID="E1WPXL8WBOWOE8"
-if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-  CLOUDFRONT_URL="${CLOUDFRONT_URL:-$(jq -r '.cloudfront.admin // empty' "$PROJECT_ROOT/config/urls.json")}"
+
+if [ "$PROD" = true ]; then
+  echo "🚀 Deploying admin-web to AWS PRODUCTION environment..."
+  S3_BUCKET="warmpawz-prod-admin-frontend-ap-south-1"
+  CLOUDFRONT_DIST_ID="E2NHO6UUI5UIHW"
+  CLOUDFRONT_URL="https://dbr09zyoq9akb.cloudfront.net"
+  API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
+  if [ "$SKIP_CONFIRM" = false ]; then
+    echo "⚠️  WARNING: This will deploy to PRODUCTION!"
+    read -p "Type 'yes' to proceed: " confirm
+    if [ "$confirm" != "yes" ]; then
+      echo "❌ Deployment cancelled"
+      exit 1
+    fi
+  fi
+else
+  echo "🚀 Deploying admin-web to AWS dev environment..."
+  S3_BUCKET="warmpawz-dev-admin-frontend-ap-south-1"
+  CLOUDFRONT_DIST_ID="E1WPXL8WBOWOE8"
+  if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+    CLOUDFRONT_URL="${CLOUDFRONT_URL:-$(jq -r '.cloudfront.admin // empty' "$PROJECT_ROOT/config/urls.json")}"
+  fi
+  CLOUDFRONT_URL="${CLOUDFRONT_URL:-}"
+  API_BASE_URL=""
 fi
-CLOUDFRONT_URL="${CLOUDFRONT_URL:-}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -56,39 +82,54 @@ fi
 # Step 1.5: Inject runtime-config.js with API Gateway URL (API calls must go to backend, not CloudFront)
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
-# Resolve API Gateway URL so /admin/categories, /admin/roles etc. hit the backend, not Admin CloudFront (which serves HTML)
-# Prefer CDK outputs (source of truth for dev) to avoid wrong API from AWS CLI when multiple APIs exist
-API_BASE_URL=""
-CDK_OUTPUTS="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
-if [ -f "$CDK_OUTPUTS" ] && command -v jq &>/dev/null; then
-  API_BASE_URL=$(jq -r '.["WarmpawzStack-dev"].ApiGatewayUrl // empty' "$CDK_OUTPUTS")
-fi
-if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+if [ "$PROD" = false ] && [ -z "$API_BASE_URL" ]; then
+  CDK_OUTPUTS="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
+  if [ -f "$CDK_OUTPUTS" ] && command -v jq &>/dev/null; then
+    API_BASE_URL=$(jq -r '.["WarmpawzStack-dev"].ApiGatewayUrl // empty' "$CDK_OUTPUTS")
+  fi
+  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+    if command -v aws &>/dev/null; then
+      API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+    fi
+    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+      if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+        API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+      fi
+    fi
+  fi
+  if [ -z "$API_BASE_URL" ]; then
+    echo -e "${YELLOW}⚠️  API Gateway URL not found. Set in config/urls.json or run CDK deploy first.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✅ API Gateway endpoint (dev): $API_BASE_URL${NC}"
+elif [ "$PROD" = true ] && { [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; }; then
   if command -v aws &>/dev/null; then
-    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
   fi
   if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-    if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-      API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
-    fi
-    if [ -z "$API_BASE_URL" ]; then
-      echo -e "${YELLOW}⚠️  API Gateway URL not found. Set in config/urls.json (apiGatewayDefaultUrl) or run CDK deploy first.${NC}"
-      exit 1
-    fi
-    echo -e "${YELLOW}⚠️  Using API Gateway URL from config: $API_BASE_URL${NC}"
-  else
-    echo -e "${GREEN}✅ API Gateway endpoint (from AWS): $API_BASE_URL${NC}"
+    echo -e "${YELLOW}⚠️  Could not get prod API Gateway; using default.${NC}"
+    API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
   fi
-else
-  echo -e "${GREEN}✅ API Gateway endpoint (from cdk-outputs.json): $API_BASE_URL${NC}"
+  echo -e "${GREEN}✅ API Gateway endpoint (prod): $API_BASE_URL${NC}"
 fi
-# Ensure no trailing slash
 API_BASE_URL="${API_BASE_URL%/}"
 
 # Inject runtime-config.js into dist folder
-cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
+if [ "$PROD" = true ]; then
+  cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
+// Runtime Configuration for Warmpawz ${APP_NAME} (PRODUCTION)
+(function() {
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+    apiBaseUrl: "${API_BASE_URL}",
+    uatMode: false,
+    environment: "production"
+  };
+  console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+})();
+EOF
+else
+  cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 // Runtime Configuration for Warmpawz ${APP_NAME}
-// Injected at deployment - API base is API Gateway (backend), not CloudFront
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
@@ -97,6 +138,7 @@ cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF
+fi
 
 echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}"
 
@@ -129,7 +171,11 @@ fi
 # Summary
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   ✅ DIRECT AWS DEPLOYMENT COMPLETED                          ║${NC}"
+if [ "$PROD" = true ]; then
+  echo -e "${GREEN}║   ✅ PRODUCTION DEPLOYMENT COMPLETED                           ║${NC}"
+else
+  echo -e "${GREEN}║   ✅ DIRECT AWS DEPLOYMENT COMPLETED (dev)                      ║${NC}"
+fi
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "📦 Deployment Summary:"
@@ -143,7 +189,6 @@ echo -e "   - Direct S3: s3://${S3_BUCKET}"
 echo ""
 echo -e "⏰ Next Steps:"
 echo -e "   1. Wait 5-15 minutes for CloudFront propagation"
-echo -e "   2. Test the deployed fix at ${CLOUDFRONT_URL}"
-echo -e "   3. Verify issues are resolved"
+echo -e "   2. Test at ${CLOUDFRONT_URL}"
 echo ""
 

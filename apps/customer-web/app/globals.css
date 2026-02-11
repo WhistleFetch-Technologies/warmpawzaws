@@ -2,8 +2,7 @@
  * Warmpawz Customer Web - Global Styles
  * Using unified design system
  * 
- * PERFORMANCE: Fonts are now loaded via next/font (Baloo 2) and 
- * non-blocking stylesheet link (Material Symbols) in layout.tsx
+ * PERFORMANCE: Fonts are loaded via non-blocking stylesheet links in layout.tsx
  * This eliminates render-blocking @import statements
  */
 
@@ -55,8 +54,9 @@
   --shadow-primary: 0 4px 14px 0 rgba(255, 140, 66, 0.3);
   --shadow-card: 0 4px 12px 0 rgba(0, 0, 0, 0.08);
   
-  /* Typography - Uses CSS variable from next/font in layout.tsx */
-  --font-sans: var(--font-baloo2), 'Baloo 2', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Typography */
+  --font-baloo2: 'Baloo 2';
+  --font-sans: var(--font-baloo2), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   
   /* Border Radius */
   --radius-sm: 4px;

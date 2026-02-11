@@ -187,11 +187,12 @@ export async function triggerBookingNotification(event: string, data: any) {
       return;
     }
 
-    // Send SMS
+    // Send SMS (explicit senderId for India DLT header WARMPZ)
     await sendSMS({
       to: recipientPhone,
       message,
       type: 'transactional',
+      senderId: 'WARMPZ',
       ...(template.templateId ? { templateId: template.templateId } : {}),
     });
 
@@ -234,11 +235,12 @@ export function registerSmsNotificationEndpoints(app: Hono) {
         return c.json({ error: 'templateId is required for SMS in production (DLT compliance)' }, 400);
       }
 
-      // Send SMS
+      // Send SMS (explicit senderId for India DLT header WARMPZ)
       const result = await sendSMS({
         to: phone,
         message,
         type: 'transactional',
+        senderId: 'WARMPZ',
         ...(templateId ? { templateId } : {}),
       });
 
@@ -264,6 +266,66 @@ export function registerSmsNotificationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error sending SMS:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /sms/send-sample-templates
+   * Send all 4 Jio-approved SMS templates to a phone with sample data (for verification).
+   * Body: { "phone": "9611377119" }
+   */
+  app.post("/sms/send-sample-templates", async (c) => {
+    try {
+      const { phone } = await c.req.json();
+      const to = phone || '9611377119';
+      const delayMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      const samples: { name: string; templateId: string; message: string }[] = [
+        {
+          name: 'Login OTP',
+          templateId: '1207177028377787269',
+          message: 'Warmpawz: Your OTP for logging in is 123456. Do not share this OTP with anyone.',
+        },
+        {
+          name: 'Booking Confirmation',
+          templateId: '1207177035174777582',
+          message: 'Warmpawz Booking: Your booking with PetCare Clinic for 10-Feb-2026 at 10:30 AM is confirmed. For more details, refer to My Bookings.',
+        },
+        {
+          name: 'Booking Rescheduled',
+          templateId: '1207177035515118051',
+          message: 'Warmpawz Rescheduling: Your booking with PetCare Clinic has been rescheduled to 12-Feb-2026 at 2:00 PM. For more details, refer to My Bookings.',
+        },
+        {
+          name: 'Booking Cancelled',
+          templateId: '1207177035326314961',
+          message: 'Warmpawz Cancellation: Your booking with PetCare Clinic scheduled for 10-Feb-2026 at 10:30 AM has been cancelled. For more details, refer to My Bookings.',
+        },
+      ];
+
+      const results: { name: string; templateId: string; success: boolean; messageId?: string }[] = [];
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const result = await sendSMS({
+          to,
+          message: s.message,
+          type: i === 0 ? 'otp' : 'transactional',
+          templateId: s.templateId,
+          senderId: 'WARMPZ',
+        });
+        results.push({ name: s.name, templateId: s.templateId, success: result.success, messageId: result.messageId });
+        if (i < samples.length - 1) await delayMs(2000);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Sample templates sent (one by one with 2s delay)',
+        phone: to,
+        results,
+      });
+    } catch (error: any) {
+      console.error('Error sending sample templates:', error);
       return c.json({ error: error.message }, 500);
     }
   });

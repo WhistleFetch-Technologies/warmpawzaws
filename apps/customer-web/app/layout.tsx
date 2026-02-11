@@ -1,16 +1,6 @@
 import type { Metadata } from 'next';
-import { Baloo_2 } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-
-// Optimized font loading with next/font - self-hosted for better performance
-const baloo2 = Baloo_2({ 
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  display: 'swap',
-  preload: true,
-  variable: '--font-baloo2',
-});
 
 export const metadata: Metadata = {
   title: 'Warmpawz - Pet Care Services',
@@ -23,8 +13,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={baloo2.variable}>
+    <html lang="en">
       <head>
+        {/* Baloo 2 font via stylesheet to avoid build-time fetches */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&display=swap"
+          // @ts-ignore - media trick for non-blocking CSS
+          media="print"
+          // @ts-ignore
+          onLoad="this.media='all'"
+        />
         {/* Preconnect to Google Fonts for Material Symbols (non-blocking) */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -38,7 +37,7 @@ export default function RootLayout({
           onLoad="this.media='all'"
         />
       </head>
-      <body className={baloo2.className}>
+      <body>
         {/* Runtime config: no hardcoded URLs. Injected at deploy from config/urls.json; local dev: NEXT_PUBLIC_API_BASE_URL */}
         <script
           dangerouslySetInnerHTML={{
@@ -56,4 +55,3 @@ export default function RootLayout({
     </html>
   );
 }
-

@@ -18,12 +18,38 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
   const [participantId, setParticipantId] = useState<string>('');
 
   useEffect(() => {
-    // Get participant ID from localStorage
-    const customerId = typeof window !== 'undefined' 
-      ? localStorage.getItem('customerId') || localStorage.getItem('customerPhone') || ''
-      : '';
-    
-    setParticipantId(customerId);
+    if (typeof window !== 'undefined') {
+      // Prefer query params (mobile WebView/deep links), then localStorage
+      const urlParams = new URLSearchParams(window.location.search);
+      const qpCustomerId =
+        urlParams.get('customerId') ||
+        urlParams.get('customer_id') ||
+        urlParams.get('participantId') ||
+        '';
+      const qpPhone =
+        urlParams.get('customerPhone') ||
+        urlParams.get('customer_phone') ||
+        urlParams.get('phone') ||
+        '';
+
+      if (qpCustomerId) {
+        localStorage.setItem('customerId', qpCustomerId);
+      }
+      if (qpPhone) {
+        localStorage.setItem('customerPhone', qpPhone);
+        localStorage.setItem('customer_phone', qpPhone);
+        localStorage.setItem('phone', qpPhone);
+      }
+
+      const storedId =
+        localStorage.getItem('customerId') ||
+        localStorage.getItem('customerPhone') ||
+        localStorage.getItem('customer_phone') ||
+        localStorage.getItem('phone') ||
+        '';
+
+      setParticipantId(qpCustomerId || qpPhone || storedId);
+    }
     loadBookingData();
   }, [bookingId]);
 
@@ -110,4 +136,3 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
     </div>
   );
 }
-

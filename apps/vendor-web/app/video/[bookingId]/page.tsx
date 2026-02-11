@@ -8,11 +8,9 @@
 
 import { VideoPageClient } from './VideoPageClient';
 
-// Server component wrapper - generateStaticParams must be in server component
+// Required for output: 'export' — must return at least one param so static export can build
 export async function generateStaticParams() {
-  // Return empty array - this allows any booking ID to work
-  // The page will be generated as a fallback and handle routing client-side
-  return [];
+  return [{ bookingId: '_' }];
 }
 
 // Allow dynamic params at runtime (client-side navigation)

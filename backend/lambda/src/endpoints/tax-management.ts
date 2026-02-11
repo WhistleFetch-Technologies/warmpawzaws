@@ -913,13 +913,19 @@ export function registerTaxManagementEndpoints(app: Hono) {
 }
 
 function createApiGatewayEvent(req: any): any {
+  const headers =
+    req?.headers != null && typeof (req.headers as any).entries === 'function'
+      ? Object.fromEntries((req.headers as Headers).entries())
+      : req?.headers != null && typeof req.headers === 'object' && !Array.isArray(req.headers)
+        ? (req.headers as Record<string, string>)
+        : {};
   return {
-    httpMethod: req.method,
-    path: req.url.split('?')[0],
+    httpMethod: req?.method ?? 'GET',
+    path: (req?.url ?? '/').split('?')[0],
     pathParameters: {},
     queryStringParameters: {},
-    headers: Object.fromEntries(req.headers.entries()),
-    body: JSON.stringify(req.body || {}),
+    headers,
+    body: JSON.stringify(req?.body ?? {}),
     isBase64Encoded: false,
   };
 }

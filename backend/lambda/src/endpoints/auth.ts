@@ -110,6 +110,15 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
       return false;
     }
 
+    const normalizedPhone = (() => {
+      const raw = String(phone || '').trim();
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length === 10) return `+91${digits}`;
+      if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+      if (raw.startsWith('+')) return raw;
+      return digits ? `+${digits}` : raw;
+    })();
+
     const snsClient = new SNSClient({
       region: awsSettings.sns.region || 'ap-south-1',
       credentials: {
@@ -139,9 +148,23 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
       }
     }
 
+    if (awsSettings.sns?.entityId) {
+      messageAttributes['AWS.SNS.SMS.EntityId'] = {
+        DataType: 'String',
+        StringValue: awsSettings.sns.entityId,
+      };
+    }
+
+    if (awsSettings.sns?.templateId) {
+      messageAttributes['AWS.SNS.SMS.TemplateId'] = {
+        DataType: 'String',
+        StringValue: awsSettings.sns.templateId,
+      };
+    }
+
     await snsClient.send(
       new PublishCommand({
-        PhoneNumber: phone,
+        PhoneNumber: normalizedPhone,
         Message: message,
         MessageAttributes: messageAttributes,
       })
@@ -743,4 +766,3 @@ function createLambdaContext(): any {
     functionVersion: '$LATEST',
   };
 }
-

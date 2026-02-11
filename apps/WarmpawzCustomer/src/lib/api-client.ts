@@ -472,16 +472,24 @@ class ApiClient {
     return this.get(`/video-call/booking/${bookingId}`);
   }
 
-  async joinVideoCall(bookingId: string, meetingId: string): Promise<VideoCallJoinResponse> {
-    return this.post('/video-call/join', { booking_id: bookingId, meeting_id: meetingId });
+  /** Join video call. Backend creates meeting on join if none exists. participantId = customerId or phone, participantType = 'customer'. */
+  async joinVideoCall(bookingId: string, participantId: string, participantType: 'customer'): Promise<VideoCallJoinResponse> {
+    return this.post('/video-call/join', {
+      booking_id: bookingId,
+      participant_id: participantId,
+      participant_type: participantType,
+    });
   }
 
-  async endVideoCall(bookingId: string, meetingId: string, durationSeconds: number): Promise<void> {
-    return this.post('/video-call/end', { 
-      booking_id: bookingId, 
-      meeting_id: meetingId,
-      duration_seconds: durationSeconds,
+  async notifyVideoCallReady(bookingId: string, participantType: 'customer'): Promise<void> {
+    await this.post('/video-call/notify-ready', {
+      bookingId,
+      participantType,
     });
+  }
+
+  async endVideoCall(bookingId: string): Promise<void> {
+    return this.post('/video-call/end', { booking_id: bookingId });
   }
 
   // ============================================================================

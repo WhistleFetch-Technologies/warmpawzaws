@@ -23,11 +23,18 @@ const AWS_API_GATEWAY_URL = process.env.AWS_API_GATEWAY_URL ||
 // ✅ FIXED: API Base URL - NO Supabase path, direct API Gateway access
 export const API_BASE_URL = AWS_API_GATEWAY_URL;
 
+// Web app base URL for embedded/redirected video calls
+// Priority: ENV VAR > DEV fallback > PROD fallback
+export const CUSTOMER_WEB_BASE_URL =
+  process.env.CUSTOMER_WEB_BASE_URL ||
+  process.env.EXPO_PUBLIC_CUSTOMER_WEB_BASE_URL ||
+  (__DEV__ ? 'https://d2aoyjj8ine0wk.cloudfront.net' : 'https://d2aoyjj8ine0wk.cloudfront.net');
+
 // Validate configuration in development
 if (__DEV__) {
   console.log('🔧 [DEV] API Gateway URL:', AWS_API_GATEWAY_URL);
+  console.log('🔧 [DEV] Customer Web URL:', CUSTOMER_WEB_BASE_URL);
 }
 
 // Export for use in API service
 export { AWS_API_GATEWAY_URL };
-

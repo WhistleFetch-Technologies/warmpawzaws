@@ -1,8 +1,18 @@
 #!/bin/bash
 # Direct AWS CLI deployment script for vendor-web
-# Usage: ./scripts/deploy-vendor-web.sh
+# Usage: ./scripts/deploy-vendor-web.sh [--deploy-only]
+#   --deploy-only  Skip build; inject config and upload existing dist (fails if dist missing).
 
 set -e
+
+# Only skip build when explicitly requested via flag
+DEPLOY_ONLY=false
+for arg in "$@"; do
+  if [ "$arg" = "--deploy-only" ] || [ "$arg" = "--skip-build" ]; then
+    DEPLOY_ONLY=true
+    break
+  fi
+done
 
 echo "🚀 Deploying vendor-web to AWS dev environment..."
 
@@ -23,17 +33,21 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Step 1: Build the app
-echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
-cd "$PROJECT_ROOT/apps/${APP_NAME}"
-npm run build
+cd "$PROJECT_ROOT"
 
-if [ ! -d "dist" ]; then
-  echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
-  exit 1
+# Step 1: Build the app (skip only when --deploy-only and dist exists)
+cd "apps/${APP_NAME}"
+if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
+  echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
+else
+  echo -e "${BLUE}📦 Building ${APP_NAME} (static export)...${NC}"
+  ENABLE_STATIC_EXPORT=true npm run build
+  if [ ! -d "dist" ]; then
+    echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✅ Build completed successfully${NC}"
 fi
-
-echo -e "${GREEN}✅ Build completed successfully${NC}"
 
 # Step 1.5: Inject runtime-config.js with API Gateway URL (API calls must go to backend, not CloudFront)
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
@@ -92,6 +106,15 @@ else
   exit 1
 fi
 
+# Step 2.5: Set short cache on HTML and config so CDN/browsers don't serve stale index (avoids "Unexpected token '<'" when chunk names change)
+echo -e "${BLUE}📄 Setting cache headers on HTML and runtime-config...${NC}"
+for f in index.html 404.html runtime-config.js; do
+  if [ -f "apps/${APP_NAME}/dist/${f}" ]; then
+    aws s3 cp "apps/${APP_NAME}/dist/${f}" "s3://${S3_BUCKET}/${f}" --cache-control "public, max-age=0, must-revalidate" --content-type "$( [ "${f%.html}" != "$f" ] && echo "text/html" || echo "application/javascript")" 2>/dev/null || true
+  fi
+done
+echo -e "${GREEN}✅ Cache headers set (HTML/config revalidate; chunks remain long-cached)${NC}"
+
 # Step 3: Invalidate CloudFront cache
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
@@ -121,5 +144,7 @@ echo ""
 echo -e "🌐 Access URLs:"
 echo -e "   - Vendor Web: ${CLOUDFRONT_URL}"
 echo -e "   - Direct S3: s3://${S3_BUCKET}"
+echo ""
+echo -e "${BLUE}💡 If you see \"Unexpected token '<'\" for .js files: ensure CloudFront has a behavior for /_next/* that does NOT return index.html for 404 (see docs/NEXTJS_AWS_SERVERLESS_ARCHITECTURE.md).${NC}"
 echo ""
 

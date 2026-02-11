@@ -131,3 +131,6 @@ archive/
 # =============================================================================
 *.backup
 *.bak
+
+# Admin config export (may contain secrets; do not commit)
+scripts/admin-config/export/

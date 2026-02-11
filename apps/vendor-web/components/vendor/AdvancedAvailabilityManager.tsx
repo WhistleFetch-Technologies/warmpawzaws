@@ -109,6 +109,53 @@ const HOLIDAY_TYPES = [
   { id: 'sick', label: 'Sick Leave' },
 ] as const;
 
+/** Convert "HH:MM" to minutes since midnight for comparison */
+function timeToMinutes(t: string): number {
+  const [h, m] = (t || '00:00').split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/** True if two time ranges overlap (boundaries inclusive: same start/end counts as overlap) */
+function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  const aS = timeToMinutes(aStart);
+  const aE = timeToMinutes(aEnd);
+  const bS = timeToMinutes(bStart);
+  const bE = timeToMinutes(bEnd);
+  if (aS > aE || bS > bE) return true; // invalid range, treat as overlap to block
+  return aS < bE && bS < aE;
+}
+
+/** Returns first overlapping day name if schedule + breaks have any slot/slot, slot/break, or break/break overlap */
+function getOverlapDay(
+  schedule: DaySchedule[],
+  breaks: Break[]
+): string | null {
+  for (let dayIdx = 0; dayIdx < (schedule?.length ?? 0); dayIdx++) {
+    const daySlots = schedule[dayIdx]?.slots ?? [];
+    const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === dayIdx);
+    for (let i = 0; i < daySlots.length; i++) {
+      for (let j = i + 1; j < daySlots.length; j++) {
+        if (timeRangesOverlap(daySlots[i].startTime, daySlots[i].endTime, daySlots[j].startTime, daySlots[j].endTime)) {
+          return DAYS[dayIdx];
+        }
+      }
+      for (const b of dayBreaks) {
+        if (timeRangesOverlap(daySlots[i].startTime, daySlots[i].endTime, b.startTime, b.endTime)) {
+          return DAYS[dayIdx];
+        }
+      }
+    }
+    for (let i = 0; i < dayBreaks.length; i++) {
+      for (let j = i + 1; j < dayBreaks.length; j++) {
+        if (timeRangesOverlap(dayBreaks[i].startTime, dayBreaks[i].endTime, dayBreaks[j].startTime, dayBreaks[j].endTime)) {
+          return DAYS[dayIdx];
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // DEFAULT_SLOT will be created dynamically based on allowed service styles
 
 export function AdvancedAvailabilityManager({ 
@@ -340,9 +387,9 @@ export function AdvancedAvailabilityManager({
         console.warn('Failed to load breaks:', e);
       }
       
-      // Load holidays
+      // Load holidays (same endpoint as save so data persists correctly)
       try {
-        const holidaysRes = await apiClient.get(`/vendor/${vendorId}/holidays`) as any;
+        const holidaysRes = await apiClient.get(`/vendor/${vendorId}/holidays-enhanced`) as any;
         if (holidaysRes?.success && holidaysRes?.holidays) {
           setHolidays(holidaysRes.holidays.map((h: any) => ({
             id: h.id,
@@ -385,8 +432,31 @@ export function AdvancedAvailabilityManager({
     }
   }, [vendorId, allowedServiceStyles, loadAvailabilityData]);
 
-  // Add slot to current day
+  // Add slot to current day; warn if default 09:00-17:00 overlaps (user must set non-overlapping times)
   const addSlot = () => {
+    const defaultStart = '09:00';
+    const defaultEnd = '17:00';
+    const daySlots = schedule[selectedDay]?.slots ?? [];
+    const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === selectedDay);
+    let overlaps = false;
+    for (const slot of daySlots) {
+      if (timeRangesOverlap(defaultStart, defaultEnd, slot.startTime, slot.endTime)) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (!overlaps) {
+      for (const b of dayBreaks) {
+        if (timeRangesOverlap(defaultStart, defaultEnd, b.startTime, b.endTime)) {
+          overlaps = true;
+          break;
+        }
+      }
+    }
+    if (overlaps) {
+      toast.warning('Default times overlap existing slots or breaks. Set non-overlapping times for this slot.');
+    }
+
     setSchedule(prev => {
       const newSchedule = [...prev];
       const defaultServiceStyles = getDefaultServiceStyle();
@@ -397,8 +467,8 @@ export function AdvancedAvailabilityManager({
         lng: vendorData.longitude,
       } : undefined;
       newSchedule[selectedDay].slots.push({
-        startTime: '09:00',
-        endTime: '17:00',
+        startTime: defaultStart,
+        endTime: defaultEnd,
         serviceStyles: defaultServiceStyles,
         locationData: initialLocationData,
         leadTimeByStyle: { ...DEFAULT_LEAD_TIME_BY_STYLE },
@@ -418,14 +488,40 @@ export function AdvancedAvailabilityManager({
     });
   };
 
-  // Update slot
+  // Update slot (with overlap validation: no overlap with other slots or breaks on same day)
   const updateSlot = (slotIdx: number, updates: Partial<TimeSlot>) => {
+    const hasTimeChange = 'startTime' in updates || 'endTime' in updates;
+    const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === selectedDay);
+
     setSchedule(prev => {
       const newSchedule = [...prev];
-      newSchedule[selectedDay].slots[slotIdx] = {
-        ...newSchedule[selectedDay].slots[slotIdx],
-        ...updates,
-      };
+      const daySlots = newSchedule[selectedDay]?.slots ?? [];
+      const merged = { ...daySlots[slotIdx], ...updates };
+      const start = merged.startTime ?? '';
+      const end = merged.endTime ?? '';
+
+      if (hasTimeChange && start && end) {
+        if (timeToMinutes(end) <= timeToMinutes(start)) {
+          toast.error('End time must be after start time');
+          return prev;
+        }
+        for (let i = 0; i < daySlots.length; i++) {
+          if (i === slotIdx) continue;
+          const s = daySlots[i];
+          if (timeRangesOverlap(start, end, s.startTime, s.endTime)) {
+            toast.error('This slot overlaps another slot. Please choose a different time.');
+            return prev;
+          }
+        }
+        for (const b of dayBreaks) {
+          if (timeRangesOverlap(start, end, b.startTime, b.endTime)) {
+            toast.error('This slot overlaps a break. Please choose a different time.');
+            return prev;
+          }
+        }
+      }
+
+      newSchedule[selectedDay].slots[slotIdx] = merged;
       return newSchedule;
     });
   };
@@ -554,9 +650,14 @@ export function AdvancedAvailabilityManager({
         });
       }
     });
-    
+
     setBreaks(newBreaks);
-    toast.success(`Copied ${DAYS[selectedDay]}'s breaks to all days`);
+    const overlapDay = getOverlapDay(schedule, newBreaks);
+    if (overlapDay) {
+      toast.warning(`Some copied breaks overlap slots or other breaks (e.g. ${overlapDay}). Fix before saving.`);
+    } else {
+      toast.success(`Copied ${DAYS[selectedDay]}'s breaks to all days`);
+    }
   };
 
   // Copy breaks to weekdays only
@@ -588,23 +689,47 @@ export function AdvancedAvailabilityManager({
         });
       }
     }
-    
+
     setBreaks(newBreaks);
-    toast.success(`Copied ${DAYS[selectedDay]}'s breaks to weekdays`);
+    const overlapDay = getOverlapDay(schedule, newBreaks);
+    if (overlapDay) {
+      toast.warning(`Some copied breaks overlap slots or other breaks (e.g. ${overlapDay}). Fix before saving.`);
+    } else {
+      toast.success(`Copied ${DAYS[selectedDay]}'s breaks to weekdays`);
+    }
   };
 
-  // Add break
+  // Add break (with overlap validation: no overlap with slots or other breaks on same day)
   const addBreak = async () => {
     if (!newBreak.startTime || !newBreak.endTime) {
       toast.error('Start and end time are required');
       return;
     }
-    
+    if (timeToMinutes(newBreak.endTime) <= timeToMinutes(newBreak.startTime)) {
+      toast.error('End time must be after start time');
+      return;
+    }
+
+    const daySlots = schedule[selectedDay]?.slots ?? [];
+    const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === selectedDay);
+    for (const slot of daySlots) {
+      if (timeRangesOverlap(newBreak.startTime, newBreak.endTime, slot.startTime, slot.endTime)) {
+        toast.error('This break overlaps an existing time slot. Please choose a different time.');
+        return;
+      }
+    }
+    for (const b of dayBreaks) {
+      if (timeRangesOverlap(newBreak.startTime, newBreak.endTime, b.startTime, b.endTime)) {
+        toast.error('This break overlaps another break. Please choose a different time.');
+        return;
+      }
+    }
+
     const breakToAdd: Break = {
       ...newBreak as Break,
       dayOfWeek: newBreak.isRecurring ? selectedDay : undefined,
     };
-    
+
     setBreaks(prev => [...prev, breakToAdd]);
     setNewBreak({
       breakType: 'lunch',
@@ -670,9 +795,37 @@ export function AdvancedAvailabilityManager({
       toast.error('Cannot save: Invalid vendor ID. Please refresh and try again.');
       return;
     }
-    
+
+    // Overlap validation: no slot/slot, slot/break, or break/break overlap per day
+    for (let dayIdx = 0; dayIdx < schedule.length; dayIdx++) {
+      const daySlots = schedule[dayIdx]?.slots ?? [];
+      const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === dayIdx);
+      for (let i = 0; i < daySlots.length; i++) {
+        for (let j = i + 1; j < daySlots.length; j++) {
+          if (timeRangesOverlap(daySlots[i].startTime, daySlots[i].endTime, daySlots[j].startTime, daySlots[j].endTime)) {
+            toast.error(`${DAYS[dayIdx]}: Two slots overlap. Please set non-overlapping times before saving.`);
+            return;
+          }
+        }
+        for (const b of dayBreaks) {
+          if (timeRangesOverlap(daySlots[i].startTime, daySlots[i].endTime, b.startTime, b.endTime)) {
+            toast.error(`${DAYS[dayIdx]}: A slot overlaps a break. Please fix before saving.`);
+            return;
+          }
+        }
+      }
+      for (let i = 0; i < dayBreaks.length; i++) {
+        for (let j = i + 1; j < dayBreaks.length; j++) {
+          if (timeRangesOverlap(dayBreaks[i].startTime, dayBreaks[i].endTime, dayBreaks[j].startTime, dayBreaks[j].endTime)) {
+            toast.error(`${DAYS[dayIdx]}: Two breaks overlap. Please fix before saving.`);
+            return;
+          }
+        }
+      }
+    }
+
     console.log('[SAVE] Starting save with vendorId:', vendorId);
-    
+
     setSaving(true);
     try {
       // Save availability slots
@@ -710,7 +863,14 @@ export function AdvancedAvailabilityManager({
       console.log('[SAVE] Saving breaks:', breaks);
       const breaksRes = await apiClient.post(`/vendor/${vendorId}/breaks`, { breaks }) as any;
       console.log('[SAVE] Breaks response:', breaksRes);
-      
+
+      if (!breaksRes?.success) {
+        const msg = breaksRes?.insertErrors?.length
+          ? breaksRes.insertErrors.join('; ')
+          : (breaksRes?.message || 'Failed to save breaks');
+        throw new Error(msg);
+      }
+
       // Save holidays (use enhanced endpoint for full holiday support)
       console.log('[SAVE] Saving holidays:', holidays);
       const holidaysRes = await apiClient.post(`/vendor/${vendorId}/holidays-enhanced`, { holidays }) as any;

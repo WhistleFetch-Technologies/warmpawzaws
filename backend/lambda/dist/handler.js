@@ -112255,8 +112255,8 @@ async function loadSnsSettings() {
   const envTemplate = process.env.SMS_TEMPLATE_ID || process.env.SNS_SMS_TEMPLATE_ID || "";
   if (envSender || envEntity || envTemplate) {
     return {
-      senderId: envSender || void 0,
-      entityId: envEntity || void 0,
+      senderId: envSender || JIO_DLT_DEFAULTS.senderId,
+      entityId: envEntity || JIO_DLT_DEFAULTS.entityId,
       templateId: envTemplate || void 0
     };
   }
@@ -112264,45 +112264,67 @@ async function loadSnsSettings() {
     const rows = await query(
       `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1`
     );
-    const setting = rows.rows?.[0]?.setting_value || null;
+    const raw2 = rows.rows?.[0]?.setting_value;
+    const setting = raw2 == null ? null : typeof raw2 === "string" ? (() => {
+      try {
+        return JSON.parse(raw2);
+      } catch {
+        return null;
+      }
+    })() : raw2;
     const sns = setting?.sns || {};
-    return {
-      senderId: sns?.smsOriginationNumber || void 0,
-      entityId: sns?.entityId || void 0,
-      templateId: sns?.templateId || void 0
-    };
-  } catch {
-    return null;
+    const creds = setting?.credentials || {};
+    const senderId = sns?.smsOriginationNumber || JIO_DLT_DEFAULTS.senderId;
+    const entityId = sns?.entityId || JIO_DLT_DEFAULTS.entityId;
+    const templateId = sns?.templateId;
+    const region = sns?.region || process.env.AWS_REGION || "ap-south-1";
+    const accessKeyId = creds?.accessKeyId;
+    const secretAccessKey = creds?.secretAccessKey;
+    const credentials = sns?.enabled && accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : void 0;
+    if (credentials) {
+      console.log("[SMS] Using DB credentials for SNS (Option A)");
+    } else {
+      console.log("[SMS] No DB credentials; using Lambda role for SNS");
+    }
+    return { senderId, entityId, templateId, credentials, region };
+  } catch (e) {
+    console.warn("[SMS] loadSnsSettings failed:", e?.message);
   }
+  return {
+    senderId: JIO_DLT_DEFAULTS.senderId,
+    entityId: JIO_DLT_DEFAULTS.entityId,
+    templateId: void 0
+  };
 }
-async function buildSmsAttributes(type, overrides) {
+function buildSmsAttributesFromSettings(type, settings, overrides) {
   const attrs = {
     "AWS.SNS.SMS.SMSType": {
       DataType: "String",
       StringValue: type === "promotional" ? "Promotional" : "Transactional"
     }
   };
-  const settings = await loadSnsSettings();
-  const senderId = overrides?.senderId || settings?.senderId;
+  const senderId = overrides?.senderId ?? settings.senderId;
+  const entityId = overrides?.entityId ?? settings.entityId;
+  const templateId = overrides?.templateId ?? settings.templateId;
   if (senderId) {
-    attrs["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: senderId };
+    attrs["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: String(senderId).trim() };
   }
-  const entityId = overrides?.entityId || settings?.entityId;
   if (entityId) {
-    attrs["AWS.SNS.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
+    attrs["AWS.MM.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
   }
-  const templateId = overrides?.templateId || settings?.templateId;
   if (templateId) {
-    attrs["AWS.SNS.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
+    attrs["AWS.MM.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
   }
   return attrs;
 }
 async function sendSMS(options) {
   const { to, message: message2, type = "transactional", templateId, entityId, senderId } = options;
   const phone = normalizePhone(to);
-  const attrs = await buildSmsAttributes(type, { templateId, entityId, senderId });
+  const settings = await loadSnsSettings();
+  const attrs = buildSmsAttributesFromSettings(type, settings, { templateId, entityId, senderId });
   try {
-    const snsClient4 = new import_client_sns.SNSClient({ region: process.env.AWS_REGION || "ap-south-1" });
+    const region = settings.region || process.env.AWS_REGION || "ap-south-1";
+    const snsClient4 = settings.credentials ? new import_client_sns.SNSClient({ region, credentials: settings.credentials }) : new import_client_sns.SNSClient({ region });
     const result = await snsClient4.send(
       new import_client_sns.PublishCommand({
         PhoneNumber: phone,
@@ -112313,6 +112335,8 @@ async function sendSMS(options) {
     return { success: true, messageId: result?.MessageId };
   } catch (err) {
     console.error("[SMS] SNS send failed:", err?.message || err);
+    if (err?.Code) console.error("[SMS] SNS Code:", err.Code);
+    if (err?.$metadata?.httpStatusCode) console.error("[SMS] HTTP status:", err.$metadata.httpStatusCode);
     return { success: false };
   }
 }
@@ -112325,12 +112349,16 @@ async function sendOTP(phone, otp) {
     ...templateId ? { templateId } : {}
   });
 }
-var import_client_sns, sms_service_default;
+var import_client_sns, JIO_DLT_DEFAULTS, sms_service_default;
 var init_sms_service = __esm({
   "src/utils/sms-service.ts"() {
     "use strict";
     import_client_sns = require("@aws-sdk/client-sns");
     init_rds_connection();
+    JIO_DLT_DEFAULTS = {
+      senderId: "WARMPZ",
+      entityId: "1201176605406673276"
+    };
     sms_service_default = { sendSMS, sendOTP };
   }
 });
@@ -118276,7 +118304,7 @@ var require_bookings = __commonJS({
 // src/utils/sns-client.ts
 var sns_client_exports = {};
 __export(sns_client_exports, {
-  getSnsClient: () => getSnsClient,
+  getSnsClient: () => getSnsClient2,
   publishBookingCreated: () => publishBookingCreated,
   publishBookingStatusUpdated: () => publishBookingStatusUpdated,
   publishNotification: () => publishNotification,
@@ -118285,7 +118313,7 @@ __export(sns_client_exports, {
   publishSettlementCreated: () => publishSettlementCreated,
   publishVendorApproved: () => publishVendorApproved
 });
-function getSnsClient() {
+function getSnsClient2() {
   return snsClient;
 }
 function createEventEnvelope(eventType, data, correlationId) {
@@ -122535,12 +122563,22 @@ __export(gps_tracking_service_exports, {
 });
 async function getGoogleMapsApiKey2() {
   if (_googleMapsKeyCache) return _googleMapsKeyCache;
+  const isUatEnv = process.env.UAT_MODE === "true" || true;
   if (process.env.GOOGLE_MAPS_API_KEY) {
     _googleMapsKeyCache = process.env.GOOGLE_MAPS_API_KEY;
     return _googleMapsKeyCache;
   }
+  if (isUatEnv) {
+    return "";
+  }
   try {
-    const { getSecret: getSecret2 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
+    const { getSecret: getSecret2, getSecretJson: getSecretJson2 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
+    const json = await getSecretJson2("google-maps");
+    const jsonKey = json?.apiKey || json?.api_key || json?.key;
+    if (jsonKey) {
+      _googleMapsKeyCache = jsonKey;
+      return _googleMapsKeyCache;
+    }
     const key = await getSecret2("google-maps/api-key");
     if (key) _googleMapsKeyCache = key;
   } catch (e) {
@@ -128075,7 +128113,8 @@ async function sendSmsViaSns(phone, message2) {
     to: phone,
     message: message2,
     type: "otp",
-    templateId: JIO_LOGIN_OTP_TEMPLATE_ID
+    templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+    senderId: "WARMPZ"
   });
   if (!result.success) {
     console.error("[SMS] SNS send failed");
@@ -128125,12 +128164,20 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       }
       if (!isUATMode2) {
         const message2 = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
-        sendSmsViaSns(normalizedPhone, message2).catch((smsError) => {
-          console.warn("[AUTH] Production Mode: SMS send failed (non-blocking):", smsError?.message || smsError);
+        console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
+        const smsResult = await Promise.race([
+          sendSmsViaSns(normalizedPhone, message2),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("SMS send timeout 2.5s")), 2500))
+        ]).catch((err) => {
+          console.warn("[AUTH] SMS send failed:", err?.message || err);
+          if (err?.Code) console.warn("[AUTH] SNS Code:", err.Code);
+          return false;
         });
-        console.log(`[AUTH] Production Mode: SMS sending initiated (non-blocking) to ${normalizedPhone}`);
+        if (smsResult) {
+          console.log("[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)");
+        }
       } else {
-        console.log(`[AUTH] UAT Mode: SMS skipped for ${phone} (using fixed OTP 123456)`);
+        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
       }
       const handlerDuration = Date.now() - handlerStartTime;
       console.log(`[AUTH] Send OTP handler completed in ${handlerDuration}ms`);
@@ -130945,6 +130992,7 @@ async function triggerBookingNotification(event, data) {
       to: recipientPhone,
       message: message2,
       type: "transactional",
+      senderId: "WARMPZ",
       ...template.templateId ? { templateId: template.templateId } : {}
     });
     await insert("notifications", {
@@ -130980,6 +131028,7 @@ function registerSmsNotificationEndpoints(app3) {
         to: phone,
         message: message2,
         type: "transactional",
+        senderId: "WARMPZ",
         ...templateId ? { templateId } : {}
       });
       await insert("notifications", {
@@ -131003,6 +131052,57 @@ function registerSmsNotificationEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error sending SMS:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/sms/send-sample-templates", async (c) => {
+    try {
+      const { phone } = await c.req.json();
+      const to = phone || "9611377119";
+      const delayMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const samples = [
+        {
+          name: "Login OTP",
+          templateId: "1207177028377787269",
+          message: "Warmpawz: Your OTP for logging in is 123456. Do not share this OTP with anyone."
+        },
+        {
+          name: "Booking Confirmation",
+          templateId: "1207177035174777582",
+          message: "Warmpawz Booking: Your booking with PetCare Clinic for 10-Feb-2026 at 10:30 AM is confirmed. For more details, refer to My Bookings."
+        },
+        {
+          name: "Booking Rescheduled",
+          templateId: "1207177035515118051",
+          message: "Warmpawz Rescheduling: Your booking with PetCare Clinic has been rescheduled to 12-Feb-2026 at 2:00 PM. For more details, refer to My Bookings."
+        },
+        {
+          name: "Booking Cancelled",
+          templateId: "1207177035326314961",
+          message: "Warmpawz Cancellation: Your booking with PetCare Clinic scheduled for 10-Feb-2026 at 10:30 AM has been cancelled. For more details, refer to My Bookings."
+        }
+      ];
+      const results = [];
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const result = await sendSMS({
+          to,
+          message: s.message,
+          type: i === 0 ? "otp" : "transactional",
+          templateId: s.templateId,
+          senderId: "WARMPZ"
+        });
+        results.push({ name: s.name, templateId: s.templateId, success: result.success, messageId: result.messageId });
+        if (i < samples.length - 1) await delayMs(2e3);
+      }
+      return c.json({
+        success: true,
+        message: "Sample templates sent (one by one with 2s delay)",
+        phone: to,
+        results
+      });
+    } catch (error) {
+      console.error("Error sending sample templates:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -131838,7 +131938,7 @@ function registerVendorProfileEndpoints(app3) {
         }).catch((error) => {
           console.warn("[VENDOR-PROFILE] Error creating notification:", error instanceof Error ? error.message : "Unknown error");
         });
-        const snsClient4 = getSnsClient();
+        const snsClient4 = getSnsClient2();
         await snsClient4.send(new import_client_sns4.PublishCommand({
           TopicArn: process.env.ADMIN_ALERT_TOPIC_ARN,
           Message: JSON.stringify({
@@ -132622,6 +132722,45 @@ function generateEventMetadata(requestId) {
     sourceService: "booking-handler"
   };
 }
+function extractAddressMeta(address, body) {
+  const toNumber = (value) => {
+    if (value === null || value === void 0) return null;
+    const num = parseFloat(String(value));
+    return Number.isFinite(num) ? num : null;
+  };
+  let addressText = typeof address === "string" ? address : null;
+  let addressObj = null;
+  if (address && typeof address === "object") {
+    addressObj = address;
+  } else if (typeof address === "string") {
+    try {
+      const parsed = JSON.parse(address);
+      if (parsed && typeof parsed === "object") {
+        addressObj = parsed;
+      }
+    } catch {
+    }
+  }
+  const addressId = body.addressId || body.address_id || addressObj?.id || addressObj?.addressId || addressObj?.address_id || null;
+  let latitude = toNumber(body.deliveryLatitude ?? body.delivery_latitude ?? body.latitude ?? body.lat);
+  let longitude = toNumber(body.deliveryLongitude ?? body.delivery_longitude ?? body.longitude ?? body.lng);
+  if (latitude == null && addressObj) {
+    latitude = toNumber(addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude);
+  }
+  if (longitude == null && addressObj) {
+    longitude = toNumber(addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude);
+  }
+  if (!addressText && addressObj) {
+    const parts = [
+      addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+      addressObj.city,
+      addressObj.state,
+      addressObj.pincode
+    ].filter(Boolean);
+    addressText = parts.length > 0 ? parts.join(", ") : null;
+  }
+  return { addressText, addressId, latitude, longitude };
+}
 var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const body = this.parseBody(context.event);
@@ -132675,6 +132814,8 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       petName,
       notes: notesFromSchema
     } = validationResult.data;
+    const rawAddress = body.address ?? address;
+    const addressMeta = extractAddressMeta(rawAddress, body);
     const amount = amountFromSchema ?? totalAmount;
     const serviceType = rawServiceType === "online" ? "tele" : rawServiceType || "at_vendor";
     const vendorRow = await resolveVendorById(vendorId);
@@ -133010,7 +133151,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           booking_date: bookingDate,
           booking_time: bookingTime,
           service_type: serviceType || "at_vendor",
-          address,
+          address: addressMeta.addressText || address || null,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount,
           // ✅ Use calculated amount (may be 0 for subscriptions)
@@ -133031,6 +133172,15 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           // ✅ Store customer phone for easy access
           customer_phone: customerPhone || null
         };
+        if (addressMeta.addressId) {
+          bookingData.address_id = addressMeta.addressId;
+        }
+        if (addressMeta.latitude != null && addressMeta.longitude != null) {
+          bookingData.delivery_latitude = addressMeta.latitude;
+          bookingData.delivery_longitude = addressMeta.longitude;
+          bookingData.latitude = addressMeta.latitude;
+          bookingData.longitude = addressMeta.longitude;
+        }
         if (roomId) {
           bookingData.room_id = roomId;
         }
@@ -141038,9 +141188,15 @@ async function getApiKey() {
     return _apiKeyCache;
   }
   try {
-    const { getSecret: getSecret2 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
-    const key = await getSecret2("google-maps/api-key");
-    if (key) _apiKeyCache = key;
+    const { getSecret: getSecret2, getSecretJson: getSecretJson2 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
+    const secretJson = await getSecretJson2("google-maps");
+    if (secretJson?.apiKey) _apiKeyCache = secretJson.apiKey;
+    if (!_apiKeyCache && secretJson?.api_key) _apiKeyCache = secretJson.api_key;
+    if (!_apiKeyCache && secretJson?.key) _apiKeyCache = secretJson.key;
+    if (!_apiKeyCache) {
+      const key = await getSecret2("google-maps/api-key");
+      if (key) _apiKeyCache = key;
+    }
   } catch {
   }
   return _apiKeyCache || "";
@@ -141149,7 +141305,7 @@ function registerGpsTrackingEndpoints(app3) {
           })() : null);
           if (lat != null && lng != null) {
             destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
-          } else if (addr.address || addr.full_address) {
+          } else if ((addr.address || addr.full_address) && !uatMode) {
             const geocoded = await geocodeAddress(addr.address || addr.full_address);
             if (geocoded) {
               destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
@@ -141171,19 +141327,53 @@ function registerGpsTrackingEndpoints(app3) {
         };
       }
       if (!destinationLocation) {
-        const addressText = booking.address || booking.destination_address || booking.location || booking.delivery_address || booking.customer_address;
-        if (addressText) {
-          const geocoded = await geocodeAddress(addressText);
-          if (geocoded) {
-            destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-            console.log("[GPS Tracking] Geocoded address to destination:", geocoded.latitude, geocoded.longitude);
-          } else if (uatMode) {
-            console.log("[GPS Tracking] Geocoding failed; UAT mode using default destination");
-            destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+        const rawAddress = booking.address || booking.destination_address || booking.location || booking.delivery_address || booking.customer_address;
+        let addressText = null;
+        let addressObj = null;
+        if (rawAddress && typeof rawAddress === "object") {
+          addressObj = rawAddress;
+        } else if (typeof rawAddress === "string") {
+          try {
+            const parsed = JSON.parse(rawAddress);
+            if (parsed && typeof parsed === "object") {
+              addressObj = parsed;
+            } else {
+              addressText = rawAddress;
+            }
+          } catch {
+            addressText = rawAddress;
+          }
+        }
+        if (addressObj && !destinationLocation) {
+          const lat = addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude;
+          const lng = addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude;
+          if (lat != null && lng != null) {
+            destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+          }
+          if (!addressText) {
+            const parts = [
+              addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+              addressObj.city,
+              addressObj.state,
+              addressObj.pincode
+            ].filter(Boolean);
+            addressText = parts.length > 0 ? parts.join(", ") : null;
+          }
+        }
+        if (addressText && !destinationLocation) {
+          if (!uatMode) {
+            const geocoded = await geocodeAddress(addressText);
+            if (geocoded) {
+              destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              console.log("[GPS Tracking] Geocoded address to destination:", geocoded.latitude, geocoded.longitude);
+            } else {
+              return c.json({
+                error: "Could not resolve destination coordinates. Please ensure the customer address has a valid location, or add latitude/longitude to the address."
+              }, 400);
+            }
           } else {
-            return c.json({
-              error: "Could not resolve destination coordinates. Please ensure the customer address has a valid location, or add latitude/longitude to the address."
-            }, 400);
+            console.log("[GPS Tracking] UAT mode skipping geocode; using default destination");
+            destinationLocation = { ...UAT_DEFAULT_DESTINATION };
           }
         }
       }
@@ -141774,11 +141964,25 @@ async function ensureVideoCallSessionsTable() {
     }
   }
 }
+function normalizeCreateMeetingBody(body) {
+  const bookingId = body.bookingId ?? body.booking_id;
+  const customerId = body.customerId ?? body.customer_id;
+  const vendorId = body.vendorId ?? body.vendor_id;
+  return { bookingId, customerId, vendorId };
+}
+function normalizeJoinBody(body) {
+  const bookingId = body.bookingId ?? body.booking_id;
+  const userId = body.userId ?? body.participantId ?? body.participant_id ?? body.user_id;
+  const userType = (body.userType ?? body.participantType ?? body.participant_type ?? body.user_type)?.toLowerCase?.();
+  return { bookingId, userId, userType };
+}
 var CreateMeetingHandler = class extends BaseHandler {
   async handle(context) {
     const body = this.parseBody(context.event);
-    const { bookingId, customerId, vendorId } = body;
-    this.validateRequired(body, ["bookingId", "customerId", "vendorId"]);
+    const { bookingId, customerId, vendorId } = normalizeCreateMeetingBody(body);
+    if (!bookingId || !customerId || !vendorId) {
+      return this.error("bookingId, customerId, and vendorId are required (camelCase or snake_case)", 400);
+    }
     await ensureVideoCallSessionsTable();
     const bookings = await select("bookings", { id: bookingId });
     if (bookings.length === 0) {
@@ -141891,18 +142095,23 @@ var GetMeetingInfoHandler = class extends BaseHandler {
 var JoinMeetingHandler = class extends BaseHandler {
   async handle(context) {
     const body = this.parseBody(context.event);
-    const bookingId = body.bookingId;
-    const userId = body.userId || body.participantId;
-    const userType = body.userType || body.participantType;
+    const { bookingId, userId, userType } = normalizeJoinBody(body);
     if (!bookingId || !userId || !userType) {
-      return this.error("bookingId, userId/participantId, and userType/participantType are required", 400);
+      return this.error("bookingId, participantId (or userId), and participantType (or userType) are required", 400);
     }
+    if (!["customer", "vendor"].includes(userType)) {
+      return this.error("participantType/userType must be customer or vendor", 400);
+    }
+    console.log("[VIDEO CALL] join request", { bookingId, participantId: userId, participantType: userType });
+    await ensureVideoCallSessionsTable();
     const bookings = await select("bookings", { id: bookingId });
-    if (bookings.length > 0) {
-      const windowCheck = isWithinVideoCallWindow(bookings[0]);
-      if (!windowCheck.allowed) {
-        return this.error(windowCheck.reason || "Video call is not allowed for this appointment at this time.", 400);
-      }
+    if (bookings.length === 0) {
+      return this.error("Booking not found", 404);
+    }
+    const booking = bookings[0];
+    const windowCheck = isWithinVideoCallWindow(booking);
+    if (!windowCheck.allowed) {
+      return this.error(windowCheck.reason || "Video call is not allowed for this appointment at this time.", 400);
     }
     const sessions = await select("video_call_sessions", {
       booking_id: bookingId
@@ -141910,10 +142119,69 @@ var JoinMeetingHandler = class extends BaseHandler {
     const activeSession = sessions.find(
       (s) => s.status === "active" || s.status === "waiting"
     );
-    if (!activeSession) {
-      return this.error("Active meeting not found. Please ask the other participant to start the call.", 404);
+    let session = activeSession;
+    if (!session) {
+      const chimeClient2 = new import_client_chime_sdk_meetings.ChimeSDKMeetingsClient({
+        region: process.env.AWS_REGION || "ap-south-1"
+      });
+      const customerId = booking.customer_id ?? booking.customerId;
+      const vendorId = booking.vendor_id ?? booking.vendorId;
+      console.log("[VIDEO CALL] No active session; creating meeting on join", { bookingId, participantType: userType, participantId: userId });
+      const meetingResponse = await chimeClient2.send(
+        new import_client_chime_sdk_meetings.CreateMeetingCommand({
+          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+          MediaRegion: process.env.AWS_REGION || "ap-south-1",
+          ExternalMeetingId: bookingId
+        })
+      );
+      if (!meetingResponse.Meeting?.MeetingId || !meetingResponse.Meeting?.MediaPlacement) {
+        return this.error("Failed to create meeting", 500);
+      }
+      const newMeetingId = meetingResponse.Meeting.MeetingId;
+      const attendeeResponse = await chimeClient2.send(
+        new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+          MeetingId: newMeetingId,
+          ExternalUserId: `${userType}-${userId}`
+        })
+      );
+      const newAttendee = {
+        AttendeeId: attendeeResponse.Attendee?.AttendeeId,
+        JoinToken: attendeeResponse.Attendee?.JoinToken,
+        ExternalUserId: `${userType}-${userId}`
+      };
+      const sessionRow = {
+        booking_id: bookingId,
+        meeting_id: newMeetingId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        status: "waiting",
+        started_at: /* @__PURE__ */ new Date()
+      };
+      if (userType === "customer") {
+        sessionRow.customer_attendee_id = newAttendee.AttendeeId;
+        sessionRow.customer_join_token = newAttendee.JoinToken;
+      } else {
+        sessionRow.vendor_attendee_id = newAttendee.AttendeeId;
+        sessionRow.vendor_join_token = newAttendee.JoinToken;
+      }
+      const inserted = await insert("video_call_sessions", sessionRow);
+      session = inserted[0];
+      await update("bookings", { id: bookingId }, {
+        video_call_meeting_id: newMeetingId,
+        video_call_started_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return this.success({
+        success: true,
+        meetingId: newMeetingId,
+        meeting: {
+          MeetingId: meetingResponse.Meeting.MeetingId,
+          MediaPlacement: meetingResponse.Meeting.MediaPlacement,
+          MediaRegion: meetingResponse.Meeting.MediaRegion
+        },
+        attendee: newAttendee,
+        session: { id: session.id, status: session.status }
+      });
     }
-    const session = activeSession;
     const chimeClient = new import_client_chime_sdk_meetings.ChimeSDKMeetingsClient({
       region: process.env.AWS_REGION || "ap-south-1"
     });
@@ -141931,7 +142199,7 @@ var JoinMeetingHandler = class extends BaseHandler {
       if (bookings2.length === 0) {
         return this.error("Booking not found", 404);
       }
-      const booking = bookings2[0];
+      const booking2 = bookings2[0];
       const createResponse = await chimeClient.send(
         new import_client_chime_sdk_meetings.CreateMeetingCommand({
           ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
@@ -142111,7 +142379,8 @@ function registerVideoCallEndpoints(app3) {
   app3.post("/video-call/notify-ready", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { bookingId, participantType } = body;
+      const bookingId = body.bookingId ?? body.booking_id;
+      const participantType = (body.participantType ?? body.participant_type)?.toLowerCase?.();
       if (!bookingId || !participantType) {
         return c.json({ error: "bookingId and participantType are required" }, 400);
       }
@@ -142190,7 +142459,7 @@ function registerVideoCallEndpoints(app3) {
   app3.post("/video-call/end", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent8(c.req, body);
-    event.pathParameters = { bookingId: c.req.param("bookingId") || body.bookingId };
+    event.pathParameters = { bookingId: c.req.param("bookingId") || body.bookingId || body.booking_id };
     const context = createLambdaContext10();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -148839,10 +149108,17 @@ function registerServiceDiscoveryEndpoints(app3) {
         };
         return m[roleId.toLowerCase().trim()] || roleId;
       })() : roleId;
-      const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+      let targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+      if (serviceStyle === "at_center" && targetRoles.length > 0) {
+        targetRoles = targetRoles.filter((r) => !r.toLowerCase().includes("solo"));
+        if (targetRoles.length === 0) {
+          targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+          targetRoles = (CATEGORY_ROLE_NAMES[category?.toLowerCase() || ""] || targetRoles).filter((r) => !r.toLowerCase().includes("solo"));
+        }
+      }
       if (targetRoles.length > 0) {
-        vendorQuery += ` AND r.name = ANY($${paramIndex})`;
-        params.push(targetRoles);
+        vendorQuery += ` AND LOWER(r.name) = ANY($${paramIndex}::text[])`;
+        params.push(targetRoles.map((r) => r.toLowerCase()));
         paramIndex++;
       }
       if (location) {
@@ -148870,7 +149146,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.service_name as name,
               vs.custom_description as description,
               vs.custom_price as price,
-              vs.custom_duration as duration_minutes,
+              COALESCE(vs.custom_duration, vs.duration_minutes) as duration_minutes,
               vs.service_style,
               vs.is_enabled,
               vs.publish_status,
@@ -151400,7 +151676,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           vs.service_name,
           vs.service_style,
           vs.price,
-          vs.duration_minutes as duration,
+          COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
           vs.custom_description as description,
           vs.is_enabled,
           vs.publish_status,
@@ -151599,7 +151875,7 @@ function registerServiceDiscoveryEndpoints(app3) {
                 vs.service_id,
                 vs.service_name,
                 vs.price,
-                vs.duration_minutes as duration,
+                COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
                 vs.custom_description as description,
                 vs.category as category_name
                FROM vendor_services vs
@@ -151953,7 +152229,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.id,
               vs.service_id,
               vs.price,
-              vs.duration_minutes as duration,
+              COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
               vs.custom_description as description,
               vs.category
@@ -152112,7 +152388,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.id,
               vs.service_id,
               vs.price,
-              vs.duration_minutes as duration,
+              COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
               vs.custom_description as description,
               vs.category
@@ -152252,7 +152528,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.id,
             vs.service_id,
             vs.price,
-            vs.duration_minutes as duration,
+            COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
             vs.custom_description as description,
             vs.category
@@ -154782,12 +155058,17 @@ function registerVendorScheduleEndpoints(app3) {
   app3.get("/vendor/:vendorId/breaks", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
       const breaksResult = await query(
         `SELECT * FROM vendor_breaks
          WHERE vendor_id = $1
            AND is_active = true
          ORDER BY day_of_week ASC, start_time ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -154810,6 +155091,11 @@ function registerVendorScheduleEndpoints(app3) {
   app3.post("/vendor/:vendorId/breaks", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
       const { breaks } = await c.req.json();
       if (!Array.isArray(breaks)) {
         return c.json({ error: "breaks array is required" }, 400);
@@ -154837,7 +155123,7 @@ function registerVendorScheduleEndpoints(app3) {
       }
       await query(
         "DELETE FROM vendor_breaks WHERE vendor_id = $1",
-        [vendorId]
+        [actualVendorId]
       ).catch((err) => {
         console.warn("[BREAKS] Delete error (may be OK):", err.message);
       });
@@ -154852,7 +155138,7 @@ function registerVendorScheduleEndpoints(app3) {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
             RETURNING id`,
             [
-              vendorId,
+              actualVendorId,
               breakItem.dayOfWeek ?? breakItem.day_of_week ?? null,
               breakItem.breakDate || breakItem.break_date || null,
               breakItem.startTime || breakItem.start_time,
@@ -154870,11 +155156,20 @@ function registerVendorScheduleEndpoints(app3) {
           insertErrors.push(`Break ${breakItem.startTime}-${breakItem.endTime}: ${e.message}`);
         }
       }
+      if (insertErrors.length > 0) {
+        return c.json({
+          success: false,
+          message: `Some breaks failed to save (${insertedBreaks.length} saved, ${insertErrors.length} failed)`,
+          insertedCount: insertedBreaks.length,
+          errorCount: insertErrors.length,
+          insertErrors
+        }, 400);
+      }
       return c.json({
         success: true,
         message: `Breaks saved successfully (${insertedBreaks.length} breaks)`,
         insertedCount: insertedBreaks.length,
-        errorCount: insertErrors.length
+        errorCount: 0
       });
     } catch (error) {
       console.error("Error saving vendor breaks:", error);
@@ -154884,13 +155179,18 @@ function registerVendorScheduleEndpoints(app3) {
   app3.get("/vendor/:vendorId/holidays-enhanced", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
       const holidaysResult = await query(
         `SELECT * FROM vendor_holidays_enhanced
          WHERE vendor_id = $1
            AND is_active = true
            AND (end_date >= CURRENT_DATE OR is_recurring_yearly = true)
          ORDER BY start_date ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -154911,6 +155211,11 @@ function registerVendorScheduleEndpoints(app3) {
   app3.post("/vendor/:vendorId/holidays-enhanced", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
       const { holidays } = await c.req.json();
       if (!Array.isArray(holidays)) {
         return c.json({ error: "holidays array is required" }, 400);
@@ -154935,7 +155240,7 @@ function registerVendorScheduleEndpoints(app3) {
       }
       await query(
         "DELETE FROM vendor_holidays_enhanced WHERE vendor_id = $1",
-        [vendorId]
+        [actualVendorId]
       ).catch((err) => {
         console.warn("[HOLIDAYS] Delete error (may be OK):", err.message);
       });
@@ -154949,7 +155254,7 @@ function registerVendorScheduleEndpoints(app3) {
             ) VALUES ($1, $2, $3, $4, $5, $6, true)
             RETURNING id`,
             [
-              vendorId,
+              actualVendorId,
               holiday.startDate || holiday.start_date,
               holiday.endDate || holiday.end_date,
               holiday.holidayType || holiday.holiday_type || "holiday",
@@ -162463,12 +162768,12 @@ function registerVendorServicesEndpoints(app3) {
         subCategoryName,
         serviceStyle,
         price,
-        duration,
         isPackage,
         packageDetails,
         specializationIds,
         specialization_ids
       } = serviceData;
+      const duration = serviceData.duration ?? serviceData.customDuration ?? serviceData.duration_minutes;
       const effectiveSpecIds = Array.isArray(specializationIds) ? specializationIds : Array.isArray(specialization_ids) ? specialization_ids : [];
       const effectiveCategory = category || categoryName || null;
       const effectiveSubCategory = subCategory || subCategoryName || null;
@@ -166297,7 +166602,7 @@ function registerSettlementEndpoints(app3) {
           if (rules.autoPayout) {
             await createPayout(settlementRecord[0].id, vendorId, settlement.netAmount);
           }
-          const snsClient4 = getSnsClient();
+          const snsClient4 = getSnsClient2();
           await snsClient4.send(new import_client_sns6.PublishCommand({
             TopicArn: process.env.SETTLEMENT_CREATED_TOPIC_ARN || "",
             Message: JSON.stringify({
@@ -168267,7 +168572,7 @@ function registerChatEndpoints(app3) {
       });
       const recipientPhone = senderType === "customer" ? (await select("vendors", { id: booking.vendor_id }))[0]?.phone : (await select("customers", { id: booking.customer_id }))[0]?.phone;
       if (recipientPhone) {
-        const snsClient4 = getSnsClient();
+        const snsClient4 = getSnsClient2();
         await snsClient4.send(new import_client_sns7.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
@@ -168354,7 +168659,7 @@ function registerChatEndpoints(app3) {
         }];
       });
       if (receiverPhone) {
-        const snsClient4 = getSnsClient();
+        const snsClient4 = getSnsClient2();
         await snsClient4.send(new import_client_sns7.PublishCommand({
           PhoneNumber: receiverPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
@@ -168404,7 +168709,7 @@ function registerChatEndpoints(app3) {
       });
       const recipientPhone = senderType === "customer" ? (await select("vendors", { id: booking.vendor_id }))[0]?.phone : (await select("customers", { id: booking.customer_id }))[0]?.phone;
       if (recipientPhone) {
-        const snsClient4 = getSnsClient();
+        const snsClient4 = getSnsClient2();
         if (snsClient4) {
           await snsClient4.send(new import_client_sns7.PublishCommand({
             TopicArn: process.env.CHAT_NOTIFICATIONS_TOPIC_ARN,
@@ -179854,7 +180159,7 @@ function registerOrderManagementEndpoints(app3) {
       }
       const customer = await select("customers", { id: order.customer_id });
       const vendor = order.vendor_id ? await select("vendors", { id: order.vendor_id }) : [];
-      const snsClient4 = getSnsClient();
+      const snsClient4 = getSnsClient2();
       if (customer.length > 0 && customer[0].phone) {
         await snsClient4.send(new import_client_sns8.PublishCommand({
           PhoneNumber: customer[0].phone,
@@ -180043,8 +180348,7 @@ function registerOrderManagementEndpoints(app3) {
 
 // src/endpoints/otp-enhanced.ts
 init_rds_connection();
-init_sns_client();
-var import_client_sns9 = require("@aws-sdk/client-sns");
+init_sms_service();
 function generateOTP() {
   return Math.floor(1e5 + Math.random() * 9e5).toString();
 }
@@ -180077,14 +180381,11 @@ function registerEnhancedOtpEndpoints(app3) {
       const customers = await select("customers", { id: booking.customer_id });
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
-        const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns9.PublishCommand({
-          PhoneNumber: customer.phone,
-          Message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
-          MessageAttributes: {
-            "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" }
-          }
-        })).catch((err) => console.error("SMS send failed:", err));
+        await sendSMS({
+          to: customer.phone,
+          message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
+          type: "otp"
+        }).catch((err) => console.error("SMS send failed:", err));
       }
       return c.json({
         success: true,
@@ -180234,7 +180535,7 @@ function registerEnhancedOtpEndpoints(app3) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns9.PublishCommand({
+        await snsClient4.send(new PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz booking ${booking[0].id} is confirmed! Start OTP: ${startOTP}, End OTP: ${endOTP}. Save these for verification.`,
           MessageAttributes: {
@@ -181096,7 +181397,7 @@ function registerSystemHealthEndpoints(app3) {
 // src/endpoints/vendor-settings.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns10 = require("@aws-sdk/client-sns");
+var import_client_sns9 = require("@aws-sdk/client-sns");
 function registerVendorSettingsEndpoints(app3) {
   app3.get("/admin/vendor-settings-rules", async (c) => {
     try {
@@ -181137,8 +181438,8 @@ function registerVendorSettingsEndpoints(app3) {
         },
         "setting_key"
       );
-      const snsClient4 = getSnsClient();
-      await snsClient4.send(new import_client_sns10.PublishCommand({
+      const snsClient4 = getSnsClient2();
+      await snsClient4.send(new import_client_sns9.PublishCommand({
         TopicArn: process.env.ADMIN_SETTING_UPDATED_TOPIC_ARN,
         Message: JSON.stringify({
           eventType: "PaymentRuleCreated",
@@ -184064,6 +184365,12 @@ function registerVendorBookingActionsEndpoints(app3) {
             })() : null);
             if (lat != null && lng != null) {
               destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+            } else if ((addr.address || addr.full_address) && !uatMode) {
+              const geocoded = await geocodeAddress(addr.address || addr.full_address);
+              if (geocoded) {
+                destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+                console.log("[START-TRAVEL] Geocoded customer_addresses to destination:", geocoded.latitude, geocoded.longitude);
+              }
             }
           }
         }
@@ -184079,9 +184386,47 @@ function registerVendorBookingActionsEndpoints(app3) {
             longitude: parseFloat(String(booking.longitude))
           };
         }
-        if (!destinationLocation && (booking.address || booking.destination_address)) {
-          console.log("[START-TRAVEL] No coordinates for booking; using default destination (address text present)");
-          destinationLocation = { latitude: 19.076, longitude: 72.8777 };
+        if (!destinationLocation) {
+          const rawAddress = booking.address || booking.destination_address || booking.location || booking.delivery_address || booking.customer_address;
+          let addressText = null;
+          let addressObj = null;
+          if (rawAddress && typeof rawAddress === "object") {
+            addressObj = rawAddress;
+          } else if (typeof rawAddress === "string") {
+            try {
+              const parsed = JSON.parse(rawAddress);
+              if (parsed && typeof parsed === "object") {
+                addressObj = parsed;
+              } else {
+                addressText = rawAddress;
+              }
+            } catch {
+              addressText = rawAddress;
+            }
+          }
+          if (addressObj && !destinationLocation) {
+            const lat = addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude;
+            const lng = addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude;
+            if (lat != null && lng != null) {
+              destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+            }
+            if (!addressText) {
+              const parts = [
+                addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+                addressObj.city,
+                addressObj.state,
+                addressObj.pincode
+              ].filter(Boolean);
+              addressText = parts.length > 0 ? parts.join(", ") : null;
+            }
+          }
+          if (addressText && !destinationLocation && !uatMode) {
+            const geocoded = await geocodeAddress(addressText);
+            if (geocoded) {
+              destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              console.log("[START-TRAVEL] Geocoded booking address to destination:", geocoded.latitude, geocoded.longitude);
+            }
+          }
         }
         if (!destinationLocation && uatMode) {
           destinationLocation = { latitude: 19.076, longitude: 72.8777 };
@@ -184097,10 +184442,21 @@ function registerVendorBookingActionsEndpoints(app3) {
           vendorStartLocation,
           destinationLocation
         );
-        await update("bookings", { id: bookingId }, {
-          status: "vendor_on_way",
-          vendor_departed_at: (/* @__PURE__ */ new Date()).toISOString()
-        });
+        try {
+          await update("bookings", { id: bookingId }, {
+            status: "vendor_on_way",
+            vendor_departed_at: (/* @__PURE__ */ new Date()).toISOString()
+          });
+        } catch (statusErr) {
+          console.warn("[START-TRAVEL] Booking status update failed (will retry without vendor_departed_at):", statusErr?.message || statusErr);
+          try {
+            await update("bookings", { id: bookingId }, {
+              status: "vendor_on_way"
+            });
+          } catch (fallbackErr) {
+            console.warn("[START-TRAVEL] Booking status fallback update failed:", fallbackErr?.message || fallbackErr);
+          }
+        }
         try {
           const { publishNotification: publishNotification3 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
           await publishNotification3({
@@ -184643,7 +184999,7 @@ function registerVendorBookingActionsEndpoints(app3) {
 // src/endpoints/notification-system.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns11 = require("@aws-sdk/client-sns");
+var import_client_sns10 = require("@aws-sdk/client-sns");
 function registerNotificationSystemEndpoints(app3) {
   app3.post("/notifications/create", async (c) => {
     try {
@@ -184678,8 +185034,8 @@ function registerNotificationSystemEndpoints(app3) {
         }
       });
       if (channels?.sms && recipientPhone) {
-        const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns11.PublishCommand({
+        const snsClient4 = getSnsClient2();
+        await snsClient4.send(new import_client_sns10.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `${title}: ${message2}`,
           MessageAttributes: {
@@ -190870,19 +191226,40 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/finance/settlements", async (c) => {
     try {
-      const result = await query(`
-        SELECT s.*,
-               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-               COALESCE(v.phone, vi.phone) as vendor_phone,
-               r.name as vendor_role,
-               COALESCE(v.category, vi.vendor_type, '') as business_type
-        FROM settlements s
-        LEFT JOIN vendors v ON s.vendor_id = v.id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
-        LEFT JOIN roles r ON v.role_id = r.id
-        ORDER BY s.created_at DESC
-        LIMIT 100
-      `);
+      let result;
+      try {
+        result = await query(`
+          SELECT s.*,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, vi.phone) as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, vi.vendor_type, '') as business_type
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+          LEFT JOIN roles r ON v.role_id = r.id
+          ORDER BY s.created_at DESC
+          LIMIT 100
+        `);
+      } catch (viErr) {
+        const msg = String(viErr?.message ?? viErr ?? "");
+        if (msg.includes("vendor_identity") && msg.includes("does not exist")) {
+          result = await query(`
+            SELECT s.*,
+                   COALESCE(v.business_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, '') as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, '') as business_type
+            FROM settlements s
+            LEFT JOIN vendors v ON s.vendor_id = v.id
+            LEFT JOIN roles r ON v.role_id = r.id
+            ORDER BY s.created_at DESC
+            LIMIT 100
+          `);
+        } else {
+          throw viErr;
+        }
+      }
       const rows = result.rows || [];
       const settlements = rows.map((s) => {
         const status = s.status || s.settlement_status || "pending";
@@ -192833,13 +193210,33 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payments/tiers", async (c) => {
     try {
-      const result = await query(`
-        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
-               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
-               terms_and_conditions, terms_version, created_at, updated_at
-        FROM vendor_tiers
-        ORDER BY tier_level ASC NULLS LAST, created_at DESC
-      `);
+      let result;
+      try {
+        result = await query(`
+          SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
+                 monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+                 terms_and_conditions, terms_version, created_at, updated_at
+          FROM vendor_tiers
+          ORDER BY tier_level ASC NULLS LAST, created_at DESC
+        `);
+      } catch (colErr) {
+        const colMsg = String(getErrorMessage(colErr));
+        if (/column "terms_and_conditions" does not exist/i.test(colMsg)) {
+          result = await query(`
+            SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
+                   monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+                   created_at, updated_at
+            FROM vendor_tiers
+            ORDER BY tier_level ASC NULLS LAST, created_at DESC
+          `);
+          (result.rows || []).forEach((r) => {
+            r.terms_and_conditions = null;
+            r.terms_version = "1.0";
+          });
+        } else {
+          throw colErr;
+        }
+      }
       const rows = (result.rows || []).map((row) => ({
         id: row.id,
         name: row.tier_name,
@@ -193133,20 +193530,42 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payouts", async (c) => {
     try {
-      const payouts = await query(`
-        SELECT p.*,
-               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-               COALESCE(v.phone, vi.phone) as vendor_phone,
-               r.name as vendor_role,
-               COALESCE(v.category, vi.vendor_type, '') as business_type,
-               to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
-        FROM payouts p
-        LEFT JOIN vendors v ON p.vendor_id = v.id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = p.vendor_id
-        LEFT JOIN roles r ON v.role_id = r.id
-        ORDER BY p.created_at DESC
-        LIMIT 50
-      `);
+      let payouts;
+      try {
+        payouts = await query(`
+          SELECT p.*,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, vi.phone) as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, vi.vendor_type, '') as business_type,
+                 to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
+          FROM payouts p
+          LEFT JOIN vendors v ON p.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = p.vendor_id
+          LEFT JOIN roles r ON v.role_id = r.id
+          ORDER BY p.created_at DESC
+          LIMIT 50
+        `);
+      } catch (viErr) {
+        const msg = String(viErr?.message ?? viErr ?? "");
+        if (msg.includes("vendor_identity") && msg.includes("does not exist")) {
+          payouts = await query(`
+            SELECT p.*,
+                   COALESCE(v.business_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, '') as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, '') as business_type,
+                   to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
+            FROM payouts p
+            LEFT JOIN vendors v ON p.vendor_id = v.id
+            LEFT JOIN roles r ON v.role_id = r.id
+            ORDER BY p.created_at DESC
+            LIMIT 50
+          `);
+        } else {
+          throw viErr;
+        }
+      }
       const rows = (payouts.rows || []).map((row) => {
         const raw2 = row.payout_status ?? row.status ?? "pending";
         const status = typeof raw2 === "string" && raw2.trim() ? raw2.trim().toLowerCase() : "pending";
@@ -193169,38 +193588,68 @@ function registerAdminAdvancedEndpoints(app3) {
       });
       try {
         let pending;
+        const runPendingWithVi = (statusCol) => `
+          SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                 ${statusCol === "settlement_status" ? "s.settlement_status" : "s.status as settlement_status"}, s.created_at,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, vi.phone) as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, vi.vendor_type, '') as business_type
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+          LEFT JOIN roles r ON v.role_id = r.id
+          WHERE s.${statusCol} IN ('pending', 'processing')
+          ORDER BY s.created_at DESC
+          LIMIT 50
+        `;
+        const runPendingNoVi = (statusCol) => `
+          SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                 ${statusCol === "settlement_status" ? "s.settlement_status" : "s.status as settlement_status"}, s.created_at,
+                 COALESCE(v.business_name, 'Vendor') as vendor_name,
+                 COALESCE(v.phone, '') as vendor_phone,
+                 r.name as vendor_role,
+                 COALESCE(v.category, '') as business_type
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN roles r ON v.role_id = r.id
+          WHERE s.${statusCol} IN ('pending', 'processing')
+          ORDER BY s.created_at DESC
+          LIMIT 50
+        `;
         try {
-          pending = await query(`
-            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
-                   s.settlement_status, s.created_at,
-                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-                   COALESCE(v.phone, vi.phone) as vendor_phone,
-                   r.name as vendor_role,
-                   COALESCE(v.category, vi.vendor_type, '') as business_type
-            FROM settlements s
-            LEFT JOIN vendors v ON s.vendor_id = v.id
-            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
-            LEFT JOIN roles r ON v.role_id = r.id
-            WHERE s.settlement_status IN ('pending', 'processing')
-            ORDER BY s.created_at DESC
-            LIMIT 50
-          `);
-        } catch {
-          pending = await query(`
-            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
-                   s.status as settlement_status, s.created_at,
-                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
-                   COALESCE(v.phone, vi.phone) as vendor_phone,
-                   r.name as vendor_role,
-                   COALESCE(v.category, vi.vendor_type, '') as business_type
-            FROM settlements s
-            LEFT JOIN vendors v ON s.vendor_id = v.id
-            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
-            LEFT JOIN roles r ON v.role_id = r.id
-            WHERE s.status IN ('pending', 'processing')
-            ORDER BY s.created_at DESC
-            LIMIT 50
-          `);
+          pending = await query(runPendingWithVi("settlement_status"));
+        } catch (e1) {
+          const m1 = String(e1?.message ?? e1 ?? "");
+          if (m1.includes("vendor_identity") && m1.includes("does not exist")) {
+            try {
+              pending = await query(runPendingNoVi("settlement_status"));
+            } catch {
+              pending = await query(runPendingNoVi("status"));
+            }
+          } else if (m1.includes("settlement_status") && m1.includes("does not exist")) {
+            try {
+              pending = await query(runPendingWithVi("status"));
+            } catch (e2) {
+              const m2 = String(e2?.message ?? e2 ?? "");
+              if (m2.includes("vendor_identity") && m2.includes("does not exist")) {
+                pending = await query(runPendingNoVi("status"));
+              } else {
+                throw e2;
+              }
+            }
+          } else {
+            try {
+              pending = await query(runPendingWithVi("status"));
+            } catch (e3) {
+              const m3 = String(e3?.message ?? e3 ?? "");
+              if (m3.includes("vendor_identity") && m3.includes("does not exist")) {
+                pending = await query(runPendingNoVi("status"));
+              } else {
+                throw e3;
+              }
+            }
+          }
         }
         const periodFmt = (d) => d ? new Date(d).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "\u2014";
         for (const s of pending.rows || []) {
@@ -201243,13 +201692,14 @@ function registerTaxManagementEndpoints(app3) {
   });
 }
 function createApiGatewayEvent28(req) {
+  const headers = req?.headers != null && typeof req.headers.entries === "function" ? Object.fromEntries(req.headers.entries()) : req?.headers != null && typeof req.headers === "object" && !Array.isArray(req.headers) ? req.headers : {};
   return {
-    httpMethod: req.method,
-    path: req.url.split("?")[0],
+    httpMethod: req?.method ?? "GET",
+    path: (req?.url ?? "/").split("?")[0],
     pathParameters: {},
     queryStringParameters: {},
-    headers: Object.fromEntries(req.headers.entries()),
-    body: JSON.stringify(req.body || {}),
+    headers,
+    body: JSON.stringify(req?.body ?? {}),
     isBase64Encoded: false
   };
 }
@@ -204242,7 +204692,7 @@ ${conversationHistory || "N/A"}`,
 // src/endpoints/support-crm.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns12 = require("@aws-sdk/client-sns");
+var import_client_sns11 = require("@aws-sdk/client-sns");
 function registerSupportCrmEndpoints(app3) {
   app3.post("/support/tickets", async (c) => {
     try {
@@ -204432,10 +204882,10 @@ function registerSupportCrmEndpoints(app3) {
       }
       if (responderType === "agent" && !isInternal && (ticket.customer_phone || ticket.customer_id)) {
         try {
-          const snsClient4 = getSnsClient();
+          const snsClient4 = getSnsClient2();
           const customerPhone = ticket.customer_phone || (ticket.customer_id ? (await select("customers", { id: ticket.customer_id }))[0]?.phone : null);
           if (customerPhone) {
-            await snsClient4.send(new import_client_sns12.PublishCommand({
+            await snsClient4.send(new import_client_sns11.PublishCommand({
               PhoneNumber: customerPhone,
               Message: `Support Update: ${message2.substring(0, 100)}...`,
               MessageAttributes: {

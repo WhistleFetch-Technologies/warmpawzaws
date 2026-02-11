@@ -1590,12 +1590,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
         subCategoryName,
         serviceStyle,
         price,
-        duration,
         isPackage,
         packageDetails,
         specializationIds,
         specialization_ids,
       } = serviceData;
+      const duration = serviceData.duration ?? serviceData.customDuration ?? (serviceData as any).duration_minutes;
       const effectiveSpecIds = Array.isArray(specializationIds) ? specializationIds : (Array.isArray(specialization_ids) ? specialization_ids : []);
 
       const effectiveCategory = category || categoryName || null;

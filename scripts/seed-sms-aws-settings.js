@@ -32,9 +32,14 @@ async function getDBConnection() {
   }
 
   const endpoint = clusterInfo.DBClusters[0].Endpoint;
+  const defaultSecretByEnv = {
+    prod: 'warmpawz-prod-rds-master-20260207201049162400000001',
+    dev: 'warmpawz-dev-rds-master-20260106164510791100000002',
+  };
+  const secretId = process.env.SMS_DB_SECRET_ID || defaultSecretByEnv[ENVIRONMENT] || `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
   const secretsClient = new SecretsManagerClient({ region: REGION });
   const secretValue = await secretsClient.send(
-    new GetSecretValueCommand({ SecretId: `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002` })
+    new GetSecretValueCommand({ SecretId: secretId })
   );
   const secret = JSON.parse(secretValue.SecretString);
   const password = secret.password || secret.Password || secret.secret || secret.Secret;

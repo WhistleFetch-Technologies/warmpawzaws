@@ -17,8 +17,8 @@
  */
 
 import { Hono } from 'hono';
-import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { select, insert, update, query } from '../database/rds-connection';
+import { sendSMS } from '../utils/sms-service';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -1563,43 +1563,15 @@ export function registerStaffEndpoints(app: Hono) {
         is_used: false,
       });
 
-      // Send OTP via SMS using SNS (same pattern as auth.ts)
+      // Send OTP via SNS (Jio DLT Login OTP template)
       if (!UAT_MODE) {
-        try {
-          const settings = await select('platform_settings', {
-            setting_key: 'admin:settings:aws',
-          });
-
-          if (settings.length > 0) {
-            const awsSettings = settings[0].setting_value;
-            
-            if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
-              const snsClient = new SNSClient({
-                region: awsSettings.sns.region || 'ap-south-1',
-                credentials: {
-                  accessKeyId: awsSettings.credentials.accessKeyId,
-                  secretAccessKey: awsSettings.credentials.secretAccessKey,
-                },
-              });
-
-              const message = `Your Warmpawz staff verification code is: ${otp}. Valid for 10 minutes.`;
-              await snsClient.send(
-                new PublishCommand({
-                  PhoneNumber: staff.phone,
-                  Message: message,
-                  MessageAttributes: {
-                    'AWS.SNS.SMS.SMSType': {
-                      DataType: 'String',
-                      StringValue: 'Transactional',
-                    },
-                  },
-                })
-              );
-            }
-          }
-        } catch (snsError) {
-          console.error('[STAFF] SNS send failed, OTP logged only:', snsError);
-        }
+        const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+        sendSMS({
+          to: staff.phone,
+          message,
+          type: 'otp',
+          templateId: '1207177028377787269',
+        }).catch((e) => console.error('[STAFF] SNS send failed, OTP logged only:', e));
       }
 
       console.log(`[STAFF] Resent OTP to ${staff.phone} for verification: ${UAT_MODE ? '123456 (UAT)' : '***'}`);
@@ -2377,38 +2349,15 @@ export function registerStaffEndpoints(app: Hono) {
           is_used: false,
         });
 
-        // Send OTP via SNS
+        // Send OTP via SNS (Jio DLT Login OTP template)
         if (!UAT_MODE) {
-          const settings = await select('platform_settings', {
-            setting_key: 'admin:settings:aws',
-          });
-
-          if (settings.length > 0) {
-            const awsSettings = settings[0].setting_value;
-            if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
-              const snsClient = new SNSClient({
-                region: awsSettings.sns.region || 'ap-south-1',
-                credentials: {
-                  accessKeyId: awsSettings.credentials.accessKeyId,
-                  secretAccessKey: awsSettings.credentials.secretAccessKey,
-                },
-              });
-
-              const message = `Your Warmpawz verification code is: ${otp}. Valid for 10 minutes.`;
-              await snsClient.send(
-                new PublishCommand({
-                  PhoneNumber: providerData.phone,
-                  Message: message,
-                  MessageAttributes: {
-                    'AWS.SNS.SMS.SMSType': {
-                      DataType: 'String',
-                      StringValue: 'Transactional',
-                    },
-                  },
-                })
-              );
-            }
-          }
+          const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+          sendSMS({
+            to: providerData.phone,
+            message,
+            type: 'otp',
+            templateId: '1207177028377787269',
+          }).catch((e) => console.error('[INDIVIDUAL_PROVIDER] Failed to send OTP:', e));
         }
 
         console.log(`[INDIVIDUAL_PROVIDER] OTP sent to ${providerData.phone}: ${UAT_MODE ? '123456 (UAT)' : '***'}`);
@@ -2883,42 +2832,18 @@ export function registerStaffEndpoints(app: Hono) {
         is_used: false,
       });
 
-      // Send OTP via SNS
+      // Send OTP via SNS (same Jio DLT template as customer login)
+      const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
       if (!UAT_MODE) {
-        try {
-          const settings = await select('platform_settings', {
-            setting_key: 'admin:settings:aws',
-          });
-
-          if (settings.length > 0) {
-            const awsSettings = settings[0].setting_value;
-            if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
-              const snsClient = new SNSClient({
-                region: awsSettings.sns.region || 'ap-south-1',
-                credentials: {
-                  accessKeyId: awsSettings.credentials.accessKeyId,
-                  secretAccessKey: awsSettings.credentials.secretAccessKey,
-                },
-              });
-
-              const message = `Your Warmpawz staff login code is: ${otp}. Valid for 10 minutes.`;
-              await snsClient.send(
-                new PublishCommand({
-                  PhoneNumber: phone,
-                  Message: message,
-                  MessageAttributes: {
-                    'AWS.SNS.SMS.SMSType': {
-                      DataType: 'String',
-                      StringValue: 'Transactional',
-                    },
-                  },
-                })
-              );
-            }
-          }
-        } catch (snsError) {
-          console.error('[STAFF LOGIN] SNS send failed:', snsError);
-        }
+        const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+        sendSMS({
+          to: normalizedPhone,
+          message,
+          type: 'otp',
+          templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+        }).then((r) => {
+          if (!r.success) console.error('[STAFF LOGIN] SMS send failed');
+        }).catch((e) => console.error('[STAFF LOGIN] SMS send error:', e));
       }
 
       console.log(`[STAFF LOGIN] OTP sent to ${phone}: ${UAT_MODE ? '123456 (UAT)' : '***'}`);

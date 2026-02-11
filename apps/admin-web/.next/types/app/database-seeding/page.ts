@@ -1,4 +1,4 @@
-// File: D:\WFTPL\warmpawzApp\warmpawzaws\apps\admin-web\app\database-seeding\page.tsx
+// File: /Users/ketan/Documents/warmpawzecodev/apps/admin-web/app/database-seeding/page.tsx
 import * as entry from '../../../../app/database-seeding/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

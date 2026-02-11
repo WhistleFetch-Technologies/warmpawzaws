@@ -1,0 +1,24 @@
+Please find below the requested information for our SNS Text Messaging / Account Spend Threshold Increase request:
+
+- Company name: Whistefetch Technologies Pvt Ltd
+- Company URL: www.warmpawz.com
+- Requested monthly spend (USD): 300 USD
+- SMS service/program name: Jio TrueConnect
+- Relationship to the SMS service: Warmpawz is a multivendor marketplace for pet care services and products. SMS is used to send (1) OTP for login and (2) transactional messages for booking confirmation and delivery confirmation.
+- SMS service/program website URL: vendor.warmpawz.com, customer.warmpawz.com
+- Desired launch date: 16 February 2026
+- Opt-in location and process: App and web – users provide phone number during registration/login; SMS is sent only for OTP verification and booking/delivery notifications.
+- Origination identity: Sender ID WARMPZ. Registered with India DLT (Jio TrueConnect).
+- Destination country: India
+- Message type: Transactional
+- Expected messages per day: Approximately 100 messages per day to start (volume may grow)
+- Expected messages per second: Less than 1
+- Message templates (one per use case):
+  1) Login OTP: "Warmpawz: Your OTP for logging in is {#number#}. Do not share this OTP with anyone."
+  2) Booking confirmed: "Warmpawz Booking: Your booking with {#alphanumeric#} for {#alphanumeric#} at {#alphanumeric#} is confirmed. For more details, refer to My Bookings."
+  3) Booking rescheduled: "Warmpawz Rescheduling: Your booking with {#alphanumeric#} has been rescheduled to {#alphanumeric#}. For more details, refer to My Bookings."
+  4) Booking cancelled: "Warmpawz Cancellation: Your booking with {#alphanumeric#} scheduled for {#alphanumeric#} has been cancelled. For more details, refer to My Bookings."
+  Templates are configured in AWS SNS and approved with Jio TrueConnect.
+- URLs in messages: None. Messages direct users to "My Bookings" in the app; no URLs included.
+
+Thank you for evaluating our request.

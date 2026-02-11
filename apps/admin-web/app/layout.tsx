@@ -21,7 +21,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className} suppressHydrationWarning>
+      <body
+        className={inter.className}
+        suppressHydrationWarning
+        style={{
+          // Fallback if Tailwind CSS chunk fails to load (e.g. wrong asset path in prod)
+          backgroundColor: 'var(--background, #f9fafb)',
+          color: 'var(--foreground, #030213)',
+          fontFamily: 'var(--font-sans, Inter, system-ui, sans-serif)',
+        }}
+      >
         {/* Runtime config: Inline fallback + external script for deploy-time override */}
         <script
           dangerouslySetInnerHTML={{

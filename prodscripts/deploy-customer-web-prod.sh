@@ -10,21 +10,26 @@ set -e
 
 # Only skip build when explicitly requested via flag
 DEPLOY_ONLY=false
+SKIP_CONFIRM=false
 for arg in "$@"; do
   if [ "$arg" = "--deploy-only" ] || [ "$arg" = "--skip-build" ]; then
     DEPLOY_ONLY=true
-    break
+  fi
+  if [ "$arg" = "--yes" ] || [ "$arg" = "-y" ]; then
+    SKIP_CONFIRM=true
   fi
 done
 
-# Safety confirmation for PROD
-echo "⚠️  ⚠️  ⚠️  WARNING: PRODUCTION DEPLOYMENT ⚠️  ⚠️  ⚠️"
-echo "This will deploy customer-web to PRODUCTION environment!"
-echo ""
-read -p "Are you sure you want to continue? Type 'yes' to proceed: " confirm
-if [ "$confirm" != "yes" ]; then
-  echo "❌ Deployment cancelled"
-  exit 1
+# Safety confirmation for PROD (skip if --yes flag is provided)
+if [ "$SKIP_CONFIRM" = false ]; then
+  echo "⚠️  ⚠️  ⚠️  WARNING: PRODUCTION DEPLOYMENT ⚠️  ⚠️  ⚠️"
+  echo "This will deploy customer-web to PRODUCTION environment!"
+  echo ""
+  read -p "Are you sure you want to continue? Type 'yes' to proceed: " confirm
+  if [ "$confirm" != "yes" ]; then
+    echo "❌ Deployment cancelled"
+    exit 1
+  fi
 fi
 
 echo "🚀 Deploying customer-web to AWS PRODUCTION environment..."
