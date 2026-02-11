@@ -450,6 +450,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [destinationLocation, setDestinationLocation] = useState<{ lat: number; lng: number } | null>(null); // ✅ NEW: Destination for map
+  const [correctedDestination, setCorrectedDestination] = useState<{ lat: number; lng: number } | null>(null); // ✅ CRITICAL FIX: Corrected destination for map
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null); // ✅ CRITICAL FIX: Store session ID for updates
   const trackingSessionIdRef = useRef<string | null>(null); // ✅ CRITICAL: Ref so watchPosition callback sees current session ID (closure fix)
   const mapRef = useRef<HTMLDivElement>(null); // ✅ NEW: Map container ref
@@ -613,34 +614,40 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             setIsTracking(true);
             setShowTrackingModal(true);
             
-            // ✅ CRITICAL FIX: If destination not from tracking response, try other sources
-            if (!destinationLocation) {
-              // Try multiple sources: booking coordinates, customer address
-              let destLoc: { lat: number; lng: number } | null = null;
-              
-              if (booking?.latitude && booking?.longitude) {
-                destLoc = { lat: parseFloat(booking.latitude), lng: parseFloat(booking.longitude) };
-              } else if (booking?.delivery_latitude && booking?.delivery_longitude) {
-                destLoc = { lat: parseFloat(booking.delivery_latitude), lng: parseFloat(booking.delivery_longitude) };
-              } else if (booking?.address_id) {
-                // Try to get from customer address
-                try {
-                  const addressResponse = await apiClient.get(`/customer/addresses/${booking.address_id}`) as any;
-                  if (addressResponse?.address?.latitude && addressResponse?.address?.longitude) {
-                    destLoc = { 
-                      lat: parseFloat(addressResponse.address.latitude), 
-                      lng: parseFloat(addressResponse.address.longitude) 
-                    };
-                  }
-                } catch (err) {
-                  console.warn('Could not get customer address coordinates:', err);
+            // ✅ CRITICAL FIX: Always prioritize booking coordinates over tracking session destination
+            // The tracking session might have wrong coordinates, so use booking as source of truth
+            let destLoc: { lat: number; lng: number } | null = null;
+            
+            // Priority 1: Use booking coordinates (most reliable source of truth)
+            if (booking?.latitude && booking?.longitude) {
+              destLoc = { lat: parseFloat(booking.latitude), lng: parseFloat(booking.longitude) };
+              console.log('[VENDOR-TRACKING] Using booking coordinates as destination:', destLoc);
+            } else if (booking?.delivery_latitude && booking?.delivery_longitude) {
+              destLoc = { lat: parseFloat(booking.delivery_latitude), lng: parseFloat(booking.delivery_longitude) };
+              console.log('[VENDOR-TRACKING] Using delivery coordinates as destination:', destLoc);
+            } else if (destinationLocation) {
+              // Priority 2: Use destinationLocation from tracking session (if booking coords not available)
+              destLoc = destinationLocation;
+              console.log('[VENDOR-TRACKING] Using tracking session destination:', destLoc);
+            } else if (booking?.address_id) {
+              // Priority 3: Try to get from customer address
+              try {
+                const addressResponse = await apiClient.get(`/customer/addresses/${booking.address_id}`) as any;
+                if (addressResponse?.address?.latitude && addressResponse?.address?.longitude) {
+                  destLoc = { 
+                    lat: parseFloat(addressResponse.address.latitude), 
+                    lng: parseFloat(addressResponse.address.longitude) 
+                  };
+                  console.log('[VENDOR-TRACKING] Using customer address coordinates as destination:', destLoc);
                 }
+              } catch (err) {
+                console.warn('Could not get customer address coordinates:', err);
               }
-              
-              // If we have destination, set it
-              if (destLoc) {
-                setDestinationLocation(destLoc);
-              }
+            }
+            
+            // Always set destination from booking if available (overrides tracking session)
+            if (destLoc) {
+              setDestinationLocation(destLoc);
             }
             
             // ✅ CRITICAL FIX: Initialize map after modal opens
@@ -721,10 +728,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
 
     try {
-      const center = destinationLocation 
+      // ✅ CRITICAL FIX: Use corrected destination if available, otherwise use raw destination
+      const effectiveDestLoc = correctedDestination || destinationLocation;
+      
+      const center = effectiveDestLoc 
         ? {
-            lat: (currentLocation.lat + destinationLocation.lat) / 2,
-            lng: (currentLocation.lng + destinationLocation.lng) / 2,
+            lat: (currentLocation.lat + effectiveDestLoc.lat) / 2,
+            lng: (currentLocation.lng + effectiveDestLoc.lng) / 2,
           }
         : currentLocation;
 
@@ -764,9 +774,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       }
 
       // Add destination marker if available
-      if (destinationLocation) {
+      if (effectiveDestLoc) {
         new window.google.maps.Marker({
-          position: destinationLocation,
+          position: effectiveDestLoc,
           map,
           icon: {
             url: 'data:image/svg+xml,' + encodeURIComponent(`
@@ -782,7 +792,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
         // Draw route line
         const polyline = new window.google.maps.Polyline({
-          path: [currentLocation, destinationLocation],
+          path: [currentLocation, effectiveDestLoc],
           geodesic: true,
           strokeColor: '#FF8C42',
           strokeOpacity: 0.8,
@@ -794,7 +804,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         // Fit bounds
         const bounds = new window.google.maps.LatLngBounds();
         bounds.extend(currentLocation);
-        bounds.extend(destinationLocation);
+        bounds.extend(effectiveDestLoc);
         map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
       } else {
         map.setCenter(currentLocation);
@@ -856,6 +866,87 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     document.head.appendChild(script);
   };
 
+  // ✅ CRITICAL FIX: Correct destination for map display (same logic as customer side)
+  useEffect(() => {
+    const correctDestinationForMap = async () => {
+      if (!destinationLocation?.lat || !destinationLocation?.lng) {
+        return;
+      }
+
+      // Check if destination is in Mumbai (wrong location for Bengaluru bookings)
+      const isMumbai = destinationLocation.lat > 18.5 && destinationLocation.lat < 19.5 && 
+                       destinationLocation.lng > 72.5 && destinationLocation.lng < 73.5;
+      const isBengaluru = destinationLocation.lat > 12.8 && destinationLocation.lat < 13.2 && 
+                          destinationLocation.lng > 77.4 && destinationLocation.lng < 77.8;
+
+      // If destination is already in Bengaluru, no correction needed
+      if (isBengaluru) {
+        setCorrectedDestination(null); // Use raw destination
+        return;
+      }
+
+      // If destination is in Mumbai (wrong), try to correct it
+      if (isMumbai) {
+        console.warn('⚠️ [VENDOR-MAP] Destination is in Mumbai, attempting to correct for map display...');
+
+        // Priority 1: Use booking coordinates if available
+        if (booking?.latitude && booking?.longitude) {
+          const bookingLat = parseFloat(booking.latitude);
+          const bookingLng = parseFloat(booking.longitude);
+          if (bookingLat > 12.8 && bookingLat < 13.2 && bookingLng > 77.4 && bookingLng < 77.8) {
+            setCorrectedDestination({ lat: bookingLat, lng: bookingLng });
+            console.log('✅ [VENDOR-MAP] Using corrected destination from booking coordinates:', { lat: bookingLat, lng: bookingLng });
+            return;
+          }
+        } else if (booking?.delivery_latitude && booking?.delivery_longitude) {
+          const deliveryLat = parseFloat(booking.delivery_latitude);
+          const deliveryLng = parseFloat(booking.delivery_longitude);
+          if (deliveryLat > 12.8 && deliveryLat < 13.2 && deliveryLng > 77.4 && deliveryLng < 77.8) {
+            setCorrectedDestination({ lat: deliveryLat, lng: deliveryLng });
+            console.log('✅ [VENDOR-MAP] Using corrected destination from booking delivery coordinates:', { lat: deliveryLat, lng: deliveryLng });
+            return;
+          }
+        }
+
+        // Priority 2: Get booking address from diagnostic endpoint and geocode it
+        try {
+          const diagnosticResponse = await apiClient.get<any>(`/tracking/booking/${bookingId}/diagnostic`) as any;
+          const diagnostic = diagnosticResponse?.diagnostic || diagnosticResponse;
+          const bookingAddress = diagnostic?.booking?.address;
+
+          if (bookingAddress && typeof bookingAddress === 'string') {
+            console.log('⚠️ [VENDOR-MAP] Geocoding booking address from diagnostic endpoint for map...');
+            const apiKeyResponse = await apiClient.get<any>('/config/google-maps-key') as any;
+            const apiKey = apiKeyResponse?.apiKey || apiKeyResponse?.key;
+
+            if (apiKey) {
+              const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(bookingAddress)}&key=${apiKey}`;
+              const geocodeResponse = await fetch(geocodeUrl);
+              const geocodeData = await geocodeResponse.json();
+
+              if (geocodeData.status === 'OK' && geocodeData.results?.[0]?.geometry?.location) {
+                const loc = geocodeData.results[0].geometry.location;
+                const corrected = {
+                  lat: parseFloat(loc.lat),
+                  lng: parseFloat(loc.lng),
+                };
+                setCorrectedDestination(corrected);
+                console.log('✅ [VENDOR-MAP] Geocoded booking address for map display:', corrected);
+                return;
+              }
+            }
+          } else {
+            console.warn('⚠️ [VENDOR-MAP] No booking address found in diagnostic response');
+          }
+        } catch (err) {
+          console.error('Error getting/geocoding booking address for map:', err);
+        }
+      }
+    };
+
+    correctDestinationForMap();
+  }, [destinationLocation, booking?.latitude, booking?.longitude, booking?.delivery_latitude, booking?.delivery_longitude, bookingId]);
+
   // ✅ Update map when location changes
   useEffect(() => {
     if (isTracking && currentLocation && mapInstanceRef.current) {
@@ -871,7 +962,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     if (showTrackingModal && currentLocation) {
       // Small delay to ensure modal is rendered
       const timer = setTimeout(() => {
-        if (destinationLocation) {
+        // ✅ FIX: Use corrected destination if available, otherwise use raw destination
+        const effectiveDestLoc = correctedDestination || destinationLocation;
+        if (effectiveDestLoc) {
           initializeTrackingMap();
         } else {
           // Try to get destination from booking
@@ -889,7 +982,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [showTrackingModal, currentLocation, destinationLocation]);
+  }, [showTrackingModal, currentLocation, destinationLocation, correctedDestination]);
   
   // ✅ Cleanup on unmount
   useEffect(() => {
@@ -1970,10 +2063,74 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {/* Actions */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    if (currentLocation && booking?.location) {
-                      const destination = encodeURIComponent(booking.location);
-                      window.open(`https://www.google.com/maps/dir/?api=1&origin=${currentLocation.lat},${currentLocation.lng}&destination=${destination}&travelmode=driving`, '_blank');
+                  onClick={async () => {
+                    if (currentLocation) {
+                      // ✅ CRITICAL FIX: Use booking coordinates (priority) or destinationLocation from tracking
+                      let destLat: number | null = null;
+                      let destLng: number | null = null;
+                      
+                      // Priority 1: Use booking coordinates (most reliable)
+                      if (booking?.latitude && booking?.longitude) {
+                        destLat = parseFloat(booking.latitude);
+                        destLng = parseFloat(booking.longitude);
+                      } else if (booking?.delivery_latitude && booking?.delivery_longitude) {
+                        destLat = parseFloat(booking.delivery_latitude);
+                        destLng = parseFloat(booking.delivery_longitude);
+                      } else if (destinationLocation) {
+                        // Priority 2: Use destinationLocation from tracking session
+                        destLat = destinationLocation.lat;
+                        destLng = destinationLocation.lng;
+                      } else if (booking?.location) {
+                        // Priority 3: Fallback to text address (Google Maps will geocode it)
+                        const destination = encodeURIComponent(booking.location);
+                        window.open(`https://www.google.com/maps/dir/?api=1&origin=${currentLocation.lat},${currentLocation.lng}&destination=${destination}&travelmode=driving`, '_blank');
+                        return;
+                      }
+                      
+                      // ✅ CRITICAL FIX: Validate and correct destination if it's in Mumbai (wrong location)
+                      if (destLat && destLng) {
+                        const isMumbai = destLat > 18.5 && destLat < 19.5 && destLng > 72.5 && destLng < 73.5;
+                        const isBengaluru = destLat > 12.8 && destLat < 13.2 && destLng > 77.4 && destLng < 77.8;
+                        
+                        if (isMumbai && !isBengaluru) {
+                          console.warn('⚠️ [VENDOR-MAPS] Destination is in Mumbai, attempting to correct...');
+                          
+                          // Try to get correct destination from diagnostic endpoint
+                          try {
+                            const diagnosticResponse = await apiClient.get<any>(`/tracking/booking/${bookingId}/diagnostic`) as any;
+                            const diagnostic = diagnosticResponse?.diagnostic || diagnosticResponse;
+                            const bookingAddress = diagnostic?.booking?.address;
+                            
+                            if (bookingAddress && typeof bookingAddress === 'string') {
+                              console.log('⚠️ [VENDOR-MAPS] Geocoding booking address from diagnostic endpoint...');
+                              const apiKeyResponse = await apiClient.get<any>('/config/google-maps-key') as any;
+                              const apiKey = apiKeyResponse?.apiKey || apiKeyResponse?.key;
+                              
+                              if (apiKey) {
+                                const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(bookingAddress)}&key=${apiKey}`;
+                                const geocodeResponse = await fetch(geocodeUrl);
+                                const geocodeData = await geocodeResponse.json();
+                                
+                                if (geocodeData.status === 'OK' && geocodeData.results?.[0]?.geometry?.location) {
+                                  const loc = geocodeData.results[0].geometry.location;
+                                  destLat = parseFloat(loc.lat);
+                                  destLng = parseFloat(loc.lng);
+                                  console.log('✅ [VENDOR-MAPS] Geocoded booking address for Google Maps:', { lat: destLat, lng: destLng });
+                                } else {
+                                  console.warn('⚠️ [VENDOR-MAPS] Geocoding failed:', geocodeData.status);
+                                }
+                              }
+                            } else {
+                              console.warn('⚠️ [VENDOR-MAPS] No booking address found in diagnostic response');
+                            }
+                          } catch (err) {
+                            console.error('Error getting/geocoding booking address for Google Maps:', err);
+                          }
+                        }
+                        
+                        // Open Google Maps with (corrected) destination
+                        window.open(`https://www.google.com/maps/dir/?api=1&origin=${currentLocation.lat},${currentLocation.lng}&destination=${destLat},${destLng}&travelmode=driving`, '_blank');
+                      }
                     }
                   }}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"

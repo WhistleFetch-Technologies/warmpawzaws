@@ -87,10 +87,15 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
   };
 
   const formatETA = (minutes: number) => {
-    if (minutes < 60) return `${minutes} min`;
+    if (minutes < 60) return `${Math.round(minutes)} min`;
+    // ✅ FIX: Show hours when >= 60 minutes
     const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hrs}h ${mins}m`;
+    const mins = Math.round(minutes % 60);
+    if (mins === 0) {
+      return `${hrs} ${hrs === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hrs}h ${mins}m`;
+    }
   };
 
   const submitReview = async () => {

@@ -466,8 +466,11 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const booking = bookings[0];
       const oldStatus = booking.status;
-      if (!['confirmed', 'in_progress'].includes(oldStatus)) {
-        return c.json({ error: `Booking cannot be completed. Current status: ${oldStatus}` }, 400);
+      // ✅ FIX: Allow completion from 'confirmed', 'in_progress', or 'arrived' status
+      // Business logic: confirmed → in_progress/vendor_on_way → arrived → completed
+      const allowedStatusesForCompletion = ['confirmed', 'in_progress', 'arrived', 'vendor_on_way', 'on_way'];
+      if (!allowedStatusesForCompletion.includes(oldStatus)) {
+        return c.json({ error: `Booking cannot be completed. Current status: ${oldStatus}. Allowed statuses: ${allowedStatusesForCompletion.join(', ')}` }, 400);
       }
 
       const updated = await update('bookings',

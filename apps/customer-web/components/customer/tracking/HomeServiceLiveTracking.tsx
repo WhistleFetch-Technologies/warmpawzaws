@@ -162,6 +162,21 @@ export function HomeServiceLiveTracking({
   };
 
   // Format duration
+  // ✅ FIX: Format ETA to show hours when >= 60 minutes
+  const formatETA = (minutes: number | null): string => {
+    if (minutes === null) return 'Calculating...';
+    if (minutes < 1) return 'Less than 1 min';
+    if (minutes === 1) return '1 min';
+    if (minutes < 60) return `${Math.round(minutes)} min`;
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    if (mins === 0) {
+      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hours}h ${mins}m`;
+    }
+  };
+
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -197,7 +212,7 @@ export function HomeServiceLiveTracking({
         return { 
           color: 'bg-blue-100 text-blue-700', 
           label: 'On the Way',
-          message: trackingData.eta ? `Arriving in ~${trackingData.eta} minutes` : 'Coming to you...',
+          message: trackingData.eta ? `Arriving in ~${formatETA(trackingData.eta)}` : 'Coming to you...',
           icon: Car
         };
       case 'arrived':
@@ -343,7 +358,7 @@ export function HomeServiceLiveTracking({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-blue-700">Estimated Arrival</p>
-                  <p className="text-3xl font-bold text-blue-900">{trackingData.eta} min</p>
+                  <p className="text-3xl font-bold text-blue-900">{formatETA(trackingData.eta)}</p>
                 </div>
                 <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
                   <Car className="w-8 h-8 text-blue-600 animate-pulse" />

@@ -194,8 +194,9 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
     try {
       console.log('[CONFIG] Fetching Google Maps config...');
       
-      // Check cache first
+      // ✅ FIX: Check cache first (fastest path)
       if (cachedGoogleMapsKey && Date.now() < cacheExpiry) {
+        console.log('[CONFIG] Returning cached Google Maps API key');
         const response: Record<string, string> = { apiKey: cachedGoogleMapsKey };
         if (cachedMapId) response.mapId = cachedMapId;
         return c.json(response);
@@ -220,36 +221,70 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
         console.warn('[CONFIG] Database lookup failed:', dbError);
       }
 
-      // 2. Try environment variable
+      // 2. Try environment variable (FAST - no network call)
+      // ✅ FIX: Check env vars BEFORE Secrets Manager to avoid timeouts
       if (!apiKey) {
         apiKey = process.env.GOOGLE_MAPS_API_KEY || null;
+        if (apiKey) {
+          console.log('[CONFIG] Found Google Maps API key in environment variable');
+        }
       }
       if (!mapId) {
         mapId = process.env.GOOGLE_MAPS_MAP_ID || null;
+        if (mapId) {
+          console.log('[CONFIG] Found Google Maps map ID in environment variable');
+        }
       }
 
-      // 3. Try Secrets Manager (google-maps JSON or google-maps/api-key)
+      // 3. Try Secrets Manager (google-maps JSON or google-maps/api-key) - WITH TIMEOUT PROTECTION
       if (!apiKey || !mapId) {
         try {
-          const secretJson = await getSecretJson<{ apiKey?: string; api_key?: string; mapId?: string; map_id?: string }>('google-maps');
+          // ✅ FIX: Add timeout to prevent Lambda timeout (503 errors)
+          const secretJsonPromise = getSecretJson<{ apiKey?: string; api_key?: string; mapId?: string; map_id?: string }>('google-maps');
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error('Secrets Manager timeout')), 3000) // 3s timeout
+          );
+          
+          const secretJson = await Promise.race([secretJsonPromise, timeoutPromise]).catch((err) => {
+            if (err.message === 'Secrets Manager timeout') {
+              console.warn('[CONFIG] Secrets Manager timeout for google-maps, skipping');
+              return null;
+            }
+            throw err;
+          });
+          
           if (secretJson) {
             if (!apiKey && secretJson.apiKey) apiKey = secretJson.apiKey;
             if (!apiKey && secretJson.api_key) apiKey = secretJson.api_key;
             if (!mapId && secretJson.mapId) mapId = secretJson.mapId;
             if (!mapId && secretJson.map_id) mapId = secretJson.map_id;
           }
-        } catch {
-          // ignore
+        } catch (error: any) {
+          // ✅ FIX: Log but don't fail - allow fallback
+          if (error.message !== 'Secrets Manager timeout') {
+            console.warn('[CONFIG] Secrets Manager error (non-fatal):', error.message);
+          }
         }
+        
         if (!apiKey) {
           try {
+            // ✅ FIX: Add timeout to prevent hanging
             const keyPromise = getSecret('google-maps/api-key');
             const timeoutPromise = new Promise<null>((_, reject) =>
-              setTimeout(() => reject(new Error('timeout')), 5000)
+              setTimeout(() => reject(new Error('Secrets Manager timeout')), 3000) // 3s timeout
             );
-            apiKey = await Promise.race([keyPromise, timeoutPromise]) as string | null;
-          } catch {
-            // ignore
+            apiKey = await Promise.race([keyPromise, timeoutPromise]).catch((err) => {
+              if (err.message === 'Secrets Manager timeout') {
+                console.warn('[CONFIG] Secrets Manager timeout for google-maps/api-key, skipping');
+                return null;
+              }
+              throw err;
+            }) as string | null;
+          } catch (error: any) {
+            // ✅ FIX: Log but don't fail - allow fallback
+            if (error.message !== 'Secrets Manager timeout') {
+              console.warn('[CONFIG] Secrets Manager error (non-fatal):', error.message);
+            }
           }
         }
       }
@@ -282,10 +317,13 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
 
     } catch (error: any) {
       console.error('[CONFIG] Error fetching Google Maps config:', error);
+      // ✅ FIX: Return 503 only if it's actually a service issue, otherwise return 500
+      const statusCode = error.message?.includes('timeout') || error.message?.includes('Service Unavailable') ? 503 : 500;
       return c.json({ 
         error: error.message || 'Failed to fetch Google Maps API key',
-        details: error.name || 'Unknown error'
-      }, 500);
+        details: error.name || 'Unknown error',
+        hint: 'Please check Lambda logs and Secrets Manager configuration'
+      }, statusCode);
     }
   });
 

@@ -123,14 +123,45 @@ class GPSTrackingServiceImpl {
       }
       const booking = bookings[0];
       const customerId = booking.customer_id;
+      
+      // ✅ CRITICAL FIX: Use booking.vendor_id as source of truth (not the passed vendorId)
+      // The passed vendorId is for authorization, but booking.vendor_id is the actual vendor
+      const actualVendorId = booking.vendor_id || vendorId;
+      console.log(`[GPS] Using booking vendor_id: ${actualVendorId} (passed vendorId: ${vendorId})`);
 
       // Calculate initial ETA (skip polyline on start to avoid Lambda timeout / 503)
       const eta = await this.calculateETA(startLocation, destinationLocation, true);
 
-      // Create tracking session
+      // ✅ DEBUG: Log locations before creating session
+      console.log(`[GPS] startTracking for booking ${bookingId}:`, {
+        startLocation: { lat: startLocation.latitude, lng: startLocation.longitude },
+        destinationLocation: { lat: destinationLocation.latitude, lng: destinationLocation.longitude },
+        vendorId: actualVendorId,
+        etaMinutes: eta.etaMinutes,
+        distanceKm: eta.distanceKm,
+      });
+      
+      // ✅ VALIDATION: Check if locations might be swapped
+      if (Math.abs(startLocation.latitude - destinationLocation.latitude) < 0.0001 && 
+          Math.abs(startLocation.longitude - destinationLocation.longitude) < 0.0001) {
+        console.error(`⚠️ [GPS] WARNING: Start and destination locations are identical for booking ${bookingId}!`, {
+          location: { lat: startLocation.latitude, lng: startLocation.longitude },
+        });
+      }
+      
+      // Check if start location is in Bengaluru (destination should be there, not start)
+      if (startLocation.latitude > 12.8 && startLocation.latitude < 13.0 && 
+          startLocation.longitude > 77.4 && startLocation.longitude < 77.8) {
+        console.error(`⚠️ [GPS] WARNING: Start location appears to be in Bengaluru (should be destination) for booking ${bookingId}!`, {
+          startLocation: { lat: startLocation.latitude, lng: startLocation.longitude },
+          destinationLocation: { lat: destinationLocation.latitude, lng: destinationLocation.longitude },
+        });
+      }
+
+      // Create tracking session - use booking's vendor_id
       const session = await insert('gps_tracking_sessions', {
         booking_id: bookingId,
-        vendor_id: vendorId,
+        vendor_id: actualVendorId, // ✅ Use booking's vendor_id
         staff_id: staffId,
         customer_id: customerId,
         status: 'in_transit',
@@ -158,9 +189,10 @@ class GPSTrackingServiceImpl {
         console.warn('[GPS] Booking status update failed (non-fatal):', (updateErr as Error).message);
       }
 
-      // Get vendor name for notification
-      const vendors = await select('vendors', { id: vendorId });
-      const vendorName = vendors[0]?.business_name || 'Your service provider';
+      // ✅ CRITICAL FIX: Get vendor name from booking's vendor_id (not passed vendorId)
+      const vendors = await select('vendors', { id: actualVendorId });
+      const vendorName = vendors[0]?.business_name || vendors[0]?.owner_name || 'Your service provider';
+      console.log(`[GPS] Vendor name for notification: ${vendorName} (from vendor_id: ${actualVendorId})`);
 
       // Send notification to customer
       const trackingUrl = `${process.env.CUSTOMER_APP_URL || 'https://app.warmpawz.com'}/track/${session[0].id}`;
@@ -177,7 +209,7 @@ class GPSTrackingServiceImpl {
       return {
         id: session[0].id,
         bookingId,
-        vendorId,
+        vendorId: actualVendorId, // ✅ Return booking's vendor_id
         staffId: staffId || undefined,
         customerId,
         status: 'in_transit',
@@ -311,6 +343,56 @@ class GPSTrackingServiceImpl {
       }
 
       const session = sessions[0];
+      
+      // ✅ DEBUG: Log raw session data to identify location issues
+      console.log(`[GPS] getTrackingStatus for booking ${bookingId}:`, {
+        current_latitude: session.current_latitude,
+        current_longitude: session.current_longitude,
+        start_latitude: session.start_latitude,
+        start_longitude: session.start_longitude,
+        destination_latitude: session.destination_latitude,
+        destination_longitude: session.destination_longitude,
+        status: session.status,
+        last_update_at: session.last_update_at,
+      });
+      
+      const currentLoc = session.current_latitude ? {
+        latitude: parseFloat(session.current_latitude),
+        longitude: parseFloat(session.current_longitude),
+        heading: session.current_heading,
+        speed: session.current_speed,
+        timestamp: session.last_update_at,
+      } : undefined;
+      
+      const destLoc = {
+        latitude: parseFloat(session.destination_latitude),
+        longitude: parseFloat(session.destination_longitude),
+      };
+      
+      // ✅ VALIDATION: Check if locations might be swapped
+      if (currentLoc) {
+        const currLat = currentLoc.latitude;
+        const currLng = currentLoc.longitude;
+        const destLat = destLoc.latitude;
+        const destLng = destLoc.longitude;
+        
+        // Check if they're the same (which would be wrong)
+        if (Math.abs(currLat - destLat) < 0.0001 && Math.abs(currLng - destLng) < 0.0001) {
+          console.error(`⚠️ [GPS] WARNING: Current and destination locations are identical for booking ${bookingId}!`, {
+            lat: currLat,
+            lng: currLng,
+          });
+        }
+        
+        // Check if current location is in Bengaluru (destination should be there, not current)
+        if (currLat > 12.8 && currLat < 13.0 && currLng > 77.4 && currLng < 77.8) {
+          console.error(`⚠️ [GPS] WARNING: Current location appears to be in Bengaluru (should be destination) for booking ${bookingId}!`, {
+            currentLocation: { lat: currLat, lng: currLng },
+            destinationLocation: { lat: destLat, lng: destLng },
+          });
+        }
+      }
+      
       return {
         id: session.id,
         bookingId: session.booking_id,
@@ -322,17 +404,8 @@ class GPSTrackingServiceImpl {
           latitude: parseFloat(session.start_latitude),
           longitude: parseFloat(session.start_longitude),
         } : undefined,
-        currentLocation: session.current_latitude ? {
-          latitude: parseFloat(session.current_latitude),
-          longitude: parseFloat(session.current_longitude),
-          heading: session.current_heading,
-          speed: session.current_speed,
-          timestamp: session.last_update_at,
-        } : undefined,
-        destinationLocation: {
-          latitude: parseFloat(session.destination_latitude),
-          longitude: parseFloat(session.destination_longitude),
-        },
+        currentLocation: currentLoc,
+        destinationLocation: destLoc,
         estimatedEtaMinutes: session.estimated_eta_minutes,
         distanceKm: session.distance_remaining_km || session.distance_km,
         routePolyline: session.route_polyline,

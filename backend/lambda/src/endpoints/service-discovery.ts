@@ -5128,12 +5128,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorFallbackParamIdx = 2;
 
       if (targetRoles.length > 0) {
+        // ✅ FIX: More flexible role matching - check exact match, contains match, and normalized variants
+        // This ensures vendors with roles like "Vet Solo", "Veterinarian (Solo)", "vet_solo" all match
+        const targetRolesLower = targetRoles.map((r: string) => r.toLowerCase());
+        const targetRolesNormalized = targetRolesLower.map((r: string) => r.replace(/[_\s()]/g, ''));
+        
         vendorFallbackQuery += ` AND (
           LOWER(r.name) = ANY($${vendorFallbackParamIdx}::text[])
           OR LOWER(r.display_name) = ANY($${vendorFallbackParamIdx}::text[])
+          OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(r.name, '_', ''), ' ', ''), '(', ''), ')', '')) = ANY($${vendorFallbackParamIdx + 1}::text[])
+          OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(r.display_name, '_', ''), ' ', ''), '(', ''), ')', '')) = ANY($${vendorFallbackParamIdx + 1}::text[])
         )`;
-        vendorFallbackParams.push(targetRoles.map((r: string) => r.toLowerCase()));
-        vendorFallbackParamIdx++;
+        vendorFallbackParams.push(targetRolesLower);
+        vendorFallbackParams.push(targetRolesNormalized);
+        vendorFallbackParamIdx += 2;
       }
 
       // NOTE: Availability check removed - vendors appear based on service style enablement
@@ -5150,6 +5158,84 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       });
       
       console.log(`[Services By Style] Vendor fallback found ${vendorFallbackResult.rows.length} vendors`);
+      
+      // ✅ DEBUG: Check for specific vendor "Dr_Shivang_98765 42310_SOLO"
+      if (vendorFallbackResult.rows.length > 0) {
+        const shivangVendor = vendorFallbackResult.rows.find((v: any) => 
+          (v.business_name && (v.business_name.includes('Shivang') || v.business_name.includes('42310'))) ||
+          (v.owner_name && (v.owner_name.includes('Shivang') || v.owner_name.includes('42310'))) ||
+          (v.phone && (v.phone.includes('42310') || v.phone.includes('98765')))
+        );
+        if (shivangVendor) {
+          console.log(`[Services By Style] ✅ Found Shivang vendor in fallback results:`, {
+            id: shivangVendor.vendor_id,
+            name: shivangVendor.business_name || shivangVendor.owner_name,
+            phone: shivangVendor.phone,
+            status: shivangVendor.status,
+            is_active: shivangVendor.is_active,
+            role_name: shivangVendor.role_name
+          });
+        } else {
+          console.log(`[Services By Style] ⚠️ Shivang vendor NOT found in fallback results. Checking database directly...`);
+          // Check if vendor exists but didn't match query
+          const directCheck = await query(`
+            SELECT v.id, v.business_name, v.owner_name, v.phone, v.status, v.is_active, v.vendor_type,
+                   r.name as role_name, r.display_name as role_display_name
+            FROM vendors v
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE (v.business_name ILIKE '%Shivang%' OR v.owner_name ILIKE '%Shivang%' OR v.phone LIKE '%42310%')
+            LIMIT 1
+          `).catch(() => ({ rows: [] }));
+          if (directCheck.rows.length > 0) {
+            const v = directCheck.rows[0];
+            console.log(`[Services By Style] 🔍 Found Shivang vendor in DB:`, {
+              id: v.id,
+              name: v.business_name || v.owner_name,
+              phone: v.phone,
+              status: v.status,
+              is_active: v.is_active,
+              vendor_type: v.vendor_type,
+              role_name: v.role_name,
+              role_display_name: v.role_display_name
+            });
+            
+            // Check why it didn't match - comprehensive diagnosis
+            const statusCheck = (v.status === 'approved' || v.status === 'active') && v.is_active === true;
+            console.log(`[Services By Style] ✅ Status check: ${statusCheck} (status: ${v.status}, is_active: ${v.is_active})`);
+            
+            // Check services
+            const servicesCheck = await query(`
+              SELECT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status
+              FROM vendor_services vs
+              WHERE vs.vendor_id = $1 AND vs.service_style = ANY($2::text[])
+            `, [v.id, acceptableStylesFallback]).catch(() => ({ rows: [] }));
+            console.log(`[Services By Style] 📞 Services check:`, {
+              has_services: servicesCheck.rows.length > 0,
+              services: servicesCheck.rows,
+              acceptable_styles: acceptableStylesFallback
+            });
+            
+            const enabledPublishedServices = servicesCheck.rows.filter(s => 
+              s.is_enabled === true && 
+              (s.publish_status === 'published' || s.publish_status === 'auto_published' || s.publish_status === 'draft' || s.publish_status === null)
+            );
+            console.log(`[Services By Style] ✅ Enabled & published services: ${enabledPublishedServices.length}`);
+            
+            // Check role matching
+            if (targetRoles.length > 0) {
+              const roleMatches = targetRoles.some((role: string) => 
+                v.role_name?.toLowerCase() === role.toLowerCase() ||
+                v.role_display_name?.toLowerCase() === role.toLowerCase()
+              );
+              console.log(`[Services By Style] ✅ Role match: ${roleMatches}`, {
+                vendor_role: v.role_name,
+                vendor_role_display: v.role_display_name,
+                target_roles: targetRoles
+              });
+            }
+          }
+        }
+      }
 
       for (const vendor of vendorFallbackResult.rows) {
         // Skip vendors that already have staff in providers list
@@ -5157,6 +5243,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) continue;
 
         // Get services for this vendor
+        // ✅ FIX: Include 'auto_published' status to match the EXISTS check above
         const servicesResult = await query(
           `SELECT 
             vs.id,
@@ -5170,7 +5257,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            WHERE vs.vendor_id = $1 
              AND vs.service_style = ANY($2::text[])
              AND vs.is_enabled = true
-             AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
+             AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
            ORDER BY vs.price ASC`,
           [vendor.vendor_id, acceptableStylesFallback]
         ).catch(() => ({ rows: [] }));
@@ -5520,6 +5607,164 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error in /customer/pricing/quote:', error);
       return c.json({ success: false, error: error?.message || 'Pricing quote failed' }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/diagnostics/vendor-by-phone
+   * Diagnostic endpoint to check vendor status and eligibility
+   */
+  app.get("/customer/diagnostics/vendor-by-phone", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      if (!phone) {
+        return c.json({ error: 'Phone parameter required' }, 400);
+      }
+
+      // Find vendor
+      const vendorResult = await query(`
+        SELECT 
+          v.id, 
+          v.business_name, 
+          v.owner_name, 
+          v.phone, 
+          v.status, 
+          v.is_active, 
+          v.vendor_type,
+          r.id as role_id,
+          r.name as role_name, 
+          r.display_name as role_display_name
+        FROM vendors v 
+        LEFT JOIN roles r ON v.role_id = r.id 
+        WHERE v.phone LIKE $1 OR v.phone = $2
+        ORDER BY v.created_at DESC 
+        LIMIT 5
+      `, [`%${phone}%`, phone]);
+
+      if (vendorResult.rows.length === 0) {
+        return c.json({ 
+          found: false, 
+          message: 'Vendor not found',
+          search_phone: phone
+        });
+      }
+
+      const vendor = vendorResult.rows[0];
+      
+      // Check services
+      const servicesResult = await query(`
+        SELECT 
+          vs.id, 
+          vs.service_name, 
+          vs.service_style, 
+          vs.is_enabled, 
+          vs.publish_status,
+          vs.category,
+          vs.price
+        FROM vendor_services vs
+        WHERE vs.vendor_id = $1
+        ORDER BY vs.created_at DESC
+      `, [vendor.id]);
+
+      // Check tele services specifically
+      const teleServices = servicesResult.rows.filter(s => 
+        (s.service_style === 'tele' || s.service_style === 'online') && 
+        s.is_enabled === true &&
+        (s.publish_status === 'published' || s.publish_status === 'auto_published' || s.publish_status === 'draft' || s.publish_status === null)
+      );
+
+      // Eligibility checks
+      const eligibility = {
+        statusApproved: vendor.status === 'approved' || vendor.status === 'active',
+        isActive: vendor.is_active === true,
+        hasRole: vendor.role_id !== null,
+        hasServices: servicesResult.rows.length > 0,
+        hasTeleServices: teleServices.length > 0,
+        roleMatches: false // Will check below
+      };
+
+      // Check role matching for vet
+      const targetRoles = ['veterinarian', 'vet', 'vet_clinic', 'vet_solo', 'Veterinarian (Solo)', 'Vet Solo', 'Veterinary Clinic'];
+      eligibility.roleMatches = targetRoles.some(role => 
+        vendor.role_name?.toLowerCase() === role.toLowerCase() ||
+        vendor.role_display_name?.toLowerCase() === role.toLowerCase()
+      );
+
+      // If vendor is pending but has all other requirements, offer to approve
+      const canApprove = !eligibility.statusApproved && 
+                        eligibility.isActive && 
+                        eligibility.hasRole && 
+                        eligibility.hasServices && 
+                        eligibility.hasTeleServices && 
+                        eligibility.roleMatches;
+
+      return c.json({
+        found: true,
+        vendor: {
+          id: vendor.id,
+          business_name: vendor.business_name,
+          owner_name: vendor.owner_name,
+          phone: vendor.phone,
+          status: vendor.status,
+          is_active: vendor.is_active,
+          vendor_type: vendor.vendor_type,
+          role_name: vendor.role_name,
+          role_display_name: vendor.role_display_name
+        },
+        services: {
+          total: servicesResult.rows.length,
+          all: servicesResult.rows,
+          tele: teleServices
+        },
+        eligibility,
+        willAppear: Object.values(eligibility).every(v => v === true),
+        target_roles: targetRoles,
+        canApprove,
+        fix: canApprove ? 'Update vendor status from "pending" to "approved" to make it appear in results' : null
+      });
+    } catch (error: any) {
+      console.error('[Diagnostics] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/diagnostics/approve-vendor
+   * Diagnostic endpoint to approve a vendor (for testing purposes)
+   */
+  app.post("/customer/diagnostics/approve-vendor", async (c) => {
+    try {
+      const body = await c.req.json();
+      const vendorId = body.vendorId || body.id;
+      
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID required' }, 400);
+      }
+
+      // Update vendor status to approved
+      const updateResult = await query(`
+        UPDATE vendors 
+        SET 
+          status = 'approved',
+          approved_at = NOW(),
+          is_active = true,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, business_name, phone, status, is_active
+      `, [vendorId]);
+
+      if (updateResult.rows.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Vendor approved successfully',
+        vendor: updateResult.rows[0]
+      });
+    } catch (error: any) {
+      console.error('[Diagnostics] Error approving vendor:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 }

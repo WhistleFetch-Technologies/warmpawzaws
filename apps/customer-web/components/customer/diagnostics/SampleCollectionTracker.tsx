@@ -85,6 +85,21 @@ export function SampleCollectionTracker({
   const [enteredOTP, setEnteredOTP] = useState('');
   const [verifyingOTP, setVerifyingOTP] = useState(false);
 
+  // ✅ FIX: Format ETA to show hours when >= 60 minutes
+  const formatETA = (minutes: number | undefined): string => {
+    if (!minutes) return 'Calculating...';
+    if (minutes < 1) return 'Arriving now';
+    if (minutes === 1) return '1 min';
+    if (minutes < 60) return `${Math.round(minutes)} mins`;
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    if (mins === 0) {
+      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hours}h ${mins}m`;
+    }
+  };
+
   const loadCollectionStatus = useCallback(async () => {
     try {
       const response = await apiClient.get<any>(`/diagnostics/sample-collection/booking/${bookingId}`);
@@ -277,7 +292,7 @@ export function SampleCollectionTracker({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-white/70 text-sm">Estimated Arrival</p>
-                <p className="text-2xl font-bold">{collectionStatus.eta} mins</p>
+                <p className="text-2xl font-bold">{formatETA(collectionStatus.eta)}</p>
               </div>
               <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
                 <Navigation className="w-6 h-6" />

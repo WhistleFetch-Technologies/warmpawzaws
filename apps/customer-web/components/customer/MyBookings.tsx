@@ -473,7 +473,21 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
             </p>
           </div>
         ) : (
-          filteredBookings.map((booking) => (
+          filteredBookings.map((booking) => {
+            // ✅ DEBUG: Log serviceStyle/serviceType for home visit bookings
+            const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
+            if (booking.serviceName?.toLowerCase().includes('home visit') || isAtHome) {
+              console.log('[MyBookings] Home Visit Booking:', {
+                bookingId: booking.bookingId,
+                serviceName: booking.serviceName,
+                serviceStyle: booking.serviceStyle,
+                serviceType: booking.serviceType,
+                isAtHome,
+                status: booking.status,
+                willShowTracker: isAtHome && ['confirmed', 'in_progress', 'vendor_on_way', 'on_way'].includes(booking.status),
+              });
+            }
+            return (
             <div
               key={booking.bookingId}
               onClick={() => setSelectedBooking(booking)}
@@ -520,8 +534,14 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 </div>
               </div>
 
-              {/* ✅ ENHANCED: Quick Action Buttons (Directions, Call, Review) */}
-              {booking.serviceStyle === 'at_center' && ['confirmed', 'pending', 'completed'].includes(booking.status) && (
+              {/* ✅ ENHANCED: Quick Action Buttons (Directions for at_center, Tracker for at_home, Call, Review) */}
+              {/* ✅ Directions button for at_center services (NEVER show for at_home - check both serviceType and serviceStyle) */}
+              {(() => {
+                const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
+                const isAtCenter = booking.serviceStyle === 'at_center' || booking.serviceType === 'at_center';
+                // Only show Directions if it's at_center AND NOT at_home
+                return !isAtHome && isAtCenter && ['confirmed', 'pending', 'completed'].includes(booking.status);
+              })() && (
                 <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={(e) => {
@@ -572,28 +592,65 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 </div>
               )}
 
-              {/* ✅ Track Live Location Button for at_home services */}
-              {booking.serviceStyle === 'at_home' && ['confirmed', 'in_progress'].includes(booking.status) && (
+              {/* ✅ Tracker button for at_home services (replaces Directions) - check both serviceType and serviceStyle */}
+              {(() => {
+                const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
+                return isAtHome && ['confirmed', 'in_progress', 'vendor_on_way', 'on_way'].includes(booking.status);
+              })() && (
                 <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedBooking({ ...booking, showTracking: true } as any);
+                      // ✅ Navigate to tracking page
+                      console.log('[MyBookings] Navigating to tracking page:', {
+                        bookingId: booking.bookingId,
+                        serviceStyle: booking.serviceStyle,
+                        status: booking.status,
+                        serviceName: booking.serviceName,
+                      });
+                      const trackingUrl = phone 
+                        ? `/tracking/${booking.bookingId}?phone=${encodeURIComponent(phone)}`
+                        : `/tracking/${booking.bookingId}`;
+                      router.push(trackingUrl);
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium"
+                    className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm font-medium"
                   >
                     <Navigation className="w-4 h-4" />
-                    Track Live Location
+                    Tracker
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      window.open(`sms:+${booking.vendorId}`, '_self');
+                      // Trigger call (on mobile) or show number
+                      const vendorPhone = booking.vendorPhone || booking.vendorContact;
+                      if (vendorPhone) {
+                        window.location.href = `tel:${vendorPhone}`;
+                      } else {
+                        toast.info('Vendor contact not available');
+                      }
                     }}
-                    className="flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                    className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 text-sm font-medium"
                   >
-                    <MessageSquare className="w-4 h-4" />
+                    <Phone className="w-4 h-4" />
+                    Call
                   </button>
+                  {/* ✅ NEW: Review button for completed bookings */}
+                  {booking.status === 'completed' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowReviewModal({
+                          bookingId: booking.bookingId,
+                          vendorId: booking.vendorId,
+                          serviceName: booking.serviceName
+                        });
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 text-sm font-medium"
+                    >
+                      <Star className="w-4 h-4" />
+                      Review
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -701,7 +758,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 )}
               </div>
             </div>
-          ))
+          );
+          })
         )}
       </div>
 

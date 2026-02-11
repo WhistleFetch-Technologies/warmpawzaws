@@ -20,6 +20,80 @@ import { select, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
+import { resolveVendorId } from '../utils/vendor-resolve';
+
+/**
+ * Helper function to get the correct OTP for a booking based on action and service type
+ * @param booking - The booking object
+ * @param bookingId - The booking ID
+ * @param action - 'start' or 'complete' (or 'end')
+ * @returns Object with expectedOTP and isWalkerService flag
+ */
+async function getExpectedOTPForBooking(
+  booking: any,
+  bookingId: string,
+  action: 'start' | 'complete' | 'end' = 'complete'
+): Promise<{ expectedOTP: string; isWalkerService: boolean }> {
+  let isWalkerService = false;
+  let expectedOTP = '';
+
+  // For 'start' action, always use otp_code (start OTP)
+  if (action === 'start') {
+    expectedOTP = String(booking.otp_code || '').trim();
+    return { expectedOTP, isWalkerService: false };
+  }
+
+  // For 'complete' or 'end' action, check if walker service
+  try {
+    // Get vendor role to check if it's a walker
+    const vendorRoleResult = await query(
+      `SELECT r.name AS role_name
+       FROM vendors v
+       JOIN roles r ON r.id = v.role_id
+       WHERE v.id = $1 AND r.is_active = true
+       LIMIT 1`,
+      [booking.vendor_id]
+    ).catch(() => ({ rows: [] }));
+    
+    const rows = Array.isArray(vendorRoleResult) ? vendorRoleResult : (vendorRoleResult as any).rows || [];
+    const roleName = rows[0]?.role_name?.toLowerCase() || '';
+    
+    // Check if role is walker (pet_walker, walker, dog_walker)
+    const walkerRoles = ['pet_walker', 'walker', 'dog_walker'];
+    isWalkerService = walkerRoles.includes(roleName);
+    
+    if (isWalkerService) {
+      // Walker service: Get end OTP from otp_tokens table
+      const endOtpResult = await query(
+        `SELECT otp_code FROM otp_tokens
+         WHERE metadata->>'bookingId' = $1
+           AND metadata->>'action' = 'end'
+           AND is_used = false
+           AND expires_at > NOW()
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [bookingId]
+      ).catch(() => ({ rows: [] }));
+      
+      const endOtpRows = Array.isArray(endOtpResult) ? endOtpResult : (endOtpResult as any).rows || [];
+      if (endOtpRows.length > 0) {
+        expectedOTP = String(endOtpRows[0].otp_code || '').trim();
+      } else {
+        // Fallback to otp_code if end OTP not found
+        expectedOTP = String(booking.otp_code || '').trim();
+      }
+    } else {
+      // Non-walker service: Use otp_code from bookings table (single OTP for completion)
+      expectedOTP = String(booking.otp_code || '').trim();
+    }
+  } catch (error: any) {
+    console.error(`❌ [getExpectedOTPForBooking] Error checking walker service, falling back to otp_code:`, error);
+    // Fallback to otp_code if role check fails
+    expectedOTP = String(booking.otp_code || '').trim();
+  }
+
+  return { expectedOTP, isWalkerService };
+}
 
 export function registerVendorBookingActionsEndpoints(app: Hono) {
   /**
@@ -132,13 +206,38 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'OTP is required for in-person services' }, 400);
       }
 
-      // Check OTP from booking
-      const expectedOTP = String(booking.otp_code || '').trim();
+      // ✅ FIX: Get correct OTP based on service type (walker vs non-walker)
+      // For walker services: use end OTP from otp_tokens table
+      // For other services: use otp_code from bookings table (single OTP for completion)
+      const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, 'complete');
       const providedOTP = String(otp).trim();
 
+      if (!expectedOTP) {
+        console.error(`❌ [COMPLETE-BOOKING] No OTP found for booking ${bookingId}`);
+        return c.json({ error: 'No OTP found for this booking. Please contact support.' }, 400);
+      }
+
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}"`);
+        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}" (Walker: ${isWalkerService})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
+      }
+      
+      // ✅ Mark end OTP as used if it's a walker service
+      if (isWalkerService) {
+        try {
+          await update('otp_tokens',
+            { 
+              'metadata->>bookingId': bookingId,
+              'metadata->>action': 'end',
+              is_used: false
+            },
+            { is_used: true }
+          );
+          console.log(`✅ [COMPLETE-BOOKING] Marked end OTP as used for walker service`);
+        } catch (error: any) {
+          console.warn(`⚠️ [COMPLETE-BOOKING] Failed to mark end OTP as used:`, error);
+          // Non-critical, continue with completion
+        }
       }
 
       // Mark booking as completed
@@ -243,19 +342,60 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const { bookingId } = c.req.param();
       const { vendorId, staffId, startLocation } = await c.req.json();
 
-      console.log(`🚗 [START-TRAVEL] Vendor ${vendorId} starting travel for booking ${bookingId}`);
+      console.log(`🚗 [START-TRAVEL] Request: bookingId=${bookingId}, vendorId=${vendorId}, staffId=${staffId || 'none'}`);
+
+      // ✅ CRITICAL FIX: Resolve vendorId (may be vendor_identity.id) to vendors.id
+      const resolvedVendorId = await resolveVendorId(vendorId);
+      console.log(`🚗 [START-TRAVEL] Resolved vendorId: ${vendorId} -> ${resolvedVendorId}`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
+        console.error(`🚗 [START-TRAVEL] Booking ${bookingId} not found`);
         return c.json({ error: 'Booking not found' }, 404);
       }
 
       const booking = bookings[0];
+      const bookingVendorId = booking.vendor_id;
+      
+      // ✅ DEBUG: Log both IDs for comparison
+      console.log(`🚗 [START-TRAVEL] Comparison: booking.vendor_id=${bookingVendorId} (type: ${typeof bookingVendorId}), resolvedVendorId=${resolvedVendorId} (type: ${typeof resolvedVendorId})`);
+      console.log(`🚗 [START-TRAVEL] String comparison: "${String(bookingVendorId)}" === "${String(resolvedVendorId)}" = ${String(bookingVendorId) === String(resolvedVendorId)}`);
 
-      // Verify vendor owns this booking
-      if (booking.vendor_id !== vendorId) {
-        return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
+      // ✅ CRITICAL FIX: Compare using resolved vendorId and handle type mismatches
+      const bookingVendorIdStr = String(bookingVendorId || '').trim().toLowerCase();
+      const resolvedVendorIdStr = String(resolvedVendorId || '').trim().toLowerCase();
+      
+      if (bookingVendorIdStr !== resolvedVendorIdStr && bookingVendorId !== resolvedVendorId) {
+        console.error(`🚗 [START-TRAVEL] UNAUTHORIZED: Booking ${bookingId} belongs to vendor ${bookingVendorId}, but request is from vendor ${resolvedVendorId} (original: ${vendorId})`);
+        
+        // ✅ ADDITIONAL DEBUG: Check if vendorId matches by looking up vendor details
+        try {
+          const vendorCheck = await select('vendors', { id: resolvedVendorId });
+          const bookingVendorCheck = await select('vendors', { id: bookingVendorId });
+          console.log(`🚗 [START-TRAVEL] Vendor check: resolvedVendor exists=${vendorCheck.length > 0}, bookingVendor exists=${bookingVendorCheck.length > 0}`);
+          if (vendorCheck.length > 0) {
+            console.log(`🚗 [START-TRAVEL] Resolved vendor: ${JSON.stringify({ id: vendorCheck[0].id, phone: vendorCheck[0].phone, business_name: vendorCheck[0].business_name })}`);
+          }
+          if (bookingVendorCheck.length > 0) {
+            console.log(`🚗 [START-TRAVEL] Booking vendor: ${JSON.stringify({ id: bookingVendorCheck[0].id, phone: bookingVendorCheck[0].phone, business_name: bookingVendorCheck[0].business_name })}`);
+          }
+        } catch (debugErr) {
+          console.warn(`🚗 [START-TRAVEL] Debug vendor lookup failed:`, debugErr);
+        }
+        
+        return c.json({ 
+          error: 'Unauthorized: This booking belongs to another vendor',
+          debug: {
+            bookingVendorId,
+            requestedVendorId: vendorId,
+            resolvedVendorId,
+            comparison: {
+              strict: booking.vendor_id === vendorId,
+              resolved: bookingVendorIdStr === resolvedVendorIdStr,
+            }
+          }
+        }, 403);
       }
 
       // Check if already traveling
@@ -283,8 +423,30 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
         // Get destination: address_id → customer_addresses, then booking coords, then booking address fallback
         let destinationLocation: { latitude: number; longitude: number } | null = null;
+        let destinationSource = 'unknown';
 
-        if (booking.address_id) {
+        // ✅ PRIORITY 1: Use booking.latitude/longitude (primary at_home location fields)
+        if (booking.latitude != null && booking.longitude != null) {
+          destinationLocation = {
+            latitude: parseFloat(String(booking.latitude)),
+            longitude: parseFloat(String(booking.longitude)),
+          };
+          destinationSource = 'booking.latitude/longitude';
+          console.log(`[START-TRAVEL] Using booking coordinates as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
+        }
+
+        // ✅ PRIORITY 2: Use booking.delivery_latitude/longitude (if booking coords not available)
+        if (!destinationLocation && (booking.delivery_latitude != null && booking.delivery_longitude != null)) {
+          destinationLocation = {
+            latitude: parseFloat(String(booking.delivery_latitude)),
+            longitude: parseFloat(String(booking.delivery_longitude)),
+          };
+          destinationSource = 'booking.delivery_latitude/longitude';
+          console.log(`[START-TRAVEL] Using delivery coordinates as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
+        }
+
+        // ✅ PRIORITY 3: Use customer_addresses from address_id (fallback if booking coords not available)
+        if (!destinationLocation && booking.address_id) {
           const addresses = await select('customer_addresses', { id: booking.address_id });
           if (addresses.length > 0) {
             const addr = addresses[0] as any;
@@ -292,30 +454,20 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
             if (lat != null && lng != null) {
               destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+              destinationSource = 'customer_addresses';
+              console.log(`[START-TRAVEL] Using customer_addresses as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
             } else if ((addr.address || addr.full_address) && !uatMode) {
               const geocoded = await geocodeAddress(addr.address || addr.full_address);
               if (geocoded) {
                 destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-                console.log('[START-TRAVEL] Geocoded customer_addresses to destination:', geocoded.latitude, geocoded.longitude);
+                destinationSource = 'customer_addresses (geocoded)';
+                console.log(`[START-TRAVEL] Geocoded customer_addresses to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
               }
             }
           }
         }
 
-        if (!destinationLocation && (booking.delivery_latitude != null && booking.delivery_longitude != null)) {
-          destinationLocation = {
-            latitude: parseFloat(String(booking.delivery_latitude)),
-            longitude: parseFloat(String(booking.delivery_longitude)),
-          };
-        }
-
-        if (!destinationLocation && (booking.latitude != null && booking.longitude != null)) {
-          destinationLocation = {
-            latitude: parseFloat(String(booking.latitude)),
-            longitude: parseFloat(String(booking.longitude)),
-          };
-        }
-
+        // ✅ PRIORITY 4: Parse booking.address as JSON object or string
         if (!destinationLocation) {
           const rawAddress = booking.address || (booking as any).destination_address ||
             (booking as any).location || (booking as any).delivery_address ||
@@ -343,6 +495,8 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             const lng = addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude;
             if (lat != null && lng != null) {
               destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+              destinationSource = 'booking.address (parsed object)';
+              console.log(`[START-TRAVEL] Using parsed booking.address as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
             }
             if (!addressText) {
               const parts = [
@@ -359,13 +513,15 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             const geocoded = await geocodeAddress(addressText);
             if (geocoded) {
               destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-              console.log('[START-TRAVEL] Geocoded booking address to destination:', geocoded.latitude, geocoded.longitude);
+              destinationSource = 'booking.address (geocoded)';
+              console.log(`[START-TRAVEL] Geocoded booking address to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
             }
           }
         }
 
         if (!destinationLocation && uatMode) {
           destinationLocation = { latitude: 19.0760, longitude: 72.8777 };
+          destinationSource = 'UAT mock';
           console.log('[START-TRAVEL] UAT Mode: Using mock destination');
         }
 
@@ -373,10 +529,24 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           return c.json({ error: 'No destination address configured for this booking' }, 400);
         }
 
-        // Start GPS tracking session
+        // ✅ CRITICAL: Log destination source and coordinates for debugging
+        console.log(`[START-TRAVEL] Final destination for booking ${bookingId}:`, {
+          source: destinationSource,
+          latitude: destinationLocation.latitude,
+          longitude: destinationLocation.longitude,
+          bookingId,
+          address_id: booking.address_id,
+          booking_latitude: booking.latitude,
+          booking_longitude: booking.longitude,
+          delivery_latitude: booking.delivery_latitude,
+          delivery_longitude: booking.delivery_longitude,
+        });
+
+        // ✅ CRITICAL FIX: Use booking.vendor_id for tracking session (not resolvedVendorId)
+        // The resolvedVendorId is for authorization only. The booking.vendor_id is the source of truth.
         const session = await startTracking(
           bookingId,
-          vendorId,
+          booking.vendor_id, // Use booking's vendor_id, not resolved vendorId
           staffId || null,
           vendorStartLocation,
           destinationLocation
@@ -411,7 +581,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             data: {
               bookingId,
               sessionId: session.id,
-              vendorId,
+              vendorId: resolvedVendorId,
               action: 'track_live',
             },
           });
@@ -871,24 +1041,43 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // ✅ FIXED: Strict OTP validation - must match actual OTP stored in booking
-      const expectedOtp = String(booking.otp_code || booking.completion_otp || booking.start_otp || '').trim();
+      // ✅ FIX: Get correct OTP based on action and service type (walker vs non-walker)
+      const otpAction = (action === 'end' ? 'complete' : action) as 'start' | 'complete';
+      const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, otpAction);
       const providedOtp = String(otp).trim();
       
       // Only validate if we have an expected OTP
-      if (!expectedOtp) {
+      if (!expectedOTP) {
         console.error(`❌ [OTP-VERIFY] No OTP found for booking ${bookingId}`);
         return c.json({ error: 'No OTP found for this booking. Please contact support.', verified: false }, 400);
       }
       
-      if (expectedOtp !== providedOtp) {
-        console.error(`❌ [OTP-VERIFY] Invalid OTP. Expected: "${expectedOtp}", Got: "${providedOtp}"`);
+      if (expectedOTP !== providedOtp) {
+        console.error(`❌ [OTP-VERIFY] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOtp}" (Walker: ${isWalkerService}, Action: ${action})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
+      }
+
+      // ✅ Mark end OTP as used if it's a walker service completing
+      if (isWalkerService && (action === 'complete' || action === 'end')) {
+        try {
+          await update('otp_tokens',
+            { 
+              'metadata->>bookingId': bookingId,
+              'metadata->>action': 'end',
+              is_used: false
+            },
+            { is_used: true }
+          );
+          console.log(`✅ [OTP-VERIFY] Marked end OTP as used for walker service`);
+        } catch (error: any) {
+          console.warn(`⚠️ [OTP-VERIFY] Failed to mark end OTP as used:`, error);
+          // Non-critical, continue
+        }
       }
 
       // Update booking based on action
       let newStatus = booking.status;
-      if (action === 'complete') {
+      if (action === 'complete' || action === 'end') {
         newStatus = 'completed';
         await update('bookings', { id: bookingId }, {
           status: 'completed',
@@ -1055,18 +1244,38 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // ✅ FIXED: Strict OTP validation - must match actual OTP stored in booking
-      const expectedOtp = String(booking.otp_code || booking.completion_otp || booking.start_otp || '').trim();
+      // ✅ FIX: Get correct OTP based on action and service type (walker vs non-walker)
+      // Default to 'complete' if action not specified
+      const otpAction = (action === 'end' ? 'complete' : (action || 'complete')) as 'start' | 'complete';
+      const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, otpAction);
       const providedOtp = String(otp).trim();
       
-      if (!expectedOtp) {
+      if (!expectedOTP) {
         console.error(`❌ [VERIFY-OTP] No OTP found for booking ${bookingId}`);
         return c.json({ error: 'No OTP found for this booking', verified: false }, 400);
       }
       
-      if (expectedOtp !== providedOtp) {
-        console.error(`❌ [VERIFY-OTP] Invalid OTP. Expected: "${expectedOtp}", Got: "${providedOtp}"`);
+      if (expectedOTP !== providedOtp) {
+        console.error(`❌ [VERIFY-OTP] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOtp}" (Walker: ${isWalkerService}, Action: ${action || 'complete'})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
+      }
+
+      // ✅ Mark end OTP as used if it's a walker service completing
+      if (isWalkerService && (action === 'complete' || action === 'end' || !action)) {
+        try {
+          await update('otp_tokens',
+            { 
+              'metadata->>bookingId': bookingId,
+              'metadata->>action': 'end',
+              is_used: false
+            },
+            { is_used: true }
+          );
+          console.log(`✅ [VERIFY-OTP] Marked end OTP as used for walker service`);
+        } catch (error: any) {
+          console.warn(`⚠️ [VERIFY-OTP] Failed to mark end OTP as used:`, error);
+          // Non-critical, continue
+        }
       }
 
       return c.json({

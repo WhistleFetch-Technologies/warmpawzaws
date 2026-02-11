@@ -251,8 +251,8 @@ export function CustomerHomeComplete({
           vendorPhone: session.vendorPhone,
           serviceName: session.serviceName,
           petName: session.petName,
-          eta: session.eta || 15,
-          distance: session.distance || undefined,
+          eta: Number(session.eta || 15),
+          distance: session.distance !== undefined && session.distance !== null ? Number(session.distance) : undefined,
           status: session.status as TrackingStatus,
           serviceStyle: (session as any).serviceStyle || 'at_home', // ✅ Include service style
           meetingId: (session as any).meetingId, // ✅ Include meeting ID for tele
@@ -264,8 +264,8 @@ export function CustomerHomeComplete({
       if (vendorOnTheWay?.bookingId === session.bookingId) {
         setVendorOnTheWay((prev) => prev ? {
           ...prev,
-          eta: session.eta || prev.eta,
-          distance: session.distance ?? prev.distance,
+          eta: Number(session.eta || prev.eta),
+          distance: session.distance !== undefined && session.distance !== null ? Number(session.distance) : prev.distance,
           status: session.status as TrackingStatus,
           serviceStyle: (session as any).serviceStyle || prev.serviceStyle, // ✅ Preserve/update service style
           meetingId: (session as any).meetingId || prev.meetingId, // ✅ Preserve meeting ID
@@ -800,8 +800,8 @@ export function CustomerHomeComplete({
               vendorPhone: onWayBooking.vendorPhone || onWayBooking.staffPhone,
               serviceName: onWayBooking.serviceName || onWayBooking.service_name || 'Service',
               petName: onWayBooking.petName || onWayBooking.pet_name,
-              eta: onWayBooking.eta_minutes || onWayBooking.eta || 15,
-              distance: onWayBooking.distance_km || onWayBooking.distance,
+              eta: Number(onWayBooking.eta_minutes || onWayBooking.eta || 15),
+              distance: onWayBooking.distance_km || onWayBooking.distance ? Number(onWayBooking.distance_km || onWayBooking.distance) : undefined,
               status: (onWayBooking.status === 'arrived' ? 'arrived' : 'en_route') as TrackingStatus,
               serviceStyle: onWayBooking.serviceStyle || onWayBooking.service_style || 'at_home', // ✅ Include service style
               meetingId: onWayBooking.meetingId || onWayBooking.meeting_id, // ✅ Include meeting ID for tele

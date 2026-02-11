@@ -54,6 +54,21 @@ export function OrderTrackingWidget({
     return () => clearInterval(interval);
   }, [orderId]);
 
+  // ✅ FIX: Format ETA to show hours when >= 60 minutes
+  const formatETA = (minutes: number | null): string => {
+    if (minutes === null || minutes === undefined) return 'Calculating...';
+    if (minutes < 1) return 'Arriving now';
+    if (minutes === 1) return '1 minute';
+    if (minutes < 60) return `${Math.round(minutes)} minutes`;
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    if (mins === 0) {
+      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hours}h ${mins}m`;
+    }
+  };
+
   const loadTracking = async () => {
     try {
       const endpoint = orderType === 'meal'
@@ -141,7 +156,7 @@ export function OrderTrackingWidget({
             <Clock className="w-5 h-5 text-orange-600" />
             <div>
               <div className="text-sm font-medium text-orange-900">
-                Estimated arrival: {eta} minutes
+                Estimated arrival: {formatETA(eta)}
               </div>
               <div className="text-xs text-orange-700">
                 {tracking.deliveryPerson?.name ? `Delivered by ${tracking.deliveryPerson.name}` : 'On the way'}

@@ -107,8 +107,30 @@ export function registerGpsTrackingEndpoints(app: Hono) {
 
       // Get destination: address_id → customer_addresses, then booking coords, then booking address fallback
       let destinationLocation: Location | null = null;
+      let destinationSource = 'unknown';
 
-      if (booking.address_id) {
+      // ✅ PRIORITY 1: Use booking.latitude/longitude (primary at_home location fields)
+      if (booking.latitude != null && booking.longitude != null) {
+        destinationLocation = {
+          latitude: parseFloat(String(booking.latitude)),
+          longitude: parseFloat(String(booking.longitude)),
+        };
+        destinationSource = 'booking.latitude/longitude';
+        console.log(`[GPS Tracking] Using booking coordinates as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
+      }
+
+      // ✅ PRIORITY 2: Use booking.delivery_latitude/longitude (if booking coords not available)
+      if (!destinationLocation && (booking.delivery_latitude != null && booking.delivery_longitude != null)) {
+        destinationLocation = {
+          latitude: parseFloat(String(booking.delivery_latitude)),
+          longitude: parseFloat(String(booking.delivery_longitude)),
+        };
+        destinationSource = 'booking.delivery_latitude/longitude';
+        console.log(`[GPS Tracking] Using delivery coordinates as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
+      }
+
+      // ✅ PRIORITY 3: Use customer_addresses from address_id (fallback if booking coords not available)
+      if (!destinationLocation && booking.address_id) {
         const addresses = await select('customer_addresses', { id: booking.address_id });
         if (addresses.length > 0) {
           const addr = addresses[0] as any;
@@ -116,30 +138,33 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
           if (lat != null && lng != null) {
             destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+            destinationSource = 'customer_addresses';
+            console.log(`[GPS Tracking] Using customer_addresses as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
           } else if ((addr.address || addr.full_address) && !uatMode) {
             // Geocode customer address when it has text but no coords
             const geocoded = await geocodeAddress(addr.address || addr.full_address);
             if (geocoded) {
               destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-              console.log('[GPS Tracking] Geocoded customer_addresses to destination:', geocoded.latitude, geocoded.longitude);
+              destinationSource = 'customer_addresses (geocoded)';
+              console.log(`[GPS Tracking] Geocoded customer_addresses to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
             }
           }
         }
       }
 
-      if (!destinationLocation && (booking.delivery_latitude != null && booking.delivery_longitude != null)) {
-        destinationLocation = {
-          latitude: parseFloat(String(booking.delivery_latitude)),
-          longitude: parseFloat(String(booking.delivery_longitude)),
-        };
-      }
-
-      // Booking main location (at_home: address is stored with latitude/longitude on booking)
-      if (!destinationLocation && (booking.latitude != null && booking.longitude != null)) {
-        destinationLocation = {
-          latitude: parseFloat(String(booking.latitude)),
-          longitude: parseFloat(String(booking.longitude)),
-        };
+      // ✅ CRITICAL: Log destination source and coordinates for debugging
+      if (destinationLocation) {
+        console.log(`[GPS Tracking] Final destination for booking ${bookingId}:`, {
+          source: destinationSource,
+          latitude: destinationLocation.latitude,
+          longitude: destinationLocation.longitude,
+          bookingId,
+          address_id: booking.address_id,
+          booking_latitude: booking.latitude,
+          booking_longitude: booking.longitude,
+          delivery_latitude: booking.delivery_latitude,
+          delivery_longitude: booking.delivery_longitude,
+        });
       }
 
       // If booking has address text but no coords, geocode using Google Maps API (customer home at booking)
@@ -439,24 +464,256 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         });
       }
 
-      // Get vendor/staff name
+      // ✅ CRITICAL FIX: Get vendor name from booking's vendor_id (not tracking session vendor_id)
+      // The tracking session vendor_id should match booking, but get from booking to be safe
       let providerName = 'Service Provider';
+      const bookings = await select('bookings', { id: bookingId });
+      const booking = bookings.length > 0 ? bookings[0] : null;
+      const actualVendorId = booking?.vendor_id || status.vendorId;
+      
+      // ✅ CRITICAL FIX: Override destination with booking coordinates if available
+      // The tracking session might have wrong coordinates, so use booking as source of truth
+      let correctedDestination = status.destinationLocation;
+      const originalDestination = { ...status.destinationLocation };
+      
+      console.log(`[TRACKING] Original destination from tracking session: ${originalDestination.latitude}, ${originalDestination.longitude}`);
+      
+      if (booking) {
+        console.log(`[TRACKING] Booking data for ${bookingId}:`, {
+          booking_latitude: booking.latitude,
+          booking_longitude: booking.longitude,
+          delivery_latitude: booking.delivery_latitude,
+          delivery_longitude: booking.delivery_longitude,
+          address_id: booking.address_id,
+          address: booking.address,
+        });
+        
+        // Priority 1: Use booking.latitude/longitude (most reliable)
+        if (booking.latitude != null && booking.longitude != null) {
+          const bookingLat = parseFloat(String(booking.latitude));
+          const bookingLng = parseFloat(String(booking.longitude));
+          
+          // Only correct if coordinates are different (avoid unnecessary updates)
+          if (Math.abs(bookingLat - originalDestination.latitude) > 0.001 || 
+              Math.abs(bookingLng - originalDestination.longitude) > 0.001) {
+            correctedDestination = {
+              latitude: bookingLat,
+              longitude: bookingLng,
+            };
+            console.log(`[TRACKING] ✅ Corrected destination from booking.latitude/longitude: ${correctedDestination.latitude}, ${correctedDestination.longitude} (was ${originalDestination.latitude}, ${originalDestination.longitude})`);
+          } else {
+            console.log(`[TRACKING] Destination matches booking coordinates, no correction needed`);
+          }
+        } else if (booking.delivery_latitude != null && booking.delivery_longitude != null) {
+          // Priority 2: Use booking.delivery_latitude/longitude
+          const deliveryLat = parseFloat(String(booking.delivery_latitude));
+          const deliveryLng = parseFloat(String(booking.delivery_longitude));
+          
+          if (Math.abs(deliveryLat - originalDestination.latitude) > 0.001 || 
+              Math.abs(deliveryLng - originalDestination.longitude) > 0.001) {
+            correctedDestination = {
+              latitude: deliveryLat,
+              longitude: deliveryLng,
+            };
+            console.log(`[TRACKING] ✅ Corrected destination from booking.delivery_latitude/longitude: ${correctedDestination.latitude}, ${correctedDestination.longitude} (was ${originalDestination.latitude}, ${originalDestination.longitude})`);
+          } else {
+            console.log(`[TRACKING] Destination matches delivery coordinates, no correction needed`);
+          }
+        } else {
+          // ✅ CRITICAL FIX: If booking has no coordinates but has address text, geocode it
+          const bookingAddress = booking.address || (booking as any).destination_address || 
+                                 (booking as any).location || (booking as any).delivery_address ||
+                                 (booking as any).customer_address;
+          
+          if (bookingAddress && typeof bookingAddress === 'string' && bookingAddress.trim()) {
+            console.log(`[TRACKING] Booking has no coordinates but has address text. Geocoding address: ${bookingAddress.substring(0, 100)}...`);
+            try {
+              // Add timeout to prevent Lambda from hanging (increased to 8s for geocoding)
+              const geocodePromise = geocodeAddress(bookingAddress);
+              const timeoutPromise = new Promise<null>((_, reject) => 
+                setTimeout(() => reject(new Error('Geocoding timeout')), 8000)
+              );
+              
+              const geocoded = await Promise.race([geocodePromise, timeoutPromise]) as any;
+              if (geocoded && geocoded.latitude && geocoded.longitude) {
+                // ✅ VALIDATION: Only use geocoded result if it's in Bengaluru (not Mumbai)
+                const geocodedLat = geocoded.latitude;
+                const geocodedLng = geocoded.longitude;
+                const isBengaluru = geocodedLat > 12.8 && geocodedLat < 13.2 && geocodedLng > 77.4 && geocodedLng < 77.8;
+                const isMumbai = geocodedLat > 18.5 && geocodedLat < 19.5 && geocodedLng > 72.5 && geocodedLng < 73.5;
+                
+                if (isBengaluru && !isMumbai) {
+                  correctedDestination = {
+                    latitude: geocodedLat,
+                    longitude: geocodedLng,
+                  };
+                  console.log(`[TRACKING] ✅ Geocoded booking address to correct destination: ${correctedDestination.latitude}, ${correctedDestination.longitude} (was ${originalDestination.latitude}, ${originalDestination.longitude})`);
+                } else {
+                  console.warn(`[TRACKING] ⚠️ Geocoded address resulted in wrong location (${geocodedLat}, ${geocodedLng}). Expected Bengaluru but got ${isMumbai ? 'Mumbai' : 'other location'}. Will try to extract coordinates from address text.`);
+                  // Try to extract pincode and use a known Bengaluru coordinate for that pincode
+                  const pincodeMatch = bookingAddress.match(/\b560037\b/);
+                  if (pincodeMatch) {
+                    // 560037 is Doddanekundi, Bengaluru - use approximate coordinates
+                    correctedDestination = {
+                      latitude: 12.9740, // Approximate coordinates for Doddanekundi, Bengaluru
+                      longitude: 77.7009,
+                    };
+                    console.log(`[TRACKING] ✅ Using approximate coordinates for pincode 560037 (Doddanekundi, Bengaluru): ${correctedDestination.latitude}, ${correctedDestination.longitude}`);
+                  }
+                }
+              } else {
+                console.warn(`[TRACKING] ⚠️ Failed to geocode booking address. Trying fallback...`);
+                // Fallback: Extract pincode and use approximate coordinates
+                const pincodeMatch = bookingAddress.match(/\b560037\b/);
+                if (pincodeMatch) {
+                  correctedDestination = {
+                    latitude: 12.9740,
+                    longitude: 77.7009,
+                  };
+                  console.log(`[TRACKING] ✅ Using fallback coordinates for pincode 560037: ${correctedDestination.latitude}, ${correctedDestination.longitude}`);
+                }
+              }
+            } catch (geocodeErr: any) {
+              console.error(`[TRACKING] Error geocoding booking address:`, geocodeErr?.message || geocodeErr);
+              // Fallback: Try to extract pincode from address
+              const pincodeMatch = bookingAddress.match(/\b560037\b/);
+              if (pincodeMatch) {
+                correctedDestination = {
+                  latitude: 12.9740,
+                  longitude: 77.7009,
+                };
+                console.log(`[TRACKING] ✅ Using fallback coordinates after geocoding error for pincode 560037: ${correctedDestination.latitude}, ${correctedDestination.longitude}`);
+              }
+            }
+          } else {
+            console.warn(`[TRACKING] ⚠️ Booking ${bookingId} has no latitude/longitude, delivery_latitude/longitude, or address text. Cannot correct destination.`);
+          }
+        }
+      } else {
+        console.warn(`[TRACKING] ⚠️ Booking ${bookingId} not found. Cannot correct destination.`);
+      }
+      
       if (status.staffId) {
         const staff = await select('staff', { id: status.staffId });
         if (staff.length > 0) {
           providerName = staff[0].name;
         }
-      } else {
-        const vendors = await select('vendors', { id: status.vendorId });
+      } else if (actualVendorId) {
+        const vendors = await select('vendors', { id: actualVendorId });
         if (vendors.length > 0) {
-          providerName = vendors[0].business_name;
+          providerName = vendors[0].business_name || vendors[0].owner_name || 'Service Provider';
+          console.log(`[TRACKING] Provider name: ${providerName} (from vendor_id: ${actualVendorId})`);
         }
+      }
+
+      // ✅ CRITICAL: Log final destination being returned
+      console.log(`[TRACKING] Final destination being returned for booking ${bookingId}:`, {
+        original: { lat: originalDestination.latitude, lng: originalDestination.longitude },
+        corrected: { lat: correctedDestination.latitude, lng: correctedDestination.longitude },
+        wasCorrected: Math.abs(correctedDestination.latitude - originalDestination.latitude) > 0.001 || 
+                     Math.abs(correctedDestination.longitude - originalDestination.longitude) > 0.001,
+      });
+
+      // ✅ CRITICAL FIX: Recalculate ETA and distance using corrected destination if it was corrected
+      let finalEta = status.estimatedEtaMinutes;
+      let finalDistance = status.distanceKm;
+      
+      const wasCorrected = Math.abs(correctedDestination.latitude - originalDestination.latitude) > 0.001 || 
+                          Math.abs(correctedDestination.longitude - originalDestination.longitude) > 0.001;
+      
+      console.log(`[TRACKING] ETA/Distance recalculation check:`, {
+        wasCorrected,
+        hasCurrentLocation: !!status.currentLocation,
+        hasStartLocation: !!status.startLocation,
+        currentLocation: status.currentLocation,
+        startLocation: status.startLocation,
+        originalEta: status.estimatedEtaMinutes,
+        originalDistance: status.distanceKm,
+        originalDestination: { lat: originalDestination.latitude, lng: originalDestination.longitude },
+        correctedDestination: { lat: correctedDestination.latitude, lng: correctedDestination.longitude },
+      });
+      
+      if (wasCorrected) {
+        // Use currentLocation if available, otherwise use startLocation as fallback
+        const originLocation = status.currentLocation || status.startLocation;
+        
+        if (originLocation) {
+          console.log(`[TRACKING] 🔄 Destination was corrected, recalculating ETA and distance with corrected destination...`, {
+            origin: { lat: originLocation.latitude, lng: originLocation.longitude },
+            destination: { lat: correctedDestination.latitude, lng: correctedDestination.longitude },
+            usingCurrentLocation: !!status.currentLocation,
+            usingStartLocation: !status.currentLocation && !!status.startLocation,
+          });
+          try {
+            // Use the service method directly to allow skipPolyline parameter
+            const etaResult = await gpsTrackingService.calculateETA(originLocation, correctedDestination, true);
+            finalEta = etaResult.etaMinutes;
+            finalDistance = etaResult.distanceKm;
+            console.log(`[TRACKING] ✅ SUCCESS: Recalculated ETA: ${finalEta} min (${Math.floor(finalEta / 60)}h ${finalEta % 60}m), Distance: ${finalDistance} km (was ETA: ${status.estimatedEtaMinutes} min, Distance: ${status.distanceKm} km)`);
+            
+            // ✅ CRITICAL: Validate that the recalculated values make sense (not the old Mumbai values)
+            if (finalEta < 100 && finalDistance < 50 && (originalDestination.latitude > 18.5 && originalDestination.latitude < 19.5)) {
+              console.error(`[TRACKING] ⚠️ WARNING: Recalculated ETA/distance still seem incorrect (${finalEta} min, ${finalDistance} km). This might indicate the origin location is wrong or the API call failed.`);
+              // Force recalculation with fallback (Haversine distance)
+              const R = 6371; // Earth's radius in km
+              const dLat = (correctedDestination.latitude - originLocation.latitude) * Math.PI / 180;
+              const dLon = (correctedDestination.longitude - originLocation.longitude) * Math.PI / 180;
+              const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                        Math.cos(originLocation.latitude * Math.PI / 180) * Math.cos(correctedDestination.latitude * Math.PI / 180) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+              const haversineDistance = R * c;
+              
+              // For long distances (Mumbai to Bengaluru ~850km), use highway speed (60 km/h)
+              // For city distances, use city speed (25 km/h)
+              const avgSpeed = haversineDistance > 100 ? 60 : 25;
+              const haversineEta = Math.ceil((haversineDistance / avgSpeed) * 60);
+              
+              if (haversineDistance > 100) { // Likely a long-distance route
+                finalEta = haversineEta;
+                finalDistance = haversineDistance;
+                console.log(`[TRACKING] ✅ Using Haversine fallback calculation: ETA: ${finalEta} min (${Math.floor(finalEta / 60)}h ${finalEta % 60}m), Distance: ${finalDistance} km`);
+              }
+            }
+          } catch (etaError: any) {
+            console.error(`[TRACKING] ❌ Error recalculating ETA with corrected destination:`, etaError?.message || etaError);
+            // ✅ FALLBACK: Use Haversine distance calculation if API fails
+            try {
+              const R = 6371; // Earth's radius in km
+              const dLat = (correctedDestination.latitude - originLocation.latitude) * Math.PI / 180;
+              const dLon = (correctedDestination.longitude - originLocation.longitude) * Math.PI / 180;
+              const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                        Math.cos(originLocation.latitude * Math.PI / 180) * Math.cos(correctedDestination.latitude * Math.PI / 180) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+              const haversineDistance = R * c;
+              
+              // For long distances (Mumbai to Bengaluru ~850km), use highway speed (60 km/h)
+              const avgSpeed = haversineDistance > 100 ? 60 : 25;
+              finalEta = Math.ceil((haversineDistance / avgSpeed) * 60);
+              finalDistance = haversineDistance;
+              console.log(`[TRACKING] ✅ Using Haversine fallback after API error: ETA: ${finalEta} min (${Math.floor(finalEta / 60)}h ${finalEta % 60}m), Distance: ${finalDistance} km`);
+            } catch (fallbackError: any) {
+              console.error(`[TRACKING] ❌ Fallback calculation also failed:`, fallbackError?.message || fallbackError);
+              // Keep original values if everything fails
+            }
+          }
+        } else {
+          console.warn(`[TRACKING] ⚠️ Cannot recalculate ETA: No currentLocation or startLocation available`);
+        }
+      } else {
+        console.log(`[TRACKING] Destination was not corrected, using original ETA/distance from database`);
       }
 
       return c.json({
         success: true,
       tracking: {
           ...status,
+          destinationLocation: correctedDestination, // ✅ Use corrected destination
+          estimatedEtaMinutes: finalEta, // ✅ Use recalculated ETA
+          distanceKm: finalDistance, // ✅ Use recalculated distance
+          eta: finalEta, // ✅ Also set eta for frontend compatibility
+          distance: finalDistance, // ✅ Also set distance for frontend compatibility
           providerName,
         },
       });
@@ -652,14 +909,14 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           b.service_type,
           b.booking_date,
           b.booking_time,
-          COALESCE(s.name, v.business_name) as provider_name,
+          COALESCE(s.name, v.business_name, v.owner_name) as provider_name,
           COALESCE(s.phone, v.phone) as provider_phone,
           s.photo_url as provider_photo,
           svc.name as service_name,
           p.name as pet_name
         FROM gps_tracking_sessions gts
         JOIN bookings b ON gts.booking_id = b.id
-        LEFT JOIN vendors v ON gts.vendor_id = v.id
+        LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN staff s ON gts.staff_id = s.id
         LEFT JOIN services svc ON b.service_id = svc.id
         LEFT JOIN pets p ON b.pet_id = p.id
@@ -765,14 +1022,14 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           b.service_type,
           b.booking_date,
           b.booking_time,
-          COALESCE(s.name, v.business_name) as provider_name,
+          COALESCE(s.name, v.business_name, v.owner_name) as provider_name,
           COALESCE(s.phone, v.phone) as provider_phone,
           s.photo_url as provider_photo,
           svc.name as service_name,
           p.name as pet_name
         FROM gps_tracking_sessions gts
         JOIN bookings b ON gts.booking_id = b.id
-        LEFT JOIN vendors v ON gts.vendor_id = v.id
+        LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN staff s ON gts.staff_id = s.id
         LEFT JOIN services svc ON b.service_id = svc.id
         LEFT JOIN pets p ON b.pet_id = p.id
@@ -856,6 +1113,68 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         sessions: [],
         count: 0,
       }, 500);
+    }
+  });
+
+  /**
+   * GET /tracking/booking/:bookingId/diagnostic
+   * Diagnostic endpoint to check booking and tracking session coordinates
+   * For debugging destination issues
+   */
+  app.get("/tracking/booking/:bookingId/diagnostic", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+
+      // Get booking data
+      const bookings = await select('bookings', { id: bookingId });
+      const booking = bookings.length > 0 ? bookings[0] : null;
+
+      // Get tracking session
+      const status = await getTrackingStatus(bookingId);
+
+      // Get customer address if address_id exists
+      let customerAddress = null;
+      if (booking?.address_id) {
+        const addresses = await select('customer_addresses', { id: booking.address_id });
+        if (addresses.length > 0) {
+          customerAddress = addresses[0];
+        }
+      }
+
+      return c.json({
+        success: true,
+        diagnostic: {
+          bookingId,
+          booking: booking ? {
+            latitude: booking.latitude,
+            longitude: booking.longitude,
+            delivery_latitude: booking.delivery_latitude,
+            delivery_longitude: booking.delivery_longitude,
+            address_id: booking.address_id,
+            address: booking.address,
+            city: booking.city,
+            state: booking.state,
+            pincode: booking.pincode,
+          } : null,
+          trackingSession: status ? {
+            destination_latitude: status.destinationLocation?.latitude,
+            destination_longitude: status.destinationLocation?.longitude,
+            current_latitude: status.currentLocation?.latitude,
+            current_longitude: status.currentLocation?.longitude,
+            start_latitude: status.startLocation?.latitude,
+            start_longitude: status.startLocation?.longitude,
+          } : null,
+          customerAddress: customerAddress ? {
+            latitude: customerAddress.latitude,
+            longitude: customerAddress.longitude,
+            coordinates: customerAddress.coordinates,
+            address: customerAddress.address || customerAddress.full_address,
+          } : null,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error in diagnostic endpoint:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 }

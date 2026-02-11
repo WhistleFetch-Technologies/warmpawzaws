@@ -46,24 +46,72 @@ export function EnhancedAddressAutocomplete({
   componentRestrictions = { country: 'in' },
 }: EnhancedAddressAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<any>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const autocompleteServiceRef = useRef<any>(null);
+  const placesServiceRef = useRef<any>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [predictions, setPredictions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch Google Maps API key from backend (AWS Secrets Manager)
   useEffect(() => {
     const fetchApiKey = async () => {
+      console.log('🔑 [ADDRESS-AUTOCOMPLETE] Fetching Google Maps API key from backend...');
+      setIsLoading(true);
+      const timeout = new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('API key fetch timed out after 15 seconds')), 15000)
+      );
+
       try {
-        const response = await apiClient.get<{ apiKey: string }>('/config/google-maps-key');
+        const response = await Promise.race([
+          apiClient.get<{ apiKey: string; error?: string; hint?: string }>('/config/google-maps-key'),
+          timeout
+        ]) as { apiKey?: string; error?: string; hint?: string } | null;
+        
+        if (response?.error) {
+          console.error('❌ [ADDRESS-AUTOCOMPLETE] Backend returned error for API key:', response.error, response.hint);
+          if (response.error.includes('Invalid API key')) {
+            setError('Invalid Google Maps API key configured. Please contact support.');
+          } else {
+            setError(response.error);
+          }
+          setApiKey(null);
+          setIsLoading(false);
+          return;
+        }
+
         if (response?.apiKey) {
+          // Basic validation: Google Maps API keys start with "AIza"
+          if (!response.apiKey.startsWith('AIza')) {
+            console.error('❌ [ADDRESS-AUTOCOMPLETE] Invalid Google Maps API key format (does not start with AIza):', response.apiKey);
+            setError('Invalid Google Maps API key format. Please contact support.');
+            setApiKey(null);
+            setIsLoading(false);
+            return;
+          }
+          console.log('✅ [ADDRESS-AUTOCOMPLETE] Google Maps API key fetched successfully.');
           setApiKey(response.apiKey);
         } else {
-          console.warn('Google Maps API key not available from backend');
-          setIsLoading(false);
+          console.warn('⚠️ [ADDRESS-AUTOCOMPLETE] Google Maps API key not available from backend response.');
+          setError('Google Maps API key not configured. Autocomplete disabled.');
+          setApiKey(null);
         }
-      } catch (error) {
-        console.warn('Failed to fetch Google Maps API key:', error);
+      } catch (error: any) {
+        console.error('❌ [ADDRESS-AUTOCOMPLETE] Failed to fetch Google Maps API key:', error);
+        setError(error.message || 'Failed to load Google Maps API key.');
+        setApiKey(null);
+        
+        // Try fallback to environment variable if backend fails
+        const envApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+        if (envApiKey) {
+          console.log('✅ [ADDRESS-AUTOCOMPLETE] Using fallback API key from environment variable');
+          setApiKey(envApiKey);
+        }
+      } finally {
         setIsLoading(false);
       }
     };
@@ -71,172 +119,227 @@ export function EnhancedAddressAutocomplete({
     fetchApiKey();
   }, []);
 
-  // Load Google Maps script
+  // Check if Google Maps is already loaded (from other components)
   useEffect(() => {
-    if (!apiKey) return;
-
-    // Check if Google Maps is already loaded
     const win = window as any;
     if (win.google && win.google.maps && win.google.maps.places) {
-      setIsLoaded(true);
-      setIsLoading(false);
+      if (!autocompleteServiceRef.current) {
+        initServices();
+      }
+    }
+  }, []);
+
+  // Load Google Maps script and initialize services
+  useEffect(() => {
+    if (!apiKey) {
       return;
     }
 
-    // Check if script is already being loaded
-    if (document.querySelector(`script[src*="maps.googleapis.com"]`)) {
-      // Wait for script to load
+    const win = window as any;
+    if (win.google && win.google.maps && win.google.maps.places) {
+      if (!autocompleteServiceRef.current) {
+        initServices();
+      }
+      return;
+    }
+
+    const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
+    if (existingScript) {
       const checkInterval = setInterval(() => {
         if (win.google && win.google.maps && win.google.maps.places) {
-          setIsLoaded(true);
-          setIsLoading(false);
+          if (!autocompleteServiceRef.current) {
+            initServices();
+          }
           clearInterval(checkInterval);
         }
       }, 100);
       return () => clearInterval(checkInterval);
     }
 
-    // Load Google Maps script
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      setIsLoaded(true);
-      setIsLoading(false);
+      if (!autocompleteServiceRef.current) {
+        initServices();
+      }
     };
-    script.onerror = () => {
-      console.error('Failed to load Google Maps script');
+    script.onerror = (e) => {
+      setError('Failed to load Google Maps. Check your network connection.');
       setIsLoading(false);
     };
     document.head.appendChild(script);
-
-    return () => {
-      // Cleanup: remove script if component unmounts
-      const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
-      if (existingScript && existingScript.parentNode) {
-        existingScript.parentNode.removeChild(existingScript);
-      }
-    };
   }, [apiKey]);
 
-  // Initialize autocomplete
+  const initServices = () => {
+    const win = window as any;
+    if (win.google?.maps?.places) {
+      try {
+        if (!autocompleteServiceRef.current) {
+          autocompleteServiceRef.current = new win.google.maps.places.AutocompleteService();
+        }
+        if (!placesServiceRef.current) {
+          const dummyDiv = document.createElement('div');
+          placesServiceRef.current = new win.google.maps.places.PlacesService(dummyDiv);
+        }
+        setIsLoaded(true);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error initializing services:', error);
+      }
+    }
+  };
+
+  // Click outside to close dropdown
   useEffect(() => {
-    if (!isLoaded || !inputRef.current || disabled) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Search for predictions as user types
+  const searchPredictions = (query: string) => {
+    if (!autocompleteServiceRef.current) {
+      // Try to initialize services if not ready
+      const win = window as any;
+      if (win.google?.maps?.places && !autocompleteServiceRef.current) {
+        initServices();
+        // Retry after a short delay
+        setTimeout(() => {
+          if (autocompleteServiceRef.current && query.length >= 2) {
+            searchPredictions(query);
+          }
+        }, 100);
+      }
+      return;
+    }
+
+    if (query.length < 2) {
+      setPredictions([]);
+      setShowSuggestions(false);
+      return;
+    }
 
     try {
-      // Create autocomplete instance
-      const win = window as any;
-      const autocomplete = new win.google.maps.places.Autocomplete(
-        inputRef.current,
+      autocompleteServiceRef.current.getPlacePredictions(
         {
+          input: query,
           types,
           componentRestrictions,
-          fields: [
-            'address_components',
-            'formatted_address',
-            'geometry',
-            'name',
-            'place_id',
-          ],
+        },
+        (results: any[], status: any) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+            setPredictions(results.slice(0, 5)); // Limit to 5 suggestions
+            setShowSuggestions(true);
+          } else {
+            setPredictions([]);
+            setShowSuggestions(false);
+          }
         }
       );
+    } catch (error) {
+      setPredictions([]);
+      setShowSuggestions(false);
+    }
+  };
 
-      autocompleteRef.current = autocomplete;
+  // Handle input change with debounce
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    onChange(newValue);
 
-      // Helper: parse address_components into AddressComponents (including pincode)
-      const parseAddressComponents = (addressComponents: any[] | undefined, base: Partial<AddressComponents>): AddressComponents => {
-        const components: AddressComponents = { ...base };
-        addressComponents?.forEach((component: any) => {
-          const types = component.types;
-          if (types.includes('street_number')) {
-            components.street = (components.street || '') + component.long_name + ' ';
-          } else if (types.includes('route')) {
-            components.street = (components.street || '') + component.long_name;
-          } else if (types.includes('locality') || types.includes('sublocality')) {
-            components.city = component.long_name;
-          } else if (types.includes('administrative_area_level_1')) {
-            components.state = component.long_name;
-          } else if (types.includes('postal_code')) {
-            components.pincode = component.long_name;
-          } else if (types.includes('country')) {
-            components.country = component.long_name;
-          } else if (types.includes('point_of_interest') || types.includes('establishment')) {
-            components.landmark = component.long_name;
-          }
-        });
-        return components as AddressComponents;
-      };
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
 
-      // Handle place selection
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (!place.place_id) {
-          console.warn('No place_id for selected place');
+    debounceRef.current = setTimeout(() => {
+      // Ensure services are initialized
+      if (!autocompleteServiceRef.current) {
+        const win = window as any;
+        if (win.google?.maps?.places) {
+          initServices();
+        }
+      }
+      
+      // Search if services are ready
+      if (autocompleteServiceRef.current && newValue.length >= 2) {
+        searchPredictions(newValue);
+      } else if (newValue.length < 2) {
+        setPredictions([]);
+        setShowSuggestions(false);
+      }
+    }, 300);
+  };
+
+  // Handle place selection
+  const handleSelectPlace = (prediction: any) => {
+    setShowSuggestions(false);
+    onChange(prediction.description);
+
+    if (!placesServiceRef.current) return;
+
+    placesServiceRef.current.getDetails(
+      {
+        placeId: prediction.place_id,
+        fields: ['address_components', 'formatted_address', 'geometry', 'place_id'],
+      },
+      (place: any, status: any) => {
+        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
           return;
         }
+
         const lat = place.geometry?.location?.lat?.() ?? 0;
         const lng = place.geometry?.location?.lng?.() ?? 0;
-        const formattedAddress = place.formatted_address ?? '';
+        const formattedAddress = place.formatted_address ?? prediction.description;
 
-        const baseComponents: Partial<AddressComponents> = {
-          coordinates: { lat, lng },
-          formattedAddress,
-          lat,
-          lng,
-          placeId: place.place_id,
+        const parseAddressComponents = (addressComponents: any[] | undefined): AddressComponents => {
+          const components: AddressComponents = {
+            coordinates: { lat, lng },
+            formattedAddress,
+            lat,
+            lng,
+            placeId: place.place_id,
+          };
+
+          addressComponents?.forEach((component: any) => {
+            const types = component.types;
+            if (types.includes('street_number')) {
+              components.street = (components.street || '') + component.long_name + ' ';
+            } else if (types.includes('route')) {
+              components.street = (components.street || '') + component.long_name;
+            } else if (types.includes('locality') || types.includes('sublocality')) {
+              components.city = component.long_name;
+            } else if (types.includes('administrative_area_level_1')) {
+              components.state = component.long_name;
+            } else if (types.includes('postal_code')) {
+              components.pincode = component.long_name;
+            } else if (types.includes('country')) {
+              components.country = component.long_name;
+            } else if (types.includes('point_of_interest') || types.includes('establishment')) {
+              components.landmark = component.long_name;
+            }
+          });
+
+          return components;
         };
 
-        // getPlace() often omits address_components; fetch full details by place_id when missing or when pincode not found
-        const hasPincode = (comps: any[] | undefined) =>
-          comps?.some((c: any) => c.types?.includes('postal_code'));
-        if (place.address_components?.length && hasPincode(place.address_components)) {
-          const components = parseAddressComponents(place.address_components, baseComponents);
-          onChange(formattedAddress, components);
-          return;
-        }
+        const components = parseAddressComponents(place.address_components);
+        onChange(formattedAddress, components);
+      }
+    );
+  };
 
-        // Fetch place details to get address_components (including postal_code) when getPlace() omits them
-        const placesService = new win.google.maps.places.PlacesService(document.createElement('div'));
-        placesService.getDetails(
-          {
-            placeId: place.place_id,
-            fields: ['address_components', 'formatted_address', 'geometry'],
-          },
-          (details: any, status: string) => {
-            if (status !== win.google.maps.places.PlacesServiceStatus.OK || !details) {
-              const fallback = parseAddressComponents(place.address_components, baseComponents);
-              onChange(formattedAddress, fallback);
-              return;
-            }
-            const detailLat = details.geometry?.location?.lat?.() ?? lat;
-            const detailLng = details.geometry?.location?.lng?.() ?? lng;
-            const fullBase: Partial<AddressComponents> = {
-              ...baseComponents,
-              coordinates: { lat: detailLat, lng: detailLng },
-              lat: detailLat,
-              lng: detailLng,
-            };
-            const components = parseAddressComponents(
-              details.address_components ?? place.address_components,
-              fullBase
-            );
-            onChange(details.formatted_address ?? formattedAddress, components);
-          }
-        );
-      });
-
-      return () => {
-        if (autocompleteRef.current) {
-          win.google.maps.event.clearInstanceListeners(autocompleteRef.current);
-          autocompleteRef.current = null;
-        }
-      };
-    } catch (error) {
-      console.error('Error initializing Google Maps autocomplete:', error);
-      setIsLoading(false);
-    }
-  }, [isLoaded, disabled, onChange, types, componentRestrictions]);
 
   return (
     <div className={`relative ${className}`}>
@@ -246,7 +349,7 @@ export function EnhancedAddressAutocomplete({
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={handleInputChange}
           placeholder={!apiKey && !isLoading ? "Enter your full address" : placeholder}
           required={required}
           disabled={disabled}
@@ -263,10 +366,53 @@ export function EnhancedAddressAutocomplete({
           </div>
         )}
       </div>
+
+      {/* Suggestions Dropdown */}
+      {showSuggestions && predictions.length > 0 && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-[9999] w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl max-h-80 overflow-y-auto"
+        >
+          {predictions.map((prediction) => (
+            <button
+              key={prediction.place_id}
+              type="button"
+              onClick={() => handleSelectPlace(prediction)}
+              className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-start gap-3 border-b last:border-0 transition-colors"
+            >
+              <MapPin className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {prediction.structured_formatting?.main_text || prediction.description}
+                </p>
+                {prediction.structured_formatting?.secondary_text && (
+                  <p className="text-xs text-gray-500 truncate mt-0.5">
+                    {prediction.structured_formatting.secondary_text}
+                  </p>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* No Results */}
+      {showSuggestions && value.length >= 2 && predictions.length === 0 && isLoaded && (
+        <div className="absolute z-[9999] w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-center">
+          <p className="text-sm text-gray-500">No addresses found. Try a different search.</p>
+        </div>
+      )}
+
       {!apiKey && !isLoading && (
         <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
           <span className="text-amber-500">ℹ️</span>
           Type your address manually (autocomplete not available)
+        </p>
+      )}
+      {isLoading && (
+        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin text-[#FF8C42]" />
+          Loading address autocomplete...
         </p>
       )}
     </div>

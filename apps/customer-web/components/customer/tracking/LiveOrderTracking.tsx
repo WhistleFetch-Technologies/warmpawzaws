@@ -230,9 +230,14 @@ export function LiveOrderTracking({
   const formatETA = (minutes: number): string => {
     if (!minutes) return '--';
     if (minutes < 60) return `${Math.round(minutes)} min`;
+    // ✅ FIX: Show hours when >= 60 minutes
     const hrs = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
-    return `${hrs}h ${mins}m`;
+    if (mins === 0) {
+      return `${hrs} ${hrs === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hrs}h ${mins}m`;
+    }
   };
 
   if (loading) {

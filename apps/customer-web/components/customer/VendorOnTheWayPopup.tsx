@@ -20,13 +20,14 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   X, Navigation, Phone, Clock, MapPin, User, Car, 
   CheckCircle2, MessageSquare, Bell, ChevronUp, ChevronDown,
   Loader2, Video
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { apiClient } from '@/lib/api-client';
 
 export type TrackingStatus = 'en_route' | 'in_transit' | 'arriving' | 'arrived' | 'on_way';
 export type ServiceStyle = 'at_home' | 'at_center' | 'tele' | 'clinic';
@@ -67,6 +68,10 @@ export function VendorOnTheWayPopup({
   const [isVisible, setIsVisible] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [displayEta, setDisplayEta] = useState(booking.eta);
+  const [displayDistance, setDisplayDistance] = useState(booking.distance);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const initialEtaSet = useRef(false);
+  const initialDistanceSet = useRef(false);
 
   // ✅ Determine service type for appropriate action buttons
   const isTeleService = booking.serviceStyle === 'tele';
@@ -74,7 +79,7 @@ export function VendorOnTheWayPopup({
   
   // Determine if vendor has arrived
   const hasArrived = booking.status === 'arrived';
-  const isArriving = booking.status === 'arriving' || (booking.eta <= 2 && !hasArrived);
+  const isArriving = booking.status === 'arriving' || (displayEta <= 2 && !hasArrived);
 
   // Animate entrance
   useEffect(() => {
@@ -82,10 +87,89 @@ export function VendorOnTheWayPopup({
     return () => clearTimeout(timer);
   }, []);
 
-  // Update ETA display
+  // ✅ CRITICAL FIX: Poll tracking endpoint to get corrected ETA and distance
   useEffect(() => {
-    setDisplayEta(booking.eta);
+    // Only poll for home services (not tele consultations)
+    if (!isHomeService || hasArrived) {
+      console.log(`[VendorOnTheWayPopup] Skipping polling: isHomeService=${isHomeService}, hasArrived=${hasArrived}`);
+      return;
+    }
+
+    console.log(`[VendorOnTheWayPopup] Starting polling for booking ${booking.bookingId}`);
+
+    const pollTracking = async () => {
+      try {
+        const response = await apiClient.get<any>(`/tracking/booking/${booking.bookingId}`);
+        
+        if (response.success && response.tracking) {
+          const tracking = response.tracking;
+          
+          // ✅ Use corrected ETA and distance from tracking endpoint
+          const correctedEta = tracking.estimatedEtaMinutes ?? tracking.eta ?? null;
+          const correctedDistance = tracking.distanceKm ?? tracking.distance ?? null;
+          
+          console.log(`[VendorOnTheWayPopup] Polled tracking data:`, {
+            correctedEta,
+            correctedDistance,
+            currentDisplayEta: displayEta,
+            currentDisplayDistance: displayDistance,
+          });
+          
+          if (correctedEta !== null && correctedEta !== undefined) {
+            setDisplayEta((prevEta) => {
+              if (prevEta !== correctedEta) {
+                console.log(`[VendorOnTheWayPopup] ✅ Updated ETA: ${correctedEta} min (${Math.floor(correctedEta / 60)}h ${correctedEta % 60}m) (was ${prevEta} min)`);
+                return correctedEta;
+              }
+              return prevEta;
+            });
+          }
+          
+          if (correctedDistance !== null && correctedDistance !== undefined) {
+            setDisplayDistance((prevDistance) => {
+              if (prevDistance !== correctedDistance) {
+                console.log(`[VendorOnTheWayPopup] ✅ Updated Distance: ${correctedDistance} km (was ${prevDistance} km)`);
+                return correctedDistance;
+              }
+              return prevDistance;
+            });
+          }
+        } else {
+          console.warn(`[VendorOnTheWayPopup] No tracking data in response:`, response);
+        }
+      } catch (error) {
+        console.error('[VendorOnTheWayPopup] Error polling tracking:', error);
+      }
+    };
+
+    // Poll immediately, then every 5 seconds
+    pollTracking();
+    pollingRef.current = setInterval(pollTracking, 5000);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [booking.bookingId, isHomeService, hasArrived]);
+
+  // ✅ FIX: Only use props as initial values, don't override polling updates
+  // The polling will update displayEta/displayDistance with corrected values
+  // This useEffect only runs once on mount to initialize, not continuously
+  useEffect(() => {
+    if (!initialEtaSet.current && booking.eta) {
+      setDisplayEta(booking.eta);
+      initialEtaSet.current = true;
+    }
   }, [booking.eta]);
+
+  useEffect(() => {
+    if (!initialDistanceSet.current && booking.distance !== undefined && booking.distance !== null) {
+      setDisplayDistance(booking.distance);
+      initialDistanceSet.current = true;
+    }
+  }, [booking.distance]);
 
   // Auto minimize after delay (optional)
   useEffect(() => {
@@ -138,7 +222,15 @@ export function VendorOnTheWayPopup({
   const formatEta = (minutes: number) => {
     if (minutes < 1) return 'Less than 1 min';
     if (minutes === 1) return '1 min';
-    return `${Math.round(minutes)} mins`;
+    if (minutes < 60) return `${Math.round(minutes)} mins`;
+    // ✅ FIX: Show hours when >= 60 minutes
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = Math.round(minutes % 60);
+    if (remainingMinutes === 0) {
+      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hours}h ${remainingMinutes}m`;
+    }
   };
 
   // Get header gradient and status based on state
@@ -362,11 +454,11 @@ export function VendorOnTheWayPopup({
                     </p>
                   </div>
                 </div>
-                {booking.distance !== undefined && booking.distance !== null && (
+                {displayDistance !== undefined && displayDistance !== null && !isNaN(Number(displayDistance)) && (
                   <div className="text-right">
                     <div className="flex items-center gap-1 text-gray-500 text-sm">
                       <MapPin className="w-4 h-4" />
-                      <span>{booking.distance.toFixed(1)} km</span>
+                      <span>{Number(displayDistance).toFixed(1)} km</span>
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">away</p>
                   </div>

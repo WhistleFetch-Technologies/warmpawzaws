@@ -247,9 +247,14 @@ export function UnifiedAppointmentTracker({
   const formatETA = (minutes: number): string => {
     if (minutes < 1) return 'Arriving now';
     if (minutes < 60) return `${Math.round(minutes)} min`;
+    // ✅ FIX: Show hours when >= 60 minutes
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
-    return `${hours}h ${mins}m`;
+    if (mins === 0) {
+      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hours}h ${mins}m`;
+    }
   };
 
   // Filter out dismissed items

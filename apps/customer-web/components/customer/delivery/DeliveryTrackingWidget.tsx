@@ -210,9 +210,14 @@ export function DeliveryTrackingWidget({
     if (minutes < 1) return 'Arriving now';
     if (minutes === 1) return '1 min';
     if (minutes < 60) return `${Math.round(minutes)} mins`;
+    // ✅ FIX: Show hours when >= 60 minutes
     const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
+    const mins = Math.round(minutes % 60);
+    if (mins === 0) {
+      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    } else {
+      return `${hours}h ${mins}m`;
+    }
   };
 
   if (loading) {
