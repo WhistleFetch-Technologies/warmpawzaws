@@ -46,6 +46,40 @@ class CreateReviewHandler extends BaseHandler {
     }
 
     try {
+      const isUuid = (value?: string | null) =>
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+      // ✅ Resolve customerId: if phone passed (or customerId is phone), map to customers.id
+      let resolvedCustomerId: string | null = customerId || null;
+      if (resolvedCustomerId && !isUuid(resolvedCustomerId)) {
+        const customers = await select('customers', { phone: resolvedCustomerId });
+        resolvedCustomerId = customers.length > 0 ? customers[0].id : null;
+      }
+      if (!resolvedCustomerId && customerPhone) {
+        const customers = await select('customers', { phone: customerPhone });
+        resolvedCustomerId = customers.length > 0 ? customers[0].id : null;
+      }
+
+      // ✅ Resolve vendorId: if vendorId is vendor_identity id, map to vendors.id
+      let resolvedVendorId: string | null = vendorId;
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        const identities = await select('vendor_identity', { id: vendorId });
+        if (identities.length > 0 && identities[0]?.vendor_id) {
+          resolvedVendorId = identities[0].vendor_id;
+        } else {
+          const byVendorId = await query(
+            `SELECT vendor_id FROM vendor_identity WHERE vendor_id::text = $1 OR id::text = $1 LIMIT 1`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          resolvedVendorId = byVendorId.rows?.[0]?.vendor_id || resolvedVendorId;
+        }
+      }
+      if (!resolvedVendorId) {
+        return this.error('Vendor not found for review', 400);
+      }
+
       // Check if review already exists for this booking
       const existing = await select('reviews', { booking_id: bookingId });
       if (existing.length > 0) {
@@ -55,8 +89,8 @@ class CreateReviewHandler extends BaseHandler {
       // Create review – use only columns that exist in reviews table (comment, service_type, is_published)
       const [newReview] = await insert('reviews', {
         booking_id: bookingId,
-        vendor_id: vendorId,
-        customer_id: customerId || null,
+        vendor_id: resolvedVendorId,
+        customer_id: resolvedCustomerId || null,
         rating,
         comment: review || null,
         service_type: serviceStyle || 'at_center',
@@ -66,7 +100,7 @@ class CreateReviewHandler extends BaseHandler {
       });
 
       // Update vendor's average rating
-      await this.updateVendorRating(vendorId);
+      await this.updateVendorRating(resolvedVendorId);
 
       // Update staff's average rating if applicable
       if (staffId) {
@@ -287,8 +321,17 @@ class GetVendorReviewsHandler extends BaseHandler {
 
 class GetPendingReviewHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const customerId = context.event.pathParameters?.customerId;
-    const customerPhone = context.event.queryStringParameters?.phone;
+    let customerId = context.event.pathParameters?.customerId;
+    let customerPhone = context.event.queryStringParameters?.phone;
+
+    // ✅ If path param is a phone number, treat it as phone (not UUID)
+    const isUuid = (value?: string | null) =>
+      typeof value === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    if (customerId && !isUuid(customerId)) {
+      customerPhone = customerId;
+      customerId = undefined;
+    }
 
     if (!customerId && !customerPhone) {
       return this.error('Customer ID or phone is required', 400);

@@ -121,7 +121,12 @@ export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOr
   const showLabOrdersLink = isDiagnosticsCenter(vendorData) && onNavigateToOrders;
 
   return (
-    <CapabilityGate requireAny={['diagnostic_results', 'diagnostics', 'test_catalog']} showDisabledMessage disabledMessage="Diagnostic tests management is not available for your account">
+    <CapabilityGate
+      requireAny={['diagnostic_results', 'diagnostics', 'test_catalog']}
+      allowIfRoleContains="diagnostics,diagnostic,lab"
+      showDisabledMessage
+      disabledMessage="Diagnostic tests management is not available for your account"
+    >
       <div className="space-y-4 w-full max-w-[430px] mx-auto">
         {/* Header with Back Arrow */}
         <div className="flex items-center gap-3">

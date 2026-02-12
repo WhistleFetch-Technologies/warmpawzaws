@@ -56,7 +56,10 @@ const roleMappings: Record<string, string[]> = {
   'vet_solo': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
   'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
   'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
-  'diagnostics_center': ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+  // ✅ Diagnostics should NOT inherit vet services
+  'diagnostics_center': ['diagnostics_center', 'diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo', 'lab', 'lab_center'],
+  'diagnostics': ['diagnostics_center', 'diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo', 'lab', 'lab_center'],
+  'diagnostic_center': ['diagnostics_center', 'diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo', 'lab', 'lab_center'],
   
   // ✅ FIX: Nutritionist should ONLY see nutrition services, NOT vet services
   'nutritionist': ['nutritionist', 'pet_nutritionist'],
