@@ -19,6 +19,70 @@ import { getSecretJson } from './secrets-manager';
 
 export type KYCProvider = 'sandbox' | 'signzy' | 'idfy' | 'karza';
 
+// ============================================================================
+// ACCESS TOKEN MANAGEMENT (for Sandbox.co)
+// ============================================================================
+
+interface AccessTokenCache {
+  token: string;
+  expiresAt: number;
+}
+
+// In-memory cache for access tokens (valid for 24 hours, we refresh after 23 hours)
+let sandboxAccessTokenCache: AccessTokenCache | null = null;
+const TOKEN_REFRESH_BUFFER_MS = 60 * 60 * 1000; // Refresh 1 hour before expiry
+
+/**
+ * Get or refresh Sandbox.co access token
+ * Tokens are valid for 24 hours, cached in memory
+ */
+async function getSandboxAccessToken(config: KYCConfig): Promise<string> {
+  // Check if we have a valid cached token
+  if (sandboxAccessTokenCache && Date.now() < sandboxAccessTokenCache.expiresAt - TOKEN_REFRESH_BUFFER_MS) {
+    console.log('[SANDBOX-AUTH] Using cached access token');
+    return sandboxAccessTokenCache.token;
+  }
+
+  console.log('[SANDBOX-AUTH] Generating new access token...');
+  
+  try {
+    const response = await fetch(`${config.baseUrl}/authenticate`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': config.apiKey,
+        'x-api-secret': config.apiSecret,
+        'x-api-version': '1.0.0',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error('[SANDBOX-AUTH] Authentication failed:', error);
+      throw new Error(`Sandbox authentication failed: ${error?.message || response.statusText}`);
+    }
+
+    const result = await response.json();
+    const accessToken = result.data?.access_token || result.access_token;
+    
+    if (!accessToken) {
+      throw new Error('No access token in authentication response');
+    }
+
+    // Cache the token (24 hour validity)
+    sandboxAccessTokenCache = {
+      token: accessToken,
+      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
+    };
+
+    console.log('[SANDBOX-AUTH] Access token generated and cached');
+    return accessToken;
+  } catch (error: any) {
+    console.error('[SANDBOX-AUTH] Error getting access token:', error.message);
+    throw error;
+  }
+}
+
 export interface KYCConfig {
   provider: KYCProvider;
   apiKey: string;
@@ -262,8 +326,14 @@ export async function kycRequest<T>(
   try {
     const startTime = Date.now();
     
+    // Get access token for Sandbox provider (required for all API calls)
+    let accessToken: string | undefined;
+    if (config.provider === 'sandbox') {
+      accessToken = await getSandboxAccessToken(config);
+    }
+    
     // Build headers based on provider
-    const headers = buildAuthHeaders(config);
+    const headers = buildAuthHeaders(config, accessToken);
     
     const response = await fetch(url, {
       method,
@@ -304,14 +374,17 @@ export async function kycRequest<T>(
 
 /**
  * Build authentication headers based on provider
+ * Note: For Sandbox, accessToken must be passed separately as it requires async fetch
  */
-function buildAuthHeaders(config: KYCConfig): Record<string, string> {
+function buildAuthHeaders(config: KYCConfig, accessToken?: string): Record<string, string> {
   switch (config.provider) {
     case 'sandbox':
+      if (!accessToken) {
+        throw new Error('Access token required for Sandbox provider');
+      }
       return {
-        'Authorization': config.apiKey,
+        'authorization': accessToken, // JWT access token (no "Bearer" prefix per Sandbox docs)
         'x-api-key': config.apiKey,
-        'x-api-secret': config.apiSecret,
         'x-api-version': '1.0',
       };
       
@@ -448,7 +521,7 @@ export async function verifyAadhaarOTP(request: AadhaarVerifyOTPRequest): Promis
   try {
     // Provider-specific endpoints
     const endpoints: Record<KYCProvider, string> = {
-      sandbox: '/kyc/aadhaar/okyc/verify',
+      sandbox: '/kyc/aadhaar/okyc/otp/verify',
       signzy: '/api/v2/aadhaar/verify',
       idfy: '/v3/tasks',
       karza: '/v3/aadhaar-xml/submit-otp',
@@ -513,9 +586,9 @@ export async function verifyPAN(request: PANVerifyRequest): Promise<PANVerifyRes
   }
   
   try {
-    // Provider-specific endpoints
+    // Provider-specific endpoints (Sandbox changed from GET /pans/{pan} to POST /kyc/pan/verify)
     const endpoints: Record<KYCProvider, string> = {
-      sandbox: '/pans/' + normalizedPAN,
+      sandbox: '/kyc/pan/verify',
       signzy: '/api/v2/pancard/verify',
       idfy: '/v3/tasks/sync/verify_with_source/ind_pan',
       karza: '/v3/pan-verify',
@@ -523,14 +596,10 @@ export async function verifyPAN(request: PANVerifyRequest): Promise<PANVerifyRes
     
     const endpoint = config.panApiUrl || endpoints[config.provider];
     
-    // Provider-specific request body
+    // Provider-specific request body (all providers now use POST)
     const body = buildPANVerifyRequestBody(config.provider, { ...request, panNumber: normalizedPAN });
     
-    const response = await kycRequest<any>(
-      endpoint, 
-      config.provider === 'sandbox' ? 'GET' : 'POST', 
-      config.provider === 'sandbox' ? undefined : body
-    );
+    const response = await kycRequest<any>(endpoint, 'POST', body);
     
     // Normalize response across providers
     return normalizePANVerifyResponse(config.provider, response, request.name);
@@ -626,7 +695,13 @@ export async function verifyGST(request: GSTVerifyRequest): Promise<GSTVerifyRes
 function buildAadhaarOTPRequestBody(provider: KYCProvider, request: AadhaarOTPRequest): any {
   switch (provider) {
     case 'sandbox':
-      return { '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.request', aadhaar_number: request.aadhaarNumber };
+      // Updated format per Sandbox.co API docs - requires consent and reason
+      return { 
+        '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.otp.request', 
+        aadhaar_number: request.aadhaarNumber,
+        consent: 'Y',
+        reason: 'KYC verification for vendor onboarding',
+      };
     case 'signzy':
       return { aadhaarNo: request.aadhaarNumber };
     case 'idfy':
@@ -641,7 +716,12 @@ function buildAadhaarOTPRequestBody(provider: KYCProvider, request: AadhaarOTPRe
 function buildAadhaarVerifyRequestBody(provider: KYCProvider, request: AadhaarVerifyOTPRequest): any {
   switch (provider) {
     case 'sandbox':
-      return { '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.request', reference_id: request.requestId, otp: request.otp };
+      // Updated format per Sandbox.co API docs
+      return { 
+        '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request', 
+        reference_id: parseInt(request.requestId, 10) || request.requestId, 
+        otp: request.otp,
+      };
     case 'signzy':
       return { requestId: request.requestId, otp: request.otp };
     case 'idfy':
@@ -656,7 +736,15 @@ function buildAadhaarVerifyRequestBody(provider: KYCProvider, request: AadhaarVe
 function buildPANVerifyRequestBody(provider: KYCProvider, request: PANVerifyRequest): any {
   switch (provider) {
     case 'sandbox':
-      return null; // Sandbox uses GET with PAN in URL
+      // Updated format per Sandbox.co API docs - now uses POST with required fields
+      return { 
+        '@entity': 'in.co.sandbox.kyc.pan_verification.request',
+        pan: request.panNumber,
+        name_as_per_pan: request.name || 'NA', // Required field
+        date_of_birth: '01/01/1990', // Required field - using placeholder since we don't collect DOB for PAN-only verification
+        consent: 'Y',
+        reason: 'KYC verification for vendor onboarding',
+      };
     case 'signzy':
       return { pan: request.panNumber, name: request.name };
     case 'idfy':
@@ -690,10 +778,24 @@ function buildGSTVerifyRequestBody(provider: KYCProvider, request: GSTVerifyRequ
 function normalizeAadhaarOTPResponse(provider: KYCProvider, response: any): AadhaarOTPResponse {
   switch (provider) {
     case 'sandbox':
+      // Updated response format: { code, timestamp, data: { reference_id, message }, transaction_id }
+      const sandboxOTPData = response.data || response;
+      const isSuccess = response.code === 200;
+      const message = sandboxOTPData.message || response.message || 'OTP sent successfully';
+      
+      // Handle error responses (e.g., "Invalid Aadhaar Card")
+      if (isSuccess && message.toLowerCase().includes('invalid')) {
+        return {
+          success: false,
+          requestId: '',
+          message: message,
+        };
+      }
+      
       return {
-        success: response.code === 200 || response.status === 'SUCCESS',
-        requestId: response.reference_id || response.data?.reference_id || '',
-        message: response.message || 'OTP sent successfully',
+        success: isSuccess,
+        requestId: String(sandboxOTPData.reference_id || response.reference_id || ''),
+        message: message,
         expiresIn: 600,
       };
     case 'signzy':
@@ -781,19 +883,23 @@ function normalizeAadhaarVerifyResponse(provider: KYCProvider, response: any): A
 function normalizePANVerifyResponse(provider: KYCProvider, response: any, inputName?: string): PANVerifyResponse {
   switch (provider) {
     case 'sandbox':
+      // Updated response format: { code, timestamp, data: { pan, category, status, remarks, ... }, transaction_id }
       const sandboxPAN = response.data || response;
-      const panName = sandboxPAN.name || sandboxPAN.full_name || '';
+      const panStatus = sandboxPAN.status?.toLowerCase();
+      const isValid = panStatus === 'valid';
+      
       return {
-        success: response.code === 200 || sandboxPAN.valid === true,
-        verified: sandboxPAN.valid === true || sandboxPAN.status === 'VALID',
+        success: response.code === 200,
+        verified: isValid,
         data: {
           panNumber: sandboxPAN.pan || '',
-          name: panName,
-          status: sandboxPAN.valid ? 'active' : 'inactive',
-          nameMatchScore: inputName ? calculateNameMatchScore(inputName, panName) : undefined,
-          category: sandboxPAN.category || 'Individual',
+          name: inputName || '', // New API doesn't return name, only validates match
+          status: isValid ? 'active' : 'inactive',
+          nameMatchScore: sandboxPAN.name_as_per_pan_match === true ? 100 : 
+                          sandboxPAN.name_as_per_pan_match === false ? 0 : undefined,
+          category: sandboxPAN.category ? capitalizeFirst(sandboxPAN.category.replace(/_/g, ' ')) : 'Individual',
         },
-        message: response.message || 'PAN verified',
+        message: sandboxPAN.remarks || (isValid ? 'PAN verified successfully' : 'PAN verification failed'),
       };
       
     case 'signzy':
@@ -815,6 +921,15 @@ function normalizePANVerifyResponse(provider: KYCProvider, response: any, inputN
         message: response.message,
       };
   }
+}
+
+/**
+ * Capitalize first letter of each word
+ */
+function capitalizeFirst(str: string): string {
+  return str.split(' ').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
 }
 
 function normalizeGSTVerifyResponse(provider: KYCProvider, response: any): GSTVerifyResponse {

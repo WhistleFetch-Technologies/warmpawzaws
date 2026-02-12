@@ -1547,7 +1547,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
 
       // Generate new OTP
-      const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+      const UAT_MODE = process.env.UAT_MODE === 'true';
       const otp = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
 
       // Store OTP in database
@@ -2815,7 +2815,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
 
       // Generate OTP
-      const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+      const UAT_MODE = process.env.UAT_MODE === 'true';
       const otp = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
 
       // Store OTP
@@ -2915,8 +2915,8 @@ export function registerStaffEndpoints(app: Hono) {
         }
       }
 
-      // Check UAT mode - accept 123456 without database check
-      const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+      // Check UAT mode - ONLY check UAT_MODE env variable
+      const UAT_MODE = process.env.UAT_MODE === 'true';
       let isValid = false;
       if (UAT_MODE && otp === '123456') {
         isValid = true;

@@ -189,8 +189,8 @@ class SendOtpHandler extends BaseHandler {
       return this.error('Phone number is required', 400);
     }
 
-    // Check UAT mode
-    const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+    // Check UAT mode - ONLY check UAT_MODE env variable for security
+    const UAT_MODE = process.env.UAT_MODE === 'true';
 
     // Generate 6-digit OTP (or use 123456 for UAT)
     const otp = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
@@ -236,8 +236,8 @@ class VerifyOtpHandler extends BaseHandler {
       return this.error('Phone and OTP are required', 400);
     }
 
-    // Check UAT mode - accept 123456 without database check
-    const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+    // Check UAT mode - ONLY check UAT_MODE env variable
+    const UAT_MODE = process.env.UAT_MODE === 'true';
     
     let isValid = false;
     if (UAT_MODE && otp === '123456') {

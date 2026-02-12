@@ -123093,7 +123093,7 @@ __export(gps_tracking_service_exports, {
 });
 async function getGoogleMapsApiKey2() {
   if (_googleMapsKeyCache) return _googleMapsKeyCache;
-  const isUatEnv = process.env.UAT_MODE === "true" || true;
+  const isUatEnv = process.env.UAT_MODE === "true";
   if (process.env.GOOGLE_MAPS_API_KEY) {
     _googleMapsKeyCache = process.env.GOOGLE_MAPS_API_KEY;
     return _googleMapsKeyCache;
@@ -123557,27 +123557,17 @@ __export(uat_mode_exports, {
   isUATMode: () => isUATMode
 });
 function isUATMode(context) {
-  const envUAT = process.env.UAT_MODE === "true" || true;
-  const headerUAT = context?.headers && (context.headers["x-uat-mode"] === "true" || context.headers["X-UAT-Mode"] === "true" || context.headers["x-uat-mode"] === "True" || context.headers["X-UAT-Mode"] === "True");
-  const result = envUAT || headerUAT || false;
+  const result = process.env.UAT_MODE === "true";
   if (context?.headers) {
     console.log("[isUATMode] Check:", {
-      envUAT,
-      headerUAT,
-      result,
-      headers: Object.keys(context.headers),
-      xUatModeValue: context.headers["x-uat-mode"],
-      XUatModeValue: context.headers["X-UAT-Mode"]
+      UAT_MODE: process.env.UAT_MODE,
+      result
     });
   }
   return result;
 }
 function getUATModeStatus(context) {
-  const envUAT = process.env.UAT_MODE === "true" || true;
-  const headerUAT = context?.headers && (context.headers["x-uat-mode"] === "true" || context.headers["X-UAT-Mode"] === "true");
-  if (headerUAT) {
-    return { isUAT: true, source: "header" };
-  }
+  const envUAT = process.env.UAT_MODE === "true";
   if (envUAT) {
     return { isUAT: true, source: "env" };
   }
@@ -123987,7 +123977,7 @@ __export(admin_exports, {
 });
 async function requireAdminAuth(c) {
   const authHeader = c.req.header("authorization") || c.req.header("Authorization");
-  const uatMode = c.req.header("x-uat-mode") === "true" || c.req.header("X-UAT-Mode") === "true" || process.env.UAT_MODE === "true" || true;
+  const uatMode = process.env.UAT_MODE === "true";
   if (uatMode) {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       console.log("[ADMIN AUTH] UAT Mode: Allowing admin access without auth header");
@@ -128806,7 +128796,7 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       );
     }
     const { phone, otp } = validationResult.data;
-    const isUATMode2 = process.env.UAT_MODE === "true" || true;
+    const isUATMode2 = process.env.UAT_MODE === "true";
     try {
       let isValid = false;
       if (isUATMode2 && otp === "123456") {
@@ -129340,7 +129330,7 @@ var GetOnboardingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
     }
     const phoneDigits = phone.replace(/\D/g, "");
     const normalizedPhone = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits.length === 9 ? "0" + phoneDigits : phoneDigits;
-    const isUATMode2 = process.env.UAT_MODE === "true" || true;
+    const isUATMode2 = process.env.UAT_MODE === "true";
     try {
       let isStaff = false;
       let staffInfo = null;
@@ -208714,7 +208704,7 @@ var AdminLoginHandler = class extends BaseHandler {
       if (!email || !password) {
         return this.error("Email and password are required", 400);
       }
-      const isUATMode2 = process.env.UAT_MODE === "true" || true;
+      const isUATMode2 = process.env.UAT_MODE === "true";
       if (isUATMode2) {
         console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
         const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
@@ -229204,6 +229194,46 @@ init_rds_connection();
 // src/utils/kyc-verification-client.ts
 init_rds_connection();
 init_secrets_manager();
+var sandboxAccessTokenCache = null;
+var TOKEN_REFRESH_BUFFER_MS = 60 * 60 * 1e3;
+async function getSandboxAccessToken(config) {
+  if (sandboxAccessTokenCache && Date.now() < sandboxAccessTokenCache.expiresAt - TOKEN_REFRESH_BUFFER_MS) {
+    console.log("[SANDBOX-AUTH] Using cached access token");
+    return sandboxAccessTokenCache.token;
+  }
+  console.log("[SANDBOX-AUTH] Generating new access token...");
+  try {
+    const response = await fetch(`${config.baseUrl}/authenticate`, {
+      method: "POST",
+      headers: {
+        "x-api-key": config.apiKey,
+        "x-api-secret": config.apiSecret,
+        "x-api-version": "1.0.0",
+        "Content-Type": "application/json"
+      }
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error("[SANDBOX-AUTH] Authentication failed:", error);
+      throw new Error(`Sandbox authentication failed: ${error?.message || response.statusText}`);
+    }
+    const result = await response.json();
+    const accessToken = result.data?.access_token || result.access_token;
+    if (!accessToken) {
+      throw new Error("No access token in authentication response");
+    }
+    sandboxAccessTokenCache = {
+      token: accessToken,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1e3
+      // 24 hours
+    };
+    console.log("[SANDBOX-AUTH] Access token generated and cached");
+    return accessToken;
+  } catch (error) {
+    console.error("[SANDBOX-AUTH] Error getting access token:", error.message);
+    throw error;
+  }
+}
 var PROVIDER_BASE_URLS = {
   sandbox: "https://api.sandbox.co.in",
   signzy: "https://preproduction.signzy.tech",
@@ -229307,7 +229337,11 @@ async function kycRequest(endpoint, method = "POST", body, timeoutMs = 3e4) {
   }, timeoutMs);
   try {
     const startTime = Date.now();
-    const headers = buildAuthHeaders(config);
+    let accessToken;
+    if (config.provider === "sandbox") {
+      accessToken = await getSandboxAccessToken(config);
+    }
+    const headers = buildAuthHeaders(config, accessToken);
     const response = await fetch(url, {
       method,
       headers: {
@@ -229339,13 +229373,16 @@ async function kycRequest(endpoint, method = "POST", body, timeoutMs = 3e4) {
     throw error;
   }
 }
-function buildAuthHeaders(config) {
+function buildAuthHeaders(config, accessToken) {
   switch (config.provider) {
     case "sandbox":
+      if (!accessToken) {
+        throw new Error("Access token required for Sandbox provider");
+      }
       return {
-        "Authorization": config.apiKey,
+        "authorization": accessToken,
+        // JWT access token (no "Bearer" prefix per Sandbox docs)
         "x-api-key": config.apiKey,
-        "x-api-secret": config.apiSecret,
         "x-api-version": "1.0"
       };
     case "signzy":
@@ -229445,7 +229482,7 @@ async function verifyAadhaarOTP(request) {
   }
   try {
     const endpoints = {
-      sandbox: "/kyc/aadhaar/okyc/verify",
+      sandbox: "/kyc/aadhaar/okyc/otp/verify",
       signzy: "/api/v2/aadhaar/verify",
       idfy: "/v3/tasks",
       karza: "/v3/aadhaar-xml/submit-otp"
@@ -229491,18 +229528,14 @@ async function verifyPAN(request) {
   }
   try {
     const endpoints = {
-      sandbox: "/pans/" + normalizedPAN,
+      sandbox: "/kyc/pan/verify",
       signzy: "/api/v2/pancard/verify",
       idfy: "/v3/tasks/sync/verify_with_source/ind_pan",
       karza: "/v3/pan-verify"
     };
     const endpoint = config.panApiUrl || endpoints[config.provider];
     const body = buildPANVerifyRequestBody(config.provider, { ...request, panNumber: normalizedPAN });
-    const response = await kycRequest(
-      endpoint,
-      config.provider === "sandbox" ? "GET" : "POST",
-      config.provider === "sandbox" ? void 0 : body
-    );
+    const response = await kycRequest(endpoint, "POST", body);
     return normalizePANVerifyResponse(config.provider, response, request.name);
   } catch (error) {
     console.error("[PAN-VERIFY] Error verifying PAN:", error.message);
@@ -229570,7 +229603,12 @@ async function verifyGST(request) {
 function buildAadhaarOTPRequestBody(provider, request) {
   switch (provider) {
     case "sandbox":
-      return { "@entity": "in.co.sandbox.kyc.aadhaar.okyc.request", aadhaar_number: request.aadhaarNumber };
+      return {
+        "@entity": "in.co.sandbox.kyc.aadhaar.okyc.otp.request",
+        aadhaar_number: request.aadhaarNumber,
+        consent: "Y",
+        reason: "KYC verification for vendor onboarding"
+      };
     case "signzy":
       return { aadhaarNo: request.aadhaarNumber };
     case "idfy":
@@ -229584,7 +229622,11 @@ function buildAadhaarOTPRequestBody(provider, request) {
 function buildAadhaarVerifyRequestBody(provider, request) {
   switch (provider) {
     case "sandbox":
-      return { "@entity": "in.co.sandbox.kyc.aadhaar.okyc.request", reference_id: request.requestId, otp: request.otp };
+      return {
+        "@entity": "in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request",
+        reference_id: parseInt(request.requestId, 10) || request.requestId,
+        otp: request.otp
+      };
     case "signzy":
       return { requestId: request.requestId, otp: request.otp };
     case "idfy":
@@ -229598,8 +229640,16 @@ function buildAadhaarVerifyRequestBody(provider, request) {
 function buildPANVerifyRequestBody(provider, request) {
   switch (provider) {
     case "sandbox":
-      return null;
-    // Sandbox uses GET with PAN in URL
+      return {
+        "@entity": "in.co.sandbox.kyc.pan_verification.request",
+        pan: request.panNumber,
+        name_as_per_pan: request.name || "NA",
+        // Required field
+        date_of_birth: "01/01/1990",
+        // Required field - using placeholder since we don't collect DOB for PAN-only verification
+        consent: "Y",
+        reason: "KYC verification for vendor onboarding"
+      };
     case "signzy":
       return { pan: request.panNumber, name: request.name };
     case "idfy":
@@ -229628,10 +229678,20 @@ function buildGSTVerifyRequestBody(provider, request) {
 function normalizeAadhaarOTPResponse(provider, response) {
   switch (provider) {
     case "sandbox":
+      const sandboxOTPData = response.data || response;
+      const isSuccess = response.code === 200;
+      const message2 = sandboxOTPData.message || response.message || "OTP sent successfully";
+      if (isSuccess && message2.toLowerCase().includes("invalid")) {
+        return {
+          success: false,
+          requestId: "",
+          message: message2
+        };
+      }
       return {
-        success: response.code === 200 || response.status === "SUCCESS",
-        requestId: response.reference_id || response.data?.reference_id || "",
-        message: response.message || "OTP sent successfully",
+        success: isSuccess,
+        requestId: String(sandboxOTPData.reference_id || response.reference_id || ""),
+        message: message2,
         expiresIn: 600
       };
     case "signzy":
@@ -229716,18 +229776,20 @@ function normalizePANVerifyResponse(provider, response, inputName) {
   switch (provider) {
     case "sandbox":
       const sandboxPAN = response.data || response;
-      const panName = sandboxPAN.name || sandboxPAN.full_name || "";
+      const panStatus = sandboxPAN.status?.toLowerCase();
+      const isValid = panStatus === "valid";
       return {
-        success: response.code === 200 || sandboxPAN.valid === true,
-        verified: sandboxPAN.valid === true || sandboxPAN.status === "VALID",
+        success: response.code === 200,
+        verified: isValid,
         data: {
           panNumber: sandboxPAN.pan || "",
-          name: panName,
-          status: sandboxPAN.valid ? "active" : "inactive",
-          nameMatchScore: inputName ? calculateNameMatchScore(inputName, panName) : void 0,
-          category: sandboxPAN.category || "Individual"
+          name: inputName || "",
+          // New API doesn't return name, only validates match
+          status: isValid ? "active" : "inactive",
+          nameMatchScore: sandboxPAN.name_as_per_pan_match === true ? 100 : sandboxPAN.name_as_per_pan_match === false ? 0 : void 0,
+          category: sandboxPAN.category ? capitalizeFirst(sandboxPAN.category.replace(/_/g, " ")) : "Individual"
         },
-        message: response.message || "PAN verified"
+        message: sandboxPAN.remarks || (isValid ? "PAN verified successfully" : "PAN verification failed")
       };
     case "signzy":
     case "idfy":
@@ -229748,6 +229810,11 @@ function normalizePANVerifyResponse(provider, response, inputName) {
         message: response.message
       };
   }
+}
+function capitalizeFirst(str) {
+  return str.split(" ").map(
+    (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(" ");
 }
 function normalizeGSTVerifyResponse(provider, response) {
   const data = response.data || response.result || response;

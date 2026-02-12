@@ -224,11 +224,9 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
     const { phone, otp } = validationResult.data;
 
-    // Check if UAT mode is enabled (check once for the entire function)
-    const isUATMode = process.env.UAT_MODE === 'true' || 
-                     process.env.NODE_ENV === 'development' ||
-                     process.env.STAGE === 'dev' ||
-                     (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
+    // Check if UAT mode is enabled - ONLY check UAT_MODE env variable
+    // This ensures PROD (UAT_MODE=false) never accepts fixed OTP 123456
+    const isUATMode = process.env.UAT_MODE === 'true';
 
     try {
       let isValid = false;

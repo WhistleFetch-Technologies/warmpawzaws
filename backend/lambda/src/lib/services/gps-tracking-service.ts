@@ -26,10 +26,7 @@ import { sendVendorOnWay, sendEventNotification } from './push-notification-serv
 let _googleMapsKeyCache: string | null = null;
 async function getGoogleMapsApiKey(): Promise<string> {
   if (_googleMapsKeyCache) return _googleMapsKeyCache;
-  const isUatEnv =
-    process.env.UAT_MODE === 'true' ||
-    process.env.NODE_ENV === 'development' ||
-    process.env.NODE_ENV === 'dev';
+  const isUatEnv = process.env.UAT_MODE === 'true';
   if (process.env.GOOGLE_MAPS_API_KEY) {
     _googleMapsKeyCache = process.env.GOOGLE_MAPS_API_KEY;
     return _googleMapsKeyCache;

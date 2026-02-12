@@ -60,11 +60,8 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
         ? '0' + phoneDigits
         : phoneDigits;
 
-    // Check if UAT mode is enabled
-    const isUATMode = process.env.UAT_MODE === 'true' || 
-                     process.env.NODE_ENV === 'development' ||
-                     process.env.STAGE === 'dev' ||
-                     (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
+    // Check if UAT mode is enabled - ONLY check UAT_MODE env variable
+    const isUATMode = process.env.UAT_MODE === 'true';
 
     try {
       // ✅ FIX: Check if phone belongs to staff FIRST

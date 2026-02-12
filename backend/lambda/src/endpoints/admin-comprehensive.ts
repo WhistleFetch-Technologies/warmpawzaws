@@ -237,11 +237,8 @@ class AdminLoginHandler extends BaseHandler {
         return this.error('Email and password are required', 400);
       }
 
-      // Check UAT mode
-      const isUATMode = process.env.UAT_MODE === 'true' || 
-                       process.env.NODE_ENV === 'development' ||
-                       context.event.headers?.['x-uat-mode'] === 'true' ||
-                       context.event.headers?.['X-UAT-Mode'] === 'true';
+      // Check UAT mode - ONLY check UAT_MODE env variable for security
+      const isUATMode = process.env.UAT_MODE === 'true';
 
       // In UAT mode, allow any admin login with 60s token expiry
       if (isUATMode) {

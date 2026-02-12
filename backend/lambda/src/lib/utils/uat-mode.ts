@@ -2,7 +2,7 @@
  * UAT Mode Utility
  * 
  * Detects if the application is running in UAT/Development mode
- * Similar to how OTP uses '123456' in UAT mode
+ * SECURITY: Only checks UAT_MODE environment variable to prevent PROD bypass
  */
 
 export interface UATContext {
@@ -12,34 +12,18 @@ export interface UATContext {
 
 /**
  * Check if UAT mode is enabled
- * Checks both environment variables and request headers
+ * ONLY checks UAT_MODE environment variable - headers are NOT trusted for security
  */
 export function isUATMode(context?: UATContext): boolean {
-  // Check environment variables
-  const envUAT = process.env.UAT_MODE === 'true' || 
-                 process.env.NODE_ENV === 'development' || 
-                 process.env.NODE_ENV === 'dev';
-  
-  // Check request headers (if context provided)
-  // Headers are normalized to lowercase, so check both lowercase and original case
-  const headerUAT = context?.headers && (
-    context.headers['x-uat-mode'] === 'true' ||
-    context.headers['X-UAT-Mode'] === 'true' ||
-    context.headers['x-uat-mode'] === 'True' ||
-    context.headers['X-UAT-Mode'] === 'True'
-  );
-  
-  const result = envUAT || headerUAT || false;
+  // SECURITY: Only check UAT_MODE env variable, never headers or NODE_ENV
+  // This ensures PROD (UAT_MODE=false) is never bypassed
+  const result = process.env.UAT_MODE === 'true';
   
   // Debug logging
   if (context?.headers) {
     console.log('[isUATMode] Check:', {
-      envUAT,
-      headerUAT,
+      UAT_MODE: process.env.UAT_MODE,
       result,
-      headers: Object.keys(context.headers),
-      xUatModeValue: context.headers['x-uat-mode'],
-      XUatModeValue: context.headers['X-UAT-Mode']
     });
   }
   
@@ -51,17 +35,11 @@ export function isUATMode(context?: UATContext): boolean {
  */
 export function getUATModeStatus(context?: UATContext): {
   isUAT: boolean;
-  source: 'env' | 'header' | 'none';
+  source: 'env' | 'none';
 } {
-  const envUAT = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
-  const headerUAT = context?.headers && (
-    context.headers['x-uat-mode'] === 'true' ||
-    context.headers['X-UAT-Mode'] === 'true'
-  );
+  // SECURITY: Only check UAT_MODE env variable
+  const envUAT = process.env.UAT_MODE === 'true';
   
-  if (headerUAT) {
-    return { isUAT: true, source: 'header' };
-  }
   if (envUAT) {
     return { isUAT: true, source: 'env' };
   }

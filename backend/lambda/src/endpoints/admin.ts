@@ -453,12 +453,8 @@ class ListVendorsHandler extends BaseHandler {
 async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?: string; error?: string }> {
   const authHeader = c.req.header('authorization') || c.req.header('Authorization');
   
-  // Check for UAT mode (development/testing)
-  const uatMode = c.req.header('x-uat-mode') === 'true' || 
-                  c.req.header('X-UAT-Mode') === 'true' ||
-                  process.env.UAT_MODE === 'true' ||
-                  process.env.NODE_ENV === 'development' ||
-                  process.env.STAGE === 'dev';
+  // Check for UAT mode - ONLY check UAT_MODE env variable for security
+  const uatMode = process.env.UAT_MODE === 'true';
   
   // ✅ FIX: In UAT mode, allow admin access with any valid token or UAT token
   if (uatMode) {
