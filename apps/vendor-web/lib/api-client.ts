@@ -76,26 +76,43 @@ function getApiGatewayUrl(): string {
 }
 
 function getApiBaseUrl(): string {
-  // Priority: runtime-config.js (deploy-time) → build-time env (local dev) → environment-based fallback
+  // Priority: explicit env var → runtime-config.js (deploy-time) → build-time env (local dev) → environment-based fallback
+  // Allow NEXT_PUBLIC_API_BASE_URL to override everything (useful for local testing with production API)
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+    const url = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (url && url.trim()) {
+      return url.trim();
+    }
+  }
+  
   const cfg = getRuntimeConfig();
   
-  if (cfg.apiBaseUrl) {
-    return cfg.apiBaseUrl;
+  if (cfg.apiBaseUrl && cfg.apiBaseUrl.trim()) {
+    return cfg.apiBaseUrl.trim();
   }
   
-  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  // ✅ FIX: Use environment-aware API Gateway selection (always return valid URL)
+  const fallbackUrl = getApiGatewayUrl();
+  if (!fallbackUrl || !fallbackUrl.trim()) {
+    // Last resort: use production API if everything else fails
+    console.warn('[API Client] No API URL configured, defaulting to production API Gateway');
+    return 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
   }
-  
-  // ✅ FIX: Use environment-aware API Gateway selection (no hardcoded fallback)
-  return getApiGatewayUrl();
+  return fallbackUrl;
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
 export function isUatMode(): boolean {
-  if (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true) {
-    return true;
+  const runtimeConfig = typeof window !== 'undefined' ? getRuntimeConfig() : {};
+  // If runtime config explicitly sets uatMode (including false), use that value
+  if (typeof runtimeConfig.uatMode === 'boolean') {
+    return runtimeConfig.uatMode;
   }
+  // Check for explicit false in environment variable (allows overriding)
+  if (process.env.NEXT_PUBLIC_UAT_MODE === 'false') {
+    return false;
+  }
+  // Otherwise fall back to environment variables
   return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
 }
 
@@ -105,13 +122,15 @@ export class ApiClient {
   private baseUrl: string;
 
   constructor(baseUrl: string = getApiBaseUrl()) {
-    this.baseUrl = baseUrl || '';
+    this.baseUrl = baseUrl || getApiBaseUrl(); // Ensure we always have a URL
     
-    // UAT Mode: Log API configuration for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
-      console.log('🔧 [UAT Mode] API Client Initialized (Vendor)');
+    // Always log API configuration for debugging (especially useful for localhost issues)
+    if (typeof window !== 'undefined') {
+      console.log('🔧 [API Client] Initialized (Vendor)');
       console.log('   Base URL:', this.baseUrl);
+      console.log('   UAT Mode:', UAT_MODE);
       console.log('   Environment:', process.env.NODE_ENV);
+      console.log('   Runtime Config:', getRuntimeConfig());
     }
   }
 

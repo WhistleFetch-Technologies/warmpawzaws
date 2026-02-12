@@ -3,7 +3,7 @@
 // Official Vendor app URL: set VENDOR_URL / see config/urls.json cloudfront.vendor
 
 (function () {
-  const defaultUatMode = true;
+  const defaultUatMode = false;
   
   // Determine environment
   function isProduction() {
@@ -30,8 +30,9 @@
       : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   }
   
-  const apiBaseUrl = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || 
-                     (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) || 
+  // Priority: explicit env var (allows local override) → build-time __API_BASE_URL__ → environment-based fallback
+  const apiBaseUrl = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) ||
+                     (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || 
                      getApiGatewayUrl();
 
   const environment = isProduction() ? 'production' : 'development';

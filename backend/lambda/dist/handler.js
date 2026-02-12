@@ -112371,7 +112371,7 @@ __export(cognito_client_exports, {
   verifyCognitoToken: () => verifyCognitoToken3
 });
 async function getOrCreateCognitoUser(phone, email, userType = "customer") {
-  const username = `phone_${phone}`;
+  const username = email || `${phone.replace(/[^0-9]/g, "")}@warmpawz.local`;
   try {
     const getUserResponse = await cognitoClient.send(
       new import_client_cognito_identity_provider.AdminGetUserCommand({
@@ -112400,19 +112400,41 @@ async function getOrCreateCognitoUser(phone, email, userType = "customer") {
   }
 }
 async function createCognitoUser(phone, email, userType = "customer") {
-  const username = `phone_${phone}`;
+  const username = email || `${phone.replace(/[^0-9]/g, "")}@warmpawz.local`;
   const tempPassword = generateTemporaryPassword();
+  let phoneFormatted = phone;
+  if (!phone.startsWith("+")) {
+    const digits = phone.replace(/[^0-9]/g, "");
+    if (digits.length === 10) {
+      phoneFormatted = `+91${digits}`;
+    } else if (digits.startsWith("91") && digits.length === 12) {
+      phoneFormatted = `+${digits}`;
+    } else {
+      phoneFormatted = `+${digits}`;
+    }
+  }
+  const userAttributes = [
+    { Name: "phone_number", Value: phoneFormatted },
+    // Use E.164 formatted phone
+    { Name: "phone_number_verified", Value: "true" },
+    { Name: "email", Value: username },
+    // Use email-like username as email attribute
+    { Name: "email_verified", Value: "true" },
+    // Mark as verified since it's phone-based
+    { Name: "custom:user_type", Value: userType }
+  ];
+  if (email && email !== username) {
+    const emailIndex = userAttributes.findIndex((attr) => attr.Name === "email");
+    if (emailIndex >= 0) {
+      userAttributes[emailIndex] = { Name: "email", Value: email };
+    }
+  }
   const createResponse = await cognitoClient.send(
     new import_client_cognito_identity_provider.AdminCreateUserCommand({
       UserPoolId: USER_POOL_ID,
       Username: username,
       TemporaryPassword: tempPassword,
-      UserAttributes: [
-        { Name: "phone_number", Value: phone },
-        { Name: "phone_number_verified", Value: "true" },
-        ...email ? [{ Name: "email", Value: email }, { Name: "email_verified", Value: "false" }] : [],
-        { Name: "custom:user_type", Value: userType }
-      ],
+      UserAttributes: userAttributes,
       MessageAction: "SUPPRESS"
       // Don't send email/SMS from Cognito
     })
@@ -112441,13 +112463,12 @@ async function createCognitoUser(phone, email, userType = "customer") {
   };
 }
 async function authenticateCognitoUser(phone) {
-  const username = `phone_${phone}`;
+  const username = `${phone.replace(/[^0-9]/g, "")}@warmpawz.local`;
   const password = generatePermanentPassword(phone);
   const authResponse = await cognitoClient.send(
-    new import_client_cognito_identity_provider.AdminInitiateAuthCommand({
-      UserPoolId: USER_POOL_ID,
+    new import_client_cognito_identity_provider.InitiateAuthCommand({
       ClientId: CLIENT_ID,
-      AuthFlow: import_client_cognito_identity_provider.AuthFlowType.ADMIN_NO_SRP_AUTH,
+      AuthFlow: import_client_cognito_identity_provider.AuthFlowType.USER_PASSWORD_AUTH,
       AuthParameters: {
         USERNAME: username,
         PASSWORD: password
@@ -128663,23 +128684,53 @@ async function createOtp(phone, code, purpose = "login") {
   });
 }
 async function verifyOtp(phone, code) {
+  console.log(`[DEBUG] verifyOtp called: phone=${phone}, code=${code}`);
   const records = await select("otp_tokens", {
     phone,
     code,
     is_used: false
   });
+  console.log(`[DEBUG] Found ${records.length} OTP records for phone=${phone}, code=${code}`);
   if (records.length === 0) {
+    const allRecords = await select("otp_tokens", { phone, is_used: false });
+    console.log(`[DEBUG] Found ${allRecords.length} unused OTPs for phone=${phone} (any code)`);
+    if (allRecords.length > 0) {
+      console.log(`[DEBUG] Available OTP codes: ${allRecords.map((r) => r.code || r.otp_code).join(", ")}`);
+    }
     return false;
   }
-  const record = records[0];
-  if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) {
-    return false;
+  try {
+    const record = records[0];
+    console.log(`[DEBUG] OTP record found: id=${record?.id}, expires_at=${record?.expires_at}, is_used=${record?.is_used}`);
+    console.log(`[DEBUG] Full record: ${JSON.stringify(record)}`);
+    if (!record) {
+      console.log(`[DEBUG] ERROR: Record is null or undefined`);
+      return false;
+    }
+    if (!record.expires_at) {
+      console.log(`[DEBUG] ERROR: expires_at is missing from record`);
+      return false;
+    }
+    const expiresAt = new Date(record.expires_at);
+    const now = /* @__PURE__ */ new Date();
+    console.log(`[DEBUG] Expiration check: expires_at=${expiresAt.toISOString()}, now=${now.toISOString()}, expired=${expiresAt < now}`);
+    if (expiresAt < now) {
+      console.log(`[DEBUG] OTP expired: ${expiresAt.toISOString()} < ${now.toISOString()}`);
+      return false;
+    }
+    console.log(`[DEBUG] Marking OTP as used: id=${record.id}`);
+    await query(
+      "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
+      [record.id]
+    );
+    console.log(`[DEBUG] OTP marked as used successfully`);
+    return true;
+  } catch (error) {
+    console.error(`[DEBUG] ERROR in verifyOtp after finding record:`, error);
+    console.error(`[DEBUG] Error message: ${error?.message}`);
+    console.error(`[DEBUG] Error stack: ${error?.stack}`);
+    throw error;
   }
-  await query(
-    "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
-    [record.id]
-  );
-  return true;
 }
 async function sendSmsViaSns(phone, message2) {
   const result = await sendSMS({
@@ -128718,9 +128769,12 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       } else {
         console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
       }
+      console.log(`[DEBUG] OTP GENERATED FOR ${phone}: ${otpCode}`);
+      console.log(`[DEBUG] Phone normalized: ${normalizedPhone}, OTP: ${otpCode}`);
       const otpStoreStartTime = Date.now();
       try {
-        const createOtpPromise = createOtp(phone, otpCode, body.role || "login");
+        const createOtpPromise = createOtp(normalizedPhone, otpCode, body.role || "login");
+        console.log(`[DEBUG] Storing OTP: phone=${normalizedPhone}, otp=${otpCode}, role=${body.role || "login"}`);
         const otpTimeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error("OTP storage timeout after 3 seconds")), 3e3);
         });
@@ -128826,7 +128880,20 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         });
       } else {
         console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
-        isValid = await verifyOtp(phone, otp);
+        const phoneDigits2 = phone.replace(/\D/g, "");
+        let normalizedPhoneForVerification2;
+        if (phoneDigits2.length === 10) {
+          normalizedPhoneForVerification2 = `+91${phoneDigits2}`;
+        } else if (phoneDigits2.startsWith("91") && phoneDigits2.length === 12) {
+          normalizedPhoneForVerification2 = `+${phoneDigits2}`;
+        } else if (phone.startsWith("+")) {
+          normalizedPhoneForVerification2 = phone;
+        } else {
+          normalizedPhoneForVerification2 = phoneDigits2 ? `+${phoneDigits2}` : phone;
+        }
+        console.log(`[DEBUG] Verifying OTP: original phone=${phone}, normalized=${normalizedPhoneForVerification2}, otp=${otp}`);
+        isValid = await verifyOtp(normalizedPhoneForVerification2, otp);
+        console.log(`[DEBUG] OTP verification result: ${isValid}`);
         if (isValid) {
           console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
         } else {
@@ -128837,7 +128904,18 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         return this.error("Invalid or expired OTP", 401, "UNAUTHORIZED", void 0, context.requestId);
       }
       const phoneDigits = phone.replace(/\D/g, "");
-      const normalizedPhone = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits.length === 9 ? "0" + phoneDigits : phoneDigits;
+      let normalizedPhoneForVerification;
+      if (phoneDigits.length === 10) {
+        normalizedPhoneForVerification = `+91${phoneDigits}`;
+      } else if (phoneDigits.startsWith("91") && phoneDigits.length === 12) {
+        normalizedPhoneForVerification = `+${phoneDigits}`;
+      } else if (phone.startsWith("+")) {
+        normalizedPhoneForVerification = phone;
+      } else {
+        normalizedPhoneForVerification = phoneDigits ? `+${phoneDigits}` : phone;
+      }
+      console.log(`[DEBUG] Normalized phone for verification: ${phone} -> ${normalizedPhoneForVerification}`);
+      const normalizedPhone = normalizedPhoneForVerification;
       let role = body.role || "customer";
       let userId;
       let userData;
@@ -129124,11 +129202,16 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       } else {
         try {
           console.log(`[AUTH] Production Mode: Authenticating with Cognito for ${phone} (role: ${role})`);
+          console.log(`[DEBUG] COGNITO_USER_POOL_ID: ${process.env.COGNITO_USER_POOL_ID || "NOT SET"}`);
+          console.log(`[DEBUG] COGNITO_CLIENT_ID: ${process.env.COGNITO_CLIENT_ID || "NOT SET"}`);
           const cognitoUser = await getOrCreateCognitoUser(phone, void 0, role);
+          console.log(`[DEBUG] Cognito user created/retrieved: ${JSON.stringify(cognitoUser)}`);
           cognitoTokens = await authenticateCognitoUser(phone);
           console.log("[AUTH] Production Mode: Cognito authentication successful");
+          console.log(`[DEBUG] Cognito tokens received: accessToken=${cognitoTokens.accessToken.substring(0, 20)}...`);
         } catch (cognitoError) {
           console.error("[AUTH] Production Mode: Cognito authentication failed:", cognitoError);
+          console.error(`[DEBUG] Cognito error details: ${JSON.stringify(cognitoError)}`);
           return this.error(
             "Authentication service unavailable",
             503,
@@ -229342,6 +229425,9 @@ async function kycRequest(endpoint, method = "POST", body, timeoutMs = 3e4) {
       accessToken = await getSandboxAccessToken(config);
     }
     const headers = buildAuthHeaders(config, accessToken);
+    if (body) {
+      console.log(`[KYC-REQUEST] Request body for ${endpoint}:`, JSON.stringify(body, null, 2));
+    }
     const response = await fetch(url, {
       method,
       headers: {
@@ -229354,15 +229440,18 @@ async function kycRequest(endpoint, method = "POST", body, timeoutMs = 3e4) {
     clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
     console.log(`[KYC-REQUEST] Response received in ${duration}ms for ${endpoint}`);
+    console.log(`[KYC-REQUEST] Response status: ${response.status} ${response.statusText}`);
+    const responseBody = await response.json().catch(() => ({}));
+    console.log(`[KYC-REQUEST] Full response body:`, JSON.stringify(responseBody, null, 2));
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      const errorMsg = error?.message || error?.error?.description || response.statusText || "Unknown error";
+      const errorMsg = responseBody?.message || responseBody?.error?.description || response.statusText || "Unknown error";
       console.error(`[KYC-REQUEST] API error (${response.status}): ${errorMsg}`);
+      console.error(`[KYC-REQUEST] Full error response:`, JSON.stringify(responseBody, null, 2));
+      console.error(`[KYC-REQUEST] Request body that was sent:`, JSON.stringify(body, null, 2));
       throw new Error(`KYC API error: ${errorMsg}`);
     }
-    const result = await response.json();
     console.log(`[KYC-REQUEST] Success for ${endpoint}`);
-    return result;
+    return responseBody;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === "AbortError") {
@@ -229432,9 +229521,12 @@ async function generateAadhaarOTP(request) {
     const endpoint = config.aadhaarApiUrl || endpoints[config.provider];
     const body = buildAadhaarOTPRequestBody(config.provider, request);
     const response = await kycRequest(endpoint, "POST", body);
+    console.log("[AADHAAR-OTP] Full Sandbox response:", JSON.stringify(response, null, 2));
     return normalizeAadhaarOTPResponse(config.provider, response);
   } catch (error) {
     console.error("[AADHAAR-OTP] Error generating OTP:", error.message);
+    console.error("[AADHAAR-OTP] Full error details:", JSON.stringify(error, null, 2));
+    console.error("[AADHAAR-OTP] Error stack:", error.stack);
     return {
       success: false,
       requestId: "",
@@ -229622,10 +229714,22 @@ function buildAadhaarOTPRequestBody(provider, request) {
 function buildAadhaarVerifyRequestBody(provider, request) {
   switch (provider) {
     case "sandbox":
+      const referenceIdNum = parseInt(request.requestId, 10);
+      if (isNaN(referenceIdNum)) {
+        console.error(`[AADHAAR-VERIFY] Invalid requestId format: "${request.requestId}" - cannot parse as number`);
+        throw new Error(`Invalid requestId format: must be a numeric string`);
+      }
+      console.log(`[AADHAAR-VERIFY] Building request body: requestId="${request.requestId}" -> reference_id=${referenceIdNum} (with consent & reason)`);
       return {
         "@entity": "in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request",
-        reference_id: parseInt(request.requestId, 10) || request.requestId,
-        otp: request.otp
+        reference_id: referenceIdNum,
+        // As NUMBER (integer)
+        otp: String(request.otp),
+        // OTP as string
+        consent: "Y",
+        // Add consent field like generate-otp
+        reason: "KYC verification for vendor onboarding"
+        // Add reason field like generate-otp
       };
     case "signzy":
       return { requestId: request.requestId, otp: request.otp };
@@ -229678,9 +229782,12 @@ function buildGSTVerifyRequestBody(provider, request) {
 function normalizeAadhaarOTPResponse(provider, response) {
   switch (provider) {
     case "sandbox":
+      console.log("[AADHAAR-OTP] Normalizing Sandbox response:", JSON.stringify(response, null, 2));
       const sandboxOTPData = response.data || response;
       const isSuccess = response.code === 200;
       const message2 = sandboxOTPData.message || response.message || "OTP sent successfully";
+      const referenceId = sandboxOTPData.reference_id || response.reference_id || sandboxOTPData.referenceId || response.referenceId || sandboxOTPData.request_id || response.request_id || "";
+      console.log("[AADHAAR-OTP] Extracted reference_id:", referenceId, "from response");
       if (isSuccess && message2.toLowerCase().includes("invalid")) {
         return {
           success: false,
@@ -229690,7 +229797,7 @@ function normalizeAadhaarOTPResponse(provider, response) {
       }
       return {
         success: isSuccess,
-        requestId: String(sandboxOTPData.reference_id || response.reference_id || ""),
+        requestId: String(referenceId),
         message: message2,
         expiresIn: 600
       };

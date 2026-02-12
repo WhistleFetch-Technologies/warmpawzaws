@@ -109,6 +109,18 @@ resource "aws_iam_role_policy" "lambda_custom" {
       {
         Effect = "Allow"
         Action = [
+          "sns:Publish"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "sns:Protocol" = "sms"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "sqs:SendMessage",
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
@@ -121,7 +133,10 @@ resource "aws_iam_role_policy" "lambda_custom" {
         Action = [
           "cognito-idp:AdminGetUser",
           "cognito-idp:AdminUpdateUserAttributes",
-          "cognito-idp:ListUsers"
+          "cognito-idp:ListUsers",
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminSetUserPassword",
+          "cognito-idp:AdminInitiateAuth"
         ]
         Resource = var.cognito_arns
       },

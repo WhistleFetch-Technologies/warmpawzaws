@@ -1,0 +1,21 @@
+﻿{
+    "events": [
+        {
+            "logStreamName": "2026/02/12/[$LATEST]2deba387cd364692b696005aa175d6d4",
+            "timestamp": 1770894876062,
+            "message": "INIT_START Runtime Version: nodejs:20.v95\tRuntime Version ARN: arn:aws:lambda:ap-south-1::runtime:2d788b26ac416854c5eb831c9f46cb2e0a0ddcee84b1a9b114acbdfdb644c8c1\n",
+            "ingestionTime": 1770894883129,
+            "eventId": "39492275404442129454882405442826154665203757891000598528"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]2deba387cd364692b696005aa175d6d4",
+            "timestamp": 1770894876866,
+aws : 
+At C:\Users\itach\AppData\Local\Temp\ps-script-40b8623d-3fad-41b5-864e-7470cb0defa3.ps1:77 char:168
++ ... ; $events = aws logs filter-log-events --log-group-name /aws/lambda/w ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+'charmap' codec can't encode characters in position 44-45: character maps to <undefined>
+            "message": 

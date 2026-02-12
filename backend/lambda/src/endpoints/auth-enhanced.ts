@@ -52,28 +52,62 @@ async function createOtp(phone: string, code: string, purpose: string = 'login')
 }
 
 async function verifyOtp(phone: string, code: string): Promise<boolean> {
+  console.log(`[DEBUG] verifyOtp called: phone=${phone}, code=${code}`);
   const records = await select('otp_tokens', {
     phone,
     code,
     is_used: false,
   });
+  console.log(`[DEBUG] Found ${records.length} OTP records for phone=${phone}, code=${code}`);
 
   if (records.length === 0) {
+    // Try to find any OTP for this phone to debug
+    const allRecords = await select('otp_tokens', { phone, is_used: false });
+    console.log(`[DEBUG] Found ${allRecords.length} unused OTPs for phone=${phone} (any code)`);
+    if (allRecords.length > 0) {
+      console.log(`[DEBUG] Available OTP codes: ${allRecords.map((r: any) => r.code || r.otp_code).join(', ')}`);
+    }
     return false;
   }
 
-  const record = records[0];
-  
-  if (new Date(record.expires_at) < new Date()) {
-    return false;
+  try {
+    const record = records[0];
+    console.log(`[DEBUG] OTP record found: id=${record?.id}, expires_at=${record?.expires_at}, is_used=${record?.is_used}`);
+    console.log(`[DEBUG] Full record: ${JSON.stringify(record)}`);
+    
+    if (!record) {
+      console.log(`[DEBUG] ERROR: Record is null or undefined`);
+      return false;
+    }
+    
+    if (!record.expires_at) {
+      console.log(`[DEBUG] ERROR: expires_at is missing from record`);
+      return false;
+    }
+    
+    const expiresAt = new Date(record.expires_at);
+    const now = new Date();
+    console.log(`[DEBUG] Expiration check: expires_at=${expiresAt.toISOString()}, now=${now.toISOString()}, expired=${expiresAt < now}`);
+    
+    if (expiresAt < now) {
+      console.log(`[DEBUG] OTP expired: ${expiresAt.toISOString()} < ${now.toISOString()}`);
+      return false;
+    }
+
+    console.log(`[DEBUG] Marking OTP as used: id=${record.id}`);
+    await query(
+      'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+      [record.id]
+    );
+    console.log(`[DEBUG] OTP marked as used successfully`);
+
+    return true;
+  } catch (error: any) {
+    console.error(`[DEBUG] ERROR in verifyOtp after finding record:`, error);
+    console.error(`[DEBUG] Error message: ${error?.message}`);
+    console.error(`[DEBUG] Error stack: ${error?.stack}`);
+    throw error;
   }
-
-  await query(
-    'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-    [record.id]
-  );
-
-  return true;
 }
 
 /**
@@ -133,10 +167,16 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
       }
       
+      // ✅ DEBUG: Log OTP clearly for testing
+      console.log(`[DEBUG] OTP GENERATED FOR ${phone}: ${otpCode}`);
+      console.log(`[DEBUG] Phone normalized: ${normalizedPhone}, OTP: ${otpCode}`);
+      
       // ✅ FIX: Store OTP with timeout protection (3 seconds max)
       const otpStoreStartTime = Date.now();
       try {
-        const createOtpPromise = createOtp(phone, otpCode, body.role || 'login');
+        // ✅ FIX: Use normalizedPhone for storing OTP (must match verification)
+        const createOtpPromise = createOtp(normalizedPhone, otpCode, body.role || 'login');
+        console.log(`[DEBUG] Storing OTP: phone=${normalizedPhone}, otp=${otpCode}, role=${body.role || 'login'}`);
         const otpTimeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('OTP storage timeout after 3 seconds')), 3000);
         });
@@ -261,7 +301,21 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       } else {
         // PRODUCTION MODE: Normal OTP verification against database
         console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
-        isValid = await verifyOtp(phone, otp);
+        // ✅ FIX: Normalize phone to match how it was stored
+        const phoneDigits = phone.replace(/\D/g, '');
+        let normalizedPhoneForVerification: string;
+        if (phoneDigits.length === 10) {
+          normalizedPhoneForVerification = `+91${phoneDigits}`;
+        } else if (phoneDigits.startsWith('91') && phoneDigits.length === 12) {
+          normalizedPhoneForVerification = `+${phoneDigits}`;
+        } else if (phone.startsWith('+')) {
+          normalizedPhoneForVerification = phone;
+        } else {
+          normalizedPhoneForVerification = phoneDigits ? `+${phoneDigits}` : phone;
+        }
+        console.log(`[DEBUG] Verifying OTP: original phone=${phone}, normalized=${normalizedPhoneForVerification}, otp=${otp}`);
+        isValid = await verifyOtp(normalizedPhoneForVerification, otp);
+        console.log(`[DEBUG] OTP verification result: ${isValid}`);
         if (isValid) {
           console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
         } else {
@@ -274,12 +328,21 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       // ✅ FIX: Normalize phone number for database lookups
+      // OTP is stored with +91 prefix, so normalize to match
       const phoneDigits = phone.replace(/\D/g, '');
-      const normalizedPhone = phoneDigits.length > 10 
-        ? phoneDigits.slice(-10)
-        : phoneDigits.length === 9 
-          ? '0' + phoneDigits
-          : phoneDigits;
+      let normalizedPhoneForVerification: string;
+      if (phoneDigits.length === 10) {
+        normalizedPhoneForVerification = `+91${phoneDigits}`;
+      } else if (phoneDigits.startsWith('91') && phoneDigits.length === 12) {
+        normalizedPhoneForVerification = `+${phoneDigits}`;
+      } else if (phone.startsWith('+')) {
+        normalizedPhoneForVerification = phone;
+      } else {
+        normalizedPhoneForVerification = phoneDigits ? `+${phoneDigits}` : phone;
+      }
+      console.log(`[DEBUG] Normalized phone for verification: ${phone} -> ${normalizedPhoneForVerification}`);
+      
+      const normalizedPhone = normalizedPhoneForVerification;
 
       // Get or create customer/vendor
       let role = body.role || 'customer';
@@ -628,11 +691,16 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         // PRODUCTION MODE: Use full Cognito authentication
         try {
           console.log(`[AUTH] Production Mode: Authenticating with Cognito for ${phone} (role: ${role})`);
+          console.log(`[DEBUG] COGNITO_USER_POOL_ID: ${process.env.COGNITO_USER_POOL_ID || 'NOT SET'}`);
+          console.log(`[DEBUG] COGNITO_CLIENT_ID: ${process.env.COGNITO_CLIENT_ID || 'NOT SET'}`);
           const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
+          console.log(`[DEBUG] Cognito user created/retrieved: ${JSON.stringify(cognitoUser)}`);
           cognitoTokens = await authenticateCognitoUser(phone);
           console.log('[AUTH] Production Mode: Cognito authentication successful');
+          console.log(`[DEBUG] Cognito tokens received: accessToken=${cognitoTokens.accessToken.substring(0, 20)}...`);
         } catch (cognitoError: any) {
           console.error('[AUTH] Production Mode: Cognito authentication failed:', cognitoError);
+          console.error(`[DEBUG] Cognito error details: ${JSON.stringify(cognitoError)}`);
           // In production, Cognito failures are critical - fail the request
           return this.error(
             'Authentication service unavailable',

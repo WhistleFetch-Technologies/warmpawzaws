@@ -335,6 +335,11 @@ export async function kycRequest<T>(
     // Build headers based on provider
     const headers = buildAuthHeaders(config, accessToken);
     
+    // DEBUG: Log request body for troubleshooting
+    if (body) {
+      console.log(`[KYC-REQUEST] Request body for ${endpoint}:`, JSON.stringify(body, null, 2));
+    }
+    
     const response = await fetch(url, {
       method,
       headers: {
@@ -717,10 +722,14 @@ function buildAadhaarVerifyRequestBody(provider: KYCProvider, request: AadhaarVe
   switch (provider) {
     case 'sandbox':
       // Updated format per Sandbox.co API docs
+      // FIX: Keep reference_id as string (as returned from generate-otp response)
+      // The generate-otp response returns reference_id as a string, so we should send it as string
+      console.log(`[AADHAAR-VERIFY] Building request body: requestId="${request.requestId}" (keeping as string)`);
+      
       return { 
         '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request', 
-        reference_id: parseInt(request.requestId, 10) || request.requestId, 
-        otp: request.otp,
+        reference_id: String(request.requestId), // Keep as string to match generate-otp response format
+        otp: String(request.otp), // Ensure OTP is also a string
       };
     case 'signzy':
       return { requestId: request.requestId, otp: request.otp };
