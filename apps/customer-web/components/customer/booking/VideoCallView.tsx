@@ -170,16 +170,8 @@ export function VideoCallView({
         }
       };
       
-      // Try to get meeting info from backend
-      try {
-        await apiClient.post('/video-call/create', { 
-          bookingId,
-          participantType 
-        });
-      } catch (e) {
-        console.log('Backend call notification (may not be implemented)');
-      }
-      
+      // Legacy/demo: real video uses ChimeVideoCall + POST /video-call/join (create-on-join).
+      // POST /video-call/create requires { bookingId, customerId, vendorId } — not used here.
       // For demo, simulate connection
       setTimeout(() => {
         setStatus('active');

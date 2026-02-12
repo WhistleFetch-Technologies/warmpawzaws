@@ -395,13 +395,12 @@ export function VideoCallInterface({
       audioVideo.addObserver(observer);
 
       // =========================================================================
-      // REAL-TIME CHAT VIA DATA MESSAGES
+      // REAL-TIME CHAT VIA DATA MESSAGES - Chime SDK 3.x requires (topic, callback)
       // =========================================================================
-      audioVideo.realtimeSubscribeToReceiveDataMessage((dataMessage: any) => {
+      const handleDataMessage = (dataMessage: any) => {
         try {
           const topic = dataMessage.topic;
           const data = JSON.parse(new TextDecoder().decode(dataMessage.data));
-          
           if (topic === CHAT_TOPIC) {
             handleReceivedChatMessage(data as ChatDataMessage);
           } else if (topic === TYPING_TOPIC) {
@@ -410,7 +409,9 @@ export function VideoCallInterface({
         } catch (err) {
           console.error('Error processing data message:', err);
         }
-      });
+      };
+      audioVideo.realtimeSubscribeToReceiveDataMessage(CHAT_TOPIC, handleDataMessage);
+      audioVideo.realtimeSubscribeToReceiveDataMessage(TYPING_TOPIC, handleDataMessage);
 
       // Get available devices and select first ones
       try {

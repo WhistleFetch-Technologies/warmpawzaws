@@ -494,7 +494,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       toast.info('Starting video call...');
       const createRes = await apiClient.post('/video-call/create-meeting', {
         bookingId: booking.id,
-        customerId: booking.customerId || '',
+        customerId: booking.customerId || (booking as any).customer_id || '',
         vendorId: effectiveVendorId,
       }) as any;
       if (!createRes?.success && !createRes?.meetingId) {
@@ -1837,7 +1837,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               toast.info('Starting video call...');
               const createRes = await apiClient.post('/video-call/create-meeting', {
                 bookingId: bid,
-                customerId: booking.customerId || '',
+                customerId: booking.customerId || (booking as any).customer_id || '',
                 vendorId: vendorData?.id,
               }) as any;
               if (!createRes?.success && !createRes?.meetingId) {

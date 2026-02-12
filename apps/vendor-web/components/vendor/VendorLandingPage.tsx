@@ -247,6 +247,60 @@ export function VendorLandingPage({
       if (type === 'new_booking' || type === 'new_order') {
         setNewBookingAlert(notification);
       }
+      // ✅ Tele video call notifications (incoming / customer waiting)
+      if (type === 'tele_call_incoming' || type === 'tele_customer_waiting') {
+        void (async () => {
+          try {
+            const rawData = notification.data || notification.payload || {};
+            const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+            const bookingId =
+              data?.bookingId ||
+              data?.booking_id ||
+              notification.bookingId ||
+              notification.booking_id ||
+              '';
+            if (!bookingId) return;
+            const meetingId = data?.meetingId || data?.meeting_id;
+            const callType = (data?.callType || data?.call_type || (type === 'tele_customer_waiting' ? 'customer_waiting' : 'incoming')) as
+              | 'incoming'
+              | 'customer_waiting';
+
+            // Avoid re-showing the same call if already visible
+            if (incomingCall?.bookingId === bookingId && incomingCall?.callType === callType) return;
+
+            let customer = { id: '', name: 'Customer', phone: undefined as string | undefined, photo: undefined as string | undefined };
+            let serviceName: string | undefined;
+            let petName: string | undefined;
+            try {
+              const bookingRes = await apiClient.get<any>(`/bookings/${bookingId}?vendorId=${encodeURIComponent(vendorId)}`);
+              const booking = bookingRes?.booking || bookingRes;
+              customer = {
+                id: booking?.customer_id || booking?.customerId || '',
+                name: booking?.customer_name || booking?.customerName || 'Customer',
+                phone: booking?.customer_phone || booking?.customerPhone,
+                photo: booking?.customer_photo || booking?.customerPhoto,
+              };
+              serviceName = booking?.service_name || booking?.serviceName;
+              petName = booking?.pet_name || booking?.petName;
+            } catch (err) {
+              // Fallback to generic customer if booking lookup fails
+              console.warn('[VENDOR-LANDING] Could not load booking for call notification:', err);
+            }
+
+            setIncomingCall({
+              bookingId,
+              meetingId,
+              callType,
+              customer,
+              serviceName,
+              petName,
+              isInstant: true,
+            });
+          } catch (err) {
+            console.warn('[VENDOR-LANDING] Failed to parse tele call notification:', err);
+          }
+        })();
+      }
       // Toast and sound will be shown automatically by the service
     }
   });

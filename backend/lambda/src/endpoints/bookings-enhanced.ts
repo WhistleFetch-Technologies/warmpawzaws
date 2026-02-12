@@ -2737,6 +2737,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   app.get('/bookings/:bookingId', async (c) => {
     const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
+    const url = new URL(c.req.url, 'http://localhost');
+    event.queryStringParameters = Object.fromEntries(url.searchParams);
     const context = createLambdaContext();
     const result: any = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -2747,6 +2749,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   app.get('/customer/bookings/:bookingId', async (c) => {
     const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
+    const url = new URL(c.req.url, 'http://localhost');
+    event.queryStringParameters = Object.fromEntries(url.searchParams);
     const context = createLambdaContext();
     const result: any = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);

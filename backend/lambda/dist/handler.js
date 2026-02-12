@@ -135265,6 +135265,8 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.get("/bookings/:bookingId", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
+    const url = new URL(c.req.url, "http://localhost");
+    event.queryStringParameters = Object.fromEntries(url.searchParams);
     const context = createLambdaContext4();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -135273,6 +135275,8 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.get("/customer/bookings/:bookingId", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
+    const url = new URL(c.req.url, "http://localhost");
+    event.queryStringParameters = Object.fromEntries(url.searchParams);
     const context = createLambdaContext4();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);

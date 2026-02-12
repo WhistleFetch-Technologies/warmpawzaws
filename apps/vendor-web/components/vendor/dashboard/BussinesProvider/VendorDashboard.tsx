@@ -1348,7 +1348,7 @@ export function VendorDashboard({
                                         // Create meeting then notify customer (so they see incoming call) before navigating
                                         const createRes = await apiClient.post('/video-call/create-meeting', {
                                           bookingId: bid,
-                                          customerId: (appointment as any).customerId || '',
+                                          customerId: (appointment as any).customerId || (appointment as any).customer_id || '',
                                           vendorId: vendorData?.id || vendorId,
                                         }) as any;
                                         

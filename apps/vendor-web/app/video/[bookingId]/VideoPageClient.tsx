@@ -9,39 +9,42 @@ interface VideoPageClientProps {
   bookingId?: string;
 }
 
+const normalizeBookingId = (value?: string | null) => (value && value !== '_' ? value : '');
+
 export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientProps) {
   const router = useRouter();
   const params = useParams();
   
-  // ✅ CRITICAL: Get bookingId from URL path if not in params (for static exports)
-  const bookingIdFromPath = typeof window !== 'undefined' 
-    ? window.location.pathname.match(/\/video\/([^/?]+)/)?.[1] 
-    : null;
-  const bookingIdFromQuery = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('bookingId')
-    : null;
-  const normalizeBookingId = (value?: string | null) => (value && value !== '_' ? value : '');
-  const bookingId =
-    normalizeBookingId(bookingIdProp) ||
-    normalizeBookingId(params?.bookingId as string) ||
-    normalizeBookingId(bookingIdFromPath) ||
-    normalizeBookingId(bookingIdFromQuery) ||
-    '';
+  // Defer URL-derived state until after mount to avoid hydration mismatch (React #418)
+  const [resolvedBookingId, setResolvedBookingId] = useState('');
+  const [hasMounted, setHasMounted] = useState(false);
   
   const [bookingData, setBookingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [participantId, setParticipantId] = useState<string>('');
 
-  // ✅ CRITICAL: Log immediately to verify component is mounting
-  console.log('[VideoPageClient] ✅ Component mounted', { 
-    bookingId, 
-    bookingIdFromPath,
-    pathname: typeof window !== 'undefined' ? window.location.pathname : 'SSR',
-    search: typeof window !== 'undefined' ? window.location.search : ''
-  });
-
+  // Resolve bookingId from props, params, or URL only after mount (same on server and first client paint = '')
   useEffect(() => {
+    setHasMounted(true);
+    const fromPath = typeof window !== 'undefined' ? window.location.pathname.match(/\/video\/([^/?]+)/)?.[1] : null;
+    const fromQuery = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('bookingId') : null;
+    const id =
+      normalizeBookingId(bookingIdProp) ||
+      normalizeBookingId(params?.bookingId as string) ||
+      normalizeBookingId(fromPath) ||
+      normalizeBookingId(fromQuery) ||
+      '';
+    setResolvedBookingId(id);
+  }, [bookingIdProp, params?.bookingId]);
+
+  const bookingId = hasMounted ? resolvedBookingId : (normalizeBookingId(bookingIdProp) || normalizeBookingId(params?.bookingId as string) || '');
+
+  // Init effect - must run on every render (Rules of Hooks)
+  useEffect(() => {
+    if (!hasMounted) {
+      return () => {};
+    }
     console.log('[VideoPageClient] ✅ useEffect running', { 
       bookingId, 
       pathname: typeof window !== 'undefined' ? window.location.pathname : 'SSR',
@@ -149,7 +152,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     return () => {
       cancelled = true;
     };
-  }, [bookingId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bookingId, hasMounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadBookingData = async () => {
     if (!bookingId) {
@@ -176,7 +179,8 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     try {
       console.log('[VideoPageClient] Loading booking data for:', bookingId);
       setError(null);
-      const url = vid ? `/bookings/${bookingId}?vendorId=${encodeURIComponent(vid)}` : `/bookings/${bookingId}`;
+      // Use vendor-specific endpoint when we have vendorId (avoids 404 from GET /bookings/:id auth)
+      const url = vid ? `/vendor/bookings/${bookingId}/details` : `/bookings/${bookingId}`;
       
       // Race between API call and timeout
       const response = await Promise.race([
@@ -184,7 +188,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         timeoutPromise
       ]) as any;
       
-      const booking = response.booking || response;
+      const booking = response.booking || response.data || response;
       if (booking) {
         console.log('[VideoPageClient] ✅ Booking data loaded:', booking);
         setBookingData({
@@ -201,6 +205,18 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     }
     // ✅ NOTE: Don't set loading to false here - it's already false, and we don't want to block rendering
   };
+
+  // Conditional returns AFTER all hooks (React #310: same hook count every render)
+  if (!hasMounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto" />
+          <p className="mt-4 text-gray-400">Preparing video call...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!bookingId) {
     return (
