@@ -119082,7 +119082,7 @@ async function putSecretJson(secretName, secretValue, description) {
   const secretString = JSON.stringify(secretValue);
   await putSecret(secretName, secretString, description);
 }
-var import_client_secrets_manager2, secretsClient2, STAGE;
+var import_client_secrets_manager2, secretsClient2, STAGE_RAW, STAGE;
 var init_secrets_manager = __esm({
   "src/utils/secrets-manager.ts"() {
     "use strict";
@@ -119090,7 +119090,8 @@ var init_secrets_manager = __esm({
     secretsClient2 = new import_client_secrets_manager2.SecretsManagerClient({
       region: process.env.AWS_REGION || "ap-south-1"
     });
-    STAGE = "development";
+    STAGE_RAW = process.env.ENVIRONMENT || process.env.STAGE || "development";
+    STAGE = STAGE_RAW === "production" ? "prod" : STAGE_RAW === "development" ? "dev" : STAGE_RAW;
   }
 });
 

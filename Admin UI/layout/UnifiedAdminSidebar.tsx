@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
-// import { supabase } from '../../../utils/supabase/client';
 
 const logoImage = "/warmpawz-logo-1.svg";
 
@@ -37,7 +36,6 @@ export function UnifiedAdminSidebar({
 }: UnifiedAdminSidebarProps) {
 	const [open, setOpen] = useState(false);
 	const handleSignOut = async () => {
-		// await supabase.auth.signOut();
 		window.location.reload();
 	};
 

@@ -8,7 +8,6 @@
  * - Track milestones
  * - Generate progress reports
  * 
- * Migrated from: supabase/functions/server/training-progress-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

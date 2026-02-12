@@ -8,7 +8,6 @@
  * - Start session (for services like dog walking)
  * - End session
  * 
- * Migrated from: supabase/functions/server/vendor-booking-actions.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

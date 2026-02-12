@@ -464,7 +464,6 @@ const result = await apiClient.post('/vendor/bookings', payload) as any;
 - ✅ Cognito authentication automatic
 - ✅ Error handling centralized
 - ✅ Request/response formatting consistent
-- ✅ No Supabase dependencies
 
 ---
 
@@ -503,7 +502,6 @@ const result = await apiClient.post('/vendor/bookings', payload) as any;
 
 3. **Mobile Apps**: Mobile apps use the same API endpoints but have React Native-specific implementations. The API contracts remain the same.
 
-4. **Authentication**: All components use Cognito authentication via `apiClient`. No direct Supabase references.
 
 ---
 

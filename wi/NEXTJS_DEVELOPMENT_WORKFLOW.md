@@ -13,7 +13,6 @@
 Node.js: >= 18.0.0
 pnpm: >= 8.0.0
 Git: >= 2.40.0
-Docker: >= 20.10 (optional, for Supabase local)
 AWS CLI: >= 2.0 (for Phase 5+)
 ```
 
@@ -93,15 +92,10 @@ pnpm run dev:vendor      # Port 3002
 pnpm run dev:admin       # Port 3003
 ```
 
-### Start Backend (Supabase)
 
 ```bash
-# Terminal 2: Start Supabase local (Phase 2+)
-cd infrastructure/supabase
-supabase start
 
 # Or with Docker
-docker-compose up -d supabase
 ```
 
 ### Access Applications
@@ -110,7 +104,6 @@ docker-compose up -d supabase
 Customer App: http://localhost:3001
 Vendor App:   http://localhost:3002
 Admin App:    http://localhost:3003
-Supabase UI:  http://localhost:54323
 API Routes:   http://localhost:3001/api/v1/* (proxied from apps)
 ```
 
@@ -627,7 +620,6 @@ Before creating a pull request:
 
 ### Architecture
 
-- [ ] No Supabase imports in components
 - [ ] No database logic in API routes
 - [ ] Business logic in domain layer only
 - [ ] Repository pattern used for data access
@@ -769,18 +761,12 @@ pnpm install --save-dev @types/node@latest
 pnpm why react
 ```
 
-### Issue: Supabase Connection Failed
 
 ```bash
-# Check if Supabase is running
 curl http://localhost:54321
 
-# Restart Supabase
-supabase stop
-supabase start
 
 # Check environment variables
-echo $NEXT_PUBLIC_SUPABASE_URL
 ```
 
 ### Issue: Tests Failing
@@ -845,15 +831,12 @@ pnpm --filter @warmpawz/domain test
 pnpm test:domain --watch
 
 # Verify: No framework imports in domain
-grep -r "import.*@supabase\|import.*next" packages/domain/src/
 ```
 
-### PHASE 2: Frontend + Supabase
 
 ```bash
 # Start development
 pnpm run dev
-supabase start
 
 # Test end-to-end
 pnpm test e2e --grep "customer.*booking"

@@ -9,7 +9,6 @@
  * - Generate presigned URLs
  * - Delete files
  * 
- * Migrated from: supabase/functions/server/storage-handler.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda (S3)

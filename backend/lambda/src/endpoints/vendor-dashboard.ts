@@ -3,7 +3,6 @@
  * VENDOR DASHBOARD ENDPOINTS - LAMBDA VERSION
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-vendor/vendor-dashboard-endpoints.tsx
  * 
  * Endpoints:
  * - GET /vendor/dashboard/:vendorId - Get comprehensive dashboard data

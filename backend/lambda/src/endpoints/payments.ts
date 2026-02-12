@@ -3,7 +3,6 @@
  * PAYMENT ENDPOINTS - LAMBDA VERSION (TEMPORAL AUDIT COMPLIANT)
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-payment/payment-endpoints.tsx
  * 
  * Endpoints:
  * - POST /payments/create - Create payment

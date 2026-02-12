@@ -8,7 +8,6 @@
  * - Donation campaigns
  * - Donor management
  * 
- * Migrated from: supabase/functions/server/donation-management-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

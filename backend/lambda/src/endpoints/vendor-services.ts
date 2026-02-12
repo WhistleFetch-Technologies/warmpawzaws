@@ -9,7 +9,6 @@
  * - Enable/disable services
  * - Custom service creation
  * 
- * Migrated from: supabase/functions/make-server-vendor/vendor-services-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

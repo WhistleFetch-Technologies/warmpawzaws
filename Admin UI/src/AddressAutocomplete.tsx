@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { MapPin, Loader2, Search, Navigation } from "lucide-react";
-// import { getApiBaseUrl, getAuthHeaders } from '../../utils/supabase/info';
 
 interface AddressAutocompleteProps {
 	onSelect: (address: any) => void;

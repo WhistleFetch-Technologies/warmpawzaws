@@ -3,7 +3,6 @@
  * ADMIN ENDPOINTS - LAMBDA VERSION
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-admin/admin-vendor-routes-sql.tsx
  * 
  * Endpoints:
  * - GET /admin/vendors/stats - Get vendor statistics

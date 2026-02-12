@@ -8,7 +8,6 @@
  * - Verify OTP to start/end sessions
  * - Booking OTP management
  * 
- * Migrated from: supabase/functions/make-server-3dd53475/universal-otp-system-sql.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

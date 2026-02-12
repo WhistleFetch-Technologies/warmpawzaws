@@ -3,7 +3,6 @@
  * RAZORPAY PAYMENT & SETTLEMENT ENDPOINTS - LAMBDA VERSION
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-payment/razorpay-payment-integration-sql.tsx
  * 
  * Endpoints:
  * - POST /razorpay/create-order - Create Razorpay order

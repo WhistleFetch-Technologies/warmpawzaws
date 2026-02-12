@@ -9,7 +9,6 @@
  * - Check vacation mode
  * - Generate time slots
  * 
- * Migrated from: supabase/functions/make-server-booking/followup-endpoints-sql.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

@@ -9,7 +9,6 @@
  * - In-app notifications
  * - Push notifications (future)
  * 
- * Migrated from: supabase/functions/server/notification-system.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

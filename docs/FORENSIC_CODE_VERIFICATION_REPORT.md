@@ -26,10 +26,8 @@
 | File | Change | Breakage risk |
 |------|--------|----------------|
 | `Warmpawz Ecosystem Development/src/components/vendor/VendorRoleSelection.tsx` | Use `configRolesUrl()`, `getAuthHeaders()` from `utils/api-config` | **Fixed:** Import now `configRolesUrl, getAuthHeaders` from api-config. |
-| `Warmpawz Ecosystem Development/src/utils/api-config.ts` | API base URL and auth (no Supabase). Exports `getApiBaseUrl()`, `configRolesUrl()`, `getAuthHeaders()` | No breakage; all Ecosystem components use api-config. |
 | `packages/api-config` | **Created** – `getApiBaseUrl()`, `ENDPOINTS` | Not yet consumed by all apps; optional. |
 | `apps/admin-web/next.config.js`, `apps/vendor-web/next.config.js`, `apps/customer-web/next.config.js` | Performance opts (compress, optimizePackageImports, modularizeImports); structure retained | No functional breakage; build output remains `dist/`, static export. |
-| `apps/vendor-web/lib/api-config.ts` | **Created** – API base and auth (no Supabase); vendor-web components import `@/lib/api-config` | **Gap closed:** All vendor-web components use getApiBaseUrl/getAuthHeaders from api-config. |
 
 ### 2.2 Breakage Status
 
@@ -152,7 +150,5 @@
 ## 8. Files Touched in This Verification
 
 - **Fixed:** `Warmpawz Ecosystem Development/src/components/vendor/VendorRoleSelection.tsx` – import `configRolesUrl, getAuthHeaders` from api-config.
-- **Added:** `apps/vendor-web/lib/api-config.ts` – `getApiBaseUrl()`, `getAuthHeaders()` so vendor-web builds and runs (no Supabase).
 - **Added:** This report – `docs/FORENSIC_CODE_VERIFICATION_REPORT.md`.
 
-No other production code was changed. Ecosystem, vendor-web, and Admin UI use api-config (getApiBaseUrl/getAuthHeaders); no Supabase references in app code.

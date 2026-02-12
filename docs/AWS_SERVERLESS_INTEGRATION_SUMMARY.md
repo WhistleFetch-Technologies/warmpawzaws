@@ -3,9 +3,7 @@
 ## ✅ Completed Tasks
 
 ### 1. AWS Serverless Compatibility
-- ✅ **API Client Migration**: All components now use `apiClient` instead of direct `fetch` with Supabase URLs
 - ✅ **Cognito Authentication**: API client configured to use Cognito tokens
-- ✅ **Removed Supabase Dependencies**: All `projectId` and `publicAnonKey` references removed
 - ✅ **Lambda Endpoints Created**: Distance pricing endpoints created and registered
 
 ### 2. New UI Pages Created
@@ -65,7 +63,6 @@ Some components are imported but not yet created. These need placeholder impleme
 ### Frontend
 - `apps/vendor-web/lib/api-client.ts` - Already AWS Serverless compatible
 - `apps/vendor-web/components/vendor/VendorDistancePricing.tsx` - Migrated to apiClient
-- `apps/vendor-web/components/vendor/VendorLandingPage.tsx` - Removed Supabase deps
 - `apps/vendor-web/components/vendor/VendorDashboard.tsx` - New component
 - `apps/vendor-web/components/vendor/VendorAnalytics.tsx` - New component
 - `apps/vendor-web/components/vendor/VendorPaymentSettings.tsx` - New component
@@ -78,7 +75,6 @@ Some components are imported but not yet created. These need placeholder impleme
 
 1. **Complete AWS Serverless Architecture**: All new pages are compatible with Cognito, Lambda, RDS, and CloudFront
 2. **API Integration**: Lambda endpoints created and registered for distance pricing
-3. **Component Migration**: All critical components migrated from Supabase to AWS Serverless
 4. **Routing System**: Capability-based routing implemented for dynamic navigation
 
 ## 📚 Documentation

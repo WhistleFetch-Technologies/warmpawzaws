@@ -9,7 +9,6 @@
  * - Payout management
  * - Dashboard statistics and analytics
  * 
- * Migrated from: supabase/functions/make-server-3dd53475/vendor-dashboard-endpoints-refactored.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

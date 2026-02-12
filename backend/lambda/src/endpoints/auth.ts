@@ -3,7 +3,6 @@
  * AUTHENTICATION ENDPOINTS - LAMBDA VERSION
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-core/auth-endpoints.tsx
  * 
  * Endpoints:
  * - POST /auth/send-otp - Send OTP to phone number

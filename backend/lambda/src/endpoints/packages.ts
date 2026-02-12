@@ -9,7 +9,6 @@
  * - Session tracking
  * - Package progress
  * 
- * Migrated from: supabase/functions/server/customer-package-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

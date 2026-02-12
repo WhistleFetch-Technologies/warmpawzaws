@@ -9,7 +9,6 @@
  * - Region configuration
  * - Region seeding (multi-region support)
  * 
- * Migrated from: supabase/functions/server/missing-crud-endpoints.tsx
  * Enhanced with: Multi-region seeding system
  * 
  * Date: 2025-01-28

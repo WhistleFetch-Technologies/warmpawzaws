@@ -12,7 +12,6 @@
  * - Tier eligibility checking
  * - Settlement breakup with clear explanations
  * 
- * Migrated from: supabase/functions/server/tier-system.tsx
  * 
  * Date: 2025-01-28
  * Updated: 2026-01-27 - Added tier upgrade payment flow and settlement deductions

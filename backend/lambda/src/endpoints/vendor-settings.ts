@@ -9,7 +9,6 @@
  * - Booking rules
  * - Schedule settings
  * 
- * Migrated from: supabase/functions/make-server-3dd53475/vendor-settings-rules-endpoints-refactored.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

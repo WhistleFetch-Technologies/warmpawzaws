@@ -802,7 +802,6 @@ import {
 	ERROR_CODES,
 } from "@warmpawz/api-contracts";
 import { BookingService } from "@warmpawz/services";
-import { SupabaseBookingRepository } from "@/infrastructure/repositories";
 
 /**
  * Create a new booking
@@ -857,7 +856,6 @@ export async function POST(request: NextRequest) {
 		}
 
 		// 4. Call service layer (business logic lives there)
-		const bookingService = new BookingService(new SupabaseBookingRepository());
 
 		const result = await bookingService.createBooking(userId, parseResult.data);
 

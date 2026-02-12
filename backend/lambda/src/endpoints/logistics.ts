@@ -15,7 +15,6 @@
  * - Delhivery: Inter-city shipments with better rates for certain routes
  * - Dunzo: Hyperlocal delivery (<10km, same city) for pharmacy/meal
  * 
- * Migrated from: supabase/functions/server/shiprocket-integration.tsx
  * 
  * Date: 2025-01-28
  * Updated: 2026-01-27 - Added Delhivery and Dunzo integrations

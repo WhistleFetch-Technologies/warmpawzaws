@@ -9,7 +9,6 @@
  * - Download prescriptions
  * - Link prescriptions to bookings
  * 
- * Migrated from: supabase/functions/make-server-3dd53475/healthcare-compliance-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

@@ -9,7 +9,6 @@
  * - Get settlement history
  * - Vendor bank account management
  * 
- * Migrated from: supabase/functions/make-server-payment/settlement-automation.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

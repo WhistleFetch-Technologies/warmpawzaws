@@ -22,7 +22,6 @@
 ```bash
 # Search for stream endpoint in backend
 grep -r "updates/stream" backend/
-grep -r "updates/stream" supabase/functions/
 
 # Check mobile API service
 grep -r "updates/stream" apps/WarmpawzVendor/src/services/

@@ -8,7 +8,6 @@
  * - Event registration
  * - Event discovery
  * 
- * Migrated from: supabase/functions/server/event-management-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

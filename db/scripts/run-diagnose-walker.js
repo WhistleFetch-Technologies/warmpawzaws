@@ -5,9 +5,7 @@
  */
 const { Client } = require('pg');
 
-const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 if (!DATABASE_URL) {
-  console.error('Set DATABASE_URL (or SUPABASE_DB_URL) to run the diagnostic.');
   process.exit(1);
 }
 
@@ -54,7 +52,6 @@ ORDER BY v.business_name`,
 async function main() {
   const client = new Client({
     connectionString: DATABASE_URL,
-    ssl: DATABASE_URL.includes('rds.') || DATABASE_URL.includes('supabase') ? { rejectUnauthorized: false } : undefined,
   });
   await client.connect();
   try {

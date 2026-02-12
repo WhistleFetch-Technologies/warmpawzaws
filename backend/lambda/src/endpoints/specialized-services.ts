@@ -12,7 +12,6 @@
  * - Breeder/Adoption: Puppy/Pet profiles
  * - Pet Resort/Boarding: Room configuration, pricing
  * 
- * Migrated from: supabase/functions/make-server-3dd53475/specialized-vendor-config-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

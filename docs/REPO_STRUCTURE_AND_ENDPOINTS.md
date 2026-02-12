@@ -66,7 +66,6 @@ Constants: `packages/api-config` exports `ENDPOINTS` (e.g. `ENDPOINTS.CONFIG_ROL
 - **Vendor “choose your role”**:  
   - `apps/vendor-web`: `apiClient.get('/config/roles')` (lib/api-client.ts base URL).  
   - `apps/WarmpawzVendor`: `fetch(API_BASE_URL + '/config/roles')` in VendorRoleSelectionScreen.  
-  - Warmpawz Ecosystem Development: `configRolesUrl()` from `src/utils/supabase/info.ts` in VendorRoleSelection.tsx.
 - **Admin active vendors**:  
   - `apps/admin-web`: apiClient + `/admin/vendors/active`.  
   - Warmpawz Ecosystem Development / Admin UI: use same path with their base URL.
@@ -89,5 +88,4 @@ node scripts/verify-endpoints-structure.js
 
 This reports:
 
-- Files that still use hardcoded API URLs (e.g. legacy `supabase.co` or `make-server-3dd53475`).
 - Files that use `/config/roles` or other key paths so you can confirm they use the shared base URL.

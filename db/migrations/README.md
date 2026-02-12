@@ -24,11 +24,9 @@ This directory contains idempotent SQL migration scripts for migrating from KV-s
 
 ## Running Migrations
 
-### Option 1: Using Supabase CLI
 
 ```bash
 # Run all migrations
-supabase db reset
 
 # Or run individually
 psql $DATABASE_URL -f db/migrations/001_initial_schema.sql
@@ -48,9 +46,7 @@ psql -h <host> -U <user> -d <database>
 \i db/migrations/003_indexes.sql
 ```
 
-### Option 3: Using Supabase Dashboard
 
-1. Go to SQL Editor in Supabase Dashboard
 2. Copy and paste each migration file content
 3. Run in order: 001, 002, 003
 

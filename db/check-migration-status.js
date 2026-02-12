@@ -9,10 +9,8 @@
 const { Pool } = require('pg');
 
 // Database URL from environment or default
-const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 
 if (!DATABASE_URL) {
-  console.error('❌ DATABASE_URL or SUPABASE_DB_URL environment variable is required');
   process.exit(1);
 }
 
@@ -24,7 +22,6 @@ async function checkMigrationStatus() {
 
   const pool = new Pool({ 
     connectionString: DATABASE_URL,
-    ssl: DATABASE_URL.includes('supabase') || DATABASE_URL.includes('rds.amazonaws.com') || DATABASE_URL.includes('sslmode=require') 
       ? { rejectUnauthorized: false } 
       : undefined
   });

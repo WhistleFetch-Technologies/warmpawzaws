@@ -10,7 +10,6 @@
  * - Logistics partners
  * - Connection testing
  * 
- * Migrated from: supabase/functions/make-server-3dd53475/admin-integration-endpoints-sql.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

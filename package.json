@@ -88,7 +88,6 @@
     "build:frontend:customer": "cd apps/customer-web && npm ci && npm run build",
     "package:lambda": "cd backend/lambda && npm run package",
     "preview": "vite preview --host --port 3000",
-    "serve": "vite preview --host --port 3000",
-    "dev:legacy-vite": "npm run dev --prefix \"Warmpawz Ecosystem Development\""
+    "serve": "vite preview --host --port 3000"
   }
 }

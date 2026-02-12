@@ -13,7 +13,6 @@ This document outlines the complete AWS Serverless architecture integration for 
 ### ✅ Completed Migrations
 
 1. **API Client** (`apps/vendor-web/lib/api-client.ts`)
-   - ✅ Migrated from Supabase Functions to API Gateway
    - ✅ Uses Cognito tokens for authentication
    - ✅ Supports runtime configuration via `runtime-config.js`
    - ✅ Handles FormData uploads correctly
@@ -217,7 +216,6 @@ window.__WARMPAWZ_RUNTIME_CONFIG__ = {
 
 ### Frontend
 - [x] All components use `apiClient` instead of direct `fetch`
-- [x] Removed all Supabase dependencies
 - [x] Cognito authentication integrated
 - [x] New UI pages created and functional
 - [x] Routing structure updated
@@ -259,10 +257,6 @@ window.__WARMPAWZ_RUNTIME_CONFIG__ = {
 ## 📝 Notes
 
 - All new components are compatible with AWS Serverless architecture
-- Authentication uses Cognito tokens (not Supabase sessions)
-- API calls go through API Gateway (not Supabase Functions)
-- Database operations use RDS PostgreSQL (not Supabase Postgres)
-- Static assets served via CloudFront (not Supabase Storage)
 
 ## 🐛 Known Issues
 

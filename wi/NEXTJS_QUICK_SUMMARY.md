@@ -24,7 +24,6 @@ Admin App (Next.js)    ┘         ↑
 
 > **Frontend never knows which backend it's talking to.**
 >
-> API contracts are frozen in Phase 0. During Phase 5, swap entire backend (Supabase → AWS) without touching frontend code.
 
 ---
 
@@ -56,9 +55,7 @@ warmpawz/
 | **App Router**         | Next.js App Router (new, better)                       |
 | **State Management**   | Context + React Query + Zustand                        |
 | **API Contracts**      | Zod-based, TypeScript-first                            |
-| **Data Layer**         | Supabase KV now → DynamoDB later                       |
 | **Mobile Support**     | Share `packages/domain` with React Native              |
-| **File Storage**       | S3 (not Supabase Storage)                              |
 
 ---
 
@@ -115,7 +112,6 @@ Define contracts in Phase 0 → Frontend & backend build against contracts
 ```typescript
 // ✅ GOOD: Pure TypeScript in domain/
 export function validateBooking(slot, existing) {
-  // No Supabase, no Next.js, no React, no AWS SDK
   // Only domain imports
 }
 
@@ -156,7 +152,6 @@ const response = await fetch('/api/v1/bookings', {...});
 // - Table names (bookings, bookings_payments, etc.)
 // - Database fields (vendor_id_fk, created_ts, etc.)
 // - SQL relationships
-// - Whether backend is Supabase or AWS
 ```
 
 ### 5️⃣ Semantic Errors
@@ -231,8 +226,6 @@ const response = await fetch('/api/v1/bookings', {...});
 └─────────────┬──────────────────────────────┘
               │
 ┌─────────────▼──────────────────────────────┐
-│ Repository Layer (supabase-booking-repo)   │
-│ - Persist booking to Supabase KV           │
 │ - Return saved booking with ID             │
 └─────────────┬──────────────────────────────┘
               │
@@ -276,10 +269,8 @@ Layer 1: Local Component State (useState)
 ```
 Week 1-2:    Phase 0 - Freeze contracts & domain types
 Week 3-5:    Phase 1 - Extract business logic
-Week 6-9:    Phase 2 - Build frontend + Supabase validation
 Week 10-12:  Phase 3 - Complete UI, mobile apps
 Week 13-14:  Phase 4 - AWS infrastructure
-Week 15-16:  Phase 5 - Backend swap (Supabase → AWS)
 Week 17-18:  Phase 6 - Optimization & monitoring
 ```
 
@@ -336,7 +327,6 @@ Week 17-18:  Phase 6 - Optimization & monitoring
 ```typescript
 // ❌ These are ALWAYS wrong:
 
-import { createClient } from '@supabase/supabase-js';           // NO Supabase in frontend
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';     // NO AWS SDK in frontend
 import React from 'react'; // in packages/domain              // NO React in domain
 export async function route(req: NextRequest) { ... logic ... } // NO logic in routes

@@ -9,7 +9,6 @@
  * - File claims
  * - Track claims
  * 
- * Migrated from: supabase/functions/server/insurance-endpoints.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

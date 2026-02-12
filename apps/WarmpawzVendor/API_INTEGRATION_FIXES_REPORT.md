@@ -159,7 +159,6 @@ Comprehensive audit and fixes applied to ensure 100% API integration coverage an
 - ✅ All error handling in place
 - ✅ All loading states implemented
 - ✅ No placeholder code remaining
-- ✅ No Supabase/KV usage (AWS only)
 - ✅ All business logic validated
 - ✅ Staff vs Vendor permissions enforced
 - ✅ Real-time features wired

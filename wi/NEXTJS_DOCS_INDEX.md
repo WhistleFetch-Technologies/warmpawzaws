@@ -216,16 +216,13 @@ pnpm run dev              # Starts all 3 apps
 - Single source of truth for contracts
 - Used in both frontend validation and API routes
 
-### 8. **Keep Supabase for Now**
 
-- Phase 2: Use Supabase KV for data
 - Phase 5: Swap to Aurora + DynamoDB (AWS)
 - Changes only in repository layer
 - Frontend and API contracts remain unchanged
 
 ### 9. **S3 for File Storage**
 
-- Replace Supabase Storage with S3
 - Signed URLs for access
 - Separate bucket per environment (dev/staging/prod)
 
@@ -255,7 +252,6 @@ export const CreateBookingRequestSchema = z.object({...});
 
 ### Principle 2: Framework-Free Domain Logic
 
-> Domain layer has ZERO dependencies on Next.js, React, AWS SDK, or Supabase SDK.
 
 ```typescript
 // ✅ domain/booking/rules.ts - Pure TypeScript
@@ -298,7 +294,6 @@ export async function POST(request: NextRequest) {
 
 ### Principle 4: Frontend Never Knows the Backend
 
-> Frontend cannot determine if backend is Supabase, AWS, or even a mock.
 
 ```typescript
 // Frontend only knows:
@@ -309,7 +304,6 @@ export async function POST(request: NextRequest) {
 // Frontend DOES NOT know:
 // - Database schema
 // - Whether backend is SQL or NoSQL
-// - Whether backend is Supabase or AWS
 // - Table names or relationships
 ```
 
@@ -367,11 +361,8 @@ vendor_01JBXV7F41ANKJSDQQ69G69FP3
 └─────────────────────────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ PHASE 2: Frontend + Supabase Validation  (4 weeks)           │
 │ • Build Next.js apps                                         │
-│ • Supabase as backend                                        │
 │ • Validate contracts                                         │
-│ ✅ OUTPUT: 3 functional Next.js apps, Supabase integration   │
 └─────────────────────────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -392,7 +383,6 @@ vendor_01JBXV7F41ANKJSDQQ69G69FP3
          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ PHASE 5: Backend Swap                    (2 weeks)           │
-│ • Replace Supabase repos → Aurora repos                      │
 │ • Deploy Lambda functions                                    │
 │ • Point frontend to AWS                                      │
 │ ✅ OUTPUT: Full AWS microservices stack                      │
@@ -522,7 +512,6 @@ NEXTJS_ARCHITECTURE_DESIGN.md
 1. **Build** React components
 2. **Implement** React Query hooks
 3. **Setup** Zustand stores
-4. **Integrate** Supabase backend
 5. **Write** E2E tests
 
 ---

@@ -3,7 +3,6 @@
  * CUSTOMER ENDPOINTS - LAMBDA VERSION
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-customer/customer-routes.tsx
  * 
  * Endpoints:
  * - GET /customer/:customerId - Get customer profile

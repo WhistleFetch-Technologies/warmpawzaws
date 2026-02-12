@@ -8,7 +8,6 @@
  * - Get follow-up eligible bookings
  * - Get booking details with vendor/service info
  * 
- * Migrated from: supabase/functions/make-server-customer/customer-booking-history.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

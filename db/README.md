@@ -24,7 +24,6 @@ Runs all SQL migration files in numerical order. This is idempotent and safe to 
 # Set database URL
 export DATABASE_URL="postgresql://user:password@host:port/database"
 # or
-export SUPABASE_DB_URL="postgresql://postgres:password@db.project.supabase.co:5432/postgres"
 
 # Run migrations
 npm run migrate:up
@@ -83,7 +82,6 @@ npm run seed:prod
 The scripts require one of the following environment variables:
 
 - `DATABASE_URL` - Standard PostgreSQL connection string
-- `SUPABASE_DB_URL` - Supabase database connection string
 
 Example:
 ```bash
@@ -173,8 +171,6 @@ psql "$DATABASE_URL" -c "SELECT version();"
 ### Migration Already Applied
 If you see "already exists" or "duplicate key" errors, this is normal for idempotent migrations. The script will skip these and continue.
 
-### SSL Certificate Issues with Supabase
-The scripts automatically detect Supabase URLs and disable SSL certificate verification. If you still have issues, check your connection string includes the correct SSL parameters.
 
 ## Architecture
 
@@ -190,7 +186,6 @@ The scripts automatically detect Supabase URLs and disable SSL certificate verif
 2. **Idempotent**: Safe to run multiple times
 3. **Error handling**: Continues with remaining migrations even if one fails
 4. **Connection pooling**: Proper cleanup of database connections
-5. **SSL support**: Automatic SSL configuration for Supabase
 
 ## Database Schema
 

@@ -3,7 +3,6 @@
  * ROLE CONFIG ENDPOINTS - LAMBDA VERSION
  * ============================================================================
  * 
- * Migrated from: supabase/functions/make-server-vendor/vendor-role-config.tsx
  * 
  * Endpoints:
  * - GET /config/roles - Get all roles

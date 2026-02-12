@@ -28,7 +28,6 @@ import {
 	Building2,
 	Loader2,
 } from "lucide-react";
-// import { getApiBaseUrl, getAuthHeaders } from '../../utils/supabase/info';
 
 interface SearchResult {
 	type: "vendor" | "product" | "staff" | "service";

@@ -8,7 +8,6 @@
  * - Manage recurring schedules
  * - Morning/Afternoon/Evening time slots
  * 
- * Migrated from: supabase/functions/server/time-window-subscription.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

@@ -15,7 +15,8 @@ const secretsClient = new SecretsManagerClient({
   region: process.env.AWS_REGION || 'ap-south-1',
 });
 
-const STAGE = process.env.NODE_ENV || process.env.STAGE || 'dev';
+const STAGE_RAW = process.env.ENVIRONMENT || process.env.STAGE || process.env.NODE_ENV || 'dev';
+const STAGE = STAGE_RAW === 'production' ? 'prod' : STAGE_RAW === 'development' ? 'dev' : STAGE_RAW;
 
 /**
  * Get a secret from AWS Secrets Manager

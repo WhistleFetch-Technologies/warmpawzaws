@@ -12,7 +12,6 @@ The vendor updates WebSocket endpoint has been successfully implemented to match
 
 ## 📋 CHANGES MADE
 
-### 1. WebSocket Server (`supabase/functions/server/websocket-server.tsx`)
 
 **Added:**
 - ✅ New endpoint: `/make-server-3dd53475/ws/updates/:vendorId`
@@ -32,7 +31,6 @@ The vendor updates WebSocket endpoint has been successfully implemented to match
 
 ---
 
-### 2. Booking Lifecycle Management (`src/supabase/functions/server/booking-lifecycle-management.tsx`)
 
 **Added:**
 - ✅ Import: `broadcastVendorUpdate` from websocket-server
@@ -46,7 +44,6 @@ The vendor updates WebSocket endpoint has been successfully implemented to match
 
 ---
 
-### 3. Vendor Booking Actions (`src/supabase/functions/server/vendor-booking-actions.tsx`)
 
 **Added:**
 - ✅ Import: `broadcastVendorUpdate` from websocket-server
@@ -152,7 +149,6 @@ wss://api.warmpawz.com/make-server-3dd53475/ws/updates/{vendorId}
 **Note:** If import path doesn't work, update imports to:
 ```typescript
 // In booking-lifecycle-management.tsx and vendor-booking-actions.tsx
-import { broadcastVendorUpdate } from '../../supabase/functions/server/websocket-server';
 ```
 
 Or use relative path based on actual file structure:
@@ -176,7 +172,6 @@ import { broadcastVendorUpdate } from '../websocket-server';
 
 ## 🎯 NEXT STEPS
 
-1. ✅ **Deploy backend changes** to Supabase Functions
 2. ✅ **Test WebSocket connection** from mobile app
 3. ✅ **Test broadcast events** (accept, complete, start service)
 4. ✅ **Verify updates appear** in RealTimeUpdatesScreen

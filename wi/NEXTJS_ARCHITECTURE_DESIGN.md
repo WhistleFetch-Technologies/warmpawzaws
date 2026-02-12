@@ -18,9 +18,7 @@ This document defines the complete architecture for migrating Warmpawz from Vite
 | **Shared Code**      | `packages/domain`, `packages/api-contracts`, `packages/shared-libs` |
 | **BFF Layer**        | Next.js API routes (thin adapter)                                   |
 | **Backend Services** | AWS Lambda microservices                                            |
-| **Data Layer**       | Supabase KV (temp) + Aurora (Phase 5) + DynamoDB (Phase 5)          |
 | **Authentication**   | 3 separate Cognito user pools (customer, vendor, admin)             |
-| **File Storage**     | S3 (replaces Supabase Storage)                                      |
 | **State Management** | Context + TanStack Query + Zustand                                  |
 | **API Contracts**    | Zod-validated, TypeScript-first                                     |
 | **Mobile Support**   | Shared `packages/domain` for React Native                           |
@@ -361,7 +359,6 @@ export interface IBookingRepository {
 }
 
 // Implementation in infrastructure layer (replaceable)
-// Phase 2: SupabaseBookingRepository (KV)
 // Phase 5: AuroraBookingRepository (SQL) or DynamoBookingRepository
 ```
 
@@ -450,8 +447,6 @@ export async function POST(request: NextRequest) {
 
 		// 3. Call service (business logic lives there)
 		const bookingService = new BookingService(
-			new SupabaseBookingRepository(),
-			new SupabaseVendorRepository()
 		);
 
 		const result = await bookingService.createBooking(userId, parseResult.data);
@@ -531,7 +526,6 @@ export async function POST(request: NextRequest) {
 └────────────────────┬────────────────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────────────────┐
-│ 8. REPOSITORY LAYER (Phase 2: Supabase KV)                          │
 │    await bookingRepository.save(validatedBooking)                   │
 │    // Returns booking with ID                                       │
 └────────────────────┬────────────────────────────────────────────────┘
@@ -712,10 +706,8 @@ NEXT_PUBLIC_COGNITO_POOL_ID=yyy
 | ----------- | ---------------------------- | -------- | ----------------------------------------- |
 | **Phase 0** | Contract & Rule Freeze       | 2 weeks  | API contracts, Cursor rules, domain types |
 | **Phase 1** | Domain Extraction            | 3 weeks  | Pure business logic, no framework deps    |
-| **Phase 2** | Temporary Backend (Supabase) | 4 weeks  | Next.js + Supabase KV validation          |
 | **Phase 3** | Frontend Migration           | 3 weeks  | 3 functional Next.js apps                 |
 | **Phase 4** | AWS Foundation               | 2 weeks  | Infrastructure (no code changes)          |
-| **Phase 5** | Backend Swap                 | 2 weeks  | Replace Supabase → AWS Lambda             |
 | **Phase 6** | Optimization                 | 2 weeks  | Performance, caching, monitoring          |
 
 ---
@@ -737,7 +729,6 @@ By end of Phase 0, you will have:
 
 ## 🛡️ Hard Rules (Non-Negotiable)
 
-1. ❌ **NO Supabase imports in frontend components**
 
    - Only in Next.js API routes during Phase 2
    - Only in repository layer during Phase 5
@@ -763,7 +754,6 @@ By end of Phase 0, you will have:
    - Use domain-specific field names
 
 6. ✅ **Frontend must survive complete backend deletion**
-   - Can swap Supabase → AWS without frontend changes
    - Can swap HTTP → mock with same contract
 
 ---

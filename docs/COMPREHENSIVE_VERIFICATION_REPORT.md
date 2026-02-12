@@ -83,7 +83,6 @@ All placeholder components created:
 #### API Client ✅
 - ✅ `apiClient` - Properly configured for AWS Serverless
 - ✅ Cognito authentication support
-- ✅ No Supabase dependencies
 
 ### Customer Web App (`apps/customer-web`)
 

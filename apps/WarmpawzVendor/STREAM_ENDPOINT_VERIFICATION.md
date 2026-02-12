@@ -19,7 +19,6 @@ const wsUrl = `wss://api.warmpawz.com/make-server-3dd53475/ws/updates/${vendorId
 ---
 
 ### Backend Implementation
-**File:** `supabase/functions/server/websocket-server.tsx`  
 **Line:** 18
 
 ```typescript
@@ -167,7 +166,6 @@ ws.send(JSON.stringify({
 **Immediate:** Implement Option 1 (Add vendor updates endpoint to backend)
 
 **Files to Modify:**
-1. `supabase/functions/server/websocket-server.tsx` - Add new endpoint
 2. `booking-lifecycle-management.tsx` - Broadcast vendor updates
 3. `vendor-booking-actions.ts` - Broadcast vendor updates
 4. `settlement-tier-system-enhanced-sql.tsx` - Broadcast payout updates

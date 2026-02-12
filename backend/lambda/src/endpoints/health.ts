@@ -8,7 +8,6 @@
  * - External service status
  * - System metrics
  * 
- * Migrated from: supabase/functions/server/system-health-check.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

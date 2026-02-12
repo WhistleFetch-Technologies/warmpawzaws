@@ -641,7 +641,6 @@ import { CreateBookingSchema } from "@warmpawz/api-contracts";
 
 ```typescript
 // ❌ Frontend importing backend infrastructure
-import { SupabaseClient } from "@supabase/supabase-js";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 
 // ❌ Domain importing framework
@@ -683,7 +682,6 @@ import { LoginForm } from "@/../vendor-web/src/components";
 - **React/JSX only**
 - **Call API routes**
 - **No database imports**
-- **No Supabase SDK**
 - **Consume API responses only**
 
 ### Hook Files (apps/\*/src/hooks/)

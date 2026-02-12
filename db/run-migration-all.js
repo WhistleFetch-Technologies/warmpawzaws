@@ -108,7 +108,6 @@ function parsePartialUrl(rawUrl) {
  * @returns {string} Valid PostgreSQL connection URL
  */
 function buildAndValidateDatabaseUrl() {
-  const rawDatabaseUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
   const dbUser = process.env.DB_USER || process.env.PGUSER;
   const dbPassword = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   const dbHost = process.env.DB_HOST || process.env.PGHOST;
@@ -342,8 +341,6 @@ async function runAllMigrations() {
     connectionString: DATABASE_URL,
   };
 
-  // Add SSL for RDS/Supabase
-  if (DATABASE_URL.includes('rds.amazonaws.com') || DATABASE_URL.includes('supabase')) {
     poolConfig.ssl = { rejectUnauthorized: false };
   }
 

@@ -8,7 +8,6 @@
  * - Get customer pets
  * - Pet profiles
  * 
- * Migrated from: supabase/functions/make-server-customer/customer-pets-sql.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda

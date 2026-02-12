@@ -9,7 +9,6 @@
  * 
  * This file is kept for reference only. Do not use or register this handler.
  * 
- * Migrated from: supabase/functions/make-server-booking/booking-endpoints.tsx
  * 
  * Endpoints (DEPRECATED - not registered):
  * - POST /bookings/create - Create new booking

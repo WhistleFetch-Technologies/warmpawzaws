@@ -8,7 +8,6 @@
  * - Check edit permissions
  * - Re-approval workflow
  * 
- * Migrated from: supabase/functions/server/vendor-profile-update.tsx
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda
