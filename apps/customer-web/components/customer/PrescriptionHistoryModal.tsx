@@ -67,27 +67,49 @@ export function PrescriptionHistoryModal({
     loadPrescriptions();
   }, [bookingId]);
 
-  const loadPrescriptions = async () => {
+  // ✅ FIX: Safe version that uses fetch to avoid automatic redirect on 401
+  const loadPrescriptionsSafe = async () => {
+    const allPrescriptions: any[] = [];
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+    
+    // 1. Fetch uploaded medical records (handwritten prescriptions)
     try {
-      setLoading(true);
-      const allPrescriptions: any[] = [];
+      const medicalResponse = await fetch(`${baseUrl}/medical-records/booking/${bookingId}/prescriptions`, {
+        method: 'GET',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json',
+        },
+      });
       
-      // ✅ FIX: Load both uploaded medical records AND published prescriptions
-      // 1. Fetch uploaded medical records (handwritten prescriptions)
-      try {
-        const medicalResult = await apiClient.get(`/medical-records/booking/${bookingId}/prescriptions`) as any;
+      if (medicalResponse.ok) {
+        const medicalResult = await medicalResponse.json();
         const medicalRecords = medicalResult.prescriptions || [];
         medicalRecords.forEach((record: any) => {
           record.recordType = 'uploaded';
         });
         allPrescriptions.push(...medicalRecords);
-      } catch (error) {
-        console.warn('Failed to load medical records:', error);
+      } else if (medicalResponse.status === 401) {
+        console.warn('Unauthorized access to medical records - session may have expired');
+        // Don't throw, just skip this data
       }
+    } catch (error) {
+      console.warn('Failed to load medical records:', error);
+    }
+    
+    // 2. Fetch published prescriptions from vendors (with full details for A4 document)
+    try {
+      const prescriptionResponse = await fetch(`${baseUrl}/prescriptions/booking/${bookingId}?includeDetails=true`, {
+        method: 'GET',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json',
+        },
+      });
       
-      // 2. Fetch published prescriptions from vendors (with full details for A4 document)
-      try {
-        const prescriptionResult = await apiClient.get(`/prescriptions/booking/${bookingId}?includeDetails=true`) as any;
+      if (prescriptionResponse.ok) {
+        const prescriptionResult = await prescriptionResponse.json();
         const prescriptions = prescriptionResult.prescriptions || [];
         prescriptions.forEach((prescription: any) => {
           prescription.recordType = 'prescription';
@@ -101,11 +123,21 @@ export function PrescriptionHistoryModal({
         if (prescriptions.length > 0) {
           setFullPrescriptionData(prescriptionResult);
         }
-      } catch (error) {
-        console.warn('Failed to load prescriptions:', error);
+      } else if (prescriptionResponse.status === 401) {
+        console.warn('Unauthorized access to prescriptions - session may have expired');
+        // Don't throw, just skip this data
       }
-      
-      setPrescriptions(allPrescriptions);
+    } catch (error) {
+      console.warn('Failed to load prescriptions:', error);
+    }
+    
+    setPrescriptions(allPrescriptions);
+  };
+
+  const loadPrescriptions = async () => {
+    try {
+      setLoading(true);
+      await loadPrescriptionsSafe();
     } catch (error) {
       console.error('Error loading prescriptions:', error);
       toast.error('Failed to load prescriptions');
@@ -177,8 +209,16 @@ export function PrescriptionHistoryModal({
         body: formData,
       });
 
+      // ✅ FIX: Handle 401 errors gracefully without redirecting
+      if (response.status === 401) {
+        const errorData = await response.json().catch(() => ({ error: 'Unauthorized' }));
+        toast.error('Your session has expired. Please refresh the page and try again.');
+        setUploading(false);
+        return; // Don't redirect, let user stay on the page
+      }
+
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ error: 'Upload failed' }));
         throw new Error(error.error || 'Upload failed');
       }
 
@@ -190,7 +230,16 @@ export function PrescriptionHistoryModal({
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      loadPrescriptions();
+      
+      // ✅ FIX: Load prescriptions using fetch to avoid automatic redirect on 401
+      // Only reload if upload was successful
+      try {
+        await loadPrescriptionsSafe();
+      } catch (reloadError) {
+        console.warn('Failed to reload prescriptions after upload:', reloadError);
+        // Don't show error to user, upload was successful
+      }
+      
       if (onUploadSuccess) onUploadSuccess();
     } catch (error: any) {
       console.error('Error uploading prescription:', error);

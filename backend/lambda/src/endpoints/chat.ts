@@ -759,12 +759,23 @@ export function registerChatEndpoints(app: Hono) {
   });
 
   /**
-   * GET /chat/file/:fileId
+   * GET /chat/file/*
    * Get presigned URL for chat file download
+   * Supports both single-segment fileIds and multi-segment S3 keys (e.g., chat/bookingId/filename.pdf)
+   * Uses wildcard route to handle fileIds with slashes
    */
-  app.get("/chat/file/:fileId", async (c) => {
+  app.get("/chat/file/*", async (c) => {
     try {
-      const { fileId } = c.req.param();
+      // Extract file key from full path (handles both single and multi-segment fileIds)
+      const fullPath = c.req.path;
+      let fileId = fullPath.replace('/chat/file/', '');
+      
+      // Decode URL-encoded fileId (handles %2F for slashes)
+      fileId = decodeURIComponent(fileId);
+
+      if (!fileId) {
+        return c.json({ error: 'File ID is required' }, 400);
+      }
 
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');

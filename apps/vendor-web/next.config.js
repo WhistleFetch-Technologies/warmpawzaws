@@ -20,6 +20,24 @@ const nextConfig = {
   images: { unoptimized: true },
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
+  // ✅ FIX: Add rewrites to proxy API requests to API Gateway in development
+  async rewrites() {
+    // Only apply rewrites in development mode (not in static export)
+    if (process.env.NODE_ENV === 'development' && process.env.ENABLE_STATIC_EXPORT !== 'true') {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+      return [
+        {
+          source: '/chat/:path*',
+          destination: `${apiBaseUrl}/chat/:path*`,
+        },
+        {
+          source: '/api/:path*',
+          destination: `${apiBaseUrl}/api/:path*`,
+        },
+      ];
+    }
+    return [];
+  },
   experimental: {
     outputFileTracingExcludes: { '*': ['**/*'] },
     optimizePackageImports: [

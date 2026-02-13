@@ -73,6 +73,20 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
       return;
     }
 
+    // ✅ FIX: Automatically include current medication entry if it has a name
+    // This allows doctors to type medication and submit without clicking "+ Add Medication"
+    let allPrescriptions = [...summary.prescriptions];
+    if (newPrescription.medication && newPrescription.medication.trim()) {
+      allPrescriptions.push(newPrescription);
+    }
+
+    // ✅ FIX: Validate that at least one medication with a name is provided
+    const validPrescriptions = allPrescriptions.filter(p => p.medication && p.medication.trim());
+    if (validPrescriptions.length === 0) {
+      toast.error('Please add at least one medication with a name');
+      return;
+    }
+
     try {
       setSaving(true);
       const status = saveAsDraft ? 'draft' : 'published';
@@ -82,7 +96,7 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
         staffId: resolvedStaffId,
         diagnosis: summary.diagnosis,
         notes: summary.notes,
-        medications: summary.prescriptions.map(p => ({
+        medications: validPrescriptions.map(p => ({
           name: p.medication,
           dosage: p.dosage,
           frequency: p.frequency,

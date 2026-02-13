@@ -341,6 +341,8 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   /**
    * GET /medical-records/booking/:bookingId
    * Get medical records for a specific booking
+   * ✅ FIX: Now returns ALL documents in history (for the same pet), not just current booking
+   * This matches the behavior of /bookings/:bookingId/history
    */
   app.get("/medical-records/booking/:bookingId", async (c) => {
     try {
@@ -353,19 +355,46 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       }
 
       const booking = bookings[0];
+      const petId = booking.pet_id;
+      const customerId = booking.customer_id;
 
-      // Get records for this booking
-      const records = await query(
-        `SELECT mr.*, 
-                v.business_name as vendor_name
-         FROM medical_records mr
-         LEFT JOIN vendors v ON mr.vendor_id = v.id
-         WHERE mr.booking_id = $1::uuid
-         ORDER BY mr.created_at DESC`,
-        [bookingId]
-      );
+      // ✅ FIX: Get ALL medical records for this pet (not just this booking)
+      // This includes records from other bookings for the same pet (customer uploads, etc.)
+      let records: any;
+      if (petId) {
+        console.log(`[Medical Records] Fetching all records for pet ${petId} (booking ${bookingId})`);
+        records = await query(
+          `SELECT mr.*, 
+                  v.business_name as vendor_name
+           FROM medical_records mr
+           LEFT JOIN vendors v ON mr.vendor_id = v.id
+           WHERE (
+             -- Records directly linked to this booking
+             mr.booking_id = $1::uuid
+             OR
+             -- Records for the same pet (customer-uploaded documents may not have booking_id)
+             mr.pet_id = $2::uuid
+           )
+           ORDER BY mr.created_at DESC`,
+          [bookingId, petId]
+        );
+        console.log(`[Medical Records] Found ${records.rows.length} records for pet ${petId}`);
+      } else {
+        // Fallback: if no pet_id, only get records for this booking
+        console.warn('[Medical Records] Booking missing pet_id, only returning records for this booking');
+        records = await query(
+          `SELECT mr.*, 
+                  v.business_name as vendor_name
+           FROM medical_records mr
+           LEFT JOIN vendors v ON mr.vendor_id = v.id
+           WHERE mr.booking_id = $1::uuid
+           ORDER BY mr.created_at DESC`,
+          [bookingId]
+        );
+      }
 
-      // ✅ CRITICAL FIX: Also get prescriptions for this booking
+      // ✅ FIX: Get ALL prescriptions for this pet (not just this booking)
+      // This shows the complete prescription history for the pet
       const prescriptions = await query(
         `SELECT 
           p.id,
@@ -381,10 +410,10 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         FROM prescriptions p
         LEFT JOIN vendors v ON v.id = p.vendor_id
         LEFT JOIN staff s ON s.id = p.staff_id
-        WHERE p.booking_id = $1 
+        WHERE ${petId ? 'p.pet_id = $1::uuid' : 'p.booking_id = $1'}
           AND p.is_active = true
         ORDER BY p.created_at DESC`,
-        [bookingId]
+        [petId || bookingId]
       ).catch(() => ({ rows: [] }));
 
       // Also get records from referral chain (diagnostics reports)
@@ -432,8 +461,9 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           serviceName: booking.service_name,
           date: booking.booking_date,
           status: booking.status,
+          petId: petId,
         },
-        records: allRecords, // ✅ CRITICAL FIX: Includes both medical records and prescriptions
+        records: allRecords, // ✅ FIX: Now includes ALL documents in history (for the same pet)
         prescriptions: (prescriptions as any).rows || [], // Also return separately for easy access
         referralRecords: (referralRecords as any).rows || [],
       });
@@ -922,15 +952,9 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         ContentType: file.type || (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
       }));
 
-      // Generate presigned URL for viewing
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-        }),
-        { expiresIn: 604800 } // 7 days
-      );
+      // ✅ FIX: Store S3 key instead of presigned URL to avoid expired token issues
+      // Presigned URLs will be generated on-demand when viewing the file
+      // This prevents ExpiredToken errors when temporary credentials expire before the presigned URL
 
       // Create medical record entry
       // ✅ FIX: Handle constraint error gracefully - try 'prescription', fallback to 'treatment' if constraint doesn't allow it
@@ -944,7 +968,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           record_type: 'prescription',
           title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
           description: context || `Handwritten prescription uploaded by ${uploadedBy}`,
-          file_url: signedUrl,
+          file_url: fileKey, // Store S3 key, not presigned URL
           record_date: recordDate, // Mandatory date field
           created_at: new Date().toISOString(),
         });
@@ -960,7 +984,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
             record_type: 'treatment', // Fallback value that works with older constraints
             title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
             description: context || `Handwritten prescription uploaded by ${uploadedBy} [Type: Prescription]`,
-            file_url: signedUrl,
+            file_url: fileKey, // Store S3 key, not presigned URL
             record_date: recordDate,
             created_at: new Date().toISOString(),
           });
@@ -969,10 +993,20 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         }
       }
 
+      // ✅ FIX: Generate fresh presigned URL for immediate response (not stored in DB)
+      const responseSignedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 3600 } // 1 hour
+      );
+
       return c.json({
         success: true,
         record: record[0],
-        fileUrl: signedUrl,
+        fileUrl: responseSignedUrl, // Fresh presigned URL for immediate use
         message: 'Handwritten prescription uploaded successfully',
       });
 
@@ -1128,9 +1162,9 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
   /**
    * GET /medical-records/booking/:bookingId/prescriptions
-   * Get all prescriptions for a booking (handwritten + doctor-created)
-   * Shows both uploaded files and doctor prescriptions, sorted by latest date first
-   * ✅ FIX: Query BOTH medical_records AND prescriptions tables
+   * Get all prescriptions for a booking (doctor-created prescriptions only)
+   * ✅ FIX: Only return prescriptions from prescriptions table, NOT uploaded documents from medical_records
+   * ✅ FIX: Query by pet_id to get ALL prescriptions in history (not just current booking)
    */
   app.get("/medical-records/booking/:bookingId/prescriptions", async (c) => {
     try {
@@ -1142,29 +1176,11 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      // ✅ FIX: Query BOTH tables and merge results
-      // 1. Get from medical_records table (uploaded prescriptions)
-      const medicalRecordsResult = await query(
-        `SELECT mr.*, 
-                v.business_name as vendor_name,
-                p.name as pet_name,
-                'medical_records' as source
-         FROM medical_records mr
-         LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN pets p ON mr.pet_id = p.id
-         WHERE mr.booking_id = $1::uuid
-         AND (
-           mr.record_type = 'prescription' 
-           OR (mr.record_type = 'treatment' AND (
-             (mr.description IS NOT NULL AND mr.description ILIKE '%[Type: Prescription]%')
-             OR (mr.content_data IS NOT NULL AND mr.content_data::text ILIKE '%"recordType":"prescription"%')
-           ))
-         )`,
-        [bookingId]
-      );
-      const medicalRecords = (medicalRecordsResult as any).rows || [];
+      const booking = bookings[0];
+      const petId = booking.pet_id;
 
-      // 2. Get from prescriptions table (doctor-created prescriptions)
+      // ✅ FIX: Only get prescriptions from prescriptions table (doctor-created)
+      // Filter out uploaded documents from medical_records table
       let prescriptionsTableRecords: any[] = [];
       try {
         const prescriptionsResult = await query(
@@ -1176,18 +1192,20 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
            FROM prescriptions pr
            LEFT JOIN vendors v ON pr.vendor_id = v.id
            LEFT JOIN pets p ON pr.pet_id = p.id
-           WHERE pr.booking_id = $1::uuid
-           AND (pr.status IS NULL OR pr.status != 'cancelled')`,
-          [bookingId]
+           WHERE ${petId ? 'pr.pet_id = $1::uuid' : 'pr.booking_id = $1::uuid'}
+           AND pr.is_active = true
+           AND (pr.status IS NULL OR pr.status = 'published' OR pr.status != 'cancelled')`,
+          [petId || bookingId]
         );
         prescriptionsTableRecords = (prescriptionsResult as any).rows || [];
+        console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table (filtered out medical_records)`);
       } catch (prescError) {
         console.warn('Error querying prescriptions table:', prescError);
-        // Continue with medical_records only
+        prescriptionsTableRecords = [];
       }
 
-      // 3. Merge and deduplicate by ID (in case same record is in both)
-      const allPrescriptions = [...medicalRecords, ...prescriptionsTableRecords];
+      // ✅ FIX: Only use prescriptions from prescriptions table (no medical_records)
+      const allPrescriptions = prescriptionsTableRecords;
       const uniqueById = new Map();
       for (const p of allPrescriptions) {
         if (!uniqueById.has(p.id)) {
@@ -1202,8 +1220,6 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         const dateB = new Date(b.prescription_date || b.record_date || b.created_at).getTime();
         return dateB - dateA;
       });
-
-      const booking = bookings[0];
 
       return c.json({
         success: true,
@@ -1294,7 +1310,8 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
         const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
         
-        // Extract S3 key from various URL formats
+        // ✅ FIX: Extract S3 key from various URL formats
+        // Handle both stored S3 keys and legacy presigned URLs
         let key = record.file_url;
         
         // Remove query string if present (for presigned URLs)
@@ -1306,7 +1323,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         // Format 1: https://bucket-name.s3.region.amazonaws.com/key
         // Format 2: https://s3.region.amazonaws.com/bucket-name/key
         // Format 3: s3://bucket-name/key
-        // Format 4: Just the key path (documents/prescription-123.jpg)
+        // Format 4: Just the key path (documents/prescription-123.jpg or prescriptions/...)
         // Format 5: CloudFront URL - extract from path
         
         const urlPatterns = [
@@ -1323,6 +1340,8 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           const match = key.match(pattern);
           if (match) {
             extractedKey = match[match.length - 1]; // Get the last capture group (the key)
+            // ✅ FIX: Decode URL-encoded characters in the key (e.g., %20 -> space)
+            extractedKey = decodeURIComponent(extractedKey);
             break;
           }
         }
@@ -1330,6 +1349,18 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         // If no pattern matched, check if it's already a key path (starts with 'documents/' or similar)
         if (!extractedKey && (key.startsWith('documents/') || key.startsWith('prescriptions/') || key.startsWith('medical-records/'))) {
           extractedKey = key;
+        }
+        
+        // ✅ FIX: Also try URL decoding if the key looks like it might be encoded
+        if (!extractedKey && key.includes('%')) {
+          try {
+            const decoded = decodeURIComponent(key);
+            if (decoded.startsWith('documents/') || decoded.startsWith('prescriptions/') || decoded.startsWith('medical-records/')) {
+              extractedKey = decoded;
+            }
+          } catch (e) {
+            // Not a valid URL-encoded string, continue
+          }
         }
         
         // If we have a valid key, generate presigned URL

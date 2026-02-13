@@ -75,7 +75,7 @@ function getApiGatewayUrl(): string {
     : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 }
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   // Priority: runtime-config.js (deploy-time) → build-time env (local dev) → environment-based fallback
   const cfg = getRuntimeConfig();
   
@@ -365,4 +365,3 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
-

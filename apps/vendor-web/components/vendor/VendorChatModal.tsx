@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -304,7 +304,13 @@ export function VendorChatModal({
       formData.append('senderType', 'vendor');
 
       // Use fetch directly for FormData
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/chat/upload-file`, {
+      // ✅ FIX: Use getApiBaseUrl() instead of process.env.NEXT_PUBLIC_API_URL to ensure correct API Gateway URL
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw new Error('API base URL is not configured');
+      }
+      
+      const response = await fetch(`${apiBaseUrl}/chat/upload-file`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -625,7 +631,7 @@ export function VendorChatModal({
                             {/* File/Image attachment */}
                             {message.message_type !== 'text' && message.file_name && (
                               <a 
-                                href={message.file_url || `/chat/file/${message.file_id}`}
+                                href={message.file_url || `${getApiBaseUrl()}/chat/file/${encodeURIComponent(message.file_id || '')}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-2 mb-2 ${

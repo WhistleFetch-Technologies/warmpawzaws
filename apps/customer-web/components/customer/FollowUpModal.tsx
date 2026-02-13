@@ -527,7 +527,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                           {msg.fileId && (
                             <div className="mb-2">
                               <a
-                                href={`${getApiBaseUrl()}/chat/file/${msg.fileId}`}
+                                href={`${getApiBaseUrl()}/chat/file/${encodeURIComponent(msg.fileId)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-2 p-2 rounded-lg ${

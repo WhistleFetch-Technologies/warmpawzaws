@@ -581,7 +581,7 @@ export function CommunicationHub({
                             {/* File/Image attachment */}
                             {message.message_type !== 'text' && message.message_type !== 'prescription' && message.file_name && (
                               <a 
-                                href={message.file_url || `/chat/file/${message.file_id}`}
+                                href={message.file_url || `${getApiBaseUrl()}/chat/file/${encodeURIComponent(message.file_id || '')}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-2 mb-2 ${

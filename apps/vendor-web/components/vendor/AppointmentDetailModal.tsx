@@ -130,6 +130,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'prescriptions'>('details');
+  // ✅ FIX: Store vendor role info fetched from API if not in props
+  const [fetchedVendorRoleInfo, setFetchedVendorRoleInfo] = useState<{ roleId?: string; roleName?: string; capabilities?: any } | null>(null);
   
   // Modal states
   const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
@@ -151,6 +153,15 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     loadAppointmentDetails();
   }, [bookingId]);
 
+  // ✅ FIX: Force re-render when fetchedVendorRoleInfo changes
+  // This ensures buttons appear immediately after role info is fetched from API
+  useEffect(() => {
+    if (fetchedVendorRoleInfo && booking) {
+      console.log('[AppointmentDetailModal] Vendor role info updated, re-checking isVetOrNutritionist');
+      // The component will re-render and isVetOrNutritionist will be recalculated
+    }
+  }, [fetchedVendorRoleInfo, booking]);
+
   const loadAppointmentDetails = async () => {
     try {
       setLoading(true);
@@ -167,6 +178,51 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         console.warn('Could not load booking history:', error);
       }
       const historyList = historyData?.data?.history ?? historyData?.history ?? [];
+
+      // ✅ FIX: Load prescriptions from dedicated endpoint
+      let prescriptionsFromEndpoint: any[] = [];
+      try {
+        const prescriptionsResponse = await apiClient.get(`/medical-records/booking/${bookingId}/prescriptions`) as any;
+        if (prescriptionsResponse?.prescriptions && Array.isArray(prescriptionsResponse.prescriptions)) {
+          prescriptionsFromEndpoint = prescriptionsResponse.prescriptions;
+          console.log(`[Prescriptions] Loaded ${prescriptionsFromEndpoint.length} prescriptions from endpoint`);
+        }
+      } catch (error) {
+        console.warn('Could not load prescriptions from endpoint:', error);
+      }
+      
+      // ✅ FIX: ALWAYS fetch vendor role info from API to ensure we have the most up-to-date role information
+      // This ensures buttons show for ALL bookings when vendor is a vet, regardless of service type
+      if (rawBooking.vendorId || rawBooking.vendor_id) {
+        const vendorIdFromBooking = rawBooking.vendorId || rawBooking.vendor_id;
+        
+        // ✅ FIX: Always fetch vendor role info (even if we have some from props) to ensure accuracy
+        // This is especially important for custom services where role info might not be passed correctly
+        try {
+          const vendorInfoResponse = await apiClient.get(`/vendor/${vendorIdFromBooking}/profile`) as any;
+          if (vendorInfoResponse?.vendor) {
+            const v = vendorInfoResponse.vendor;
+            const fetchedRoleId = v.roleId || v.role_id || v.role?.id;
+            const fetchedRoleName = v.roleName || v.role_name || v.role?.name || v.role?.display_name;
+            const fetchedCaps = v.capabilities || v.role?.capabilities;
+            
+            if (fetchedRoleId || fetchedRoleName) {
+              setFetchedVendorRoleInfo({
+                roleId: fetchedRoleId,
+                roleName: fetchedRoleName,
+                capabilities: fetchedCaps
+              });
+              console.log('[AppointmentDetailModal] ✅ Fetched vendor role info from API:', {
+                roleId: fetchedRoleId,
+                roleName: fetchedRoleName,
+                capabilities: fetchedCaps
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('[AppointmentDetailModal] Could not fetch vendor role info:', error);
+        }
+      }
       
       // Map backend response to frontend Booking interface
       const mappedBooking: Booking = {
@@ -212,9 +268,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         vendorId: rawBooking.vendorId || rawBooking.vendor_id,
         staffId: rawBooking.staffId || rawBooking.staff_id,
         // For lab/diagnostics: allow upload report
-        serviceCategory: rawBooking.serviceCategory,
+        serviceCategory: rawBooking.serviceCategory || rawBooking.service?.category || null,
         notes: rawBooking.notes,
         serviceId: rawBooking.serviceId || rawBooking.service_id,
+        // ✅ FIX: Include service object if available (for category check)
+        service: rawBooking.service || null,
         // Backend tells us if this is a diagnostics lab booking (not vet consultation)
         isDiagnosticsBooking: historyData?.data?.isDiagnosticsBooking ?? historyData?.isDiagnosticsBooking,
         // ✅ Home service GPS: customer/delivery coordinates for tracking destination
@@ -334,9 +392,59 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             ...d
           };
         });
+      // ✅ FIX: Process prescriptions from dedicated endpoint
+      const fromEndpoint = prescriptionsFromEndpoint.map((prescription: any) => {
+        try {
+          // Handle different prescription formats (from prescriptions table vs medical_records table)
+          const meds = prescription.medications || prescription.content_data?.medications || [];
+          const medicationName = Array.isArray(meds) && meds.length > 0 
+            ? (typeof meds[0] === 'string' ? meds[0] : meds[0]?.name || 'Prescription')
+            : prescription.medication_name || 'Prescription';
+          
+          return {
+            id: String(prescription.id || `presc_${Date.now()}_${Math.random()}`),
+            bookingId: String(prescription.booking_id || prescription.bookingId || bookingId),
+            notes: String(prescription.instructions || prescription.notes || prescription.content_data?.instructions || ''),
+            medications: meds,
+            medication_name: medicationName,
+            dosage: String(prescription.dosage || (Array.isArray(meds) && meds[0]?.dosage) || ''),
+            frequency: String(prescription.frequency || (Array.isArray(meds) && meds[0]?.frequency) || ''),
+            duration: String(prescription.duration || (Array.isArray(meds) && meds[0]?.duration) || ''),
+            diagnosis: prescription.diagnosis || prescription.content_data?.diagnosis || '',
+            prescription_date: prescription.prescription_date || prescription.content_data?.prescription_date || prescription.record_date,
+            uploadedAt: String(prescription.created_at || prescription.uploadedAt || ''),
+            uploadedBy: String(prescription.vendor_name || prescription.uploadedBy || 'Vendor'),
+            vendor_name: prescription.vendor_name,
+            staff_name: prescription.staff_name,
+            source: prescription.source || 'prescriptions',
+            content_data: prescription.content_data,
+            ...prescription
+          };
+        } catch (error) {
+          console.error('Error processing prescription from endpoint:', error, prescription);
+          return {
+            id: String(prescription?.id || `presc_${Date.now()}`),
+            bookingId: bookingId,
+            notes: '',
+            medications: [],
+            medication_name: 'Prescription',
+            dosage: '',
+            frequency: '',
+            duration: '',
+            uploadedAt: '',
+            uploadedBy: 'Unknown',
+            ...prescription
+          };
+        }
+      });
+
+      // ✅ FIX: Merge all prescriptions sources (details, history, and endpoint)
       const mergedPrescriptions = [...fromDetails];
       fromHistory.forEach((ph: any) => {
         if (ph.id && !mergedPrescriptions.some((p: any) => p.id === ph.id)) mergedPrescriptions.push(ph);
+      });
+      fromEndpoint.forEach((pe: any) => {
+        if (pe.id && !mergedPrescriptions.some((p: any) => p.id === pe.id)) mergedPrescriptions.push(pe);
       });
       const safePrescriptions = mergedPrescriptions.filter((p: any) => p && p.id);
       setPrescriptions(safePrescriptions);
@@ -347,28 +455,76 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
   
-  // Vet/nutritionist: show prescription for ALL vet appointments (tele, home, center) per role config. Not gated by service type.
+  // Vet/nutritionist: show prescription for ALL vet appointments (tele, home, center, custom) per role config. Not gated by service type.
+  // ✅ FIX: Make this check more permissive - if vendor has vet role, show options for ALL bookings
   const isVetOrNutritionist = (() => {
     if (!booking) return false;
-    const roleId = (propRoleId ?? vendorData?.roleId ?? vendorData?.role_id ?? '').toString();
-    const role = (vendorData?.role ?? '').toString();
-    const roleName = (propRoleName ?? vendorData?.roleName ?? vendorData?.role_name ?? '').toString();
-    const caps = propCapabilities ?? vendorData?.capabilities;
+    
+    // ✅ FIX: Prioritize fetchedVendorRoleInfo (most reliable, from API) over props/vendorData
+    // This ensures we always use the most up-to-date role information
+    const roleId = (fetchedVendorRoleInfo?.roleId ?? propRoleId ?? vendorData?.roleId ?? vendorData?.role_id ?? booking?.vendor?.roleId ?? booking?.vendor?.role_id ?? '').toString();
+    const role = (vendorData?.role ?? booking?.vendor?.role ?? '').toString();
+    const roleName = (fetchedVendorRoleInfo?.roleName ?? propRoleName ?? vendorData?.roleName ?? vendorData?.role_name ?? booking?.vendor?.roleName ?? booking?.vendor?.role_name ?? '').toString();
+    const caps = fetchedVendorRoleInfo?.capabilities ?? propCapabilities ?? vendorData?.capabilities ?? booking?.vendor?.capabilities;
+    
     const hasPrescriptionCapability = (() => {
       if (Array.isArray(caps)) return caps.some((c: string) => /prescription/i.test(String(c)));
       if (caps && typeof caps === 'object') return !!(caps.prescription || caps.prescriptions || caps.prescription_create);
       return false;
     })();
-    const svcName = (booking.serviceName || booking.serviceCategory || '').toLowerCase();
+    
+    // ✅ FIX: Check role/capability FIRST (these are authoritative) - this includes custom services
+    const hasVetRole = (
+      (roleId && roleId !== '' && /vet|clinic|diagnostics|nutritionist|veterinary|pet_clinic/i.test(roleId)) ||
+      (role && role !== '' && /vet|clinic|diagnostics|nutritionist/i.test(role)) ||
+      (roleName && roleName !== '' && /vet|clinic|diagnostics|nutritionist|veterinary/i.test(roleName)) ||
+      hasPrescriptionCapability
+    );
+    
+    // ✅ DEBUG: Log for ALL services to help diagnose
+    const isCustomService = (booking.serviceCategory || '').toLowerCase() === 'custom' || 
+                           (booking.serviceName || '').toLowerCase().includes('custom') ||
+                           (booking.service?.category || '').toLowerCase() === 'custom';
+    
+    // ✅ FIX: Always log role detection for debugging
+    console.log('[AppointmentDetailModal] Role check:', {
+      serviceName: booking.serviceName,
+      serviceCategory: booking.serviceCategory,
+      serviceCategoryFromService: booking.service?.category,
+      isCustomService,
+      roleId: roleId || 'NOT FOUND',
+      role: role || 'NOT FOUND',
+      roleName: roleName || 'NOT FOUND',
+      hasPrescriptionCapability,
+      hasVetRole,
+      vendorDataExists: !!vendorData,
+      fetchedVendorRoleInfo: fetchedVendorRoleInfo ? JSON.stringify(fetchedVendorRoleInfo) : 'NOT FETCHED',
+      propRoleId: propRoleId || 'NOT PROVIDED',
+      propRoleName: propRoleName || 'NOT PROVIDED',
+      propCapabilities: propCapabilities ? 'PROVIDED' : 'NOT PROVIDED'
+    });
+    
+    // ✅ FIX: If vendor has vet role/capability, ALWAYS show options for ALL bookings (including custom services)
+    if (hasVetRole) {
+      console.log('[AppointmentDetailModal] ✅ Showing Medical History & Prescription buttons (vet role/capability detected)');
+      return true;
+    }
+    
+    // ✅ FIX: More permissive fallback - check service name/category with broader patterns
+    const svcName = (booking.serviceName || booking.serviceCategory || booking.service?.category || '').toLowerCase();
     const svcType = (booking.serviceType || booking.serviceStyle || booking.service_style || '').toLowerCase();
-    return (
-      (roleId && /vet|clinic|diagnostics|nutritionist|veterinary|pet_clinic/i.test(roleId)) ||
-      (role && /vet|clinic|diagnostics|nutritionist/i.test(role)) ||
-      (roleName && /vet|clinic|diagnostics|nutritionist|veterinary/i.test(roleName)) ||
-      hasPrescriptionCapability ||
-      /vet|clinic|consultation|nutritionist|diagnostic/i.test(svcName) ||
+    const fallbackMatch = (
+      /vet|clinic|consultation|nutritionist|diagnostic|vet care|veterinary/i.test(svcName) ||
       /vet|clinic|consultation|nutritionist|at_clinic/i.test(svcType)
     );
+    
+    if (fallbackMatch) {
+      console.log('[AppointmentDetailModal] ✅ Showing Medical History & Prescription buttons (service name/category match)');
+    } else {
+      console.warn('[AppointmentDetailModal] ⚠️ NOT showing buttons - no vet role detected and service does not match vet patterns');
+    }
+    
+    return fallbackMatch;
   })();
 
   // Lab/diagnostics booking: customer booked lab tests → order → report upload. NOT mixed with vet visit.

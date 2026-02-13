@@ -152,8 +152,9 @@ aws s3 rm "s3://${S3_BUCKET}/" --recursive --region $REGION | Out-Null
 # Upload all files (excluding source maps for production)
 Write-Host "📤 Uploading new build..." -ForegroundColor Blue
 aws s3 sync "${distPath}/" "s3://${S3_BUCKET}/" --exclude "*.map" --region $REGION --cache-control "public, max-age=0, must-revalidate"
+$syncResult = $?
 
-if ($LASTEXITCODE -eq 0) {
+if ($syncResult) {
     Write-Host "✅ S3 upload completed successfully" -ForegroundColor Green
     
     # Verify chunk files were uploaded
@@ -174,10 +175,9 @@ $invalidation = aws cloudfront create-invalidation `
     --region $REGION `
     --output json | ConvertFrom-Json
 
-if ($LASTEXITCODE -eq 0) {
+if ($?) {
     $INVALIDATION_ID = $invalidation.Invalidation.Id
     Write-Host "✅ CloudFront invalidation created: ${INVALIDATION_ID}" -ForegroundColor Green
-    Write-Host "   Invalidated paths: $($pathsToInvalidate.Count)" -ForegroundColor Cyan
     Write-Host "⏳ Full propagation may take 5-15 minutes" -ForegroundColor Yellow
     Write-Host "💡 Tip: Hard refresh (Ctrl+Shift+R) after propagation completes" -ForegroundColor Yellow
 } else {

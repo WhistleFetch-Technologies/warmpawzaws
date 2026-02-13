@@ -32,7 +32,7 @@ import {
   Monitor, MonitorOff, Loader2, Users, Check, Circle,
   Paperclip, FileText
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -1152,7 +1152,13 @@ export function ChimeVideoCall({
       formData.append('senderName', senderName);
       formData.append('senderType', participantType);
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/chat/upload-file`, {
+      // ✅ FIX: Use getApiBaseUrl() instead of process.env.NEXT_PUBLIC_API_URL to ensure correct API Gateway URL
+      const apiBaseUrl = getApiBaseUrl();
+      if (!apiBaseUrl) {
+        throw new Error('API base URL is not configured');
+      }
+      
+      const response = await fetch(`${apiBaseUrl}/chat/upload-file`, {
         method: 'POST',
         body: formData,
         headers: {
