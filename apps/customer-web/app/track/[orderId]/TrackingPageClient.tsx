@@ -101,7 +101,22 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   };
 
   const getStatusIndex = (status: string, steps: typeof statusSteps) => {
-    const index = steps.findIndex(s => s.key === status);
+    // ✅ FIX: Map backend statuses to frontend step keys
+    // Backend uses 'heading_to_pickup' when rider is assigned and heading to vendor
+    // Frontend expects 'assigned' for "Rider Assigned" step
+    const statusMap: Record<string, string> = {
+      'heading_to_pickup': 'assigned', // Rider assigned and heading to pickup location
+      'pending_assignment': 'pending_assignment',
+      'assigned': 'assigned',
+      'at_pickup': 'at_pickup',
+      'picked_up': 'picked_up',
+      'on_the_way': 'on_the_way',
+      'nearby': 'nearby',
+      'delivered': 'delivered',
+    };
+    
+    const mappedStatus = statusMap[status] || status;
+    const index = steps.findIndex(s => s.key === mappedStatus);
     return index >= 0 ? index : 0;
   };
 
@@ -147,8 +162,11 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
 
   const isHyperlocal = tracking.orderType === 'pharmacy' || tracking.orderType === 'meal';
   const steps = isHyperlocal ? deliveryStatusSteps : statusSteps;
-  const currentStepIndex = getStatusIndex(tracking.tracking?.status || 'pending', steps);
-  const isDelivered = tracking.tracking?.status === 'delivered';
+  // ✅ FIX: Use tracking status if available, otherwise fallback to order status
+  // If no delivery_tracking exists yet, show "Finding Rider" (pending_assignment)
+  const trackingStatus = tracking.tracking?.status || (isHyperlocal ? 'pending_assignment' : 'pending');
+  const currentStepIndex = getStatusIndex(trackingStatus, steps);
+  const isDelivered = tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">

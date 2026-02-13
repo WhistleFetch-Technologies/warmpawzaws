@@ -471,24 +471,143 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     try {
       const result = await withTransaction(async (client) => {
-        // Slot collision prevention with row-level locking
-        const lockQuery = staffId
-          ? `SELECT id FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 AND booking_time = $3 AND staff_id = $4
+        // ✅ FIX: Check overlap using ONLY service duration (no buffer blocking)
+        // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
+        // Get booking duration
+        const bookingDuration = totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
+        
+        // Convert booking time to minutes
+        const [bookingHour, bookingMin] = bookingTime.split(':').map(Number);
+        const newBookingStartMinutes = bookingHour * 60 + bookingMin;
+        const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;  // ✅ NO buffer
+
+        // Fetch existing bookings for overlap check
+        const overlapQuery = staffId
+          ? `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
+             FROM bookings 
+             WHERE vendor_id = $1 
+             AND booking_date = $2 
+             AND staff_id = $4
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
-             FOR UPDATE NOWAIT`
-          : `SELECT id FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 AND booking_time = $3 AND staff_id IS NULL
+             FOR UPDATE`
+          : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
+             FROM bookings 
+             WHERE vendor_id = $1 
+             AND booking_date = $2 
+             AND staff_id IS NULL
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
-             FOR UPDATE NOWAIT`;
+             FOR UPDATE`;
 
-        const lockParams = staffId
-          ? [vendorId, bookingDate, bookingTime, staffId]
-          : [vendorId, bookingDate, bookingTime];
+        const overlapParams = staffId
+          ? [vendorId, bookingDate, staffId]
+          : [vendorId, bookingDate];
 
-        const { rows: conflictingBookings } = await client.query(lockQuery, lockParams);
+        const { rows: existingBookings } = await client.query(overlapQuery, overlapParams);
 
-        if (conflictingBookings.length > 0) {
+        // ✅ FIX: For at_center only, get buffer time and subtract from existing booking durations
+        // This matches the logic in available-slots endpoint to prevent false conflicts
+        let bufferMinutes = 0;
+        const normalizedServiceStyle = (serviceType === 'at_vendor' || serviceType === 'at_center') ? 'at_center' : serviceType;
+        if (normalizedServiceStyle === 'at_center') {
+          try {
+            // Get minNoticeMinutes first (same as available-slots endpoint)
+            let minNoticeMinutes = 30;
+            try {
+              const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
+              const bufferPolicy = policiesResult.rows?.find((p: any) => p.policy_type === 'buffer_time');
+              if (bufferPolicy?.policy_config) {
+                const cfg = bufferPolicy.policy_config as any;
+                minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
+              }
+            } catch (_) { /* ignore */ }
+            
+            // Get buffer time from vendor_availability_v2 (lead_time_by_style or buffer_time)
+            // Use the same logic as available-slots endpoint
+            const dayOfWeek = new Date(bookingDate).getDay();
+            
+            // First try to get from vendor_availability_v2 (same query pattern as available-slots)
+            // Note: vendor_availability_v2 only has service_styles (plural, array), not service_style or service_type
+            try {
+              const va2Result = await client.query(
+                `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
+                 FROM vendor_availability_v2
+                 WHERE vendor_id = $1
+                   AND day_of_week = $2
+                   AND (COALESCE(service_styles, ARRAY[]::text[]) && ARRAY['at_center', 'at_vendor']::text[])
+                   AND (COALESCE(is_available, true) = true)
+                 LIMIT 1`,
+                [vendorId, dayOfWeek]
+              );
+              
+              if (va2Result.rows && va2Result.rows.length > 0) {
+                const row = va2Result.rows[0];
+                const leadByStyle = row.lead_time_by_style != null
+                  ? (typeof row.lead_time_by_style === 'string' ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style)
+                  : {};
+                bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && (leadByStyle['at_center'] != null || leadByStyle['at_vendor'] != null))
+                  ? Number(leadByStyle['at_center'] ?? leadByStyle['at_vendor'])
+                  : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+                console.log(`[BOOKING] at_center: Found buffer from vendor_availability_v2: ${bufferMinutes} minutes`);
+              } else {
+                // Fallback to minNoticeMinutes (same as available-slots)
+                bufferMinutes = minNoticeMinutes;
+                console.log(`[BOOKING] at_center: No vendor_availability_v2 record, using minNoticeMinutes: ${bufferMinutes} minutes`);
+              }
+            } catch (va2Err: any) {
+              console.warn('[BOOKING] Error querying vendor_availability_v2 for buffer, using minNoticeMinutes:', va2Err?.message);
+              bufferMinutes = minNoticeMinutes;
+            }
+          } catch (err) {
+            console.warn('[BOOKING] Could not get buffer time, using minNoticeMinutes as fallback:', err);
+            // Fallback: use 30 minutes buffer for at_center (matches available-slots default)
+            bufferMinutes = 30;
+          }
+          
+          // ✅ CRITICAL: If buffer is still 0, use default 30 minutes for at_center
+          // This matches the available-slots endpoint behavior
+          if (bufferMinutes === 0) {
+            console.log('[BOOKING] at_center: Buffer is 0, using default 30 minutes');
+            bufferMinutes = 30;
+          }
+        }
+
+        // ✅ FIX: Check overlap using ONLY service duration (buffer doesn't block)
+        // For at_center: subtract buffer from existing booking durations to match available-slots logic
+        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min`);
+        console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
+        
+        const hasOverlap = existingBookings.some((existing: any) => {
+          const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
+          const existingStartMinutes = existingHour * 60 + existingMin;
+          
+          // ✅ FIX: For at_center, subtract buffer time from existing booking duration
+          // Match the exact logic from available-slots endpoint
+          let existingDuration = existing.duration_minutes;
+          if (normalizedServiceStyle === 'at_center' && bufferMinutes > 0) {
+            // Subtract buffer from existing booking duration for overlap check only
+            // This matches available-slots: Math.max(slotDuration, bookingDuration - bufferMinutes)
+            // Minimum duration is slotDuration (30) to prevent negative values
+            const originalDuration = existingDuration;
+            const slotDuration = 30; // Default slot duration for at_center
+            existingDuration = Math.max(slotDuration, existingDuration - bufferMinutes);
+            console.log(`[BOOKING] at_center overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), originalDuration=${originalDuration}min, adjustedDuration=${existingDuration}min (subtracted ${bufferMinutes}min buffer, min=${slotDuration}min)`);
+          }
+          
+          const existingEndMinutes = existingStartMinutes + existingDuration;  // ✅ Use adjusted duration for at_center
+          const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;
+          
+          // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
+          // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
+          const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
+          
+          if (overlaps) {
+            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${newBookingStartMinutes}-${newBookingEndMinutes}] overlaps with existing [${existingStartMinutes}-${existingEndMinutes}]`);
+          }
+          
+          return overlaps;
+        });
+
+        if (hasOverlap) {
           throw new Error('SLOT_CONFLICT');
         }
 
@@ -734,12 +853,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
         const serviceName = service?.service_name || service?.name || 'Service';
         const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
+        // ✅ FIX: Use notification_type instead of type (schema column name)
         await insert('notifications', {
           recipient_id: booking.vendor_id,
           recipient_type: 'vendor',
-          type: 'new_booking',
+          notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
           title: 'New appointment',
           message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+          channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
           data: JSON.stringify({
             bookingId: booking.id,
             customerId: booking.customer_id,

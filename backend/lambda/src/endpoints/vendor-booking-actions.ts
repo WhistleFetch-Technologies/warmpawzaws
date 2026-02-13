@@ -718,11 +718,24 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
   /**
    * POST /vendor/bookings/:bookingId/location-update
    * Update vendor's current location during travel
+   * ✅ FIX: Now uses updateLocation service to recalculate ETA/distance properly
    */
   app.post("/vendor/bookings/:bookingId/location-update", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { latitude, longitude, eta, distanceRemaining, status, accuracy } = await c.req.json();
+      const { latitude, longitude, accuracy, heading, speed } = await c.req.json();
+
+      console.log(`📍 [LOCATION-UPDATE] Received update for booking ${bookingId}:`, {
+        latitude,
+        longitude,
+        accuracy,
+        heading,
+        speed,
+      });
+
+      if (!latitude || !longitude) {
+        return c.json({ error: 'latitude and longitude are required' }, 400);
+      }
 
       // Find active tracking session
       const sessions = await select('gps_tracking_sessions', {
@@ -734,29 +747,41 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       );
 
       if (!activeSession) {
+        console.warn(`📍 [LOCATION-UPDATE] No active session found for booking ${bookingId}`);
         // Create new session if none exists (for backward compatibility)
         return c.json({ success: true, message: 'No active session, location noted' });
       }
 
-      // Update session
-      await update('gps_tracking_sessions',
-        { id: activeSession.id },
-        {
-          current_latitude: latitude,
-          current_longitude: longitude,
-          estimated_eta_minutes: eta,
-          distance_remaining_km: distanceRemaining,
-          last_update_at: new Date().toISOString(),
-        }
-      );
+      console.log(`📍 [LOCATION-UPDATE] Found active session ${activeSession.id} for booking ${bookingId}`);
+
+      // ✅ CRITICAL FIX: Use updateLocation service to recalculate ETA/distance
+      // This ensures accurate ETA/distance calculation using Google Maps API
+      const { updateLocation } = await import('../lib/services/gps-tracking-service');
+      
+      const result = await updateLocation(activeSession.id, {
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        accuracy: accuracy ? parseFloat(accuracy) : undefined,
+        heading: heading ? parseFloat(heading) : undefined,
+        speed: speed ? parseFloat(speed) : undefined,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log(`✅ [LOCATION-UPDATE] Successfully updated location for booking ${bookingId}:`, {
+        sessionId: activeSession.id,
+        eta: result.eta,
+        distanceRemaining: result.distanceRemaining,
+      });
 
       return c.json({
         success: true,
         sessionId: activeSession.id,
+        eta: result.eta,
+        distanceRemaining: result.distanceRemaining,
       });
 
     } catch (error: any) {
-      console.error('Error updating location:', error);
+      console.error(`❌ [LOCATION-UPDATE] Error updating location for booking ${bookingId}:`, error);
       return c.json({ error: error.message }, 500);
     }
   });

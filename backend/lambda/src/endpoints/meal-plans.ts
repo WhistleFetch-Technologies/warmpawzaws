@@ -550,12 +550,33 @@ export function registerMealPlanEndpoints(app: Hono) {
       // Check lead time (when plan has lead_time_hours set)
       const leadTimeHours = plan.lead_time_hours != null ? Number(plan.lead_time_hours) : 0;
       if (leadTimeHours > 0) {
-        const deliveryDate = new Date(scheduledDeliveryDate);
+        // ✅ FIX: Use the actual delivery datetime (date + slot time), not just date at midnight
+        // This ensures the lead time is calculated correctly based on when delivery actually happens
+        let deliveryDateTime: Date;
+        if (scheduledDeliverySlot && scheduledDeliverySlot.start) {
+          // Parse the slot start time (format: "HH:MM")
+          const [hours, minutes] = scheduledDeliverySlot.start.split(':').map(Number);
+          deliveryDateTime = new Date(scheduledDeliveryDate);
+          deliveryDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+        } else {
+          // Fallback: use date at start of day (midnight)
+          deliveryDateTime = new Date(scheduledDeliveryDate);
+          deliveryDateTime.setHours(0, 0, 0, 0);
+        }
+        
         const leadTimeMs = leadTimeHours * 60 * 60 * 1000;
-        if (deliveryDate.getTime() - Date.now() < leadTimeMs) {
+        const timeUntilDelivery = deliveryDateTime.getTime() - Date.now();
+        
+        if (timeUntilDelivery < leadTimeMs) {
           return c.json({
             error: `Order must be placed at least ${leadTimeHours} hours in advance`,
-            code: 'LEAD_TIME_VIOLATION'
+            code: 'LEAD_TIME_VIOLATION',
+            details: {
+              deliveryDateTime: deliveryDateTime.toISOString(),
+              currentTime: new Date().toISOString(),
+              hoursUntilDelivery: (timeUntilDelivery / (60 * 60 * 1000)).toFixed(2),
+              requiredLeadTimeHours: leadTimeHours
+            }
           }, 400);
         }
       }
@@ -1181,11 +1202,15 @@ export function registerMealPlanEndpoints(app: Hono) {
         });
       }
 
+      // ✅ FIX: Create tracking with status that indicates waiting for partner assignment
+      // Status 'assigned' is confusing when no partner is assigned yet
+      // We'll use 'assigned' but it means "available for assignment" until partner accepts
       const tracking = await insert('delivery_tracking', {
         meal_order_id: orderId,
         pharmacy_order_id: null,
-        status: 'assigned',
-        assigned_at: new Date().toISOString(),
+        status: 'assigned', // This means "available for assignment" - will change to 'heading_to_pickup' when partner accepts
+        assigned_at: new Date().toISOString(), // Time when logistics was notified
+        logistics_partner_id: null, // No partner assigned yet - will be set when partner accepts
       });
 
       return c.json({
@@ -1283,9 +1308,13 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: 'preparationEtaMinutes must be a positive number' }, 400);
       }
 
+      // ✅ FIX: meal_orders table doesn't have preparation_eta_minutes or estimated_preparation_time columns
+      // Use estimated_delivery_time to store the calculated preparation completion time
+      const estimatedPreparationTime = new Date(Date.now() + preparationEtaMinutes * 60 * 1000).toISOString();
+      
+      // Update only with columns that exist in the meal_orders table
       await update('meal_orders', { id: orderId }, {
-        preparation_eta_minutes: preparationEtaMinutes,
-        estimated_preparation_time: new Date(Date.now() + preparationEtaMinutes * 60 * 1000).toISOString(),
+        estimated_delivery_time: estimatedPreparationTime,
         updated_at: new Date().toISOString(),
       });
 

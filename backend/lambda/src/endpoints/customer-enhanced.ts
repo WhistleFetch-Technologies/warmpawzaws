@@ -427,6 +427,100 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     }
   });
 
+  // GET /customer/meal-plan-orders?customerId=... - MUST come before /customer/:customerId
+  app.get('/customer/meal-plan-orders', async (c) => {
+    try {
+      const customerId = c.req.query('customerId');
+      if (!customerId) {
+        return c.json({ success: false, error: 'customerId is required' }, 400);
+      }
+      const allOrders: any[] = [];
+
+      // 1. From meal_orders (MealOrderCheckout flow)
+      const mealResult = await query(
+        `SELECT mo.*, mp.name as meal_plan_name, v.business_name as vendor_name
+         FROM meal_orders mo
+         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+         LEFT JOIN vendors v ON mo.vendor_id = v.id
+         WHERE mo.customer_id = $1
+         ORDER BY mo.created_at DESC`,
+        [customerId]
+      ).catch(() => ({ rows: [] }));
+
+      for (const o of (mealResult as any).rows || []) {
+        allOrders.push({
+          id: o.id,
+          order_number: o.order_number || o.id?.toString().slice(-8),
+          order_type: 'meal_plan_delivery',
+          orderType: 'meal_plan_delivery',
+          meal_plan_id: o.meal_plan_id,
+          meal_plan_name: o.meal_name || o.meal_plan_name,
+          pet_id: o.pet_id,
+          vendor_id: o.vendor_id,
+          vendor_name: o.vendor_name,
+          total_amount: o.total_amount,
+          status: o.status,
+          delivery_address: o.delivery_address,
+          scheduled_delivery_date: o.scheduled_delivery_date,
+          scheduled_delivery_slot: o.scheduled_delivery_slot,
+          created_at: o.created_at,
+          source: 'meal_orders',
+        });
+      }
+
+      // 2. From orders table (MealPlanBookingFlow /nutrition/delivery-orders)
+      try {
+        const hasOrderType = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_type' LIMIT 1`
+        ).then((r: any) => (r?.rows?.length || 0) > 0);
+        if (hasOrderType) {
+          const ordResult = await query(
+            `SELECT o.id, o.order_number, o.order_status as status, o.total_amount, o.shipping_address as delivery_address,
+                    o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,
+                    o.vendor_id, v.business_name as vendor_name,
+                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name
+             FROM orders o
+             LEFT JOIN vendors v ON o.vendor_id = v.id
+             WHERE o.customer_id = $1 AND o.order_type = 'meal_plan_delivery'
+             ORDER BY o.created_at DESC`,
+            [customerId]
+          ).catch(() => ({ rows: [] }));
+
+          for (const o of (ordResult as any).rows || []) {
+            allOrders.push({
+              id: o.id,
+              order_number: o.order_number || o.id?.toString().slice(-8),
+              order_type: 'meal_plan_delivery',
+              orderType: 'meal_plan_delivery',
+              meal_plan_id: null,
+              meal_plan_name: o.meal_plan_name || 'Meal Plan',
+              pet_id: null,
+              vendor_id: o.vendor_id,
+              vendor_name: o.vendor_name,
+              total_amount: o.total_amount,
+              status: o.status,
+              delivery_address: o.delivery_address,
+              scheduled_delivery_date: o.scheduled_delivery_date,
+              scheduled_delivery_slot: o.scheduled_delivery_slot,
+              created_at: o.created_at,
+              source: 'orders',
+            });
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
+
+      // Sort by created_at desc
+      allOrders.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      return c.json({ success: true, orders: allOrders });
+    } catch (error: any) {
+      console.error('[meal-plan-orders] Error:', error);
+      return c.json({ success: true, orders: [] });
+    }
+  });
+
   // GET /customer/pets?phone=... - MUST come before /customer/:customerId
   app.get('/customer/pets', async (c) => {
     try {
@@ -1530,103 +1624,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     }
   });
 
-  /**
-   * GET /customer/meal-plan-orders
-   * Returns meal plan orders from BOTH meal_orders (MealOrderCheckout) and orders (MealPlanBookingFlow).
-   * Enables OBJECTIVE 1: Customer can access meal tracker at will via /orders/meal-plans.
-   */
-  app.get('/customer/meal-plan-orders', async (c) => {
-    try {
-      const customerId = c.req.query('customerId');
-      if (!customerId) {
-        return c.json({ success: false, error: 'customerId is required' }, 400);
-      }
-      const allOrders: any[] = [];
-
-      // 1. From meal_orders (MealOrderCheckout flow)
-      const mealResult = await query(
-        `SELECT mo.*, mp.name as meal_plan_name, v.business_name as vendor_name
-         FROM meal_orders mo
-         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
-         LEFT JOIN vendors v ON mo.vendor_id = v.id
-         WHERE mo.customer_id = $1
-         ORDER BY mo.created_at DESC`,
-        [customerId]
-      ).catch(() => ({ rows: [] }));
-
-      for (const o of (mealResult as any).rows || []) {
-        allOrders.push({
-          id: o.id,
-          order_number: o.order_number || o.id?.toString().slice(-8),
-          order_type: 'meal_plan_delivery',
-          orderType: 'meal_plan_delivery',
-          meal_plan_id: o.meal_plan_id,
-          meal_plan_name: o.meal_name || o.meal_plan_name,
-          pet_id: o.pet_id,
-          vendor_id: o.vendor_id,
-          vendor_name: o.vendor_name,
-          total_amount: o.total_amount,
-          status: o.status,
-          delivery_address: o.delivery_address,
-          scheduled_delivery_date: o.scheduled_delivery_date,
-          scheduled_delivery_slot: o.scheduled_delivery_slot,
-          created_at: o.created_at,
-          source: 'meal_orders',
-        });
-      }
-
-      // 2. From orders table (MealPlanBookingFlow /nutrition/delivery-orders)
-      try {
-        const hasOrderType = await query(
-          `SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_type' LIMIT 1`
-        ).then((r: any) => (r?.rows?.length || 0) > 0);
-        if (hasOrderType) {
-          const ordResult = await query(
-            `SELECT o.id, o.order_number, o.order_status as status, o.total_amount, o.shipping_address as delivery_address,
-                    o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,
-                    o.vendor_id, v.business_name as vendor_name,
-                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name
-             FROM orders o
-             LEFT JOIN vendors v ON o.vendor_id = v.id
-             WHERE o.customer_id = $1 AND o.order_type = 'meal_plan_delivery'
-             ORDER BY o.created_at DESC`,
-            [customerId]
-          ).catch(() => ({ rows: [] }));
-
-          for (const o of (ordResult as any).rows || []) {
-            allOrders.push({
-              id: o.id,
-              order_number: o.order_number || o.id?.toString().slice(-8),
-              order_type: 'meal_plan_delivery',
-              orderType: 'meal_plan_delivery',
-              meal_plan_id: null,
-              meal_plan_name: o.meal_plan_name || 'Meal Plan',
-              pet_id: null,
-              vendor_id: o.vendor_id,
-              vendor_name: o.vendor_name,
-              total_amount: o.total_amount,
-              status: o.status,
-              delivery_address: o.delivery_address,
-              scheduled_delivery_date: o.scheduled_delivery_date,
-              scheduled_delivery_slot: o.scheduled_delivery_slot,
-              created_at: o.created_at,
-              source: 'orders',
-            });
-          }
-        }
-      } catch (_) {
-        /* ignore */
-      }
-
-      // Sort by created_at desc
-      allOrders.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      return c.json({ success: true, orders: allOrders });
-    } catch (error: any) {
-      console.error('[meal-plan-orders] Error:', error);
-      return c.json({ success: true, orders: [] });
-    }
-  });
 
   /**
    * GET /customer/:phone/subscriptions/active

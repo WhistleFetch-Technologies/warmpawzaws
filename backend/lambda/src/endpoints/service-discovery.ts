@@ -1128,23 +1128,59 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       if (serviceStyle === 'at_center') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         console.log('[discover-services] at_center: acceptableStyles=', acceptableStyles);
+        
+        // Resolve target roles BEFORE building query so we can include category/role filter
+        const roleIdForCenter = (roleId) ? (() => {
+          const m: Record<string, string> = {
+            vet: 'vet_clinic', veterinarian: 'vet_clinic',
+            grooming: 'groomer_center', groomer: 'groomer_center', pet_groomer: 'groomer_center',
+            training: 'trainer_center', trainer: 'trainer_center', pet_trainer: 'trainer_center',
+            nutrition: 'nutritionist_center', nutritionist: 'nutritionist_center',
+            diagnostics: 'diagnostics_center', 'lab-diagnostics': 'diagnostics_center',
+          };
+          return m[(roleId as string).toLowerCase().trim()] || roleId;
+        })() : roleId;
+        let targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+        console.log('[discover-services] at_center: category=%s, roleIdForCenter=%s, initial targetRoles=%s', category, roleIdForCenter, JSON.stringify(targetRoles));
+        // For at_center, exclude solo role names so business/clinic vendors are returned
+        if (targetRoles.length > 0) {
+          targetRoles = targetRoles.filter((r) => !r.toLowerCase().includes('solo'));
+          if (targetRoles.length === 0) {
+            targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+            targetRoles = (CATEGORY_ROLE_NAMES[category?.toLowerCase() || ''] || targetRoles).filter((r) => !r.toLowerCase().includes('solo'));
+          }
+        }
+        console.log('[discover-services] at_center: final targetRoles=%s', JSON.stringify(targetRoles));
+        
         // Use INNER JOIN like debug endpoint - this matches the working query
+        // ✅ FIX: Add category/role filter to SQL query
+        params = [acceptableStyles];
+        let categoryFilterClause = '';
+        if (targetRoles.length > 0) {
+          categoryFilterClause = ` AND LOWER(r.name) = ANY($${params.length + 1}::text[])`;
+          params.push(targetRoles.map((r) => r.toLowerCase()));
+        } else if (category) {
+          // Fallback: filter by vendor.category if roles not available
+          categoryFilterClause = ` AND (LOWER(COALESCE(v.category, '')) = LOWER($${params.length + 1}) OR LOWER(r.name) LIKE LOWER($${params.length + 1} || '%'))`;
+          params.push(category.toLowerCase());
+        }
+        
         vendorQuery = `
           SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config,
             COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
             COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)), 0) as availability_count
           FROM vendors v
           INNER JOIN roles r ON v.role_id = r.id
-          INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+          INNER JOIN vendor_services vs ON vs.vendor_id = v.id AND vs.vendor_id IS NOT NULL
           WHERE (v.status = 'approved' OR v.status = 'active') AND v.is_active = true
             AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
             AND LOWER(r.name) NOT LIKE '%solo%'
             AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            ${categoryFilterClause}
         `;
-        params = [acceptableStyles];
-        paramIndex = 2;
+        paramIndex = params.length + 1;
       } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         vendorQuery += ` AND EXISTS (
@@ -1157,41 +1193,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      // DB-driven: filter by category and/or roleId. For at_center normalize to center role names (vet → vet_clinic, etc.)
-      const roleIdForCenter = (serviceStyle === 'at_center' && roleId) ? (() => {
-        const m: Record<string, string> = {
-          vet: 'vet_clinic', veterinarian: 'vet_clinic',
-          grooming: 'groomer_center', groomer: 'groomer_center', pet_groomer: 'groomer_center',
-          training: 'trainer_center', trainer: 'trainer_center', pet_trainer: 'trainer_center',
-          nutrition: 'nutritionist_center', nutritionist: 'nutritionist_center',
-          diagnostics: 'diagnostics_center', 'lab-diagnostics': 'diagnostics_center',
-        };
-        return m[(roleId as string).toLowerCase().trim()] || roleId;
-      })() : roleId;
-      let targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
-      console.log('[discover-services] at_center: category=%s, roleIdForCenter=%s, initial targetRoles=%s', category, roleIdForCenter, JSON.stringify(targetRoles));
-      // For at_center, exclude solo role names so business/clinic vendors are returned (otherwise r.name NOT LIKE '%solo%' + only vet_solo in list = 0 results)
-      if (serviceStyle === 'at_center' && targetRoles.length > 0) {
-        targetRoles = targetRoles.filter((r) => !r.toLowerCase().includes('solo'));
-        if (targetRoles.length === 0) {
-          targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
-          targetRoles = (CATEGORY_ROLE_NAMES[category?.toLowerCase() || ''] || targetRoles).filter((r) => !r.toLowerCase().includes('solo'));
-        }
-      }
-      console.log('[discover-services] at_center: final targetRoles=%s', JSON.stringify(targetRoles));
-      // ✅ TEMP FIX: For at_center, skip role filter entirely to test - we know vendors exist
-      // TODO: Re-enable role filter once we confirm this works
+      // DB-driven: filter by category and/or roleId. For at_center, this is already handled above in the query.
+      // For other service styles, resolve roles here.
+      let targetRoles: string[] = [];
       let roleFilterAdded = false;
-      if (targetRoles.length > 0 && serviceStyle !== 'at_center') {
-        // Simple ANY match - this should work since we know vet_clinic exists in DB
-        vendorQuery += ` AND LOWER(r.name) = ANY($${paramIndex}::text[])`;
-        params.push(targetRoles.map((r) => r.toLowerCase()));
-        paramIndex++;
-        roleFilterAdded = true;
-        console.log('[discover-services] Added role filter with roles:', targetRoles.map((r) => r.toLowerCase()));
-      } else if (category && serviceStyle === 'at_center') {
-        // For at_center, skip role filter - just ensure it's not a solo role (already done above)
-        console.log('[discover-services] at_center: Skipping role filter, only filtering out solo roles');
+      if (serviceStyle !== 'at_center') {
+        const roleIdForCenter = roleId;
+        targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+        if (targetRoles.length > 0) {
+          vendorQuery += ` AND LOWER(r.name) = ANY($${paramIndex}::text[])`;
+          params.push(targetRoles.map((r) => r.toLowerCase()));
+          paramIndex++;
+          roleFilterAdded = true;
+          console.log('[discover-services] Added role filter with roles:', targetRoles.map((r) => r.toLowerCase()));
+        }
       }
 
       // Filter by location (text match)
@@ -1217,31 +1232,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           id: vendors[0].id,
           business_name: vendors[0].business_name,
           role_name: vendors[0].role_name,
+          category: vendors[0].category,
           status: vendors[0].status,
           is_active: vendors[0].is_active
         }));
-      }
-      
-      // ✅ FALLBACK: If no vendors found and we filtered by roles, try without role filter
-      if (vendors.length === 0 && serviceStyle === 'at_center' && roleFilterAdded) {
-        console.log('[discover-services] at_center: No vendors found with role filter, trying without role filter...');
-        // Remove the role filter clause
-        const roleFilterPattern = new RegExp(`\\s+AND\\s+\\(LOWER\\(r\\.name\\)[^)]+\\)`, 'gi');
-        const fallbackQuery = vendorQuery.replace(roleFilterPattern, '');
-        // Remove the role filter param (last array param before availability params)
-        const fallbackParams = [...params];
-        if (fallbackParams.length > 0 && Array.isArray(fallbackParams[fallbackParams.length - 1])) {
-          fallbackParams.pop();
-        }
-        try {
-          console.log('[discover-services] at_center: fallback query params:', JSON.stringify(fallbackParams));
-          vendorResults = await query(fallbackQuery, fallbackParams);
-          vendors = vendorResults.rows;
-          console.log('[discover-services] at_center: fallback query found %s vendors', vendors.length);
-        } catch (fallbackError: any) {
-          console.error('[discover-services] at_center: fallback query failed:', fallbackError.message);
-          console.error('[discover-services] at_center: fallback query:', fallbackQuery.substring(0, 500));
-        }
+      } else {
+        console.log('[discover-services] at_center: No vendors found. Check category filter and role matching.');
       }
 
       // Enrich vendors with services, reviews, and availability
@@ -1562,6 +1558,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       )).filter(Boolean);
 
       // Strict discovery: photos loaded, next availability, profile (specializations), services with complete duration and info
+      // ✅ FIX: For at_center, make availability optional (vendors may not have availability configured yet)
       let filteredVendors = enrichedVendors.filter((v: any) => {
         const hasPhoto = !!(v.photoUrl || (v.photos && v.photos.length > 0));
         const hasNextAvailability = !!v.nextAvailableSlot || !!v.nextAvailability;
@@ -1569,6 +1566,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const hasCompleteServices = v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.every((o: any) =>
           (o.duration != null && Number(o.duration) > 0) && (o.name || o.category)
         );
+        // For at_center: require photo, profile, and services; availability is optional
+        if (serviceStyle === 'at_center') {
+          return hasPhoto && hasProfileInfo && hasCompleteServices;
+        }
+        // For at_home/tele: require all fields
         return hasPhoto && hasNextAvailability && hasProfileInfo && hasCompleteServices;
       });
       if (serviceStyle === 'at_center') {
@@ -2672,8 +2674,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       };
       let existingBookings: { booking_time: string; duration_minutes: number }[] = [];
       try {
+        // ✅ CRITICAL: Use total_duration_minutes if available (for multi-service bookings), otherwise duration_minutes
+        // This ensures we use the actual booking duration, not just the base service duration
         const bookResult = await query(
-          `SELECT booking_time, COALESCE(duration_minutes, 30) as duration_minutes
+          `SELECT booking_time, 
+                  COALESCE(total_duration_minutes, duration_minutes, 30) as duration_minutes
            FROM bookings
            WHERE vendor_id = $1 AND booking_date = $2
              AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
@@ -2797,23 +2802,49 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             }
 
             // 2) Break overlap
-            const slotEndMin = currentMinutes + totalDuration;
+            // ✅ FIX: Use slotDuration for break check (slot size), but also check if totalDuration would extend into break
+            const slotEndMin = currentMinutes + slotDuration;  // Slot end for break check
+            const serviceEndMin = currentMinutes + totalDuration;  // Service end if booked at this slot
             const inBreak = breaks.some((brk: { startTime: string; endTime: string }) => {
               const bStart = timeToMinutes(brk.startTime);
               const bEnd = timeToMinutes(brk.endTime);
-              return currentMinutes < bEnd && slotEndMin > bStart;
+              // Slot overlaps break if slot itself overlaps OR if service would extend into break
+              return (currentMinutes < bEnd && slotEndMin > bStart) || (currentMinutes < bEnd && serviceEndMin > bStart);
             });
             if (inBreak) {
               currentMinutes += slotDuration;
               continue;
             }
 
-            // 3) Buffer overlap with existing bookings (slot start + totalDuration + buffer vs booking start + duration + buffer)
-            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
+            // 3) Overlap check with existing bookings (slot start + slotDuration vs booking start + duration)
+            // ✅ STRICT BUSINESS RULE: Each slot is atomic and independent
+            // Buffer is informational (travel/prep/setup) and MUST NOT block adjacent slots
+            // Only service duration blocks slots - buffer is used for scheduling spacing, not availability blocking
+            // ✅ CRITICAL: Use slotDuration (actual slot size) not totalDuration (requested service duration) for overlap check
+            // ✅ ATOMIC SLOT RULE: Booking 09:00 (30min) should ONLY block 09:00, NOT 09:30
+            // Mathematical proof:
+            //   Booking 09:00: bStart=540, bEnd=540+30=570 (09:30)
+            //   Slot 09:30: currentMinutes=570, slotEnd=570+30=600 (10:00)
+            //   Overlap: 570 < 570 && 600 > 540 = false && true = false ✅ (NO overlap)
+            const slotEnd = currentMinutes + slotDuration;  // ✅ Use slotDuration, NO buffer in blocking
             const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
               const bStart = timeToMinutes(b.booking_time);
-              const bEnd = bStart + b.duration_minutes + bufferMinutes;
-              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
+              
+              // ✅ FIX: For at_center only, subtract buffer time from booking duration for overlap check
+              // at_home/tele use exact time matching (staff-based) so they don't have this issue
+              // Buffer is informational (prep time) and should NOT block adjacent slots for at_center
+              let bookingDuration = b.duration_minutes;
+              if (normalizedServiceStyle === 'at_center' && bufferMinutes > 0) {
+                // Subtract buffer from booking duration for overlap check only
+                // This ensures adjacent slots are not blocked by buffer time
+                // Minimum duration is slotDuration to prevent negative values
+                bookingDuration = Math.max(slotDuration, bookingDuration - bufferMinutes);
+              }
+              
+              const bEnd = bStart + bookingDuration;  // ✅ Use adjusted duration for at_center (no buffer blocking)
+              // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
+              // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
+              return currentMinutes < bEnd && slotEnd > bStart;  // ✅ Strict < ensures atomic behavior
             });
 
             // ✅ FIX: Check max capacity first to determine availability
@@ -2840,6 +2871,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
             // ✅ FIX: Always add slot (even if booked or past) so UI can show it as unavailable
             // Dynamic payload: pass through schedule fields so clients sync with future enhancements
+            // ✅ FIX: Filter serviceStyles to only include styles matching the requested serviceStyle
+            // When serviceStyle=at_center is requested, only return ["at_center"], not ["at_center", "at_home"]
+            let filteredServiceStyles: string[] = [];
+            if (Array.isArray(row.service_styles) && row.service_styles.length > 0) {
+              // Filter to only include styles that match the requested serviceStyle
+              filteredServiceStyles = row.service_styles.filter((style: string) => 
+                acceptableStylesForSlot.includes(style)
+              );
+              // If no matching styles found, use the requested serviceStyle as fallback
+              if (filteredServiceStyles.length === 0 && normalizedServiceStyle) {
+                filteredServiceStyles = [normalizedServiceStyle];
+              }
+            } else if (normalizedServiceStyle) {
+              // If no service_styles array, use the requested serviceStyle
+              filteredServiceStyles = [normalizedServiceStyle];
+            }
+            
             const slotPayload: Record<string, unknown> = {
               time: timeStr,
               available,
@@ -2847,7 +2895,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               slotDuration,
               bufferMinutes,
               ...(isPastSlot && { isPast: true }), // ✅ Mark past slots for today
-              ...(Array.isArray(row.service_styles) && row.service_styles.length > 0 && { serviceStyles: row.service_styles }),
+              ...(filteredServiceStyles.length > 0 && { serviceStyles: filteredServiceStyles }),
               ...(row.max_capacity != null && row.max_capacity !== '' && { maxCapacity: parseInt(String(row.max_capacity), 10) }),
             };
             slots.push(slotPayload);

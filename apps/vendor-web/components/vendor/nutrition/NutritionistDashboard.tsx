@@ -122,6 +122,8 @@ interface MealOrder {
   status: string;
   total_amount: number;
   created_at: string;
+  confirmed_at?: string; // Timestamp when payment was confirmed
+  prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
   items: any[];
   delivery_address?: any;
 }
@@ -140,6 +142,41 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   const [refreshing, setRefreshing] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<MealProduct | null>(null);
+  // ✅ Track vendor-accepted orders locally (since we can't distinguish from payment confirmation in DB)
+  // Use localStorage to persist across page refreshes
+  const getStoredAcceptedOrders = (): Set<string> => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = localStorage.getItem(`accepted_meal_orders_${vendorId}`);
+      if (stored) {
+        const ids = JSON.parse(stored) as string[];
+        console.log(`[NutritionistDashboard] Loaded ${ids.length} accepted order IDs from localStorage:`, ids);
+        return new Set(ids);
+      }
+    } catch (e) {
+      console.warn('Error reading accepted orders from localStorage:', e);
+    }
+    return new Set();
+  };
+  const [acceptedOrderIds, setAcceptedOrderIds] = useState<Set<string>>(getStoredAcceptedOrders());
+  
+  // Helper to update both state and localStorage
+  const updateAcceptedOrderIds = useCallback((updater: (prev: Set<string>) => Set<string>) => {
+    setAcceptedOrderIds(prev => {
+      const newSet = updater(prev);
+      // Persist to localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          const idsArray = Array.from(newSet);
+          localStorage.setItem(`accepted_meal_orders_${vendorId}`, JSON.stringify(idsArray));
+          console.log(`[NutritionistDashboard] Saved ${idsArray.length} accepted order IDs to localStorage:`, idsArray);
+        } catch (e) {
+          console.warn('Error saving accepted orders to localStorage:', e);
+        }
+      }
+      return newSet;
+    });
+  }, [vendorId]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -171,7 +208,53 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-orders`);
       if (response && (response as any).success) {
-        setOrders((response as any).orders || []);
+        const fetchedOrders = (response as any).orders || [];
+        setOrders(fetchedOrders);
+        
+        // ✅ Initialize acceptedOrderIds: Merge stored accepted IDs with orders that have progressed
+        // This preserves localStorage state (vendor accepted) while also including orders that have prep_started_at
+        setAcceptedOrderIds(prev => {
+          const newAcceptedIds = new Set(prev); // Preserve stored accepted IDs from localStorage
+          const currentOrderIds = new Set(fetchedOrders.map((o: MealOrder) => o.id));
+          
+          fetchedOrders.forEach((order: MealOrder) => {
+            // If order has prep_started_at or status beyond 'confirmed', vendor has accepted/started
+            if (order.prep_started_at || 
+                order.status === 'preparing' || 
+                order.status === 'ready_for_pickup' || 
+                order.status === 'picked_up' || 
+                order.status === 'on_the_way' || 
+                order.status === 'delivered') {
+              newAcceptedIds.add(order.id);
+            }
+          });
+          
+          // Clean up: Remove accepted IDs for orders that no longer exist or are cancelled/delivered
+          // This prevents localStorage from growing indefinitely
+          Array.from(newAcceptedIds).forEach(orderId => {
+            if (!currentOrderIds.has(orderId)) {
+              // Order no longer in the list, remove from accepted set
+              newAcceptedIds.delete(orderId);
+            } else {
+              const order = fetchedOrders.find((o: MealOrder) => o.id === orderId);
+              if (order && (order.status === 'cancelled' || order.status === 'delivered')) {
+                // Order is completed, remove from accepted set (no longer relevant)
+                newAcceptedIds.delete(orderId);
+              }
+            }
+          });
+          
+          // Persist to localStorage
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(`accepted_meal_orders_${vendorId}`, JSON.stringify(Array.from(newAcceptedIds)));
+            } catch (e) {
+              console.warn('Error saving accepted orders to localStorage:', e);
+            }
+          }
+          
+          return newAcceptedIds;
+        });
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
@@ -181,6 +264,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
+      // ✅ Load accepted orders from localStorage first
+      const stored = getStoredAcceptedOrders();
+      if (stored.size > 0) {
+        setAcceptedOrderIds(stored);
+        console.log(`[NutritionistDashboard] Initialized with ${stored.size} accepted orders from localStorage:`, Array.from(stored));
+      }
       await Promise.all([fetchProducts(), fetchOrders()]);
       setLoading(false);
     };
@@ -264,12 +353,37 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
 
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
+      // ✅ CRITICAL: Track acceptance BEFORE API call and persist to localStorage
+      if (status === 'accepted') {
+        updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
+      }
+      
       await apiClient.put(`/vendor/${vendorId}/meal-orders/${orderId}/status`, { status });
-      toast.success('Order status updated');
+      
+      // ✅ BUSINESS LOGIC: Track vendor acceptance locally
+      if (status === 'accepted') {
+        toast.success('Order accepted successfully!');
+      } else if (status === 'preparing') {
+        // When vendor starts preparing, they've implicitly accepted
+        updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
+        toast.success('Order status updated');
+      } else {
+        toast.success('Order status updated');
+      }
+      
+      // Refresh orders (this will merge with localStorage, preserving the accepted ID)
       await fetchOrders();
     } catch (error: any) {
       console.error('Error updating order status:', error);
       toast.error(error?.message || 'Failed to update status');
+      // On error, remove from acceptedOrderIds if it was added
+      if (status === 'accepted') {
+        updateAcceptedOrderIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(orderId);
+          return newSet;
+        });
+      }
     }
   };
 
@@ -555,7 +669,15 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                           </button>
                         </>
                       )}
-                      {order.status === 'confirmed' && (
+                      {/* BUSINESS LOGIC:
+                          1. Pending: Order created, payment not done → Show Accept (but payment should be done first)
+                          2. Confirmed (after payment): Payment done, vendor needs to accept → Show Accept + Start Preparing + Cancel
+                          3. After vendor accepts: Status stays 'confirmed', but prep_started_at is still null → Hide Accept, show Start Preparing + Cancel
+                          4. Preparing: Status = 'preparing', prep_started_at is set → Hide Accept, show Ready for Pickup, restrict Cancel
+                      */}
+                      
+                      {/* Pending orders: Payment not confirmed yet */}
+                      {order.status === 'pending' && (
                         <>
                           <button
                             onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
@@ -569,19 +691,82 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                             className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
                           >
                             {Icons.x}
+                            <span className="text-sm ml-1">Cancel</span>
                           </button>
                         </>
                       )}
-                      {order.status === 'accepted' && (
-                        <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                          className="py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          {Icons.utensils}
-                          <span className="text-sm">Start Preparing</span>
-                        </button>
+                      
+                      {/* Confirmed orders (payment done): Vendor can accept or start preparing directly */}
+                      {/* If prep_started_at is null, vendor hasn't started, so show Accept button */}
+                      {/* If prep_started_at is not null, vendor has started, so hide Accept button */}
+                      {/* ✅ BUSINESS LOGIC: Confirmed orders (payment done) - Vendor needs to accept */}
+                      {/* Show Accept button only if vendor hasn't accepted yet (tracked in localStorage) */}
+                      {(() => {
+                        const shouldShowAccept = order.status === 'confirmed' && !order.prep_started_at && !acceptedOrderIds.has(order.id);
+                        if (order.status === 'confirmed' && !order.prep_started_at) {
+                          console.log(`[NutritionistDashboard] Order ${order.id}: status=confirmed, prep_started_at=${order.prep_started_at}, in acceptedOrderIds=${acceptedOrderIds.has(order.id)}, shouldShowAccept=${shouldShowAccept}`);
+                        }
+                        return shouldShowAccept;
+                      })() && (
+                        <>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
+                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            {Icons.check}
+                            <span className="text-sm">Accept</span>
+                          </button>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
+                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            {Icons.utensils}
+                            <span className="text-sm">Start Preparing</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
+                                handleUpdateOrderStatus(order.id, 'cancelled');
+                              }
+                            }}
+                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                          >
+                            {Icons.x}
+                            <span className="text-sm ml-1">Cancel</span>
+                          </button>
+                        </>
                       )}
-                      {(order.status === 'accepted' || order.status === 'preparing') && (
+                      
+                      {/* Confirmed orders where vendor has accepted but not started preparing yet */}
+                      {order.status === 'confirmed' && !order.prep_started_at && acceptedOrderIds.has(order.id) && (
+                        <>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
+                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            {Icons.utensils}
+                            <span className="text-sm">Start Preparing</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
+                                handleUpdateOrderStatus(order.id, 'cancelled');
+                              }
+                            }}
+                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                          >
+                            {Icons.x}
+                            <span className="text-sm ml-1">Cancel</span>
+                          </button>
+                        </>
+                      )}
+                      
+                      {/* Confirmed orders where vendor has accepted (prep_started_at is null but vendor clicked Accept) */}
+                      {/* This case is handled by the condition above - if prep_started_at is null, show Accept */}
+                      {/* After vendor clicks Accept, status stays 'confirmed', prep_started_at stays null until "Start Preparing" */}
+                      {/* So we need to track acceptance differently - for now, allow "Start Preparing" which implicitly accepts */}
+                      {/* ETA buttons: Show for preparing orders only (vendor has started) */}
+                      {order.status === 'preparing' && (
                         <>
                           <button
                             onClick={() => handleSetPreparationEta(order.id, 30)}
@@ -601,16 +786,14 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                           >
                             ETA 60m
                           </button>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
+                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            {Icons.package}
+                            <span className="text-sm">Ready for Pickup</span>
+                          </button>
                         </>
-                      )}
-                      {order.status === 'preparing' && (
-                        <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
-                          className="py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          {Icons.package}
-                          <span className="text-sm">Ready for Pickup</span>
-                        </button>
                       )}
                       {order.status === 'ready_for_pickup' && (
                         <>

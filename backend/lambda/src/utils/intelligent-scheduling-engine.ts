@@ -426,11 +426,13 @@ function generateSlotsForWindow(
       }
     }
     
-    // Count existing bookings at this time
+    // ✅ FIX: Count existing bookings at this time - use ONLY service duration (no buffer blocking)
+    // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
     const overlappingBookings = existingBookings.filter(booking => {
       const bookingStart = timeToMinutes(booking.bookingTime);
-      const bookingEnd = bookingStart + booking.duration + bufferTime;
-      return currentMinutes < bookingEnd && currentMinutes + slotDuration + bufferTime > bookingStart;
+      const bookingEnd = bookingStart + booking.duration;  // ✅ NO buffer - only service duration
+      const slotEnd = currentMinutes + slotDuration;  // ✅ NO buffer
+      return currentMinutes < bookingEnd && slotEnd > bookingStart;  // ✅ Standard overlap without buffer
     });
     
     const bookedCount = overlappingBookings.length;
