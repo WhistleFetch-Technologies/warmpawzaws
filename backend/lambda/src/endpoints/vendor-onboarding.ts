@@ -1217,6 +1217,17 @@ class AdminReviewApplicationHandler extends BaseHandler {
       return this.error('applicationId, action, and admin_id are required', 400);
     }
 
+    // ✅ FIX: Validate that applicationId is a valid UUID format
+    // This prevents errors like "invalid input syntax for type uuid: \"admin\""
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(applicationId)) {
+      console.error(`[ADMIN-REVIEW] Invalid applicationId format: "${applicationId}"`);
+      return this.error(
+        `Invalid application ID format. Expected UUID, got: "${applicationId}"`,
+        400
+      );
+    }
+
     if (!['APPROVE', 'REQUEST_CLARIFICATION', 'REJECT'].includes(action)) {
       return this.error('Invalid action. Must be APPROVE, REQUEST_CLARIFICATION, or REJECT', 400);
     }
@@ -1848,6 +1859,20 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
 
   // Phase 6: Admin Review
   app.post('/admin/vendor/onboarding/:applicationId/review', async (c) => {
+    // ✅ FIX: Validate applicationId before passing to handler
+    const applicationId = c.req.param('applicationId');
+    console.log('[ADMIN-REVIEW] Route matched, applicationId from param:', applicationId);
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!applicationId || !uuidRegex.test(applicationId)) {
+      console.error(`[ADMIN-REVIEW] Invalid applicationId: "${applicationId}"`);
+      return c.json({
+        success: false,
+        error: `Invalid application ID format. Expected UUID, got: "${applicationId}"`,
+      }, 400);
+    }
+    
     return toHonoResponse(c, new AdminReviewApplicationHandler(), createHandlerContext(c));
   });
 

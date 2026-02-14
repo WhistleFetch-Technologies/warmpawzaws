@@ -8,6 +8,10 @@ const path = require('path');
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    // Expose API base URL to the client
+    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  },
   ...(process.env.NODE_ENV === 'production' && process.env.NEXT_EXPORT !== 'false'
     ? { output: 'export' }
     : {}),

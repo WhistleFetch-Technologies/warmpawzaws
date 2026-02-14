@@ -175,6 +175,10 @@ export function UniversalProviderProfile({
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
   
+  // ✅ FIX: Track services separately and load if provider.services is empty
+  const [services, setServices] = useState<Service[]>(provider.services || []);
+  const [loadingServices, setLoadingServices] = useState(false);
+  
   // Booking form state
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
@@ -208,6 +212,96 @@ export function UniversalProviderProfile({
       month: date.toLocaleDateString('en-US', { month: 'short' }),
     };
   });
+
+  // ✅ FIX: Load services from API if not provided
+  const loadServices = async () => {
+    const vendorId = provider.vendorId || provider.providerId;
+    if (!vendorId) {
+      return;
+    }
+
+    setLoadingServices(true);
+    try {
+      // Try to fetch services from customer endpoint
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const servicesResponse = await apiClient.get(
+        `/customer/vendor/${vendorId}/services?serviceStyle=${serviceStyle}&category=${category}${phoneParam}`
+      ) as any;
+
+      let servicesArray = [
+        ...(servicesResponse?.services || []),
+        ...(servicesResponse?.packages || []),
+      ];
+      if (servicesArray.length === 0 && Array.isArray(servicesResponse)) {
+        servicesArray = servicesResponse;
+      }
+
+      if (servicesArray.length > 0) {
+        const mappedServices = servicesArray.map((s: any) => ({
+          id: s.id || s.service_id,
+          serviceId: s.id || s.service_id,
+          name: s.name || s.service_name || 'Service',
+          price: Number(s.price || s.custom_price || 0),
+          duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
+          description: s.description || s.custom_description,
+          categoryName: s.category_name || s.category,
+          serviceStyle: s.serviceStyle || s.service_style || serviceStyle,
+          popular: s.popular || false,
+        }));
+        setServices(mappedServices);
+        console.log(`✅ [UniversalProviderProfile] Loaded ${mappedServices.length} services for vendor ${vendorId}`);
+        return;
+      }
+
+      // Fallback: Check if provider has featuredOfferings
+      if ((provider as any).featuredOfferings && Array.isArray((provider as any).featuredOfferings)) {
+        const offerings = (provider as any).featuredOfferings.map((offering: any) => ({
+          id: offering.id || offering.serviceId,
+          serviceId: offering.id || offering.serviceId,
+          name: offering.name || offering.serviceName || 'Service',
+          price: Number(offering.price || 0),
+          duration: Number(offering.duration || 30),
+          description: offering.description,
+          categoryName: offering.category,
+          serviceStyle: offering.serviceStyle || serviceStyle,
+          popular: false,
+        }));
+        setServices(offerings);
+        console.log(`✅ [UniversalProviderProfile] Using featuredOfferings as fallback: ${offerings.length} services`);
+        return;
+      }
+    } catch (error) {
+      console.error('[UniversalProviderProfile] Error loading services:', error);
+      // Try featuredOfferings as last resort
+      if ((provider as any).featuredOfferings && Array.isArray((provider as any).featuredOfferings)) {
+        const offerings = (provider as any).featuredOfferings.map((offering: any) => ({
+          id: offering.id || offering.serviceId,
+          serviceId: offering.id || offering.serviceId,
+          name: offering.name || offering.serviceName || 'Service',
+          price: Number(offering.price || 0),
+          duration: Number(offering.duration || 30),
+          description: offering.description,
+          categoryName: offering.category,
+          serviceStyle: offering.serviceStyle || serviceStyle,
+          popular: false,
+        }));
+        setServices(offerings);
+        console.log(`✅ [UniversalProviderProfile] Using featuredOfferings after error: ${offerings.length} services`);
+      }
+    } finally {
+      setLoadingServices(false);
+    }
+  };
+
+  // ✅ FIX: Load services if provider.services is empty
+  useEffect(() => {
+    if (!provider.services || provider.services.length === 0) {
+      loadServices();
+    } else {
+      setServices(provider.services);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider.vendorId, provider.providerId, serviceStyle, provider.services?.length]);
 
   // Load customer data on mount
   useEffect(() => {
@@ -243,6 +337,7 @@ export function UniversalProviderProfile({
       console.log('Could not refresh addresses', e);
     }
   };
+
 
   const loadCustomerData = async () => {
     try {
@@ -354,7 +449,7 @@ export function UniversalProviderProfile({
   };
 
   // Calculate total for selected services
-  const selectedServicesList = provider.services.filter(s => selectedServices.has(s.id));
+  const selectedServicesList = services.filter(s => selectedServices.has(s.id));
   const totalAmount = selectedServicesList.reduce((sum, s) => sum + s.price, 0);
   const totalDuration = selectedServicesList.reduce((sum, s) => sum + s.duration, 0);
 
@@ -756,12 +851,16 @@ export function UniversalProviderProfile({
             {activeTab === 'services' && (
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-700">Available Services</h3>
-                {provider.services.length === 0 ? (
+                {loadingServices ? (
+                  <Card className="p-6 text-center">
+                    <p className="text-gray-500">Loading services...</p>
+                  </Card>
+                ) : services.length === 0 ? (
                   <Card className="p-6 text-center">
                     <p className="text-gray-500">No services available</p>
                   </Card>
                 ) : (
-                  provider.services.map((service) => {
+                  services.map((service) => {
                     const isSelected = selectedServices.has(service.id);
                     return (
                       <Card 

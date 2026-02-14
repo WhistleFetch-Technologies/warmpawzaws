@@ -994,6 +994,20 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Application ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    // ✅ FIX: Validate that applicationId is a valid UUID format
+    // This prevents errors like "invalid input syntax for type uuid: \"admin\""
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(applicationId)) {
+      console.error(`[ADMIN-REVIEW] Invalid applicationId format: "${applicationId}"`);
+      return this.error(
+        `Invalid application ID format. Expected UUID, got: "${applicationId}"`,
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        requestId
+      );
+    }
+
     // Validate request with Zod schema
     const validationResult = AdminReviewApplicationRequestSchema.safeParse(body);
     if (!validationResult.success) {
@@ -1235,8 +1249,34 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
 
   // Phase 6: Admin Review
   app.post('/admin/vendor/onboarding/:applicationId/review', async (c: Context) => {
+    // ✅ FIX: Extract applicationId from route parameter and validate
+    const applicationId = c.req.param('applicationId');
+    
+    // Log for debugging
+    console.log('[ADMIN-REVIEW] Route matched, applicationId from param:', applicationId);
+    console.log('[ADMIN-REVIEW] Full URL path:', c.req.url);
+    console.log('[ADMIN-REVIEW] All route params:', c.req.param());
+    
+    // Validate UUID format before proceeding
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!applicationId || !uuidRegex.test(applicationId)) {
+      console.error(`[ADMIN-REVIEW] Invalid applicationId: "${applicationId}"`);
+      return c.json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid application ID format. Expected UUID, got: "${applicationId}"`,
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: randomUUID(),
+          version: 'v1',
+        },
+      }, 400);
+    }
+    
     const event = await createApiGatewayEventWithBody(c);
-    event.pathParameters = { applicationId: c.req.param('applicationId') };
+    event.pathParameters = { applicationId };
     const context = createLambdaContext();
     const result: any = await reviewHandler.execute(event, context);
     const body = JSON.parse(result.body);

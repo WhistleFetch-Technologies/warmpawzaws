@@ -37,27 +37,14 @@ type TabType =
 	| "analytics"
 	| "policies";
 
-// UAT Mode: Auto-login if no token exists
-const UAT_MODE = typeof window !== 'undefined' && (
-	(window as any).__WARMPAWZ_RUNTIME_CONFIG__?.uatMode === true ||
-	process.env.NEXT_PUBLIC_UAT_MODE === 'true'
-);
+// ✅ FIX: Import isUatMode from api-client to respect uatMode: false in production
+import { isUatMode } from "@/lib/api-client";
 
 export default function ECommerceManagement() {
 	const [activeTab, setActiveTab] = useState<TabType>("dashboard");
 
-	// Auto-login in UAT mode if no token exists
-	useEffect(() => {
-		if (UAT_MODE && typeof window !== 'undefined') {
-			const token = localStorage.getItem('adminAuthToken');
-			if (!token) {
-				// Auto-login with UAT credentials
-				localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
-				localStorage.setItem('adminEmail', 'admin@warmpawz.com');
-				console.log('🔧 [UAT Mode] Auto-logged in for ecommerce page');
-			}
-		}
-	}, []);
+	// ✅ REMOVED: UAT Mode auto-login - Production should never generate UAT tokens
+	// Users must log in through the proper login flow to get real JWT tokens
 
 	const tabs = [
 		{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard },

@@ -17,11 +17,16 @@ try {
  * Build for performance: compress, tree-shake, chunk splitting.
  * See docs/NEXTJS_AWS_SERVERLESS_ARCHITECTURE.md
  */
+// Log the API URL being used (for debugging)
+const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || defaultApiUrl;
+console.log('🔧 Next.js Config - NEXT_PUBLIC_API_BASE_URL:', apiUrl);
+console.log('🔧 Next.js Config - process.env.NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    // Local dev: use config/urls.json apiGatewayDefaultUrl when NEXT_PUBLIC_API_BASE_URL not set
-    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || defaultApiUrl,
+    // Expose API base URL to the client - prioritize explicit env var
+    NEXT_PUBLIC_API_BASE_URL: apiUrl,
   },
   // Only use static export in production builds, not in development
   // This allows dynamic routes to work in dev mode

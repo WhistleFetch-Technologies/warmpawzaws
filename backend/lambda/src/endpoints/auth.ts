@@ -723,14 +723,28 @@ export function registerAuthEndpoints(app: Hono) {
 
   // Primary routes
   app.post('/auth/send-otp', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono request before creating API Gateway event
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await sendOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/auth/verify-otp', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono request before creating API Gateway event
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -738,14 +752,26 @@ export function registerAuthEndpoints(app: Hono) {
 
   // Compatibility aliases (web/mobile clients)
   app.post('/auth/otp/send', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await sendOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/auth/otp/verify', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -753,14 +779,26 @@ export function registerAuthEndpoints(app: Hono) {
 
   // Legacy mobile endpoints
   app.post('/otp/generate', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await sendOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/otp/verify', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -768,12 +806,31 @@ export function registerAuthEndpoints(app: Hono) {
 }
 
 // Helper to convert Hono request to API Gateway event (for compatibility)
-function createApiGatewayEvent(req: any): any {
+// ✅ FIX: Accept parsed body as parameter since Hono doesn't have req.body
+function createApiGatewayEvent(req: any, parsedBody?: any): any {
+  // Get headers from Hono request
+  let headers: Record<string, string> = {};
+  try {
+    if (req.raw && req.raw.headers) {
+      const rawHeaders = req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else if (req.headers) {
+      headers = req.headers;
+    }
+  } catch (e) {
+    console.warn('[AUTH] Error processing headers:', e);
+  }
+
   return {
     httpMethod: req.method,
     path: req.url,
-    headers: req.headers,
-    body: JSON.stringify(req.body || {}),
+    headers: headers,
+    body: parsedBody ? JSON.stringify(parsedBody) : undefined,
     requestContext: {
       requestId: randomUUID(),
     },

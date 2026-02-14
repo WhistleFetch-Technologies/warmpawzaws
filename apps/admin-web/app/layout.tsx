@@ -35,9 +35,15 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Inline fallback config (ensures API URL is always available)
+              // ✅ FIX: Inline fallback config - default to production mode (uatMode: false)
+              // This ensures production never defaults to UAT mode even if runtime-config.js fails to load
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
+                const isProd = window.location.hostname.includes('cloudfront.net') || 
+                              window.location.hostname.includes('warmpawz.com');
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = { 
+                  apiBaseUrl: isProd ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com' : '', 
+                  uatMode: false  // ✅ CRITICAL: Never default to UAT mode
+                };
               }
               (function() {
                 try {
@@ -52,19 +58,8 @@ export default function RootLayout({
                   document.head.insertBefore(script, document.head.firstChild);
                 } catch (e) { console.error('Error loading runtime-config.js', e); }
               })();
-              // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
-              (function() {
-                var config = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
-                var isUatMode = config.uatMode === true;
-                if (isUatMode && typeof localStorage !== 'undefined') {
-                  var token = localStorage.getItem('adminAuthToken');
-                  if (!token) {
-                    localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
-                    localStorage.setItem('adminEmail', 'admin@warmpawz.com');
-                    console.log('🔧 [UAT Mode] Auto-logged in for direct page access');
-                  }
-                }
-              })();
+              // ✅ REMOVED: UAT Mode auto-login - Production should never generate UAT tokens
+              // Users must log in through the proper login flow to get real JWT tokens
             `,
           }}
         />

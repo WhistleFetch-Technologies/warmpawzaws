@@ -38,12 +38,14 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* Runtime config: no hardcoded URLs. Injected at deploy from config/urls.json; local dev: NEXT_PUBLIC_API_BASE_URL */}
+        {/* Inject NEXT_PUBLIC_API_BASE_URL from environment before runtime-config.js loads */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              // Inject API Base URL from Next.js environment variable
+              window.__NEXT_PUBLIC_API_BASE_URL__ = ${JSON.stringify(process.env.NEXT_PUBLIC_API_BASE_URL || '')};
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: false };
               }
             `,
           }}

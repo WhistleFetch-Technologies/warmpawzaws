@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AdminApp } from '@/components/AdminApp';
 import { NoSSR } from '@/components/NoSSR';
+import { apiClient } from '@/lib/api-client';
 
 // Prevent prerendering - this page uses localStorage and React context
 export const dynamic = 'force-dynamic';
@@ -14,19 +15,8 @@ const UAT_CREDENTIALS = {
   password: process.env.NEXT_PUBLIC_UAT_ADMIN_PASSWORD || '',
 };
 
-// Helper function to check UAT mode from runtime config
-function isUatMode(): boolean {
-  if (typeof window === 'undefined') {
-    return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
-  }
-  // Check runtime config first (for deployed static builds)
-  const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
-  if (runtimeConfig?.uatMode === true) {
-    return true;
-  }
-  // Fallback to build-time env vars
-  return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
-}
+// ✅ FIX: Import isUatMode from api-client for consistency
+import { isUatMode } from '@/lib/api-client';
 
 export default function AdminHomePage() {
   const pathname = usePathname();
@@ -51,6 +41,17 @@ export default function AdminHomePage() {
       initializeSession();
       
       const storedToken = localStorage.getItem('adminAuthToken');
+      
+      // ✅ FIX: Reject UAT tokens in production - they should never be used
+      if (storedToken && storedToken.startsWith('uat-token-')) {
+        console.warn('⚠️ [Auth] UAT token detected in production - clearing invalid token');
+        localStorage.removeItem('adminAuthToken');
+        localStorage.removeItem('adminEmail');
+        setIsAuthenticated(false);
+        setIsLoading(false);
+        return;
+      }
+      
       if (storedToken && !isTokenExpired(storedToken)) {
         setIsAuthenticated(true);
       } else if (storedToken && isTokenExpired(storedToken)) {
@@ -68,34 +69,31 @@ export default function AdminHomePage() {
     setLoginLoading(true);
 
     try {
-      // Check UAT mode dynamically (from runtime config)
-      const currentUatMode = isUatMode();
+      // ✅ FIX: Production - Always call real API (no UAT token generation)
+      // In production (uatMode: false), we must always use the real login endpoint
+      const response = await apiClient.post<{ success: boolean; token?: any; admin?: any; user?: any; error?: string }>('/admin/auth/login', { email, password });
       
-      // UAT Mode: Use hardcoded credentials
-      if (currentUatMode) {
-        if (email === UAT_CREDENTIALS.email && password === UAT_CREDENTIALS.password) {
-          console.log('🔧 [UAT Mode] Admin login successful (hardcoded)');
-          // Store UAT token (note: this is not a real Cognito token, but allows UI to render)
-          // API calls will still fail with 401, but components handle this gracefully
-          localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
-          localStorage.setItem('adminEmail', email);
-          // Set sessionStorage flag to track that user is logged in
-          // This flag is cleared on hard refresh, allowing us to detect it
-          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
-          setIsAuthenticated(true);
-          return;
-        } else {
-          setError('Invalid credentials. Please check your email and password.');
+      if (response.success && response.token) {
+        // ✅ FIX: Store the real JWT token from API
+        // The token object has access_token, id_token, refresh_token, etc.
+        const accessToken = response.token.access_token || response.token.accessToken || response.token;
+        if (!accessToken || accessToken.startsWith('uat-token-')) {
+          console.error('❌ [Login] Received invalid token (UAT token or empty)');
+          setError('Login failed: Invalid token received from server');
           return;
         }
+        localStorage.setItem('adminAuthToken', accessToken);
+        if (response.admin?.email || response.user?.email) {
+          localStorage.setItem('adminEmail', response.admin?.email || response.user?.email);
+        } else {
+          localStorage.setItem('adminEmail', email);
+        }
+          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+          setIsAuthenticated(true);
+        console.log('✅ [Production] Admin login successful - JWT token stored');
+        } else {
+        setError(response.error || 'Login failed. Please check your credentials.');
       }
-
-      // Production: Call real API (placeholder)
-      // const response = await apiClient.post('/admin/auth/login', { email, password });
-      // if (response.success) { ... }
-      
-      // For now, production login not implemented
-      setError('Production login not yet implemented. Use UAT mode for testing.');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {

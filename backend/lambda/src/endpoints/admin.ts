@@ -371,7 +371,7 @@ class ListVendorsHandler extends BaseHandler {
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
         ORDER BY v.created_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -382,7 +382,7 @@ class ListVendorsHandler extends BaseHandler {
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
       `, params);
 
