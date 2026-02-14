@@ -160,17 +160,24 @@ export function registerPrescriptionEndpoints(app: Hono) {
       // Use raw SQL INSERT so we explicitly include vendor_id. Run migration 309_add_prescriptions_vendor_id
       // if the column is missing. Schema: 034-style (medications JSONB) + vendor_id.
       const meds = Array.isArray(medications) ? medications : [medications];
+      // ✅ FIX: Filter out medications without names before processing
+      const validMeds = meds.filter(med => med && med.name && med.name.trim().length > 0);
+      
+      if (validMeds.length === 0) {
+        return c.json({ error: 'Validation failed', errors: ['At least one medication with a name is required'] }, 400);
+      }
+      
       const insertedPrescriptions: any[] = [];
       const savedStatus = (prescriptionData as any).status || 'published';
 
-      for (const med of meds) {
+      for (const med of validMeds) {
         const combinedInstructions = [
           diagnosis ? `Diagnosis: ${diagnosis}` : '',
           med.instructions || instructions || ''
         ].filter(Boolean).join('\n') || null;
 
         const medsJson = JSON.stringify([{
-          name: med.name || 'Prescription',
+          name: med.name,
           dosage: med.dosage || null,
           frequency: med.frequency || null,
           duration: med.duration || null,

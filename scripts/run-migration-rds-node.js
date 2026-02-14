@@ -129,8 +129,28 @@ async function runMigration() {
     // Verification: migration-specific (do not assume; verify what was applied)
     const migrationBasename = path.basename(migrationPath);
     const is524 = migrationBasename.includes('524') && (sql.includes('specialization_ids') && sql.includes('service_catalog'));
+    const is553 = migrationBasename.includes('553') && sql.includes('package_snapshot');
 
-    if (is524) {
+    if (is553) {
+      console.log('🔍 Verifying migration 553: package_purchases.package_snapshot...');
+      const colRes = await pool.query(`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'package_purchases' AND column_name = 'package_snapshot'
+      `);
+      if (colRes.rows.length === 0) {
+        throw new Error('Verification failed: column package_purchases.package_snapshot not found');
+      }
+      console.log(`   ✅ Column: ${colRes.rows[0].column_name} (${colRes.rows[0].data_type})`);
+      const idxRes = await pool.query(`
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'package_purchases' AND indexname = 'idx_package_purchases_customer_vendor_active'
+      `);
+      if (idxRes.rows.length === 0) {
+        throw new Error('Verification failed: index idx_package_purchases_customer_vendor_active not found');
+      }
+      console.log(`   ✅ Index: ${idxRes.rows[0].indexname}`);
+    } else if (is524) {
       console.log('🔍 Verifying migration 524: service_catalog.specialization_ids...');
       const colRes = await pool.query(`
         SELECT column_name, data_type

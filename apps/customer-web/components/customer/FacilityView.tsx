@@ -185,12 +185,6 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
                 <span className="text-sm text-gray-700">{formatOperatingHours(facility.operatingHours)}</span>
               </div>
             )}
-            {vendor.phone && (
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <span className="text-sm text-gray-700">{vendor.phone}</span>
-              </div>
-            )}
           </div>
 
           {/* Amenities */}

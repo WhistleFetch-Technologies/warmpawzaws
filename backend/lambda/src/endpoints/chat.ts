@@ -87,6 +87,112 @@ export function registerChatEndpoints(app: Hono) {
   });
 
   /**
+   * GET /chat/vendor/:vendorId/unread-count
+   * Total count of unread chat messages from customers across all vendor bookings.
+   */
+  app.get("/chat/vendor/:vendorId/unread-count", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ success: true, totalUnread: 0 });
+      }
+      const result = await query(
+        `SELECT COUNT(*)::int as total
+         FROM chat_messages cm
+         INNER JOIN bookings b ON b.id = cm.booking_id AND b.vendor_id = $1
+         WHERE cm.is_read = false AND cm.sender_type = 'customer'`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ total: 0 }] }));
+      const totalUnread = result.rows?.[0]?.total ?? 0;
+      return c.json({ success: true, totalUnread });
+    } catch (error: any) {
+      console.error('Error fetching vendor chat unread count:', error);
+      return c.json({ success: true, totalUnread: 0 });
+    }
+  });
+
+  /**
+   * GET /chat/vendor/:vendorId/conversations
+   * Get all chat conversations for a vendor (bookings that have messages).
+   * Returns last message, unread count, booking details, and package utilization when applicable.
+   */
+  app.get("/chat/vendor/:vendorId/conversations", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ success: true, conversations: [] });
+      }
+      const conversationsResult = await query(`
+        SELECT
+          b.id as booking_id,
+          b.booking_date,
+          b.booking_time,
+          b.status as booking_status,
+          b.service_type,
+          b.package_purchase_id,
+          COALESCE(vs.service_name, b.service_type::text, 'Service') as service_name,
+          c.full_name as customer_name,
+          c.phone as customer_phone,
+          last_msg.message as last_message,
+          last_msg.created_at as last_message_at,
+          COALESCE(unread_cnt.cnt, 0)::int as unread_count,
+          pp.package_name as package_name,
+          pp.total_sessions as package_total_sessions,
+          pp.remaining_sessions as package_remaining_sessions,
+          pp.unlimited_usage as package_unlimited,
+          pp.expires_at as package_expires_at
+        FROM bookings b
+        INNER JOIN (SELECT DISTINCT booking_id FROM chat_messages) has_msg ON has_msg.booking_id = b.id
+        LEFT JOIN LATERAL (
+          SELECT message, created_at FROM chat_messages WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
+        ) last_msg ON true
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int as cnt FROM chat_messages
+          WHERE booking_id = b.id AND is_read = false AND sender_type = 'customer'
+        ) unread_cnt ON true
+        LEFT JOIN vendor_services vs ON b.service_id = vs.id
+        LEFT JOIN customers c ON b.customer_id = c.id
+        LEFT JOIN package_purchases pp ON b.package_purchase_id = pp.id
+        WHERE b.vendor_id = $1
+        ORDER BY last_msg.created_at DESC NULLS LAST
+        LIMIT 100
+      `, [vendorId]).catch((e: any) => {
+        console.error('Vendor conversations query error:', e);
+        return { rows: [] };
+      });
+
+      const rows = conversationsResult.rows || [];
+      const conversations = rows.map((r: any) => ({
+        bookingId: r.booking_id,
+        bookingDate: r.booking_date,
+        bookingTime: r.booking_time,
+        bookingStatus: r.booking_status,
+        serviceType: r.service_type,
+        serviceName: r.service_name,
+        customerName: r.customer_name || 'Customer',
+        customerPhone: r.customer_phone,
+        lastMessage: r.last_message || '',
+        lastMessageAt: r.last_message_at,
+        unreadCount: r.unread_count ?? 0,
+        packageUtilization: (r.package_purchase_id && (r.package_total_sessions != null || r.package_unlimited)) ? {
+          packageName: r.package_name,
+          totalSessions: r.package_total_sessions,
+          remainingSessions: r.package_remaining_sessions,
+          usedSessions: (r.package_total_sessions != null && r.package_remaining_sessions != null)
+            ? r.package_total_sessions - r.package_remaining_sessions : null,
+          isUnlimited: r.package_unlimited,
+          expiresAt: r.package_expires_at,
+        } : null,
+      }));
+
+      return c.json({ success: true, conversations });
+    } catch (error: any) {
+      console.error('Error fetching vendor conversations:', error);
+      return c.json({ success: true, conversations: [] });
+    }
+  });
+
+  /**
    * GET /chat/conversations/:conversationId/messages
    * Get messages for a specific conversation (booking)
    */
@@ -403,6 +509,24 @@ export function registerChatEndpoints(app: Hono) {
           created_at: new Date().toISOString(),
         }];
       });
+
+      // In-app notification for vendor when customer sends a message
+      const effectiveSenderType = (senderType || 'customer').toLowerCase();
+      if (effectiveSenderType === 'customer' && booking.vendor_id) {
+        try {
+          await insert('notifications', {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            notification_type: 'chat_message',
+            title: 'New chat message',
+            message: `${senderName || senderPhone}: ${(message || '').substring(0, 80)}${(message || '').length > 80 ? '…' : ''}`,
+            channels: { email: false, sms: false, inApp: true, push: false },
+            is_read: false,
+          });
+        } catch (notifErr) {
+          console.warn('Failed to create vendor notification for chat message:', notifErr);
+        }
+      }
 
       // Notify recipient via SNS
       const recipientPhone = senderType === 'customer'
@@ -759,12 +883,23 @@ export function registerChatEndpoints(app: Hono) {
   });
 
   /**
-   * GET /chat/file/:fileId
+   * GET /chat/file/*
    * Get presigned URL for chat file download
+   * Supports both single-segment fileIds and multi-segment S3 keys (e.g., chat/bookingId/filename.pdf)
+   * Uses wildcard route to handle fileIds with slashes
    */
-  app.get("/chat/file/:fileId", async (c) => {
+  app.get("/chat/file/*", async (c) => {
     try {
-      const { fileId } = c.req.param();
+      // Extract file key from full path (handles both single and multi-segment fileIds)
+      const fullPath = c.req.path;
+      let fileId = fullPath.replace('/chat/file/', '');
+      
+      // Decode URL-encoded fileId (handles %2F for slashes)
+      fileId = decodeURIComponent(fileId);
+
+      if (!fileId) {
+        return c.json({ error: 'File ID is required' }, 400);
+      }
 
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');

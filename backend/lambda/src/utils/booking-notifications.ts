@@ -49,12 +49,14 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
   const serviceName = service?.name || 'Service';
   const serviceTypeLabel = buildServiceTypeLabel(booking.service_type);
 
+  // ✅ FIX: Use notification_type instead of type (schema column name)
   await insert('notifications', {
     recipient_id: booking.vendor_id,
     recipient_type: 'vendor',
-    type: 'new_booking',
+    notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
     title: 'New appointment',
     message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+    channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
     data: JSON.stringify({
       bookingId: booking.id,
       customerId: booking.customer_id,

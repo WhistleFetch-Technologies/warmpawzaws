@@ -231,6 +231,7 @@ export function CustomerHomeComplete({
   const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
+  const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
 
   // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
@@ -321,8 +322,9 @@ export function CustomerHomeComplete({
     { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder', categoryId: 'breeder' },
     { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance', categoryId: 'ambulance' },
     
-    // WELLNESS SERVICES - NEW
+    // WELLNESS & BEHAVIORAL
     { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' },
+    { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' },
     { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation', categoryId: 'relocation' },
     { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort', categoryId: 'resort' },
     { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday', categoryId: 'holiday' },
@@ -357,10 +359,14 @@ export function CustomerHomeComplete({
   const hasNutritionist = baseQuickServices.some(
     (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'nutritionist'
   );
+  const hasBehaviorist = baseQuickServices.some(
+    (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'behaviorist' || ((s.categoryId || s.screen || '') as string).toLowerCase() === 'behavioral'
+  );
   let sourceQuickServices = baseQuickServices;
   if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
   if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Lab Test', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
   if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
+  if (!hasBehaviorist) sourceQuickServices = [...sourceQuickServices, { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' }];
 
   useEffect(() => {
     loadUserData();
@@ -372,11 +378,12 @@ export function CustomerHomeComplete({
   const loadDynamicContent = async () => {
     try {
       // Fetch all content in parallel with better error handling
-      const [bannersResp, articlesResp, announcementsResp, adoptionResp] = await Promise.allSettled([
+      const [bannersResp, articlesResp, announcementsResp, adoptionResp, featuredResp] = await Promise.allSettled([
         apiClient.get<any>('/customer/banners?position=home_top&limit=5'),
         apiClient.get<any>('/customer/articles?limit=3&featured=true'),
         apiClient.get<any>('/customer/announcements?limit=3'),
         apiClient.get<any>('/customer/adoption-stats'),
+        apiClient.get<any>('/customer/featured-vendors?limit=6'),
       ]);
 
       // Handle banners
@@ -418,6 +425,11 @@ export function CustomerHomeComplete({
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
           console.warn('Failed to load adoption stats:', error.message);
         }
+      }
+
+      // Featured/spotlight vendors (admin-configured)
+      if (featuredResp.status === 'fulfilled' && featuredResp.value?.vendors?.length > 0) {
+        setFeaturedVendors(featuredResp.value.vendors);
       }
     } catch (error: any) {
       // Only log if it's not a CORS error
@@ -1331,7 +1343,11 @@ export function CustomerHomeComplete({
                 </span>
               )}
             </button>
-            <button className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors">
+            <button
+              onClick={() => onNavigate?.('wishlist')}
+              className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+              aria-label="Wishlist"
+            >
               <Heart className="w-[18px] h-[18px] text-white" />
             </button>
           </div>
@@ -1460,6 +1476,21 @@ export function CustomerHomeComplete({
             customerId={phone}
             onResultSelect={(result) => {
               console.log('Search result selected:', result);
+              if (result.type === 'symptom') {
+                // Symptom search: drive to problem_grid_flow with specialization so user picks service style then books
+                const d = result.data || {};
+                onNavigate?.('services_by_problem', {
+                  problemId: d.specializationId || result.id,
+                  problemTitle: d.name || 'Consult',
+                  roleId: d.roleId || 'vet_solo',
+                  problem: {
+                    allowedServiceStyles: d.allowedServiceStyles || ['at_home', 'at_center', 'tele'],
+                    name: d.name,
+                    roleId: d.roleId,
+                  },
+                });
+                return;
+              }
               if (result.type === 'service' || result.category) {
                 const serviceNavigationMap: Record<string, string> = {
                   'veterinary': 'vet',
@@ -1471,6 +1502,8 @@ export function CustomerHomeComplete({
                   'walker': 'walker',
                   'nutrition': 'nutritionist',
                   'nutritionist': 'nutritionist',
+                  'behavioral': 'behaviorist',
+                  'behaviorist': 'behaviorist',
                   'cafe': 'cafes',
                   'cafes': 'cafes',
                   'adoption': 'adoption',
@@ -1478,6 +1511,9 @@ export function CustomerHomeComplete({
                   'ambulance': 'ambulance',
                   'insurance': 'insurance',
                   'pharmacy': 'pharmacy',
+                  'diagnostics': 'lab-diagnostics',
+                  'lab-diagnostics': 'lab-diagnostics',
+                  'lab': 'lab-diagnostics',
                   'photography': 'photography',
                   'relocation': 'relocation',
                   'resort': 'resort',
@@ -1514,7 +1550,8 @@ export function CustomerHomeComplete({
               onNavigate?.('services_by_problem', { 
                 problemId, 
                 problemTitle: problem?.title || (problem as any)?.name || 'Service',
-                roleId: (problem as any)?.roleId || (problem as any)?.vendorType
+                roleId: (problem as any)?.roleId || (problem as any)?.vendorType,
+                problem: problem,
               });
             }}
             showTrending={false}
@@ -1646,7 +1683,10 @@ export function CustomerHomeComplete({
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               <h2 className="text-black font-semibold">Grooming Services</h2>
             </div>
-            <button className="text-xs text-[#FF8C42] font-medium flex items-center gap-1">
+            <button
+              onClick={() => onNavigate?.('grooming')}
+              className="text-xs text-[#FF8C42] font-medium flex items-center gap-1"
+            >
               View All <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -1774,7 +1814,10 @@ export function CustomerHomeComplete({
               <TrendingUp className="w-5 h-5 text-pink-600" />
               <h2 className="text-black font-semibold">Hot Deals</h2>
             </div>
-            <button className="text-xs text-pink-600 font-medium flex items-center gap-1">
+            <button
+              onClick={() => onNavigate?.('shop')}
+              className="text-xs text-pink-600 font-medium flex items-center gap-1"
+            >
               Shop All <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -1801,7 +1844,13 @@ export function CustomerHomeComplete({
                     <span className="text-[#FF8C42] font-bold text-sm">{deal.price}</span>
                     <span className="text-gray-400 line-through text-xs">{deal.originalPrice}</span>
                   </div>
-                  <button className="w-full bg-[#FF8C42] text-white py-2 rounded-lg text-xs font-medium mt-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigate?.('shop');
+                    }}
+                    className="w-full bg-[#FF8C42] text-white py-2 rounded-lg text-xs font-medium mt-2"
+                  >
                     Add to Cart
                   </button>
                 </div>
@@ -1898,7 +1947,12 @@ export function CustomerHomeComplete({
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               <h2 className="text-black font-semibold">What's New</h2>
             </div>
-            <button className="text-xs text-[#FF8C42] font-medium">See All</button>
+            <button
+              onClick={() => onNavigate?.('services')}
+              className="text-xs text-[#FF8C42] font-medium"
+            >
+              See All
+            </button>
           </div>
           <div className="px-6 space-y-3">
             {/* Render dynamic announcements if available */}
@@ -1984,6 +2038,47 @@ export function CustomerHomeComplete({
             />
           </div>
         </div>
+
+        {/* Featured providers (spotlight from admin) */}
+        {featuredVendors.length > 0 && (
+          <div className="mb-6">
+            <div className="px-6 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <h2 className="text-black font-semibold">Featured providers</h2>
+              </div>
+              <p className="text-xs text-gray-600">Hand-picked by us</p>
+            </div>
+            <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
+              {featuredVendors.map((v: any) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    const target = v.ctaLink || (v.roleId ? 'vet' : 'grooming');
+                    onNavigate?.(target, v.vendorId ? { vendorId: v.vendorId } : undefined);
+                  }}
+                  className="flex-shrink-0 w-36 bg-white rounded-2xl border border-gray-200 p-4 text-left shadow-sm hover:shadow-md hover:border-amber-200 transition-all"
+                >
+                  <div className="w-full aspect-square rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 mb-3 overflow-hidden">
+                    {v.imageUrl ? (
+                      <img src={v.imageUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Star className="w-8 h-8 text-amber-400" />
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-800 truncate">{v.vendorName || v.title}</h3>
+                  {v.subtitle && <p className="text-xs text-gray-600 truncate mt-0.5">{v.subtitle}</p>}
+                  <span className="text-xs text-amber-600 font-medium mt-2 inline-flex items-center gap-1">
+                    {v.ctaText || 'Book'} <ChevronRight className="w-3 h-3" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Adoption Services */}
         <div className="mb-6">

@@ -916,6 +916,8 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           sm.icon_name,
           sm.icon_color,
           sm.category_id,
+          sm.applicable_roles,
+          sm.allowed_service_styles,
           ss.symptom_name as matched_symptom
         FROM specialization_master sm
         JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id
@@ -939,16 +941,34 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       
       const result = await query(sqlQuery, params);
       
+      const roleDisplayToRoleId: Record<string, string> = {
+        veterinary: 'vet_solo', vet: 'vet_solo', grooming: 'groomer_solo', training: 'trainer_solo',
+        walking: 'walker', boarding: 'boarding', behavioral: 'behaviorist_solo', wellness: 'nutritionist',
+      };
       return c.json({
         success: true,
-        results: result.rows.map((row: any) => ({
-          specializationId: row.specialization_id,
-          name: row.display_name || row.name,
-          matchedSymptom: row.matched_symptom,
-          iconName: row.icon_name,
-          iconColor: row.icon_color,
-          categoryId: row.category_id,
-        })),
+        results: result.rows.map((row: any) => {
+          const rawStyles = row.allowed_service_styles;
+          let allowedServiceStyles = ['at_home', 'at_center', 'tele'];
+          if (rawStyles) {
+            try {
+              allowedServiceStyles = typeof rawStyles === 'string' ? JSON.parse(rawStyles) : rawStyles;
+            } catch (_) {}
+          }
+          const categoryId = (row.category_id || '').toLowerCase();
+          const roleId = roleDisplayToRoleId[categoryId] || categoryId || 'vet_solo';
+          return {
+            specializationId: row.specialization_id,
+            name: row.display_name || row.name,
+            matchedSymptom: row.matched_symptom,
+            iconName: row.icon_name,
+            iconColor: row.icon_color,
+            categoryId: row.category_id,
+            applicableRoles: row.applicable_roles || [],
+            allowedServiceStyles,
+            roleId,
+          };
+        }),
       });
     } catch (error: any) {
       console.error('[SPEC-MASTER] Search symptoms error:', error.message);

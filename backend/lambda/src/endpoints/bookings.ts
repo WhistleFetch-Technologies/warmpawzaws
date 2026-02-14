@@ -204,11 +204,16 @@ class CreateBookingHandler extends BaseHandler {
       return this.error(dateValidation.error!, 400);
     }
 
-    // ✅ Validate service exists
+    // ✅ Validate service exists and get duration
+    let serviceDuration = 30; // Default duration
     const services = await select('services', { id: serviceId });
-    if (services.length === 0) {
+    if (services.length > 0) {
+      serviceDuration = services[0].duration_minutes || 30;
+    } else {
       const vendorServices = await select('vendor_services', { id: serviceId });
-      if (vendorServices.length === 0) {
+      if (vendorServices.length > 0) {
+        serviceDuration = vendorServices[0].duration_minutes || vendorServices[0].custom_duration || 30;
+      } else {
         return this.error('Service not found', 404);
       }
     }
@@ -216,24 +221,47 @@ class CreateBookingHandler extends BaseHandler {
     // ✅ TEMPORAL FIX: Use transaction for atomicity
     try {
       const result = await withTransaction(async (client) => {
-        // ✅ Slot collision prevention with row-level locking
-        const lockQuery = staffId
-          ? `SELECT id FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 AND booking_time = $3 AND staff_id = $4
+        // ✅ FIX: Check overlap using ONLY service duration (no buffer blocking)
+        // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
+        // Convert booking time to minutes
+        const [bookingHour, bookingMin] = bookingTime.split(':').map(Number);
+        const newBookingStartMinutes = bookingHour * 60 + bookingMin;
+        const newBookingEndMinutes = newBookingStartMinutes + serviceDuration;  // ✅ NO buffer
+
+        // Fetch existing bookings for overlap check
+        const overlapQuery = staffId
+          ? `SELECT id, booking_time, COALESCE(duration_minutes, 30) as duration_minutes
+             FROM bookings 
+             WHERE vendor_id = $1 
+             AND booking_date = $2 
+             AND staff_id = $4
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
-             FOR UPDATE NOWAIT`
-          : `SELECT id FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 AND booking_time = $3 AND staff_id IS NULL
+             FOR UPDATE`
+          : `SELECT id, booking_time, COALESCE(duration_minutes, 30) as duration_minutes
+             FROM bookings 
+             WHERE vendor_id = $1 
+             AND booking_date = $2 
+             AND staff_id IS NULL
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
-             FOR UPDATE NOWAIT`;
+             FOR UPDATE`;
 
-        const lockParams = staffId
-          ? [vendorId, bookingDate, bookingTime, staffId]
-          : [vendorId, bookingDate, bookingTime];
+        const overlapParams = staffId
+          ? [vendorId, bookingDate, staffId]
+          : [vendorId, bookingDate];
 
-        const { rows: conflictingBookings } = await client.query(lockQuery, lockParams);
+        const { rows: existingBookings } = await client.query(overlapQuery, overlapParams);
 
-        if (conflictingBookings.length > 0) {
+        // ✅ FIX: Check overlap using ONLY service duration (buffer doesn't block)
+        const hasOverlap = existingBookings.some((existing: any) => {
+          const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
+          const existingStartMinutes = existingHour * 60 + existingMin;
+          const existingEndMinutes = existingStartMinutes + existing.duration_minutes;  // ✅ NO buffer
+          
+          // Overlap formula: (newStart < existingEnd) AND (newEnd > existingStart)
+          return newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
+        });
+
+        if (hasOverlap) {
           throw new Error('SLOT_CONFLICT');
         }
 

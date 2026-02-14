@@ -1889,10 +1889,73 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.get('/admin/catalog/services/export', async (c) => {
+    try {
+      const format = c.req.query('format') || 'csv';
+      const result = await query(`
+        SELECT service_id, service_name, display_name, description, category_id, category_name,
+               sub_category_id, sub_category_name, applicable_roles, service_style, base_price,
+               duration_minutes, status, publish_status
+        FROM service_catalog ORDER BY display_order ASC, created_at DESC LIMIT 5000
+      `);
+      const rows = result?.rows || [];
+      if (format === 'csv') {
+        const headers = ['service_id', 'service_name', 'display_name', 'description', 'category_id', 'category_name', 'sub_category_id', 'sub_category_name', 'base_price', 'duration_minutes', 'status'];
+        const escape = (v: any) => (v == null ? '' : String(v).replace(/"/g, '""'));
+        const csvRows = [headers.join(',')];
+        for (const r of rows) {
+          csvRows.push(headers.map((h) => `"${escape((r as any)[h])}"`).join(','));
+        }
+        return c.json({ success: true, content: csvRows.join('\n') });
+      }
+      return c.json({ success: true, content: '', message: 'Excel format not yet implemented; use CSV.' });
+    } catch (error: any) {
+      console.error('Error exporting services:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.get('/admin/catalog/services/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const result = await query(
+        isUUID
+          ? `SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1::uuid LIMIT 1`
+          : `SELECT * FROM service_catalog WHERE service_id = $1 OR id::text = $1 LIMIT 1`,
+        [id]
+      );
+      const s = result?.rows?.[0];
+      if (!s) {
+        return c.json({ success: false, error: 'Service not found' }, 404);
+      }
+      const service = {
+        id: String(s.id || s.service_id || ''),
+        service_id: String(s.service_id || s.id || ''),
+        name: String(s.service_name || s.display_name || ''),
+        code: String(s.service_id || s.id || ''),
+        description: String(s.description || ''),
+        categoryId: s.category_id ? String(s.category_id) : '',
+        subCategoryId: s.sub_category_id ? String(s.sub_category_id) : '',
+        price: parseFloat(s.base_price || '0'),
+        duration: s.duration_minutes || 30,
+        serviceType: (s.service_style === 'at_home' ? 'at-home' : s.service_style === 'at_center' ? 'at-center' : s.service_style) || 'at-center',
+        status: String(s.status || 'active'),
+        applicableRoles: s.applicable_roles || [],
+        specializationIds: s.specialization_ids || [],
+        metadata: s.metadata || {},
+      };
+      return c.json({ success: true, service });
+    } catch (error: any) {
+      console.error('Error fetching service:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
   app.post('/admin/catalog/services', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids, tax_category_id, taxCategoryId, hsn_code_id, hsnCodeId } = body;
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids, tax_category_id, taxCategoryId, hsn_code_id, hsnCodeId, metadata: bodyMetadata } = body;
       const taxCategoryIdVal = tax_category_id ?? taxCategoryId ?? null;
       const hsnCodeIdVal = hsn_code_id ?? hsnCodeId ?? null;
       const specializationIdsArr = Array.isArray(specializationIds) ? specializationIds : (Array.isArray(specialization_ids) ? specialization_ids : []);
@@ -1960,6 +2023,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       };
       if (taxCategoryIdVal) insertPayload.tax_category_id = taxCategoryIdVal;
       if (hsnCodeIdVal) insertPayload.hsn_code_id = hsnCodeIdVal;
+      const metadata = bodyMetadata && typeof bodyMetadata === 'object' ? bodyMetadata : {};
+      if (Object.keys(metadata).length > 0) insertPayload.metadata = metadata;
 
       const newService = await insert('service_catalog', insertPayload);
 
@@ -2002,6 +2067,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.taxCategoryId !== undefined) updateData.tax_category_id = body.taxCategoryId || null;
       if (body.hsn_code_id !== undefined) updateData.hsn_code_id = body.hsn_code_id || null;
       if (body.hsnCodeId !== undefined) updateData.hsn_code_id = body.hsnCodeId || null;
+      if (body.metadata !== undefined && body.metadata && typeof body.metadata === 'object') updateData.metadata = body.metadata;
 
       if (updateData.applicable_roles && updateData.applicable_roles.length > 0) {
         const validation = await validateApplicableRolesAgainstActiveRoles(updateData.applicable_roles);

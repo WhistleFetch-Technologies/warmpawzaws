@@ -912,7 +912,7 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
         );
       }
 
-      // Transition to UNDER_REVIEW
+      // Transition to UNDER_REVIEW - BOTH vendor_identity AND vendor_onboarding_applications
       if (identity.onboarding_status === 'FORM_PENDING' || identity.onboarding_status === 'CLARIFICATION_REQUIRED') {
         try {
           // Try stored procedure first
@@ -933,6 +933,14 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
           );
         }
       }
+
+      // CRITICAL FIX: Update vendor_onboarding_applications.status to UNDER_REVIEW
+      // Review API expects application.status === 'UNDER_REVIEW', but we had only been updating vendor_identity
+      await update(
+        'vendor_onboarding_applications',
+        { id: applicationId },
+        { status: 'UNDER_REVIEW', updated_at: new Date().toISOString() }
+      );
 
       console.log('✅ [SUBMIT] Application submitted successfully:', applicationId);
 
@@ -1012,9 +1020,11 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
       const application = apps[0];
 
-      if (application.status !== 'UNDER_REVIEW') {
+      // Accept both UNDER_REVIEW and SUBMITTED (legacy: submit flow used to only set SUBMITTED on application)
+      const isReviewable = application.status === 'UNDER_REVIEW' || application.status === 'SUBMITTED';
+      if (!isReviewable) {
         return this.error(
-          'Application is not in UNDER_REVIEW status',
+          `Application is not in reviewable status (current: ${application.status}). Expected UNDER_REVIEW or SUBMITTED.`,
           400,
           'VALIDATION_ERROR',
           undefined,

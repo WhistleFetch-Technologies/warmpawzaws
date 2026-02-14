@@ -31,10 +31,13 @@ export function registerNutritionOrderEndpoints(app: Hono) {
         return c.json({ error: 'ETA in minutes is required' }, 400);
       }
 
+      // ✅ FIX: meal_orders table doesn't have preparation_eta_minutes column
+      // Use estimated_delivery_time to store the calculated preparation completion time
+      const estimatedPreparationTime = new Date(Date.now() + eta * 60 * 1000).toISOString();
+      
       // Update meal order with preparation ETA
       await update('meal_orders', { id: orderId }, {
-        preparation_eta_minutes: eta,
-        preparation_eta_updated_at: new Date().toISOString(),
+        estimated_delivery_time: estimatedPreparationTime,
         updated_at: new Date().toISOString(),
       });
 
@@ -85,7 +88,11 @@ export function registerNutritionOrderEndpoints(app: Hono) {
       const tracking = trackingResult.rows[0] || null;
 
       // Get preparation ETA
-      const preparationETA = order.preparation_eta_minutes || null;
+      // ✅ FIX: meal_orders table doesn't have preparation_eta_minutes column
+      // Calculate ETA from estimated_delivery_time if available
+      const preparationETA = order.estimated_delivery_time 
+        ? Math.max(0, Math.round((new Date(order.estimated_delivery_time).getTime() - Date.now()) / (60 * 1000)))
+        : null;
 
       return c.json({
         success: true,

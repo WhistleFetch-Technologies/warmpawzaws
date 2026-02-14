@@ -67,6 +67,8 @@ interface Service {
   specializationIds?: string[];
   taxCategoryId?: string;
   hsnCodeId?: string;
+  metadata?: Record<string, unknown>;
+  isPackage?: boolean;
 }
 
 interface AddServiceModalProps {
@@ -111,6 +113,7 @@ export function AddServiceModal({
     specializationIds: [] as string[],
     taxCategoryId: '' as string,
     hsnCodeId: '' as string,
+    isPackage: false,
   });
   const formDataRef = useRef(formData);
   formDataRef.current = formData;
@@ -123,6 +126,8 @@ export function AddServiceModal({
       if (service) {
         const specIds = (service as any).specializationIds ?? (service as any).specialization_ids ?? [];
         const rawRoles = (service.applicableRoles || []).map((r: string) => toCanonicalRoleCode(r));
+        const meta = (service as any).metadata || {};
+        const isPkg = !!(service.isPackage ?? meta?.isPackage);
         setFormData({
           name: service.name || '',
           code: '',
@@ -139,6 +144,7 @@ export function AddServiceModal({
           specializationIds: Array.isArray(specIds) ? specIds : [],
           taxCategoryId: (service as any).taxCategoryId ?? (service as any).tax_category_id ?? '',
           hsnCodeId: (service as any).hsnCodeId ?? (service as any).hsn_code_id ?? '',
+          isPackage: isPkg,
         });
       } else {
         setFormData({
@@ -155,6 +161,7 @@ export function AddServiceModal({
           specializationIds: [],
           taxCategoryId: '',
           hsnCodeId: '',
+          isPackage: false,
         });
       }
     }
@@ -273,6 +280,7 @@ export function AddServiceModal({
     try {
       setLoading(true);
       
+      const metadata = { ...((service as any)?.metadata || {}), isPackage: formData.isPackage };
       if (service?.id) {
         // Update existing service
         await apiClient.put(`/admin/service-catalog/${service.id}`, {
@@ -291,6 +299,7 @@ export function AddServiceModal({
           specialization_ids: formData.specializationIds,
           tax_category_id: formData.taxCategoryId || undefined,
           hsn_code_id: formData.hsnCodeId || undefined,
+          metadata,
         });
         alert('Service updated successfully!');
       } else {
@@ -307,6 +316,7 @@ export function AddServiceModal({
           status: formData.status,
           applicableRoles: formData.applicableRoles,
           specializationIds: formData.specializationIds,
+          metadata,
         });
         alert('Service created successfully!');
       }
@@ -327,6 +337,7 @@ export function AddServiceModal({
         specializationIds: [],
         taxCategoryId: '',
         hsnCodeId: '',
+        isPackage: false,
       });
     } catch (error: any) {
       console.error('Error saving service:', error);
@@ -505,6 +516,20 @@ export function AddServiceModal({
                 <option value="draft">Draft</option>
               </select>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="isPackage"
+              checked={formData.isPackage}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('isPackage', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-[#FF8C42] focus:ring-[#FF8C42]"
+            />
+            <label htmlFor="isPackage" className="text-sm font-medium text-gray-700">
+              Mark as Package
+            </label>
+            <span className="text-xs text-gray-500">Show as &quot;Package&quot; (not &quot;Service&quot;) in vendor and customer flows.</span>
           </div>
 
           {/* GST & Tax Configuration Section */}

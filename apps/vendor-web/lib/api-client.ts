@@ -75,16 +75,8 @@ function getApiGatewayUrl(): string {
     : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 }
 
-function getApiBaseUrl(): string {
-  // Priority: explicit env var → runtime-config.js (deploy-time) → build-time env (local dev) → environment-based fallback
-  // Allow NEXT_PUBLIC_API_BASE_URL to override everything (useful for local testing with production API)
-  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    const url = process.env.NEXT_PUBLIC_API_BASE_URL;
-    if (url && url.trim()) {
-      return url.trim();
-    }
-  }
-  
+export function getApiBaseUrl(): string {
+  // Priority: runtime-config.js (deploy-time) → build-time env (local dev) → environment-based fallback
   const cfg = getRuntimeConfig();
   
   if (cfg.apiBaseUrl && cfg.apiBaseUrl.trim()) {
@@ -384,4 +376,3 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
-

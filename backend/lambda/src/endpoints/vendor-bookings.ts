@@ -50,27 +50,59 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${filter}`);
 
-      let queryText = vendorIds.length === 1
-        ? 'SELECT * FROM bookings WHERE vendor_id = $1 AND status != \'pending_payment\''
-        : 'SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status != \'pending_payment\'';
+      // ✅ FIX: Get center_id for the querying vendor to include bookings from same center
+      let centerId: string | null = null;
+      try {
+        const vendorInfo = await query(
+          `SELECT center_id FROM vendors WHERE id = $1 OR id = $2 LIMIT 1`,
+          vendorIds
+        );
+        if (vendorInfo.rows.length > 0 && vendorInfo.rows[0].center_id) {
+          centerId = vendorInfo.rows[0].center_id;
+          console.log(`[VENDOR-BOOKINGS] Vendor belongs to center: ${centerId}`);
+        }
+      } catch (e) {
+        console.warn('[VENDOR-BOOKINGS] Could not check center_id:', e);
+      }
+
+      // Build query to include bookings from same vendor OR same center
+      let queryText: string;
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
+      if (centerId) {
+        // Include bookings from same vendor IDs OR vendors with same center_id
+        const vendorIdConditions = vendorIds.map((_, idx) => `b.vendor_id = $${idx + 1}`).join(' OR ');
+        queryText = `SELECT b.* FROM bookings b
+           LEFT JOIN vendors v ON v.id = b.vendor_id
+           WHERE (
+             (${vendorIdConditions})
+             OR (v.center_id = $${paramIndex} AND v.center_id IS NOT NULL)
+           ) AND b.status != 'pending_payment'`;
+        params.push(centerId);
+        paramIndex++;
+      } else {
+        // No center_id, just match vendor IDs
+        queryText = vendorIds.length === 1
+          ? 'SELECT b.* FROM bookings b WHERE b.vendor_id = $1 AND b.status != \'pending_payment\''
+          : 'SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.status != \'pending_payment\'';
+      }
+
       // Filter by date
       if (date) {
-        queryText += ` AND booking_date = $${paramIndex}`;
+        queryText += ` AND b.booking_date = $${paramIndex}`;
         params.push(date);
         paramIndex++;
       }
 
       // Filter by status
       if (filter && filter !== 'all') {
-        queryText += ` AND status = $${paramIndex}`;
+        queryText += ` AND b.status = $${paramIndex}`;
         params.push(filter);
         paramIndex++;
       }
 
-      queryText += ' ORDER BY booking_date DESC, booking_time DESC';
+      queryText += ' ORDER BY b.booking_date DESC, b.booking_time DESC';
 
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
 

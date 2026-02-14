@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 
 // Razorpay type declaration
@@ -74,10 +75,13 @@ interface UniversalPaymentPageProps {
   // Customer
   customerPhone: string;
   customerId?: string;
+
+  /** For instant tele: payment-first, then create booking via instant-after-payment. No booking before payment. */
+  flowType?: 'tele-scheduled' | 'tele-instant';
   
   // Navigation
   onBack: () => void;
-  onSuccess: (bookingId: string, orderId?: string, otpCode?: string) => void;
+  onSuccess: (bookingId: string, orderId?: string, otpCode?: string, meta?: { isInstantTele?: boolean }) => void;
 }
 
 interface CouponResult {
@@ -241,6 +245,7 @@ export function UniversalPaymentPage({
   selectedServices, // ✅ FIX: Add missing prop destructuring
   customerPhone,
   customerId,
+  flowType,
   onBack,
   onSuccess,
 }: UniversalPaymentPageProps) {
@@ -898,8 +903,12 @@ export function UniversalPaymentPage({
       // Step 1: Create booking/order if not already created
       let currentBookingId = bookingId;
       let currentOrderId = orderId;
-      
-      if (type === 'booking' && !currentBookingId) {
+
+      // Instant tele: no booking until after payment; backend creates via instant-after-payment
+      if (type === 'booking' && flowType === 'tele-instant') {
+        currentBookingId = undefined;
+        // Skip booking creation below; Razorpay handler will call instant-after-payment
+      } else if (type === 'booking' && !currentBookingId) {
         // Validate required fields
         if (!customerId) {
           toast.error('Customer ID is required. Please try again.');
@@ -1582,14 +1591,14 @@ export function UniversalPaymentPage({
         ? (requiredUpfrontAmount ?? finalAmount)
         : finalAmount;
       const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        // ✅ bookingId is REQUIRED only when booking already exists
-        bookingId: bookingCreationDeferred ? undefined : currentBookingId,
+        // Instant tele: no booking until after payment; use booking_prepaid
+        bookingId: (flowType === 'tele-instant' || bookingCreationDeferred) ? undefined : currentBookingId,
         orderId: currentOrderId,
         amount: amountToCharge,
         customerId,
         offerId: selectedRazorpayOffer?.id,
-        type: bookingCreationDeferred ? 'booking_prepaid' : undefined,
-        vendorId: bookingCreationDeferred ? vendorId : undefined,
+        type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
+        vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
       }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       
       console.log('✅ [PAYMENT] Razorpay order created:', orderRes.orderId);
@@ -1623,6 +1632,31 @@ export function UniversalPaymentPage({
             });
             
             console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
+
+            // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
+            if (type === 'booking' && flowType === 'tele-instant') {
+              const instantRes = await apiClient.post<any>('/customer/tele/instant-after-payment', {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                vendorId,
+                customerId,
+                petId,
+                serviceId: resolvedServiceId || serviceId,
+                amount: amountToCharge,
+                serviceName,
+                vendorName,
+                petName,
+              });
+              const bid = instantRes?.bookingId;
+              if (!bid) {
+                throw new Error(instantRes?.error || 'Instant booking creation failed');
+              }
+              toast.success('Payment successful! Connecting to vet...');
+              setProcessing(false);
+              onSuccess(bid, response.razorpay_order_id, undefined, { isInstantTele: true });
+              return;
+            }
 
             // ✅ If booking creation was deferred, create booking now with payment info
             if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
@@ -1891,14 +1925,14 @@ export function UniversalPaymentPage({
                         </p>
                       )}
                     </div>
-                    <p className="font-bold text-[#FF8C42]">₹{svcPrice.toLocaleString('en-IN')}</p>
+                    <p className="font-bold text-[#FF8C42]">{formatPriceWithSymbol(svcPrice)}</p>
                   </div>
                 );
               })}
               {effectiveSelectedServices.length > 1 && (
                 <div className="flex justify-between items-center pt-2 font-bold">
                   <span>Subtotal</span>
-                  <span className="text-[#FF8C42]">₹{displayAmount.toLocaleString('en-IN')}</span>
+                  <span className="text-[#FF8C42]">{formatPriceWithSymbol(displayAmount)}</span>
                 </div>
               )}
             </div>
@@ -1926,7 +1960,7 @@ export function UniversalPaymentPage({
                   <p className="text-sm text-gray-400 mt-1">Quantity: {quantity}</p>
                 )}
               </div>
-              <p className="font-bold text-[#FF8C42]">₹{displayAmount.toLocaleString('en-IN')}</p>
+              <p className="font-bold text-[#FF8C42]">{formatPriceWithSymbol(displayAmount)}</p>
             </div>
           )}
           

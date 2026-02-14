@@ -552,16 +552,39 @@ export function registerProblemGridEndpoints(app: Hono) {
         [problemId]
       );
 
+      console.log(`[BY-PROBLEM] problemId: ${problemId}, serviceStyle: ${serviceStyle}, mappings found: ${mappingsResult.rows.length}`);
+
       let subCategoryIds: string[];
       let roleIds: string[];
 
       if (mappingsResult.rows.length === 0) {
         // Fallback: problemId may be specialization_id from specialization_master - use for vendor_specializations match
+        // Also try to infer role from problemId (e.g., potty_training -> trainer)
         subCategoryIds = [problemId];
         roleIds = [];
+        
+        // ✅ FIX: Infer role from problemId for common training/behavioral problems
+        const problemToRoleMap: Record<string, string[]> = {
+          'potty_training': ['trainer', 'trainer_solo', 'trainer_center'],
+          'basic_obedience': ['trainer', 'trainer_solo', 'trainer_center'],
+          'socialization': ['trainer', 'trainer_solo', 'trainer_center'],
+          'aggression': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
+          'separation_anxiety': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
+          'barking': ['behaviorist_solo', 'behaviorist_center'],
+          'destructive': ['behaviorist_solo', 'behaviorist_center'],
+          'fear_phobia': ['behaviorist_solo', 'behaviorist_center'],
+        };
+        
+        if (problemToRoleMap[problemId]) {
+          roleIds = problemToRoleMap[problemId];
+          console.log(`[BY-PROBLEM] No mappings found, inferred role from problemId - roleIds: ${roleIds.join(', ')}`);
+        } else {
+          console.log(`[BY-PROBLEM] No mappings found, using fallback - subCategoryIds: ${subCategoryIds.join(', ')}, roleIds: []`);
+        }
       } else {
         subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
         roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
+        console.log(`[BY-PROBLEM] Mappings found - subCategoryIds: ${subCategoryIds.join(', ')}, roleIds: ${roleIds.join(', ')}`);
       }
 
       // Check if requested serviceStyle is allowed for this problem (only when we have mappings)
@@ -610,6 +633,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         }
       }
       roleIds = [...new Set(expandedRoleIds)];
+      console.log(`[BY-PROBLEM] After expansion - roleIds: ${roleIds.join(', ')}`);
 
       // Normalize legacy service styles: at_vendor → at_center, online → tele
       const styleToDbValues: Record<string, string[]> = {
@@ -675,25 +699,44 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       // Match by subcategory: ILIKE on service_name (with %), exact match on vendor_specializations.specialization (no %)
+      // ✅ FIX: If we have roleIds, we can be less strict on subcategory matching
       if (subCategoryIds.length > 0) {
         const searchTerms = subCategoryIds.map((id: string) => `%${id}%`);
-        servicesQuery += ` AND (
-          vs.service_name ILIKE ANY($${paramIndex}::text[]) OR
-          vs.vendor_id IN (
-            SELECT vendor_id 
-            FROM vendor_specializations 
-            WHERE specialization = ANY($${paramIndex + 1}::text[])
-          )
-        )`;
-        params.push(searchTerms, subCategoryIds);
-        paramIndex += 2;
-      }
-
-      // Filter by role: problem_grid_mappings.role_id is role name (TEXT); match via roles.name
-      if (roleIds.length > 0) {
-        servicesQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
-        params.push(roleIds);
-        paramIndex++;
+        // If we have roleIds, make subcategory matching optional (OR condition)
+        // If no roleIds, require subcategory match
+        if (roleIds.length > 0) {
+          // Has role filter: subcategory is optional (OR)
+          servicesQuery += ` AND (
+            r.name = ANY($${paramIndex}::text[]) OR
+            vs.service_name ILIKE ANY($${paramIndex + 1}::text[]) OR
+            vs.vendor_id IN (
+              SELECT vendor_id 
+              FROM vendor_specializations 
+              WHERE specialization = ANY($${paramIndex + 2}::text[])
+            )
+          )`;
+          params.push(roleIds, searchTerms, subCategoryIds);
+          paramIndex += 3;
+        } else {
+          // No role filter: require subcategory match
+          servicesQuery += ` AND (
+            vs.service_name ILIKE ANY($${paramIndex}::text[]) OR
+            vs.vendor_id IN (
+              SELECT vendor_id 
+              FROM vendor_specializations 
+              WHERE specialization = ANY($${paramIndex + 1}::text[])
+            )
+          )`;
+          params.push(searchTerms, subCategoryIds);
+          paramIndex += 2;
+        }
+      } else {
+        // No subcategoryIds: only filter by role if available
+        if (roleIds.length > 0) {
+          servicesQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
+          params.push(roleIds);
+          paramIndex++;
+        }
       }
 
       servicesQuery += `
@@ -705,7 +748,12 @@ export function registerProblemGridEndpoints(app: Hono) {
         LIMIT 50
       `;
 
+      console.log(`[BY-PROBLEM] Executing query with params:`, JSON.stringify(params));
+      console.log(`[BY-PROBLEM] Query: ${servicesQuery.substring(0, 500)}...`);
+      
       const servicesResult = await query(servicesQuery, params);
+      
+      console.log(`[BY-PROBLEM] Query returned ${servicesResult.rows.length} services`);
 
       const vendorIds = [...new Set(servicesResult.rows.map((r: any) => r.vendor_id))];
       const specMap: Record<string, string[]> = {};
@@ -1627,6 +1675,12 @@ function getDefaultProblemsForRole(roleId: string): any[] {
       { id: 'long_walk', name: 'Long Walk', displayName: 'Long Walk', icon: '🏃', description: 'Extended walking sessions' },
     ],
     'behavioral': [
+      { id: 'separation_anxiety', name: 'Separation Anxiety', displayName: 'Separation Anxiety', icon: '😢', description: 'Anxiety when alone' },
+      { id: 'barking', name: 'Excessive Barking', displayName: 'Excessive Barking', icon: '🔊', description: 'Barking control' },
+      { id: 'destructive', name: 'Destructive Behavior', displayName: 'Destructive Behavior', icon: '💥', description: 'Chewing and destroying items' },
+      { id: 'fear_phobia', name: 'Fear & Phobias', displayName: 'Fear & Phobias', icon: '👻', description: 'Fear of sounds, objects' },
+    ],
+    'behaviorist': [
       { id: 'separation_anxiety', name: 'Separation Anxiety', displayName: 'Separation Anxiety', icon: '😢', description: 'Anxiety when alone' },
       { id: 'barking', name: 'Excessive Barking', displayName: 'Excessive Barking', icon: '🔊', description: 'Barking control' },
       { id: 'destructive', name: 'Destructive Behavior', displayName: 'Destructive Behavior', icon: '💥', description: 'Chewing and destroying items' },

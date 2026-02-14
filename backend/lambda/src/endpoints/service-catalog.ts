@@ -56,7 +56,10 @@ const roleMappings: Record<string, string[]> = {
   'vet_solo': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
   'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
   'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
-  'diagnostics_center': ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+  // ✅ Diagnostics should NOT inherit vet services
+  'diagnostics_center': ['diagnostics_center', 'diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo', 'lab', 'lab_center'],
+  'diagnostics': ['diagnostics_center', 'diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo', 'lab', 'lab_center'],
+  'diagnostic_center': ['diagnostics_center', 'diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo', 'lab', 'lab_center'],
   
   // ✅ FIX: Nutritionist should ONLY see nutrition services, NOT vet services
   'nutritionist': ['nutritionist', 'pet_nutritionist'],
@@ -198,8 +201,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       if (services.rows.length > 0) {
         const service = services.rows[0];
-        return c.json({
-          success: true,
+        const serviceData = {
           id: service.service_id || `catalog_${service.id}`,
           serviceId: service.service_id || `catalog_${service.id}`,
           catalogId: service.id,
@@ -223,11 +225,17 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           status: service.status,
           publishStatus: service.publish_status,
           metadata: service.metadata || {},
+        };
+        return c.json({
+          success: true,
+          service: serviceData,
+          // Also include flat structure for backward compatibility
+          ...serviceData,
         });
       }
 
-      // 2. Fallback: vendor_services.id (ProblemGridFlowRouter passes vendor_services.id from by-problem)
-      const vsResult = await query(
+      // 2. Try vendor_services.id (ProblemGridFlowRouter passes vendor_services.id from by-problem)
+      const vsResultById = await query(
         `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
          FROM vendor_services vs
          INNER JOIN vendors v ON vs.vendor_id = v.id
@@ -235,11 +243,31 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         [serviceId]
       );
 
-      if (vsResult.rows.length > 0) {
-        const vs = vsResult.rows[0];
+      if (vsResultById.rows.length > 0) {
+        const vs = vsResultById.rows[0];
         const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
         return c.json({
           success: true,
+          service: {
+            id: vs.id,
+            serviceId: vs.id,
+            serviceName: vs.service_name,
+            name: vs.service_name,
+            displayName: vs.service_name,
+            description: vs.custom_description || vs.service_name,
+            vendor_id: vs.vendor_id,
+            vendor_name: vs.vendor_name,
+            vendor_address: vs.vendor_address,
+            service_style: vs.service_style || 'at_center',
+            serviceStyle: vs.service_style || 'at_center',
+            basePrice: price,
+            price,
+            duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
+            durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
+            category: vs.category,
+            sub_category: vs.sub_category,
+          },
+          // Also include flat structure for backward compatibility
           id: vs.id,
           serviceId: vs.id,
           serviceName: vs.service_name,
@@ -258,6 +286,63 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           category: vs.category,
           sub_category: vs.sub_category,
         });
+      }
+
+      // 3. Fallback: vendor_services.service_id (base service UUID) - in case serviceId is the base service UUID
+      if (isUUID) {
+        const vsResultByServiceId = await query(
+          `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
+           FROM vendor_services vs
+           INNER JOIN vendors v ON vs.vendor_id = v.id
+           WHERE vs.service_id = $1::uuid AND vs.is_enabled = true
+           LIMIT 1`,
+          [serviceId]
+        );
+
+        if (vsResultByServiceId.rows.length > 0) {
+          const vs = vsResultByServiceId.rows[0];
+          const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+          return c.json({
+            success: true,
+            service: {
+              id: vs.id,
+              serviceId: vs.id,
+              serviceName: vs.service_name,
+              name: vs.service_name,
+              displayName: vs.service_name,
+              description: vs.custom_description || vs.service_name,
+              vendor_id: vs.vendor_id,
+              vendor_name: vs.vendor_name,
+              vendor_address: vs.vendor_address,
+              service_style: vs.service_style || 'at_center',
+              serviceStyle: vs.service_style || 'at_center',
+              basePrice: price,
+              price,
+              duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
+              durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
+              category: vs.category,
+              sub_category: vs.sub_category,
+            },
+            // Also include flat structure for backward compatibility
+            id: vs.id,
+            serviceId: vs.id,
+            serviceName: vs.service_name,
+            name: vs.service_name,
+            displayName: vs.service_name,
+            description: vs.custom_description || vs.service_name,
+            vendor_id: vs.vendor_id,
+            vendor_name: vs.vendor_name,
+            vendor_address: vs.vendor_address,
+            service_style: vs.service_style || 'at_center',
+            serviceStyle: vs.service_style || 'at_center',
+            basePrice: price,
+            price,
+            duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
+            durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
+            category: vs.category,
+            sub_category: vs.sub_category,
+          });
+        }
       }
 
       return c.json({ error: 'Service not found' }, 404);
@@ -418,6 +503,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         status: service.status,
         publishStatus: service.publish_status,
         metadata: service.metadata || {},
+        isPackage: !!(service.metadata && (service.metadata as any).isPackage),
       }));
 
       return c.json({

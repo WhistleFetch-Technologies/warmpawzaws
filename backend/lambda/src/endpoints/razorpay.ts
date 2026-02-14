@@ -788,27 +788,53 @@ class RazorpayWebhookHandler extends BaseHandler {
     } else if (event === 'payment.failed') {
       const payment = payload_data.payment.entity;
       
-      await update(
-        'payments',
-        { razorpay_payment_id: payment.id },
-        {
-          payment_status: 'failed',
-          failure_reason: payment.error_description || 'Payment failed',
-        }
-      );
+      // ✅ FIX: Use transaction to ensure atomicity when cancelling booking
+      await withTransaction(async (client) => {
+        // Update payment status
+        await client.query(
+          `UPDATE payments SET 
+            payment_status = 'failed',
+            failure_reason = $1,
+            updated_at = NOW()
+          WHERE razorpay_payment_id = $2`,
+          [payment.error_description || 'Payment failed', payment.id]
+        );
 
-      const payments = await select('payments', { razorpay_payment_id: payment.id });
-      if (payments.length > 0 && payments[0].booking_id) {
-        const bookingRows = await select('bookings', { id: payments[0].booking_id });
-        const booking = bookingRows[0];
-        if (booking && booking.payment_status !== 'paid' && booking.status === 'pending_payment') {
-          await update(
-            'bookings',
-            { id: payments[0].booking_id },
-            { status: 'cancelled', payment_status: 'failed' }
+        // Get payment with booking_id
+        const { rows: payments } = await client.query(
+          `SELECT booking_id FROM payments WHERE razorpay_payment_id = $1 FOR UPDATE`,
+          [payment.id]
+        );
+
+        if (payments.length > 0 && payments[0].booking_id) {
+          const bookingId = payments[0].booking_id;
+          
+          // ✅ FIX: Cancel booking if payment_status is not 'paid' and status is 'pending' or 'pending_payment'
+          // This ensures slot is released when payment fails
+          const { rows: bookingRows } = await client.query(
+            `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+            [bookingId]
           );
+          
+          if (bookingRows.length > 0) {
+            const booking = bookingRows[0];
+            // ✅ FIX: Check for both 'pending' and 'pending_payment' status (booking is created with 'pending')
+            if (booking.payment_status !== 'paid' && 
+                (booking.status === 'pending' || booking.status === 'pending_payment')) {
+              await client.query(
+                `UPDATE bookings SET 
+                  status = 'cancelled', 
+                  payment_status = 'failed',
+                  cancelled_at = NOW(),
+                  updated_at = NOW()
+                WHERE id = $1`,
+                [bookingId]
+              );
+              console.log('[PAYMENT-FAILED] ✅ Booking cancelled and slot released:', bookingId);
+            }
+          }
         }
-      }
+      });
     } else if (event === 'refund.created') {
       const refund = payload_data.refund.entity;
       

@@ -873,7 +873,9 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             created_at: order.created_at,
           },
           tracking: deliveryTracking ? {
-            status: deliveryTracking.status,
+            // ✅ FIX: Map backend status to frontend-expected status
+            // 'heading_to_pickup' means rider is assigned and heading to vendor → map to 'assigned' for "Rider Assigned"
+            status: deliveryTracking.status === 'heading_to_pickup' ? 'assigned' : deliveryTracking.status,
             deliveryOtp: deliveryTracking.delivery_otp || null,
             deliveryPerson: {
               name: deliveryTracking.delivery_person_name,
@@ -893,7 +895,9 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             trackingUrl: deliveryTracking.tracking_url,
             locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
           } : {
-            status: order.status,
+            // ✅ FIX: When no delivery_tracking exists, show "Finding Rider" (pending_assignment)
+            // This matches the frontend's deliveryStatusSteps which expects 'pending_assignment' for "Finding Rider"
+            status: 'pending_assignment',
             deliveryOtp: null,
             deliveryPerson: null,
           },

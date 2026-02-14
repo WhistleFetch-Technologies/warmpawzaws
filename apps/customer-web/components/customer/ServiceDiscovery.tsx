@@ -254,12 +254,6 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
                   {/* Contact & Action */}
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="flex items-center gap-4 text-sm text-gray-600">
-                      {vendor.phone && (
-                        <div className="flex items-center gap-1">
-                          <Phone className="w-4 h-4" />
-                          <span>{vendor.phone}</span>
-                        </div>
-                      )}
                       <div className="flex items-center gap-1">
                         <Award className="w-4 h-4" />
                         <span>{vendor.totalOfferings} services</span>

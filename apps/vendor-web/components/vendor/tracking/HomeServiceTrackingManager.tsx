@@ -86,7 +86,8 @@ export function HomeServiceTrackingManager({
   const trackingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const latestLocationRef = useRef<LocationPoint | null>(null);
   const lastLocationUpdateSentRef = useRef<number>(0);
-  const GPS_THROTTLE_MS = 30000; // Min 30s between server updates (P3 performance)
+  // ✅ FIX: Reduced throttle to 5s for better real-time tracking updates
+  const GPS_THROTTLE_MS = 5000; // Min 5s between server updates (backend recalculates ETA/distance)
   
   // Session state
   const [sessionState, setSessionState] = useState<SessionState>({
@@ -231,11 +232,12 @@ export function HomeServiceTrackingManager({
       }
     );
 
-    // Send location updates every 45s, throttled to min 30s between sends (P3 performance)
+    // ✅ FIX: Send location updates every 10s (was 45s) for better real-time tracking
+    // Backend will recalculate ETA/distance using Google Maps API
     trackingIntervalRef.current = setInterval(() => {
       const latest = latestLocationRef.current;
       if (latest) sendLocationUpdate(latest);
-    }, 45000);
+    }, 10000); // 10 seconds for better real-time updates
   }, [bookingData, sessionState.status]);
 
   // Stop GPS tracking
@@ -251,20 +253,23 @@ export function HomeServiceTrackingManager({
     setTrackingActive(false);
   }, []);
 
-  // Send location update to server (throttled: min 30s between sends)
+  // ✅ FIX: Send location update to server (throttled: min 5s between sends)
+  // Backend will recalculate ETA/distance using Google Maps API, so we don't need to send those
   const sendLocationUpdate = async (location?: LocationPoint | null) => {
     const loc = location ?? latestLocationRef.current ?? currentLocation;
     if (!loc) return;
     const now = Date.now();
+    // ✅ FIX: Throttle to prevent too frequent updates
     if (now - lastLocationUpdateSentRef.current < GPS_THROTTLE_MS) return;
     lastLocationUpdateSentRef.current = now;
 
     try {
+      // ✅ FIX: Only send location data - backend will recalculate ETA/distance
       await apiClient.post(`/vendor/bookings/${bookingId}/location-update`, {
-        ...loc,
-        eta: sessionState.currentEta,
-        distanceRemaining: sessionState.distanceToDestination,
-        status: sessionState.status
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        accuracy: loc.accuracy,
+        // Note: Backend recalculates ETA/distance, so we don't send those
       });
     } catch (error: any) {
       console.error('Failed to send location update:', error);

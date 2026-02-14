@@ -119,9 +119,10 @@ export function VendorPrescriptionModal({
   };
 
   const handleSave = async (mode: 'draft' | 'publish' = 'publish') => {
-    const validMedications = medications.filter(m => m.name.trim());
+    // ✅ FIX: Filter out empty medications - at least one medication with a name is required
+    const validMedications = medications.filter(m => m.name && m.name.trim());
     if (validMedications.length === 0) {
-      setError('Please add at least one medication');
+      setError('Please add at least one medication with a name');
       return;
     }
 

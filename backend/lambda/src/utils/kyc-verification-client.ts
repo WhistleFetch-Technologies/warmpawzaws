@@ -721,15 +721,11 @@ function buildAadhaarOTPRequestBody(provider: KYCProvider, request: AadhaarOTPRe
 function buildAadhaarVerifyRequestBody(provider: KYCProvider, request: AadhaarVerifyOTPRequest): any {
   switch (provider) {
     case 'sandbox':
-      // Updated format per Sandbox.co API docs
-      // FIX: Keep reference_id as string (as returned from generate-otp response)
-      // The generate-otp response returns reference_id as a string, so we should send it as string
-      console.log(`[AADHAAR-VERIFY] Building request body: requestId="${request.requestId}" (keeping as string)`);
-      
+      // Per Sandbox.co API docs: @entity must be in.co.sandbox.kyc.aadhaar.okyc.request, reference_id must be string
       return { 
-        '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request', 
-        reference_id: String(request.requestId), // Keep as string to match generate-otp response format
-        otp: String(request.otp), // Ensure OTP is also a string
+        '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.request', 
+        reference_id: String(request.requestId || ''), 
+        otp: String(request.otp || ''),
       };
     case 'signzy':
       return { requestId: request.requestId, otp: request.otp };

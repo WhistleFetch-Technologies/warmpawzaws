@@ -418,28 +418,28 @@ export default function ServiceCatalogPage() {
     { id: 'all', label: 'All Styles', icon: 'All' },
   ];
 
-  // ✅ FIX: Canonical roles (post-migration 250/521/522) - fetch active roles from API
-  const CANONICAL_ROLES_FALLBACK = [
-    'vet_solo', 'vet_clinic', 'groomer_solo', 'groomer_center', 'trainer_solo', 'trainer_center',
-    'walker', 'sitter', 'boarding', 'cafe', 'pharmacy', 'ambulance', 'photographer', 'resort',
-    'breeder', 'sunset', 'adoption_center', 'seller', 'relocation', 'diagnostics_center',
-    'nutritionist', 'nutritionist_center', 'insurance', 'holiday', 'event_organizer',
-  ];
-  const [catalogRoles, setCatalogRoles] = useState<string[]>(CANONICAL_ROLES_FALLBACK);
+  // Single source: same active roles as Roles tab (Catalog > Roles). Store full objects to show display_name in UI and use name/roleCode for API.
+  interface CatalogRoleItem { id: string; name: string; roleCode: string; display_name: string; }
+  const [catalogRoles, setCatalogRoles] = useState<CatalogRoleItem[]>([]);
   useEffect(() => {
     apiClient.get<any>('/admin/roles').then((r: any) => {
       const roles = r?.roles || r?.data || [];
       const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
-      const names = Array.isArray(roles)
+      const list: CatalogRoleItem[] = Array.isArray(roles)
         ? roles
             .filter((x: any) => x.isActive !== false && x.is_active !== false)
             .map((x: any) => {
-              const v = x.name || x.roleCode || (isUuid(x.roleId || x.id) ? null : (x.roleId || x.id));
-              return v;
+              const fallback = isUuid(x.roleId || x.id) ? '' : (x.roleId || x.id) || '';
+              return {
+                id: String(x.id ?? x.roleId ?? ''),
+                name: String(x.name ?? x.roleCode ?? fallback),
+                roleCode: String(x.name ?? x.roleCode ?? fallback),
+                display_name: String(x.display_name ?? x.roleName ?? x.name ?? x.roleCode ?? ''),
+              };
             })
-            .filter(Boolean)
+            .filter((x: CatalogRoleItem) => x.roleCode)
         : [];
-      if (names.length > 0) setCatalogRoles(names);
+      if (list.length > 0) setCatalogRoles(list);
     }).catch(() => {});
   }, []);
   const ROLES = catalogRoles;
@@ -1006,31 +1006,32 @@ export default function ServiceCatalogPage() {
               {/* Applicable Roles — select first so specializations below filter dynamically */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Applicable Roles <span className="text-red-500">*</span></label>
-                <p className="text-xs text-gray-500 mb-2">Select roles that can use this service. Specializations below are filtered by these roles (from Catalog &gt; Categories).</p>
+                <p className="text-xs text-gray-500 mb-2">Select roles that can use this service (same as Catalog &gt; Roles). Specializations below are filtered by these roles.</p>
                 <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
-                  {ROLES.map(role => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => {
-                        const roles = formData.applicable_roles || [];
-                        const canon = toCanonicalRoleCode(role);
-                        const newRoles = roles.includes(canon)
-                          ? roles.filter(r => toCanonicalRoleCode(r) !== canon)
-                          : [...roles.filter(r => toCanonicalRoleCode(r) !== canon), canon];
-                        setFormData(prev => ({ ...prev, applicable_roles: newRoles }));
-                        const currentCategory = formDataRef.current?.category_id || formData.category_id || '';
-                        loadSpecializationsForCatalog(currentCategory, newRoles);
-                      }}
-                      className={`px-3 py-1 rounded-lg text-sm transition ${
-                        (formData.applicable_roles || []).map(toCanonicalRoleCode).includes(toCanonicalRoleCode(role))
-                          ? 'bg-orange-500 text-white'
-                          : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
-                      }`}
-                    >
-                      {role.replace(/_/g, ' ')}
-                    </button>
-                  ))}
+                  {ROLES.map((role) => {
+                    const canon = toCanonicalRoleCode(role.roleCode || role.name);
+                    const selected = (formData.applicable_roles || []).map(toCanonicalRoleCode).includes(canon);
+                    return (
+                      <button
+                        key={role.id || role.roleCode}
+                        type="button"
+                        onClick={() => {
+                          const roles = formData.applicable_roles || [];
+                          const newRoles = selected
+                            ? roles.filter(r => toCanonicalRoleCode(r) !== canon)
+                            : [...roles.filter(r => toCanonicalRoleCode(r) !== canon), canon];
+                          setFormData(prev => ({ ...prev, applicable_roles: newRoles }));
+                          const currentCategory = formDataRef.current?.category_id || formData.category_id || '';
+                          loadSpecializationsForCatalog(currentCategory, newRoles);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-sm transition ${
+                          selected ? 'bg-orange-500 text-white' : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        {role.display_name || role.name?.replace(/_/g, ' ')}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

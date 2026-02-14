@@ -90,6 +90,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
         params.append('lat', userLocation.lat.toString());
         params.append('lon', userLocation.lon.toString());
       }
+      if (phone) params.append('customerPhone', phone);
 
       // Use vendor search endpoint
       const data = await apiClient.get<{ doctors?: any[]; vendors?: any[]; success?: boolean }>(
@@ -116,6 +117,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
         params.append('lat', userLocation.lat.toString());
         params.append('lon', userLocation.lon.toString());
       }
+      if (phone) params.append('customerPhone', phone);
 
       const data = await apiClient.get<{ clinics?: any[]; vendors?: any[]; success?: boolean }>(
         `/customer/vendors/search?${params.toString()}`
@@ -228,13 +230,18 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                       <div className="flex-1 min-w-0">
                         <h3 className="font-bold text-gray-900 truncate">{person.name}</h3>
                         <p className="text-xs text-gray-500 truncate">{person.specialization || roleName}</p>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <div className="flex items-center gap-1 text-xs font-medium">
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                             {person.rating}
                           </div>
                           {person.distance && (
                             <span className="text-xs text-gray-500">• {person.distance} km</span>
+                          )}
+                          {(person as any).hasActivePackage && (
+                            <Badge variant="outline" className="text-[10px] border-[#FF8C42]/50 text-[#FF8C42] bg-orange-50">
+                              Package active
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -269,11 +276,18 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                         <MapPin className="w-3 h-3" />
                         {center.distance ? `${center.distance} km away` : center.city}
                       </div>
-                      {center.isVerified && (
-                        <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">
-                          Verified
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {(center as any).hasActivePackage && (
+                          <Badge variant="outline" className="text-[10px] border-[#FF8C42]/50 text-[#FF8C42] bg-orange-50">
+                            Package active
+                          </Badge>
+                        )}
+                        {center.isVerified && (
+                          <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">
+                            Verified
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </Card>
                 ))

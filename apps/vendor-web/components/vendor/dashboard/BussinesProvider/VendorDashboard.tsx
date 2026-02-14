@@ -84,6 +84,12 @@ const PharmacyOrderAlerts = lazy(() =>
 const PendingReportsPanel = lazy(() =>
   import('../../appointments/PendingReportsPanel').then((m) => ({ default: m.PendingReportsPanel }))
 );
+const VendorChatConversationsModal = lazy(() =>
+  import('../../VendorChatConversationsModal').then((m) => ({ default: m.VendorChatConversationsModal }))
+);
+const VendorChatModal = lazy(() =>
+  import('../../VendorChatModal').then((m) => ({ default: m.VendorChatModal }))
+);
 
 export function VendorDashboard({
   vendorId,
@@ -146,11 +152,21 @@ export function VendorDashboard({
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [chatConversationsOpen, setChatConversationsOpen] = useState(false);
+  const [selectedChatConversation, setSelectedChatConversation] = useState<{
+    bookingId: string;
+    customerName: string;
+    customerPhone: string;
+    serviceName: string;
+    bookingStatus: string;
+    packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
+  } | null>(null);
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
@@ -265,7 +281,12 @@ export function VendorDashboard({
         // 5. Fetch services if catalog, booking, services capability, or service-offering role - USE UTILITY
         (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy', 'pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance']))
           ? apiClient.get(`/vendor/${vendorId}/services`).catch(() => ({ success: false, services: [] }))
-          : Promise.resolve({ success: false, services: [] })
+          : Promise.resolve({ success: false, services: [] }),
+
+        // 6. Chat unread count (for message icon badge)
+        capabilities.chat
+          ? apiClient.get(`/chat/vendor/${vendorId}/unread-count`).then((r: any) => ({ totalUnread: r?.totalUnread ?? 0 })).catch(() => ({ totalUnread: 0 }))
+          : Promise.resolve({ totalUnread: 0 })
       ];
 
       // ✅ OPTIMIZATION: Execute critical fetches first, hide loading screen ASAP
@@ -354,7 +375,7 @@ export function VendorDashboard({
       console.log('✅ Critical dashboard data loaded (fast path)');
 
       // ✅ OPTIMIZATION: Load non-critical data in background
-      Promise.all(nonCriticalPromises).then(async ([watchlistRes, notificationsRes, servicesRes]) => {
+      Promise.all(nonCriticalPromises).then(async ([watchlistRes, notificationsRes, servicesRes, chatUnreadRes]) => {
         // Process watchlist
         if (watchlistRes && watchlistRes.success) {
           setWatchlist(watchlistRes.watchlist || []);
@@ -375,6 +396,10 @@ export function VendorDashboard({
             servicesNotConfigured: servicesData.length === 0,
           }));
         }
+
+        // Chat unread count for message icon badge
+        const unread = (chatUnreadRes as any)?.totalUnread ?? 0;
+        setChatUnreadCount(unread);
 
         console.log('✅ Non-critical dashboard data loaded (background)');
       }).catch(error => {
@@ -544,7 +569,20 @@ export function VendorDashboard({
               </button>
 
               {capabilities.chat && (
-                <MessageSquare className="w-5 h-5 text-gray-400" />
+                <button
+                  type="button"
+                  className="relative p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                  onClick={() => setChatConversationsOpen(true)}
+                  title="Messages"
+                  aria-label="Open messages"
+                >
+                  <MessageSquare className="w-5 h-5 text-gray-400 hover:text-[#FF8C42]" />
+                  {chatUnreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-medium">
+                      {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                    </span>
+                  )}
+                </button>
               )}
 
               <button
@@ -1534,6 +1572,53 @@ export function VendorDashboard({
         onClose={() => setNotificationModalOpen(false)}
         onNotificationsRead={() => fetchDashboardData(true)}
       />
+
+      {/* Chat conversations list - wire message button */}
+      {capabilities.chat && (
+        <Suspense fallback={null}>
+          <VendorChatConversationsModal
+            vendorId={vendorId}
+            vendorPhone={vendorData?.phone || vendorData?.mobile}
+            vendorName={vendorData?.fullName || vendorData?.businessName}
+            open={chatConversationsOpen}
+            onClose={() => {
+              setChatConversationsOpen(false);
+              fetchDashboardData(true);
+            }}
+            onSelectConversation={(conv) => {
+              setSelectedChatConversation({
+                bookingId: conv.bookingId,
+                customerName: conv.customerName,
+                customerPhone: conv.customerPhone,
+                serviceName: conv.serviceName,
+                bookingStatus: conv.bookingStatus,
+                packageUtilization: conv.packageUtilization ?? undefined,
+              });
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Chat modal when a conversation is selected from the list */}
+      {capabilities.chat && selectedChatConversation && (
+        <Suspense fallback={null}>
+          <VendorChatModal
+            bookingId={selectedChatConversation.bookingId}
+            vendorId={vendorId}
+            vendorPhone={vendorData?.phone || vendorData?.mobile}
+            vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+            customerPhone={selectedChatConversation.customerPhone}
+            customerName={selectedChatConversation.customerName}
+            bookingStatus={selectedChatConversation.bookingStatus}
+            serviceName={selectedChatConversation.serviceName}
+            packageUtilization={selectedChatConversation.packageUtilization}
+            onClose={() => {
+              setSelectedChatConversation(null);
+              fetchDashboardData(true);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Communication Hub (Unified Chat/Video) */}
       {communicationMode && selectedAppointment && (

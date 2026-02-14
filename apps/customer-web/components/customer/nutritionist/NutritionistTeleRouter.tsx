@@ -106,11 +106,11 @@ const NUTRITION_PROBLEMS = [
 
 interface ModeSelectionProps {
   onSelectScheduled: () => void;
-  onSelectInstant: () => void;
   onBack: () => void;
 }
 
-function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelectionProps) {
+/** Nutritionist tele: scheduled only. Instant video calling is Vet-only. */
+function ModeSelection({ onSelectScheduled, onBack }: ModeSelectionProps) {
   return (
     <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
       {/* Header - Consistent Design */}
@@ -157,41 +157,9 @@ function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelec
       {/* Main Content - White Card with Top Radius */}
       <div className="bg-white rounded-t-[32px] px-4 pt-6 min-h-[calc(100vh-260px)] pb-8">
         {/* Section Title */}
-        <h2 className="text-base font-semibold text-gray-900 mb-4">How would you like to consult?</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-4">Book a video consultation</h2>
 
-        {/* Instant Consultation */}
-        <button
-          className="w-full p-4 mb-3 rounded-2xl text-left transition-all border-2 border-transparent hover:border-green-400 hover:shadow-md bg-green-50"
-          onClick={onSelectInstant}
-        >
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Zap className="w-6 h-6 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <h3 className="font-semibold text-base text-gray-900">Instant Consultation</h3>
-                <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium">Live Now</span>
-              </div>
-              <p className="text-sm text-gray-600 leading-snug">
-                Connect immediately with the next available nutritionist
-              </p>
-              <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  &lt;5 min wait
-                </span>
-                <span className="flex items-center gap-1">
-                  <Video className="w-3.5 h-3.5" />
-                  Video call
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-          </div>
-        </button>
-
-        {/* Scheduled Consultation */}
+        {/* Scheduled only - Instant is Vet-only */}
         <button
           className="w-full p-4 rounded-2xl text-left transition-all border-2 border-transparent hover:border-blue-400 hover:shadow-md bg-blue-50"
           onClick={onSelectScheduled}
@@ -435,10 +403,6 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
     setStep('provider-list');
   };
 
-  const handleSelectInstant = () => {
-    setStep('instant-problem');
-  };
-
   const handleSelectProvider = (provider: Provider) => {
     setSelectedProvider(provider);
     setStep('provider-profile');
@@ -503,7 +467,6 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
       return (
         <ModeSelection
           onSelectScheduled={handleSelectScheduled}
-          onSelectInstant={handleSelectInstant}
           onBack={onBack}
         />
       );
@@ -593,7 +556,6 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
       return (
         <ModeSelection
           onSelectScheduled={handleSelectScheduled}
-          onSelectInstant={handleSelectInstant}
           onBack={onBack}
         />
       );

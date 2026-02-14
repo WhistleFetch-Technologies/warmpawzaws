@@ -53,6 +53,8 @@ export const CreateBookingRequestSchema = z.object({
   customerPhone: z.string().optional(),
   customerName: z.string().optional(),
   petName: z.string().optional(),
+  /** When provided and valid, booking uses package credit: totalAmount=0, payment_status=completed, no payment step */
+  packagePurchaseId: z.string().uuid('Invalid package purchase ID format').optional(),
 });
 
 export const UpdateBookingStatusRequestSchema = z.object({

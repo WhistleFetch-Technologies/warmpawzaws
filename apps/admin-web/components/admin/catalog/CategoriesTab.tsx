@@ -4,6 +4,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import * as LucideIcons from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
+interface SymptomItem {
+  id: string;
+  symptomName: string;
+  symptomDisplayName: string;
+  symptomKeywords: string[];
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
 // ============================================================================
 // ICON MAPPING - Direct reference to Lucide icons
 // ============================================================================
@@ -299,7 +308,6 @@ function SpecializationModal({
     displayName: specialization?.displayName || '',
     iconName: specialization?.iconName || 'Package',
     iconColor: specialization?.iconColor || 'text-blue-500',
-    // ✅ NEW: Add applicableRoles for vendor/customer visibility
     applicableRoles: (specialization as any)?.applicableRoles || [],
     showInProblemGrid: (specialization as any)?.showInProblemGrid ?? true,
     showInVendorProfile: (specialization as any)?.showInVendorProfile ?? true,
@@ -307,6 +315,103 @@ function SpecializationModal({
   });
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [iconSearch, setIconSearch] = useState('');
+
+  // Symptoms: load when editing an existing specialization; full CRUD (add/edit/remove)
+  const [symptoms, setSymptoms] = useState<SymptomItem[]>([]);
+  const [loadingSymptoms, setLoadingSymptoms] = useState(false);
+  const [symptomForm, setSymptomForm] = useState({ symptomName: '', symptomDisplayName: '', symptomKeywords: '' });
+  const [editingSymptomId, setEditingSymptomId] = useState<string | null>(null);
+  const [savingSymptom, setSavingSymptom] = useState(false);
+
+  const specId = form.specializationId || specialization?.specializationId;
+
+  useEffect(() => {
+    if (specId && specialization) {
+      setLoadingSymptoms(true);
+      apiClient.get<any>(`/admin/specializations/${specId}`)
+        .then((res) => {
+          if (res.success && res.data?.symptoms) {
+            const list = (res.data.symptoms || []).map((s: any) => ({
+              id: s.id,
+              symptomName: s.symptomName || s.symptom_name,
+              symptomDisplayName: s.symptomDisplayName || s.symptom_display_name || s.symptomName || s.symptom_name,
+              symptomKeywords: Array.isArray(s.symptomKeywords) ? s.symptomKeywords : (s.symptom_keywords || []),
+              displayOrder: s.displayOrder ?? s.display_order,
+              isActive: s.isActive !== false && s.is_active !== false,
+            }));
+            setSymptoms(list);
+          } else {
+            setSymptoms([]);
+          }
+        })
+        .catch(() => setSymptoms([]))
+        .finally(() => setLoadingSymptoms(false));
+    } else {
+      setSymptoms([]);
+    }
+  }, [specId, specialization?.specializationId]);
+
+  const refreshSymptoms = useCallback(() => {
+    if (!specId) return;
+    setLoadingSymptoms(true);
+    apiClient.get<any>(`/admin/specializations/${specId}/symptoms`)
+      .then((res) => {
+        if (res.success && res.data) {
+          setSymptoms((res.data || []).map((s: any) => ({
+            id: s.id,
+            symptomName: s.symptomName || s.symptom_name,
+            symptomDisplayName: s.symptomDisplayName || s.symptom_display_name || s.symptomName || s.symptom_name,
+            symptomKeywords: Array.isArray(s.symptomKeywords) ? s.symptomKeywords : (s.symptom_keywords || []),
+            displayOrder: s.displayOrder ?? s.display_order,
+            isActive: s.isActive !== false && s.is_active !== false,
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSymptoms(false));
+  }, [specId]);
+
+  const handleAddOrUpdateSymptom = async () => {
+    if (!specId || !symptomForm.symptomName.trim()) return;
+    setSavingSymptom(true);
+    try {
+      await apiClient.post(`/admin/specializations/${specId}/symptoms`, {
+        symptomName: symptomForm.symptomName.trim().toLowerCase().replace(/\s+/g, '_'),
+        symptomDisplayName: symptomForm.symptomDisplayName.trim() || symptomForm.symptomName.trim(),
+        symptomKeywords: symptomForm.symptomKeywords.trim() ? symptomForm.symptomKeywords.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean) : [],
+      });
+      setSymptomForm({ symptomName: '', symptomDisplayName: '', symptomKeywords: '' });
+      setEditingSymptomId(null);
+      refreshSymptoms();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save symptom');
+    } finally {
+      setSavingSymptom(false);
+    }
+  };
+
+  const handleEditSymptom = (symptom: SymptomItem) => {
+    setSymptomForm({
+      symptomName: symptom.symptomName,
+      symptomDisplayName: symptom.symptomDisplayName || symptom.symptomName,
+      symptomKeywords: Array.isArray(symptom.symptomKeywords) ? symptom.symptomKeywords.join(', ') : '',
+    });
+    setEditingSymptomId(symptom.id);
+  };
+
+  const handleDeleteSymptom = async (symptomId: string) => {
+    if (!confirm('Remove this symptom?')) return;
+    try {
+      await apiClient.delete(`/admin/symptoms/${symptomId}`);
+      refreshSymptoms();
+      if (editingSymptomId === symptomId) {
+        setEditingSymptomId(null);
+        setSymptomForm({ symptomName: '', symptomDisplayName: '', symptomKeywords: '' });
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete symptom');
+    }
+  };
 
   const filteredIcons = ICON_OPTIONS.filter(i => i.toLowerCase().includes(iconSearch.toLowerCase()));
 
@@ -470,6 +575,91 @@ function SpecializationModal({
               <span className="text-sm text-gray-700">Show in Services Dashboard</span>
             </label>
           </div>
+
+          {/* Symptoms: visible when editing existing specialization; full CRUD */}
+          {specId && (
+            <div className="border-t border-gray-200 pt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Symptoms ({symptoms.length}) <span className="text-xs text-gray-400">— used for search (e.g. &quot;vomiting&quot;) and filtering</span>
+              </label>
+              {loadingSymptoms ? (
+                <p className="text-sm text-gray-500 flex items-center gap-2">
+                  <LucideIcons.Loader2 className="w-4 h-4 animate-spin" /> Loading symptoms…
+                </p>
+              ) : (
+                <>
+                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 mb-3 bg-gray-50">
+                    {symptoms.length === 0 ? (
+                      <p className="text-sm text-gray-400 py-2">No symptoms yet. Add below.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {symptoms.map((s) => (
+                          <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded hover:bg-white group">
+                            <div className="min-w-0">
+                              <span className="font-medium text-gray-900">{s.symptomDisplayName || s.symptomName}</span>
+                              {s.symptomKeywords?.length > 0 && (
+                                <span className="text-xs text-gray-500 ml-2">({(s.symptomKeywords as string[]).join(', ')})</span>
+                              )}
+                            </div>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                              <button type="button" onClick={() => handleEditSymptom(s)} className="p-1 text-orange-600 hover:bg-orange-50 rounded" title="Edit">
+                                <LucideIcons.Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => handleDeleteSymptom(s.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Remove">
+                                <LucideIcons.Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <input
+                      type="text"
+                      placeholder="Symptom name (e.g. vomiting)"
+                      value={symptomForm.symptomName}
+                      onChange={(e) => setSymptomForm((f) => ({ ...f, symptomName: e.target.value }))}
+                      readOnly={!!editingSymptomId}
+                      className={`px-3 py-2 border border-gray-300 rounded-lg text-sm ${editingSymptomId ? 'bg-gray-100' : ''}`}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Display name (e.g. Vomiting)"
+                      value={symptomForm.symptomDisplayName}
+                      onChange={(e) => setSymptomForm((f) => ({ ...f, symptomDisplayName: e.target.value }))}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Keywords (comma-separated)"
+                      value={symptomForm.symptomKeywords}
+                      onChange={(e) => setSymptomForm((f) => ({ ...f, symptomKeywords: e.target.value }))}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAddOrUpdateSymptom}
+                        disabled={savingSymptom || !symptomForm.symptomName.trim()}
+                        className="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+                      >
+                        {savingSymptom ? 'Saving…' : editingSymptomId ? 'Update symptom' : 'Add symptom'}
+                      </button>
+                      {editingSymptomId && (
+                        <button type="button" onClick={() => { setEditingSymptomId(null); setSymptomForm({ symptomName: '', symptomDisplayName: '', symptomKeywords: '' }); }} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {!specId && specialization && (
+            <p className="text-xs text-gray-500">Save the specialization first, then you can add symptoms.</p>
+          )}
 
           {/* Preview */}
           <div className="p-4 bg-gray-50 rounded-lg">

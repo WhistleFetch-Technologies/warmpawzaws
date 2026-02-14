@@ -21,20 +21,24 @@ import { toast } from 'sonner';
 
 interface RatingRequestPopupProps {
   bookingId: string;
+  vendorId?: string;
   vendorName: string;
   serviceName: string;
   serviceDate: string;
   petName?: string;
+  customerId?: string;
   onClose: () => void;
   onSubmit?: () => void;
 }
 
 export function RatingRequestPopup({
   bookingId,
+  vendorId,
   vendorName,
   serviceName,
   serviceDate,
   petName,
+  customerId,
   onClose,
   onSubmit,
 }: RatingRequestPopupProps) {
@@ -50,11 +54,17 @@ export function RatingRequestPopup({
       toast.error('Please select a rating');
       return;
     }
+    if (!vendorId) {
+      toast.error('Missing vendor information for review');
+      return;
+    }
 
     setSubmitting(true);
     try {
-      await apiClient.post('/reviews/submit', {
+      await apiClient.post('/reviews/create', {
         bookingId,
+        vendorId,
+        customerId,
         rating,
         review: review.trim() || null,
       });
@@ -219,6 +229,7 @@ export function RatingRequestPopup({
 export function usePendingRatingRequests(customerPhone: string) {
   const [pendingReview, setPendingReview] = useState<{
     bookingId: string;
+    vendorId?: string;
     vendorName: string;
     serviceName: string;
     serviceDate: string;
@@ -231,16 +242,17 @@ export function usePendingRatingRequests(customerPhone: string) {
 
       try {
         const result = await apiClient.get<any>(
-          `/reviews/pending?phone=${encodeURIComponent(customerPhone)}`
+          `/reviews/pending/${encodeURIComponent(customerPhone)}`
         );
 
-        if (result.success && result.pendingBookings?.length > 0) {
-          const booking = result.pendingBookings[0]; // Show first pending
+        if (result.success && result.hasPending && result.booking) {
+          const booking = result.booking; // Show first pending
           setPendingReview({
             bookingId: booking.id || booking.bookingId,
+            vendorId: booking.vendorId || booking.vendor_id,
             vendorName: booking.vendorName || booking.vendor_name,
             serviceName: booking.serviceName || booking.service_name,
-            serviceDate: booking.bookingDate || booking.booking_date,
+            serviceDate: booking.bookingDate || booking.booking_date || booking.completedAt,
             petName: booking.petName || booking.pet_name,
           });
         }

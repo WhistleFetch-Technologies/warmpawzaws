@@ -58,18 +58,24 @@ export function validatePrescription(data: PrescriptionData): PrescriptionValida
     errors.push('Valid vendorId is required');
   }
 
-  // Medications validation
+  // Medications validation - at least one medication with a name is required
   if (!data.medications || !Array.isArray(data.medications) || data.medications.length === 0) {
     errors.push('At least one medication is required');
   } else {
-    data.medications.forEach((med, index) => {
-      if (!med.name || med.name.trim().length === 0) {
-        errors.push(`Medication ${index + 1}: name is required`);
-      }
-      if (med.name && med.name.length > 200) {
-        errors.push(`Medication ${index + 1}: name exceeds 200 characters`);
-      }
-    });
+    // Filter out empty medications and validate remaining ones
+    const validMedications = data.medications.filter(med => med.name && med.name.trim().length > 0);
+    if (validMedications.length === 0) {
+      errors.push('At least one medication with a name is required');
+    } else {
+      validMedications.forEach((med, index) => {
+        if (!med.name || med.name.trim().length === 0) {
+          errors.push(`Medication ${index + 1}: name is required`);
+        }
+        if (med.name && med.name.length > 200) {
+          errors.push(`Medication ${index + 1}: name exceeds 200 characters`);
+        }
+      });
+    }
   }
 
   // Diagnosis validation

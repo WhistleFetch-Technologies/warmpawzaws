@@ -57,6 +57,8 @@ const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { toast } from 'sonner';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
 import { VendorNotificationModal } from '../../VendorNotificationModal';
+import { VendorChatConversationsModal } from '../../VendorChatConversationsModal';
+import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
 import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
@@ -92,10 +94,20 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
   // Modals
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [chatConversationsOpen, setChatConversationsOpen] = useState(false);
+  const [selectedChatConversation, setSelectedChatConversation] = useState<{
+    bookingId: string;
+    customerName: string;
+    customerPhone: string;
+    serviceName: string;
+    bookingStatus: string;
+    packageUtilization?: { packageName?: string; totalSessions?: number; remainingSessions?: number; usedSessions?: number; isUnlimited?: boolean; expiresAt?: string } | null;
+  } | null>(null);
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   // OTP modal for completing appointments
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -231,6 +243,14 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       const notificationsRes = await apiClient.get<any>(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] }));
       if (notificationsRes && notificationsRes.success) {
         setNotifications(notificationsRes.notifications || []);
+      }
+
+      // Chat unread count for message icon badge
+      if (capabilities.chat) {
+        const chatUnreadRes = await apiClient.get<any>(`/chat/vendor/${vendorId}/unread-count`).catch(() => ({ totalUnread: 0 }));
+        setChatUnreadCount(chatUnreadRes?.totalUnread ?? 0);
+      } else {
+        setChatUnreadCount(0);
       }
 
       // Check profile, bank and services status for warnings
@@ -532,7 +552,20 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
 
               {capabilities.chat && (
-                <MessageSquare className="w-5 h-5 text-gray-400" />
+                <button
+                  type="button"
+                  className="relative p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                  onClick={() => setChatConversationsOpen(true)}
+                  title="Messages"
+                  aria-label="Open messages"
+                >
+                  <MessageSquare className="w-5 h-5 text-gray-400 hover:text-[#FF8C42]" />
+                  {chatUnreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-medium">
+                      {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                    </span>
+                  )}
+                </button>
               )}
 
               <button
@@ -916,6 +949,49 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         onClose={() => setNotificationModalOpen(false)}
         onNotificationsRead={() => fetchDashboardData(true)}
       />
+
+      {/* Chat conversations list - wire message button */}
+      {capabilities.chat && (
+        <VendorChatConversationsModal
+          vendorId={vendorId}
+          vendorPhone={vendorData?.phone || vendorData?.mobile}
+          vendorName={vendorData?.fullName || vendorData?.businessName}
+          open={chatConversationsOpen}
+          onClose={() => {
+            setChatConversationsOpen(false);
+            fetchDashboardData(true);
+          }}
+          onSelectConversation={(conv) => {
+            setSelectedChatConversation({
+              bookingId: conv.bookingId,
+              customerName: conv.customerName,
+              customerPhone: conv.customerPhone,
+              serviceName: conv.serviceName,
+              bookingStatus: conv.bookingStatus,
+              packageUtilization: conv.packageUtilization ?? undefined,
+            });
+          }}
+        />
+      )}
+
+      {/* Chat modal when a conversation is selected from the list */}
+      {capabilities.chat && selectedChatConversation && (
+        <VendorChatModal
+          bookingId={selectedChatConversation.bookingId}
+          vendorId={vendorId}
+          vendorPhone={vendorData?.phone || vendorData?.mobile}
+          vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          customerPhone={selectedChatConversation.customerPhone}
+          customerName={selectedChatConversation.customerName}
+          bookingStatus={selectedChatConversation.bookingStatus}
+          serviceName={selectedChatConversation.serviceName}
+          packageUtilization={selectedChatConversation.packageUtilization}
+          onClose={() => {
+            setSelectedChatConversation(null);
+            fetchDashboardData(true);
+          }}
+        />
+      )}
 
       {/* Communication Hub */}
       {communicationMode && selectedAppointment && (

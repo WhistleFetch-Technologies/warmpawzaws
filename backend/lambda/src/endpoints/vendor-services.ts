@@ -1513,8 +1513,16 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
       
       // Create new vendor_services record (use actualVendorId)
-      const vendorServiceId = randomUUID();
-      
+      // Copy catalog metadata (e.g. isPackage, packageDetails) so admin "Mark as Package" flows to vendor and customer
+      const catalogMeta = catalogService.metadata && typeof catalogService.metadata === 'object' ? catalogService.metadata : {};
+      const vendorMetadata = { ...catalogMeta };
+      if (catalogService.metadata && (catalogService.metadata as any).isPackage !== undefined) {
+        (vendorMetadata as any).isPackage = (catalogService.metadata as any).isPackage;
+      }
+      if (catalogService.metadata && (catalogService.metadata as any).packageDetails) {
+        (vendorMetadata as any).packageDetails = (catalogService.metadata as any).packageDetails;
+      }
+
       const newService = await insert('vendor_services', {
         id: vendorServiceId,
         vendor_id: actualVendorId,
@@ -1530,6 +1538,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         is_custom_service: false,
         custom_price: customPrice,
         custom_duration: customDuration,
+        metadata: Object.keys(vendorMetadata).length > 0 ? vendorMetadata : undefined,
       });
       
       console.log(`✅ Created vendor service ${vendorServiceId} for vendor ${actualVendorId}`);

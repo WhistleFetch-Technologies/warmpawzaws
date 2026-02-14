@@ -200,12 +200,6 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             <Card className="p-4">
               <h3 className="font-semibold text-gray-900 mb-3">Contact Information</h3>
               <div className="space-y-3">
-                {vendor.phone && (
-                  <div className="flex items-center gap-3">
-                    <Phone className="w-5 h-5 text-gray-400" />
-                    <span className="text-sm text-gray-700">{vendor.phone}</span>
-                  </div>
-                )}
                 {vendor.email && (
                   <div className="flex items-center gap-3">
                     <Mail className="w-5 h-5 text-gray-400" />

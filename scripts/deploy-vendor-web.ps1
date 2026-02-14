@@ -40,9 +40,23 @@ $SCRIPT_DIR = $PSScriptRoot
 $PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
 $APP_DIR = Join-Path $PROJECT_ROOT "apps" $APP_NAME
 
-# Step 1: Build the app (if not already built)
-Write-Host "📦 Building ${APP_NAME}..." -ForegroundColor Blue
+# Step 1: Clean previous build and build the app
+Write-Host "🧹 Cleaning previous build..." -ForegroundColor Blue
 Set-Location $APP_DIR
+
+# Remove dist folder to ensure clean build
+if (Test-Path "dist") {
+    Remove-Item -Recurse -Force "dist"
+    Write-Host "✅ Cleaned previous build" -ForegroundColor Green
+}
+
+# Clean Next.js cache
+if (Test-Path ".next") {
+    Remove-Item -Recurse -Force ".next"
+    Write-Host "✅ Cleaned Next.js cache" -ForegroundColor Green
+}
+
+Write-Host "📦 Building ${APP_NAME}..." -ForegroundColor Blue
 npm run build
 
 if (-not (Test-Path "dist")) {
@@ -51,6 +65,22 @@ if (-not (Test-Path "dist")) {
 }
 
 Write-Host "✅ Build completed successfully" -ForegroundColor Green
+
+# Verify critical files exist
+$criticalFiles = @(
+    "dist/index.html",
+    "_next/static"
+)
+$missingFiles = @()
+foreach ($file in $criticalFiles) {
+    $fullPath = Join-Path $APP_DIR "dist" $file
+    if (-not (Test-Path $fullPath)) {
+        $missingFiles += $file
+    }
+}
+if ($missingFiles.Count -gt 0) {
+    Write-Host "⚠️  Warning: Some critical files may be missing: $($missingFiles -join ', ')" -ForegroundColor Yellow
+}
 
 # Step 1.5: Inject runtime-config.js
 Write-Host "🔧 Injecting runtime-config.js..." -ForegroundColor Blue
@@ -114,17 +144,30 @@ Write-Host "✅ runtime-config.js injected" -ForegroundColor Green
 # Step 2: Deploy to S3
 Write-Host "📤 Uploading to S3 bucket: ${S3_BUCKET}..." -ForegroundColor Blue
 $distPath = Join-Path $APP_DIR "dist"
-aws s3 sync "${distPath}/" "s3://${S3_BUCKET}/" --delete --exclude "*.map" --region $REGION
+
+# First, remove all files from S3 to ensure clean state
+Write-Host "🧹 Cleaning S3 bucket..." -ForegroundColor Blue
+aws s3 rm "s3://${S3_BUCKET}/" --recursive --region $REGION | Out-Null
+
+# Upload all files (excluding source maps for production)
+Write-Host "📤 Uploading new build..." -ForegroundColor Blue
+aws s3 sync "${distPath}/" "s3://${S3_BUCKET}/" --exclude "*.map" --region $REGION --cache-control "public, max-age=0, must-revalidate"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "✅ S3 upload completed successfully" -ForegroundColor Green
+    
+    # Verify chunk files were uploaded
+    $chunkCount = (aws s3 ls "s3://${S3_BUCKET}/_next/static/chunks/" --recursive --region $REGION 2>$null | Measure-Object -Line).Lines
+    Write-Host "   📊 Uploaded $chunkCount chunk files" -ForegroundColor Cyan
 } else {
     Write-Host "❌ Error: S3 upload failed!" -ForegroundColor Red
     exit 1
 }
 
-# Step 3: Invalidate CloudFront cache
+# Step 3: Invalidate CloudFront cache (aggressive invalidation)
 Write-Host "🔄 Invalidating CloudFront cache..." -ForegroundColor Blue
+
+# Invalidate all paths including chunks - use wildcard to catch everything
 $invalidation = aws cloudfront create-invalidation `
     --distribution-id "${CLOUDFRONT_DIST_ID}" `
     --paths "/*" `
@@ -134,7 +177,9 @@ $invalidation = aws cloudfront create-invalidation `
 if ($LASTEXITCODE -eq 0) {
     $INVALIDATION_ID = $invalidation.Invalidation.Id
     Write-Host "✅ CloudFront invalidation created: ${INVALIDATION_ID}" -ForegroundColor Green
+    Write-Host "   Invalidated paths: $($pathsToInvalidate.Count)" -ForegroundColor Cyan
     Write-Host "⏳ Full propagation may take 5-15 minutes" -ForegroundColor Yellow
+    Write-Host "💡 Tip: Hard refresh (Ctrl+Shift+R) after propagation completes" -ForegroundColor Yellow
 } else {
     Write-Host "⚠️  Warning: CloudFront invalidation failed (but files are uploaded)" -ForegroundColor Yellow
 }

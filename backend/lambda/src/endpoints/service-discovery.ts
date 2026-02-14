@@ -257,6 +257,20 @@ async function resolveTargetRolesForDiscovery(category?: string | null, roleId?:
   return discoverable;
 }
 
+/** Resolve customer ID from phone for vendor-specific package badges (hasActivePackage, inActivePackage). */
+async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<string | null> {
+  if (!phone || typeof phone !== 'string') return null;
+  const clean = phone.replace(/[^0-9]/g, '');
+  if (clean.length < 10) return null;
+  const customers = await select('customers', { phone: clean });
+  if (customers.length > 0) return (customers[0] as any).id;
+  if (clean.length === 10) {
+    const with91 = await select('customers', { phone: `+91${clean}` });
+    if (with91.length > 0) return (with91[0] as any).id;
+  }
+  return null;
+}
+
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discovery/meta
@@ -311,6 +325,124 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         serviceStyles: ['at_center', 'at_home', 'tele'],
         categories: ['vet', 'grooming', 'training', 'walker', 'nutrition', 'boarding', 'diagnostics', 'shop', 'cafes', 'photography', 'insurance', 'ambulance', 'breeder', 'adoption', 'relocation', 'resort', 'holiday', 'sunset'],
       }, 200);
+    }
+  });
+
+  /**
+   * GET /customer/debug/at-center-vendors
+   * Debug endpoint to check for vendors with at_center services in database
+   */
+  app.get('/customer/debug/at-center-vendors', async (c) => {
+    try {
+      const category = c.req.query('category') || 'vet';
+      
+      // Query 1: All vendors with at_center services
+      const allVendors = await query(`
+        SELECT 
+          v.id,
+          v.business_name,
+          v.status,
+          v.is_active,
+          r.name as role_name,
+          COUNT(vs.id) as at_center_service_count
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+        WHERE vs.service_style IN ('at_center', 'at_vendor', 'at_clinic')
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        GROUP BY v.id, v.business_name, v.status, v.is_active, r.name
+        ORDER BY v.business_name
+        LIMIT 50
+      `);
+
+      // Query 2: Approved/active vendors with at_center services (non-solo)
+      const approvedVendors = await query(`
+        SELECT 
+          v.id,
+          v.business_name,
+          v.status,
+          v.is_active,
+          r.name as role_name,
+          COUNT(vs.id) as at_center_service_count
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+        WHERE (v.status = 'approved' OR v.status = 'active')
+          AND v.is_active = true
+          AND LOWER(r.name) NOT LIKE '%solo%'
+          AND vs.service_style IN ('at_center', 'at_vendor', 'at_clinic')
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        GROUP BY v.id, v.business_name, v.status, v.is_active, r.name
+        ORDER BY v.business_name
+        LIMIT 50
+      `);
+
+      // Query 3: Vet category vendors with at_center services
+      const vetVendors = await query(`
+        SELECT 
+          v.id,
+          v.business_name,
+          v.status,
+          v.is_active,
+          r.name as role_name,
+          COUNT(vs.id) as at_center_service_count
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+        WHERE (v.status = 'approved' OR v.status = 'active')
+          AND v.is_active = true
+          AND LOWER(r.name) IN ('vet_clinic', 'veterinarian', 'vet')
+          AND LOWER(r.name) NOT LIKE '%solo%'
+          AND vs.service_style IN ('at_center', 'at_vendor', 'at_clinic')
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        GROUP BY v.id, v.business_name, v.status, v.is_active, r.name
+        ORDER BY v.business_name
+        LIMIT 50
+      `);
+
+      // Query 4: Check availability for vet vendors
+      let vetAvailability = [];
+      if (vetVendors.rows.length > 0) {
+        const vetIds = vetVendors.rows.map((v: any) => v.id);
+        const availabilityResult = await query(`
+          SELECT 
+            va.vendor_id,
+            v.business_name,
+            COUNT(va.id) as availability_slots,
+            COUNT(CASE WHEN COALESCE(va.service_styles, ARRAY[]::text[]) && ARRAY['at_center', 'at_vendor', 'at_clinic']::text[] THEN 1 END) as matching_slots,
+            COUNT(CASE WHEN COALESCE(va.service_styles, ARRAY[]::text[]) = ARRAY[]::text[] THEN 1 END) as empty_service_styles_slots
+          FROM vendor_availability_v2 va
+          INNER JOIN vendors v ON va.vendor_id = v.id
+          WHERE va.vendor_id = ANY($1::uuid[])
+            AND (va.is_available IS NULL OR va.is_available = true)
+          GROUP BY va.vendor_id, v.business_name
+        `, [vetIds]);
+        vetAvailability = availabilityResult.rows;
+      }
+
+      return c.json({
+        success: true,
+        summary: {
+          all_vendors_with_at_center: allVendors.rows.length,
+          approved_active_non_solo: approvedVendors.rows.length,
+          vet_category: vetVendors.rows.length,
+          vet_with_availability: vetAvailability.length
+        },
+        all_vendors: allVendors.rows,
+        approved_vendors: approvedVendors.rows,
+        vet_vendors: vetVendors.rows,
+        vet_availability: vetAvailability
+      });
+    } catch (error: any) {
+      console.error('[debug/at-center-vendors] Error:', error);
+      return c.json({
+        success: false,
+        error: error.message,
+        stack: error.stack
+      }, 500);
     }
   });
 
@@ -699,7 +831,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               SELECT 1 FROM vendor_availability_v2 va
               WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
                 AND (va.is_available IS NULL OR va.is_available = true)
-                AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${styleParamIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${styleParamIndex}::text[]))
+                AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${styleParamIndex}::text[])
             )
             ${soloOnlyClause}
             AND (${targetRolesLower.length > 0 ? '1=1' : "COALESCE(v.is_online, true) = true"})
@@ -731,7 +863,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                FROM vendor_availability_v2 va
                WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
                  AND (va.is_available IS NULL OR va.is_available = true)
-                 AND ((COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[]) OR va.service_style = ANY($3::text[]) OR va.service_type = ANY($3::text[]))
+                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[])
                ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
               [vendor.id, vendor.phone || '', acceptableServiceStyles]
@@ -984,81 +1116,111 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Build vendor query: strict discovery — only vendors with advance availability, profile, and services
       // No fallback: vendor must have slot-based advance availability (VA2), profile completion, and services configured for the booking flow.
+      // ✅ FIX: For at_center, make availability optional if vendor has at_center services (handles cases where availability isn't configured yet)
+      const requireAvailability = serviceStyle !== 'at_center';
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config,
           COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
           COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)), 0) as availability_count
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
-        WHERE v.status = 'approved' AND v.is_active = true
+        WHERE (v.status = 'approved' OR v.status = 'active') AND v.is_active = true
           AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
-          AND EXISTS (
+      `;
+      if (requireAvailability) {
+        vendorQuery += ` AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va
             WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
               AND (va.is_available IS NULL OR va.is_available = true)
-          )
-      `;
+          )`;
+      }
 
-      const params: any[] = [];
+      let params: any[] = [];
       let paramIndex = 1;
 
-      // ✅ FIX: When serviceStyle=at_center, exclude solo vendors and only include vendors with at_center services + advance availability for that style
+      // ✅ FIX: When serviceStyle=at_center, use the same query structure as debug endpoint (which works!)
       if (serviceStyle === 'at_center') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
-        vendorQuery += ` AND (LOWER(r.name) NOT LIKE '%solo%')`;
-        vendorQuery += ` AND EXISTS (
-          SELECT 1 FROM vendor_services vs
-          WHERE vs.vendor_id = v.id
-            AND vs.service_style = ANY($${paramIndex}::text[])
+        console.log('[discover-services] at_center: acceptableStyles=', acceptableStyles);
+        
+        // Resolve target roles BEFORE building query so we can include category/role filter
+        const roleIdForCenter = (roleId) ? (() => {
+          const m: Record<string, string> = {
+            vet: 'vet_clinic', veterinarian: 'vet_clinic',
+            grooming: 'groomer_center', groomer: 'groomer_center', pet_groomer: 'groomer_center',
+            training: 'trainer_center', trainer: 'trainer_center', pet_trainer: 'trainer_center',
+            nutrition: 'nutritionist_center', nutritionist: 'nutritionist_center',
+            diagnostics: 'diagnostics_center', 'lab-diagnostics': 'diagnostics_center',
+          };
+          return m[(roleId as string).toLowerCase().trim()] || roleId;
+        })() : roleId;
+        let targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+        console.log('[discover-services] at_center: category=%s, roleIdForCenter=%s, initial targetRoles=%s', category, roleIdForCenter, JSON.stringify(targetRoles));
+        // For at_center, exclude solo role names so business/clinic vendors are returned
+        if (targetRoles.length > 0) {
+          targetRoles = targetRoles.filter((r) => !r.toLowerCase().includes('solo'));
+          if (targetRoles.length === 0) {
+            targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+            targetRoles = (CATEGORY_ROLE_NAMES[category?.toLowerCase() || ''] || targetRoles).filter((r) => !r.toLowerCase().includes('solo'));
+          }
+        }
+        console.log('[discover-services] at_center: final targetRoles=%s', JSON.stringify(targetRoles));
+        
+        // Use INNER JOIN like debug endpoint - this matches the working query
+        // ✅ FIX: Add category/role filter to SQL query
+        params = [acceptableStyles];
+        let categoryFilterClause = '';
+        if (targetRoles.length > 0) {
+          categoryFilterClause = ` AND LOWER(r.name) = ANY($${params.length + 1}::text[])`;
+          params.push(targetRoles.map((r) => r.toLowerCase()));
+        } else if (category) {
+          // Fallback: filter by vendor.category if roles not available
+          categoryFilterClause = ` AND (LOWER(COALESCE(v.category, '')) = LOWER($${params.length + 1}) OR LOWER(r.name) LIKE LOWER($${params.length + 1} || '%'))`;
+          params.push(category.toLowerCase());
+        }
+        
+        vendorQuery = `
+          SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config,
+            COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
+            COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)), 0) as availability_count
+          FROM vendors v
+          INNER JOIN roles r ON v.role_id = r.id
+          INNER JOIN vendor_services vs ON vs.vendor_id = v.id AND vs.vendor_id IS NOT NULL
+          WHERE (v.status = 'approved' OR v.status = 'active') AND v.is_active = true
+            AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
+            AND LOWER(r.name) NOT LIKE '%solo%'
+            AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
-        )`;
-        params.push(acceptableStyles);
-        paramIndex++;
-        vendorQuery += ` AND EXISTS (
-          SELECT 1 FROM vendor_availability_v2 va
-          WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-            AND (va.is_available IS NULL OR va.is_available = true)
-            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
-        )`;
-        params.push(acceptableStyles);
-        paramIndex++;
+            ${categoryFilterClause}
+        `;
+        paramIndex = params.length + 1;
       } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va
           WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
             AND (va.is_available IS NULL OR va.is_available = true)
-            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
+            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[])
         )`;
         params.push(acceptableStyles);
         paramIndex++;
       }
 
-      // DB-driven: filter by category and/or roleId. For at_center normalize to center role names (vet → vet_clinic, etc.)
-      const roleIdForCenter = (serviceStyle === 'at_center' && roleId) ? (() => {
-        const m: Record<string, string> = {
-          vet: 'vet_clinic', veterinarian: 'vet_clinic',
-          grooming: 'groomer_center', groomer: 'groomer_center', pet_groomer: 'groomer_center',
-          training: 'trainer_center', trainer: 'trainer_center', pet_trainer: 'trainer_center',
-          nutrition: 'nutritionist_center', nutritionist: 'nutritionist_center',
-          diagnostics: 'diagnostics_center', 'lab-diagnostics': 'diagnostics_center',
-        };
-        return m[(roleId as string).toLowerCase().trim()] || roleId;
-      })() : roleId;
-      let targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
-      // For at_center, exclude solo role names so business/clinic vendors are returned (otherwise r.name NOT LIKE '%solo%' + only vet_solo in list = 0 results)
-      if (serviceStyle === 'at_center' && targetRoles.length > 0) {
-        targetRoles = targetRoles.filter((r) => !r.toLowerCase().includes('solo'));
-        if (targetRoles.length === 0) {
-          targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
-          targetRoles = (CATEGORY_ROLE_NAMES[category?.toLowerCase() || ''] || targetRoles).filter((r) => !r.toLowerCase().includes('solo'));
+      // DB-driven: filter by category and/or roleId. For at_center, this is already handled above in the query.
+      // For other service styles, resolve roles here.
+      let targetRoles: string[] = [];
+      let roleFilterAdded = false;
+      if (serviceStyle !== 'at_center') {
+        const roleIdForCenter = roleId;
+        targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
+        if (targetRoles.length > 0) {
+          vendorQuery += ` AND LOWER(r.name) = ANY($${paramIndex}::text[])`;
+          params.push(targetRoles.map((r) => r.toLowerCase()));
+          paramIndex++;
+          roleFilterAdded = true;
+          console.log('[discover-services] Added role filter with roles:', targetRoles.map((r) => r.toLowerCase()));
         }
-      }
-      if (targetRoles.length > 0) {
-        vendorQuery += ` AND LOWER(r.name) = ANY($${paramIndex}::text[])`;
-        params.push(targetRoles.map((r) => r.toLowerCase()));
-        paramIndex++;
       }
 
       // Filter by location (text match)
@@ -1074,13 +1236,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       vendorQuery += ` ORDER BY v.created_at DESC`;
 
-      const vendorResults = await query(vendorQuery, params);
+      console.log('[discover-services] at_center: executing query with params:', JSON.stringify(params));
+      console.log('[discover-services] at_center: query preview:', vendorQuery.substring(0, 800));
+      let vendorResults = await query(vendorQuery, params);
       let vendors = vendorResults.rows;
+      console.log('[discover-services] at_center: found %s vendors before enrichment', vendors.length);
+      if (vendors.length > 0) {
+        console.log('[discover-services] at_center: first vendor:', JSON.stringify({
+          id: vendors[0].id,
+          business_name: vendors[0].business_name,
+          role_name: vendors[0].role_name,
+          category: vendors[0].category,
+          status: vendors[0].status,
+          is_active: vendors[0].is_active
+        }));
+      } else {
+        console.log('[discover-services] at_center: No vendors found. Check category filter and role matching.');
+      }
 
       // Enrich vendors with services, reviews, and availability
       const enrichedVendors = (await Promise.all(
         vendors.map(async (vendor: any) => {
           if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
+            console.log('[discover-services] at_center: vendor %s filtered by roleConfigAllowsStyle', vendor.id);
             return null;
           }
           // Get services - ✅ FIX: Query vendor_services directly (includes custom services)
@@ -1394,6 +1572,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       )).filter(Boolean);
 
       // Strict discovery: photos loaded, next availability, profile (specializations), services with complete duration and info
+      // ✅ FIX: For at_center, make availability optional (vendors may not have availability configured yet)
       let filteredVendors = enrichedVendors.filter((v: any) => {
         const hasPhoto = !!(v.photoUrl || (v.photos && v.photos.length > 0));
         const hasNextAvailability = !!v.nextAvailableSlot || !!v.nextAvailability;
@@ -1401,6 +1580,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const hasCompleteServices = v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.every((o: any) =>
           (o.duration != null && Number(o.duration) > 0) && (o.name || o.category)
         );
+        // For at_center: require photo, profile, and services; availability is optional
+        if (serviceStyle === 'at_center') {
+          return hasPhoto && hasProfileInfo && hasCompleteServices;
+        }
+        // For at_home/tele: require all fields
         return hasPhoto && hasNextAvailability && hasProfileInfo && hasCompleteServices;
       });
       if (serviceStyle === 'at_center') {
@@ -2142,9 +2326,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           if (directVerificationNoStyle.rows.length > 0) {
             console.log(`[SLOTS] ⚠️ Found ${directVerificationNoStyle.rows.length} records but service style filter excluded them`);
             console.log(`[SLOTS] Sample record service_styles: ${JSON.stringify(directVerificationNoStyle.rows[0].service_styles)}`);
+            console.log(`[SLOTS] Sample record service_type: ${directVerificationNoStyle.rows[0].service_type}`);
+            console.log(`[SLOTS] Sample record service_style: ${directVerificationNoStyle.rows[0].service_style}`);
             console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
-            // Use these records anyway - we'll filter by style when generating slots
-            verificationSlots = directVerificationNoStyle.rows;
+            // ✅ FIX: Do NOT use records that don't match service style - this causes whole day slots
+            // Only use records that actually match the requested service style
+            const styleFiltered = directVerificationNoStyle.rows.filter((row: any) => {
+              const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+              const serviceType = row.service_type || row.service_style || '';
+              return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                     acceptableStylesForSlot.includes(serviceType);
+            });
+            if (styleFiltered.length > 0) {
+              console.log(`[SLOTS] ✅ After style filtering, ${styleFiltered.length} records match service style`);
+              verificationSlots = styleFiltered;
+            } else {
+              console.log(`[SLOTS] ⚠️ No records match service style after filtering - will return empty slots`);
+            }
           } else {
             console.log(`[SLOTS] ⚠️ VERIFICATION: No records found for day_of_week ${dayOfWeek} at all`);
           }
@@ -2248,10 +2446,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             if (noStyleRows.length > 0) {
               console.log(`[SLOTS] ⚠️ Records exist but service style filter excluded them!`);
               console.log(`[SLOTS] Sample record service_styles: ${JSON.stringify(noStyleRows[0].service_styles)}`);
+              console.log(`[SLOTS] Sample record service_type: ${noStyleRows[0].service_type}`);
+              console.log(`[SLOTS] Sample record service_style: ${noStyleRows[0].service_style}`);
               console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
               console.log(`[SLOTS] Sample record time_window_start: ${noStyleRows[0]?.time_window_start || noStyleRows[0]?.start_time}, time_window_end: ${noStyleRows[0]?.time_window_end || noStyleRows[0]?.end_time}`);
-              // Use records anyway - we'll filter by style when generating slots
-              va2Slots = noStyleRows;
+              // ✅ FIX: Filter by service style BEFORE using records - don't use records that don't match
+              const styleFiltered = noStyleRows.filter((row: any) => {
+                const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+                const serviceType = row.service_type || row.service_style || '';
+                return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                       acceptableStylesForSlot.includes(serviceType);
+              });
+              if (styleFiltered.length > 0) {
+                console.log(`[SLOTS] ✅ After style filtering, ${styleFiltered.length} records match service style`);
+                va2Slots = styleFiltered;
+              } else {
+                console.log(`[SLOTS] ⚠️ No records match service style after filtering - will return empty slots`);
+                va2Slots = []; // Don't use records that don't match service style
+              }
             } else {
               // ✅ CRITICAL: Try query without vendor status filters (vendor might be offline or not approved)
               console.log(`[SLOTS] ⚠️ No availability found even without service style filter, trying without vendor status filters...`);
@@ -2311,9 +2523,28 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 }
                 console.log(`[SLOTS] ⚠️ Last resort query returned ${lastResortQuery.rows.length} rows`);
                 if (lastResortQuery.rows.length > 0) {
+                  // ✅ FIX: Filter last resort results by service style - don't use all records
+                  if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
+                    const styleFiltered = lastResortQuery.rows.filter((row: any) => {
+                      const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+                      const serviceType = row.service_type || row.service_style || '';
+                      return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                             acceptableStylesForSlot.includes(serviceType);
+                    });
+                    if (styleFiltered.length > 0) {
+                      va2Slots = styleFiltered;
+                      console.log(`[SLOTS] ✅ Using last resort results (${styleFiltered.length} slots after service style filter, from ${lastResortQuery.rows.length} total)`);
+                    } else {
+                      console.log(`[SLOTS] ⚠️ Last resort query found records but none match service style - will return empty slots`);
+                      va2Slots = [];
+                    }
+                  } else {
                   va2Slots = lastResortQuery.rows;
-                  console.log(`[SLOTS] ✅ Using last resort results (${va2Slots.length} slots) - NO FILTERS APPLIED`);
-                  console.log(`[SLOTS] First record:`, JSON.stringify(lastResortQuery.rows[0]));
+                    console.log(`[SLOTS] ✅ Using last resort results (${va2Slots.length} slots) - NO SERVICE STYLE FILTER`);
+                  }
+                  if (va2Slots.length > 0) {
+                    console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+                  }
                 }
               }
             }
@@ -2333,13 +2564,41 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       
       // ✅ CRITICAL: Prioritize verificationSlots since they're already filtered correctly (service style + is_available, no vendor status filter)
       // This ensures we find availability even if vendor status filters exclude records
+      // ✅ FIX: Ensure verificationSlots are filtered by service style
       if (verificationSlots.length > 0) {
         console.log(`[SLOTS] ========== USING VERIFICATION RESULTS (${verificationSlots.length} records) - PRIORITIZED ==========`);
+        // Double-check service style filtering on verification slots
+        if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
+          const styleFiltered = verificationSlots.filter((row: any) => {
+            const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+            const serviceType = row.service_type || row.service_style || '';
+            return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                   acceptableStylesForSlot.includes(serviceType);
+          });
+          if (styleFiltered.length !== verificationSlots.length) {
+            console.log(`[SLOTS] ⚠️ Verification slots filtered: ${verificationSlots.length} -> ${styleFiltered.length} (removed non-matching service styles)`);
+          }
+          va2Slots = styleFiltered;
+        } else {
         va2Slots = verificationSlots;
+        }
       } else if (va2Slots.length === 0) {
         console.log(`[SLOTS] ========== NO RECORDS FOUND (verification: ${verificationSlots.length}, main query: ${va2Slots.length}) ==========`);
       } else {
         console.log(`[SLOTS] ========== USING MAIN QUERY RESULTS (${va2Slots.length} records) ==========`);
+        // ✅ FIX: Ensure main query results are also filtered by service style
+        if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
+          const styleFiltered = va2Slots.filter((row: any) => {
+            const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+            const serviceType = row.service_type || row.service_style || '';
+            return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                   acceptableStylesForSlot.includes(serviceType);
+          });
+          if (styleFiltered.length !== va2Slots.length) {
+            console.log(`[SLOTS] ⚠️ Main query results filtered: ${va2Slots.length} -> ${styleFiltered.length} (removed non-matching service styles)`);
+          }
+          va2Slots = styleFiltered;
+        }
       }
       
       console.log(`[SLOTS] ========== FINAL QUERY RESULT ==========`);
@@ -2429,8 +2688,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       };
       let existingBookings: { booking_time: string; duration_minutes: number }[] = [];
       try {
+        // ✅ CRITICAL: Use total_duration_minutes if available (for multi-service bookings), otherwise duration_minutes
+        // This ensures we use the actual booking duration, not just the base service duration
         const bookResult = await query(
-          `SELECT booking_time, COALESCE(duration_minutes, 30) as duration_minutes
+          `SELECT booking_time, 
+                  COALESCE(total_duration_minutes, duration_minutes, 30) as duration_minutes
            FROM bookings
            WHERE vendor_id = $1 AND booking_date = $2
              AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
@@ -2444,7 +2706,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       if (va2Slots.length > 0) {
         console.log(`[SLOTS] ========== GENERATING SLOTS FROM ${va2Slots.length} AVAILABILITY RECORDS ==========`);
-        // ✅ CRITICAL: Filter records by service style if not already filtered by query
+        // ✅ CRITICAL: Filter records by service style - STRICT FILTERING (no fallback to all records)
+        // This ensures tele service only shows tele-specific availability (e.g., 2pm-6pm), not whole day
         let filteredSlots = va2Slots;
         if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
           filteredSlots = va2Slots.filter((row: any) => {
@@ -2454,13 +2717,36 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                                     acceptableStylesForSlot.includes(serviceType);
             if (!hasMatchingStyle) {
               console.log(`[SLOTS] Filtering out record: service_styles=${JSON.stringify(serviceStyles)}, service_type=${serviceType}, acceptableStyles=${JSON.stringify(acceptableStylesForSlot)}`);
+            } else {
+              console.log(`[SLOTS] ✅ Record matches service style: service_styles=${JSON.stringify(serviceStyles)}, service_type=${serviceType}, time_window=${row.time_window_start || row.start_time}-${row.time_window_end || row.end_time}`);
             }
             return hasMatchingStyle;
           });
           console.log(`[SLOTS] After service style filter: ${filteredSlots.length} records (from ${va2Slots.length})`);
+          // ✅ FIX: DO NOT fallback to all records - if no matching service style, return empty slots
+          // This ensures tele service only shows tele-specific availability windows
           if (filteredSlots.length === 0) {
-            console.log(`[SLOTS] ⚠️ All records filtered out by service style! Using all records anyway to generate slots.`);
-            filteredSlots = va2Slots; // Use all records if style filter removes everything
+            console.log(`[SLOTS] ⚠️ No availability records match service style '${serviceStyle}' (acceptableStyles: ${JSON.stringify(acceptableStylesForSlot)})`);
+            console.log(`[SLOTS] ⚠️ This vendor may not have ${serviceStyle} availability configured, or records use different service style values`);
+            // Return empty slots instead of using all records
+            return c.json({
+              success: true,
+              slots: [],
+              date,
+              vendorId: canonicalVendorId,
+              inputVendorId: vendorId,
+              serviceStyle,
+              staffBased: false,
+              message: `No ${serviceStyle} availability configured for this day. Vendor must set ${serviceStyle}-specific schedule in Advanced Availability.`,
+              availabilityMeta: {
+                source: 'vendor_availability_v2',
+                hadAvailability: va2Slots.length > 0, // Had records but none matched service style
+                allBooked: false,
+                totalSlots: 0,
+                availableSlots: 0,
+                bookedSlots: 0,
+              },
+            });
           }
         }
         
@@ -2514,16 +2800,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
 
-            // 1) Past booking window
+            // 1) Past booking window - for today, include past slots but mark as unavailable
+            let isPastSlot = false;
             if (isToday) {
               const slotDateTime = new Date(requestedDate);
               slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
-              const isPast = slotDateTime < minBookingTime;
-              if (isPast) {
-                console.log(`[SLOTS]     Skipping ${timeStr}: slot is in the past (${slotDateTime.toISOString()} < ${minBookingTime.toISOString()})`);
-                currentMinutes += slotDuration;
-                slotsSkippedForThisRecord++;
-                continue;
+              isPastSlot = slotDateTime < minBookingTime;
+              if (isPastSlot) {
+                console.log(`[SLOTS]     ${timeStr} is in the past (${slotDateTime.toISOString()} < ${minBookingTime.toISOString()}) - will include as unavailable`);
               } else {
                 console.log(`[SLOTS]     ✅ ${timeStr} is NOT in the past (${slotDateTime.toISOString()} >= ${minBookingTime.toISOString()})`);
               }
@@ -2532,53 +2816,106 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             }
 
             // 2) Break overlap
-            const slotEndMin = currentMinutes + totalDuration;
+            // ✅ FIX: Use slotDuration for break check (slot size), but also check if totalDuration would extend into break
+            const slotEndMin = currentMinutes + slotDuration;  // Slot end for break check
+            const serviceEndMin = currentMinutes + totalDuration;  // Service end if booked at this slot
             const inBreak = breaks.some((brk: { startTime: string; endTime: string }) => {
               const bStart = timeToMinutes(brk.startTime);
               const bEnd = timeToMinutes(brk.endTime);
-              return currentMinutes < bEnd && slotEndMin > bStart;
+              // Slot overlaps break if slot itself overlaps OR if service would extend into break
+              return (currentMinutes < bEnd && slotEndMin > bStart) || (currentMinutes < bEnd && serviceEndMin > bStart);
             });
             if (inBreak) {
               currentMinutes += slotDuration;
               continue;
             }
 
-            // 3) Buffer overlap with existing bookings (slot start + totalDuration + buffer vs booking start + duration + buffer)
-            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
+            // 3) Overlap check with existing bookings (slot start + slotDuration vs booking start + duration)
+            // ✅ STRICT BUSINESS RULE: Each slot is atomic and independent
+            // Buffer is informational (travel/prep/setup) and MUST NOT block adjacent slots
+            // Only service duration blocks slots - buffer is used for scheduling spacing, not availability blocking
+            // ✅ CRITICAL: Use slotDuration (actual slot size) not totalDuration (requested service duration) for overlap check
+            // ✅ ATOMIC SLOT RULE: Booking 09:00 (30min) should ONLY block 09:00, NOT 09:30
+            // Mathematical proof:
+            //   Booking 09:00: bStart=540, bEnd=540+30=570 (09:30)
+            //   Slot 09:30: currentMinutes=570, slotEnd=570+30=600 (10:00)
+            //   Overlap: 570 < 570 && 600 > 540 = false && true = false ✅ (NO overlap)
+            const slotEnd = currentMinutes + slotDuration;  // ✅ Use slotDuration, NO buffer in blocking
             const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
               const bStart = timeToMinutes(b.booking_time);
-              const bEnd = bStart + b.duration_minutes + bufferMinutes;
-              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
+              
+              // ✅ FIX: For at_center only, subtract buffer time from booking duration for overlap check
+              // at_home/tele use exact time matching (staff-based) so they don't have this issue
+              // Buffer is informational (prep time) and should NOT block adjacent slots for at_center
+              let bookingDuration = b.duration_minutes;
+              if (normalizedServiceStyle === 'at_center' && bufferMinutes > 0) {
+                // Subtract buffer from booking duration for overlap check only
+                // This ensures adjacent slots are not blocked by buffer time
+                // Minimum duration is slotDuration to prevent negative values
+                bookingDuration = Math.max(slotDuration, bookingDuration - bufferMinutes);
+              }
+              
+              const bEnd = bStart + bookingDuration;  // ✅ Use adjusted duration for at_center (no buffer blocking)
+              // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
+              // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
+              return currentMinutes < bEnd && slotEnd > bStart;  // ✅ Strict < ensures atomic behavior
             });
-            if (overlapsBooking) {
-              currentMinutes += slotDuration;
-              continue;
-            }
 
-            // 5) Max capacity (only when defined): count bookings at this start time; if not defined, do not enforce
+            // ✅ FIX: Check max capacity first to determine availability
             let available = true;
+            let booked = false;
             if (maxCapacity != null && maxCapacity > 0) {
               const norm = (t: string) => (typeof t === 'string' ? t.substring(0, 5) : String(t));
               const sameStartCount = existingBookings.filter(
                 (b: { booking_time: string }) => norm(b.booking_time) === timeStr
               ).length;
               available = sameStartCount < maxCapacity;
+              booked = !available;
+            } else {
+              // ✅ FIX: If overlaps booking (buffer conflict), mark as booked but still return slot
+              booked = overlapsBooking;
+              available = !booked;
             }
 
+            // ✅ FIX: For today, mark past slots as unavailable (but still include them)
+            if (isPastSlot) {
+              available = false;
+              booked = false; // Past slots are not "booked", they're just unavailable
+            }
+
+            // ✅ FIX: Always add slot (even if booked or past) so UI can show it as unavailable
             // Dynamic payload: pass through schedule fields so clients sync with future enhancements
+            // ✅ FIX: Filter serviceStyles to only include styles matching the requested serviceStyle
+            // When serviceStyle=at_center is requested, only return ["at_center"], not ["at_center", "at_home"]
+            let filteredServiceStyles: string[] = [];
+            if (Array.isArray(row.service_styles) && row.service_styles.length > 0) {
+              // Filter to only include styles that match the requested serviceStyle
+              filteredServiceStyles = row.service_styles.filter((style: string) => 
+                acceptableStylesForSlot.includes(style)
+              );
+              // If no matching styles found, use the requested serviceStyle as fallback
+              if (filteredServiceStyles.length === 0 && normalizedServiceStyle) {
+                filteredServiceStyles = [normalizedServiceStyle];
+              }
+            } else if (normalizedServiceStyle) {
+              // If no service_styles array, use the requested serviceStyle
+              filteredServiceStyles = [normalizedServiceStyle];
+            }
+            
             const slotPayload: Record<string, unknown> = {
               time: timeStr,
               available,
-              booked: !available,
+              booked, // ✅ Explicitly mark as booked if overlapping or at capacity
               slotDuration,
               bufferMinutes,
-              ...(Array.isArray(row.service_styles) && row.service_styles.length > 0 && { serviceStyles: row.service_styles }),
+              ...(isPastSlot && { isPast: true }), // ✅ Mark past slots for today
+              ...(filteredServiceStyles.length > 0 && { serviceStyles: filteredServiceStyles }),
               ...(row.max_capacity != null && row.max_capacity !== '' && { maxCapacity: parseInt(String(row.max_capacity), 10) }),
             };
             slots.push(slotPayload);
             slotsGenerated++;
             slotsGeneratedForThisRecord++;
-            console.log(`[SLOTS]     ✅ Added slot: ${timeStr} (available: ${available})`);
+            console.log(`[SLOTS]     ✅ Added slot: ${timeStr} (available: ${available}, booked: ${booked})`);
             currentMinutes += slotDuration;
           }
           console.log(`[SLOTS]   Record complete: Generated ${slotsGeneratedForThisRecord} slots, skipped ${slotsSkippedForThisRecord} slots`);
@@ -2592,6 +2929,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         const sortedSlots = slots.sort((a: any, b: any) => (a.time || '').localeCompare(b.time || ''));
         console.log(`[SLOTS] Returning ${sortedSlots.length} sorted slots`);
+        
+        // ✅ FIX: Track metadata to distinguish "no availability" vs "all booked"
+        const hadAvailabilityRecords = va2Slots.length > 0;
+        const availableSlotsCount = sortedSlots.filter((s: any) => s.available === true).length;
+        const bookedSlotsCount = sortedSlots.filter((s: any) => s.booked === true).length;
+        const allBooked = hadAvailabilityRecords && availableSlotsCount === 0 && bookedSlotsCount > 0;
+        
         return c.json({
           success: true,
           slots: sortedSlots,
@@ -2604,11 +2948,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             source: 'vendor_availability_v2',
             slotDurationDefault: 30,
             bufferMinutesDefault: 15,
+            hadAvailability: hadAvailabilityRecords, // ✅ Flag: availability records existed
+            allBooked, // ✅ Flag: all slots were booked/filtered
+            totalSlots: sortedSlots.length,
+            availableSlots: availableSlotsCount,
+            bookedSlots: bookedSlotsCount,
           },
         });
       }
 
       // No slot-based advance availability: do not show slots (no fallback)
+      // ✅ FIX: Check if availability exists but was filtered out (all booked/past)
+      const hadAvailabilityRecords = va2Slots.length > 0;
+      let message = 'No advance availability set for this day and service type. Vendor must set schedule in Advanced Availability.';
+      
+      if (hadAvailabilityRecords) {
+        // Availability exists but all slots were filtered (booked/past/breaks)
+        message = 'All available slots for this date are currently booked or unavailable.';
+      }
+      
       return c.json({
         success: true,
         slots: [],
@@ -2617,7 +2975,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         inputVendorId: vendorId, // ✅ Also include original input for debugging
         serviceStyle,
         staffBased: false,
-        message: 'No advance availability set for this day and service type. Vendor must set schedule in Advanced Availability.',
+        message,
+        availabilityMeta: {
+          source: 'vendor_availability_v2',
+          hadAvailability: hadAvailabilityRecords, // ✅ Flag: availability records existed
+          allBooked: hadAvailabilityRecords, // ✅ If we had records but no slots, they're all booked/filtered
+        },
       });
     } catch (error: any) {
       console.error('Error fetching available slots:', error);
@@ -2635,6 +2998,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const category = c.req.query('category');
       const serviceStyle = c.req.query('serviceStyle');
+      const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
 
       // Resolve vendor (frontend may pass vendor_identity.id or staff id; resolve to vendors.id)
       const vendor = await resolveVendorById(vendorId);
@@ -2642,6 +3006,68 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
       }
       const resolvedVendorId = vendor.id;
+
+      // Included vendor_service ids (and legacy service_ids) from customer's active packages (for "In your package" label)
+      const includedVendorServiceIds = new Set<string>();
+      const includedLegacyServiceIds = new Set<string>();
+      const vendorServiceIdToPackagePurchaseId = new Map<string, string>();
+      if (customerPhone) {
+        try {
+          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          if (customerId) {
+            const purchases = await query(
+              `SELECT id, package_id, package_snapshot FROM package_purchases
+               WHERE customer_id = $1 AND vendor_id = $2 AND status = 'active'
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)
+                 AND (expires_at IS NULL OR expires_at > NOW())`,
+              [customerId, resolvedVendorId]
+            );
+            for (const pp of purchases.rows || []) {
+              const snapshot = pp.package_snapshot && (typeof pp.package_snapshot === 'string' ? JSON.parse(pp.package_snapshot) : pp.package_snapshot);
+              const inc = snapshot?.includedServices;
+              if (Array.isArray(inc) && inc.length > 0) {
+                inc.forEach((s: any) => {
+                  const id = s.id || s.vendor_service_id;
+                  if (id) {
+                    includedVendorServiceIds.add(id);
+                    vendorServiceIdToPackagePurchaseId.set(id, pp.id);
+                  }
+                });
+              } else {
+                const vsRow = await query(
+                  `SELECT id, metadata FROM vendor_services WHERE id = $1 AND vendor_id = $2`,
+                  [pp.package_id, resolvedVendorId]
+                );
+                if (vsRow.rows?.length > 0) {
+                  const meta = vsRow.rows[0].metadata;
+                  const parsed = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : (meta || {});
+                  const details = parsed?.packageDetails || parsed;
+                  const arr = details?.includedServices || details?.included_services;
+                  if (Array.isArray(arr)) {
+                    arr.forEach((s: any) => {
+                      const id = s.id || s.vendor_service_id;
+                      if (id) {
+                        includedVendorServiceIds.add(id);
+                        vendorServiceIdToPackagePurchaseId.set(id, pp.id);
+                      }
+                    });
+                  }
+                } else {
+                  const psRows = await query(
+                    `SELECT service_id FROM package_services WHERE package_id = $1`,
+                    [pp.package_id]
+                  );
+                  for (const r of psRows.rows || []) {
+                    if (r.service_id) {
+                      includedLegacyServiceIds.add(r.service_id);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       // vendor_services.service_id can point to services.id (legacy) OR service_catalog.id (catalog-origin)
       let servicesQuery = `
@@ -2708,6 +3134,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } : undefined;
         const taxCategoryId = metadata?.taxCategoryId ?? metadata?.tax_category ?? null;
         const couponEligible = metadata?.couponEligible !== false;
+        const inActivePackage = includedVendorServiceIds.has(row.id) || includedLegacyServiceIds.has(row.service_id);
+        const activePackagePurchaseId = vendorServiceIdToPackagePurchaseId.get(row.id) || undefined;
         return {
           id: row.id,
           serviceId: row.service_id,
@@ -2735,17 +3163,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           isEnabled: true,
           requiresPetProfile: false,
           requiresAddress: false,
+          inActivePackage: !!inActivePackage,
+          activePackagePurchaseId: inActivePackage ? activePackagePurchaseId : undefined,
         };
       });
 
       const services = formattedServices.filter((s: any) => !s.isPackage);
       const packages = formattedServices.filter((s: any) => s.isPackage);
+      const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
 
       return c.json({
         success: true,
         services,
         packages,
-        count: formattedServices.length
+        count: formattedServices.length,
+        hasActivePackage: hasActivePackageForVendor,
       });
 
     } catch (error: any) {
@@ -2904,6 +3336,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
       const serviceStyle = c.req.query('serviceStyle');
+      const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
       const limit = parseInt(c.req.query('limit') || '20', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
@@ -2975,6 +3408,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const vendorResults = await query(vendorQuery, params);
       let vendors = vendorResults.rows;
+
+      // Vendor IDs where this customer has an active package (for "Package active" badge)
+      let vendorIdsWithActivePackage = new Set<string>();
+      if (customerPhone) {
+        try {
+          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          if (customerId) {
+            const activePackages = await query(
+              `SELECT DISTINCT vendor_id FROM package_purchases
+               WHERE customer_id = $1 AND status = 'active'
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)
+                 AND (expires_at IS NULL OR expires_at > NOW())`,
+              [customerId]
+            );
+            (activePackages.rows || []).forEach((r: any) => {
+              if (r.vendor_id) vendorIdsWithActivePackage.add(r.vendor_id);
+            });
+          }
+        } catch (_) {}
+      }
 
       // Enrich vendors with unified card shape: photoUrl, specializations, nextAvailable, distanceText, serviceStyles
       const enrichedVendors = (await Promise.all(
@@ -3081,6 +3534,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             address: vendor.address,
             city: vendor.city,
             state: vendor.state,
+            hasActivePackage: vendorIdsWithActivePackage.has(vendor.id),
           };
         })
       )).filter(Boolean);
@@ -4167,7 +4621,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vs.publish_status,
           vs.category as category_name,
           vs.sub_category as sub_category_name,
-          vs.is_custom_service as is_package,
           vs.metadata as package_details,
           s.name as base_service_name,
           s.description as base_description
@@ -4190,21 +4643,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const servicesResult = await query(servicesQuery, params);
 
-      const services = servicesResult.rows.map(s => ({
-        id: s.id,
-        serviceId: s.service_id,
-        serviceName: s.service_name || s.base_service_name,
-        description: s.description || s.base_description || '',
-        price: parseFloat(s.price || 0),
-        duration: s.duration || 30,
-        serviceStyle: s.service_style,
-        categoryName: s.category_name || s.category,
-        subCategoryName: s.sub_category_name || s.sub_category,
-        isPackage: s.is_package,
-        packageDetails: s.package_details,
-        isEnabled: s.is_enabled,
-        publishStatus: s.publish_status,
-      }));
+      const services = servicesResult.rows.map(s => {
+        const meta = typeof s.package_details === 'string' ? (s.package_details ? JSON.parse(s.package_details) : {}) : (s.package_details || {});
+        const isPackage = !!(meta?.isPackage || meta?.type === 'package');
+        return {
+          id: s.id,
+          serviceId: s.service_id,
+          serviceName: s.service_name || s.base_service_name,
+          description: s.description || s.base_description || '',
+          price: parseFloat(s.price || 0),
+          duration: s.duration || 30,
+          serviceStyle: s.service_style,
+          categoryName: s.category_name || s.category,
+          subCategoryName: s.sub_category_name || s.sub_category,
+          isPackage,
+          packageDetails: isPackage && (meta?.totalSessions != null || meta?.validityDays != null) ? { totalSessions: meta.totalSessions, validityDays: meta.validityDays, sessionDuration: meta.sessionDuration } : meta,
+          isEnabled: s.is_enabled,
+          publishStatus: s.publish_status,
+        };
+      });
 
       // Group by service style
       const groupedServices = {

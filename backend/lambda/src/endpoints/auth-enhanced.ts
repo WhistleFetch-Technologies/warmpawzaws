@@ -38,12 +38,27 @@ import { isValidUUID } from '../types/entities';
 
 const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
 
+/**
+ * Normalize phone to canonical form for OTP storage/lookup.
+ * Ensures "9326977987", "+919326977987", "919326977987" all match.
+ * Indian 10-digit numbers: use last 10 digits. Others: digits only.
+ */
+function normalizePhoneForOtp(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const last10 = digits.slice(-10);
+    if (/^[6-9]\d{9}$/.test(last10)) return last10; // Indian mobile
+  }
+  return digits || phone;
+}
+
 async function createOtp(phone: string, code: string, purpose: string = 'login'): Promise<void> {
+  const canonicalPhone = normalizePhoneForOtp(phone);
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
   await insert('otp_tokens', {
-    phone,
+    phone: canonicalPhone,
     code,
     purpose,
     expires_at: expiresAt,
@@ -52,62 +67,32 @@ async function createOtp(phone: string, code: string, purpose: string = 'login')
 }
 
 async function verifyOtp(phone: string, code: string): Promise<boolean> {
-  console.log(`[DEBUG] verifyOtp called: phone=${phone}, code=${code}`);
-  const records = await select('otp_tokens', {
-    phone,
-    code,
-    is_used: false,
-  });
-  console.log(`[DEBUG] Found ${records.length} OTP records for phone=${phone}, code=${code}`);
+  const canonicalPhone = normalizePhoneForOtp(phone);
+  // Try canonical first, then original (for backward compatibility with existing tokens)
+  const phonesToTry = [canonicalPhone];
+  const alt = phone.replace(/\D/g, '').slice(-10);
+  if (alt && alt !== canonicalPhone) phonesToTry.push(alt);
+  if (phone !== canonicalPhone && phone !== alt) phonesToTry.push(phone);
 
-  if (records.length === 0) {
-    // Try to find any OTP for this phone to debug
-    const allRecords = await select('otp_tokens', { phone, is_used: false });
-    console.log(`[DEBUG] Found ${allRecords.length} unused OTPs for phone=${phone} (any code)`);
-    if (allRecords.length > 0) {
-      console.log(`[DEBUG] Available OTP codes: ${allRecords.map((r: any) => r.code || r.otp_code).join(', ')}`);
-    }
-    return false;
-  }
+  for (const p of phonesToTry) {
+    const records = await select('otp_tokens', {
+      phone: p,
+      code,
+      is_used: false,
+    });
 
-  try {
+    if (records.length === 0) continue;
+
     const record = records[0];
-    console.log(`[DEBUG] OTP record found: id=${record?.id}, expires_at=${record?.expires_at}, is_used=${record?.is_used}`);
-    console.log(`[DEBUG] Full record: ${JSON.stringify(record)}`);
-    
-    if (!record) {
-      console.log(`[DEBUG] ERROR: Record is null or undefined`);
-      return false;
-    }
-    
-    if (!record.expires_at) {
-      console.log(`[DEBUG] ERROR: expires_at is missing from record`);
-      return false;
-    }
-    
-    const expiresAt = new Date(record.expires_at);
-    const now = new Date();
-    console.log(`[DEBUG] Expiration check: expires_at=${expiresAt.toISOString()}, now=${now.toISOString()}, expired=${expiresAt < now}`);
-    
-    if (expiresAt < now) {
-      console.log(`[DEBUG] OTP expired: ${expiresAt.toISOString()} < ${now.toISOString()}`);
-      return false;
-    }
+    if (new Date(record.expires_at) < new Date()) return false;
 
-    console.log(`[DEBUG] Marking OTP as used: id=${record.id}`);
     await query(
       'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
       [record.id]
     );
-    console.log(`[DEBUG] OTP marked as used successfully`);
-
     return true;
-  } catch (error: any) {
-    console.error(`[DEBUG] ERROR in verifyOtp after finding record:`, error);
-    console.error(`[DEBUG] Error message: ${error?.message}`);
-    console.error(`[DEBUG] Error stack: ${error?.stack}`);
-    throw error;
   }
+  return false;
 }
 
 /**

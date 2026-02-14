@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, ChevronDown, ChevronUp, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { getRoleConfig, RoleId, ServiceStyle } from './roleConfig';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 
@@ -43,6 +44,8 @@ interface Provider {
   distance?: number | null;
   isVerified?: boolean;
   isIndividualProvider?: boolean;
+  nextAvailableSlot?: string;
+  specialization?: string;
   services: {
     id: string;
     serviceId: string;
@@ -53,6 +56,7 @@ interface Provider {
     duration: number;
     description?: string;
     category?: string;
+    inActivePackage?: boolean;
   }[];
 }
 
@@ -86,6 +90,7 @@ export function UniversalServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [expandedServiceIds, setExpandedServiceIds] = useState<Set<string>>(new Set()); // Collapsible description
 
   // Check if we're in profile view mode (vendorId provided and single provider)
   const isProfileView = vendorId && providers.length === 1;
@@ -165,16 +170,22 @@ export function UniversalServicesByStyle({
             // Fetch services for this provider
             let services: any[] = [];
             try {
+              const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
               if (isStaff) {
                 // For staff, services are linked via vendor_services of their vendor
                 const vendorId = provider.vendorId || providerId;
                 const servicesResponse = await apiClient.get(
-                  `/customer/vendor/${vendorId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}`
+                  `/customer/vendor/${vendorId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
                 ) as any;
                 
                 // ✅ FIX: Handle response format correctly - API returns { success: true, services: [...] }
-                const servicesArray = servicesResponse?.services || (Array.isArray(servicesResponse) ? servicesResponse : []);
-                
+                // API returns { services, packages }; merge both so packages appear in list with isPackage flag
+                let servicesArray = [
+                  ...(servicesResponse?.services || []),
+                  ...(servicesResponse?.packages || []),
+                ];
+                if (servicesArray.length === 0 && Array.isArray(servicesResponse)) servicesArray = servicesResponse;
+
                 services = servicesArray.map((s: any) => ({
                   id: s.id || s.service_id,
                   serviceId: s.id || s.service_id,
@@ -184,17 +195,22 @@ export function UniversalServicesByStyle({
                   vendorDiscount: s.vendor_discount || s.discount || 0,
                   duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
                   description: s.description || s.custom_description,
-                  category: s.category_name || s.category
+                  category: s.category_name || s.category,
+                  isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
+                  inActivePackage: !!s.inActivePackage,
                 }));
               } else {
                 // For solo vendors, fetch their services
                 const servicesResponse = await apiClient.get(
-                  `/customer/vendor/${providerId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}`
+                  `/customer/vendor/${providerId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
                 ) as any;
-                
-                // ✅ FIX: Handle response format correctly - API returns { success: true, services: [...] }
-                const servicesArray = servicesResponse?.services || (Array.isArray(servicesResponse) ? servicesResponse : []);
-                
+
+                let servicesArray = [
+                  ...(servicesResponse?.services || []),
+                  ...(servicesResponse?.packages || []),
+                ];
+                if (servicesArray.length === 0 && Array.isArray(servicesResponse)) servicesArray = servicesResponse;
+
                 services = servicesArray.map((s: any) => ({
                   id: s.id || s.service_id,
                   serviceId: s.id || s.service_id,
@@ -204,7 +220,9 @@ export function UniversalServicesByStyle({
                   vendorDiscount: s.vendor_discount || s.discount || 0,
                   duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
                   description: s.description || s.custom_description,
-                  category: s.category_name || s.category
+                  category: s.category_name || s.category,
+                  isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
+                  inActivePackage: !!s.inActivePackage,
                 }));
               }
             } catch (serviceError) {
@@ -240,6 +258,8 @@ export function UniversalServicesByStyle({
               distance: provider.distance || null,
               isVerified: provider.isVerified,
               isIndividualProvider: provider.isIndividualProvider || !provider.vendorId,
+              nextAvailableSlot: provider.nextAvailableSlot ?? (typeof provider.nextAvailability === 'string' ? provider.nextAvailability : provider.nextAvailability?.formattedDisplay),
+              specialization: provider.specialization || provider.specialisation,
               services: services
             };
           })
@@ -653,12 +673,6 @@ export function UniversalServicesByStyle({
                   <span className="text-gray-700 leading-relaxed">{address}</span>
                 </div>
               )}
-              {phoneNumber && (
-                <div className="flex items-center gap-3 text-sm">
-                  <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="text-gray-700">{phoneNumber}</span>
-                </div>
-              )}
               {serviceStyle === 'tele' && (
                 <div className="flex items-center gap-3 text-sm">
                   <Video className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -827,6 +841,9 @@ export function UniversalServicesByStyle({
                   <div className="space-y-3">
                     {sortedServices.map((service) => {
                       const isSelected = selectedServices.has(service.id) || selectedServices.has(service.serviceId);
+                      const profileServiceKey = `profile-${service.id}`;
+                      const isDescExpanded = expandedServiceIds.has(profileServiceKey);
+                      const hasDescription = !!service.description?.trim();
                       return (
                         <div
                           key={service.id}
@@ -841,6 +858,14 @@ export function UniversalServicesByStyle({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {(service as any).isPackage && (
+                                    <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                  )}
+                                  {(service as any).inActivePackage && (
+                                    <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-[#FF8C42] border border-orange-200">In your package</span>
+                                  )}
+                                </div>
                                 {isSelected && (
                                   <span className="px-2.5 py-0.5 bg-green-500 text-white rounded-full text-xs font-semibold flex items-center gap-1 flex-shrink-0">
                                     <Check className="w-3 h-3" />
@@ -848,13 +873,28 @@ export function UniversalServicesByStyle({
                                   </span>
                                 )}
                               </div>
-                              {service.description && (
-                                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.description}</p>
+                              {hasDescription && (
+                                <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                                  <p className={`text-sm text-gray-600 ${!isDescExpanded ? 'line-clamp-2' : ''}`}>{service.description}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedServiceIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(profileServiceKey)) next.delete(profileServiceKey);
+                                      else next.add(profileServiceKey);
+                                      return next;
+                                    })}
+                                    className="text-xs text-orange-600 font-medium mt-1 flex items-center gap-0.5 hover:underline"
+                                  >
+                                    {isDescExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                    {isDescExpanded ? 'Show less' : 'Show more'}
+                                  </button>
+                                </div>
                               )}
                               <div className="flex items-center gap-4 text-xs text-gray-500">
                                 <span className="flex items-center gap-1.5 bg-gray-100 px-2.5 py-1 rounded-lg">
                                   <Clock className="w-3.5 h-3.5 text-gray-600" />
-                                  {service.duration} mins
+                                  {(service.duration ?? 0)} mins
                                 </span>
                                 {service.category && (
                                   <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-gray-600">{service.category}</span>
@@ -968,7 +1008,7 @@ export function UniversalServicesByStyle({
                   <p className="text-sm font-medium text-gray-700">
                     {selectedServices.size} service{selectedServices.size > 1 ? 's' : ''} selected
                   </p>
-                  <p className="text-lg font-bold text-orange-600">₹{totalPrice}</p>
+                  <p className="text-lg font-bold text-orange-600">{formatPriceWithSymbol(totalPrice)}</p>
                 </div>
                 <button
                   onClick={() => setSelectedServices(new Set())}
@@ -987,7 +1027,7 @@ export function UniversalServicesByStyle({
             >
               {selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
-                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (₹${totalPrice})`
+                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
           </div>
@@ -1114,9 +1154,9 @@ export function UniversalServicesByStyle({
                               {provider.city}
                             </div>
                           )}
-                          {provider.distance !== null && provider.distance !== undefined && (
+                          {serviceStyle === 'at_center' && provider.distance != null && (
                             <span className="text-xs text-blue-600 font-medium">
-                              {provider.distance} km away
+                              {Number(provider.distance).toFixed(1)} km away
                             </span>
                           )}
                         </div>
@@ -1124,6 +1164,15 @@ export function UniversalServicesByStyle({
                         {provider.experienceYears && provider.providerType !== 'vendor' && (
                           <div className="text-xs text-gray-500 mt-1">
                             {provider.experienceYears} years experience
+                          </div>
+                        )}
+                        {provider.specialization && (
+                          <Badge variant="secondary" className="text-xs mt-1">{provider.specialization}</Badge>
+                        )}
+                        {provider.nextAvailableSlot && (
+                          <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+                            <Clock className="w-3 h-3" />
+                            <span>Next: {provider.nextAvailableSlot}</span>
                           </div>
                         )}
                       </div>
@@ -1148,23 +1197,32 @@ export function UniversalServicesByStyle({
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
                       Available Services ({provider.services.length})
                     </h4>
-                    {provider.services.map((service) => (
+                    {provider.services.map((service) => {
+                        const serviceKey = `${provider.providerId}-${service.id}`;
+                        const isDescExpanded = expandedServiceIds.has(serviceKey);
+                        const hasDescription = !!service.description?.trim();
+                        return (
                       <div 
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                       >
                         <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h5 className="font-medium text-gray-900">{service.name}</h5>
-                            {service.description && (
-                              <p className="text-gray-500 text-sm mt-1 line-clamp-2">
-                                {service.description}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-3 mt-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-medium text-gray-900">{service.name}</h5>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {(service as any).isPackage && (
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                )}
+                                {(service as any).inActivePackage && (
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-[#FF8C42] border border-orange-200">In your package</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 mt-2 flex-wrap">
                               <Badge variant="outline" className="text-xs">
                                 <Clock className="w-3 h-3 mr-1" />
-                                {service.duration} mins
+                                {(service.duration ?? 0)} mins
                               </Badge>
                               {service.category && (
                                 <Badge variant="secondary" className="text-xs">
@@ -1172,9 +1230,31 @@ export function UniversalServicesByStyle({
                                 </Badge>
                               )}
                             </div>
+                            {hasDescription && (
+                              <div className="mt-2">
+                                <p className={`text-gray-500 text-sm ${!isDescExpanded ? 'line-clamp-2' : ''}`}>
+                                  {service.description}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedServiceIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(serviceKey)) next.delete(serviceKey);
+                                      else next.add(serviceKey);
+                                      return next;
+                                    });
+                                  }}
+                                  className="text-xs text-orange-600 font-medium mt-1 flex items-center gap-0.5 hover:underline"
+                                >
+                                  {isDescExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                  {isDescExpanded ? 'Show less' : 'Show more'}
+                                </button>
+                              </div>
+                            )}
                           </div>
-                          <div className="text-right ml-4">
-                            {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
+                          <div className="text-right ml-4 flex-shrink-0">
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
@@ -1193,7 +1273,7 @@ export function UniversalServicesByStyle({
                           </div>
                         </div>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
 
@@ -1203,7 +1283,7 @@ export function UniversalServicesByStyle({
                     <div className="text-sm text-gray-600">
                       {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
                       {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from ₹{
+                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
                           Math.min(...provider.services.map(s => {
                             // ✅ FIX GAP-7.1: Use discounted price if available
                             const basePrice = s.originalPrice || s.price;
@@ -1212,7 +1292,7 @@ export function UniversalServicesByStyle({
                               : basePrice;
                             return finalPrice;
                           }))
-                        }</span>
+                        )}</span>
                       )}
                     </div>
                     <Button

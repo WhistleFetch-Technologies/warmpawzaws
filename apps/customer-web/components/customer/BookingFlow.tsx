@@ -215,17 +215,23 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
     try {
       setLoading(true);
       const response = await apiClient.get<any>(`/services/${serviceId}`);
-      if (response.service) {
-        setService(response.service);
+      
+      // ✅ FIX: Handle both response formats (service object or flat structure)
+      const serviceData = response.service || response;
+      
+      if (serviceData && (serviceData.id || serviceData.serviceId)) {
+        setService(serviceData);
         
         // Determine specialized service type (if any)
-        const specialized = getSpecializedServiceType(response.service);
+        const specialized = getSpecializedServiceType(serviceData);
         setSpecializedType(specialized);
         
         // Load specialized service data if needed
-        if (specialized) {
-          await loadSpecializedServiceData(specialized, response.service.vendor_id);
+        if (specialized && serviceData.vendor_id) {
+          await loadSpecializedServiceData(specialized, serviceData.vendor_id);
         }
+      } else {
+        console.error('Invalid service response:', response);
       }
     } catch (err) {
       console.error('Error loading service:', err);

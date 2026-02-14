@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { copyTextToClipboard } from '@/lib/shareUtils';
+import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from './BookingDetailModal';
@@ -530,17 +531,20 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  <span className="capitalize">{booking.serviceStyle.replace('_', ' ')}</span>
+                  <span>{getServiceStyleDisplayLabel(booking.serviceStyle, booking.serviceType, booking.serviceName)}</span>
                 </div>
               </div>
 
               {/* ✅ ENHANCED: Quick Action Buttons (Directions for at_center, Tracker for at_home, Call, Review) */}
-              {/* ✅ Directions button for at_center services (NEVER show for at_home - check both serviceType and serviceStyle) */}
+              {/* ✅ Directions button for at_center only - NEVER for at_home, tele, or video */}
               {(() => {
                 const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
-                const isAtCenter = booking.serviceStyle === 'at_center' || booking.serviceType === 'at_center';
-                // Only show Directions if it's at_center AND NOT at_home
-                return !isAtHome && isAtCenter && ['confirmed', 'pending', 'completed'].includes(booking.status);
+                const isTeleOrVideo = ['tele', 'video_consultation', 'video', 'online'].includes(booking.serviceStyle || '') ||
+                  ['tele', 'video_consultation', 'video', 'online'].includes(booking.serviceType || '') ||
+                  (booking.serviceName || '').toLowerCase().includes('video') ||
+                  (booking.serviceName || '').toLowerCase().includes('tele');
+                const isAtCenter = (booking.serviceStyle === 'at_center' || booking.serviceType === 'at_center') && !isTeleOrVideo;
+                return !isAtHome && isAtCenter && !isTeleOrVideo && ['confirmed', 'pending', 'completed'].includes(booking.status);
               })() && (
                 <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
                   <button
@@ -731,7 +735,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               )}
 
               <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                <span className="font-medium">₹{booking.price}</span>
+                <span className="font-medium">{formatPriceWithSymbol(booking.price)}</span>
                 
                 {/* ✅ Action Buttons */}
                 {canCancelOrReschedule(booking) && (
@@ -793,7 +797,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                   <span className="font-semibold">{estimatedRefund.percentage}%</span> refund.
                 </p>
                 <p className="text-lg font-bold text-blue-800 mt-1">
-                  Estimated Refund: ₹{estimatedRefund.amount.toFixed(2)}
+                  Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
                 </p>
               </div>
             )}
