@@ -25944,7 +25944,7 @@ var require_config = __commonJS({
        *     the configuration object. Defaults to `false`.
        *   @see constructor
        */
-      update: function update17(options, allowUnknownKeys) {
+      update: function update18(options, allowUnknownKeys) {
         allowUnknownKeys = allowUnknownKeys || false;
         options = this.extractCredentials(options);
         AWS.util.each.call(this, options, function(key, value) {
@@ -31532,7 +31532,7 @@ var require_util = __commonJS({
           }
         }
       },
-      update: function update17(obj1, obj2) {
+      update: function update18(obj1, obj2) {
         util3.each(obj2, function iterator(key, item) {
           obj1[key] = item;
         });
@@ -44407,12 +44407,12 @@ var require_channel_credentials = __commonJS({
           this.secureContextWatchers = [];
         }
       }
-      handleCaCertificateUpdate(update17) {
-        this.latestCaUpdate = update17;
+      handleCaCertificateUpdate(update18) {
+        this.latestCaUpdate = update18;
         this.maybeUpdateWatchers();
       }
-      handleIdentityCertitificateUpdate(update17) {
-        this.latestIdentityUpdate = update17;
+      handleIdentityCertitificateUpdate(update18) {
+        this.latestIdentityUpdate = update18;
         this.maybeUpdateWatchers();
       }
       hasReceivedUpdates() {
@@ -62528,12 +62528,12 @@ var require_server_credentials = __commonJS({
         const secureContextOptions = this.calculateSecureContextOptions();
         this.updateSecureContextOptions(secureContextOptions);
       }
-      handleCaCertificateUpdate(update17) {
-        this.latestCaUpdate = update17;
+      handleCaCertificateUpdate(update18) {
+        this.latestCaUpdate = update18;
         this.finalizeUpdate();
       }
-      handleIdentityCertitificateUpdate(update17) {
-        this.latestIdentityUpdate = update17;
+      handleIdentityCertitificateUpdate(update18) {
+        this.latestIdentityUpdate = update18;
         this.finalizeUpdate();
       }
     };
@@ -122622,6 +122622,8 @@ async function requireAdminAuth(c) {
     headers["authorization"] = authHeader;
     const result = await extractAndVerifyAuthToken2(headers);
     if (!result.valid || !result.payload) {
+      const reason = result.error || "unknown";
+      console.warn("[ADMIN AUTH] Token verification failed:", reason, "tokenPrefix:", token.slice(0, 20) + "...");
       return { authorized: false, error: "Invalid or expired token" };
     }
     const groups = result.payload["cognito:groups"];
@@ -130150,11 +130152,20 @@ var BaseHandlerEnhanced = class {
 init_cognito_client();
 var import_auth = __toESM(require_auth());
 var JIO_LOGIN_OTP_TEMPLATE_ID = "1207177028377787269";
+function normalizePhoneForOtp(phone) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length >= 10) {
+    const last10 = digits.slice(-10);
+    if (/^[6-9]\d{9}$/.test(last10)) return last10;
+  }
+  return digits || phone;
+}
 async function createOtp(phone, code, purpose = "login") {
+  const canonicalPhone = normalizePhoneForOtp(phone);
   const expiresAt = /* @__PURE__ */ new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 5);
   await insert("otp_tokens", {
-    phone,
+    phone: canonicalPhone,
     code,
     purpose,
     expires_at: expiresAt,
@@ -130162,23 +130173,27 @@ async function createOtp(phone, code, purpose = "login") {
   });
 }
 async function verifyOtp(phone, code) {
-  const records = await select("otp_tokens", {
-    phone,
-    code,
-    is_used: false
-  });
-  if (records.length === 0) {
-    return false;
+  const canonicalPhone = normalizePhoneForOtp(phone);
+  const phonesToTry = [canonicalPhone];
+  const alt = phone.replace(/\D/g, "").slice(-10);
+  if (alt && alt !== canonicalPhone) phonesToTry.push(alt);
+  if (phone !== canonicalPhone && phone !== alt) phonesToTry.push(phone);
+  for (const p of phonesToTry) {
+    const records = await select("otp_tokens", {
+      phone: p,
+      code,
+      is_used: false
+    });
+    if (records.length === 0) continue;
+    const record = records[0];
+    if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) return false;
+    await query(
+      "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
+      [record.id]
+    );
+    return true;
   }
-  const record = records[0];
-  if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) {
-    return false;
-  }
-  await query(
-    "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
-    [record.id]
-  );
-  return true;
+  return false;
 }
 async function sendSmsViaSns(phone, message2) {
   const result = await sendSMS({
@@ -131549,6 +131564,11 @@ var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
           );
         }
       }
+      await update(
+        "vendor_onboarding_applications",
+        { id: applicationId },
+        { status: "UNDER_REVIEW", updated_at: (/* @__PURE__ */ new Date()).toISOString() }
+      );
       console.log("\u2705 [SUBMIT] Application submitted successfully:", applicationId);
       return this.success({
         message: "Application submitted successfully",
@@ -131611,9 +131631,10 @@ var AdminReviewApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
         return this.error("Application not found", 404, "NOT_FOUND", void 0, requestId);
       }
       const application = apps[0];
-      if (application.status !== "UNDER_REVIEW") {
+      const isReviewable = application.status === "UNDER_REVIEW" || application.status === "SUBMITTED";
+      if (!isReviewable) {
         return this.error(
-          "Application is not in UNDER_REVIEW status",
+          `Application is not in reviewable status (current: ${application.status}). Expected UNDER_REVIEW or SUBMITTED.`,
           400,
           "VALIDATION_ERROR",
           void 0,
@@ -132543,15 +132564,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select26 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select26("staff", { id: staffId });
+    const { select: select27 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select27("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors = await select26("vendors", { id: vendorId });
+    const vendors = await select27("vendors", { id: vendorId });
     if (vendors.length > 0 && vendors[0].latitude && vendors[0].longitude) {
       return {
         latitude: parseFloat(vendors[0].latitude),
@@ -132566,8 +132587,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select26 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select26("staff", { id: staffId });
+    const { select: select27 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select27("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -132918,6 +132939,134 @@ async function getRuleNumberArray(roleId, ruleKey, flow, serviceStyle, serviceTy
   return Array.isArray(def) ? def : [5, 10, 20];
 }
 
+// src/lib/services/cancellation-policy-service.ts
+init_rds_connection();
+function serviceTypeToLocation(serviceType) {
+  const t = (serviceType || "").toLowerCase();
+  if (t === "at_home") return "home";
+  if (t === "at_center" || t === "at_vendor") return "clinic";
+  if (t === "tele") return "tele";
+  return "all";
+}
+async function getRefundTierForCancellation(booking, cancelledBy, options) {
+  const serviceLocation = serviceTypeToLocation(booking.service_type);
+  let vendorRoleName = null;
+  if (booking.vendor_id) {
+    const vendorRoleResult = await query(
+      `SELECT r.name AS role_name
+       FROM vendors v
+       JOIN roles r ON r.id = v.role_id
+       WHERE v.id = $1 AND r.is_active = true
+       LIMIT 1`,
+      [booking.vendor_id]
+    ).catch(() => ({ rows: [] }));
+    const rows2 = Array.isArray(vendorRoleResult) ? vendorRoleResult : vendorRoleResult.rows || [];
+    vendorRoleName = rows2[0]?.role_name ?? null;
+  }
+  const cancelledByParam = cancelledBy === "pet_parent" ? "pet_parent" : "provider";
+  if (cancelledBy === "provider") {
+    const vendorReason = options?.vendorCancellationReason ? String(options.vendorCancellationReason).toLowerCase() : null;
+    const tiersResult2 = await query(
+      `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
+       FROM vendor_refund_tiers
+       WHERE is_active = true
+         AND cancelled_by = 'provider'
+         AND (vendor_cancellation_reason IS NULL OR vendor_cancellation_reason = $1 OR $1 IS NULL)
+         AND (
+           service_location = 'all'
+           OR service_location = $2
+           OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
+         )
+         AND (
+           COALESCE(array_length(vendor_types, 1), 0) = 0
+           OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
+         )
+       ORDER BY vendor_cancellation_reason DESC NULLS LAST
+       LIMIT 1`,
+      [vendorReason, serviceLocation, vendorRoleName || null]
+    ).catch(() => ({ rows: [] }));
+    const rows2 = Array.isArray(tiersResult2) ? tiersResult2 : tiersResult2.rows || [];
+    const tier2 = rows2[0];
+    if (!tier2) return null;
+    return {
+      refundPercentage: Number(tier2.refund_percentage ?? 100),
+      cancellationFee: Number(tier2.cancellation_fee ?? 0),
+      maxPartialRefundPercentage: tier2.max_partial_refund_percentage != null ? Number(tier2.max_partial_refund_percentage) : null,
+      tierId: tier2.id,
+      tierName: tier2.name
+    };
+  }
+  let computedHours = null;
+  if (typeof options?.hoursUntilBooking === "number" && Number.isFinite(options.hoursUntilBooking)) {
+    computedHours = options.hoursUntilBooking;
+  } else {
+    const rawDateTime = (booking.booking_datetime ? new Date(booking.booking_datetime) : null) || (booking.scheduled_at ? new Date(booking.scheduled_at) : null) || /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}`);
+    if (!isNaN(rawDateTime.getTime())) {
+      computedHours = (rawDateTime.getTime() - Date.now()) / (1e3 * 60 * 60);
+    }
+  }
+  if (computedHours == null || !Number.isFinite(computedHours)) {
+    console.warn("[RefundTier] Unable to compute hours until booking for tier evaluation:", booking.id);
+    return null;
+  }
+  const h = Math.max(0, computedHours);
+  const tiersResult = await query(
+    `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
+     FROM vendor_refund_tiers
+     WHERE is_active = true
+       AND cancelled_by = 'pet_parent'
+       AND (
+         (hours_operator IS NOT NULL AND hours_threshold IS NOT NULL AND (
+           (hours_operator = 'gte' AND $1 >= hours_threshold) OR
+           (hours_operator = 'lte' AND $1 <= hours_threshold) OR
+           (hours_operator = 'gt' AND $1 > hours_threshold) OR
+           (hours_operator = 'lt' AND $1 < hours_threshold)
+         ))
+         OR
+         ((hours_operator IS NULL OR hours_threshold IS NULL) AND hours_before_service <= $1)
+       )
+       AND (
+         service_location = 'all'
+         OR service_location = $2
+         OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
+       )
+       AND (
+         COALESCE(array_length(vendor_types, 1), 0) = 0
+         OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
+       )
+     ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST
+     LIMIT 1`,
+    [h, serviceLocation, vendorRoleName || null]
+  ).catch(() => ({ rows: [] }));
+  const rows = Array.isArray(tiersResult) ? tiersResult : tiersResult.rows || [];
+  const tier = rows[0];
+  if (!tier) return null;
+  const refundPercentage = Number(tier.refund_percentage ?? 75);
+  const cancellationFee = Number(tier.cancellation_fee ?? 0);
+  const maxPartial = tier.max_partial_refund_percentage != null ? Number(tier.max_partial_refund_percentage) : null;
+  return {
+    refundPercentage,
+    cancellationFee,
+    maxPartialRefundPercentage: Number.isFinite(maxPartial) ? maxPartial : null,
+    tierId: tier.id,
+    tierName: tier.name
+  };
+}
+function computeRefundFromTier(totalAmount, tier, fallbackPercentage = 100, fallbackFee = 0) {
+  const refundPercentage = tier ? tier.refundPercentage : fallbackPercentage;
+  const cancellationFee = tier ? tier.cancellationFee : fallbackFee;
+  let effectivePercentage = refundPercentage;
+  if (tier?.maxPartialRefundPercentage != null && effectivePercentage > tier.maxPartialRefundPercentage) {
+    effectivePercentage = tier.maxPartialRefundPercentage;
+  }
+  const refundAmount = Math.max(0, totalAmount * effectivePercentage / 100 - cancellationFee);
+  return {
+    refundAmount,
+    refundPercentage: effectivePercentage,
+    cancellationFee
+  };
+}
+
 // src/endpoints/bookings-enhanced.ts
 var import_bookings = __toESM(require_bookings());
 var MAX_ADVANCE_BOOKING_DAYS = 60;
@@ -133008,7 +133157,8 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       customerPhone,
       customerName,
       petName,
-      notes: notesFromSchema
+      notes: notesFromSchema,
+      packagePurchaseId
     } = validationResult.data;
     const amount = amountFromSchema ?? totalAmount;
     const serviceType = rawServiceType === "online" ? "tele" : rawServiceType || "at_vendor";
@@ -133372,10 +133522,40 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         let subscriptionId = null;
         let isSubscriptionBooking = false;
         let finalAmount = amount || 0;
+        let isPackageBooking = false;
+        let packagePurchaseIdToUse = null;
+        let packageSessionNumberToUse = null;
+        let pkgForDeduction = null;
+        if (packagePurchaseId) {
+          try {
+            const packageResult = await query(
+              `SELECT id, remaining_sessions, unlimited_usage, total_sessions
+               FROM package_purchases
+               WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
+                 AND status = 'active'
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)`,
+              [packagePurchaseId, customerId, vendorId]
+            );
+            if (packageResult.rows?.length > 0) {
+              const pkg = packageResult.rows[0];
+              const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
+              packagePurchaseIdToUse = pkg.id;
+              packageSessionNumberToUse = sessionsUsed + 1;
+              pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
+              isPackageBooking = true;
+              finalAmount = 0;
+              console.log(`[BOOKING] \u2705 Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount \u20B90.`);
+            }
+          } catch (pkgErr) {
+            console.warn("[BOOKING] Package check failed:", pkgErr);
+          }
+        }
         try {
-          const serviceCategory = service.category || baseServices[0]?.category || null;
-          const activeSubscriptions = await query(
-            `SELECT * FROM customer_subscriptions 
+          if (!isPackageBooking) {
+            const serviceCategory = service.category || baseServices[0]?.category || null;
+            const activeSubscriptions = await query(
+              `SELECT * FROM customer_subscriptions 
              WHERE customer_id = $1 
              AND status = 'active'
              AND start_date <= CURRENT_DATE
@@ -133388,27 +133568,29 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
                CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
                CASE WHEN service_category = $2 THEN 0 ELSE 1 END
              LIMIT 1`,
-            [customerId, serviceCategory, vendorId]
-          );
-          const subscriptions = activeSubscriptions.rows || [];
-          if (subscriptions.length > 0) {
-            const subscription = subscriptions[0];
-            subscriptionId = subscription.id;
-            isSubscriptionBooking = true;
-            finalAmount = 0;
-            await query(
-              `UPDATE customer_subscriptions 
+              [customerId, serviceCategory, vendorId]
+            );
+            const subscriptions = activeSubscriptions.rows || [];
+            if (subscriptions.length > 0) {
+              const subscription = subscriptions[0];
+              subscriptionId = subscription.id;
+              isSubscriptionBooking = true;
+              finalAmount = 0;
+              await query(
+                `UPDATE customer_subscriptions 
                SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
                WHERE id = $1`,
-              [subscriptionId]
-            );
-            console.log(`[BOOKING] \u2705 Active unlimited subscription found: ${subscriptionId}. Setting amount to \u20B90.`);
+                [subscriptionId]
+              );
+              console.log(`[BOOKING] \u2705 Active unlimited subscription found: ${subscriptionId}. Setting amount to \u20B90.`);
+            }
           }
         } catch (subError) {
           console.warn("[BOOKING] Could not check subscriptions (table may not exist):", subError);
         }
         const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : amount || 0;
-        const calculatedFinalAmount = isSubscriptionBooking ? 0 : calculatedBasePrice;
+        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
+        const paymentStatus = isPackageBooking ? "completed" : isSubscriptionBooking ? "paid" : "pending";
         const bookingData = {
           customer_id: customerId,
           vendor_id: vendorId,
@@ -133420,10 +133602,10 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           address,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount,
-          // ✅ Use calculated amount (may be 0 for subscriptions)
-          status: "pending",
-          payment_status: isSubscriptionBooking ? "paid" : "pending",
-          // ✅ Mark as paid for subscription
+          // ✅ 0 for package or subscription
+          status: isPackageBooking ? "confirmed" : "pending",
+          payment_status: paymentStatus,
+          // ✅ completed for package, paid for subscription
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           subscription_id: subscriptionId,
           // ✅ Track subscription used
@@ -133443,6 +133625,11 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         }
         if (promotionId) {
           bookingData.promotion_id = promotionId;
+        }
+        if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
+          bookingData.package_purchase_id = packagePurchaseIdToUse;
+          bookingData.is_package_session = true;
+          bookingData.package_session_number = packageSessionNumberToUse;
         }
         if (staffId) {
           bookingData.staff_id = staffId;
@@ -133482,7 +133669,27 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           `INSERT INTO bookings (${columns.join(", ")}) VALUES (${placeholders}) RETURNING *`,
           values
         );
-        return insertResult.rows[0];
+        const insertedBooking = insertResult.rows[0];
+        if (packagePurchaseIdToUse && pkgForDeduction && insertedBooking?.id) {
+          if (!pkgForDeduction.unlimited_usage) {
+            await client2.query(
+              `UPDATE package_purchases SET remaining_sessions = remaining_sessions - 1, updated_at = NOW() WHERE id = $1`,
+              [packagePurchaseIdToUse]
+            );
+          }
+          await client2.query(
+            `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
+             VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
+            [
+              packagePurchaseIdToUse,
+              insertedBooking.id,
+              packageSessionNumberToUse,
+              pkgForDeduction.remaining_sessions,
+              pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1
+            ]
+          );
+        }
+        return insertedBooking;
       });
       const booking = result;
       await logAuditEntry({
@@ -134406,35 +134613,43 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (currentBooking.payment_status === "paid" && currentBooking.total_amount > 0) {
         try {
+          const totalAmount = parseFloat(String(currentBooking.total_amount));
           const bookingDateTime2 = /* @__PURE__ */ new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
           const hoursUntilBooking = (bookingDateTime2.getTime() - Date.now()) / (1e3 * 60 * 60);
-          const rulesResult = await query(
-            `SELECT * FROM booking_cancellation_rules
-             WHERE (vendor_id = $1 OR vendor_id IS NULL)
-               AND (service_id = $2 OR service_id IS NULL)
-             ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-             LIMIT 1`,
-            [currentBooking.vendor_id || null, currentBooking.service_id || null]
-          ).catch(() => ({ rows: [] }));
-          let refundPercentage = 100;
-          const rule = rulesResult.rows[0];
-          if (rule) {
-            if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) {
-              refundPercentage = 100;
-            } else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) {
-              refundPercentage = rule.partial_refund_percentage || 50;
-            } else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) {
-              refundPercentage = 25;
-            } else {
-              refundPercentage = 0;
+          const tier = await getRefundTierForCancellation(
+            {
+              id: bookingId2,
+              vendor_id: currentBooking.vendor_id,
+              service_id: currentBooking.service_id,
+              service_type: currentBooking.service_type,
+              booking_date: currentBooking.booking_date,
+              booking_time: currentBooking.booking_time,
+              total_amount: totalAmount
+            },
+            "pet_parent",
+            { hoursUntilBooking }
+          );
+          const computed = tier ? computeRefundFromTier(totalAmount, tier, 100, 0) : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
+          let refundAmount = computed.refundAmount;
+          let refundPercentage = computed.refundPercentage;
+          if (!tier) {
+            const rulesResult = await query(
+              `SELECT * FROM booking_cancellation_rules
+               WHERE (vendor_id = $1 OR vendor_id IS NULL)
+                 AND (service_id = $2 OR service_id IS NULL)
+               ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+               LIMIT 1`,
+              [currentBooking.vendor_id || null, currentBooking.service_id || null]
+            ).catch(() => ({ rows: [] }));
+            const rule = rulesResult.rows?.[0];
+            if (rule) {
+              if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) refundPercentage = 100;
+              else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
+              else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
+              else refundPercentage = 0;
+              refundAmount = totalAmount * refundPercentage / 100;
             }
-          } else {
-            if (hoursUntilBooking >= 24) refundPercentage = 100;
-            else if (hoursUntilBooking >= 12) refundPercentage = 50;
-            else if (hoursUntilBooking >= 6) refundPercentage = 25;
-            else refundPercentage = 0;
           }
-          const refundAmount = parseFloat(currentBooking.total_amount) * refundPercentage / 100;
           if (refundAmount > 0) {
             const payments = await query(
               `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
@@ -136153,23 +136368,23 @@ function createLambdaContext4() {
 async function triggerAutoShipment(orderId, orderType) {
   console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
   try {
-    const { select: select26, insert: insert14, update: update17, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const { select: select27, insert: insert14, update: update18, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
     const { logisticsPartnerService: logisticsPartnerService2 } = await Promise.resolve().then(() => (init_logistics_partner_service(), logistics_partner_service_exports));
     let order = null;
     let orderItems = [];
     let vendorId = null;
     if (orderType === "ecommerce") {
-      const orders = await select26("orders", { id: orderId });
+      const orders = await select27("orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Order not found: ${orderId}`);
         return;
       }
       order = orders[0];
-      const items = await select26("order_items", { order_id: orderId });
+      const items = await select27("order_items", { order_id: orderId });
       orderItems = items;
       vendorId = order.vendor_id;
     } else if (orderType === "pharmacy") {
-      const orders = await select26("pharmacy_orders", { id: orderId });
+      const orders = await select27("pharmacy_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Pharmacy order not found: ${orderId}`);
         return;
@@ -136182,14 +136397,14 @@ async function triggerAutoShipment(orderId, orderType) {
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update17("pharmacy_orders", { id: orderId }, {
+      await update18("pharmacy_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
       console.log(`[AUTO-SHIPMENT] Pharmacy delivery tracking created for ${orderId}`);
       return;
     } else if (orderType === "meal") {
-      const orders = await select26("meal_orders", { id: orderId });
+      const orders = await select27("meal_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Meal order not found: ${orderId}`);
         return;
@@ -136202,7 +136417,7 @@ async function triggerAutoShipment(orderId, orderType) {
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update17("meal_orders", { id: orderId }, {
+      await update18("meal_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
@@ -136219,7 +136434,7 @@ async function triggerAutoShipment(orderId, orderType) {
     }
     let customer = null;
     if (order.customer_id) {
-      const customers = await select26("customers", { id: order.customer_id });
+      const customers = await select27("customers", { id: order.customer_id });
       if (customers.length > 0) customer = customers[0];
     }
     const shippingAddress = typeof order.shipping_address === "string" ? JSON.parse(order.shipping_address) : order.shipping_address;
@@ -136238,7 +136453,7 @@ async function triggerAutoShipment(orderId, orderType) {
     });
     if (!partner) {
       console.log(`[AUTO-SHIPMENT] No partner available, marking for manual processing: ${orderId}`);
-      await update17("orders", { id: orderId }, {
+      await update18("orders", { id: orderId }, {
         order_status: "processing",
         logistics_notes: "Pending manual shipment creation"
       });
@@ -136250,7 +136465,7 @@ async function triggerAutoShipment(orderId, orderType) {
       logistics_partner_id: partner.id,
       status: "pending_creation"
     });
-    await update17("orders", { id: orderId }, {
+    await update18("orders", { id: orderId }, {
       order_status: "processing"
     });
     console.log(`[AUTO-SHIPMENT] Shipment record created for ${orderId}, partner: ${partner.partner_name}`);
@@ -149652,6 +149867,18 @@ async function resolveTargetRolesForDiscovery(category, roleId) {
   }
   return discoverable;
 }
+async function resolveCustomerIdFromPhoneForDiscovery(phone) {
+  if (!phone || typeof phone !== "string") return null;
+  const clean = phone.replace(/[^0-9]/g, "");
+  if (clean.length < 10) return null;
+  const customers = await select("customers", { phone: clean });
+  if (customers.length > 0) return customers[0].id;
+  if (clean.length === 10) {
+    const with91 = await select("customers", { phone: `+91${clean}` });
+    if (with91.length > 0) return with91[0].id;
+  }
+  return null;
+}
 function registerServiceDiscoveryEndpoints(app3) {
   app3.get("/customer/discovery/meta", async (c) => {
     try {
@@ -151927,11 +152154,73 @@ function registerServiceDiscoveryEndpoints(app3) {
       const { vendorId } = c.req.param();
       const category = c.req.query("category");
       const serviceStyle = c.req.query("serviceStyle");
+      const customerPhone = c.req.query("customerPhone") || c.req.query("phone");
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
         return c.json({ error: "Vendor not found", success: false }, 404);
       }
       const resolvedVendorId = vendor.id;
+      const includedVendorServiceIds = /* @__PURE__ */ new Set();
+      const includedLegacyServiceIds = /* @__PURE__ */ new Set();
+      const vendorServiceIdToPackagePurchaseId = /* @__PURE__ */ new Map();
+      if (customerPhone) {
+        try {
+          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          if (customerId) {
+            const purchases = await query(
+              `SELECT id, package_id, package_snapshot FROM package_purchases
+               WHERE customer_id = $1 AND vendor_id = $2 AND status = 'active'
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)
+                 AND (expires_at IS NULL OR expires_at > NOW())`,
+              [customerId, resolvedVendorId]
+            );
+            for (const pp of purchases.rows || []) {
+              const snapshot = pp.package_snapshot && (typeof pp.package_snapshot === "string" ? JSON.parse(pp.package_snapshot) : pp.package_snapshot);
+              const inc = snapshot?.includedServices;
+              if (Array.isArray(inc) && inc.length > 0) {
+                inc.forEach((s) => {
+                  const id = s.id || s.vendor_service_id;
+                  if (id) {
+                    includedVendorServiceIds.add(id);
+                    vendorServiceIdToPackagePurchaseId.set(id, pp.id);
+                  }
+                });
+              } else {
+                const vsRow = await query(
+                  `SELECT id, metadata FROM vendor_services WHERE id = $1 AND vendor_id = $2`,
+                  [pp.package_id, resolvedVendorId]
+                );
+                if (vsRow.rows?.length > 0) {
+                  const meta = vsRow.rows[0].metadata;
+                  const parsed = typeof meta === "string" ? meta ? JSON.parse(meta) : {} : meta || {};
+                  const details = parsed?.packageDetails || parsed;
+                  const arr = details?.includedServices || details?.included_services;
+                  if (Array.isArray(arr)) {
+                    arr.forEach((s) => {
+                      const id = s.id || s.vendor_service_id;
+                      if (id) {
+                        includedVendorServiceIds.add(id);
+                        vendorServiceIdToPackagePurchaseId.set(id, pp.id);
+                      }
+                    });
+                  }
+                } else {
+                  const psRows = await query(
+                    `SELECT service_id FROM package_services WHERE package_id = $1`,
+                    [pp.package_id]
+                  );
+                  for (const r of psRows.rows || []) {
+                    if (r.service_id) {
+                      includedLegacyServiceIds.add(r.service_id);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) {
+        }
+      }
       let servicesQuery = `
         SELECT
           vs.id,
@@ -151993,6 +152282,8 @@ function registerServiceDiscoveryEndpoints(app3) {
         } : void 0;
         const taxCategoryId = metadata?.taxCategoryId ?? metadata?.tax_category ?? null;
         const couponEligible = metadata?.couponEligible !== false;
+        const inActivePackage = includedVendorServiceIds.has(row.id) || includedLegacyServiceIds.has(row.service_id);
+        const activePackagePurchaseId = vendorServiceIdToPackagePurchaseId.get(row.id) || void 0;
         return {
           id: row.id,
           serviceId: row.service_id,
@@ -152019,16 +152310,20 @@ function registerServiceDiscoveryEndpoints(app3) {
           publishStatus: row.publish_status || "published",
           isEnabled: true,
           requiresPetProfile: false,
-          requiresAddress: false
+          requiresAddress: false,
+          inActivePackage: !!inActivePackage,
+          activePackagePurchaseId: inActivePackage ? activePackagePurchaseId : void 0
         };
       });
       const services = formattedServices.filter((s) => !s.isPackage);
       const packages = formattedServices.filter((s) => s.isPackage);
+      const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
       return c.json({
         success: true,
         services,
         packages,
-        count: formattedServices.length
+        count: formattedServices.length,
+        hasActivePackage: hasActivePackageForVendor
       });
     } catch (error) {
       console.error("Error fetching vendor services:", error);
@@ -152156,6 +152451,7 @@ function registerServiceDiscoveryEndpoints(app3) {
       const latitude = c.req.query("latitude");
       const longitude = c.req.query("longitude");
       const serviceStyle = c.req.query("serviceStyle");
+      const customerPhone = c.req.query("customerPhone") || c.req.query("phone");
       const limit = parseInt(c.req.query("limit") || "20", 10);
       const offset = parseInt(c.req.query("offset") || "0", 10);
       let vendorQuery = `
@@ -152213,6 +152509,25 @@ function registerServiceDiscoveryEndpoints(app3) {
       paramIndex += 2;
       const vendorResults = await query(vendorQuery, params);
       let vendors = vendorResults.rows;
+      let vendorIdsWithActivePackage = /* @__PURE__ */ new Set();
+      if (customerPhone) {
+        try {
+          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          if (customerId) {
+            const activePackages = await query(
+              `SELECT DISTINCT vendor_id FROM package_purchases
+               WHERE customer_id = $1 AND status = 'active'
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)
+                 AND (expires_at IS NULL OR expires_at > NOW())`,
+              [customerId]
+            );
+            (activePackages.rows || []).forEach((r) => {
+              if (r.vendor_id) vendorIdsWithActivePackage.add(r.vendor_id);
+            });
+          }
+        } catch (_) {
+        }
+      }
       const enrichedVendors = (await Promise.all(
         vendors.map(async (vendor) => {
           if (serviceStyle && !roleConfigAllowsStyle(vendor.role_config, serviceStyle)) {
@@ -152312,7 +152627,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             priceRange: vendor.price_range || null,
             address: vendor.address,
             city: vendor.city,
-            state: vendor.state
+            state: vendor.state,
+            hasActivePackage: vendorIdsWithActivePackage.has(vendor.id)
           };
         })
       )).filter(Boolean);
@@ -152857,8 +153173,8 @@ function registerServiceDiscoveryEndpoints(app3) {
         return c.json({ error: "No valid fields to update. Please provide at least one facility field" }, 400);
       }
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      const { update: update17 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      const updated = await update17("vendors", { id: actualVendorId }, updateData);
+      const { update: update18 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      const updated = await update18("vendors", { id: actualVendorId }, updateData);
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
@@ -152942,8 +153258,8 @@ function registerServiceDiscoveryEndpoints(app3) {
       const existingMetadata = vendor.metadata || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
-      const { update: update17 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      await update17("vendors", { id: actualVendorId }, {
+      const { update: update18 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      await update18("vendors", { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -153168,7 +153484,6 @@ function registerServiceDiscoveryEndpoints(app3) {
           vs.publish_status,
           vs.category as category_name,
           vs.sub_category as sub_category_name,
-          vs.is_custom_service as is_package,
           vs.metadata as package_details,
           s.name as base_service_name,
           s.description as base_description
@@ -153186,21 +153501,25 @@ function registerServiceDiscoveryEndpoints(app3) {
       }
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
       const servicesResult = await query(servicesQuery, params);
-      const services = servicesResult.rows.map((s) => ({
-        id: s.id,
-        serviceId: s.service_id,
-        serviceName: s.service_name || s.base_service_name,
-        description: s.description || s.base_description || "",
-        price: parseFloat(s.price || 0),
-        duration: s.duration || 30,
-        serviceStyle: s.service_style,
-        categoryName: s.category_name || s.category,
-        subCategoryName: s.sub_category_name || s.sub_category,
-        isPackage: s.is_package,
-        packageDetails: s.package_details,
-        isEnabled: s.is_enabled,
-        publishStatus: s.publish_status
-      }));
+      const services = servicesResult.rows.map((s) => {
+        const meta = typeof s.package_details === "string" ? s.package_details ? JSON.parse(s.package_details) : {} : s.package_details || {};
+        const isPackage = !!(meta?.isPackage || meta?.type === "package");
+        return {
+          id: s.id,
+          serviceId: s.service_id,
+          serviceName: s.service_name || s.base_service_name,
+          description: s.description || s.base_description || "",
+          price: parseFloat(s.price || 0),
+          duration: s.duration || 30,
+          serviceStyle: s.service_style,
+          categoryName: s.category_name || s.category,
+          subCategoryName: s.sub_category_name || s.sub_category,
+          isPackage,
+          packageDetails: isPackage && (meta?.totalSessions != null || meta?.validityDays != null) ? { totalSessions: meta.totalSessions, validityDays: meta.validityDays, sessionDuration: meta.sessionDuration } : meta,
+          isEnabled: s.is_enabled,
+          publishStatus: s.publish_status
+        };
+      });
       const groupedServices = {
         at_center: services.filter((s) => s.serviceStyle === "at_center"),
         at_home: services.filter((s) => s.serviceStyle === "at_home"),
@@ -157676,6 +157995,7 @@ function registerCustomerBookingHistoryEndpoints(app3) {
           bookingDate: b.booking_date,
           bookingTime: b.booking_time,
           serviceType: b.service_type,
+          serviceStyle: b.service_style || b.service_type,
           totalAmount: b.total_amount,
           basePrice: b.base_price,
           discountAmount: b.discount_amount,
@@ -164691,7 +165011,14 @@ function registerVendorServicesEndpoints(app3) {
           service: updated[0] || existingService
         });
       }
-      const vendorServiceId = (0, import_crypto27.randomUUID)();
+      const catalogMeta = catalogService.metadata && typeof catalogService.metadata === "object" ? catalogService.metadata : {};
+      const vendorMetadata = { ...catalogMeta };
+      if (catalogService.metadata && catalogService.metadata.isPackage !== void 0) {
+        vendorMetadata.isPackage = catalogService.metadata.isPackage;
+      }
+      if (catalogService.metadata && catalogService.metadata.packageDetails) {
+        vendorMetadata.packageDetails = catalogService.metadata.packageDetails;
+      }
       const newService = await insert("vendor_services", {
         id: vendorServiceId,
         vendor_id: actualVendorId,
@@ -164706,7 +165033,8 @@ function registerVendorServicesEndpoints(app3) {
         publish_status: "draft",
         is_custom_service: false,
         custom_price: customPrice,
-        custom_duration: customDuration
+        custom_duration: customDuration,
+        metadata: Object.keys(vendorMetadata).length > 0 ? vendorMetadata : void 0
       });
       console.log(`\u2705 Created vendor service ${vendorServiceId} for vendor ${actualVendorId}`);
       return c.json({
@@ -165628,26 +165956,26 @@ function validateBulkPricing(data) {
     errors.push("Maximum 100 updates allowed per bulk operation");
   }
   const serviceIds = /* @__PURE__ */ new Set();
-  data.updates.forEach((update17, index) => {
-    if (!update17.serviceId || !isValidUUID(update17.serviceId)) {
+  data.updates.forEach((update18, index) => {
+    if (!update18.serviceId || !isValidUUID(update18.serviceId)) {
       errors.push(`Update ${index + 1}: Valid serviceId is required`);
     } else {
-      if (serviceIds.has(update17.serviceId)) {
+      if (serviceIds.has(update18.serviceId)) {
         errors.push(`Update ${index + 1}: Duplicate serviceId found`);
       }
-      serviceIds.add(update17.serviceId);
+      serviceIds.add(update18.serviceId);
     }
-    if (update17.price === void 0 || update17.price === null) {
+    if (update18.price === void 0 || update18.price === null) {
       errors.push(`Update ${index + 1}: Price is required`);
-    } else if (update17.price < 0) {
+    } else if (update18.price < 0) {
       errors.push(`Update ${index + 1}: Price cannot be negative`);
-    } else if (update17.price > 1e6) {
+    } else if (update18.price > 1e6) {
       errors.push(`Update ${index + 1}: Price exceeds maximum allowed value`);
     }
-    if (update17.duration !== void 0) {
-      if (update17.duration < 1) {
+    if (update18.duration !== void 0) {
+      if (update18.duration < 1) {
         errors.push(`Update ${index + 1}: Duration must be at least 1 minute`);
-      } else if (update17.duration > 1440) {
+      } else if (update18.duration > 1440) {
         errors.push(`Update ${index + 1}: Duration cannot exceed 1440 minutes`);
       }
     }
@@ -167414,7 +167742,8 @@ function registerServiceCatalogEndpoints(app3) {
         durationMinutes: service.duration_minutes || 30,
         status: service.status,
         publishStatus: service.publish_status,
-        metadata: service.metadata || {}
+        metadata: service.metadata || {},
+        isPackage: !!(service.metadata && service.metadata.isPackage)
       }));
       return c.json({
         success: true,
@@ -170398,6 +170727,98 @@ function registerChatEndpoints(app3) {
       return c.json({ success: true, conversations: [] });
     }
   });
+  app3.get("/chat/vendor/:vendorId/unread-count", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ success: true, totalUnread: 0 });
+      }
+      const result = await query(
+        `SELECT COUNT(*)::int as total
+         FROM chat_messages cm
+         INNER JOIN bookings b ON b.id = cm.booking_id AND b.vendor_id = $1
+         WHERE cm.is_read = false AND cm.sender_type = 'customer'`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ total: 0 }] }));
+      const totalUnread = result.rows?.[0]?.total ?? 0;
+      return c.json({ success: true, totalUnread });
+    } catch (error) {
+      console.error("Error fetching vendor chat unread count:", error);
+      return c.json({ success: true, totalUnread: 0 });
+    }
+  });
+  app3.get("/chat/vendor/:vendorId/conversations", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ success: true, conversations: [] });
+      }
+      const conversationsResult = await query(`
+        SELECT
+          b.id as booking_id,
+          b.booking_date,
+          b.booking_time,
+          b.status as booking_status,
+          b.service_type,
+          b.package_purchase_id,
+          COALESCE(vs.service_name, b.service_type::text, 'Service') as service_name,
+          c.full_name as customer_name,
+          c.phone as customer_phone,
+          last_msg.message as last_message,
+          last_msg.created_at as last_message_at,
+          COALESCE(unread_cnt.cnt, 0)::int as unread_count,
+          pp.package_name as package_name,
+          pp.total_sessions as package_total_sessions,
+          pp.remaining_sessions as package_remaining_sessions,
+          pp.unlimited_usage as package_unlimited,
+          pp.expires_at as package_expires_at
+        FROM bookings b
+        INNER JOIN (SELECT DISTINCT booking_id FROM chat_messages) has_msg ON has_msg.booking_id = b.id
+        LEFT JOIN LATERAL (
+          SELECT message, created_at FROM chat_messages WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
+        ) last_msg ON true
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int as cnt FROM chat_messages
+          WHERE booking_id = b.id AND is_read = false AND sender_type = 'customer'
+        ) unread_cnt ON true
+        LEFT JOIN vendor_services vs ON b.service_id = vs.id
+        LEFT JOIN customers c ON b.customer_id = c.id
+        LEFT JOIN package_purchases pp ON b.package_purchase_id = pp.id
+        WHERE b.vendor_id = $1
+        ORDER BY last_msg.created_at DESC NULLS LAST
+        LIMIT 100
+      `, [vendorId]).catch((e) => {
+        console.error("Vendor conversations query error:", e);
+        return { rows: [] };
+      });
+      const rows = conversationsResult.rows || [];
+      const conversations = rows.map((r) => ({
+        bookingId: r.booking_id,
+        bookingDate: r.booking_date,
+        bookingTime: r.booking_time,
+        bookingStatus: r.booking_status,
+        serviceType: r.service_type,
+        serviceName: r.service_name,
+        customerName: r.customer_name || "Customer",
+        customerPhone: r.customer_phone,
+        lastMessage: r.last_message || "",
+        lastMessageAt: r.last_message_at,
+        unreadCount: r.unread_count ?? 0,
+        packageUtilization: r.package_purchase_id && (r.package_total_sessions != null || r.package_unlimited) ? {
+          packageName: r.package_name,
+          totalSessions: r.package_total_sessions,
+          remainingSessions: r.package_remaining_sessions,
+          usedSessions: r.package_total_sessions != null && r.package_remaining_sessions != null ? r.package_total_sessions - r.package_remaining_sessions : null,
+          isUnlimited: r.package_unlimited,
+          expiresAt: r.package_expires_at
+        } : null
+      }));
+      return c.json({ success: true, conversations });
+    } catch (error) {
+      console.error("Error fetching vendor conversations:", error);
+      return c.json({ success: true, conversations: [] });
+    }
+  });
   app3.get("/chat/conversations/:conversationId/messages", async (c) => {
     try {
       const { conversationId } = c.req.param();
@@ -170636,6 +171057,22 @@ function registerChatEndpoints(app3) {
           created_at: (/* @__PURE__ */ new Date()).toISOString()
         }];
       });
+      const effectiveSenderType = (senderType || "customer").toLowerCase();
+      if (effectiveSenderType === "customer" && booking.vendor_id) {
+        try {
+          await insert("notifications", {
+            recipient_id: booking.vendor_id,
+            recipient_type: "vendor",
+            notification_type: "chat_message",
+            title: "New chat message",
+            message: `${senderName || senderPhone}: ${(message2 || "").substring(0, 80)}${(message2 || "").length > 80 ? "\u2026" : ""}`,
+            channels: { email: false, sms: false, inApp: true, push: false },
+            is_read: false
+          });
+        } catch (notifErr) {
+          console.warn("Failed to create vendor notification for chat message:", notifErr);
+        }
+      }
       const recipientPhone = senderType === "customer" ? (await select("vendors", { id: booking.vendor_id }))[0]?.phone : (await select("customers", { id: booking.customer_id }))[0]?.phone;
       if (recipientPhone) {
         const snsClient4 = getSnsClient2();
@@ -172047,18 +172484,57 @@ function registerCustomerPhoneConvenienceEndpoints(app3) {
       }
       packageQuery += ` ORDER BY pp.expires_at ASC NULLS LAST, pp.created_at DESC`;
       const result = await query(packageQuery, params);
-      const packages = result.rows.map((pkg) => ({
-        id: pkg.id,
-        packageName: pkg.package_name || pkg.name,
-        vendorName: pkg.vendor_name,
-        vendorId: pkg.vendor_id,
-        totalSessions: pkg.total_sessions,
-        remainingSessions: pkg.unlimited_usage ? "unlimited" : pkg.remaining_sessions,
-        sessionsUsed: pkg.sessions_used || 0,
-        expiresAt: pkg.expires_at,
-        isUnlimited: pkg.unlimited_usage,
-        packageType: pkg.package_type,
-        status: pkg.computed_status
+      const packages = await Promise.all(result.rows.map(async (pkg) => {
+        let includedServices = [];
+        const snapshot = pkg.package_snapshot && (typeof pkg.package_snapshot === "string" ? JSON.parse(pkg.package_snapshot) : pkg.package_snapshot);
+        if (snapshot?.includedServices && Array.isArray(snapshot.includedServices)) {
+          includedServices = snapshot.includedServices.map((s) => ({ id: s.id || s.vendor_service_id, name: s.name || s.serviceName || "Service" }));
+        } else {
+          try {
+            const vsRows = await query(
+              `SELECT id, service_name, metadata FROM vendor_services WHERE id = $1 AND vendor_id = $2`,
+              [pkg.package_id, pkg.vendor_id]
+            );
+            if (vsRows.rows?.length > 0) {
+              const meta = vsRows.rows[0].metadata;
+              const parsed = typeof meta === "string" ? meta ? JSON.parse(meta) : {} : meta || {};
+              const details = parsed?.packageDetails || parsed;
+              const inc = details?.includedServices || details?.included_services;
+              if (Array.isArray(inc) && inc.length > 0) {
+                includedServices = inc.map((s) => ({ id: s.id || s.vendor_service_id, name: s.name || s.serviceName || "Service" }));
+              }
+            }
+          } catch (_) {
+          }
+          if (includedServices.length === 0) {
+            try {
+              const psRows = await query(
+                `SELECT ps.service_id, s.name as service_name FROM package_services ps
+                 LEFT JOIN services s ON ps.service_id = s.id
+                 WHERE ps.package_id = $1`,
+                [pkg.package_id]
+              );
+              if (psRows.rows?.length > 0) {
+                includedServices = psRows.rows.map((r) => ({ id: r.service_id, name: r.service_name || "Service" }));
+              }
+            } catch (_) {
+            }
+          }
+        }
+        return {
+          id: pkg.id,
+          packageName: pkg.package_name || pkg.name,
+          vendorName: pkg.vendor_name,
+          vendorId: pkg.vendor_id,
+          totalSessions: pkg.total_sessions,
+          remainingSessions: pkg.unlimited_usage ? "unlimited" : pkg.remaining_sessions,
+          sessionsUsed: pkg.sessions_used || 0,
+          expiresAt: pkg.expires_at,
+          isUnlimited: pkg.unlimited_usage,
+          packageType: pkg.package_type,
+          status: pkg.computed_status,
+          includedServices
+        };
       }));
       return c.json({
         success: true,
@@ -172068,6 +172544,44 @@ function registerCustomerPhoneConvenienceEndpoints(app3) {
     } catch (error) {
       console.error("Error fetching packages by phone:", error);
       return c.json({ packages: [], success: true });
+    }
+  });
+  app3.get("/customer/:phone/latest-booking-by-vendor", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const vendorId = c.req.query("vendorId");
+      if (!vendorId) {
+        return c.json({ error: "vendorId query required" }, 400);
+      }
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ booking: null, success: true });
+      }
+      const result = await query(
+        `SELECT b.id as booking_id, b.vendor_id, v.business_name as vendor_name, v.logo_url as vendor_photo
+         FROM bookings b
+         LEFT JOIN vendors v ON v.id = b.vendor_id
+         WHERE b.customer_id = $1 AND b.vendor_id = $2 AND b.status NOT IN ('cancelled', 'rejected')
+         ORDER BY b.booking_date DESC, b.booking_time DESC
+         LIMIT 1`,
+        [customerId, vendorId]
+      );
+      const row = result.rows?.[0];
+      if (!row) {
+        return c.json({ success: true, booking: null });
+      }
+      return c.json({
+        success: true,
+        booking: {
+          bookingId: row.booking_id,
+          vendorId: row.vendor_id,
+          vendorName: row.vendor_name,
+          vendorPhoto: row.vendor_photo
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching latest booking by vendor:", error);
+      return c.json({ success: true, booking: null });
     }
   });
   app3.get("/customer/:phone/active-walks", async (c) => {
@@ -176641,6 +177155,38 @@ function registerCustomerContentEndpoints(app3) {
   });
   app3.get("/marketing/announcements", async (c) => {
     return app3.fetch(new Request(c.req.url.replace("/marketing/announcements", "/customer/announcements"), c.req.raw));
+  });
+  app3.get("/customer/featured-vendors", async (c) => {
+    try {
+      const limit = parseInt(c.req.query("limit") || "6", 10);
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const result = await query(
+        `SELECT id, title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order
+         FROM spotlight_offers
+         WHERE is_active = true
+         AND (start_date IS NULL OR start_date <= $1)
+         AND (end_date IS NULL OR end_date >= $1)
+         ORDER BY display_order ASC, created_at DESC
+         LIMIT $2`,
+        [now, limit]
+      ).catch(() => ({ rows: [] }));
+      const vendors = (result.rows || []).map((r) => ({
+        id: r.id,
+        vendorId: r.metadata?.vendorId || null,
+        vendorName: r.metadata?.vendorName || r.title,
+        title: r.title,
+        subtitle: r.subtitle,
+        imageUrl: r.image_url,
+        ctaText: r.cta_text || "Book Now",
+        ctaLink: r.cta_link,
+        roleId: r.role_id,
+        serviceCategory: r.service_category
+      }));
+      return c.json({ success: true, vendors, total: vendors.length });
+    } catch (error) {
+      console.error("Error fetching featured vendors:", error);
+      return c.json({ success: true, vendors: [], total: 0 });
+    }
   });
   app3.get("/customer/featured-packages", async (c) => {
     try {
@@ -193223,10 +193769,69 @@ function registerAdminAdvancedEndpoints(app3) {
       return c.json({ success: true, services: [] });
     }
   });
+  app3.get("/admin/catalog/services/export", async (c) => {
+    try {
+      const format = c.req.query("format") || "csv";
+      const result = await query(`
+        SELECT service_id, service_name, display_name, description, category_id, category_name,
+               sub_category_id, sub_category_name, applicable_roles, service_style, base_price,
+               duration_minutes, status, publish_status
+        FROM service_catalog ORDER BY display_order ASC, created_at DESC LIMIT 5000
+      `);
+      const rows = result?.rows || [];
+      if (format === "csv") {
+        const headers = ["service_id", "service_name", "display_name", "description", "category_id", "category_name", "sub_category_id", "sub_category_name", "base_price", "duration_minutes", "status"];
+        const escape2 = (v) => v == null ? "" : String(v).replace(/"/g, '""');
+        const csvRows = [headers.join(",")];
+        for (const r of rows) {
+          csvRows.push(headers.map((h) => `"${escape2(r[h])}"`).join(","));
+        }
+        return c.json({ success: true, content: csvRows.join("\n") });
+      }
+      return c.json({ success: true, content: "", message: "Excel format not yet implemented; use CSV." });
+    } catch (error) {
+      console.error("Error exporting services:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app3.get("/admin/catalog/services/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const result = await query(
+        isUUID ? `SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1::uuid LIMIT 1` : `SELECT * FROM service_catalog WHERE service_id = $1 OR id::text = $1 LIMIT 1`,
+        [id]
+      );
+      const s = result?.rows?.[0];
+      if (!s) {
+        return c.json({ success: false, error: "Service not found" }, 404);
+      }
+      const service = {
+        id: String(s.id || s.service_id || ""),
+        service_id: String(s.service_id || s.id || ""),
+        name: String(s.service_name || s.display_name || ""),
+        code: String(s.service_id || s.id || ""),
+        description: String(s.description || ""),
+        categoryId: s.category_id ? String(s.category_id) : "",
+        subCategoryId: s.sub_category_id ? String(s.sub_category_id) : "",
+        price: parseFloat(s.base_price || "0"),
+        duration: s.duration_minutes || 30,
+        serviceType: (s.service_style === "at_home" ? "at-home" : s.service_style === "at_center" ? "at-center" : s.service_style) || "at-center",
+        status: String(s.status || "active"),
+        applicableRoles: s.applicable_roles || [],
+        specializationIds: s.specialization_ids || [],
+        metadata: s.metadata || {}
+      };
+      return c.json({ success: true, service });
+    } catch (error) {
+      console.error("Error fetching service:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
   app3.post("/admin/catalog/services", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids, tax_category_id, taxCategoryId, hsn_code_id, hsnCodeId } = body;
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids, tax_category_id, taxCategoryId, hsn_code_id, hsnCodeId, metadata: bodyMetadata } = body;
       const taxCategoryIdVal = tax_category_id ?? taxCategoryId ?? null;
       const hsnCodeIdVal = hsn_code_id ?? hsnCodeId ?? null;
       const specializationIdsArr = Array.isArray(specializationIds) ? specializationIds : Array.isArray(specialization_ids) ? specialization_ids : [];
@@ -193283,6 +193888,8 @@ function registerAdminAdvancedEndpoints(app3) {
       };
       if (taxCategoryIdVal) insertPayload.tax_category_id = taxCategoryIdVal;
       if (hsnCodeIdVal) insertPayload.hsn_code_id = hsnCodeIdVal;
+      const metadata = bodyMetadata && typeof bodyMetadata === "object" ? bodyMetadata : {};
+      if (Object.keys(metadata).length > 0) insertPayload.metadata = metadata;
       const newService = await insert("service_catalog", insertPayload);
       return c.json({
         success: true,
@@ -193321,6 +193928,7 @@ function registerAdminAdvancedEndpoints(app3) {
       if (body.taxCategoryId !== void 0) updateData.tax_category_id = body.taxCategoryId || null;
       if (body.hsn_code_id !== void 0) updateData.hsn_code_id = body.hsn_code_id || null;
       if (body.hsnCodeId !== void 0) updateData.hsn_code_id = body.hsnCodeId || null;
+      if (body.metadata !== void 0 && body.metadata && typeof body.metadata === "object") updateData.metadata = body.metadata;
       if (updateData.applicable_roles && updateData.applicable_roles.length > 0) {
         const validation = await validateApplicableRolesAgainstActiveRoles(updateData.applicable_roles);
         if (!validation.valid) {
@@ -200574,136 +201182,6 @@ function registerConfigPoliciesEndpoints(app3) {
 // src/endpoints/customer-appointments.ts
 init_base_handler();
 init_rds_connection();
-
-// src/lib/services/cancellation-policy-service.ts
-init_rds_connection();
-function serviceTypeToLocation(serviceType) {
-  const t = (serviceType || "").toLowerCase();
-  if (t === "at_home") return "home";
-  if (t === "at_center" || t === "at_vendor") return "clinic";
-  if (t === "tele") return "tele";
-  return "all";
-}
-async function getRefundTierForCancellation(booking, cancelledBy, options) {
-  const serviceLocation = serviceTypeToLocation(booking.service_type);
-  let vendorRoleName = null;
-  if (booking.vendor_id) {
-    const vendorRoleResult = await query(
-      `SELECT r.name AS role_name
-       FROM vendors v
-       JOIN roles r ON r.id = v.role_id
-       WHERE v.id = $1 AND r.is_active = true
-       LIMIT 1`,
-      [booking.vendor_id]
-    ).catch(() => ({ rows: [] }));
-    const rows2 = Array.isArray(vendorRoleResult) ? vendorRoleResult : vendorRoleResult.rows || [];
-    vendorRoleName = rows2[0]?.role_name ?? null;
-  }
-  const cancelledByParam = cancelledBy === "pet_parent" ? "pet_parent" : "provider";
-  if (cancelledBy === "provider") {
-    const vendorReason = options?.vendorCancellationReason ? String(options.vendorCancellationReason).toLowerCase() : null;
-    const tiersResult2 = await query(
-      `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
-       FROM vendor_refund_tiers
-       WHERE is_active = true
-         AND cancelled_by = 'provider'
-         AND (vendor_cancellation_reason IS NULL OR vendor_cancellation_reason = $1 OR $1 IS NULL)
-         AND (
-           service_location = 'all'
-           OR service_location = $2
-           OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
-         )
-         AND (
-           COALESCE(array_length(vendor_types, 1), 0) = 0
-           OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
-         )
-       ORDER BY vendor_cancellation_reason DESC NULLS LAST
-       LIMIT 1`,
-      [vendorReason, serviceLocation, vendorRoleName || null]
-    ).catch(() => ({ rows: [] }));
-    const rows2 = Array.isArray(tiersResult2) ? tiersResult2 : tiersResult2.rows || [];
-    const tier2 = rows2[0];
-    if (!tier2) return null;
-    return {
-      refundPercentage: Number(tier2.refund_percentage ?? 100),
-      cancellationFee: Number(tier2.cancellation_fee ?? 0),
-      maxPartialRefundPercentage: tier2.max_partial_refund_percentage != null ? Number(tier2.max_partial_refund_percentage) : null,
-      tierId: tier2.id,
-      tierName: tier2.name
-    };
-  }
-  let computedHours = null;
-  if (typeof options?.hoursUntilBooking === "number" && Number.isFinite(options.hoursUntilBooking)) {
-    computedHours = options.hoursUntilBooking;
-  } else {
-    const rawDateTime = (booking.booking_datetime ? new Date(booking.booking_datetime) : null) || (booking.scheduled_at ? new Date(booking.scheduled_at) : null) || /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}`);
-    if (!isNaN(rawDateTime.getTime())) {
-      computedHours = (rawDateTime.getTime() - Date.now()) / (1e3 * 60 * 60);
-    }
-  }
-  if (computedHours == null || !Number.isFinite(computedHours)) {
-    console.warn("[RefundTier] Unable to compute hours until booking for tier evaluation:", booking.id);
-    return null;
-  }
-  const h = Math.max(0, computedHours);
-  const tiersResult = await query(
-    `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
-     FROM vendor_refund_tiers
-     WHERE is_active = true
-       AND cancelled_by = 'pet_parent'
-       AND (
-         (hours_operator IS NOT NULL AND hours_threshold IS NOT NULL AND (
-           (hours_operator = 'gte' AND $1 >= hours_threshold) OR
-           (hours_operator = 'lte' AND $1 <= hours_threshold) OR
-           (hours_operator = 'gt' AND $1 > hours_threshold) OR
-           (hours_operator = 'lt' AND $1 < hours_threshold)
-         ))
-         OR
-         ((hours_operator IS NULL OR hours_threshold IS NULL) AND hours_before_service <= $1)
-       )
-       AND (
-         service_location = 'all'
-         OR service_location = $2
-         OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
-       )
-       AND (
-         COALESCE(array_length(vendor_types, 1), 0) = 0
-         OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
-       )
-     ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST
-     LIMIT 1`,
-    [h, serviceLocation, vendorRoleName || null]
-  ).catch(() => ({ rows: [] }));
-  const rows = Array.isArray(tiersResult) ? tiersResult : tiersResult.rows || [];
-  const tier = rows[0];
-  if (!tier) return null;
-  const refundPercentage = Number(tier.refund_percentage ?? 75);
-  const cancellationFee = Number(tier.cancellation_fee ?? 0);
-  const maxPartial = tier.max_partial_refund_percentage != null ? Number(tier.max_partial_refund_percentage) : null;
-  return {
-    refundPercentage,
-    cancellationFee,
-    maxPartialRefundPercentage: Number.isFinite(maxPartial) ? maxPartial : null,
-    tierId: tier.id,
-    tierName: tier.name
-  };
-}
-function computeRefundFromTier(totalAmount, tier, fallbackPercentage = 100, fallbackFee = 0) {
-  const refundPercentage = tier ? tier.refundPercentage : fallbackPercentage;
-  const cancellationFee = tier ? tier.cancellationFee : fallbackFee;
-  let effectivePercentage = refundPercentage;
-  if (tier?.maxPartialRefundPercentage != null && effectivePercentage > tier.maxPartialRefundPercentage) {
-    effectivePercentage = tier.maxPartialRefundPercentage;
-  }
-  const refundAmount = Math.max(0, totalAmount * effectivePercentage / 100 - cancellationFee);
-  return {
-    refundAmount,
-    refundPercentage: effectivePercentage,
-    cancellationFee
-  };
-}
-
-// src/endpoints/customer-appointments.ts
 var GetCustomerAppointmentsHandler = class extends BaseHandler {
   async handle(context) {
     try {
@@ -207496,9 +207974,9 @@ function registerSupportCrmEndpoints(app3) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select26 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select27 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select26("platform_settings", {
+        const settings = await select27("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -212787,7 +213265,10 @@ function registerProblemGridEndpoints(app3) {
           "basic_obedience": ["trainer", "trainer_solo", "trainer_center"],
           "socialization": ["trainer", "trainer_solo", "trainer_center"],
           "aggression": ["trainer", "trainer_solo", "trainer_center", "behaviorist_solo", "behaviorist_center"],
-          "separation_anxiety": ["trainer", "trainer_solo", "trainer_center", "behaviorist_solo", "behaviorist_center"]
+          "separation_anxiety": ["trainer", "trainer_solo", "trainer_center", "behaviorist_solo", "behaviorist_center"],
+          "barking": ["behaviorist_solo", "behaviorist_center"],
+          "destructive": ["behaviorist_solo", "behaviorist_center"],
+          "fear_phobia": ["behaviorist_solo", "behaviorist_center"]
         };
         if (problemToRoleMap[problemId]) {
           roleIds = problemToRoleMap[problemId];
@@ -213743,6 +214224,12 @@ function getDefaultProblemsForRole(roleId) {
       { id: "long_walk", name: "Long Walk", displayName: "Long Walk", icon: "\u{1F3C3}", description: "Extended walking sessions" }
     ],
     "behavioral": [
+      { id: "separation_anxiety", name: "Separation Anxiety", displayName: "Separation Anxiety", icon: "\u{1F622}", description: "Anxiety when alone" },
+      { id: "barking", name: "Excessive Barking", displayName: "Excessive Barking", icon: "\u{1F50A}", description: "Barking control" },
+      { id: "destructive", name: "Destructive Behavior", displayName: "Destructive Behavior", icon: "\u{1F4A5}", description: "Chewing and destroying items" },
+      { id: "fear_phobia", name: "Fear & Phobias", displayName: "Fear & Phobias", icon: "\u{1F47B}", description: "Fear of sounds, objects" }
+    ],
+    "behaviorist": [
       { id: "separation_anxiety", name: "Separation Anxiety", displayName: "Separation Anxiety", icon: "\u{1F622}", description: "Anxiety when alone" },
       { id: "barking", name: "Excessive Barking", displayName: "Excessive Barking", icon: "\u{1F50A}", description: "Barking control" },
       { id: "destructive", name: "Destructive Behavior", displayName: "Destructive Behavior", icon: "\u{1F4A5}", description: "Chewing and destroying items" },
@@ -222551,6 +223038,190 @@ function registerInstantTeleQueueEndpoints(app3) {
   console.log("\u2705 Instant Tele Queue endpoints registered");
 }
 
+// src/endpoints/instant-tele-v2.ts
+var import_crypto44 = require("crypto");
+init_rds_connection();
+init_razorpay_client();
+var VET_ROLE_NAMES = ["veterinarian", "vet", "veterinary", "vet_solo", "vet_clinic", "pet_clinic"];
+function registerInstantTeleV2Endpoints(app3) {
+  app3.get("/customer/tele/available-now", async (c) => {
+    try {
+      const now = /* @__PURE__ */ new Date();
+      const dayOfWeek = now.getDay();
+      const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+      const result = await query(
+        `SELECT DISTINCT v.id AS vendor_id,
+                COALESCE(v.business_name, v.owner_name, 'Vet') AS vendor_name,
+                v.profile_photo_url AS photo,
+                v.phone,
+                v.city,
+                v.address
+         FROM vendors v
+         INNER JOIN roles r ON r.id = v.role_id AND r.is_active = true
+         INNER JOIN vendor_availability_v2 va ON va.vendor_id = v.id
+         INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+         WHERE v.is_active = true
+           AND (v.status = 'approved' OR v.status IS NULL)
+           AND LOWER(r.name) IN (SELECT LOWER(unnest($3::text[])))
+           AND va.day_of_week = $1
+           AND (COALESCE(va.service_styles, ARRAY[]::text[]) && ARRAY['tele', 'online', 'video_consultation']::text[]
+                OR va.service_style IN ('tele', 'online', 'video_consultation')
+                OR va.service_type IN ('tele', 'online', 'video_consultation'))
+           AND COALESCE(va.is_available, true) = true
+           AND (COALESCE(va.time_window_start::text, va.start_time::text) <= $2
+                AND COALESCE(va.time_window_end::text, va.end_time::text) >= $2)
+           AND vs.service_style = 'tele'
+           AND vs.is_enabled = true
+           AND COALESCE(vs.publish_status, 'published') = 'published'
+         ORDER BY v.business_name`,
+        [dayOfWeek, currentTime, VET_ROLE_NAMES]
+      ).catch((err) => {
+        console.error("[instant-tele-v2] available-now query error:", err);
+        return { rows: [] };
+      });
+      const rows = result.rows || [];
+      const vendors = rows.map((r) => ({
+        vendorId: r.vendor_id,
+        vendorName: r.vendor_name,
+        photo: r.photo,
+        phone: r.phone,
+        city: r.city,
+        address: r.address
+      }));
+      return c.json({ success: true, vendors, total: vendors.length });
+    } catch (error) {
+      console.error("[instant-tele-v2] available-now error:", error);
+      return c.json({ success: false, error: error.message, vendors: [] }, 500);
+    }
+  });
+  app3.post("/customer/tele/instant-after-payment", async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+        vendorId,
+        customerId,
+        petId,
+        serviceId,
+        amount,
+        serviceName,
+        vendorName,
+        petName
+      } = body;
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return c.json({ success: false, error: "Payment verification data required" }, 400);
+      }
+      if (!vendorId || !customerId || !petId || !serviceId) {
+        return c.json({ success: false, error: "vendorId, customerId, petId, serviceId required" }, 400);
+      }
+      const config = await getRazorpayConfig();
+      if (!config?.keySecret) {
+        return c.json({ success: false, error: "Payment configuration error" }, 500);
+      }
+      const text = `${razorpay_order_id}|${razorpay_payment_id}`;
+      const expectedSig = (0, import_crypto44.createHmac)("sha256", config.keySecret).update(text).digest("hex");
+      if (expectedSig !== razorpay_signature) {
+        return c.json({ success: false, error: "Invalid payment signature" }, 400);
+      }
+      const payResult = await query(
+        `SELECT id, booking_id, payment_status, customer_id, vendor_id FROM payments WHERE razorpay_order_id = $1`,
+        [razorpay_order_id]
+      );
+      const payRows = payResult.rows || [];
+      if (payRows.length === 0) {
+        return c.json({ success: false, error: "Payment record not found" }, 404);
+      }
+      const payment = payRows[0];
+      if (payment.payment_status !== "completed") {
+        return c.json({ success: false, error: "Payment not completed. Complete payment first." }, 400);
+      }
+      if (payment.booking_id) {
+        return c.json({ success: true, bookingId: payment.booking_id, alreadyCreated: true });
+      }
+      const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const timeStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[1].substring(0, 5);
+      const totalAmount = Number(amount) || 0;
+      const bookingInsert = await insert("bookings", {
+        customer_id: customerId,
+        vendor_id: vendorId,
+        staff_id: null,
+        pet_id: petId,
+        service_id: serviceId,
+        service_type: "tele",
+        service_name: serviceName || "Instant Vet Consultation",
+        booking_date: today,
+        booking_time: timeStr,
+        total_amount: totalAmount,
+        status: "confirmed",
+        payment_status: "paid",
+        is_instant_tele: true,
+        metadata: JSON.stringify({ instant_tele_v2: true, razorpay_order_id })
+      });
+      const booking = Array.isArray(bookingInsert) ? bookingInsert[0] : bookingInsert;
+      const bookingId2 = booking?.id;
+      if (!bookingId2) {
+        return c.json({ success: false, error: "Booking creation failed" }, 500);
+      }
+      await query(
+        `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE razorpay_order_id = $2`,
+        [bookingId2, razorpay_order_id]
+      );
+      const customerName = await query(`SELECT name FROM customers WHERE id = $1`, [customerId]).then((r) => r.rows?.[0]?.name) || "Customer";
+      try {
+        await insert("notifications", {
+          recipient_id: vendorId,
+          recipient_type: "vendor",
+          type: "tele_call_incoming",
+          title: "\u{1F4DE} Instant Video Call",
+          message: `${customerName} has paid and is waiting to connect. Join the call now.`,
+          data: JSON.stringify({
+            booking_id: bookingId2,
+            call_type: "incoming",
+            action: "answer_call",
+            instant: true
+          }),
+          is_read: false,
+          requires_action: true,
+          action_url: `/video/${bookingId2}`,
+          created_at: /* @__PURE__ */ new Date()
+        });
+      } catch (e) {
+        console.warn("[instant-tele-v2] Vendor notification failed:", e);
+      }
+      try {
+        await insert("notifications", {
+          recipient_id: customerId,
+          recipient_type: "customer",
+          type: "tele_call_connecting",
+          title: "Connecting to vet",
+          message: `${vendorName || "Vet"} will join shortly. Please wait.`,
+          data: JSON.stringify({
+            booking_id: bookingId2,
+            action: "join_call",
+            instant: true
+          }),
+          is_read: false,
+          requires_action: true,
+          action_url: `/video/${bookingId2}`,
+          created_at: /* @__PURE__ */ new Date()
+        });
+      } catch (e) {
+        console.warn("[instant-tele-v2] Customer notification failed:", e);
+      }
+      return c.json({
+        success: true,
+        bookingId: bookingId2,
+        message: "Booking created. You can join the video call now."
+      });
+    } catch (error) {
+      console.error("[instant-tele-v2] instant-after-payment error:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+}
+
 // src/endpoints/rooms.ts
 init_rds_connection();
 function registerRoomsEndpoints(app3) {
@@ -224064,7 +224735,7 @@ async function buildGoLiveChecklist(vendorId) {
 }
 
 // src/endpoints/diagnostics-reports.ts
-var import_crypto44 = require("crypto");
+var import_crypto45 = require("crypto");
 init_base_handler();
 init_rds_connection();
 function safeJsonParse(val, fallback) {
@@ -225022,9 +225693,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await assignAdhocHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225037,9 +225708,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await assignSampleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225052,9 +225723,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { assignmentId: c.req.param("assignmentId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await updateSampleStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225066,9 +225737,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: "",
       pathParameters: { bookingId: c.req.param("bookingId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await getSampleStatusHandler.execute(event, context);
     const body = typeof result.body === "string" ? (() => {
       try {
@@ -225088,9 +225759,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await uploadHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225103,9 +225774,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { reportId: c.req.param("reportId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await reviewHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225117,9 +225788,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: "",
       pathParameters: { bookingId: c.req.param("bookingId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await getForBookingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225131,9 +225802,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: "",
       pathParameters: { vetId: c.req.param("vetId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await getPendingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225255,7 +225926,7 @@ function registerDiagnosticsReportEndpoints(app3) {
 }
 
 // src/endpoints/meal-subscriptions.ts
-var import_crypto45 = require("crypto");
+var import_crypto46 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetMealPlansHandler = class extends BaseHandler {
@@ -225705,9 +226376,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await getMealPlansHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225720,9 +226391,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await createSubHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225734,9 +226405,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: "",
       pathParameters: { customerId: c.req.param("customerId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await getCustomerSubsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225749,9 +226420,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { subscriptionId: c.req.param("subscriptionId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await manageSubHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -225763,16 +226434,16 @@ function registerMealSubscriptionEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await processRenewalsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 
 // src/endpoints/document-expiry.ts
-var import_crypto46 = require("crypto");
+var import_crypto47 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetVendorDocumentsHandler2 = class extends BaseHandler {
@@ -226035,9 +226706,9 @@ function registerDocumentExpiryEndpoints(app3) {
       body: "",
       pathParameters: { vendorId: c.req.param("vendorId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await getVendorDocsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226050,9 +226721,9 @@ function registerDocumentExpiryEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { documentId: c.req.param("documentId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await updateDocHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226064,9 +226735,9 @@ function registerDocumentExpiryEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await checkExpiryJobHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226078,16 +226749,16 @@ function registerDocumentExpiryEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await adminGetExpiringHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 
 // src/endpoints/subscription-plans-admin.ts
-var import_crypto47 = require("crypto");
+var import_crypto48 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetSubscriptionPlansHandler = class extends BaseHandler {
@@ -226268,9 +226939,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await getPlansHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226283,9 +226954,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await createPlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226298,9 +226969,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { planId: c.req.param("planId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await updatePlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226312,9 +226983,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: "",
       pathParameters: { planId: c.req.param("planId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await deletePlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -229236,7 +229907,7 @@ function numberToWords(num) {
 }
 
 // src/endpoints/reviews-enhanced.ts
-var import_crypto48 = require("crypto");
+var import_crypto49 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var CreateReviewHandler = class extends BaseHandler {
@@ -229564,9 +230235,9 @@ function registerReviewsEnhancedEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto49.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto49.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -229579,9 +230250,9 @@ function registerReviewsEnhancedEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto49.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto49.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
     const result = await skipHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -229593,9 +230264,9 @@ function registerReviewsEnhancedEndpoints(app3) {
       body: "",
       pathParameters: { vendorId: c.req.param("vendorId") },
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto49.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto49.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
     const result = await getVendorReviewsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -229608,9 +230279,9 @@ function registerReviewsEnhancedEndpoints(app3) {
         body: "",
         pathParameters: { customerId: c.req.param("customerId") },
         queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-        requestContext: { requestId: (0, import_crypto48.randomUUID)() }
+        requestContext: { requestId: (0, import_crypto49.randomUUID)() }
       };
-      const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+      const context = { requestId: (0, import_crypto49.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
       const result = await getPendingHandler.execute(event, context);
       if (result.statusCode >= 400) {
         return c.json({ success: true, reviews: [], pending: [] }, 200);
@@ -230716,9 +231387,9 @@ function buildAadhaarVerifyRequestBody(provider, request) {
   switch (provider) {
     case "sandbox":
       return {
-        "@entity": "in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request",
-        reference_id: parseInt(request.requestId, 10) || request.requestId,
-        otp: request.otp
+        "@entity": "in.co.sandbox.kyc.aadhaar.okyc.request",
+        reference_id: String(request.requestId || ""),
+        otp: String(request.otp || "")
       };
     case "signzy":
       return { requestId: request.requestId, otp: request.otp };
@@ -232495,6 +233166,8 @@ function registerSpecializationMasterEndpoints(app3) {
           sm.icon_name,
           sm.icon_color,
           sm.category_id,
+          sm.applicable_roles,
+          sm.allowed_service_styles,
           ss.symptom_name as matched_symptom
         FROM specialization_master sm
         JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id
@@ -232514,16 +233187,41 @@ function registerSpecializationMasterEndpoints(app3) {
       }
       sqlQuery += ` ORDER BY sm.display_order, sm.name LIMIT 10`;
       const result = await query(sqlQuery, params);
+      const roleDisplayToRoleId = {
+        veterinary: "vet_solo",
+        vet: "vet_solo",
+        grooming: "groomer_solo",
+        training: "trainer_solo",
+        walking: "walker",
+        boarding: "boarding",
+        behavioral: "behaviorist_solo",
+        wellness: "nutritionist"
+      };
       return c.json({
         success: true,
-        results: result.rows.map((row) => ({
-          specializationId: row.specialization_id,
-          name: row.display_name || row.name,
-          matchedSymptom: row.matched_symptom,
-          iconName: row.icon_name,
-          iconColor: row.icon_color,
-          categoryId: row.category_id
-        }))
+        results: result.rows.map((row) => {
+          const rawStyles = row.allowed_service_styles;
+          let allowedServiceStyles = ["at_home", "at_center", "tele"];
+          if (rawStyles) {
+            try {
+              allowedServiceStyles = typeof rawStyles === "string" ? JSON.parse(rawStyles) : rawStyles;
+            } catch (_) {
+            }
+          }
+          const categoryId = (row.category_id || "").toLowerCase();
+          const roleId2 = roleDisplayToRoleId[categoryId] || categoryId || "vet_solo";
+          return {
+            specializationId: row.specialization_id,
+            name: row.display_name || row.name,
+            matchedSymptom: row.matched_symptom,
+            iconName: row.icon_name,
+            iconColor: row.icon_color,
+            categoryId: row.category_id,
+            applicableRoles: row.applicable_roles || [],
+            allowedServiceStyles,
+            roleId: roleId2
+          };
+        })
       });
     } catch (error) {
       console.error("[SPEC-MASTER] Search symptoms error:", error.message);
@@ -232760,7 +233458,7 @@ function registerSpecializationMasterEndpoints(app3) {
 }
 
 // src/endpoints/platform-policies.ts
-var import_crypto49 = require("crypto");
+var import_crypto50 = require("crypto");
 init_base_handler();
 init_rds_connection();
 init_entity_extractor();
@@ -233029,7 +233727,7 @@ var SavePlatformPolicyHandler = class extends BaseHandler {
           policyType
         ]);
       } else {
-        policyId = (0, import_crypto49.randomUUID)();
+        policyId = (0, import_crypto50.randomUUID)();
         version3 = 1;
         await query(`
           INSERT INTO platform_policies (id, policy_type, title, content, version, is_active, updated_by)
@@ -233316,6 +234014,7 @@ registerSpecializedServicesEndpoints(app2);
 registerSpecializedServiceFlows(app2);
 registerAdminGovernanceEndpoints(app2);
 registerInstantTeleQueueEndpoints(app2);
+registerInstantTeleV2Endpoints(app2);
 registerRoomsEndpoints(app2);
 registerReviewEndpoints(app2);
 registerTrackingEndpoints(app2);

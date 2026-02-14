@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 // ============================================================================
 // TYPES
@@ -562,14 +563,19 @@ export function UniversalProviderProfile({
           <Card className="p-4 mb-4 bg-orange-50 border-orange-200">
             <h3 className="font-medium text-sm mb-2">Selected Services</h3>
             {selectedServicesList.map(service => (
-              <div key={service.id} className="flex justify-between text-sm">
-                <span>{service.name}</span>
-                <span className="font-medium">₹{service.price}</span>
+              <div key={service.id} className="flex justify-between text-sm items-center gap-2">
+                <span className="flex items-center gap-2">
+                  {service.name}
+                  {(service as any).isPackage && (
+                    <span className="px-1.5 py-0.5 text-xs font-semibold rounded bg-purple-100 text-purple-700">Package</span>
+                  )}
+                </span>
+                <span className="font-medium">{formatPriceWithSymbol(service.price)}</span>
               </div>
             ))}
             <div className="flex justify-between mt-2 pt-2 border-t border-orange-200 font-bold">
               <span>Total</span>
-              <span className="text-orange-600">₹{totalAmount}</span>
+              <span className="text-orange-600">{formatPriceWithSymbol(totalAmount)}</span>
             </div>
           </Card>
 
@@ -788,7 +794,7 @@ export function UniversalProviderProfile({
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="text-right">
-                              <p className="font-bold text-gray-900">₹{service.price}</p>
+                              <p className="font-bold text-gray-900">{formatPriceWithSymbol(service.price)}</p>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                               isSelected 
@@ -844,18 +850,6 @@ export function UniversalProviderProfile({
                     </h3>
                     <p className="text-sm text-gray-600">{provider.address}</p>
                     {provider.city && <p className="text-sm text-gray-500">{provider.city}</p>}
-                  </Card>
-                )}
-
-                {provider.phone && (
-                  <Card className="p-4">
-                    <h3 className="font-medium mb-2 flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-green-500" />
-                      Contact
-                    </h3>
-                    <a href={`tel:${provider.phone}`} className="text-sm text-blue-600">
-                      {provider.phone}
-                    </a>
                   </Card>
                 )}
 
@@ -921,7 +915,7 @@ export function UniversalProviderProfile({
               onClick={handleProceedToPayment}
               disabled={!selectedPet || !selectedDate || !selectedTime || (serviceStyle === 'at_home' && !selectedAddress)}
             >
-              Proceed to Payment • ₹{totalAmount}
+              Proceed to Payment • {formatPriceWithSymbol(totalAmount)}
             </Button>
           </div>
         ) : (
@@ -931,14 +925,14 @@ export function UniversalProviderProfile({
                 className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2"
                 onClick={handleProceedToBooking}
               >
-                Continue with {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} • ₹{totalAmount}
+                Continue with {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} • {formatPriceWithSymbol(totalAmount)}
                 <ChevronRight className="w-5 h-5" />
               </Button>
             ) : (
               <div className="flex items-center gap-4">
                 <div className="flex-1">
                   <p className="text-sm text-gray-500">Select a service to continue</p>
-                  <p className="font-bold text-lg text-gray-400">₹0</p>
+                  <p className="font-bold text-lg text-gray-400">{formatPriceWithSymbol(0)}</p>
                 </div>
                 <Button
                   className="h-12 px-8 bg-gray-300 text-gray-500 font-bold rounded-xl cursor-not-allowed"

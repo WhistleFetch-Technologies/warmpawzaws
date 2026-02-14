@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -978,7 +979,7 @@ export function UniversalBookingRouter({
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="font-bold text-base sm:text-lg text-gray-900">₹{service.price}</p>
+                        <p className="font-bold text-base sm:text-lg text-gray-900">{formatPriceWithSymbol(service.price)}</p>
                         {isSelected && (
                           <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500 mt-1 ml-auto" />
                         )}
@@ -1145,7 +1146,7 @@ export function UniversalBookingRouter({
                       <p className="font-semibold text-gray-900">{svc.name || s?.name || s?.serviceName}</p>
                       {svc.duration && <p className="text-xs text-gray-500">{svc.duration} mins</p>}
                     </div>
-                    <p className="font-bold text-orange-600">₹{svc.price ?? s?.price ?? 0}</p>
+                    <p className="font-bold text-orange-600">{formatPriceWithSymbol(svc.price ?? s?.price ?? 0)}</p>
                   </div>
                 );
               })}
@@ -1159,12 +1160,14 @@ export function UniversalBookingRouter({
               </div>
               <div className="pt-2 flex justify-between items-center font-semibold">
                 <span>Total</span>
-                <span className="text-orange-600">₹{selectedPackageForSwitch
-                  ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
-                  : (() => {
-                    const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
-                    return services.reduce((sum: number, s: any) => sum + (s?.price ?? selectedServiceOption?.price ?? 0), 0);
-                  })()}</span>
+                <span className="text-orange-600">{formatPriceWithSymbol(
+                  selectedPackageForSwitch
+                    ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
+                    : (() => {
+                        const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
+                        return services.reduce((sum: number, s: any) => sum + (Number(s?.price ?? selectedServiceOption?.price ?? 0) || 0), 0);
+                      })()
+                )}</span>
               </div>
               {selectedPackageForSwitch && (
                 <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
@@ -1191,8 +1194,8 @@ export function UniversalBookingRouter({
                   return (
                     <div key={pkg.id} className="mb-3 last:mb-0 p-3 bg-white rounded-lg border border-orange-100">
                       <p className="font-medium text-gray-900">{pkg.package_name ?? pkg.name}</p>
-                      <p className="text-sm text-gray-600 mt-1">₹{pkgPrice} • {sessions} sessions</p>
-                      {savings > 0 && <p className="text-xs text-green-600 mt-1">Save ₹{savings} vs single bookings</p>}
+                      <p className="text-sm text-gray-600 mt-1">{formatPriceWithSymbol(pkgPrice)} • {sessions} sessions</p>
+                      {savings > 0 && <p className="text-xs text-green-600 mt-1">Save {formatPriceWithSymbol(savings)} vs single bookings</p>}
                       <Button variant="outline" size="sm" className="mt-2 border-orange-300 text-orange-600 hover:bg-orange-50" onClick={() => {
                         setSelectedPackageForSwitch(pkg);
                         toast.success(`Switched to ${pkg.package_name ?? pkg.name}. Proceed to payment.`);
@@ -1257,7 +1260,7 @@ export function UniversalBookingRouter({
                       {servicesToDisplay.map((service, index) => {
                         const serviceIdValue = service.id || service.serviceId || '';
                         const serviceNameValue = service.name || service.serviceName || 'Service';
-                        const servicePrice = service.price || 0;
+                        const servicePrice = Number(service.price) || 0;
                         const serviceDuration = service.duration || 0;
                         const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
                         
@@ -1274,7 +1277,7 @@ export function UniversalBookingRouter({
                                 <p className="text-xs sm:text-sm text-gray-500">{serviceDuration} mins</p>
                               )}
                             </div>
-                            <p className="font-bold text-sm sm:text-base text-orange-600 flex-shrink-0">₹{servicePrice}</p>
+                            <p className="font-bold text-sm sm:text-base text-orange-600 flex-shrink-0">{formatPriceWithSymbol(servicePrice)}</p>
                           </div>
                         );
                       })}
@@ -1284,7 +1287,7 @@ export function UniversalBookingRouter({
                 // Fallback to single service display - with fallbacks for missing data
                 const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
                 const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
-                const svcPrice = selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
+                const svcPrice = Number(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0) || 0;
                 return (
                   <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
                     <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
@@ -1298,7 +1301,7 @@ export function UniversalBookingRouter({
                         <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>
                       )}
                     </div>
-                    <p className="font-bold text-sm sm:text-base flex-shrink-0">₹{svcPrice.toLocaleString('en-IN')}</p>
+                    <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
                   </div>
                 );
               })()}
@@ -1351,10 +1354,11 @@ export function UniversalBookingRouter({
                       : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
                     
                     if (servicesToCalculate.length > 0) {
-                      return `₹${servicesToCalculate.reduce((sum, s) => sum + (s.price || 0), 0).toLocaleString('en-IN')}`;
+                      const total = servicesToCalculate.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+                      return formatPriceWithSymbol(total);
                     }
-                    const fallbackPrice = selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
-                    return `₹${Number(fallbackPrice).toLocaleString('en-IN')}`;
+                    const fallbackPrice = Number(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0) || 0;
+                    return formatPriceWithSymbol(fallbackPrice);
                   })()}
                 </span>
               </div>
@@ -1418,7 +1422,7 @@ export function UniversalBookingRouter({
                 {(() => {
                   const servicesToShow = (allSelectedServices && allSelectedServices.length > 0) ? allSelectedServices : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
                   if (servicesToShow.length > 0) {
-                    const totalAmount = servicesToShow.reduce((sum, s) => sum + (s.price || 0) * (s.quantity || 1), 0);
+                    const totalAmount = servicesToShow.reduce((sum, s) => sum + (Number(s.price) || 0) * (Number(s.quantity) || 1), 0);
                     return (
                       <>
                         <div className="space-y-1.5 pb-2">
@@ -1426,12 +1430,12 @@ export function UniversalBookingRouter({
                           {servicesToShow.map((s, i) => (
                             <div key={s.id || s.serviceId || i} className="flex justify-between items-center text-xs sm:text-sm">
                               <span className="font-medium">{s.name || s.serviceName}</span>
-                              <span className="text-orange-600">₹{(s.price || 0) * (s.quantity || 1)}</span>
+                              <span className="text-orange-600">{formatPriceWithSymbol((Number(s.price) || 0) * (Number(s.quantity) || 1))}</span>
                             </div>
                           ))}
                           <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-100">
                             <span>Total</span>
-                            <span className="text-orange-600">₹{totalAmount}</span>
+                            <span className="text-orange-600">{formatPriceWithSymbol(totalAmount)}</span>
                           </div>
                         </div>
                       </>
@@ -1591,7 +1595,7 @@ export function UniversalBookingRouter({
                   variant="outline"
                   className="w-full text-sm sm:text-base py-2.5 sm:py-3"
                 >
-                  Book New (Pay ₹{selectedServiceOption?.price || 499})
+                  Book New (Pay {formatPriceWithSymbol(selectedServiceOption?.price || 499)})
                 </Button>
               </div>
             </div>

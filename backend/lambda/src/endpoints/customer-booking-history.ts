@@ -110,6 +110,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           bookingDate: b.booking_date,
           bookingTime: b.booking_time,
           serviceType: b.service_type,
+          serviceStyle: b.service_style || b.service_type,
           totalAmount: b.total_amount,
           basePrice: b.base_price,
           discountAmount: b.discount_amount,

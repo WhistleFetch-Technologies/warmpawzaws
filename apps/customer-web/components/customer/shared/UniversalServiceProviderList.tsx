@@ -13,6 +13,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 // ============================================================================
 // TYPES
@@ -308,15 +309,20 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
     }
   };
 
-  // Get price display: range or single (Phase 2)
+  // Get price display: "Starts at ₹XX" from least service fee (sanitized, no NaN)
   const getPriceDisplay = () => {
     if (provider.priceMin != null && provider.priceMax != null && provider.priceMin !== provider.priceMax) {
-      return `₹${provider.priceMin.toLocaleString('en-IN')} – ₹${provider.priceMax.toLocaleString('en-IN')}`;
+      const min = Number(provider.priceMin) || 0;
+      const max = Number(provider.priceMax) || 0;
+      if (!Number.isNaN(min) && !Number.isNaN(max)) {
+        return `${formatPriceWithSymbol(min)} – ${formatPriceWithSymbol(max)}`;
+      }
     }
-    const lowestPrice = provider.services.length > 0
-      ? Math.min(...provider.services.map(s => s.price))
-      : ((provider as any).price ?? (provider as any).consultationFee ?? null);
-    return lowestPrice ? `₹${lowestPrice.toLocaleString('en-IN')}` : null;
+    const prices = provider.services?.length > 0
+      ? provider.services.map(s => Number(s.price) || 0).filter(p => p > 0)
+      : [];
+    const lowestPrice = prices.length > 0 ? Math.min(...prices) : (Number((provider as any).price ?? (provider as any).consultationFee) || 0);
+    return lowestPrice > 0 ? `Starts at ${formatPriceWithSymbol(lowestPrice)}` : null;
   };
 
   return (
@@ -408,7 +414,7 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
                 <span>{provider.experienceYears}+ yrs</span>
               </div>
             )}
-            {provider.distance != null && (
+            {provider.distance != null && serviceStyle === 'at_center' && (
               <div className="flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-gray-400" />
                 <span>{Number(provider.distance || 0).toFixed(1)} km</span>

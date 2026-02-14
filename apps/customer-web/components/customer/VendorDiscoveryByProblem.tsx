@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, Clock, Building2, ChevronRight, User, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -620,7 +621,7 @@ function VendorCard({
               {vendor.vendorServices.slice(0, 3).map((service: any, idx: number) => (
                 <div key={idx} className="flex items-center justify-between text-xs">
                   <span className="text-gray-700">{service.name}</span>
-                  <span className="text-gray-900 font-medium">₹{service.price}</span>
+                  <span className="text-gray-900 font-medium">{formatPriceWithSymbol(service.price)}</span>
                 </div>
               ))}
             </div>

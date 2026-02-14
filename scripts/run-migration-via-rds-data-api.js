@@ -97,14 +97,17 @@ async function main() {
     console.log(`📁 Migration file loaded: ${migrationFile}\n`);
     console.log('🔄 Executing migration...\n');
 
-    // Split SQL into individual statements (strip leading comment lines so ALTER/COMMENT/CREATE are not dropped)
-    const statements = migrationSQL
+    // Strip comments first so semicolons inside comments don't break statement splitting
+    const stripped = migrationSQL
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+    // Split SQL into individual statements
+    const statements = stripped
       .split(';')
-      .map((s) => s
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('--') && !line.trim().startsWith('/*'))
-        .join('\n')
-        .trim())
+      .map((s) => s.trim())
       .filter((s) => s.length > 10);
 
     // Begin transaction
@@ -212,7 +215,31 @@ async function main() {
 
     // Verify migration (basic checks for known migrations)
     const migrationBase = migrationFile.split('/').pop() || '';
-    if (migrationBase.includes('538')) {
+    if (migrationBase.includes('553')) {
+      console.log('🔍 Verifying migration 553 (package_purchases.package_snapshot + index)...');
+      const colSql = `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'package_purchases' AND column_name = 'package_snapshot'`;
+      const colResult = useAwsCli
+        ? runAwsCli(['rds-data', 'execute-statement', '--resource-arn', clusterArn, '--secret-arn', secretArn, '--database', dbName, '--sql', colSql, '--format-records-as', 'JSON', '--region', REGION])
+        : await client.send(new ExecuteStatementCommand({ resourceArn: clusterArn, secretArn: secretArn, database: dbName, sql: colSql, formatRecordsAs: 'JSON' }));
+      const colRows = colResult.formattedRecords
+        ? JSON.parse(colResult.formattedRecords).map((r) => ({ name: r.column_name, type: r.data_type }))
+        : (colResult.records || []).map((r) => ({ name: r[0]?.stringValue, type: r[1]?.stringValue }));
+      if (colRows.length === 0) {
+        throw new Error('Verification failed: column package_purchases.package_snapshot not found');
+      }
+      console.log(`   ✅ Column: ${colRows[0].name} (${colRows[0].type})`);
+      const idxSql = `SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'package_purchases' AND indexname = 'idx_package_purchases_customer_vendor_active'`;
+      const idxResult = useAwsCli
+        ? runAwsCli(['rds-data', 'execute-statement', '--resource-arn', clusterArn, '--secret-arn', secretArn, '--database', dbName, '--sql', idxSql, '--format-records-as', 'JSON', '--region', REGION])
+        : await client.send(new ExecuteStatementCommand({ resourceArn: clusterArn, secretArn: secretArn, database: dbName, sql: idxSql, formatRecordsAs: 'JSON' }));
+      const idxRows = idxResult.formattedRecords
+        ? JSON.parse(idxResult.formattedRecords).map((r) => r.indexname).filter(Boolean)
+        : (idxResult.records || []).map((r) => r[0]?.stringValue).filter(Boolean);
+      if (idxRows.length === 0) {
+        throw new Error('Verification failed: index idx_package_purchases_customer_vendor_active not found');
+      }
+      console.log(`   ✅ Index: ${idxRows[0]}`);
+    } else if (migrationBase.includes('538')) {
       console.log('🔍 Verifying migration 538 (bookings.cancelled_by, penalty_processed)...');
       const verifySql = `
           SELECT column_name

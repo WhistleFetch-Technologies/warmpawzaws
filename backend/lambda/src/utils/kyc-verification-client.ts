@@ -716,11 +716,11 @@ function buildAadhaarOTPRequestBody(provider: KYCProvider, request: AadhaarOTPRe
 function buildAadhaarVerifyRequestBody(provider: KYCProvider, request: AadhaarVerifyOTPRequest): any {
   switch (provider) {
     case 'sandbox':
-      // Updated format per Sandbox.co API docs
+      // Per Sandbox.co API docs: @entity must be in.co.sandbox.kyc.aadhaar.okyc.request, reference_id must be string
       return { 
-        '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.otp.verify.request', 
-        reference_id: parseInt(request.requestId, 10) || request.requestId, 
-        otp: request.otp,
+        '@entity': 'in.co.sandbox.kyc.aadhaar.okyc.request', 
+        reference_id: String(request.requestId || ''), 
+        otp: String(request.otp || ''),
       };
     case 'signzy':
       return { requestId: request.requestId, otp: request.otp };

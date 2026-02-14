@@ -347,6 +347,47 @@ export function registerCustomerContentEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/featured-vendors
+   * Get spotlight/featured vendors for customer home "Featured" block.
+   * Reads from spotlight_offers (admin-configured); does not use payment policy.
+   */
+  app.get("/customer/featured-vendors", async (c) => {
+    try {
+      const limit = parseInt(c.req.query('limit') || '6', 10);
+      const now = new Date().toISOString();
+
+      const result = await query(
+        `SELECT id, title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order
+         FROM spotlight_offers
+         WHERE is_active = true
+         AND (start_date IS NULL OR start_date <= $1)
+         AND (end_date IS NULL OR end_date >= $1)
+         ORDER BY display_order ASC, created_at DESC
+         LIMIT $2`,
+        [now, limit]
+      ).catch(() => ({ rows: [] }));
+
+      const vendors = (result.rows || []).map((r: any) => ({
+        id: r.id,
+        vendorId: r.metadata?.vendorId || null,
+        vendorName: r.metadata?.vendorName || r.title,
+        title: r.title,
+        subtitle: r.subtitle,
+        imageUrl: r.image_url,
+        ctaText: r.cta_text || 'Book Now',
+        ctaLink: r.cta_link,
+        roleId: r.role_id,
+        serviceCategory: r.service_category,
+      }));
+
+      return c.json({ success: true, vendors, total: vendors.length });
+    } catch (error: any) {
+      console.error('Error fetching featured vendors:', error);
+      return c.json({ success: true, vendors: [], total: 0 });
+    }
+  });
+
+  /**
    * GET /customer/featured-packages
    * Get featured service packages for home screen
    */

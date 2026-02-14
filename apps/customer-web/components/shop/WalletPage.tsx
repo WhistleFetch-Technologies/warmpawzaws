@@ -46,7 +46,7 @@ export function WalletPage({ onBack, onNavigate }: WalletPageProps = {}) {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
       <div className="p-6">
         {headerBar}
-        <CustomerWallet customerPhone={phone} />
+        <CustomerWallet customerPhone={phone} onNavigate={onNavigate} />
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 interface VetServicesByStyleProps {
@@ -49,6 +50,7 @@ interface Provider {
     duration: number;
     description?: string;
     category?: string;
+    isPackage?: boolean;
   }[];
 }
 
@@ -165,7 +167,8 @@ export function VetServicesByStyle({
               vendorDiscount: service.vendorDiscount || service.discount || service.discountPercentage, // ✅ FIX GAP-7.1
               duration: service.duration || 30,
               description: service.description,
-              category: service.category
+              category: service.category,
+              isPackage: !!(service.isPackage ?? (service as any).metadata?.isPackage),
             });
           }
         });
@@ -564,12 +567,6 @@ export function VetServicesByStyle({
                   <span className="text-gray-700 leading-relaxed">{address}</span>
                 </div>
               )}
-              {phoneNumber && (
-                <div className="flex items-center gap-3 text-sm">
-                  <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="text-gray-700">{phoneNumber}</span>
-                </div>
-              )}
               {serviceStyle === 'tele' && (
                 <div className="flex items-center gap-3 text-sm">
                   <Video className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -752,6 +749,9 @@ export function VetServicesByStyle({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
+                                {(service as any).isPackage && (
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                )}
                                 {isSelected && (
                                   <span className="px-2.5 py-0.5 bg-green-500 text-white rounded-full text-xs font-semibold flex items-center gap-1 flex-shrink-0">
                                     <Check className="w-3 h-3" />
@@ -879,7 +879,7 @@ export function VetServicesByStyle({
                   <p className="text-sm font-medium text-gray-700">
                     {selectedServices.size} service{selectedServices.size > 1 ? 's' : ''} selected
                   </p>
-                  <p className="text-lg font-bold text-orange-600">₹{totalPrice}</p>
+                  <p className="text-lg font-bold text-orange-600">{formatPriceWithSymbol(totalPrice)}</p>
                 </div>
                 <button
                   onClick={() => setSelectedServices(new Set())}
@@ -898,7 +898,7 @@ export function VetServicesByStyle({
             >
               {selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
-                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (₹${totalPrice})`
+                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
           </div>
@@ -1032,9 +1032,9 @@ export function VetServicesByStyle({
                               {provider.city}
                             </div>
                           )}
-                          {provider.distance !== null && provider.distance !== undefined && (
+                          {serviceStyle === 'at_center' && provider.distance != null && (
                             <span className="text-xs text-blue-600 font-medium">
-                              {provider.distance} km away
+                              {Number(provider.distance).toFixed(1)} km away
                             </span>
                           )}
                         </div>
@@ -1073,7 +1073,12 @@ export function VetServicesByStyle({
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <h5 className="font-medium text-gray-900">{service.name}</h5>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-medium text-gray-900">{service.name}</h5>
+                              {(service as any).isPackage && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                              )}
+                            </div>
                             {service.description && (
                               <p className="text-gray-500 text-sm mt-1 line-clamp-2">
                                 {service.description}
@@ -1121,7 +1126,7 @@ export function VetServicesByStyle({
                     <div className="text-sm text-gray-600">
                       {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
                       {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from ₹{
+                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
                           Math.min(...provider.services.map(s => {
                             // ✅ FIX GAP-7.1: Use discounted price if available
                             const basePrice = s.originalPrice || s.price;
@@ -1130,7 +1135,7 @@ export function VetServicesByStyle({
                               : basePrice;
                             return finalPrice;
                           }))
-                        }</span>
+                        )}</span>
                       )}
                     </div>
                     <Button

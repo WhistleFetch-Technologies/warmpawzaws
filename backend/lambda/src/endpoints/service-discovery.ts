@@ -257,6 +257,20 @@ async function resolveTargetRolesForDiscovery(category?: string | null, roleId?:
   return discoverable;
 }
 
+/** Resolve customer ID from phone for vendor-specific package badges (hasActivePackage, inActivePackage). */
+async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<string | null> {
+  if (!phone || typeof phone !== 'string') return null;
+  const clean = phone.replace(/[^0-9]/g, '');
+  if (clean.length < 10) return null;
+  const customers = await select('customers', { phone: clean });
+  if (customers.length > 0) return (customers[0] as any).id;
+  if (clean.length === 10) {
+    const with91 = await select('customers', { phone: `+91${clean}` });
+    if (with91.length > 0) return (with91[0] as any).id;
+  }
+  return null;
+}
+
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discovery/meta
@@ -2984,6 +2998,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const category = c.req.query('category');
       const serviceStyle = c.req.query('serviceStyle');
+      const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
 
       // Resolve vendor (frontend may pass vendor_identity.id or staff id; resolve to vendors.id)
       const vendor = await resolveVendorById(vendorId);
@@ -2991,6 +3006,68 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
       }
       const resolvedVendorId = vendor.id;
+
+      // Included vendor_service ids (and legacy service_ids) from customer's active packages (for "In your package" label)
+      const includedVendorServiceIds = new Set<string>();
+      const includedLegacyServiceIds = new Set<string>();
+      const vendorServiceIdToPackagePurchaseId = new Map<string, string>();
+      if (customerPhone) {
+        try {
+          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          if (customerId) {
+            const purchases = await query(
+              `SELECT id, package_id, package_snapshot FROM package_purchases
+               WHERE customer_id = $1 AND vendor_id = $2 AND status = 'active'
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)
+                 AND (expires_at IS NULL OR expires_at > NOW())`,
+              [customerId, resolvedVendorId]
+            );
+            for (const pp of purchases.rows || []) {
+              const snapshot = pp.package_snapshot && (typeof pp.package_snapshot === 'string' ? JSON.parse(pp.package_snapshot) : pp.package_snapshot);
+              const inc = snapshot?.includedServices;
+              if (Array.isArray(inc) && inc.length > 0) {
+                inc.forEach((s: any) => {
+                  const id = s.id || s.vendor_service_id;
+                  if (id) {
+                    includedVendorServiceIds.add(id);
+                    vendorServiceIdToPackagePurchaseId.set(id, pp.id);
+                  }
+                });
+              } else {
+                const vsRow = await query(
+                  `SELECT id, metadata FROM vendor_services WHERE id = $1 AND vendor_id = $2`,
+                  [pp.package_id, resolvedVendorId]
+                );
+                if (vsRow.rows?.length > 0) {
+                  const meta = vsRow.rows[0].metadata;
+                  const parsed = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : (meta || {});
+                  const details = parsed?.packageDetails || parsed;
+                  const arr = details?.includedServices || details?.included_services;
+                  if (Array.isArray(arr)) {
+                    arr.forEach((s: any) => {
+                      const id = s.id || s.vendor_service_id;
+                      if (id) {
+                        includedVendorServiceIds.add(id);
+                        vendorServiceIdToPackagePurchaseId.set(id, pp.id);
+                      }
+                    });
+                  }
+                } else {
+                  const psRows = await query(
+                    `SELECT service_id FROM package_services WHERE package_id = $1`,
+                    [pp.package_id]
+                  );
+                  for (const r of psRows.rows || []) {
+                    if (r.service_id) {
+                      includedLegacyServiceIds.add(r.service_id);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       // vendor_services.service_id can point to services.id (legacy) OR service_catalog.id (catalog-origin)
       let servicesQuery = `
@@ -3057,6 +3134,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } : undefined;
         const taxCategoryId = metadata?.taxCategoryId ?? metadata?.tax_category ?? null;
         const couponEligible = metadata?.couponEligible !== false;
+        const inActivePackage = includedVendorServiceIds.has(row.id) || includedLegacyServiceIds.has(row.service_id);
+        const activePackagePurchaseId = vendorServiceIdToPackagePurchaseId.get(row.id) || undefined;
         return {
           id: row.id,
           serviceId: row.service_id,
@@ -3084,17 +3163,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           isEnabled: true,
           requiresPetProfile: false,
           requiresAddress: false,
+          inActivePackage: !!inActivePackage,
+          activePackagePurchaseId: inActivePackage ? activePackagePurchaseId : undefined,
         };
       });
 
       const services = formattedServices.filter((s: any) => !s.isPackage);
       const packages = formattedServices.filter((s: any) => s.isPackage);
+      const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
 
       return c.json({
         success: true,
         services,
         packages,
-        count: formattedServices.length
+        count: formattedServices.length,
+        hasActivePackage: hasActivePackageForVendor,
       });
 
     } catch (error: any) {
@@ -3253,6 +3336,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
       const serviceStyle = c.req.query('serviceStyle');
+      const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
       const limit = parseInt(c.req.query('limit') || '20', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
@@ -3324,6 +3408,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const vendorResults = await query(vendorQuery, params);
       let vendors = vendorResults.rows;
+
+      // Vendor IDs where this customer has an active package (for "Package active" badge)
+      let vendorIdsWithActivePackage = new Set<string>();
+      if (customerPhone) {
+        try {
+          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          if (customerId) {
+            const activePackages = await query(
+              `SELECT DISTINCT vendor_id FROM package_purchases
+               WHERE customer_id = $1 AND status = 'active'
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)
+                 AND (expires_at IS NULL OR expires_at > NOW())`,
+              [customerId]
+            );
+            (activePackages.rows || []).forEach((r: any) => {
+              if (r.vendor_id) vendorIdsWithActivePackage.add(r.vendor_id);
+            });
+          }
+        } catch (_) {}
+      }
 
       // Enrich vendors with unified card shape: photoUrl, specializations, nextAvailable, distanceText, serviceStyles
       const enrichedVendors = (await Promise.all(
@@ -3430,6 +3534,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             address: vendor.address,
             city: vendor.city,
             state: vendor.state,
+            hasActivePackage: vendorIdsWithActivePackage.has(vendor.id),
           };
         })
       )).filter(Boolean);
@@ -4516,7 +4621,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vs.publish_status,
           vs.category as category_name,
           vs.sub_category as sub_category_name,
-          vs.is_custom_service as is_package,
           vs.metadata as package_details,
           s.name as base_service_name,
           s.description as base_description
@@ -4539,21 +4643,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const servicesResult = await query(servicesQuery, params);
 
-      const services = servicesResult.rows.map(s => ({
-        id: s.id,
-        serviceId: s.service_id,
-        serviceName: s.service_name || s.base_service_name,
-        description: s.description || s.base_description || '',
-        price: parseFloat(s.price || 0),
-        duration: s.duration || 30,
-        serviceStyle: s.service_style,
-        categoryName: s.category_name || s.category,
-        subCategoryName: s.sub_category_name || s.sub_category,
-        isPackage: s.is_package,
-        packageDetails: s.package_details,
-        isEnabled: s.is_enabled,
-        publishStatus: s.publish_status,
-      }));
+      const services = servicesResult.rows.map(s => {
+        const meta = typeof s.package_details === 'string' ? (s.package_details ? JSON.parse(s.package_details) : {}) : (s.package_details || {});
+        const isPackage = !!(meta?.isPackage || meta?.type === 'package');
+        return {
+          id: s.id,
+          serviceId: s.service_id,
+          serviceName: s.service_name || s.base_service_name,
+          description: s.description || s.base_description || '',
+          price: parseFloat(s.price || 0),
+          duration: s.duration || 30,
+          serviceStyle: s.service_style,
+          categoryName: s.category_name || s.category,
+          subCategoryName: s.sub_category_name || s.sub_category,
+          isPackage,
+          packageDetails: isPackage && (meta?.totalSessions != null || meta?.validityDays != null) ? { totalSessions: meta.totalSessions, validityDays: meta.validityDays, sessionDuration: meta.sessionDuration } : meta,
+          isEnabled: s.is_enabled,
+          publishStatus: s.publish_status,
+        };
+      });
 
       // Group by service style
       const groupedServices = {

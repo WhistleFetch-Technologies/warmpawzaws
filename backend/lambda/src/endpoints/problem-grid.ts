@@ -563,13 +563,16 @@ export function registerProblemGridEndpoints(app: Hono) {
         subCategoryIds = [problemId];
         roleIds = [];
         
-        // ✅ FIX: Infer role from problemId for common training problems
+        // ✅ FIX: Infer role from problemId for common training/behavioral problems
         const problemToRoleMap: Record<string, string[]> = {
           'potty_training': ['trainer', 'trainer_solo', 'trainer_center'],
           'basic_obedience': ['trainer', 'trainer_solo', 'trainer_center'],
           'socialization': ['trainer', 'trainer_solo', 'trainer_center'],
           'aggression': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
           'separation_anxiety': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
+          'barking': ['behaviorist_solo', 'behaviorist_center'],
+          'destructive': ['behaviorist_solo', 'behaviorist_center'],
+          'fear_phobia': ['behaviorist_solo', 'behaviorist_center'],
         };
         
         if (problemToRoleMap[problemId]) {
@@ -1672,6 +1675,12 @@ function getDefaultProblemsForRole(roleId: string): any[] {
       { id: 'long_walk', name: 'Long Walk', displayName: 'Long Walk', icon: '🏃', description: 'Extended walking sessions' },
     ],
     'behavioral': [
+      { id: 'separation_anxiety', name: 'Separation Anxiety', displayName: 'Separation Anxiety', icon: '😢', description: 'Anxiety when alone' },
+      { id: 'barking', name: 'Excessive Barking', displayName: 'Excessive Barking', icon: '🔊', description: 'Barking control' },
+      { id: 'destructive', name: 'Destructive Behavior', displayName: 'Destructive Behavior', icon: '💥', description: 'Chewing and destroying items' },
+      { id: 'fear_phobia', name: 'Fear & Phobias', displayName: 'Fear & Phobias', icon: '👻', description: 'Fear of sounds, objects' },
+    ],
+    'behaviorist': [
       { id: 'separation_anxiety', name: 'Separation Anxiety', displayName: 'Separation Anxiety', icon: '😢', description: 'Anxiety when alone' },
       { id: 'barking', name: 'Excessive Barking', displayName: 'Excessive Barking', icon: '🔊', description: 'Barking control' },
       { id: 'destructive', name: 'Destructive Behavior', displayName: 'Destructive Behavior', icon: '💥', description: 'Chewing and destroying items' },

@@ -38,12 +38,27 @@ import { isValidUUID } from '../types/entities';
 
 const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
 
+/**
+ * Normalize phone to canonical form for OTP storage/lookup.
+ * Ensures "9326977987", "+919326977987", "919326977987" all match.
+ * Indian 10-digit numbers: use last 10 digits. Others: digits only.
+ */
+function normalizePhoneForOtp(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const last10 = digits.slice(-10);
+    if (/^[6-9]\d{9}$/.test(last10)) return last10; // Indian mobile
+  }
+  return digits || phone;
+}
+
 async function createOtp(phone: string, code: string, purpose: string = 'login'): Promise<void> {
+  const canonicalPhone = normalizePhoneForOtp(phone);
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
   await insert('otp_tokens', {
-    phone,
+    phone: canonicalPhone,
     code,
     purpose,
     expires_at: expiresAt,
@@ -52,28 +67,32 @@ async function createOtp(phone: string, code: string, purpose: string = 'login')
 }
 
 async function verifyOtp(phone: string, code: string): Promise<boolean> {
-  const records = await select('otp_tokens', {
-    phone,
-    code,
-    is_used: false,
-  });
+  const canonicalPhone = normalizePhoneForOtp(phone);
+  // Try canonical first, then original (for backward compatibility with existing tokens)
+  const phonesToTry = [canonicalPhone];
+  const alt = phone.replace(/\D/g, '').slice(-10);
+  if (alt && alt !== canonicalPhone) phonesToTry.push(alt);
+  if (phone !== canonicalPhone && phone !== alt) phonesToTry.push(phone);
 
-  if (records.length === 0) {
-    return false;
+  for (const p of phonesToTry) {
+    const records = await select('otp_tokens', {
+      phone: p,
+      code,
+      is_used: false,
+    });
+
+    if (records.length === 0) continue;
+
+    const record = records[0];
+    if (new Date(record.expires_at) < new Date()) return false;
+
+    await query(
+      'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+      [record.id]
+    );
+    return true;
   }
-
-  const record = records[0];
-  
-  if (new Date(record.expires_at) < new Date()) {
-    return false;
-  }
-
-  await query(
-    'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-    [record.id]
-  );
-
-  return true;
+  return false;
 }
 
 /**

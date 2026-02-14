@@ -52,7 +52,7 @@ export function ImportServicesModal({
 
       // Note: apiClient might need a special method for FormData
       // For now, using fetch directly but with apiClient's base URL
-      const response = await fetch(`${apiClient['baseUrl']}/admin/catalog/services/import`, {
+      const response = await fetch(`${apiClient.getBaseUrl()}/admin/catalog/services/import`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('adminAuthToken') || ''}`

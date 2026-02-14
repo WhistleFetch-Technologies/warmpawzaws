@@ -159,6 +159,7 @@ import { registerVendorBankAccountEndpoints } from '../endpoints/vendor-bank-acc
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
 import { registerDeliveryOtpEndpoints } from '../endpoints/delivery-otp';
 import { registerInstantTeleQueueEndpoints } from '../endpoints/instant-tele-queue';
+import { registerInstantTeleV2Endpoints } from '../endpoints/instant-tele-v2';
 import { registerRoomsEndpoints } from '../endpoints/rooms';
 import { registerVendorLiveStatusEndpoints } from '../endpoints/vendor-live-status';
 import { registerDiagnosticsReportEndpoints } from '../endpoints/diagnostics-reports';
@@ -405,7 +406,8 @@ registerSpecializedServicesEndpoints(app);
 registerSpecializedServiceFlows(app);
 registerAdminGovernanceEndpoints(app);
 // registerStaffEndpoints(app); // Staff decommissioned – solo discovery for at_home/tele
-registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
+registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue (legacy queue/staff)
+registerInstantTeleV2Endpoints(app); // Instant tele V2: vet-only, va2 availability, payment-first, no queue
 registerRoomsEndpoints(app); // Consultation rooms management (Phase 1.1)
 registerReviewEndpoints(app);
 registerTrackingEndpoints(app);

@@ -415,6 +415,11 @@ export class ApiClient {
     });
   }
 
+  /** Get current API base URL (for FormData/fetch when apiClient methods don't apply) */
+  getBaseUrl(): string {
+    return this.baseUrl || getApiBaseUrl();
+  }
+
   // Set auth token (typically after login)
   setAuthToken(token: string): void {
     if (typeof window !== 'undefined') {

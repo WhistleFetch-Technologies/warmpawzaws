@@ -535,6 +535,8 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
     const result = await extractAndVerifyAuthToken(headers);
     
     if (!result.valid || !result.payload) {
+      const reason = result.error || 'unknown';
+      console.warn('[ADMIN AUTH] Token verification failed:', reason, 'tokenPrefix:', token.slice(0, 20) + '...');
       return { authorized: false, error: 'Invalid or expired token' };
     }
 

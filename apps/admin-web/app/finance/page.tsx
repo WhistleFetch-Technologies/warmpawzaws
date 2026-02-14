@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
 	IndianRupee,
 	TrendingUp,
@@ -68,8 +69,19 @@ type TabType =
 	| "settlement-rules"
 	| "reports";
 
-export default function FinanceManagement() {
-	const [activeTab, setActiveTab] = useState<TabType>("dashboard");
+function FinanceManagementContent() {
+	const searchParams = useSearchParams();
+	const tabFromUrl = searchParams.get("tab") as TabType | null;
+	const validTabs: TabType[] = ["dashboard", "fee-config", "payment-policies", "refund-policies", "cancellation-policy", "ecommerce-policies", "gst-config", "flexible-tax", "settlements", "payouts", "tiers", "schedule-settings", "payment-settings", "settlement-rules", "reports"];
+	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
+	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+	// Sync tab when URL param changes (e.g., from /payment-refund redirect)
+	useEffect(() => {
+		if (tabFromUrl && validTabs.includes(tabFromUrl)) {
+			setActiveTab(tabFromUrl);
+		}
+	}, [tabFromUrl]);
 	const [success, setSuccess] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loadingStats, setLoadingStats] = useState(false);
@@ -512,5 +524,13 @@ export default function FinanceManagement() {
 				</div>
 			</div>
 		</AdminLayout>
+	);
+}
+
+export default function FinanceManagement() {
+	return (
+		<Suspense fallback={<div className="flex items-center justify-center min-h-[400px]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" /></div>}>
+			<FinanceManagementContent />
+		</Suspense>
 	);
 }

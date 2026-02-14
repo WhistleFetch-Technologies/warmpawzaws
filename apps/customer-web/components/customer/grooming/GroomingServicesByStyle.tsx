@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -52,6 +53,7 @@ interface Provider {
     duration: number;
     description?: string;
     category?: string;
+    isPackage?: boolean;
   }[];
 }
 
@@ -158,6 +160,7 @@ export function GroomingServicesByStyle({
               duration: Number(s.duration ?? s.duration_minutes ?? 30),
               description: s.description || s.custom_description,
               category: s.category_name || s.category,
+              isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
             }));
             return {
               providerId: v.id || v.vendorId,
@@ -366,7 +369,8 @@ export function GroomingServicesByStyle({
               price: service.price || 999,
               duration: service.duration || 60,
               description: service.description,
-              category: service.category
+              category: service.category,
+              isPackage: !!(service.isPackage ?? (service.metadata && (service.metadata as any).isPackage)),
             });
           }
         });
@@ -837,12 +841,6 @@ export function GroomingServicesByStyle({
                   <span className="text-gray-700 leading-relaxed">{address}</span>
                 </div>
               )}
-              {phoneNumber && (
-                <div className="flex items-center gap-3 text-sm">
-                  <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="text-gray-700">{phoneNumber}</span>
-                </div>
-              )}
             </div>
 
             {/* Amenities - Grooming-Specific */}
@@ -1019,6 +1017,9 @@ export function GroomingServicesByStyle({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
+                                {service.isPackage && (
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                )}
                                 {isSelected && (
                                   <span className="px-2.5 py-0.5 bg-green-500 text-white rounded-full text-xs font-semibold flex items-center gap-1 flex-shrink-0">
                                     <Check className="w-3 h-3" />
@@ -1040,7 +1041,7 @@ export function GroomingServicesByStyle({
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
-                              <div className="text-2xl font-bold text-[#FF8C42] mb-1">₹{service.price}</div>
+                              <div className="text-2xl font-bold text-[#FF8C42] mb-1">{formatPriceWithSymbol(service.price)}</div>
                               {isSelected && (
                                 <div className="mt-1 flex justify-end">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -1141,7 +1142,7 @@ export function GroomingServicesByStyle({
                   <p className="text-sm font-medium text-gray-700">
                     {selectedServices.size} service{selectedServices.size > 1 ? 's' : ''} selected
                   </p>
-                  <p className="text-lg font-bold text-orange-600">₹{totalPrice}</p>
+                  <p className="text-lg font-bold text-orange-600">{formatPriceWithSymbol(totalPrice)}</p>
                 </div>
                 <button
                   onClick={() => setSelectedServices(new Set())}
@@ -1160,7 +1161,7 @@ export function GroomingServicesByStyle({
             >
               {selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
-                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (₹${totalPrice})`
+                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
         </div>
@@ -1363,9 +1364,9 @@ export function GroomingServicesByStyle({
                               {provider.city}
                             </div>
                           )}
-                          {provider.distance !== null && provider.distance !== undefined && (
+                          {serviceStyle === 'at_center' && provider.distance != null && (
                             <span className="text-xs text-blue-600 font-medium">
-                              {provider.distance} km away
+                              {Number(provider.distance).toFixed(1)} km away
                             </span>
                           )}
                         </div>
@@ -1420,7 +1421,12 @@ export function GroomingServicesByStyle({
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h5 className="font-medium text-gray-900">{service.name}</h5>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h5 className="font-medium text-gray-900">{service.name}</h5>
+                                {service.isPackage && (
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                )}
+                              </div>
                               {service.description && (
                                 <p className="text-gray-500 text-sm mt-1 line-clamp-2">
                                   {service.description}
@@ -1432,10 +1438,10 @@ export function GroomingServicesByStyle({
                                   {service.originalPrice && service.originalPrice > service.price ? (
                                     <>
                                       <span className="text-lg font-bold text-[#FF8C42]">
-                                        ₹{service.price}
+                                        {formatPriceWithSymbol(service.price)}
                                       </span>
                                       <span className="text-sm text-gray-400 line-through">
-                                        ₹{service.originalPrice}
+                                        {formatPriceWithSymbol(service.originalPrice)}
                                       </span>
                                       {service.discountPercentage && (
                                         <Badge className="bg-green-500 text-white text-xs">
@@ -1445,7 +1451,7 @@ export function GroomingServicesByStyle({
                                     </>
                                   ) : (
                                     <span className="text-lg font-bold text-[#FF8C42]">
-                                      ₹{service.price}
+                                      {formatPriceWithSymbol(service.price)}
                                     </span>
                                   )}
                                 </div>
@@ -1465,10 +1471,10 @@ export function GroomingServicesByStyle({
                               {service.originalPrice && service.originalPrice > service.price ? (
                                 <div className="mb-2">
                                   <div className="text-lg font-bold text-[#FF8C42]">
-                                    ₹{service.price}
+                                    {formatPriceWithSymbol(service.price)}
                                   </div>
                                   <div className="text-sm text-gray-400 line-through">
-                                    ₹{service.originalPrice}
+                                    {formatPriceWithSymbol(service.originalPrice)}
                                   </div>
                                   {service.discountPercentage && (
                                     <Badge className="bg-green-500 text-white text-xs mt-1">
@@ -1478,7 +1484,7 @@ export function GroomingServicesByStyle({
                                 </div>
                               ) : (
                                 <div className="text-lg font-bold text-gray-900 mb-2">
-                                  ₹{service.price}
+                                  {formatPriceWithSymbol(service.price)}
                                 </div>
                               )}
                               <Button
@@ -1509,9 +1515,9 @@ export function GroomingServicesByStyle({
                     <div className="text-sm text-gray-600">
                       {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
                       {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from ₹{
+                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
                           Math.min(...provider.services.map(s => s.price))
-                        }</span>
+                        )}</span>
                       )}
                     </div>
                     <Button

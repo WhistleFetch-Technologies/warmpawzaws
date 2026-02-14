@@ -13,6 +13,7 @@ import { PromotionBanner } from './shared/PromotionBanner';
 interface ShopDashboardProps {
   phone?: string;
   product?: any;
+  category?: string;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onReviewsClick?: () => void;
@@ -41,14 +42,19 @@ interface Product {
   discount?: string;
 }
 
-export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsClick, onVendorClick }: ShopDashboardProps) {
+export function ShopDashboard({ phone, product, category: initialCategory, onBack, onNavigate, onReviewsClick, onVendorClick }: ShopDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory || 'all');
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [apiCategories, setApiCategories] = useState<any[]>([]);
   const { itemCount } = useCart();
+
+  // Sync selected category when initial category from navigation changes
+  useEffect(() => {
+    if (initialCategory) setSelectedCategory(initialCategory);
+  }, [initialCategory]);
 
   // Load categories on mount
   useEffect(() => {

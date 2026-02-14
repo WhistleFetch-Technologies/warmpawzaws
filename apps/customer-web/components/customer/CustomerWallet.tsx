@@ -23,6 +23,8 @@ interface Transaction {
 
 interface CustomerWalletProps {
   customerPhone: string;
+  /** When provided (e.g. inside app wrapper), use for in-app navigation instead of href */
+  onNavigate?: (path: string) => void;
 }
 
 declare global {
@@ -31,7 +33,7 @@ declare global {
   }
 }
 
-export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
+export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProps) {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -315,13 +317,25 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
             <span className="text-2xl">💳</span>
             <span className="text-xs text-gray-600 mt-0 font-semibold">Add Money</span>
           </button>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('rewards-loyalty') : (window.location.href = '/rewards')}
+            className="flex flex-col items-center p-0 hover:bg-gray-50 rounded-xl min-w-[80px]"
+          >
+            <span className="text-2xl">⭐</span>
+            <span className="text-xs text-gray-600 mt-0">Rewards & points</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('referral-system') : (window.location.href = '/referrals')}
+            className="flex flex-col items-center p-0 hover:bg-gray-50 rounded-xl min-w-[80px]"
+          >
+            <span className="text-2xl">👥</span>
+            <span className="text-xs text-gray-600 mt-0">Refer & Earn</span>
+          </button>
           <a href="/offers" className="flex flex-col items-center p-0 hover:bg-gray-50 rounded-xl min-w-[80px]">
             <span className="text-2xl">🎁</span>
             <span className="text-xs text-gray-600 mt-0">Offers</span>
-          </a>
-          <a href="/referral" className="flex flex-col items-center p-0 hover:bg-gray-50 rounded-xl min-w-[80px]">
-            <span className="text-2xl">👥</span>
-            <span className="text-xs text-gray-600 mt-0">Refer & Earn</span>
           </a>
           <a href="/help" className="flex flex-col items-center p-0 hover:bg-gray-50 rounded-xl min-w-[80px]">
             <span className="text-2xl">❓</span>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { CustomerHomeComplete as CustomerHome } from '../CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
@@ -240,14 +241,17 @@ type ScreenType =
   | 'nutritionist-tele'
   | 'nutritionist-booking'
   | 'pharmacy_order_flow'
-  | 'pharmacy_order_status';
+  | 'pharmacy_order_status'
+  | 'behaviorist'
+  | 'instant-connecting';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
+  const router = useRouter();
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
-  const [selectedProblem, setSelectedProblem] = useState<{ id: string; title: string; roleId?: string } | null>(null);
+  const [selectedProblem, setSelectedProblem] = useState<{ id: string; title: string; roleId?: string; allowedServiceStyles?: string[] } | null>(null);
   const [currentServiceType, setCurrentServiceType] = useState<string | null>(null);
   const [paymentData, setPaymentData] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -262,11 +266,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [selectedShopCategory, setSelectedShopCategory] = useState<string | undefined>(undefined);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
   const [selectedAddressFromBook, setSelectedAddressFromBook] = useState<any>(null); // Address selected in address book (return to provider profile)
   const [trackingBookingId, setTrackingBookingId] = useState<string | null>(null); // ✅ GPS Tracking booking ID
   const [videoCallData, setVideoCallData] = useState<{ bookingId: string; meetingId?: string } | null>(null); // ✅ Video call data
+  const [instantConnectingBookingId, setInstantConnectingBookingId] = useState<string | null>(null); // Instant tele: after payment, show connecting then video
   const [prescriptionOrderData, setPrescriptionOrderData] = useState<{ prescriptionId?: string; prescriptionUrl?: string } | null>(null); // ✅ Pharmacy order from My Bookings prescription
   const [currentPharmacyOrderId, setCurrentPharmacyOrderId] = useState<string | null>(null); // ✅ After PharmacyOrderFlow completes
   const { addToCart } = useCart();
@@ -387,6 +393,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleNavigateToService = (service: string) => {
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
+    else if (service === 'vet-tele-consultation') setCurrentScreen('vet-tele-consultation');
     else if (service === 'grooming') setCurrentScreen('grooming');
     else if (service === 'training') setCurrentScreen('training');
     else if (service === 'boarding') setCurrentScreen('boarding');
@@ -394,7 +401,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'sunset') setCurrentScreen('sunset');
     else if (service === 'insurance') setCurrentScreen('insurance');
     else if (service === 'cafes') setCurrentScreen('cafes');
-    else if (service === 'shop') setCurrentScreen('shop');
+    else if (service === 'shop') {
+      setSelectedShopCategory(undefined);
+      setCurrentScreen('shop');
+    }
     else if (service === 'cart') setCurrentScreen('cart');
     else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
     else if (service === 'photography') setCurrentScreen('photography');
@@ -403,11 +413,19 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'nutritionist') setCurrentScreen('nutritionist');
     else if (service === 'pharmacy' || service === 'pharmacy_store') setCurrentScreen('pharmacy');
     else if (service === 'diagnostics' || service === 'lab-diagnostics' || service === 'lab') setCurrentScreen('lab-diagnostics');
+    else if (service === 'behaviorist' || service === 'behavioral') setCurrentScreen('behaviorist');
     else if (service === 'home-service') setCurrentScreen('home-service-selection');
     else if (service === 'relocation') setCurrentScreen('relocation');
     else if (service === 'resort') setCurrentScreen('resort');
     else if (service === 'holiday') setCurrentScreen('holiday');
     else if (service === 'mating-dating-hub') setCurrentScreen('mating-dating-hub');
+    else if (service === 'wallet') setCurrentScreen('wallet');
+    else if (service === 'purchase-package') {
+      setPreviousScreen(currentScreen);
+      setCurrentScreen('package-booking');
+    }
+    else if (service === 'services') setCurrentScreen('services');
+    else if (service === 'wishlist') router.push('/wishlist');
     else {
       setSelectedService(service);
       handleBack();
@@ -482,7 +500,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleAccountNavigate = (path: string) => {
-    if (path === 'account/orders') setCurrentScreen('order_history');
+    if (path === 'home') setCurrentScreen('home');
+    else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet') setCurrentScreen('wallet');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
@@ -683,16 +702,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             }
             // Handle problem-based navigation
             else if (screen === 'services_by_problem' || screen === 'problem_selected') {
-              // ✅ Route through ProblemGridFlowRouter for service style selection
+              // ✅ Route through ProblemGridFlowRouter; use allowedServiceStyles from specialization so only allowed styles show
               setSelectedProblem({ 
                 id: data?.problemId, 
                 title: data?.problemTitle || 'Service',
-                roleId: data?.roleId
+                roleId: data?.roleId,
+                allowedServiceStyles: data?.problem?.allowedServiceStyles ?? (data?.allowedServiceStyles ? (Array.isArray(data.allowedServiceStyles) ? data.allowedServiceStyles : [data.allowedServiceStyles]) : undefined),
               });
               setCurrentScreen('problem_grid_flow');
             } else if (screen === 'problem_grid') {
               setCurrentServiceType(data?.roleId || 'general');
               setCurrentScreen('problem_grid');
+            } else if (screen === 'shop' && data?.category) {
+              setSelectedShopCategory(data.category);
+              setCurrentScreen('shop');
             } else {
               handleNavigateToService(screen);
             }
@@ -970,12 +993,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         selectedServices={selectedServices}
         customerPhone={phone}
         customerId={bookingData.customerId}
+        flowType={bookingData.flowType}
         onBack={() => {
           // Go back to provider profile or tele consultation
           if (bookingData.category === 'nutritionist') {
             setCurrentScreen(previousScreen || 'nutritionist-tele');
             setPreviousScreen(null);
-          } else if (bookingData.flowType === 'tele-scheduled') {
+          } else if (bookingData.flowType === 'tele-scheduled' || bookingData.flowType === 'tele-instant') {
             setCurrentScreen('vet-tele-consultation');
           } else if (bookingData.flowType === 'home-visit') {
             setCurrentScreen('vet-home-visit');
@@ -984,14 +1008,57 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           }
           setPaymentData(null);
         }}
-        onSuccess={(bookingId, orderId, otpCode) => {
+        onSuccess={(bookingId, orderId, otpCode, meta) => {
           setSelectedBookingId(bookingId);
           setSelectedAppointmentId(bookingId);
-          setCurrentScreen('my-bookings');
           setPaymentData(null);
+          if (meta?.isInstantTele) {
+            setInstantConnectingBookingId(bookingId);
+            setCurrentScreen('instant-connecting');
+            toast.success('Payment successful! Connecting to vet...');
+            return;
+          }
+          setCurrentScreen('my-bookings');
           toast.success('Booking confirmed successfully!');
         }}
       />
+    );
+  }
+  // ✅ Instant tele: connecting screen (after payment) → then join video call
+  if (currentScreen === 'instant-connecting' && instantConnectingBookingId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 max-w-md mx-auto">
+        <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-8 w-full text-center">
+          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">Booking confirmed!</h1>
+          <p className="text-gray-600 mb-6">Connecting to vet now. They will join shortly.</p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => {
+                setVideoCallData({ bookingId: instantConnectingBookingId });
+                setInstantConnectingBookingId(null);
+                setCurrentScreen('video-call');
+              }}
+              className="w-full py-3 px-4 bg-[#FF8C42] hover:bg-[#e67a35] text-white font-medium rounded-xl transition-colors"
+            >
+              Join video call
+            </button>
+            <button
+              onClick={() => {
+                setInstantConnectingBookingId(null);
+                setCurrentScreen('vet-tele-consultation');
+              }}
+              className="w-full py-2 text-gray-500 text-sm"
+            >
+              Back to tele consultation
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
   // ✅ FIX: Grooming Service with Frame UI (ServiceDashboardHeader)
@@ -1082,6 +1149,27 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         }
       }} />,
       { title: 'Training', subtitle: 'Professional pet training', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ Behaviorist: Problem-grid–driven flow (same pattern as vet/grooming/training; no separate dashboard router)
+  if (currentScreen === 'behaviorist') {
+    return (
+      <ProblemGridSelector
+        roleId="behaviorist"
+        roleName="Behaviorist"
+        customerId={phone}
+        phone={phone}
+        onBack={handleBack}
+        onProblemSelect={(problem) => {
+          setSelectedProblem({
+            id: problem.id || problem.problemId,
+            title: problem.displayName || problem.name || problem.title,
+            roleId: 'behaviorist',
+            allowedServiceStyles: (problem as any).allowedServiceStyles,
+          });
+          setCurrentScreen('problem_grid_flow');
+        }}
+      />
     );
   }
   // ✅ FIX: Boarding Service with Frame UI (ServiceDashboardHeader – skipHeader to match vet/grooming/training)
@@ -1495,7 +1583,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
       >
-        <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />
+        <ShopDashboard phone={phone} category={selectedShopCategory} onBack={() => { setSelectedShopCategory(undefined); handleBack(); }} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />
       </CustomerScreenWrapper>
     );
   }
@@ -1556,7 +1644,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       }}
     />
   );
-  if (currentScreen === 'wallet') return <WalletPage onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'wallet') return (
+    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />
+    </CustomerScreenWrapper>
+  );
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
   if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); setCurrentScreen('shop'); }} onHelp={() => setCurrentScreen('support_help')} />;
   if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
@@ -1977,6 +2069,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       'boarding': { roleId: 'boarding', roleName: 'Boarding' },
       'adoption': { roleId: 'adoption', roleName: 'Adoption' },
       'sunset': { roleId: 'sunset', roleName: 'Sunset Care' },
+      'nutritionist': { roleId: 'nutritionist', roleName: 'Nutritionist' },
+      'pet_nutritionist': { roleId: 'nutritionist', roleName: 'Nutritionist' },
+      'behaviorist': { roleId: 'behaviorist', roleName: 'Behaviorist' },
       'general': { roleId: 'all', roleName: 'All Services' },
     };
     const roleInfo = currentServiceType 
@@ -1998,6 +2093,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           else if (currentServiceType === 'boarding') setCurrentScreen('boarding');
           else if (currentServiceType === 'adoption') setCurrentScreen('adoption');
           else if (currentServiceType === 'sunset') setCurrentScreen('sunset');
+          else if (currentServiceType === 'nutritionist' || currentServiceType === 'pet_nutritionist') setCurrentScreen('nutritionist');
+          else if (currentServiceType === 'behaviorist') setCurrentScreen('behaviorist');
           else {
             // If opened from home page, go back to home
             setCurrentScreen('home');
@@ -2008,9 +2105,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           setSelectedProblem({ 
             id: problem.id || problem.problemId, 
             title: problem.displayName || problem.name || problem.title,
-            roleId: roleInfo.roleId === 'all' ? undefined : roleInfo.roleId
+            roleId: roleInfo.roleId === 'all' ? undefined : roleInfo.roleId,
+            allowedServiceStyles: (problem as any).allowedServiceStyles,
           });
-          // ✅ Route to ProblemGridFlowRouter for service style selection
+          // ✅ Route to ProblemGridFlowRouter for service style selection (only allowed styles shown)
           setCurrentScreen('problem_grid_flow');
         }}
       />
@@ -2026,7 +2124,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           name: selectedProblem.title,
           icon: '🐾',
           description: `Services for ${selectedProblem.title}`,
-          allowedServiceStyles: ['at_home', 'at_center', 'tele'],
+          allowedServiceStyles: ((selectedProblem.allowedServiceStyles && selectedProblem.allowedServiceStyles.length > 0) ? selectedProblem.allowedServiceStyles : ['at_home', 'at_center', 'tele']) as ('at_home' | 'at_center' | 'tele')[],
           linkedServiceRoles: selectedProblem.roleId ? [selectedProblem.roleId] : ['veterinarian', 'groomer', 'trainer'],
           category: selectedProblem.roleId || 'general',
         }}

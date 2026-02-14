@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff } from 'lucide-react';
+import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -54,6 +54,15 @@ interface VendorChatModalProps {
   serviceName?: string;
   serviceType?: string; // ✅ NEW: Service type (tele, at_home, at_center)
   meetingId?: string; // ✅ NEW: Meeting ID for video calls
+  /** Package utilization for package bookings (sessions left, expiry) */
+  packageUtilization?: {
+    packageName?: string;
+    totalSessions?: number;
+    remainingSessions?: number;
+    usedSessions?: number;
+    isUnlimited?: boolean;
+    expiresAt?: string;
+  } | null;
   onClose: () => void;
   onSupportHandoff?: (bookingId: string, reason: string) => void;
   onVideoCallStart?: (bookingId: string, meetingId?: string) => void; // ✅ NEW: Callback for video call
@@ -125,6 +134,7 @@ export function VendorChatModal({
   serviceName,
   serviceType, // ✅ NEW: Service type
   meetingId, // ✅ NEW: Meeting ID
+  packageUtilization,
   onClose,
   onSupportHandoff,
   onVideoCallStart, // ✅ NEW: Video call callback
@@ -534,6 +544,19 @@ export function VendorChatModal({
             <X className="w-5 h-5 text-white" />
           </button>
         </div>
+
+        {/* Package utilization banner - show sessions left / validity for package bookings */}
+        {packageUtilization && (packageUtilization.totalSessions != null || packageUtilization.isUnlimited) && (
+          <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center gap-2 text-sm text-purple-800">
+            <Package className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {packageUtilization.isUnlimited
+                ? `Unlimited${packageUtilization.expiresAt ? ` · Valid until ${new Date(packageUtilization.expiresAt).toLocaleDateString()}` : ''}`
+                : `${packageUtilization.remainingSessions ?? 0} of ${packageUtilization.totalSessions ?? 0} sessions left`}
+              {packageUtilization.packageName && ` · ${packageUtilization.packageName}`}
+            </span>
+          </div>
+        )}
 
         {/* Chat Status Banner */}
         {!chatActive && (

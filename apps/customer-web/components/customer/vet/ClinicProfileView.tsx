@@ -237,10 +237,6 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
               <Clock className="w-4 h-4 text-gray-400" />
               <span className="text-gray-600">{clinic.timing}</span>
             </div>
-            <div className="flex items-center gap-3 text-sm">
-              <Phone className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-600">{clinic.phone}</span>
-            </div>
           </div>
 
           {/* Amenities */}

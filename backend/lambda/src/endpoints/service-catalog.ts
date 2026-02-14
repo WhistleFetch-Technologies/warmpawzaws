@@ -503,6 +503,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         status: service.status,
         publishStatus: service.publish_status,
         metadata: service.metadata || {},
+        isPackage: !!(service.metadata && (service.metadata as any).isPackage),
       }));
 
       return c.json({

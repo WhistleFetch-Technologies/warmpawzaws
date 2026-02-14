@@ -900,18 +900,58 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
 
       const result = await query(packageQuery, params);
 
-      const packages = result.rows.map((pkg: any) => ({
-        id: pkg.id,
-        packageName: pkg.package_name || pkg.name,
-        vendorName: pkg.vendor_name,
-        vendorId: pkg.vendor_id,
-        totalSessions: pkg.total_sessions,
-        remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions,
-        sessionsUsed: pkg.sessions_used || 0,
-        expiresAt: pkg.expires_at,
-        isUnlimited: pkg.unlimited_usage,
-        packageType: pkg.package_type,
-        status: pkg.computed_status
+      // Enrich each package with includedServices (from snapshot or package definition)
+      const packages = await Promise.all(result.rows.map(async (pkg: any) => {
+        let includedServices: Array<{ id: string; name: string }> = [];
+        const snapshot = pkg.package_snapshot && (typeof pkg.package_snapshot === 'string' ? JSON.parse(pkg.package_snapshot) : pkg.package_snapshot);
+        if (snapshot?.includedServices && Array.isArray(snapshot.includedServices)) {
+          includedServices = snapshot.includedServices.map((s: any) => ({ id: s.id || s.vendor_service_id, name: s.name || s.serviceName || 'Service' }));
+        } else {
+          // Try vendor_services (catalog package): package_id may be vendor_services.id
+          try {
+            const vsRows = await query(
+              `SELECT id, service_name, metadata FROM vendor_services WHERE id = $1 AND vendor_id = $2`,
+              [pkg.package_id, pkg.vendor_id]
+            );
+            if (vsRows.rows?.length > 0) {
+              const meta = vsRows.rows[0].metadata;
+              const parsed = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : (meta || {});
+              const details = parsed?.packageDetails || parsed;
+              const inc = details?.includedServices || details?.included_services;
+              if (Array.isArray(inc) && inc.length > 0) {
+                includedServices = inc.map((s: any) => ({ id: s.id || s.vendor_service_id, name: s.name || s.serviceName || 'Service' }));
+              }
+            }
+          } catch (_) {}
+          // Fallback: service_packages + package_services (legacy)
+          if (includedServices.length === 0) {
+            try {
+              const psRows = await query(
+                `SELECT ps.service_id, s.name as service_name FROM package_services ps
+                 LEFT JOIN services s ON ps.service_id = s.id
+                 WHERE ps.package_id = $1`,
+                [pkg.package_id]
+              );
+              if (psRows.rows?.length > 0) {
+                includedServices = psRows.rows.map((r: any) => ({ id: r.service_id, name: r.service_name || 'Service' }));
+              }
+            } catch (_) {}
+          }
+        }
+        return {
+          id: pkg.id,
+          packageName: pkg.package_name || pkg.name,
+          vendorName: pkg.vendor_name,
+          vendorId: pkg.vendor_id,
+          totalSessions: pkg.total_sessions,
+          remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions,
+          sessionsUsed: pkg.sessions_used || 0,
+          expiresAt: pkg.expires_at,
+          isUnlimited: pkg.unlimited_usage,
+          packageType: pkg.package_type,
+          status: pkg.computed_status,
+          includedServices,
+        };
       }));
 
       return c.json({
@@ -922,6 +962,49 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching packages by phone:', error);
       return c.json({ packages: [], success: true });
+    }
+  });
+
+  /**
+   * GET /customer/:phone/latest-booking-by-vendor?vendorId=...
+   * Returns the latest booking for this customer with the given vendor (for opening chat from My Packages).
+   */
+  app.get("/customer/:phone/latest-booking-by-vendor", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const vendorId = c.req.query('vendorId');
+      if (!vendorId) {
+        return c.json({ error: 'vendorId query required' }, 400);
+      }
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ booking: null, success: true });
+      }
+      const result = await query(
+        `SELECT b.id as booking_id, b.vendor_id, v.business_name as vendor_name, v.logo_url as vendor_photo
+         FROM bookings b
+         LEFT JOIN vendors v ON v.id = b.vendor_id
+         WHERE b.customer_id = $1 AND b.vendor_id = $2 AND b.status NOT IN ('cancelled', 'rejected')
+         ORDER BY b.booking_date DESC, b.booking_time DESC
+         LIMIT 1`,
+        [customerId, vendorId]
+      );
+      const row = result.rows?.[0];
+      if (!row) {
+        return c.json({ success: true, booking: null });
+      }
+      return c.json({
+        success: true,
+        booking: {
+          bookingId: row.booking_id,
+          vendorId: row.vendor_id,
+          vendorName: row.vendor_name,
+          vendorPhoto: row.vendor_photo,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching latest booking by vendor:', error);
+      return c.json({ success: true, booking: null });
     }
   });
 

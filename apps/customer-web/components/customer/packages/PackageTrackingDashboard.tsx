@@ -21,7 +21,7 @@
 import { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Package, Clock, Calendar, CheckCircle2, AlertTriangle,
-  ChevronRight, Star, RefreshCw, Gift, Zap, History, Play, Plus
+  ChevronRight, Star, RefreshCw, Gift, Zap, History, Play, Plus, MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -35,6 +35,8 @@ interface PackageTrackingDashboardProps {
   customerId?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  /** Optional: open chat with vendor (bookingId from latest booking with that vendor). If not set, onNavigate('open-chat', data) is used. */
+  onOpenChat?: (bookingId: string, vendorName?: string, vendorPhoto?: string) => void;
 }
 
 interface CustomerPackage {
@@ -110,7 +112,8 @@ export function PackageTrackingDashboard({
   phone,
   customerId,
   onBack,
-  onNavigate
+  onNavigate,
+  onOpenChat,
 }: PackageTrackingDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('active');
@@ -206,6 +209,29 @@ export function PackageTrackingDashboard({
       case 'membership': return '👑';
       case 'subscription': return '🔄';
       default: return '📦';
+    }
+  };
+
+  // Open chat with vendor (uses latest booking with that vendor so chat is booking-scoped).
+  const handleMessageVendor = async (pkg: CustomerPackage, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await apiClient.get<{ booking: { bookingId: string; vendorName?: string; vendorPhoto?: string } | null }>(
+        `/customer/${encodeURIComponent(phone)}/latest-booking-by-vendor?vendorId=${encodeURIComponent(pkg.vendorId)}`
+      );
+      const booking = res?.booking;
+      if (!booking?.bookingId) {
+        toast.info('Book a session with this vendor first to unlock chat.');
+        return;
+      }
+      if (onOpenChat) {
+        onOpenChat(booking.bookingId, booking.vendorName, booking.vendorPhoto);
+      } else {
+        onNavigate('open-chat', { bookingId: booking.bookingId, vendorName: booking.vendorName, vendorPhoto: booking.vendorPhoto });
+      }
+    } catch (err) {
+      console.error('Error opening chat:', err);
+      toast.error('Could not open chat.');
     }
   };
 
@@ -328,17 +354,28 @@ export function PackageTrackingDashboard({
           </div>
           
           {isActive && (
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleBookWithPackage(pkg);
-              }}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Play className="w-3 h-3 mr-1" />
-              Book Now
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => handleMessageVendor(pkg, e)}
+                className="border-orange-300 text-orange-700 hover:bg-orange-50"
+              >
+                <MessageSquare className="w-3 h-3 mr-1" />
+                Message
+              </Button>
+              <Button
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBookWithPackage(pkg);
+                }}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Play className="w-3 h-3 mr-1" />
+                Book Now
+              </Button>
+            </div>
           )}
         </div>
 

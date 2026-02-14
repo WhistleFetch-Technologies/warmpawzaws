@@ -266,10 +266,6 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                 <h3 className="font-semibold text-gray-900 mb-0">Contact Information</h3>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 text-sm">
-                    <Phone className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-700">{center.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm">
                     <MapPin className="w-5 h-5 text-gray-400" />
                     <span className="text-gray-700">{facility.address || center.address}</span>
                   </div>

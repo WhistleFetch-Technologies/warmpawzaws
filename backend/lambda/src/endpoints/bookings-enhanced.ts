@@ -35,6 +35,7 @@ import { validateServiceAvailability } from '../utils/service-availability-valid
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { getRefundTierForCancellation, computeRefundFromTier } from '../lib/services/cancellation-policy-service';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -176,6 +177,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       customerName,
       petName,
       notes: notesFromSchema,
+      packagePurchaseId,
     } = validationResult.data;
 
     const amount = amountFromSchema ?? totalAmount;
@@ -662,8 +664,41 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let subscriptionId: string | null = null;
         let isSubscriptionBooking = false;
         let finalAmount = amount || 0;
-        
+        // ✅ Package booking: when packagePurchaseId provided, use package credit (0 payment)
+        let isPackageBooking = false;
+        let packagePurchaseIdToUse: string | null = null;
+        let packageSessionNumberToUse: number | null = null;
+        let pkgForDeduction: { remaining_sessions: number; unlimited_usage: boolean } | null = null;
+
+        if (packagePurchaseId) {
+          try {
+            const packageResult = await query(
+              `SELECT id, remaining_sessions, unlimited_usage, total_sessions
+               FROM package_purchases
+               WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
+                 AND status = 'active'
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (remaining_sessions > 0 OR unlimited_usage = true)`,
+              [packagePurchaseId, customerId, vendorId]
+            );
+            if (packageResult.rows?.length > 0) {
+              const pkg = packageResult.rows[0];
+              const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
+              packagePurchaseIdToUse = pkg.id;
+              packageSessionNumberToUse = sessionsUsed + 1;
+              pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
+              isPackageBooking = true;
+              finalAmount = 0;
+              console.log(`[BOOKING] ✅ Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount ₹0.`);
+            }
+          } catch (pkgErr) {
+            console.warn('[BOOKING] Package check failed:', pkgErr);
+          }
+        }
+
         try {
+          // Skip subscription check when already using package
+          if (!isPackageBooking) {
           // Get service category for subscription matching
           const serviceCategory = service.category || baseServices[0]?.category || null;
           
@@ -702,14 +737,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             
             console.log(`[BOOKING] ✅ Active unlimited subscription found: ${subscriptionId}. Setting amount to ₹0.`);
           }
+          }
         } catch (subError) {
           console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError);
         }
         
         // ✅ Calculate final amounts considering multiple services
-        // Priority: 1. Subscription (free), 2. Selected services total, 3. Single service amount
+        // Priority: 1. Package (free), 2. Subscription (free), 3. Selected services total, 4. Single service amount
         const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : (amount || 0);
-        const calculatedFinalAmount = isSubscriptionBooking ? 0 : calculatedBasePrice;
+        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
+        const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
         
         const bookingData: Record<string, any> = {
           customer_id: customerId,
@@ -720,9 +757,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           service_type: serviceType || 'at_vendor',
           address: address,
           base_price: calculatedBasePrice,
-          total_amount: calculatedFinalAmount, // ✅ Use calculated amount (may be 0 for subscriptions)
-          status: 'pending',
-          payment_status: isSubscriptionBooking ? 'paid' : 'pending', // ✅ Mark as paid for subscription
+          total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
+          status: isPackageBooking ? 'confirmed' : 'pending',
+          payment_status: paymentStatus, // ✅ completed for package, paid for subscription
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           subscription_id: subscriptionId, // ✅ Track subscription used
           subscription_booking: isSubscriptionBooking, // ✅ Flag for subscription booking
@@ -746,6 +783,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // ✅ Phase 2.3: Add promotionId if provided (for applied promotions)
         if (promotionId) {
           bookingData.promotion_id = promotionId;
+        }
+
+        if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
+          bookingData.package_purchase_id = packagePurchaseIdToUse;
+          bookingData.is_package_session = true;
+          bookingData.package_session_number = packageSessionNumberToUse;
         }
 
         if (staffId) {
@@ -797,7 +840,30 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           values
         );
 
-        return insertResult.rows[0];
+        const insertedBooking = insertResult.rows[0];
+
+        // ✅ Package booking: deduct session and log usage inside same transaction
+        if (packagePurchaseIdToUse && pkgForDeduction && insertedBooking?.id) {
+          if (!pkgForDeduction.unlimited_usage) {
+            await client.query(
+              `UPDATE package_purchases SET remaining_sessions = remaining_sessions - 1, updated_at = NOW() WHERE id = $1`,
+              [packagePurchaseIdToUse]
+            );
+          }
+          await client.query(
+            `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
+             VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
+            [
+              packagePurchaseIdToUse,
+              insertedBooking.id,
+              packageSessionNumberToUse,
+              pkgForDeduction.remaining_sessions,
+              pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
+            ]
+          );
+        }
+
+        return insertedBooking;
       });
 
       const booking = result;
@@ -1898,46 +1964,54 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Process refund if payment was made
+      // Process refund if payment was made — use REFUND POLICY only (vendor_refund_tiers).
+      // Payment policy is for how much to pay at booking (100%/partial); never use it for cancellation refunds.
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          // Calculate refund amount using policy
+          const totalAmount = parseFloat(String(currentBooking.total_amount));
           const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
           const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
-          
-          // Get refund rules
-          const rulesResult = await query(
-            `SELECT * FROM booking_cancellation_rules
-             WHERE (vendor_id = $1 OR vendor_id IS NULL)
-               AND (service_id = $2 OR service_id IS NULL)
-             ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-             LIMIT 1`,
-            [currentBooking.vendor_id || null, currentBooking.service_id || null]
-          ).catch(() => ({ rows: [] }));
-          
-          // Calculate refund percentage based on rules
-          let refundPercentage = 100; // Default to full refund
-          const rule = rulesResult.rows[0];
-          if (rule) {
-            if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) {
-              refundPercentage = 100;
-            } else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) {
-              refundPercentage = rule.partial_refund_percentage || 50;
-            } else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) {
-              refundPercentage = 25;
-            } else {
-              refundPercentage = 0;
+
+          // Refund policy: vendor_refund_tiers (who cancels = pet_parent for customer-initiated cancel)
+          const tier = await getRefundTierForCancellation(
+            {
+              id: bookingId,
+              vendor_id: currentBooking.vendor_id,
+              service_id: currentBooking.service_id,
+              service_type: currentBooking.service_type,
+              booking_date: currentBooking.booking_date,
+              booking_time: currentBooking.booking_time,
+              total_amount: totalAmount,
+            },
+            'pet_parent',
+            { hoursUntilBooking }
+          );
+          const computed = tier
+            ? computeRefundFromTier(totalAmount, tier, 100, 0)
+            : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
+
+          // Fallback: if no vendor_refund_tiers, use booking_cancellation_rules (legacy refund rules)
+          let refundAmount = computed.refundAmount;
+          let refundPercentage = computed.refundPercentage;
+          if (!tier) {
+            const rulesResult = await query(
+              `SELECT * FROM booking_cancellation_rules
+               WHERE (vendor_id = $1 OR vendor_id IS NULL)
+                 AND (service_id = $2 OR service_id IS NULL)
+               ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+               LIMIT 1`,
+              [currentBooking.vendor_id || null, currentBooking.service_id || null]
+            ).catch(() => ({ rows: [] }));
+            const rule = (rulesResult as any).rows?.[0];
+            if (rule) {
+              if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) refundPercentage = 100;
+              else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
+              else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
+              else refundPercentage = 0;
+              refundAmount = (totalAmount * refundPercentage) / 100;
             }
-          } else {
-            // Default policy: 100% if 24+ hours, 50% if 12+ hours, 25% if 6+ hours, 0% otherwise
-            if (hoursUntilBooking >= 24) refundPercentage = 100;
-            else if (hoursUntilBooking >= 12) refundPercentage = 50;
-            else if (hoursUntilBooking >= 6) refundPercentage = 25;
-            else refundPercentage = 0;
           }
-          
-          const refundAmount = (parseFloat(currentBooking.total_amount) * refundPercentage) / 100;
           
           if (refundAmount > 0) {
             // Get payment for refund

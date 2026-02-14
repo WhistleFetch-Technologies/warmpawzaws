@@ -205,8 +205,13 @@ export function ServicePackageSelector({
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <h3 className="font-semibold text-gray-900">{serviceName}</h3>
+                            {(service as any).isPackage && (
+                              <Badge className="bg-purple-100 text-purple-700 border border-purple-200 text-xs">
+                                Package
+                              </Badge>
+                            )}
                             {service.isPopular && (
                               <Badge className="bg-green-100 text-green-600 border-none text-xs">
                                 Popular

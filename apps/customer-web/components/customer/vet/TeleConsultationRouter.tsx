@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Video, Clock, Zap, Calendar, ChevronRight,
-  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus, Stethoscope
+  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus, Stethoscope, Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,7 +13,6 @@ import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
-import { InstantTeleQueue } from '../InstantTeleQueue';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 // ============================================================================
@@ -79,10 +78,10 @@ type FlowStep =
   | 'mode-selection'      // Choose Scheduled vs Instant
   | 'provider-list'       // For Scheduled: list of providers
   | 'provider-profile'    // For Scheduled: provider profile + services
-  | 'instant-service'     // For Instant: select service
+  | 'instant-vendor-list' // For Instant: available-now vets (from va2)
+  | 'instant-service'     // For Instant: select service (vendor's tele services)
   | 'instant-pet'         // For Instant: select pet
-  | 'instant-queue'       // For Instant: queue waiting
-  | 'payment'             // Payment page
+  | 'payment'             // Payment page (instant: payment first, then booking)
   | 'confirmation';       // Booking confirmed
 
 // ============================================================================
@@ -192,6 +191,116 @@ function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelec
             </p>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// INSTANT: AVAILABLE NOW VENDOR LIST (vet-only from va2, no queue)
+// ============================================================================
+
+interface AvailableNowVendor {
+  vendorId: string;
+  vendorName: string;
+  photo?: string;
+  phone?: string;
+  city?: string;
+  address?: string;
+}
+
+interface InstantVendorListProps {
+  vendors: AvailableNowVendor[];
+  loading: boolean;
+  onSelectVendor: (v: AvailableNowVendor) => void;
+  onBack: () => void;
+}
+
+function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: InstantVendorListProps) {
+  const [search, setSearch] = useState('');
+  const filtered = search.trim()
+    ? vendors.filter(
+        (v) =>
+          v.vendorName?.toLowerCase().includes(search.toLowerCase()) ||
+          v.city?.toLowerCase().includes(search.toLowerCase())
+      )
+    : vendors;
+
+  const dashboardStats = [
+    { value: vendors.length.toString(), label: 'Available now' },
+    { value: '<5min', label: 'Connect' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+      <ServiceDashboardHeader
+        serviceName="Available now"
+        serviceSubtitle="Vets ready for instant video call"
+        serviceIcon={Zap}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
+      <div className="px-4 pt-4 pb-8">
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name or city..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 bg-white text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-[#FF8C42]/30 focus:border-[#FF8C42]"
+          />
+        </div>
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#FF8C42] mx-auto mb-4" />
+            <p className="text-slate-500">Loading available vets...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50 rounded-2xl">
+            <Video className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <h3 className="font-bold text-slate-900 mb-2">
+              {vendors.length === 0 ? 'No vets available right now' : 'No matches'}
+            </h3>
+            <p className="text-slate-500 text-sm">
+              {vendors.length === 0
+                ? 'Try scheduled consultation or check back later.'
+                : 'Try a different search.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((v) => (
+              <button
+                key={v.vendorId}
+                onClick={() => onSelectVendor(v)}
+                className="w-full p-4 rounded-2xl text-left transition-all border-2 border-transparent hover:border-[#FF8C42] hover:shadow-md bg-white flex items-center gap-4"
+              >
+                <div className="w-14 h-14 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0">
+                  {v.photo ? (
+                    <img src={v.photo} alt={v.vendorName} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-base text-slate-900">{v.vendorName}</h3>
+                  {v.city && (
+                    <p className="text-sm text-slate-500 mt-0.5">{v.city}</p>
+                  )}
+                  <span className="inline-flex items-center gap-1 mt-1.5 text-xs text-green-600 font-medium">
+                    <Zap className="w-3.5 h-3.5" /> Available now
+                  </span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-slate-400 flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -390,8 +499,15 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
+
+  // Instant flow (available-now → vendor → service → pet → payment)
+  const [availableNowVendors, setAvailableNowVendors] = useState<AvailableNowVendor[]>([]);
+  const [loadingAvailableNow, setLoadingAvailableNow] = useState(false);
+  const [selectedInstantVendor, setSelectedInstantVendor] = useState<AvailableNowVendor | null>(null);
+  const [vendorTeleServices, setVendorTeleServices] = useState<PlatformService[]>([]);
+  const [loadingVendorServices, setLoadingVendorServices] = useState(false);
   
-  // Data
+  // Data (scheduled path / legacy)
   const [platformServices, setPlatformServices] = useState<PlatformService[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
@@ -482,14 +598,59 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     setStep('provider-list');
   };
 
-  const handleSelectInstant = () => {
-    loadPlatformServices();
-    setStep('instant-service');
+  const handleSelectInstant = async () => {
+    setLoadingAvailableNow(true);
+    setAvailableNowVendors([]);
+    setSelectedInstantVendor(null);
+    setVendorTeleServices([]);
+    try {
+      const res = await apiClient.get<any>('/customer/tele/available-now');
+      const list = res?.vendors || [];
+      setAvailableNowVendors(list);
+      setStep('instant-vendor-list');
+    } catch (err) {
+      console.error('Error loading available-now vets:', err);
+      toast.error('Could not load available vets. Try again.');
+    } finally {
+      setLoadingAvailableNow(false);
+    }
   };
 
   const handleSelectProvider = (provider: Provider) => {
     setSelectedProvider(provider);
     setStep('provider-profile');
+  };
+
+  const loadVendorTeleServices = async (vendorId: string) => {
+    setLoadingVendorServices(true);
+    setVendorTeleServices([]);
+    try {
+      const response = await apiClient.get<any>(
+        `/customer/vendor/${vendorId}/services?serviceStyle=tele`
+      );
+      let list = response?.services || response?.tele?.services || [];
+      if (Array.isArray(response) && response.length) list = response;
+      const mapped: PlatformService[] = (list || []).map((s: any) => ({
+        id: s.id || s.service_id,
+        serviceId: s.id || s.service_id,
+        name: s.name || s.service_name || 'Consultation',
+        description: s.description || s.custom_description,
+        price: Number(s.price ?? s.custom_price ?? 499),
+        duration: Number(s.duration ?? s.custom_duration ?? s.duration_minutes ?? 15),
+      }));
+      setVendorTeleServices(mapped);
+    } catch (err) {
+      console.error('Error loading vendor tele services:', err);
+      toast.error('Could not load services. Try another vet.');
+    } finally {
+      setLoadingVendorServices(false);
+    }
+  };
+
+  const handleSelectInstantVendor = (v: AvailableNowVendor) => {
+    setSelectedInstantVendor(v);
+    loadVendorTeleServices(v.vendorId);
+    setStep('instant-service');
   };
 
   const handleSelectInstantService = (service: PlatformService) => {
@@ -499,7 +660,25 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
 
   const handleSelectPet = (pet: Pet) => {
     setSelectedPet(pet);
-    setStep('instant-queue');
+    if (selectedInstantVendor && selectedService && customerId) {
+      onNavigate('payment', {
+        flowType: 'tele-instant',
+        vendorId: selectedInstantVendor.vendorId,
+        vendorName: selectedInstantVendor.vendorName,
+        serviceId: selectedService.serviceId,
+        serviceName: selectedService.name,
+        totalAmount: selectedService.price,
+        totalDuration: selectedService.duration,
+        services: [{ serviceId: selectedService.serviceId, name: selectedService.name, price: selectedService.price, duration: selectedService.duration }],
+        petId: pet.id,
+        petName: pet.name,
+        customerId,
+        category: 'vet',
+        serviceType: 'tele',
+      });
+      return;
+    }
+    if (!customerId) toast.error('Customer ID not found. Please try again.');
   };
 
   const handleProceedToPayment = (bookingData: any) => {
@@ -512,10 +691,6 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     });
   };
 
-  const handleQueueAccepted = (bookingId: string, meetingId?: string) => {
-    onNavigate('video-call', { bookingId, meetingId });
-  };
-
   const handleAddPet = () => {
     onNavigate('add-pet', { returnTo: 'tele-consultation' });
   };
@@ -526,20 +701,28 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         onBack();
         break;
       case 'provider-list':
-      case 'instant-service':
         setStep('mode-selection');
         break;
       case 'provider-profile':
         setSelectedProvider(null);
         setStep('provider-list');
         break;
+      case 'instant-vendor-list':
+        setAvailableNowVendors([]);
+        setStep('mode-selection');
+        break;
+      case 'instant-service':
+        if (selectedInstantVendor) {
+          setSelectedInstantVendor(null);
+          setVendorTeleServices([]);
+          setStep('instant-vendor-list');
+        } else {
+          setStep('mode-selection');
+        }
+        break;
       case 'instant-pet':
         setSelectedService(null);
         setStep('instant-service');
-        break;
-      case 'instant-queue':
-        setSelectedPet(null);
-        setStep('instant-pet');
         break;
       default:
         onBack();
@@ -589,12 +772,22 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         />
       );
 
+    case 'instant-vendor-list':
+      return (
+        <InstantVendorList
+          vendors={availableNowVendors}
+          loading={loadingAvailableNow}
+          onSelectVendor={handleSelectInstantVendor}
+          onBack={handleBack}
+        />
+      );
+
     case 'instant-service':
       return (
         <InstantServiceSelection
           phone={phone}
-          services={platformServices}
-          loading={loadingServices}
+          services={selectedInstantVendor ? vendorTeleServices : platformServices}
+          loading={selectedInstantVendor ? loadingVendorServices : loadingServices}
           onSelectService={handleSelectInstantService}
           onBack={handleBack}
         />
@@ -615,31 +808,6 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
           onAddPet={handleAddPet}
           onBack={handleBack}
         />
-      );
-
-    case 'instant-queue':
-      if (!selectedService || !selectedPet || !customerId) {
-        if (!customerId) {
-          toast.error('Customer ID not found. Please try again.');
-        }
-        setStep('instant-pet');
-        return null;
-      }
-      return (
-        <div className="min-h-screen bg-gray-50">
-          <InstantTeleQueue
-            customerId={customerId}
-            petId={selectedPet.id}
-            roleId="veterinarian"
-            category="vet"
-            serviceId={selectedService.serviceId}
-            onBack={handleBack}
-            onQueueJoined={(queueId) => {
-              console.log('Joined queue:', queueId);
-            }}
-            onAccepted={handleQueueAccepted}
-          />
-        </div>
       );
 
     default:

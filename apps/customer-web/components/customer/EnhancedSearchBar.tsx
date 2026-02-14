@@ -7,7 +7,7 @@ import { apiClient } from '@/lib/api-client';
 
 interface SearchResult {
   id: string;
-  type: 'staff' | 'center' | 'service' | 'product' | 'vendor' | 'category';
+  type: 'staff' | 'center' | 'service' | 'product' | 'vendor' | 'category' | 'symptom';
   category?: string; // Service category (veterinary, grooming, etc.)
   data: any;
   relevanceScore: number;
@@ -174,16 +174,40 @@ export function EnhancedSearchBar({
         params.append('customerId', customerId);
       }
 
-      // Use universal search endpoint (OpenSearch + SQL fallback)
-      const data = await apiClient.get<{ 
-        data?: { vendors?: any[], services?: any[], results?: any[] }, 
-        vendors?: any[], 
-        services?: any[], 
-        results?: any[] 
-      }>(`/search?${params.toString()}`);
+      // Parallel: universal search + symptom search (so e.g. "vomiting" shows vet options and drives to booking)
+      const [searchData, symptomData] = await Promise.all([
+        apiClient.get<{ 
+          data?: { vendors?: any[], services?: any[], results?: any[] }, 
+          vendors?: any[], 
+          services?: any[], 
+          results?: any[] 
+        }>(`/search?${params.toString()}`),
+        apiClient.get<{ success?: boolean; results?: any[] }>(`/public/search/symptoms?q=${encodeURIComponent(searchQuery)}`).catch(() => ({ success: false, results: [] })),
+      ]);
+      const data = searchData;
       
       // Transform results from universal search format to SearchResult format
       const transformedResults: SearchResult[] = [];
+      
+      // Prepend symptom-based results (e.g. "vomiting" -> Vet at Home, Vet at Clinic, Tele) so user can go straight to booking
+      const symptomResults = symptomData?.success && Array.isArray(symptomData.results) ? symptomData.results : [];
+      symptomResults.slice(0, 5).forEach((row: any) => {
+        transformedResults.push({
+          id: `symptom-${row.specializationId || row.name}`,
+          type: 'symptom',
+          category: row.categoryId || row.roleId || 'veterinary',
+          data: {
+            specializationId: row.specializationId,
+            name: row.name,
+            matchedSymptom: row.matchedSymptom,
+            roleId: row.roleId,
+            allowedServiceStyles: row.allowedServiceStyles || ['at_home', 'at_center', 'tele'],
+            categoryId: row.categoryId,
+          },
+          relevanceScore: 100,
+          matchedFields: ['symptom'],
+        });
+      });
       
       // Add vendors
       const vendors = data.data?.vendors || data.vendors || [];
@@ -432,19 +456,18 @@ export function EnhancedSearchBar({
                     </div>
 
                     <p className="text-sm text-gray-500 line-clamp-1 mt-1">
-                      {(() => {
-                        // Safely convert to string to avoid rendering objects
-                        const spec = result.data?.specialization;
-                        const serviceType = result.data?.serviceType;
-                        const desc = result.data?.description;
-                        
-                        const value = spec || serviceType || desc || '';
-                        // If it's an object, extract meaningful text
-                        if (typeof value === 'object' && value !== null) {
-                          return String(value.name || value.type || value.text || '');
-                        }
-                        return String(value || '');
-                      })()}
+                      {result.type === 'symptom'
+                        ? `Consult for "${result.data?.matchedSymptom || result.data?.name || 'symptom'}" — book vet / clinic / tele`
+                        : (() => {
+                            const spec = result.data?.specialization;
+                            const serviceType = result.data?.serviceType;
+                            const desc = result.data?.description;
+                            const value = spec || serviceType || desc || '';
+                            if (typeof value === 'object' && value !== null) {
+                              return String(value.name || value.type || value.text || '');
+                            }
+                            return String(value || '');
+                          })()}
                     </p>
 
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">

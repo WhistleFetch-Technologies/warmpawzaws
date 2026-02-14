@@ -10,6 +10,7 @@ import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -931,7 +932,7 @@ export function VetBookingRouter({
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="font-bold text-base sm:text-lg text-gray-900">₹{service.price}</p>
+                        <p className="font-bold text-base sm:text-lg text-gray-900">{formatPriceWithSymbol(service.price)}</p>
                         {isSelected && (
                           <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500 mt-1 ml-auto" />
                         )}
@@ -1170,7 +1171,7 @@ export function VetBookingRouter({
                         {selectedServiceType === 'tele' ? <Video className="w-5 h-5" /> : selectedServiceType === 'at_home' ? <Home className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
                       </div>
                       <div className="flex-1"><p className="font-semibold">{svc.name || svc.serviceName}</p><p className="text-xs text-gray-500">{svc.duration} mins</p></div>
-                      <p className="font-bold text-orange-600">₹{svc.price ?? 0}</p>
+                      <p className="font-bold text-orange-600">{formatPriceWithSymbol(svc.price ?? 0)}</p>
                     </div>
                   ))}
                 </div>
@@ -1180,13 +1181,13 @@ export function VetBookingRouter({
                     {selectedServiceType === 'tele' ? <Video className="w-5 h-5" /> : selectedServiceType === 'at_home' ? <Home className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
                   </div>
                   <div className="flex-1"><p className="font-semibold">{selectedServiceOption?.name || 'Vet Consultation'}</p><p className="text-xs text-gray-500">{selectedServiceOption?.duration ?? 0} mins</p></div>
-                  <p className="font-bold text-orange-600">₹{selectedServiceOption?.price ?? 0}</p>
+                  <p className="font-bold text-orange-600">{formatPriceWithSymbol(selectedServiceOption?.price ?? 0)}</p>
                 </div>
               )}
               <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {selectedTime}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
-              <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">₹{(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (x.price ?? 0), 0) : (selectedServiceOption?.price ?? 0))).toLocaleString('en-IN')}</span></div>
+              <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
               {selectedPackageForSwitch && (
                 <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
                   <Package className="w-4 h-4" />
@@ -1206,8 +1207,8 @@ export function VetBookingRouter({
                   return (
                     <div key={pkg.id} className="mb-3 last:mb-0 p-3 bg-white rounded-lg border border-orange-100">
                       <p className="font-medium">{pkg.package_name ?? pkg.name}</p>
-                      <p className="text-sm text-gray-600 mt-1">₹{pkgPrice} • {sessions} sessions</p>
-                      {savings > 0 && <p className="text-xs text-green-600 mt-1">Save ₹{savings} vs single bookings</p>}
+                      <p className="text-sm text-gray-600 mt-1">{formatPriceWithSymbol(pkgPrice)} • {sessions} sessions</p>
+                      {savings > 0 && <p className="text-xs text-green-600 mt-1">Save {formatPriceWithSymbol(savings)} vs single bookings</p>}
                       <Button variant="outline" size="sm" className="mt-2 border-orange-300 text-orange-600 hover:bg-orange-50" onClick={() => {
                         setSelectedPackageForSwitch(pkg);
                         toast.success(`Switched to ${pkg.package_name ?? pkg.name}. Proceed to payment.`);
@@ -1266,13 +1267,13 @@ export function VetBookingRouter({
                           <p className="text-xs sm:text-sm text-gray-500">{svc.duration} mins</p>
                         )}
                       </div>
-                      <p className="font-bold text-sm sm:text-base flex-shrink-0">₹{(svc.price ?? 0).toLocaleString('en-IN')}</p>
+                      <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svc.price ?? 0)}</p>
                     </div>
                   ))}
                   {allSelectedServices.length > 1 && (
                     <div className="flex justify-between items-center pt-2 font-bold text-sm sm:text-base">
                       <span>Subtotal</span>
-                      <span className="text-orange-600">₹{allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0).toLocaleString('en-IN')}</span>
+                      <span className="text-orange-600">{formatPriceWithSymbol(allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0))}</span>
                     </div>
                   )}
                 </div>
@@ -1294,7 +1295,7 @@ export function VetBookingRouter({
                     )}
                   </div>
                   <p className="font-bold text-sm sm:text-base flex-shrink-0">
-                    ₹{(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0).toLocaleString('en-IN')}
+                    {formatPriceWithSymbol(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0)}
                   </p>
                 </div>
               )}
@@ -1341,9 +1342,9 @@ export function VetBookingRouter({
               <div className="flex justify-between items-center text-base sm:text-lg">
                 <span className="font-bold">Total</span>
                 <span className="font-bold text-orange-600">
-                  ₹{(allSelectedServices && allSelectedServices.length > 0
-                    ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
-                    : (selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0)).toLocaleString('en-IN')}
+                  {formatPriceWithSymbol(allSelectedServices && allSelectedServices.length > 0
+                    ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
+                    : (selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0))}
                 </span>
               </div>
             </div>
@@ -1637,7 +1638,7 @@ export function VetBookingRouter({
                   variant="outline"
                   className="w-full text-sm sm:text-base py-2.5 sm:py-3"
                 >
-                  Book New (Pay ₹{selectedServiceOption?.price || 499})
+                  Book New (Pay {formatPriceWithSymbol(selectedServiceOption?.price || 499)})
                 </Button>
               </div>
             </div>
