@@ -143,18 +143,58 @@ export async function sendSMS(options: SMSOptions): Promise<{ success: boolean; 
     const snsClient = settings.credentials
       ? new SNSClient({ region, credentials: settings.credentials })
       : new SNSClient({ region });
-    const result = await snsClient.send(
-      new PublishCommand({
-        PhoneNumber: phone,
-        Message: message,
-        MessageAttributes: attrs,
-      })
-    );
+    
+    // ✅ PRODUCTION FIX: Enhanced logging for debugging
+    console.log(`[SMS] Attempting to send SMS to ${phone} via SNS in region ${region}`);
+    console.log(`[SMS] Using credentials: ${settings.credentials ? 'DB credentials' : 'Lambda role'}`);
+    console.log(`[SMS] Message attributes:`, JSON.stringify(attrs, null, 2));
+    
+    const publishCommand = new PublishCommand({
+      PhoneNumber: phone,
+      Message: message,
+      MessageAttributes: attrs,
+    });
+    
+    const sendStartTime = Date.now();
+    const result = await snsClient.send(publishCommand);
+    const sendDuration = Date.now() - sendStartTime;
+    
+    console.log(`[SMS] ✅ SNS publish successful in ${sendDuration}ms. MessageId: ${result?.MessageId}`);
     return { success: true, messageId: result?.MessageId };
   } catch (err: any) {
-    console.error('[SMS] SNS send failed:', err?.message || err);
-    if (err?.Code) console.error('[SMS] SNS Code:', err.Code);
-    if (err?.$metadata?.httpStatusCode) console.error('[SMS] HTTP status:', err.$metadata.httpStatusCode);
+    const errorDetails: any = {
+      message: err?.message || String(err),
+      name: err?.name,
+    };
+    
+    if (err?.Code) {
+      errorDetails.code = err.Code;
+      console.error('[SMS] ❌ SNS Error Code:', err.Code);
+    }
+    if (err?.$metadata) {
+      errorDetails.httpStatusCode = err.$metadata.httpStatusCode;
+      errorDetails.requestId = err.$metadata.requestId;
+      errorDetails.attempts = err.$metadata.attempts;
+      console.error('[SMS] ❌ SNS HTTP Status:', err.$metadata.httpStatusCode);
+      console.error('[SMS] ❌ SNS Request ID:', err.$metadata.requestId);
+    }
+    if (err?.stack) {
+      errorDetails.stack = err.stack;
+    }
+    
+    console.error('[SMS] ❌ SNS send failed with details:', JSON.stringify(errorDetails, null, 2));
+    
+    // Check for specific error types
+    if (err?.message?.includes('ETIMEDOUT') || err?.message?.includes('timeout')) {
+      console.error('[SMS] ⚠️ Connection timeout - check VPC/NAT gateway configuration');
+    }
+    if (err?.Code === 'OptedOut') {
+      console.error('[SMS] ⚠️ Phone number has opted out of SMS');
+    }
+    if (err?.Code === 'InvalidParameter') {
+      console.error('[SMS] ⚠️ Invalid parameter - check phone number format or DLT attributes');
+    }
+    
     return { success: false };
   }
 }

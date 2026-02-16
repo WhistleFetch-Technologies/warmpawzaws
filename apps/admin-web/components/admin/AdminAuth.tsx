@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Shield } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
 import { Button, Input } from '@warmpawz/ui';
 
 interface AdminAuthProps {
@@ -27,22 +27,50 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
     setError('');
 
     try {
+      // ✅ FIX: In dev (UAT mode), don't call API - just set localStorage directly
+      // No API endpoint should be hit in dev environment
+      if (isUatMode()) {
+        const uatToken = `uat-token-admin-${Date.now()}`;
+        localStorage.setItem('adminAuthToken', uatToken);
+        localStorage.setItem('adminEmail', formData.email || 'admin@warmpawz.com');
+        apiClient.setAuthToken(uatToken);
+        sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+        sessionStorage.setItem('_warmpawz_admin_just_logged_in', 'true');
+        console.log('✅ [UAT Mode] Login successful - UAT token set directly (no API call)');
+        onAuthSuccess({ id: 'uat-admin', email: formData.email || 'admin@warmpawz.com', role: 'admin' });
+        setLoading(false);
+        return;
+      }
+
+      // Production: Call real API endpoint
       const result = await apiClient.post<any>('/admin/auth/login', {
         email: formData.email,
         password: formData.password,
       });
 
-      if (result.success && result.session) {
-        // Store token if provided
+      if (result.success && (result.session || result.admin)) {
+        // Handle JWT token object from production
+        let tokenToStore: string | null = null;
         if (result.token) {
-          apiClient.setAuthToken(result.token);
-          // Set sessionStorage flags to track that user is logged in
-          // These flags are cleared on hard refresh, allowing us to detect it
-          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
-          sessionStorage.setItem('_warmpawz_admin_just_logged_in', 'true'); // ✅ FIX: Added for better detection
-          console.log('✅ [Admin Session] sessionStorage flags set after login');
+          if (typeof result.token === 'string') {
+            tokenToStore = result.token;
+          } else {
+            tokenToStore = result.token.access_token || result.token.accessToken || result.token;
+          }
+          // In prod, reject UAT tokens
+          if (tokenToStore.startsWith('uat-token-')) {
+            throw new Error('Invalid token received from server');
+          }
         }
-        onAuthSuccess(result.session);
+        
+        if (tokenToStore) {
+          localStorage.setItem('adminAuthToken', tokenToStore);
+          apiClient.setAuthToken(tokenToStore);
+          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+          sessionStorage.setItem('_warmpawz_admin_just_logged_in', 'true');
+          console.log('✅ [Admin Session] Token stored and session flags set after login');
+        }
+        onAuthSuccess(result.session || result.admin);
       } else {
         throw new Error(result.error || 'Failed to sign in');
       }
@@ -72,6 +100,21 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
     setError('');
 
     try {
+      // ✅ FIX: In dev (UAT mode), don't call API - just set localStorage directly
+      if (isUatMode()) {
+        const uatToken = `uat-token-admin-${Date.now()}`;
+        localStorage.setItem('adminAuthToken', uatToken);
+        localStorage.setItem('adminEmail', formData.email || 'admin@warmpawz.com');
+        apiClient.setAuthToken(uatToken);
+        sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+        sessionStorage.setItem('_warmpawz_admin_just_logged_in', 'true');
+        console.log('✅ [UAT Mode] Signup successful - UAT token set directly (no API call)');
+        onAuthSuccess({ id: 'uat-admin', email: formData.email || 'admin@warmpawz.com', role: 'admin' });
+        setLoading(false);
+        return;
+      }
+
+      // Production: Call real API endpoints
       const result = await apiClient.post<any>('/admin/auth/signup', formData);
       
       if (!result.success) {

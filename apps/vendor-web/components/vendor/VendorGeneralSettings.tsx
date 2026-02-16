@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Phone, User, Settings, Loader2, Save } from 'lucide-react';
+import { MapPin, Phone, User, Settings, Loader2, Save, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { hasVendorRole } from '@/lib/vendor-utils';
+import { VendorReferralModal } from './VendorReferralModal';
 
 interface VendorGeneralSettingsProps {
   vendorId: string;
@@ -32,6 +33,7 @@ interface VendorConfig {
 export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGeneralSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showReferralModal, setShowReferralModal] = useState(false);
   const [config, setConfig] = useState<VendorConfig>({
     service_radius: undefined,
     emergency_contact: { name: '', phone: '' },
@@ -237,6 +239,24 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
           </div>
         </div>
 
+        {/* Refer Vendor Section */}
+        <div className="border-t border-gray-200 pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-[#FF8C42]" />
+            Refer Vendor
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Refer other vendors and earn points when they get approved!
+          </p>
+          <Button
+            onClick={() => setShowReferralModal(true)}
+            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Refer Vendor & Earn Points
+          </Button>
+        </div>
+
         {/* Walker-Specific Settings */}
         {isWalker && (
           <div className="border-t border-gray-200 pt-6">
@@ -315,6 +335,15 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
           </Button>
         </div>
       </div>
+
+      {/* Referral Modal */}
+      {vendorId && (
+        <VendorReferralModal
+          open={showReferralModal}
+          onOpenChange={setShowReferralModal}
+          vendorId={vendorId}
+        />
+      )}
     </div>
   );
 }

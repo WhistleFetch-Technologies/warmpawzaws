@@ -22,10 +22,11 @@ import { apiClient } from "@/lib/api-client";
 
 interface LoyaltyRule {
 	id: string;
-	category: "End User" | "Vendor";
+	category: "loyalty" | "referral_rewards"; // Action category
+	userType: "customer" | "vendor" | "both"; // User type this rule applies to
 	action: string;
 	points: number;
-	type: "fixed" | "percentage_spend" | "multiplier";
+	type: "fixed" | "percentage_spend" | "percentage" | "per_amount" | "multiplier";
 	thresholdAmount?: number;
 	frequency: "one-time" | "recurring" | "monthly_limit" | "yearly";
 	isActive: boolean;
@@ -159,6 +160,7 @@ export function RewardsLoyaltyManagement() {
 						<TableHeader>
 							<TableRow>
 								<TableHead>Status</TableHead>
+								<TableHead>Category</TableHead>
 								<TableHead>User Type</TableHead>
 								<TableHead>Action</TableHead>
 								<TableHead>Reward Logic</TableHead>
@@ -178,10 +180,21 @@ export function RewardsLoyaltyManagement() {
 									<TableCell>
 										<Badge
 											variant={
-												rule.category === "Vendor" ? "secondary" : "outline"
+												rule.category === "referral_rewards" ? "secondary" : "outline"
 											}
 										>
-											{rule.category}
+											{rule.category === "referral_rewards" ? "Referral Rewards" : "Loyalty"}
+										</Badge>
+									</TableCell>
+									<TableCell>
+										<Badge
+											variant={
+												rule.userType === "vendor" ? "secondary" : 
+												rule.userType === "both" ? "default" : "outline"
+											}
+										>
+											{rule.userType === "customer" ? "Customer" :
+											 rule.userType === "vendor" ? "Vendor" : "Both"}
 										</Badge>
 									</TableCell>
 									<TableCell>
@@ -196,9 +209,14 @@ export function RewardsLoyaltyManagement() {
 												Fixed
 											</Badge>
 										)}
-										{rule.type === "percentage_spend" && (
+										{(rule.type === "percentage_spend" || rule.type === "per_amount") && (
 											<Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
-												Per ₹{rule.thresholdAmount}
+												Per ₹{rule.thresholdAmount || 1000}
+											</Badge>
+										)}
+										{rule.type === "percentage" && (
+											<Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+												{rule.points}% of Amount
 											</Badge>
 										)}
 										{rule.type === "multiplier" && (

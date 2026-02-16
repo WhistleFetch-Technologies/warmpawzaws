@@ -9,8 +9,10 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    // Expose API base URL to the client
+    // Expose environment variables to the client
     NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+    NEXT_PUBLIC_ENVIRONMENT: process.env.NEXT_PUBLIC_ENVIRONMENT,
+    NEXT_PUBLIC_UAT_MODE: process.env.NEXT_PUBLIC_UAT_MODE,
   },
   ...(process.env.NODE_ENV === 'production' && process.env.NEXT_EXPORT !== 'false'
     ? { output: 'export' }

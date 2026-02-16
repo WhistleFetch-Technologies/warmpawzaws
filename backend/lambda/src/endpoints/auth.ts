@@ -240,8 +240,23 @@ class SendOtpHandler extends BaseHandler {
 
 class VerifyOtpHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
+    console.log(`[AUTH] ========================================`);
+    console.log(`[AUTH] ⚡ VERIFY OTP HANDLER CALLED`);
+    console.log(`[AUTH] ========================================`);
+    
     const body = this.parseBody(context.event);
-    const { phone, otp } = body;
+    const { phone, otp, referralCode, role } = body;
+
+    // ✅ AGGRESSIVE LOGGING: Log referral code immediately
+    console.log(`[AUTH] ========================================`);
+    console.log(`[AUTH] OTP VERIFICATION REQUEST`);
+    console.log(`[AUTH] Phone: ${phone}`);
+    console.log(`[AUTH] Role: ${role}`);
+    console.log(`[AUTH] Referral Code: ${referralCode || 'NOT PROVIDED'}`);
+    console.log(`[AUTH] Referral Code Type: ${typeof referralCode}`);
+    console.log(`[AUTH] Referral Code Trimmed: ${referralCode ? referralCode.trim() : 'N/A'}`);
+    console.log(`[AUTH] Full Body Keys: ${Object.keys(body).join(', ')}`);
+    console.log(`[AUTH] ========================================`);
 
     if (!phone || !otp) {
       return this.error('Phone and OTP are required', 400);
@@ -497,11 +512,17 @@ class VerifyOtpHandler extends BaseHandler {
                     }
                     
                     if (viSchema.has_metadata) {
-                      insertFields.push('metadata');
-                      insertValues.push(JSON.stringify({
+                      const metadata: any = {
                         staff_id: staffMember.id,
                         created_via: 'staff_login',
-                      }));
+                      };
+                      // ✅ NEW: Add referral code to metadata if provided
+                      if ((body as any)._pendingReferralId) {
+                        metadata.referral_code_id = (body as any)._pendingReferralId;
+                        metadata.referrer_vendor_id = (body as any)._referrerVendorId;
+                      }
+                      insertFields.push('metadata');
+                      insertValues.push(JSON.stringify(metadata));
                     }
                     
                     const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
@@ -525,17 +546,485 @@ class VerifyOtpHandler extends BaseHandler {
         // STEP 2: NORMAL VENDOR LOGIN FLOW - Phone is NOT staff, check vendor_identity
         // ============================================================================
         console.log(`[AUTH] Phone ${normalizedPhone} is NOT staff, checking vendor_identity for regular vendor login...`);
+        console.log(`[AUTH] 🔍 Using normalizedPhoneForDb: ${normalizedPhoneForDb} for database lookup`);
         
-        let identities = await select('vendor_identity', { phone: normalizedPhone });
-        if (identities.length === 0 && phone !== normalizedPhone) {
+        // ✅ FIX: Use normalizedPhoneForDb (10 digits) for lookup, as vendor_identity stores 10-digit phones
+        console.log(`[AUTH] 🔍 Checking for existing vendor_identity with phone: ${normalizedPhoneForDb}`);
+        let identities = await select('vendor_identity', { phone: normalizedPhoneForDb });
+        console.log(`[AUTH] 🔍 First lookup result: ${identities.length} record(s) found`);
+        
+        if (identities.length === 0) {
+          // Try with +91 prefix as fallback
+          console.log(`[AUTH] 🔍 Trying fallback lookup with phone: ${normalizedPhone}`);
+          identities = await select('vendor_identity', { phone: normalizedPhone });
+          console.log(`[AUTH] 🔍 Fallback lookup result: ${identities.length} record(s) found`);
+        }
+        if (identities.length === 0 && phone !== normalizedPhone && phone !== normalizedPhoneForDb) {
+          // Try original phone format as last resort
+          console.log(`[AUTH] 🔍 Trying last resort lookup with original phone: ${phone}`);
           identities = await select('vendor_identity', { phone });
+          console.log(`[AUTH] 🔍 Last resort lookup result: ${identities.length} record(s) found`);
         }
         
+        console.log(`[AUTH] 🔍 Final identities count: ${identities.length}`);
+        
         if (identities.length > 0) {
+          console.log(`[AUTH] ✅ Found existing vendor_identity, processing...`);
           vendorIdentity = identities[0];
           console.log(`[AUTH] Found vendor_identity by phone: ${vendorIdentity.id}, status: ${vendorIdentity.onboarding_status}`);
+          
+          // ✅ NEW: If referral code provided and not in metadata, update it
+          if (referralCode && role === 'vendor' && typeof referralCode === 'string' && referralCode.trim()) {
+            try {
+              let metadata = vendorIdentity.metadata || {};
+              if (typeof metadata === 'string') {
+                try {
+                  metadata = JSON.parse(metadata);
+                } catch (e) {
+                  metadata = {};
+                }
+              }
+              
+              if (!metadata.referral_code_id) {
+                const trimmedCode = referralCode.trim().toUpperCase();
+                console.log(`[AUTH] 🔍 Processing referral code for existing vendor_identity: ${trimmedCode}`);
+                console.log(`[AUTH] 🔍 Vendor Identity ID: ${vendorIdentity.id}, Phone: ${normalizedPhoneForDb}`);
+                
+                // ✅ FIX: Use normalizedPhoneForDb (10 digits) and convert to +91 format for vendor_referrals
+                const fullPhoneForComparison = `+91${normalizedPhoneForDb}`;
+                console.log(`[AUTH] 🔍 Normalized phone for comparison: ${fullPhoneForComparison}`);
+                
+                // Check if referral record already exists for this phone
+                let existingReferral = await query(
+                  `SELECT * FROM vendor_referrals 
+                   WHERE referral_code = $1 
+                   AND referred_phone = $2
+                   LIMIT 1`,
+                  [trimmedCode, fullPhoneForComparison]
+                );
+                
+                console.log(`[AUTH] 🔍 Existing referral check: ${existingReferral.rows.length} record(s) found`);
+                
+                let referralRecord: any;
+                
+                if (existingReferral.rows.length > 0) {
+                  referralRecord = existingReferral.rows[0];
+                  console.log(`[AUTH] ✅ Found existing referral record ${referralRecord.id} for phone ${fullPhoneForComparison}`);
+                } else {
+                  // Find any referral record with this code to get referrer_vendor_id
+                  console.log(`[AUTH] 🔍 No existing referral record found, looking up referrer for code ${trimmedCode}`);
+                  const codeLookup = await query(
+                    `SELECT DISTINCT referrer_vendor_id FROM vendor_referrals 
+                     WHERE referral_code = $1 
+                     LIMIT 1`,
+                    [trimmedCode]
+                  );
+                  
+                  console.log(`[AUTH] 🔍 Code lookup result: ${codeLookup.rows.length} record(s) found`);
+                  
+                  if (codeLookup.rows.length > 0) {
+                    let foundReferrerVendorId = codeLookup.rows[0].referrer_vendor_id;
+                    console.log(`[AUTH] 🔍 Found referrer vendor ID: ${foundReferrerVendorId}`);
+                    
+                    // Create new referral record for this vendor
+                    console.log(`[AUTH] 🔍 Creating new referral record...`);
+                    try {
+                      const newReferral = await query(
+                        `INSERT INTO vendor_referrals 
+                         (referrer_vendor_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+                         VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+                         ON CONFLICT (referrer_vendor_id, referred_phone) 
+                         DO UPDATE SET 
+                           referral_code = EXCLUDED.referral_code,
+                           status = 'applied',
+                           applied_at = NOW(),
+                           updated_at = NOW()
+                         RETURNING *`,
+                        [foundReferrerVendorId, trimmedCode, fullPhoneForComparison]
+                      );
+                      
+                      referralRecord = newReferral.rows[0];
+                      console.log(`[AUTH] ✅ Created/updated referral record ${referralRecord.id} for code ${trimmedCode}`);
+                    } catch (insertError: any) {
+                      console.error(`[AUTH] ❌ Error creating referral record:`, insertError);
+                      // Try to fetch existing record if insert failed due to constraint
+                      const existingAfterError = await query(
+                        `SELECT * FROM vendor_referrals 
+                         WHERE referrer_vendor_id = $1 
+                         AND referred_phone = $2
+                         LIMIT 1`,
+                        [foundReferrerVendorId, fullPhoneForComparison]
+                      );
+                      if (existingAfterError.rows.length > 0) {
+                        referralRecord = existingAfterError.rows[0];
+                        console.log(`[AUTH] ✅ Found existing referral record after insert error: ${referralRecord.id}`);
+                      } else {
+                        console.error(`[AUTH] ❌ Could not create or find referral record`);
+                      }
+                    }
+                  } else {
+                    console.warn(`[AUTH] ⚠️ Referral code ${trimmedCode} not found in database - invalid code`);
+                  }
+                }
+                
+                if (referralRecord) {
+                  metadata.referral_code_id = referralRecord.id;
+                  metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
+                  metadata.referral_code = trimmedCode;
+                  
+                  console.log(`[AUTH] 🔍 Updating vendor_identity metadata with:`, metadata);
+                  await query(
+                    `UPDATE vendor_identity 
+                     SET metadata = $1::jsonb, updated_at = NOW()
+                     WHERE id = $2`,
+                    [JSON.stringify(metadata), vendorIdentity.id]
+                  );
+                  
+                  console.log(`[AUTH] ✅ Updated vendor_identity ${vendorIdentity.id} metadata with referral code ${trimmedCode}`);
+                } else {
+                  console.warn(`[AUTH] ⚠️ Referral code ${trimmedCode} not found - invalid code or lookup failed`);
+                }
+              } else {
+                console.log(`[AUTH] ℹ️ Referral code already in metadata, skipping update`);
+              }
+            } catch (refError: any) {
+              console.error('[AUTH] ❌ CRITICAL ERROR updating referral code in metadata:', refError);
+              console.error('[AUTH] ❌ Error stack:', refError.stack);
+              console.error('[AUTH] ❌ Error details:', JSON.stringify(refError, null, 2));
+              // Don't block login, but log aggressively
+            }
+          } else {
+            console.log(`[AUTH] ⚠️ Referral code processing SKIPPED - conditions not met:`);
+            console.log(`[AUTH]   - referralCode: ${referralCode || 'NULL'}`);
+            console.log(`[AUTH]   - role: ${role}`);
+            console.log(`[AUTH]   - typeof referralCode: ${typeof referralCode}`);
+            if (referralCode && typeof referralCode === 'string') {
+              console.log(`[AUTH]   - referralCode.trim(): "${referralCode.trim()}"`);
+              console.log(`[AUTH]   - referralCode.trim().length: ${referralCode.trim().length}`);
+            }
+          }
+          
           // ✅ BUSINESS RULE: Regular vendor login - don't modify status
           // This preserves existing vendor business rules
+        } else {
+          // ✅ NEW: No vendor_identity exists - this is a new vendor registration
+          console.log(`[AUTH] ========================================`);
+          console.log(`[AUTH] ⚠️  NO VENDOR_IDENTITY FOUND - NEW VENDOR REGISTRATION`);
+          console.log(`[AUTH] Phone: ${normalizedPhoneForDb} (normalized from ${normalizedPhone})`);
+          console.log(`[AUTH] Referral Code: ${referralCode || 'NOT PROVIDED'}`);
+          console.log(`[AUTH] ========================================`);
+          
+          // Process referral code if provided and create vendor_identity with referral in metadata
+          let referralMetadata: any = {};
+          let referralRecordId: string | null = null;
+          let referrerVendorId: string | null = null;
+          
+          if (referralCode && role === 'vendor' && typeof referralCode === 'string' && referralCode.trim()) {
+            try {
+              const trimmedCode = referralCode.trim().toUpperCase();
+              console.log(`[AUTH] 🔍 Processing referral code for new vendor: ${trimmedCode}`);
+              console.log(`[AUTH] 🔍 Phone: ${normalizedPhoneForDb}`);
+              
+              // ✅ FIX: Use normalizedPhoneForDb (10 digits) and convert to +91 format for vendor_referrals
+              const fullPhoneForComparison = `+91${normalizedPhoneForDb}`;
+              console.log(`[AUTH] 🔍 Normalized phone for comparison: ${fullPhoneForComparison}`);
+              
+              // Check if referral record already exists for this phone
+              const existingReferral = await query(
+                `SELECT * FROM vendor_referrals 
+                 WHERE referral_code = $1 
+                 AND referred_phone = $2
+                 LIMIT 1`,
+                [trimmedCode, fullPhoneForComparison]
+              );
+              
+              console.log(`[AUTH] 🔍 Existing referral check: ${existingReferral.rows.length} record(s) found`);
+              
+              let referralRecord: any;
+              
+              if (existingReferral.rows.length > 0) {
+                // Reuse existing referral record
+                referralRecord = existingReferral.rows[0];
+                console.log(`[AUTH] ✅ Found existing referral record ${referralRecord.id} for phone ${fullPhoneForComparison}`);
+              } else {
+                // Find any referral record with this code to get referrer_vendor_id
+                console.log(`[AUTH] 🔍 No existing referral record found, looking up referrer for code ${trimmedCode}`);
+                const codeLookup = await query(
+                  `SELECT DISTINCT referrer_vendor_id FROM vendor_referrals 
+                   WHERE referral_code = $1 
+                   LIMIT 1`,
+                  [trimmedCode]
+                );
+                
+                console.log(`[AUTH] 🔍 Code lookup result: ${codeLookup.rows.length} record(s) found`);
+                
+                if (codeLookup.rows.length > 0) {
+                  referrerVendorId = codeLookup.rows[0].referrer_vendor_id; // ✅ FIX: Remove const to use outer scope variable
+                  console.log(`[AUTH] 🔍 Found referrer vendor ID: ${referrerVendorId}`);
+                  
+                  // Create new referral record for this vendor
+                  // ✅ FIX: Use ON CONFLICT to handle race conditions (multiple OTP verifications)
+                  console.log(`[AUTH] 🔍 Creating new referral record...`);
+                  try {
+                    const newReferral = await query(
+                      `INSERT INTO vendor_referrals 
+                       (referrer_vendor_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+                       VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+                       ON CONFLICT (referrer_vendor_id, referred_phone) 
+                       DO UPDATE SET 
+                         referral_code = EXCLUDED.referral_code,
+                         status = 'applied',
+                         applied_at = COALESCE(EXCLUDED.applied_at, vendor_referrals.applied_at, NOW()),
+                         updated_at = NOW()
+                       RETURNING *`,
+                      [referrerVendorId, trimmedCode, fullPhoneForComparison]
+                    );
+                    
+                    referralRecord = newReferral.rows[0];
+                    console.log(`[AUTH] ✅ Created/updated referral record ${referralRecord.id} for code ${trimmedCode}`);
+                  } catch (insertError: any) {
+                    // If ON CONFLICT doesn't work (constraint might not exist), try regular insert
+                    console.warn(`[AUTH] ⚠️  ON CONFLICT failed, trying regular insert:`, insertError.message);
+                    try {
+                      const newReferral = await query(
+                        `INSERT INTO vendor_referrals 
+                         (referrer_vendor_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+                         VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+                         RETURNING *`,
+                        [referrerVendorId, trimmedCode, fullPhoneForComparison]
+                      );
+                      referralRecord = newReferral.rows[0];
+                      console.log(`[AUTH] ✅ Created referral record ${referralRecord.id} for code ${trimmedCode}`);
+                    } catch (fallbackError: any) {
+                      // If insert still fails, try to find existing record
+                      console.warn(`[AUTH] ⚠️  Insert failed, checking for existing record:`, fallbackError.message);
+                      const existingCheck = await query(
+                        `SELECT * FROM vendor_referrals 
+                         WHERE referrer_vendor_id = $1 
+                         AND referred_phone = $2
+                         LIMIT 1`,
+                        [referrerVendorId, fullPhoneForComparison]
+                      );
+                      if (existingCheck.rows.length > 0) {
+                        referralRecord = existingCheck.rows[0];
+                        console.log(`[AUTH] ✅ Found existing referral record ${referralRecord.id}`);
+                      } else {
+                        throw fallbackError;
+                      }
+                    }
+                  }
+                } else {
+                  console.warn(`[AUTH] ⚠️ Referral code ${trimmedCode} not found in database - invalid code`);
+                }
+              }
+              
+              if (referralRecord) {
+                referralRecordId = referralRecord.id;
+                referrerVendorId = referralRecord.referrer_vendor_id;
+                referralMetadata = {
+                  referral_code_id: referralRecord.id,
+                  referrer_vendor_id: referralRecord.referrer_vendor_id,
+                  referral_code: trimmedCode,
+                };
+                
+                // Store for later use
+                (body as any)._pendingReferralId = referralRecord.id;
+                (body as any)._referrerVendorId = referralRecord.referrer_vendor_id;
+                
+                console.log(`[AUTH] ✅ Referral code ${trimmedCode} processed for new vendor registration`);
+                console.log(`[AUTH] 🔍 Referral metadata:`, referralMetadata);
+              } else {
+                console.warn(`[AUTH] ⚠️ Failed to process referral code ${trimmedCode} - no referral record created`);
+              }
+            } catch (refError: any) {
+              console.error('[AUTH] ❌ CRITICAL ERROR processing referral code for NEW vendor:', refError);
+              console.error('[AUTH] ❌ Error stack:', refError.stack);
+              console.error('[AUTH] ❌ Error details:', JSON.stringify(refError, null, 2));
+              // Don't block registration if referral code processing fails, but log aggressively
+            }
+          } else {
+            console.log(`[AUTH] ⚠️ Referral code processing SKIPPED for NEW vendor - conditions not met`);
+            console.log(`[AUTH]   - referralCode: ${referralCode || 'NULL'}`);
+            console.log(`[AUTH]   - role: ${role}`);
+            console.log(`[AUTH]   - typeof referralCode: ${typeof referralCode}`);
+            if (referralCode && typeof referralCode === 'string') {
+              console.log(`[AUTH]   - referralCode.trim(): "${referralCode.trim()}"`);
+            }
+          }
+          
+          // ✅ CRITICAL FIX: Create vendor_identity immediately with referral code in metadata
+          // This MUST succeed - retry logic and better error handling
+          let vendorIdentityCreated = false;
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          while (!vendorIdentityCreated && retryCount < maxRetries) {
+            try {
+              console.log(`[AUTH] ========================================`);
+              console.log(`[AUTH] CREATING VENDOR_IDENTITY FOR NEW VENDOR (Attempt ${retryCount + 1}/${maxRetries})`);
+              console.log(`[AUTH] Phone: ${normalizedPhoneForDb} (normalized from ${normalizedPhone})`);
+              console.log(`[AUTH] Referral Metadata: ${JSON.stringify(referralMetadata, null, 2)}`);
+              console.log(`[AUTH] ========================================`);
+              
+              // Check schema
+              const viSchemaCheck = await query(`
+                SELECT 
+                  EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'metadata') as has_metadata
+              `);
+              const viSchema = viSchemaCheck.rows[0] || {};
+              console.log(`[AUTH] Schema check - has_metadata: ${viSchema.has_metadata}`);
+              
+              // ✅ CRITICAL: Always try to create vendor_identity, even if metadata column doesn't exist
+              // Use INSERT with ON CONFLICT to handle race conditions
+              const insertFields = ['phone', 'onboarding_status'];
+              const insertValues: any[] = [normalizedPhoneForDb, 'INIT'];
+              const updateFields: string[] = ['onboarding_status = EXCLUDED.onboarding_status'];
+              
+              if (viSchema.has_metadata) {
+                if (Object.keys(referralMetadata).length > 0) {
+                  insertFields.push('metadata');
+                  insertValues.push(JSON.stringify(referralMetadata));
+                  updateFields.push('metadata = EXCLUDED.metadata');
+                  console.log(`[AUTH] ✅ Adding metadata to insert: ${JSON.stringify(referralMetadata)}`);
+                } else {
+                  // Even if no referral metadata, ensure metadata column is set to empty object
+                  insertFields.push('metadata');
+                  insertValues.push('{}');
+                  console.log(`[AUTH] ✅ Adding empty metadata object`);
+                }
+              } else {
+                console.log(`[AUTH] ⚠️  Metadata column does not exist, skipping metadata`);
+              }
+              
+              const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
+              // ✅ FIX: Use ON CONFLICT to handle race conditions (multiple OTP verifications)
+              const insertQuery = `
+                INSERT INTO vendor_identity (${insertFields.join(', ')}) 
+                VALUES (${placeholders}) 
+                ON CONFLICT (phone) 
+                DO UPDATE SET ${updateFields.join(', ')}, updated_at = NOW()
+                RETURNING *
+              `;
+              
+              console.log(`[AUTH] Executing query: ${insertQuery}`);
+              console.log(`[AUTH] With values: ${JSON.stringify(insertValues)}`);
+              
+              const result = await query(insertQuery, insertValues);
+              
+              if (result.rows && result.rows.length > 0) {
+                vendorIdentity = result.rows[0];
+                vendorIdentityCreated = true;
+                console.log(`[AUTH] ✅ SUCCESS: Created/updated vendor_identity ${vendorIdentity.id} for new vendor`);
+                console.log(`[AUTH] ✅ Created with metadata: ${JSON.stringify(vendorIdentity.metadata || {}, null, 2)}`);
+                
+                // ✅ CRITICAL: If metadata wasn't set but we have referral info, update it
+                if (viSchema.has_metadata && Object.keys(referralMetadata).length > 0) {
+                  let currentMetadata = vendorIdentity.metadata || {};
+                  if (typeof currentMetadata === 'string') {
+                    try {
+                      currentMetadata = JSON.parse(currentMetadata);
+                    } catch (e) {
+                      currentMetadata = {};
+                    }
+                  }
+                  
+                  // Check if referral metadata is missing
+                  if (!currentMetadata.referral_code_id && referralMetadata.referral_code_id) {
+                    console.log(`[AUTH] ⚠️  Referral metadata missing in created record, updating...`);
+                    const updatedMetadata = { ...currentMetadata, ...referralMetadata };
+                    await query(
+                      `UPDATE vendor_identity 
+                       SET metadata = $1::jsonb, updated_at = NOW()
+                       WHERE id = $2`,
+                      [JSON.stringify(updatedMetadata), vendorIdentity.id]
+                    );
+                    console.log(`[AUTH] ✅ Updated vendor_identity metadata with referral code`);
+                    
+                    // Re-fetch to get updated metadata
+                    const updated = await query(
+                      `SELECT * FROM vendor_identity WHERE id = $1`,
+                      [vendorIdentity.id]
+                    );
+                    if (updated.rows.length > 0) {
+                      vendorIdentity = updated.rows[0];
+                    }
+                  }
+                }
+                
+                // ✅ VERIFY: Double-check that vendor_identity was actually created
+                const verifyCheck = await query(
+                  `SELECT * FROM vendor_identity WHERE id = $1`,
+                  [vendorIdentity.id]
+                );
+                if (verifyCheck.rows.length > 0) {
+                  console.log(`[AUTH] ✅ VERIFIED: vendor_identity ${vendorIdentity.id} exists in database`);
+                  const verifiedMetadata = verifyCheck.rows[0].metadata || {};
+                  console.log(`[AUTH] ✅ Verified metadata: ${JSON.stringify(verifiedMetadata, null, 2)}`);
+                } else {
+                  console.error(`[AUTH] ❌ CRITICAL: vendor_identity ${vendorIdentity.id} NOT FOUND in database after insert!`);
+                  vendorIdentityCreated = false;
+                }
+              } else {
+                throw new Error('INSERT query returned no rows');
+              }
+            } catch (createError: any) {
+              retryCount++;
+              console.error(`[AUTH] ❌ CRITICAL ERROR creating vendor_identity (Attempt ${retryCount}/${maxRetries}):`, createError);
+              console.error('[AUTH] ❌ Error message:', createError.message);
+              console.error('[AUTH] ❌ Error code:', createError.code);
+              console.error('[AUTH] ❌ Error detail:', createError.detail);
+              console.error('[AUTH] ❌ Error stack:', createError.stack);
+              
+              if (retryCount >= maxRetries) {
+                // Last attempt failed - try to create without metadata as fallback
+                console.error('[AUTH] ❌ All retries failed, attempting fallback creation without metadata...');
+                try {
+                  const fallbackResult = await query(
+                    `INSERT INTO vendor_identity (phone, onboarding_status) 
+                     VALUES ($1, 'INIT')
+                     ON CONFLICT (phone) 
+                     DO UPDATE SET onboarding_status = EXCLUDED.onboarding_status, updated_at = NOW()
+                     RETURNING *`,
+                    [normalizedPhoneForDb]
+                  );
+                  if (fallbackResult.rows && fallbackResult.rows.length > 0) {
+                    vendorIdentity = fallbackResult.rows[0];
+                    vendorIdentityCreated = true;
+                    console.log(`[AUTH] ✅ FALLBACK SUCCESS: Created vendor_identity ${vendorIdentity.id} without metadata`);
+                    
+                    // Try to update metadata separately if we have referral info
+                    if (Object.keys(referralMetadata).length > 0) {
+                      try {
+                        await query(
+                          `UPDATE vendor_identity 
+                           SET metadata = $1::jsonb, updated_at = NOW()
+                           WHERE id = $2`,
+                          [JSON.stringify(referralMetadata), vendorIdentity.id]
+                        );
+                        console.log(`[AUTH] ✅ Updated vendor_identity metadata after fallback creation`);
+                      } catch (metaError) {
+                        console.error('[AUTH] ❌ Failed to update metadata after fallback:', metaError);
+                      }
+                    }
+                  }
+                } catch (fallbackError: any) {
+                  console.error('[AUTH] ❌ FALLBACK CREATION ALSO FAILED:', fallbackError);
+                  // Don't block login, but log aggressively
+                }
+              } else {
+                // Wait before retry (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, 100 * retryCount));
+              }
+            }
+          }
+          
+          // ✅ CRITICAL: If vendor_identity still wasn't created, log error but don't block
+          if (!vendorIdentityCreated) {
+            console.error('[AUTH] ❌ CRITICAL: Failed to create vendor_identity after all retries!');
+            console.error('[AUTH] ❌ This will cause issues with referral code processing!');
+            console.error('[AUTH] ❌ Phone:', normalizedPhoneForDb);
+            console.error('[AUTH] ❌ Referral Metadata:', JSON.stringify(referralMetadata, null, 2));
+          }
         }
       }
       
@@ -741,10 +1230,22 @@ export function registerAuthEndpoints(app: Hono) {
     let body: any = {};
     try {
       body = await c.req.json();
+      // ✅ AGGRESSIVE LOGGING: Log referral code immediately after parsing
+      console.log(`[AUTH-ROUTE] ========================================`);
+      console.log(`[AUTH-ROUTE] Body parsed from Hono request:`);
+      console.log(`[AUTH-ROUTE]   - phone: ${body.phone}`);
+      console.log(`[AUTH-ROUTE]   - role: ${body.role}`);
+      console.log(`[AUTH-ROUTE]   - referralCode: ${body.referralCode || 'NOT PROVIDED'}`);
+      console.log(`[AUTH-ROUTE]   - referralCode type: ${typeof body.referralCode}`);
+      console.log(`[AUTH-ROUTE]   - All body keys: ${Object.keys(body).join(', ')}`);
+      console.log(`[AUTH-ROUTE] ========================================`);
     } catch (e) {
+      console.error(`[AUTH-ROUTE] ❌ Error parsing body:`, e);
       body = {};
     }
     const event = createApiGatewayEvent(c.req, body);
+    // ✅ AGGRESSIVE LOGGING: Log event body after creation
+    console.log(`[AUTH-ROUTE] Event body (stringified): ${event.body}`);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);

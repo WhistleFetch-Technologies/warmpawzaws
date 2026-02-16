@@ -69,16 +69,27 @@ export default function AdminHomePage() {
     setLoginLoading(true);
 
     try {
-      // ✅ FIX: Production - Always call real API (no UAT token generation)
-      // In production (uatMode: false), we must always use the real login endpoint
+      // ✅ FIX: In dev (UAT mode), don't call API - just set localStorage directly
+      // No API endpoint should be hit in dev environment
+      if (isUatMode()) {
+        const uatToken = `uat-token-admin-${Date.now()}`;
+        localStorage.setItem('adminAuthToken', uatToken);
+        localStorage.setItem('adminEmail', email || 'admin@warmpawz.com');
+        sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+        setIsAuthenticated(true);
+        console.log('✅ [UAT Mode] Login successful - UAT token set directly (no API call)');
+        setLoginLoading(false);
+        return;
+      }
+
+      // Production: Call real API endpoint
       const response = await apiClient.post<{ success: boolean; token?: any; admin?: any; user?: any; error?: string }>('/admin/auth/login', { email, password });
       
       if (response.success && response.token) {
-        // ✅ FIX: Store the real JWT token from API
-        // The token object has access_token, id_token, refresh_token, etc.
+        // Handle JWT token object from production
         const accessToken = response.token.access_token || response.token.accessToken || response.token;
-        if (!accessToken || accessToken.startsWith('uat-token-')) {
-          console.error('❌ [Login] Received invalid token (UAT token or empty)');
+        if (accessToken.startsWith('uat-token-')) {
+          console.error('❌ [Login] Received UAT token in production mode');
           setError('Login failed: Invalid token received from server');
           return;
         }
@@ -88,10 +99,10 @@ export default function AdminHomePage() {
         } else {
           localStorage.setItem('adminEmail', email);
         }
-          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
-          setIsAuthenticated(true);
+        sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+        setIsAuthenticated(true);
         console.log('✅ [Production] Admin login successful - JWT token stored');
-        } else {
+      } else {
         setError(response.error || 'Login failed. Please check your credentials.');
       }
     } catch (err: any) {

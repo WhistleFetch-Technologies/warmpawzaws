@@ -142,6 +142,15 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     return null;
   }
 
+  // ✅ FIX: Check if vendor_id from identity exists in vendors table first
+  if (identity.vendor_id) {
+    const vendorById = await select('vendors', { id: identity.vendor_id });
+    if (vendorById.length > 0) {
+      console.log(`[PROFILE] Found vendor ${identity.vendor_id} via vendor_identity.vendor_id`);
+      return vendorById[0];
+    }
+  }
+
   const phoneNorm = normalizePhoneForLookup(identity.phone);
   if (phoneNorm) {
     const vendorByPhone = await query(

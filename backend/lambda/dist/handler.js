@@ -25944,7 +25944,7 @@ var require_config = __commonJS({
        *     the configuration object. Defaults to `false`.
        *   @see constructor
        */
-      update: function update18(options, allowUnknownKeys) {
+      update: function update19(options, allowUnknownKeys) {
         allowUnknownKeys = allowUnknownKeys || false;
         options = this.extractCredentials(options);
         AWS.util.each.call(this, options, function(key, value) {
@@ -31532,7 +31532,7 @@ var require_util = __commonJS({
           }
         }
       },
-      update: function update18(obj1, obj2) {
+      update: function update19(obj1, obj2) {
         util3.each(obj2, function iterator(key, item) {
           obj1[key] = item;
         });
@@ -44407,12 +44407,12 @@ var require_channel_credentials = __commonJS({
           this.secureContextWatchers = [];
         }
       }
-      handleCaCertificateUpdate(update18) {
-        this.latestCaUpdate = update18;
+      handleCaCertificateUpdate(update19) {
+        this.latestCaUpdate = update19;
         this.maybeUpdateWatchers();
       }
-      handleIdentityCertitificateUpdate(update18) {
-        this.latestIdentityUpdate = update18;
+      handleIdentityCertitificateUpdate(update19) {
+        this.latestIdentityUpdate = update19;
         this.maybeUpdateWatchers();
       }
       hasReceivedUpdates() {
@@ -62528,12 +62528,12 @@ var require_server_credentials = __commonJS({
         const secureContextOptions = this.calculateSecureContextOptions();
         this.updateSecureContextOptions(secureContextOptions);
       }
-      handleCaCertificateUpdate(update18) {
-        this.latestCaUpdate = update18;
+      handleCaCertificateUpdate(update19) {
+        this.latestCaUpdate = update19;
         this.finalizeUpdate();
       }
-      handleIdentityCertitificateUpdate(update18) {
-        this.latestIdentityUpdate = update18;
+      handleIdentityCertitificateUpdate(update19) {
+        this.latestIdentityUpdate = update19;
         this.finalizeUpdate();
       }
     };
@@ -112325,18 +112325,48 @@ async function sendSMS(options) {
   try {
     const region = settings.region || process.env.AWS_REGION || "ap-south-1";
     const snsClient4 = settings.credentials ? new import_client_sns.SNSClient({ region, credentials: settings.credentials }) : new import_client_sns.SNSClient({ region });
-    const result = await snsClient4.send(
-      new import_client_sns.PublishCommand({
-        PhoneNumber: phone,
-        Message: message2,
-        MessageAttributes: attrs
-      })
-    );
+    console.log(`[SMS] Attempting to send SMS to ${phone} via SNS in region ${region}`);
+    console.log(`[SMS] Using credentials: ${settings.credentials ? "DB credentials" : "Lambda role"}`);
+    console.log(`[SMS] Message attributes:`, JSON.stringify(attrs, null, 2));
+    const publishCommand = new import_client_sns.PublishCommand({
+      PhoneNumber: phone,
+      Message: message2,
+      MessageAttributes: attrs
+    });
+    const sendStartTime = Date.now();
+    const result = await snsClient4.send(publishCommand);
+    const sendDuration = Date.now() - sendStartTime;
+    console.log(`[SMS] \u2705 SNS publish successful in ${sendDuration}ms. MessageId: ${result?.MessageId}`);
     return { success: true, messageId: result?.MessageId };
   } catch (err) {
-    console.error("[SMS] SNS send failed:", err?.message || err);
-    if (err?.Code) console.error("[SMS] SNS Code:", err.Code);
-    if (err?.$metadata?.httpStatusCode) console.error("[SMS] HTTP status:", err.$metadata.httpStatusCode);
+    const errorDetails = {
+      message: err?.message || String(err),
+      name: err?.name
+    };
+    if (err?.Code) {
+      errorDetails.code = err.Code;
+      console.error("[SMS] \u274C SNS Error Code:", err.Code);
+    }
+    if (err?.$metadata) {
+      errorDetails.httpStatusCode = err.$metadata.httpStatusCode;
+      errorDetails.requestId = err.$metadata.requestId;
+      errorDetails.attempts = err.$metadata.attempts;
+      console.error("[SMS] \u274C SNS HTTP Status:", err.$metadata.httpStatusCode);
+      console.error("[SMS] \u274C SNS Request ID:", err.$metadata.requestId);
+    }
+    if (err?.stack) {
+      errorDetails.stack = err.stack;
+    }
+    console.error("[SMS] \u274C SNS send failed with details:", JSON.stringify(errorDetails, null, 2));
+    if (err?.message?.includes("ETIMEDOUT") || err?.message?.includes("timeout")) {
+      console.error("[SMS] \u26A0\uFE0F Connection timeout - check VPC/NAT gateway configuration");
+    }
+    if (err?.Code === "OptedOut") {
+      console.error("[SMS] \u26A0\uFE0F Phone number has opted out of SMS");
+    }
+    if (err?.Code === "InvalidParameter") {
+      console.error("[SMS] \u26A0\uFE0F Invalid parameter - check phone number format or DLT attributes");
+    }
     return { success: false };
   }
 }
@@ -117389,64 +117419,123 @@ var init_loyalty_points_service = __esm({
           }
           const finalPoints = await this.applyMultipliers(rule, points, params);
           return await withTransaction(async (client2) => {
+            const isVendor = !!params.vendorId;
             const userId = params.customerId || params.vendorId;
             if (!userId) {
               throw new Error("customerId or vendorId is required");
             }
-            let profile = await select("customer_loyalty_points", { customer_id: userId });
+            const loyaltyTable = isVendor ? "vendor_loyalty_points" : "customer_loyalty_points";
+            const loyaltyTxTable = isVendor ? "vendor_loyalty_transactions" : "loyalty_transactions";
+            const walletTable = isVendor ? "vendor_wallets" : "customer_wallets";
+            const walletTxTable = isVendor ? "vendor_wallet_transactions" : "wallet_transactions";
+            const idColumn = isVendor ? "vendor_id" : "customer_id";
+            let profileResult = await client2.query(
+              `SELECT * FROM ${loyaltyTable} WHERE ${idColumn} = $1`,
+              [userId]
+            );
+            let profile = profileResult.rows;
             if (profile.length === 0) {
-              await insert("customer_loyalty_points", {
-                customer_id: userId,
-                total_points: 0,
-                lifetime_points_earned: 0,
-                lifetime_points_redeemed: 0
-              });
-              profile = await select("customer_loyalty_points", { customer_id: userId });
+              const profileInsertResult = await client2.query(
+                `INSERT INTO ${loyaltyTable} (${idColumn}, total_points, lifetime_points_earned, lifetime_points_redeemed, created_at, updated_at)
+             VALUES ($1, 0, 0, 0, NOW(), NOW())
+             RETURNING *`,
+                [userId]
+              );
+              profile = profileInsertResult.rows;
+              console.log(`[LOYALTY] Created new loyalty profile for ${isVendor ? "vendor" : "customer"} ${userId}`);
             }
-            await insert("loyalty_transactions", {
-              customer_id: userId,
-              transaction_type: "earned",
-              points: finalPoints,
-              reference_type: params.referenceType || params.actionName,
-              reference_id: params.referenceId || null,
-              description: params.description || `Earned ${finalPoints} points for ${params.actionName}`
-            });
             await client2.query(
-              `UPDATE customer_loyalty_points
+              `INSERT INTO ${loyaltyTxTable} (${idColumn}, transaction_type, points, reference_type, reference_id, description, created_at)
+           VALUES ($1, 'earned', $2, $3, $4, $5, NOW())`,
+              [
+                userId,
+                finalPoints,
+                params.referenceType || params.actionName,
+                params.referenceId || null,
+                params.description || `Earned ${finalPoints} points for ${params.actionName}`
+              ]
+            );
+            await client2.query(
+              `UPDATE ${loyaltyTable}
            SET total_points = total_points + $1,
                lifetime_points_earned = lifetime_points_earned + $1,
                updated_at = NOW()
-           WHERE customer_id = $2`,
+           WHERE ${idColumn} = $2`,
               [finalPoints, userId]
             );
-            const walletAmount = finalPoints;
-            let wallets = await select("customer_wallets", { customer_id: userId });
+            const loyaltyRulesResult = await client2.query(
+              `SELECT * FROM loyalty_rules WHERE is_active = true LIMIT 1`
+            );
+            const loyaltyRules = loyaltyRulesResult.rows;
+            let conversionRate = 1;
+            console.log(`[LOYALTY] Fetching conversion rate. Found ${loyaltyRules.length} active rule(s)`);
+            if (loyaltyRules.length > 0) {
+              const rule2 = loyaltyRules[0];
+              console.log(`[LOYALTY] Rule: ${rule2.rule_name}, conversion_rate: ${rule2.conversion_rate}, redemption_rate: ${rule2.redemption_rate}`);
+              if (rule2.conversion_rate !== null && rule2.conversion_rate !== void 0) {
+                conversionRate = parseFloat(rule2.conversion_rate);
+                console.log(`[LOYALTY] Using conversion_rate: ${conversionRate}`);
+              } else if (rule2.redemption_rate !== null && rule2.redemption_rate !== void 0) {
+                conversionRate = parseFloat(rule2.redemption_rate);
+                console.log(`[LOYALTY] Using redemption_rate: ${conversionRate}`);
+              } else {
+                console.log(`[LOYALTY] Both rates are NULL, using default: ${conversionRate}`);
+              }
+            } else {
+              console.log(`[LOYALTY] No active rules found, using default: ${conversionRate}`);
+            }
+            const walletAmount = finalPoints / conversionRate;
+            console.log(`[LOYALTY] Conversion calculation: ${finalPoints} points / ${conversionRate} = \u20B9${walletAmount.toFixed(2)}`);
+            let walletResult = await client2.query(
+              `SELECT * FROM ${walletTable} WHERE ${idColumn} = $1`,
+              [userId]
+            );
+            let wallets = walletResult.rows;
             if (wallets.length === 0) {
-              await insert("customer_wallets", {
-                customer_id: userId,
-                balance: 0,
-                currency: "INR"
-              });
-              wallets = await select("customer_wallets", { customer_id: userId });
+              const walletData = {
+                [idColumn]: userId,
+                balance: 0
+              };
+              if (!isVendor) {
+                walletData.currency = "INR";
+              }
+              const keys = Object.keys(walletData);
+              const values = Object.values(walletData);
+              const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
+              const insertQuery = `INSERT INTO ${walletTable} (${keys.join(", ")}) VALUES (${placeholders}) RETURNING *`;
+              const insertResult = await client2.query(insertQuery, values);
+              wallets = insertResult.rows;
+              console.log(`[LOYALTY] Created new wallet for ${isVendor ? "vendor" : "customer"} ${userId}`);
             }
             const wallet = wallets[0];
             await client2.query(
-              `UPDATE customer_wallets
+              `UPDATE ${walletTable}
            SET balance = balance + $1,
                updated_at = NOW()
            WHERE id = $2`,
               [walletAmount, wallet.id]
             );
-            await insert("wallet_transactions", {
+            const walletTxData = {
               wallet_id: wallet.id,
-              customer_id: userId,
               transaction_type: "credit",
               amount: walletAmount,
-              source: "loyalty_points",
-              description: `Loyalty points converted: ${finalPoints} points = \u20B9${walletAmount}`,
-              reference_id: null
-            });
-            console.log(`\u2705 [LOYALTY] Awarded ${finalPoints} points (\u20B9${walletAmount} to wallet) for action: ${params.actionName}`);
+              balance_after: parseFloat(wallet.balance || 0) + walletAmount,
+              reference_type: params.referenceType || params.actionName,
+              reference_id: params.referenceId || null,
+              description: `Loyalty points converted: ${finalPoints} points = \u20B9${walletAmount.toFixed(2)} (rate: ${conversionRate} points/rupee)`
+            };
+            if (isVendor) {
+              walletTxData.vendor_id = userId;
+            }
+            const walletTxKeys = Object.keys(walletTxData);
+            const walletTxValues = Object.values(walletTxData);
+            const walletTxPlaceholders = walletTxValues.map((_, i) => `$${i + 1}`).join(", ");
+            await client2.query(
+              `INSERT INTO ${walletTxTable} (${walletTxKeys.join(", ")}, created_at)
+           VALUES (${walletTxPlaceholders}, NOW())`,
+              walletTxValues
+            );
+            console.log(`\u2705 [LOYALTY] Awarded ${finalPoints} points (\u20B9${walletAmount.toFixed(2)} to wallet, conversion_rate: ${conversionRate}) for action: ${params.actionName} to ${isVendor ? "vendor" : "customer"}`);
             return {
               points: finalPoints,
               walletCredited: walletAmount
@@ -122924,6 +123013,184 @@ function registerAdminEndpoints(app3) {
           [applicationId, identity?.phone || ""]
         );
       }
+      try {
+        console.log(`[Vendor Approval] ========================================`);
+        console.log(`[Vendor Approval] \u{1F50D} PROCESSING VENDOR REFERRAL`);
+        console.log(`[Vendor Approval] Vendor ID: ${vendorId}`);
+        console.log(`[Vendor Approval] ========================================`);
+        let vendorIdentityCheck = identity;
+        if (!vendorIdentityCheck) {
+          const identityResult = await query(
+            `SELECT * FROM vendor_identity WHERE vendor_id = $1 OR id = $1 OR phone IN (
+              SELECT phone FROM vendors WHERE id = $1
+            ) LIMIT 1`,
+            [vendorId]
+          );
+          vendorIdentityCheck = identityResult.rows[0] || null;
+        }
+        const vendorResult = await query(
+          `SELECT phone FROM vendors WHERE id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        const vendorPhone = vendorResult.rows.length > 0 ? vendorResult.rows[0].phone : null;
+        console.log(`[Vendor Approval] Vendor Identity Found: ${!!vendorIdentityCheck}`);
+        console.log(`[Vendor Approval] Vendor Phone: ${vendorPhone}`);
+        let referralCodeId = null;
+        let referrerVendorId = null;
+        if (vendorIdentityCheck && vendorIdentityCheck.metadata) {
+          try {
+            const metadata = typeof vendorIdentityCheck.metadata === "string" ? JSON.parse(vendorIdentityCheck.metadata) : vendorIdentityCheck.metadata;
+            referralCodeId = metadata.referral_code_id || null;
+            referrerVendorId = metadata.referrer_vendor_id || null;
+            console.log(`[Vendor Approval] \u2705 Found referral in metadata: referralCodeId=${referralCodeId}, referrerVendorId=${referrerVendorId}`);
+          } catch (metaError) {
+            console.error("[Vendor Approval] Error parsing metadata:", metaError);
+          }
+        }
+        if (!referralCodeId) {
+          const phoneToCheck = vendorIdentityCheck?.phone || vendorPhone || "";
+          console.log(`[Vendor Approval] \u{1F50D} Checking vendor_referrals for phone: ${phoneToCheck}`);
+          const phoneDigits = phoneToCheck.replace(/\D/g, "");
+          const phoneFormats = [
+            phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`,
+            // +91XXXXXXXXXX
+            phoneToCheck.startsWith("+") ? phoneToCheck : `+${phoneDigits}`,
+            // Original with +
+            phoneDigits,
+            // Just digits
+            phoneToCheck
+            // Original format
+          ];
+          const uniqueFormats = [...new Set(phoneFormats.filter((f) => f))];
+          console.log(`[Vendor Approval] \u{1F50D} Checking phone formats: ${uniqueFormats.join(", ")}`);
+          let referralCheck = null;
+          for (const phoneFormat of uniqueFormats) {
+            const appliedCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE (referred_phone = $1 OR referred_phone LIKE $2)
+               AND status = 'applied'
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [phoneFormat, `%${phoneFormat.replace("+", "")}%`]
+            );
+            if (appliedCheck.rows.length > 0) {
+              referralCheck = appliedCheck;
+              console.log(`[Vendor Approval] \u2705 Found referral with 'applied' status for phone format: ${phoneFormat}`);
+              break;
+            }
+            const pendingCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE (referred_phone = $1 OR referred_phone LIKE $2)
+               AND status = 'pending'
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [phoneFormat, `%${phoneFormat.replace("+", "")}%`]
+            );
+            if (pendingCheck.rows.length > 0) {
+              referralCheck = pendingCheck;
+              console.log(`[Vendor Approval] \u2705 Found referral with 'pending' status for phone format: ${phoneFormat}`);
+              break;
+            }
+          }
+          if (!referralCheck || referralCheck.rows.length === 0) {
+            const vendorIdCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE referred_vendor_id = $1
+               AND status IN ('applied', 'pending')
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [vendorId]
+            );
+            if (vendorIdCheck.rows.length > 0) {
+              referralCheck = vendorIdCheck;
+              console.log(`[Vendor Approval] \u2705 Found referral by vendor_id: ${vendorId}`);
+            }
+          }
+          if (referralCheck && referralCheck.rows.length > 0) {
+            referralCodeId = referralCheck.rows[0].id;
+            referrerVendorId = referralCheck.rows[0].referrer_vendor_id;
+            if (referralCheck.rows[0].status === "pending") {
+              await query(
+                `UPDATE vendor_referrals 
+                 SET status = 'applied',
+                     applied_at = NOW(),
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [referralCodeId]
+              );
+              console.log(`\u2705 [Vendor Approval] Marked referral ${referralCodeId} as 'applied'`);
+            }
+            if (vendorIdentityCheck && (!vendorIdentityCheck.metadata || typeof vendorIdentityCheck.metadata === "string" && vendorIdentityCheck.metadata === "{}" || typeof vendorIdentityCheck.metadata === "object" && Object.keys(vendorIdentityCheck.metadata).length === 0)) {
+              try {
+                const referralMetadata = {
+                  referral_code_id: referralCodeId,
+                  referrer_vendor_id: referrerVendorId,
+                  referral_code: referralCheck.rows[0].referral_code
+                };
+                await query(
+                  `UPDATE vendor_identity 
+                   SET metadata = $1::jsonb, updated_at = NOW()
+                   WHERE id = $2`,
+                  [JSON.stringify(referralMetadata), vendorIdentityCheck.id]
+                );
+                console.log(`\u2705 [Vendor Approval] Updated vendor_identity metadata with referral info`);
+              } catch (updateError) {
+                console.error("[Vendor Approval] Error updating vendor_identity metadata:", updateError);
+              }
+            }
+          } else {
+            console.log(`[Vendor Approval] \u26A0\uFE0F  No referral found for vendor ${vendorId}`);
+          }
+        }
+        if (referralCodeId && referrerVendorId) {
+          console.log(`[Vendor Approval] ========================================`);
+          console.log(`[Vendor Approval] \u2705 REFERRAL FOUND - PROCESSING`);
+          console.log(`[Vendor Approval] Referral Code ID: ${referralCodeId}`);
+          console.log(`[Vendor Approval] Referrer Vendor ID: ${referrerVendorId}`);
+          console.log(`[Vendor Approval] Referred Vendor ID: ${vendorId}`);
+          console.log(`[Vendor Approval] ========================================`);
+          await query(
+            `UPDATE vendor_referrals 
+             SET referred_vendor_id = $1,
+                 status = 'approved',
+                 approved_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [vendorId, referralCodeId]
+          );
+          console.log(`\u2705 [Vendor Approval] Updated vendor_referrals record to 'approved' status`);
+          try {
+            const { LoyaltyPointsService: LoyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+            const loyaltyPointsService2 = new LoyaltyPointsService2();
+            const referredVendor = await select("vendors", { id: vendorId });
+            const vendorName = referredVendor.length > 0 ? referredVendor[0].business_name || referredVendor[0].owner_name || "Vendor" : "Vendor";
+            console.log(`[Vendor Approval] \u{1F381} Awarding points to referrer ${referrerVendorId}...`);
+            const pointsResult = await loyaltyPointsService2.awardPoints({
+              vendorId: referrerVendorId,
+              actionName: "vendor_referral",
+              referenceType: "vendor_referral",
+              referenceId: referralCodeId,
+              description: `Vendor referral: ${vendorName} approved`
+            });
+            console.log(`\u2705 [Vendor Approval] ========================================`);
+            console.log(`\u2705 [Vendor Approval] POINTS AWARDED SUCCESSFULLY`);
+            console.log(`\u2705 [Vendor Approval] Points: ${pointsResult.points}`);
+            console.log(`\u2705 [Vendor Approval] Wallet Credited: \u20B9${pointsResult.walletCredited}`);
+            console.log(`\u2705 [Vendor Approval] Referrer Vendor: ${referrerVendorId}`);
+            console.log(`\u2705 [Vendor Approval] ========================================`);
+          } catch (pointsError) {
+            console.error("[Vendor Approval] \u274C ERROR awarding referral points:", pointsError);
+            console.error("[Vendor Approval] \u274C Error message:", pointsError.message);
+            console.error("[Vendor Approval] \u274C Error stack:", pointsError.stack);
+          }
+        } else {
+          console.log(`[Vendor Approval] \u26A0\uFE0F  No referral code found - skipping points award`);
+        }
+      } catch (referralErr) {
+        console.error("[Vendor Approval] \u274C CRITICAL ERROR processing referral:", referralErr);
+        console.error("[Vendor Approval] \u274C Error message:", referralErr.message);
+        console.error("[Vendor Approval] \u274C Error stack:", referralErr.stack);
+      }
       await insert("notifications", {
         recipient_id: vendorId,
         recipient_type: "vendor",
@@ -126036,6 +126303,13 @@ async function resolveVendorById(vendorId) {
   const identity = identities[0];
   if (identity.onboarding_status !== "APPROVED" && identity.onboarding_status !== "ACTIVATED") {
     return null;
+  }
+  if (identity.vendor_id) {
+    const vendorById = await select("vendors", { id: identity.vendor_id });
+    if (vendorById.length > 0) {
+      console.log(`[PROFILE] Found vendor ${identity.vendor_id} via vendor_identity.vendor_id`);
+      return vendorById[0];
+    }
   }
   const phoneNorm = normalizePhoneForLookup(identity.phone);
   if (phoneNorm) {
@@ -130078,6 +130352,49 @@ function requireAdmin() {
     return next();
   };
 }
+function requireCustomer() {
+  return async (c, next) => {
+    if (c.req.method === "OPTIONS") {
+      return next();
+    }
+    const auth = await extractAuth(c);
+    if (!auth.valid) {
+      return c.json(
+        { success: false, error: "Authentication required", code: "AUTH_REQUIRED" },
+        401
+      );
+    }
+    if (auth.isUAT) {
+      if (auth.userRole !== "customer") {
+        console.warn(`[AuthMiddleware] UAT Customer access denied - token is for role: ${auth.userRole}`);
+        return c.json(
+          { success: false, error: "Customer access required", code: "CUSTOMER_REQUIRED" },
+          403
+        );
+      }
+      console.log(`[AuthMiddleware] UAT Customer access granted for: ${auth.userId}`);
+      c.set("userId", auth.userId);
+      c.set("userRole", "customer");
+      c.set("userGroups", ["customer"]);
+      c.set("isCustomer", true);
+      c.set("isUAT", true);
+      return next();
+    }
+    const isCustomer = auth.groups?.includes("customer") || auth.userRole === "customer";
+    if (!isCustomer) {
+      console.warn(`[AuthMiddleware] Customer access denied for user ${auth.userId}, role: ${auth.userRole}`);
+      return c.json(
+        { success: false, error: "Customer access required", code: "CUSTOMER_REQUIRED" },
+        403
+      );
+    }
+    c.set("userId", auth.userId);
+    c.set("userRole", auth.userRole);
+    c.set("userGroups", auth.groups);
+    c.set("isCustomer", true);
+    return next();
+  };
+}
 function authAuditLog() {
   return async (c, next) => {
     const startTime = Date.now();
@@ -130614,16 +130931,40 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       if (!isUATMode2) {
         const message2 = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
         console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
-        const smsResult = await Promise.race([
-          sendSmsViaSns(normalizedPhone, message2),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("SMS send timeout 2.5s")), 2500))
-        ]).catch((err) => {
-          console.warn("[AUTH] SMS send failed:", err?.message || err);
-          if (err?.Code) console.warn("[AUTH] SNS Code:", err.Code);
-          return false;
-        });
-        if (smsResult) {
-          console.log("[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)");
+        let smsResult = false;
+        let lastError = null;
+        const maxRetries = 2;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[AUTH] SMS send attempt ${attempt}/${maxRetries} to ${normalizedPhone}`);
+            smsResult = await Promise.race([
+              sendSmsViaSns(normalizedPhone, message2),
+              new Promise((_, reject) => setTimeout(() => reject(new Error(`SMS send timeout after 10s (attempt ${attempt})`)), 1e4))
+            ]);
+            if (smsResult) {
+              console.log(`[AUTH] \u2705 SMS accepted by SNS on attempt ${attempt} (delivery depends on SNS sandbox/production)`);
+              break;
+            }
+          } catch (err) {
+            lastError = err;
+            console.error(`[AUTH] \u274C SMS send failed on attempt ${attempt}/${maxRetries}:`, err?.message || err);
+            if (err?.Code) console.error("[AUTH] SNS Error Code:", err.Code);
+            if (err?.$metadata?.httpStatusCode) console.error("[AUTH] SNS HTTP Status:", err.$metadata.httpStatusCode);
+            if (err?.$metadata?.requestId) console.error("[AUTH] SNS Request ID:", err.$metadata.requestId);
+            if (err?.message?.includes("ETIMEDOUT") || err?.message?.includes("timeout")) {
+              if (attempt < maxRetries) {
+                const waitMs = 1e3 * attempt;
+                console.log(`[AUTH] Waiting ${waitMs}ms before retry...`);
+                await new Promise((resolve) => setTimeout(resolve, waitMs));
+              }
+            } else {
+              break;
+            }
+          }
+        }
+        if (!smsResult && lastError) {
+          console.error(`[AUTH] \u274C SMS send failed after ${maxRetries} attempts. Last error:`, lastError?.message || lastError);
+          console.error("[AUTH] \u26A0\uFE0F OTP was stored in database but SMS delivery failed. User may need to request OTP again.");
         }
       } else {
         console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
@@ -130658,6 +130999,84 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
     }
   }
 };
+async function processCustomerReferralCode(referralCode, phone) {
+  const metadata = {};
+  if (!referralCode || typeof referralCode !== "string" || referralCode.trim().length === 0) {
+    console.error(`[REFERRAL-PROCESSOR] No valid referral code provided`);
+    return metadata;
+  }
+  const trimmedCode = referralCode.trim().toUpperCase();
+  console.error(`[REFERRAL-PROCESSOR] Processing code: ${trimmedCode} for phone: ${phone}`);
+  try {
+    const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const phoneDigits = phone.replace(/\D/g, "");
+    const fullPhoneForComparison = phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`;
+    const existingCheck = await query13(
+      `SELECT * FROM customer_referrals 
+       WHERE referral_code = $1 AND referred_phone = $2
+       LIMIT 1`,
+      [trimmedCode, fullPhoneForComparison]
+    );
+    let referralRecord = null;
+    if (existingCheck.rows.length > 0) {
+      referralRecord = existingCheck.rows[0];
+      console.error(`[REFERRAL-PROCESSOR] Found existing record: ${referralRecord.id}`);
+    } else {
+      const codeLookup = await query13(
+        `SELECT referrer_customer_id, id FROM customer_referrals 
+         WHERE referral_code = $1 
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [trimmedCode]
+      );
+      if (codeLookup.rows.length > 0) {
+        const referrerCustomerId = codeLookup.rows[0].referrer_customer_id;
+        const existingReferralId = codeLookup.rows[0].id;
+        const updateResult = await query13(
+          `UPDATE customer_referrals 
+           SET referred_phone = $1,
+               status = 'applied',
+               applied_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $2 AND (referred_phone = '' OR referred_phone IS NULL)
+           RETURNING *`,
+          [fullPhoneForComparison, existingReferralId]
+        );
+        if (updateResult.rows.length > 0) {
+          referralRecord = updateResult.rows[0];
+        } else {
+          const newReferral = await query13(
+            `INSERT INTO customer_referrals 
+             (referrer_customer_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+             VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+             ON CONFLICT (referrer_customer_id, referred_phone)
+             DO UPDATE SET 
+               referral_code = EXCLUDED.referral_code,
+               status = 'applied',
+               applied_at = NOW(),
+               updated_at = NOW()
+             RETURNING *`,
+            [referrerCustomerId, trimmedCode, fullPhoneForComparison]
+          );
+          if (newReferral.rows.length > 0) {
+            referralRecord = newReferral.rows[0];
+          }
+        }
+      }
+    }
+    if (referralRecord) {
+      metadata.referral_code_id = referralRecord.id;
+      metadata.referrer_customer_id = referralRecord.referrer_customer_id;
+      metadata.referral_code = trimmedCode;
+      console.error(`[REFERRAL-PROCESSOR] \u2705 Success! Metadata: ${JSON.stringify(metadata)}`);
+    } else {
+      console.error(`[REFERRAL-PROCESSOR] \u274C No referral record created`);
+    }
+  } catch (error) {
+    console.error(`[REFERRAL-PROCESSOR] \u274C Error: ${error.message}`);
+  }
+  return metadata;
+}
 var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const body = this.parseBody(context.event);
@@ -130671,7 +131090,36 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         context.requestId
       );
     }
-    const { phone, otp } = validationResult.data;
+    const { phone, otp, role: validatedRole } = validationResult.data;
+    const referralCode = body?.referralCode || body?.referral_code || body?.referralCode || body?.referral_code || context.event?.body ? typeof context.event.body === "string" ? (() => {
+      try {
+        return JSON.parse(context.event.body)?.referralCode;
+      } catch {
+        return null;
+      }
+    })() : context.event.body?.referralCode : null;
+    console.error(`[AUTH] ========================================`);
+    console.error(`[AUTH] \u{1F50D} REFERRAL CODE EXTRACTION \u{1F50D}`);
+    console.error(`[AUTH] Body keys: ${Object.keys(body || {}).join(", ")}`);
+    console.error(`[AUTH] body.referralCode: ${body?.referralCode || "NOT FOUND"}`);
+    console.error(`[AUTH] body.referral_code: ${body?.referral_code || "NOT FOUND"}`);
+    console.error(`[AUTH] Extracted referralCode: ${referralCode || "NULL"}`);
+    console.error(`[AUTH] referralCode type: ${typeof referralCode}`);
+    console.error(`[AUTH] ========================================`);
+    console.error(`[AUTH] ========================================`);
+    console.error(`[AUTH] \u{1F4E5} \u{1F4E5} \u{1F4E5} REQUEST BODY PARSED \u{1F4E5} \u{1F4E5} \u{1F4E5}`);
+    console.error(`[AUTH] Phone: ${phone}`);
+    console.error(`[AUTH] OTP: ${otp}`);
+    console.error(`[AUTH] Validated Role: ${validatedRole || "NOT PROVIDED"}`);
+    console.error(`[AUTH] Body Role: ${body.role || "NOT PROVIDED"}`);
+    console.error(`[AUTH] Referral Code from body.referralCode: ${body.referralCode || "NOT PROVIDED"}`);
+    console.error(`[AUTH] Referral Code from body.referral_code: ${body.referral_code || "NOT PROVIDED"}`);
+    console.error(`[AUTH] Final referralCode variable: ${referralCode || "NOT PROVIDED"}`);
+    console.error(`[AUTH] Referral Code type: ${typeof referralCode}`);
+    console.error(`[AUTH] Full body keys: ${Object.keys(body).join(", ")}`);
+    console.error(`[AUTH] Full body: ${JSON.stringify(body)}`);
+    console.error(`[AUTH] Validation result keys: ${Object.keys(validationResult.data).join(", ")}`);
+    console.error(`[AUTH] ========================================`);
     const isUATMode2 = process.env.UAT_MODE === "true";
     try {
       let isValid = false;
@@ -130738,7 +131186,14 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       }
       console.log(`[DEBUG] Normalized phone for verification: ${phone} -> ${normalizedPhoneForVerification}`);
       const normalizedPhone = normalizedPhoneForVerification;
-      let role = body.role || "customer";
+      let role = validatedRole || body.role || "customer";
+      console.error(`[AUTH] ========================================`);
+      console.error(`[AUTH] \u{1F3AF} \u{1F3AF} \u{1F3AF} ROLE DETERMINATION \u{1F3AF} \u{1F3AF} \u{1F3AF}`);
+      console.error(`[AUTH] validatedRole: ${validatedRole || "NOT PROVIDED"}`);
+      console.error(`[AUTH] body.role: ${body.role || "NOT PROVIDED"}`);
+      console.error(`[AUTH] Final role: ${role}`);
+      console.error(`[AUTH] Will check: role === 'vendor' ? ${role === "vendor"}`);
+      console.error(`[AUTH] ========================================`);
       let userId;
       let userData;
       if (role === "customer") {
@@ -130754,6 +131209,133 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
           customers = [];
         }
         let isNewCustomer2 = false;
+        let referralMetadata = {};
+        const finalReferralCode = referralCode || body?.referralCode || body?.referral_code || null;
+        console.error(`[AUTH] ========================================`);
+        console.error(`[AUTH] \u{1F50D} CHECKING REFERRAL CODE PROCESSING \u{1F50D}`);
+        console.error(`[AUTH] referralCode (original): ${referralCode}`);
+        console.error(`[AUTH] finalReferralCode: ${finalReferralCode}`);
+        console.error(`[AUTH] referralCode type: ${typeof referralCode}`);
+        console.error(`[AUTH] finalReferralCode type: ${typeof finalReferralCode}`);
+        console.error(`[AUTH] referralCode truthy: ${!!referralCode}`);
+        console.error(`[AUTH] finalReferralCode truthy: ${!!finalReferralCode}`);
+        console.error(`[AUTH] ========================================`);
+        const codeToProcess = finalReferralCode || referralCode;
+        if (codeToProcess && typeof codeToProcess === "string" && codeToProcess.trim().length > 0) {
+          const trimmedCode = referralCode.trim().toUpperCase();
+          console.error(`[AUTH] ========================================`);
+          console.error(`[AUTH] \u{1F381} \u{1F381} \u{1F381} PROCESSING CUSTOMER REFERRAL CODE \u{1F381} \u{1F381} \u{1F381}`);
+          console.error(`[AUTH] Referral Code: ${trimmedCode}`);
+          console.error(`[AUTH] Phone: ${phone}`);
+          console.error(`[AUTH] Customer exists: ${customers.length > 0}`);
+          console.error(`[AUTH] ========================================`);
+          try {
+            const phoneDigits2 = phone.replace(/\D/g, "");
+            const fullPhoneForComparison = phoneDigits2.length === 10 ? `+91${phoneDigits2}` : `+${phoneDigits2}`;
+            console.error(`[AUTH] Full phone for comparison: ${fullPhoneForComparison}`);
+            const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+            const existingReferral = await query13(
+              `SELECT * FROM customer_referrals 
+               WHERE referral_code = $1 
+               AND referred_phone = $2
+               LIMIT 1`,
+              [trimmedCode, fullPhoneForComparison]
+            );
+            console.error(`[AUTH] Existing referral check: ${existingReferral.rows.length} results`);
+            let referralRecord;
+            if (existingReferral.rows.length > 0) {
+              referralRecord = existingReferral.rows[0];
+              console.error(`[AUTH] \u2705 Found existing customer referral record ${referralRecord.id}`);
+            } else {
+              console.error(`[AUTH] Looking up referral code: ${trimmedCode}`);
+              const codeLookup = await query13(
+                `SELECT referrer_customer_id, id FROM customer_referrals 
+                 WHERE referral_code = $1 
+                 ORDER BY created_at ASC
+                 LIMIT 1`,
+                [trimmedCode]
+              );
+              console.error(`[AUTH] Code lookup results: ${codeLookup.rows.length}`);
+              if (codeLookup.rows.length > 0) {
+                const referrerCustomerId = codeLookup.rows[0].referrer_customer_id;
+                const existingReferralId = codeLookup.rows[0].id;
+                console.error(`[AUTH] Found referrer customer ID: ${referrerCustomerId}`);
+                console.error(`[AUTH] Existing referral record ID: ${existingReferralId}`);
+                try {
+                  const updateResult = await query13(
+                    `UPDATE customer_referrals 
+                     SET referred_phone = $1,
+                         status = 'applied',
+                         applied_at = NOW(),
+                         updated_at = NOW()
+                     WHERE id = $2 AND (referred_phone = '' OR referred_phone IS NULL)
+                     RETURNING *`,
+                    [fullPhoneForComparison, existingReferralId]
+                  );
+                  if (updateResult.rows.length > 0) {
+                    referralRecord = updateResult.rows[0];
+                    console.error(`[AUTH] \u2705 Updated existing referral record ${referralRecord.id} with phone`);
+                  } else {
+                    console.error(`[AUTH] Existing record has phone ${existingReferredPhone}, creating new record for ${fullPhoneForComparison}`);
+                    const newReferral = await query13(
+                      `INSERT INTO customer_referrals 
+                       (referrer_customer_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+                       VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+                       ON CONFLICT (referrer_customer_id, referred_phone)
+                       DO UPDATE SET 
+                         referral_code = EXCLUDED.referral_code,
+                         status = 'applied',
+                         applied_at = COALESCE(customer_referrals.applied_at, NOW()),
+                         updated_at = NOW()
+                       RETURNING *`,
+                      [referrerCustomerId, trimmedCode, fullPhoneForComparison]
+                    );
+                    if (newReferral.rows.length > 0) {
+                      referralRecord = newReferral.rows[0];
+                      console.error(`[AUTH] \u2705 Created/Updated customer referral record ${referralRecord.id} for phone ${fullPhoneForComparison}`);
+                    } else {
+                      console.error(`[AUTH] \u274C CRITICAL: INSERT returned 0 rows - this should never happen!`);
+                    }
+                  }
+                } catch (insertError) {
+                  console.error(`[AUTH] \u274C \u274C \u274C CRITICAL ERROR creating/updating referral record \u274C \u274C \u274C`);
+                  console.error(`[AUTH] Error message: ${insertError.message}`);
+                  console.error(`[AUTH] Error code: ${insertError.code}`);
+                  console.error(`[AUTH] Error detail: ${insertError.detail}`);
+                  console.error(`[AUTH] Error stack: ${insertError.stack}`);
+                }
+              } else {
+                console.error(`[AUTH] \u26A0\uFE0F Customer referral code ${trimmedCode} not found in database`);
+              }
+            }
+            if (referralRecord) {
+              referralMetadata = {
+                referral_code_id: referralRecord.id,
+                referrer_customer_id: referralRecord.referrer_customer_id,
+                referral_code: trimmedCode
+              };
+              console.error(`[AUTH] \u2705 \u2705 \u2705 Customer referral metadata CREATED: ${JSON.stringify(referralMetadata)}`);
+              console.error(`[AUTH] \u2705 referralMetadata keys: ${Object.keys(referralMetadata).length}`);
+              console.error(`[AUTH] ========================================`);
+            } else {
+              console.error(`[AUTH] \u274C No referral record found or created`);
+              console.error(`[AUTH] ========================================`);
+            }
+          } catch (refError) {
+            console.error("[AUTH] \u274C \u274C \u274C ERROR processing customer referral code \u274C \u274C \u274C");
+            console.error("[AUTH] Error message:", refError.message);
+            console.error("[AUTH] Error stack:", refError.stack);
+            console.error("[AUTH] ========================================");
+          }
+        } else {
+          console.error(`[AUTH] \u26A0\uFE0F No referral code provided or invalid format`);
+          console.error(`[AUTH] referralCode type: ${typeof referralCode}, value: ${referralCode}`);
+        }
+        console.error(`[AUTH] ========================================`);
+        console.error(`[AUTH] \u{1F4CA} REFERRAL METADATA STATE BEFORE CUSTOMER CHECK \u{1F4CA}`);
+        console.error(`[AUTH] referralMetadata keys: ${Object.keys(referralMetadata).length}`);
+        console.error(`[AUTH] referralMetadata: ${JSON.stringify(referralMetadata)}`);
+        console.error(`[AUTH] ========================================`);
         if (customers.length > 0) {
           userId = customers[0].id;
           userData = customers[0];
@@ -130778,6 +131360,74 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
               (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
             );
             identityId = await Promise.race([identityPromise, identityTimeout]);
+            if (identityId && Object.keys(referralMetadata).length > 0) {
+              try {
+                const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+                const phoneDigits2 = phone.replace(/\D/g, "");
+                const normalizedPhoneForDb = phoneDigits2.length > 10 ? phoneDigits2.slice(-10) : phoneDigits2;
+                console.error(`[AUTH] Attempting to update customer_identity ${identityId} with referral metadata...`);
+                console.error(`[AUTH] Referral metadata: ${JSON.stringify(referralMetadata)}`);
+                console.error(`[AUTH] Referral metadata keys: ${Object.keys(referralMetadata).length}`);
+                let updateResult = await query13(
+                  `UPDATE customer_identity 
+                   SET metadata = $1::jsonb, updated_at = NOW()
+                   WHERE id = $2
+                   RETURNING id, phone, metadata`,
+                  [JSON.stringify(referralMetadata), identityId]
+                );
+                if (updateResult.rows.length === 0) {
+                  console.error(`[AUTH] \u26A0\uFE0F ID-based update returned 0 rows, trying phone-based update...`);
+                  updateResult = await query13(
+                    `UPDATE customer_identity 
+                     SET metadata = $1::jsonb, updated_at = NOW()
+                     WHERE phone = $2
+                     RETURNING id, phone, metadata`,
+                    [JSON.stringify(referralMetadata), normalizedPhoneForDb]
+                  );
+                }
+                if (updateResult.rows.length > 0) {
+                  let updatedMetadata = updateResult.rows[0].metadata || {};
+                  if (typeof updatedMetadata === "string") {
+                    try {
+                      updatedMetadata = JSON.parse(updatedMetadata);
+                    } catch (e) {
+                      updatedMetadata = {};
+                    }
+                  }
+                  console.error(`[AUTH] \u2705 Updated existing customer_identity ${updateResult.rows[0].id} with referral metadata`);
+                  console.error(`[AUTH] Updated metadata: ${JSON.stringify(updatedMetadata)}`);
+                  console.error(`[AUTH] Has referral_code_id: ${!!updatedMetadata.referral_code_id}`);
+                  const verifyUpdate = await query13(
+                    `SELECT metadata FROM customer_identity WHERE id = $1`,
+                    [updateResult.rows[0].id]
+                  );
+                  if (verifyUpdate.rows.length > 0) {
+                    let verifiedMeta = verifyUpdate.rows[0].metadata || {};
+                    if (typeof verifiedMeta === "string") {
+                      try {
+                        verifiedMeta = JSON.parse(verifiedMeta);
+                      } catch (e) {
+                        verifiedMeta = {};
+                      }
+                    }
+                    console.error(`[AUTH] \u2705 Verified metadata after update: ${JSON.stringify(verifiedMeta)}`);
+                  }
+                } else {
+                  console.error(`[AUTH] \u274C CRITICAL: Both ID and phone-based updates returned 0 rows!`);
+                  console.error(`[AUTH] Identity ID: ${identityId}, Phone: ${normalizedPhoneForDb}`);
+                }
+              } catch (updateError) {
+                console.error(`[AUTH] \u274C Error updating customer_identity with referral metadata: ${updateError.message}`);
+                console.error(`[AUTH] Error stack: ${updateError.stack}`);
+              }
+            } else {
+              if (!identityId) {
+                console.error(`[AUTH] \u26A0\uFE0F No identityId available to update with referral metadata`);
+              }
+              if (Object.keys(referralMetadata).length === 0) {
+                console.error(`[AUTH] \u26A0\uFE0F No referral metadata to update (referralMetadata is empty)`);
+              }
+            }
           } catch (identityError) {
             console.warn("[AUTH] Could not create/update customer identity:", identityError.message);
           }
@@ -130794,16 +131444,417 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
           }
         } else {
           isNewCustomer2 = true;
+          console.error(`[AUTH] ========================================`);
+          console.error(`[AUTH] \u26A0\uFE0F  \u26A0\uFE0F  \u26A0\uFE0F  ELSE BLOCK REACHED - NO CUSTOMER_IDENTITY FOUND \u26A0\uFE0F  \u26A0\uFE0F  \u26A0\uFE0F`);
+          console.error(`[AUTH] Phone: ${phone}`);
+          console.error(`[AUTH] Referral Code: ${referralCode || "NOT PROVIDED"}`);
+          console.error(`[AUTH] Customers length: ${customers.length}`);
+          console.error(`[AUTH] About to process referral and create customer_identity...`);
+          console.error(`[AUTH] ========================================`);
+          const phoneDigits2 = phone.replace(/\D/g, "");
+          let normalizedPhoneForDb = phoneDigits2.length > 10 ? phoneDigits2.slice(-10) : phoneDigits2.length === 9 ? "0" + phoneDigits2 : phoneDigits2;
+          let referralMetadata2 = {};
+          if (referralCode && typeof referralCode === "string" && referralCode.trim().length > 0) {
+            try {
+              const trimmedCode = referralCode.trim().toUpperCase();
+              console.error(`[AUTH] \u{1F50D} Processing referral code for new customer: ${trimmedCode}`);
+              const fullPhoneForComparison = phoneDigits2.length === 10 ? `+91${phoneDigits2}` : `+${phoneDigits2}`;
+              const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+              const existingReferral = await query13(
+                `SELECT * FROM customer_referrals 
+                 WHERE referral_code = $1 
+                 AND referred_phone = $2
+                 LIMIT 1`,
+                [trimmedCode, fullPhoneForComparison]
+              );
+              let referralRecord;
+              if (existingReferral.rows.length > 0) {
+                referralRecord = existingReferral.rows[0];
+                console.error(`[AUTH] \u2705 Found existing customer referral record ${referralRecord.id}`);
+              } else {
+                const codeLookup = await query13(
+                  `SELECT referrer_customer_id, id, referred_phone, status 
+                   FROM customer_referrals 
+                   WHERE referral_code = $1 
+                   ORDER BY created_at ASC
+                   LIMIT 1`,
+                  [trimmedCode]
+                );
+                console.error(`[AUTH] Code lookup result: ${codeLookup.rows.length} records found for code ${trimmedCode}`);
+                if (codeLookup.rows.length > 0) {
+                  const referrerCustomerId = codeLookup.rows[0].referrer_customer_id;
+                  const existingReferralId = codeLookup.rows[0].id;
+                  const existingReferredPhone2 = codeLookup.rows[0].referred_phone;
+                  console.error(`[AUTH] Found referrer: ${referrerCustomerId}, existing phone: ${existingReferredPhone2 || "NULL"}`);
+                  console.error(`[AUTH] Creating new referral record for phone ${fullPhoneForComparison} with code ${trimmedCode}`);
+                  const newReferral = await query13(
+                    `INSERT INTO customer_referrals 
+                     (referrer_customer_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+                     VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+                     ON CONFLICT (referrer_customer_id, referred_phone)
+                     DO UPDATE SET 
+                       referral_code = EXCLUDED.referral_code,
+                       status = 'applied',
+                       applied_at = COALESCE(customer_referrals.applied_at, NOW()),
+                       updated_at = NOW()
+                     RETURNING *`,
+                    [referrerCustomerId, trimmedCode, fullPhoneForComparison]
+                  );
+                  if (newReferral.rows.length > 0) {
+                    referralRecord = newReferral.rows[0];
+                    console.error(`[AUTH] \u2705 Created/Updated customer referral record ${referralRecord.id} for phone ${fullPhoneForComparison}`);
+                    console.error(`[AUTH] \u2705 Referral record details: ${JSON.stringify({
+                      id: referralRecord.id,
+                      referrer: referralRecord.referrer_customer_id,
+                      phone: referralRecord.referred_phone,
+                      code: referralRecord.referral_code,
+                      status: referralRecord.status
+                    })}`);
+                  } else {
+                    console.error(`[AUTH] \u274C CRITICAL: Failed to create/update referral record - INSERT returned 0 rows!`);
+                    console.error(`[AUTH] This should never happen with RETURNING *`);
+                  }
+                } else {
+                  console.error(`[AUTH] \u26A0\uFE0F Customer referral code ${trimmedCode} not found in database`);
+                  console.error(`[AUTH] \u26A0\uFE0F This means the referral code doesn't exist. Referrer needs to generate it first.`);
+                }
+              }
+              if (referralRecord) {
+                referralMetadata2 = {
+                  referral_code_id: referralRecord.id,
+                  referrer_customer_id: referralRecord.referrer_customer_id,
+                  referral_code: trimmedCode
+                };
+                console.error(`[AUTH] \u2705 \u2705 \u2705 Customer referral metadata CREATED: ${JSON.stringify(referralMetadata2)}`);
+                try {
+                  const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+                  const pointsResult = await loyaltyPointsService2.awardPoints({
+                    customerId: referralRecord.referrer_customer_id,
+                    actionName: "customer_referral",
+                    referenceType: "customer_referral",
+                    referenceId: referralRecord.id,
+                    description: `Customer referral: New customer registered with code ${trimmedCode}`,
+                    requestId: context.requestId
+                  });
+                  console.error(`[AUTH] \u2705 \u2705 \u2705 POINTS AWARDED TO REFERRER IMMEDIATELY \u2705 \u2705 \u2705`);
+                  console.error(`[AUTH] Referrer Customer ID: ${referralRecord.referrer_customer_id}`);
+                  console.error(`[AUTH] Points Awarded: ${pointsResult.points}`);
+                  console.error(`[AUTH] Wallet Credited: \u20B9${pointsResult.walletCredited}`);
+                  await query13(
+                    `UPDATE customer_referrals 
+                     SET status = 'approved',
+                         approved_at = NOW(),
+                         updated_at = NOW()
+                     WHERE id = $1`,
+                    [referralRecord.id]
+                  );
+                  console.error(`[AUTH] \u2705 Updated referral record status to 'approved'`);
+                } catch (pointsError) {
+                  console.error(`[AUTH] \u274C Error awarding referral points: ${pointsError.message}`);
+                  console.error(`[AUTH] Error stack: ${pointsError.stack}`);
+                }
+              } else {
+                console.error(`[AUTH] \u274C No referral record found or created`);
+              }
+            } catch (refError) {
+              console.error("[AUTH] \u274C \u274C \u274C ERROR processing customer referral code \u274C \u274C \u274C");
+              console.error("[AUTH] Error message:", refError.message);
+              console.error("[AUTH] Error stack:", refError.stack);
+            }
+          }
+          console.error(`[AUTH] Referral Metadata at ELSE block: ${JSON.stringify(referralMetadata2)}`);
+          console.error(`[AUTH] Referral Metadata keys: ${Object.keys(referralMetadata2).length}`);
+          let customerIdentityCreated = false;
+          let retryCount = 0;
+          const maxRetries = 3;
           let identityId;
-          try {
-            const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
-            const identityPromise = createOrUpdateCustomerIdentity2(phone, void 0);
-            const identityTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
-            );
-            identityId = await Promise.race([identityPromise, identityTimeout]);
-          } catch (identityError) {
-            console.warn("[AUTH] Could not create customer identity, continuing without it:", identityError.message);
+          while (!customerIdentityCreated && retryCount < maxRetries) {
+            try {
+              console.error(`[AUTH] ========================================`);
+              console.error(`[AUTH] \u{1F680} \u{1F680} \u{1F680} STARTING CUSTOMER_IDENTITY CREATION (Attempt ${retryCount + 1}/${maxRetries}) \u{1F680} \u{1F680} \u{1F680}`);
+              console.error(`[AUTH] Phone for DB: ${normalizedPhoneForDb}`);
+              console.error(`[AUTH] Referral Metadata: ${JSON.stringify(referralMetadata2)}`);
+              console.error(`[AUTH] ========================================`);
+              const insertData = {
+                phone: normalizedPhoneForDb,
+                onboarding_status: "PHONE_VERIFIED"
+              };
+              if (Object.keys(referralMetadata2).length > 0) {
+                insertData.metadata = referralMetadata2;
+                console.error(`[AUTH] \u2705 Adding referral metadata: ${JSON.stringify(referralMetadata2)}`);
+              } else {
+                console.error(`[AUTH] \u26A0\uFE0F  No referral metadata to add`);
+              }
+              console.error(`[AUTH] Insert data: ${JSON.stringify(insertData)}`);
+              const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+              const metadataJson = Object.keys(referralMetadata2).length > 0 ? JSON.stringify(referralMetadata2) : "{}";
+              console.error(`[AUTH] \u{1F50D} About to insert customer_identity with metadata: ${metadataJson}`);
+              const insertResult = await query13(
+                `INSERT INTO customer_identity (phone, onboarding_status, metadata, created_at, updated_at)
+                 VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+                 ON CONFLICT (phone)
+                 DO UPDATE SET 
+                   metadata = CASE 
+                     WHEN $3::jsonb != '{}'::jsonb AND ($3::jsonb->>'referral_code_id') IS NOT NULL
+                     THEN $3::jsonb  -- Always use new metadata if it has referral_code_id
+                     WHEN customer_identity.metadata IS NULL OR customer_identity.metadata = '{}'::jsonb OR (customer_identity.metadata->>'referral_code_id') IS NULL
+                     THEN $3::jsonb  -- Use new metadata if existing is empty or missing referral_code_id
+                     ELSE customer_identity.metadata  -- Keep existing if it already has referral_code_id
+                   END,
+                   onboarding_status = COALESCE(EXCLUDED.onboarding_status, customer_identity.onboarding_status),
+                   updated_at = NOW()
+                 RETURNING id, phone, onboarding_status, metadata`,
+                [normalizedPhoneForDb, "PHONE_VERIFIED", metadataJson]
+              );
+              console.error(`[AUTH] \u2705 Insert/Update result: ${insertResult.rows.length} rows`);
+              if (insertResult.rows.length > 0) {
+                const returnedRow = insertResult.rows[0];
+                let returnedMetadata = returnedRow.metadata || {};
+                if (typeof returnedMetadata === "string") {
+                  try {
+                    returnedMetadata = JSON.parse(returnedMetadata);
+                  } catch (e) {
+                    returnedMetadata = {};
+                  }
+                }
+                console.error(`[AUTH] \u2705 Returned identity ID: ${returnedRow.id}`);
+                console.error(`[AUTH] \u2705 Returned metadata: ${JSON.stringify(returnedMetadata)}`);
+                console.error(`[AUTH] \u2705 Has referral_code_id: ${!!returnedMetadata.referral_code_id}`);
+                if (!returnedMetadata.referral_code_id && Object.keys(referralMetadata2).length > 0) {
+                  console.error(`[AUTH] \u26A0\uFE0F Metadata missing referral_code_id after insert, forcing update...`);
+                  const forceUpdate = await query13(
+                    `UPDATE customer_identity 
+                     SET metadata = $1::jsonb, updated_at = NOW()
+                     WHERE id = $2
+                     RETURNING metadata`,
+                    [metadataJson, returnedRow.id]
+                  );
+                  if (forceUpdate.rows.length > 0) {
+                    let forcedMetadata = forceUpdate.rows[0].metadata || {};
+                    if (typeof forcedMetadata === "string") {
+                      try {
+                        forcedMetadata = JSON.parse(forcedMetadata);
+                      } catch (e) {
+                        forcedMetadata = {};
+                      }
+                    }
+                    console.error(`[AUTH] \u2705 Force update result: ${JSON.stringify(forcedMetadata)}`);
+                  }
+                }
+              } else {
+                console.error(`[AUTH] \u274C CRITICAL: Insert/Update returned 0 rows!`);
+              }
+              const newIdentityArray = insertResult.rows;
+              if (newIdentityArray && newIdentityArray.length > 0) {
+                const newIdentity = newIdentityArray[0];
+                console.error(`[AUTH] \u2705 Query executed successfully!`);
+                console.error(`[AUTH] Created customer_identity ID: ${newIdentity.id}`);
+                console.error(`[AUTH] Created customer_identity metadata: ${JSON.stringify(newIdentity.metadata || {})}`);
+                const { query: query14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+                const verifyCheck = await query14(
+                  `SELECT * FROM customer_identity WHERE id = $1`,
+                  [newIdentity.id]
+                );
+                if (verifyCheck.rows.length > 0) {
+                  let verifiedIdentity = verifyCheck.rows[0];
+                  let verifiedMetadata = verifiedIdentity.metadata || {};
+                  if (typeof verifiedMetadata === "string") {
+                    try {
+                      verifiedMetadata = JSON.parse(verifiedMetadata);
+                    } catch (e) {
+                      verifiedMetadata = {};
+                    }
+                  }
+                  console.error(`[AUTH] \u2705 VERIFIED: customer_identity ${newIdentity.id} exists in database`);
+                  console.error(`[AUTH] \u2705 Verified metadata: ${JSON.stringify(verifiedMetadata, null, 2)}`);
+                  if (!verifiedMetadata.referral_code_id && Object.keys(referralMetadata2).length > 0) {
+                    console.error(`[AUTH] \u26A0\uFE0F Metadata missing in DB, updating...`);
+                    try {
+                      await query14(
+                        `UPDATE customer_identity 
+                         SET metadata = $1::jsonb, updated_at = NOW()
+                         WHERE id = $2`,
+                        [JSON.stringify(referralMetadata2), newIdentity.id]
+                      );
+                      console.error(`[AUTH] \u2705 Updated metadata (approach 22)`);
+                    } catch (updateError) {
+                      console.error(`[AUTH] \u274C Update approach 22 failed: ${updateError.message}`);
+                      try {
+                        await query14(
+                          `UPDATE customer_identity 
+                           SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+                           WHERE id = $2`,
+                          [JSON.stringify(referralMetadata2), newIdentity.id]
+                        );
+                        console.error(`[AUTH] \u2705 Updated metadata (approach 23 - merge)`);
+                      } catch (mergeError) {
+                        console.error(`[AUTH] \u274C Update approach 23 failed: ${mergeError.message}`);
+                      }
+                    }
+                    const reVerify = await query14(
+                      `SELECT metadata FROM customer_identity WHERE id = $1`,
+                      [newIdentity.id]
+                    );
+                    if (reVerify.rows.length > 0) {
+                      let reVerifiedMetadata = reVerify.rows[0].metadata || {};
+                      if (typeof reVerifiedMetadata === "string") {
+                        try {
+                          reVerifiedMetadata = JSON.parse(reVerifiedMetadata);
+                        } catch (e) {
+                          reVerifiedMetadata = {};
+                        }
+                      }
+                      console.error(`[AUTH] \u2705 Re-verified metadata: ${JSON.stringify(reVerifiedMetadata)}`);
+                    }
+                  }
+                  identityId = newIdentity.id;
+                  customerIdentityCreated = true;
+                  console.error(`[AUTH] \u2705 \u2705 \u2705 SUCCESS: Created customer_identity ${newIdentity.id} with referral code in metadata \u2705 \u2705 \u2705`);
+                  console.error(`[AUTH] ========================================`);
+                } else {
+                  throw new Error("customer_identity not found after insert");
+                }
+              } else {
+                throw new Error("insert() returned empty array");
+              }
+            } catch (createError) {
+              retryCount++;
+              console.error(`[AUTH] ========================================`);
+              console.error(`[AUTH] \u274C \u274C \u274C CRITICAL ERROR creating customer_identity (Attempt ${retryCount}/${maxRetries}) \u274C \u274C \u274C`);
+              console.error("[AUTH] Error message:", createError.message);
+              console.error("[AUTH] Error code:", createError.code);
+              console.error("[AUTH] Error detail:", createError.detail);
+              console.error("[AUTH] Error stack:", createError.stack);
+              console.error("[AUTH] ========================================");
+              if (retryCount >= maxRetries) {
+                console.error("[AUTH] All retries failed, attempting direct SQL fallback...");
+                try {
+                  const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+                  const fallbackResult = await query13(
+                    `INSERT INTO customer_identity (phone, onboarding_status, metadata) 
+                     VALUES ($1, 'PHONE_VERIFIED', $2::jsonb)
+                     ON CONFLICT (phone)
+                     DO UPDATE SET 
+                       metadata = COALESCE(EXCLUDED.metadata, customer_identity.metadata),
+                       updated_at = NOW()
+                     RETURNING id`,
+                    [normalizedPhoneForDb, JSON.stringify(referralMetadata2 || {})]
+                  );
+                  if (fallbackResult.rows.length > 0) {
+                    identityId = fallbackResult.rows[0].id;
+                    customerIdentityCreated = true;
+                    console.error(`[AUTH] \u2705 Fallback SQL succeeded: customer_identity ${identityId}`);
+                  }
+                } catch (fallbackError) {
+                  console.error("[AUTH] \u274C Fallback SQL also failed:", fallbackError.message);
+                }
+              } else {
+                await new Promise((resolve) => setTimeout(resolve, 1e3 * retryCount));
+              }
+            }
+          }
+          if (!customerIdentityCreated) {
+            console.error("[AUTH] \u26A0\uFE0F Failed to create customer_identity after all retries, continuing without it");
+          } else if (identityId) {
+            if (Object.keys(referralMetadata2).length > 0) {
+              try {
+                const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+                const currentCheck = await query13(
+                  `SELECT metadata FROM customer_identity WHERE id = $1`,
+                  [identityId]
+                );
+                let currentMetadata = {};
+                if (currentCheck.rows.length > 0) {
+                  currentMetadata = currentCheck.rows[0].metadata || {};
+                  if (typeof currentMetadata === "string") {
+                    try {
+                      currentMetadata = JSON.parse(currentMetadata);
+                    } catch (e) {
+                      currentMetadata = {};
+                    }
+                  }
+                }
+                if (!currentMetadata.referral_code_id && referralMetadata2.referral_code_id) {
+                  console.error(`[AUTH] \u{1F504} Post-creation: Updating metadata for identity ${identityId}`);
+                  await query13(
+                    `UPDATE customer_identity 
+                     SET metadata = $1::jsonb, updated_at = NOW()
+                     WHERE id = $2`,
+                    [JSON.stringify(referralMetadata2), identityId]
+                  );
+                  const verifyUpdate = await query13(
+                    `SELECT metadata FROM customer_identity WHERE id = $1`,
+                    [identityId]
+                  );
+                  if (verifyUpdate.rows.length > 0) {
+                    let updatedMetadata = verifyUpdate.rows[0].metadata || {};
+                    if (typeof updatedMetadata === "string") {
+                      try {
+                        updatedMetadata = JSON.parse(updatedMetadata);
+                      } catch (e) {
+                        updatedMetadata = {};
+                      }
+                    }
+                    console.error(`[AUTH] \u2705 Post-creation update verified: ${JSON.stringify(updatedMetadata)}`);
+                  }
+                } else {
+                  console.error(`[AUTH] \u2705 Metadata already set: ${JSON.stringify(currentMetadata)}`);
+                }
+              } catch (postUpdateError) {
+                console.error(`[AUTH] \u274C Post-creation update failed: ${postUpdateError.message}`);
+              }
+            } else {
+              console.error(`[AUTH] \u{1F504} Last chance: referralMetadata is empty, re-processing...`);
+              if (referralCode && typeof referralCode === "string" && referralCode.trim().length > 0) {
+                const lastChanceMetadata = await processCustomerReferralCode(referralCode, phone);
+                if (Object.keys(lastChanceMetadata).length > 0) {
+                  referralMetadata2 = lastChanceMetadata;
+                  try {
+                    const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+                    await query13(
+                      `UPDATE customer_identity 
+                       SET metadata = $1::jsonb, updated_at = NOW()
+                       WHERE id = $2`,
+                      [JSON.stringify(referralMetadata2), identityId]
+                    );
+                    console.error(`[AUTH] \u2705 Last chance succeeded! Metadata updated: ${JSON.stringify(referralMetadata2)}`);
+                  } catch (lastChanceError) {
+                    console.error(`[AUTH] \u274C Last chance update failed: ${lastChanceError.message}`);
+                  }
+                }
+              }
+            }
+          }
+          if (identityId && Object.keys(referralMetadata2).length > 0) {
+            try {
+              const { query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+              const checkMetadata = await query13(
+                `SELECT metadata FROM customer_identity WHERE id = $1`,
+                [identityId]
+              );
+              if (checkMetadata.rows.length > 0) {
+                let existingMetadata = checkMetadata.rows[0].metadata || {};
+                if (typeof existingMetadata === "string") {
+                  try {
+                    existingMetadata = JSON.parse(existingMetadata);
+                  } catch (e) {
+                    existingMetadata = {};
+                  }
+                }
+                if (!existingMetadata.referral_code_id) {
+                  console.error(`[AUTH] \u26A0\uFE0F Referral metadata missing in customer_identity, updating...`);
+                  await query13(
+                    `UPDATE customer_identity 
+                     SET metadata = $1::jsonb, updated_at = NOW()
+                     WHERE id = $2`,
+                    [JSON.stringify(referralMetadata2), identityId]
+                  );
+                  console.error(`[AUTH] \u2705 Updated customer_identity ${identityId} with referral metadata`);
+                }
+              }
+            } catch (updateError) {
+              console.error("[AUTH] Error updating customer_identity with referral metadata:", updateError);
+            }
           }
           let newCustomers = [];
           try {
@@ -130862,26 +131913,40 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
           }
         }
       } else if (role === "vendor") {
+        console.error(`[AUTH] ========================================`);
+        console.error(`[AUTH] \u{1F3AF} \u{1F3AF} \u{1F3AF} VENDOR ROLE DETECTED - STARTING VENDOR FLOW \u{1F3AF} \u{1F3AF} \u{1F3AF}`);
+        console.error(`[AUTH] Phone: ${phone}`);
+        console.error(`[AUTH] Referral Code from body: ${referralCode || "NOT PROVIDED"}`);
+        console.error(`[AUTH] ========================================`);
         let vendorIdentity = [];
         let vendors = [];
+        const phoneDigits2 = phone.replace(/\D/g, "");
+        let normalizedPhoneForDb = phoneDigits2.length > 10 ? phoneDigits2.slice(-10) : phoneDigits2.length === 9 ? "0" + phoneDigits2 : phoneDigits2;
+        console.log(`[AUTH] \u{1F50D} Vendor lookup - original phone: ${phone}, normalized for DB: ${normalizedPhoneForDb}`);
         try {
           const vendorQueriesPromise = Promise.all([
+            select("vendor_identity", { phone: normalizedPhoneForDb }),
             select("vendor_identity", { phone }),
+            // Fallback to original format
             select("vendors", { phone })
           ]);
           const vendorQueriesTimeout = new Promise(
             (_, reject) => setTimeout(() => reject(new Error("Vendor queries timeout")), 5e3)
           );
-          [vendorIdentity, vendors] = await Promise.race([
+          const [vendorIdentityByNormalized, vendorIdentityByOriginal, vendors2] = await Promise.race([
             vendorQueriesPromise,
             vendorQueriesTimeout
           ]);
+          vendorIdentity = vendorIdentityByNormalized.length > 0 ? vendorIdentityByNormalized : vendorIdentityByOriginal;
+          console.error(`[AUTH] \u{1F50D} Vendor lookup results - vendor_identity (normalized): ${vendorIdentityByNormalized.length}, vendor_identity (original): ${vendorIdentityByOriginal.length}, vendors: ${vendors2.length}`);
         } catch (vendorQueryError) {
-          console.warn("[AUTH] Vendor queries timed out or failed, continuing with minimal data:", vendorQueryError.message);
+          console.error("[AUTH] \u274C Vendor queries timed out or failed:", vendorQueryError.message);
           vendorIdentity = [];
           vendors = [];
         }
+        console.error(`[AUTH] \u{1F50D} DECISION POINT: vendors.length=${vendors.length}, vendorIdentity.length=${vendorIdentity.length}`);
         if (vendors.length > 0) {
+          console.error(`[AUTH] \u{1F50D} Taking vendors.length > 0 path`);
           userId = vendors[0].id;
           userData = vendors[0];
           if (vendorIdentity.length > 0) {
@@ -130902,6 +131967,7 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
             console.warn("[AUTH] Could not update vendor last_login_at:", updateError.message);
           }
         } else if (vendorIdentity.length > 0) {
+          console.error(`[AUTH] \u{1F50D} Taking vendorIdentity.length > 0 path`);
           const identity = vendorIdentity[0];
           if (identity.vendor_id) {
             let vendorsByVendorId = [];
@@ -130946,14 +132012,194 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
             console.log(`[AUTH] Vendor identity found for ${phone} with status: ${userData.onboarding_status} (not approved yet)`);
           }
         } else {
-          userId = `temp_vendor_${phone}_${Date.now()}`;
-          userData = {
-            id: userId,
-            phone,
-            is_active: false,
-            onboarding_status: "INIT",
-            created_at: (/* @__PURE__ */ new Date()).toISOString()
-          };
+          console.error(`[AUTH] ========================================`);
+          console.error(`[AUTH] \u26A0\uFE0F  \u26A0\uFE0F  \u26A0\uFE0F  ELSE BLOCK REACHED - NO VENDOR_IDENTITY FOUND \u26A0\uFE0F  \u26A0\uFE0F  \u26A0\uFE0F`);
+          console.error(`[AUTH] Phone: ${phone}`);
+          console.error(`[AUTH] Referral Code: ${referralCode || "NOT PROVIDED"}`);
+          console.error(`[AUTH] Referral Code Type: ${typeof referralCode}`);
+          console.error(`[AUTH] Vendors length: ${vendors.length}`);
+          console.error(`[AUTH] VendorIdentity length: ${vendorIdentity.length}`);
+          console.error(`[AUTH] About to process referral and create vendor_identity...`);
+          console.error(`[AUTH] ========================================`);
+          let referralMetadata = {};
+          let normalizedPhoneForDb2 = phone.replace(/\D/g, "");
+          if (normalizedPhoneForDb2.length > 10) {
+            normalizedPhoneForDb2 = normalizedPhoneForDb2.slice(-10);
+          } else if (normalizedPhoneForDb2.length === 9) {
+            normalizedPhoneForDb2 = "0" + normalizedPhoneForDb2;
+          }
+          console.error(`[AUTH] Normalized phone for DB: ${normalizedPhoneForDb2}`);
+          if (referralCode && typeof referralCode === "string" && referralCode.trim()) {
+            try {
+              const trimmedCode = referralCode.trim().toUpperCase();
+              console.log(`[AUTH] \u{1F50D} Processing referral code for new vendor: ${trimmedCode}`);
+              const fullPhoneForComparison = `+91${normalizedPhoneForDb2}`;
+              const existingReferral = await query(
+                `SELECT * FROM vendor_referrals 
+                 WHERE referral_code = $1 
+                 AND referred_phone = $2
+                 LIMIT 1`,
+                [trimmedCode, fullPhoneForComparison]
+              );
+              let referralRecord;
+              if (existingReferral.rows.length > 0) {
+                referralRecord = existingReferral.rows[0];
+                console.log(`[AUTH] \u2705 Found existing referral record ${referralRecord.id}`);
+              } else {
+                const codeLookup = await query(
+                  `SELECT DISTINCT referrer_vendor_id FROM vendor_referrals 
+                   WHERE referral_code = $1 
+                   LIMIT 1`,
+                  [trimmedCode]
+                );
+                if (codeLookup.rows.length > 0) {
+                  const referrerVendorId = codeLookup.rows[0].referrer_vendor_id;
+                  const newReferral = await query(
+                    `INSERT INTO vendor_referrals 
+                     (referrer_vendor_id, referral_code, referred_phone, status, applied_at, created_at, updated_at)
+                     VALUES ($1, $2, $3, 'applied', NOW(), NOW(), NOW())
+                     ON CONFLICT (referrer_vendor_id, referred_phone) 
+                     DO UPDATE SET 
+                       referral_code = EXCLUDED.referral_code,
+                       status = 'applied',
+                       applied_at = NOW(),
+                       updated_at = NOW()
+                     RETURNING *`,
+                    [referrerVendorId, trimmedCode, fullPhoneForComparison]
+                  );
+                  referralRecord = newReferral.rows[0];
+                  console.log(`[AUTH] \u2705 Created referral record ${referralRecord.id}`);
+                } else {
+                  console.warn(`[AUTH] \u26A0\uFE0F Referral code ${trimmedCode} not found`);
+                }
+              }
+              if (referralRecord) {
+                referralMetadata = {
+                  referral_code_id: referralRecord.id,
+                  referrer_vendor_id: referralRecord.referrer_vendor_id,
+                  referral_code: trimmedCode
+                };
+                console.log(`[AUTH] \u2705 Referral metadata: ${JSON.stringify(referralMetadata)}`);
+              }
+            } catch (refError) {
+              console.error("[AUTH] \u274C Error processing referral code:", refError);
+            }
+          }
+          let vendorIdentityCreated = false;
+          let retryCount = 0;
+          const maxRetries = 3;
+          while (!vendorIdentityCreated && retryCount < maxRetries) {
+            try {
+              console.error(`[AUTH] ========================================`);
+              console.error(`[AUTH] \u{1F680} \u{1F680} \u{1F680} STARTING VENDOR_IDENTITY CREATION (Attempt ${retryCount + 1}/${maxRetries}) \u{1F680} \u{1F680} \u{1F680}`);
+              console.log(`[AUTH] Phone for DB: ${normalizedPhoneForDb2}`);
+              console.log(`[AUTH] Referral Metadata: ${JSON.stringify(referralMetadata)}`);
+              console.log(`[AUTH] ========================================`);
+              const insertData = {
+                phone: normalizedPhoneForDb2,
+                onboarding_status: "INIT"
+              };
+              if (Object.keys(referralMetadata).length > 0) {
+                insertData.metadata = referralMetadata;
+                console.error(`[AUTH] \u2705 Adding referral metadata: ${JSON.stringify(referralMetadata)}`);
+              } else {
+                console.error(`[AUTH] \u26A0\uFE0F  No referral metadata to add`);
+              }
+              console.error(`[AUTH] Insert data: ${JSON.stringify(insertData)}`);
+              const newIdentityArray = await insert("vendor_identity", insertData);
+              if (newIdentityArray && newIdentityArray.length > 0) {
+                const newIdentity = newIdentityArray[0];
+                console.log(`[AUTH] \u2705 Query executed successfully!`);
+                console.log(`[AUTH] Created vendor_identity ID: ${newIdentity.id}`);
+                console.log(`[AUTH] Created vendor_identity metadata: ${JSON.stringify(newIdentity.metadata || {})}`);
+                const { query: query13 } = await import("../../database/rds-connection");
+                const verifyCheck = await query13(
+                  `SELECT * FROM vendor_identity WHERE id = $1`,
+                  [newIdentity.id]
+                );
+                if (verifyCheck.rows.length > 0) {
+                  console.log(`[AUTH] \u2705 VERIFIED: vendor_identity ${newIdentity.id} exists in database`);
+                  const verifiedMetadata = verifyCheck.rows[0].metadata || {};
+                  console.log(`[AUTH] \u2705 Verified metadata: ${JSON.stringify(verifiedMetadata, null, 2)}`);
+                  userId = newIdentity.id;
+                  userData = {
+                    id: newIdentity.id,
+                    phone,
+                    is_active: false,
+                    onboarding_status: newIdentity.onboarding_status || "INIT",
+                    vendor_identity_id: newIdentity.id,
+                    created_at: newIdentity.created_at
+                  };
+                  vendorIdentityCreated = true;
+                  console.error(`[AUTH] \u2705 \u2705 \u2705 SUCCESS: Created vendor_identity ${newIdentity.id} with referral code in metadata \u2705 \u2705 \u2705`);
+                  console.error(`[AUTH] \u2705 UserId set to: ${userId}`);
+                  console.error(`[AUTH] ========================================`);
+                } else {
+                  throw new Error("vendor_identity not found after insert");
+                }
+              } else {
+                throw new Error("insert() returned empty array");
+              }
+            } catch (createError) {
+              retryCount++;
+              console.error(`[AUTH] ========================================`);
+              console.error(`[AUTH] \u274C \u274C \u274C CRITICAL ERROR creating vendor_identity (Attempt ${retryCount}/${maxRetries}) \u274C \u274C \u274C`);
+              console.error("[AUTH] Error message:", createError.message);
+              console.error("[AUTH] Error code:", createError.code);
+              console.error("[AUTH] Error detail:", createError.detail);
+              console.error("[AUTH] Error stack:", createError.stack);
+              console.error("[AUTH] ========================================");
+              if (retryCount >= maxRetries) {
+                console.error("[AUTH] All retries failed, attempting direct SQL fallback...");
+                try {
+                  const { query: query13 } = await import("../../database/rds-connection");
+                  const fallbackResult = await query13(
+                    `INSERT INTO vendor_identity (phone, onboarding_status, metadata) 
+                     VALUES ($1, 'INIT', $2::jsonb)
+                     ON CONFLICT (phone) 
+                     DO UPDATE SET onboarding_status = EXCLUDED.onboarding_status, 
+                                   metadata = COALESCE(EXCLUDED.metadata, vendor_identity.metadata),
+                                   updated_at = NOW()
+                     RETURNING *`,
+                    [normalizedPhoneForDb2, JSON.stringify(Object.keys(referralMetadata).length > 0 ? referralMetadata : {})]
+                  );
+                  if (fallbackResult.rows && fallbackResult.rows.length > 0) {
+                    const newIdentity = fallbackResult.rows[0];
+                    userId = newIdentity.id;
+                    userData = {
+                      id: newIdentity.id,
+                      phone,
+                      is_active: false,
+                      onboarding_status: newIdentity.onboarding_status || "INIT",
+                      vendor_identity_id: newIdentity.id,
+                      created_at: newIdentity.created_at
+                    };
+                    vendorIdentityCreated = true;
+                    console.log(`[AUTH] \u2705 FALLBACK SUCCESS: Created vendor_identity ${newIdentity.id} using direct SQL`);
+                  }
+                } catch (fallbackError) {
+                  console.error("[AUTH] \u274C FALLBACK CREATION ALSO FAILED:", fallbackError);
+                }
+                if (!vendorIdentityCreated) {
+                  userId = `temp_vendor_${phone}_${Date.now()}`;
+                  userData = {
+                    id: userId,
+                    phone,
+                    is_active: false,
+                    onboarding_status: "INIT",
+                    created_at: (/* @__PURE__ */ new Date()).toISOString()
+                  };
+                  console.log(`[AUTH] \u26A0\uFE0F  Using temp vendor ID due to vendor_identity creation failure: ${userId}`);
+                }
+              } else {
+                await new Promise((resolve) => setTimeout(resolve, 100 * retryCount));
+              }
+            }
+          }
+          if (!vendorIdentityCreated) {
+            console.error("[AUTH] \u274C CRITICAL: Failed to create vendor_identity after all retries!");
+            console.error("[AUTH] \u274C This will cause issues with referral code processing!");
+          }
           console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
         }
       } else if (role === "admin") {
@@ -131201,6 +132447,13 @@ async function createApiGatewayEvent(c, bodyParser) {
         )
       ]);
     }
+    console.error(`[CREATE-EVENT] ========================================`);
+    console.error(`[CREATE-EVENT] Body parsed from Hono request`);
+    console.error(`[CREATE-EVENT] Body keys: ${Object.keys(body).join(", ")}`);
+    console.error(`[CREATE-EVENT] referralCode in body: ${body.referralCode || "NOT FOUND"}`);
+    console.error(`[CREATE-EVENT] referral_code in body: ${body.referral_code || "NOT FOUND"}`);
+    console.error(`[CREATE-EVENT] Full body: ${JSON.stringify(body).substring(0, 500)}`);
+    console.error(`[CREATE-EVENT] ========================================`);
   } catch (error) {
     console.warn("[AUTH] Error parsing request body, using empty object:", error?.message);
     body = {};
@@ -133012,15 +134265,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select27 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select27("staff", { id: staffId });
+    const { select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select28("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors = await select27("vendors", { id: vendorId });
+    const vendors = await select28("vendors", { id: vendorId });
     if (vendors.length > 0 && vendors[0].latitude && vendors[0].longitude) {
       return {
         latitude: parseFloat(vendors[0].latitude),
@@ -133035,8 +134288,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select27 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select27("staff", { id: staffId });
+    const { select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select28("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -136889,23 +138142,23 @@ function createLambdaContext4() {
 async function triggerAutoShipment(orderId, orderType) {
   console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
   try {
-    const { select: select27, insert: insert14, update: update18, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const { select: select28, insert: insert15, update: update19, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
     const { logisticsPartnerService: logisticsPartnerService2 } = await Promise.resolve().then(() => (init_logistics_partner_service(), logistics_partner_service_exports));
     let order = null;
     let orderItems = [];
     let vendorId = null;
     if (orderType === "ecommerce") {
-      const orders = await select27("orders", { id: orderId });
+      const orders = await select28("orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Order not found: ${orderId}`);
         return;
       }
       order = orders[0];
-      const items = await select27("order_items", { order_id: orderId });
+      const items = await select28("order_items", { order_id: orderId });
       orderItems = items;
       vendorId = order.vendor_id;
     } else if (orderType === "pharmacy") {
-      const orders = await select27("pharmacy_orders", { id: orderId });
+      const orders = await select28("pharmacy_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Pharmacy order not found: ${orderId}`);
         return;
@@ -136913,19 +138166,19 @@ async function triggerAutoShipment(orderId, orderType) {
       order = orders[0];
       vendorId = order.pharmacy_id;
       const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
-      await insert14("delivery_tracking", {
+      await insert15("delivery_tracking", {
         pharmacy_order_id: orderId,
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update18("pharmacy_orders", { id: orderId }, {
+      await update19("pharmacy_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
       console.log(`[AUTO-SHIPMENT] Pharmacy delivery tracking created for ${orderId}`);
       return;
     } else if (orderType === "meal") {
-      const orders = await select27("meal_orders", { id: orderId });
+      const orders = await select28("meal_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Meal order not found: ${orderId}`);
         return;
@@ -136933,12 +138186,12 @@ async function triggerAutoShipment(orderId, orderType) {
       order = orders[0];
       vendorId = order.vendor_id;
       const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
-      await insert14("delivery_tracking", {
+      await insert15("delivery_tracking", {
         meal_order_id: orderId,
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update18("meal_orders", { id: orderId }, {
+      await update19("meal_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
@@ -136955,7 +138208,7 @@ async function triggerAutoShipment(orderId, orderType) {
     }
     let customer = null;
     if (order.customer_id) {
-      const customers = await select27("customers", { id: order.customer_id });
+      const customers = await select28("customers", { id: order.customer_id });
       if (customers.length > 0) customer = customers[0];
     }
     const shippingAddress = typeof order.shipping_address === "string" ? JSON.parse(order.shipping_address) : order.shipping_address;
@@ -136974,19 +138227,19 @@ async function triggerAutoShipment(orderId, orderType) {
     });
     if (!partner) {
       console.log(`[AUTO-SHIPMENT] No partner available, marking for manual processing: ${orderId}`);
-      await update18("orders", { id: orderId }, {
+      await update19("orders", { id: orderId }, {
         order_status: "processing",
         logistics_notes: "Pending manual shipment creation"
       });
       return;
     }
-    await insert14("shipments", {
+    await insert15("shipments", {
       order_id: orderId,
       logistics_partner: partner.partner_type,
       logistics_partner_id: partner.id,
       status: "pending_creation"
     });
-    await update18("orders", { id: orderId }, {
+    await update19("orders", { id: orderId }, {
       order_status: "processing"
     });
     console.log(`[AUTO-SHIPMENT] Shipment record created for ${orderId}, partner: ${partner.partner_name}`);
@@ -153754,8 +155007,8 @@ function registerServiceDiscoveryEndpoints(app3) {
         return c.json({ error: "No valid fields to update. Please provide at least one facility field" }, 400);
       }
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      const { update: update18 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      const updated = await update18("vendors", { id: actualVendorId }, updateData);
+      const { update: update19 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      const updated = await update19("vendors", { id: actualVendorId }, updateData);
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
@@ -153839,8 +155092,8 @@ function registerServiceDiscoveryEndpoints(app3) {
       const existingMetadata = vendor.metadata || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
-      const { update: update18 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      await update18("vendors", { id: actualVendorId }, {
+      const { update: update19 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      await update19("vendors", { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -162764,9 +164017,13 @@ function registerLoyaltyEndpoints(app3) {
         rules: rows.map((r) => ({
           id: r.id,
           category: r.action_category || r.category || "loyalty",
+          // 'loyalty' or 'referral_rewards'
+          userType: r.user_type || "customer",
+          // 'customer', 'vendor', or 'both'
           action: r.action_name,
           points: r.points_value ?? 0,
-          type: r.points_type || "fixed",
+          type: (r.points_type === "per_amount" ? "percentage_spend" : r.points_type) || "fixed",
+          // Map per_amount to percentage_spend for frontend compatibility
           thresholdAmount: r.base_amount ?? r.threshold_amount,
           frequency: (r.frequency_type || r.frequency || "one_time").replace("_", "-"),
           isActive: r.is_active !== false,
@@ -162776,6 +164033,33 @@ function registerLoyaltyEndpoints(app3) {
     } catch (error) {
       console.error("Error fetching loyalty rules:", error);
       return c.json({ success: true, rules: [] });
+    }
+  });
+  app3.put("/loyalty/rules", async (c) => {
+    try {
+      const { rules } = await c.req.json();
+      if (!Array.isArray(rules)) {
+        return c.json({ error: "rules must be an array" }, 400);
+      }
+      for (const rule of rules) {
+        if (!rule.id) {
+          console.warn("Skipping rule without id:", rule);
+          continue;
+        }
+        const updateData = {};
+        if (rule.isActive !== void 0) updateData.is_active = rule.isActive;
+        if (rule.points !== void 0) updateData.points_value = rule.points;
+        if (Object.keys(updateData).length > 0) {
+          await update("loyalty_action_rules", { id: rule.id }, updateData);
+        }
+      }
+      return c.json({
+        success: true,
+        message: "Loyalty rules updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating loyalty rules:", error);
+      return c.json({ error: error.message }, 500);
     }
   });
   app3.get("/loyalty/profile/:customerId", async (c) => {
@@ -163035,11 +164319,16 @@ function registerLoyaltyEndpoints(app3) {
         return c.json({ error: "name, points_per_rupee, and redemption_rate are required" }, 400);
       }
       const rule = await insert("loyalty_rules", {
+        rule_name: name,
+        // rule_name is NOT NULL, name is the alias
         name,
+        // Also set name for consistency
         description,
         points_per_rupee,
         redemption_rate,
         min_points_to_redeem: min_points_to_redeem || 100,
+        min_redemption_points: min_points_to_redeem || 100,
+        // Also set legacy column
         max_redemption_per_transaction,
         expiry_days,
         is_active
@@ -163059,11 +164348,17 @@ function registerLoyaltyEndpoints(app3) {
       const { id } = c.req.param();
       const body = await c.req.json();
       const updateData = {};
-      if (body.name !== void 0) updateData.name = body.name;
+      if (body.name !== void 0) {
+        updateData.name = body.name;
+        updateData.rule_name = body.name;
+      }
       if (body.description !== void 0) updateData.description = body.description;
       if (body.points_per_rupee !== void 0) updateData.points_per_rupee = body.points_per_rupee;
       if (body.redemption_rate !== void 0) updateData.redemption_rate = body.redemption_rate;
-      if (body.min_points_to_redeem !== void 0) updateData.min_points_to_redeem = body.min_points_to_redeem;
+      if (body.min_points_to_redeem !== void 0) {
+        updateData.min_points_to_redeem = body.min_points_to_redeem;
+        updateData.min_redemption_points = body.min_points_to_redeem;
+      }
       if (body.max_redemption_per_transaction !== void 0) updateData.max_redemption_per_transaction = body.max_redemption_per_transaction;
       if (body.expiry_days !== void 0) updateData.expiry_days = body.expiry_days;
       if (body.is_active !== void 0) updateData.is_active = body.is_active;
@@ -166538,26 +167833,26 @@ function validateBulkPricing(data) {
     errors.push("Maximum 100 updates allowed per bulk operation");
   }
   const serviceIds = /* @__PURE__ */ new Set();
-  data.updates.forEach((update18, index) => {
-    if (!update18.serviceId || !isValidUUID(update18.serviceId)) {
+  data.updates.forEach((update19, index) => {
+    if (!update19.serviceId || !isValidUUID(update19.serviceId)) {
       errors.push(`Update ${index + 1}: Valid serviceId is required`);
     } else {
-      if (serviceIds.has(update18.serviceId)) {
+      if (serviceIds.has(update19.serviceId)) {
         errors.push(`Update ${index + 1}: Duplicate serviceId found`);
       }
-      serviceIds.add(update18.serviceId);
+      serviceIds.add(update19.serviceId);
     }
-    if (update18.price === void 0 || update18.price === null) {
+    if (update19.price === void 0 || update19.price === null) {
       errors.push(`Update ${index + 1}: Price is required`);
-    } else if (update18.price < 0) {
+    } else if (update19.price < 0) {
       errors.push(`Update ${index + 1}: Price cannot be negative`);
-    } else if (update18.price > 1e6) {
+    } else if (update19.price > 1e6) {
       errors.push(`Update ${index + 1}: Price exceeds maximum allowed value`);
     }
-    if (update18.duration !== void 0) {
-      if (update18.duration < 1) {
+    if (update19.duration !== void 0) {
+      if (update19.duration < 1) {
         errors.push(`Update ${index + 1}: Duration must be at least 1 minute`);
-      } else if (update18.duration > 1440) {
+      } else if (update19.duration > 1440) {
         errors.push(`Update ${index + 1}: Duration cannot exceed 1440 minutes`);
       }
     }
@@ -183568,7 +184863,7 @@ function registerOrderManagementEndpoints(app3) {
         const payments = await select("payments", { order_id: orderId, payment_status: "completed" });
         if (payments.length > 0) {
           const payment = payments[0];
-          const { insert: insert14, query: query13 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+          const { insert: insert15, query: query13 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
           await query13(
             `INSERT INTO refunds (
               payment_id,
@@ -183636,9 +184931,9 @@ function registerOrderManagementEndpoints(app3) {
       if (updates.totalAmount !== void 0) updateData.total_amount = updates.totalAmount;
       if (updates.items && Array.isArray(updates.items)) {
         await query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
-        const { insert: insert14 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { insert: insert15 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         for (const item of updates.items) {
-          await insert14("order_items", {
+          await insert15("order_items", {
             order_id: orderId,
             product_id: item.productId || null,
             service_id: item.serviceId || null,
@@ -183970,6 +185265,160 @@ function registerEnhancedOtpEndpoints(app3) {
 // src/handler/index.ts
 init_sms_notifications();
 init_vendor_profile();
+
+// src/endpoints/vendor-wallet.ts
+init_rds_connection();
+init_vendor_profile();
+function registerVendorWalletEndpoints(app3) {
+  app3.get("/vendor/:vendorId/wallet", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const walletResult = await query(
+        `SELECT * FROM vendor_wallets WHERE vendor_id = $1`,
+        [resolvedVendorId]
+      );
+      let wallet = null;
+      let balance = 0;
+      if (walletResult.rows.length > 0) {
+        wallet = walletResult.rows[0];
+        balance = parseFloat(wallet.balance || 0);
+      } else {
+        balance = 0;
+      }
+      const pointsResult = await query(
+        `SELECT * FROM vendor_loyalty_points WHERE vendor_id = $1`,
+        [resolvedVendorId]
+      );
+      const points = pointsResult.rows.length > 0 ? pointsResult.rows[0] : null;
+      return c.json({
+        success: true,
+        wallet: {
+          balance,
+          currency: "INR",
+          wallet_id: wallet?.id || null
+        },
+        loyalty_points: points ? {
+          total_points: points.total_points || 0,
+          lifetime_earned: points.lifetime_points_earned || 0,
+          lifetime_redeemed: points.lifetime_points_redeemed || 0
+        } : null
+      });
+    } catch (error) {
+      console.error("Error fetching vendor wallet:", error);
+      return c.json({
+        error: error.message || "Failed to fetch wallet balance"
+      }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/wallet/transactions", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const limit = parseInt(c.req.query("limit") || "50");
+      const offset = parseInt(c.req.query("offset") || "0");
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const walletResult = await query(
+        `SELECT id FROM vendor_wallets WHERE vendor_id = $1`,
+        [resolvedVendorId]
+      );
+      if (walletResult.rows.length === 0) {
+        return c.json({
+          success: true,
+          transactions: [],
+          total: 0
+        });
+      }
+      const walletId = walletResult.rows[0].id;
+      const transactionsResult = await query(
+        `SELECT * FROM vendor_wallet_transactions 
+         WHERE wallet_id = $1 
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [walletId, limit, offset]
+      );
+      const countResult = await query(
+        `SELECT COUNT(*) as total FROM vendor_wallet_transactions WHERE wallet_id = $1`,
+        [walletId]
+      );
+      const total = parseInt(countResult.rows[0]?.total || "0");
+      const transactions = transactionsResult.rows.map((t) => ({
+        id: t.id,
+        transaction_type: t.transaction_type,
+        amount: parseFloat(t.amount || 0),
+        balance_after: parseFloat(t.balance_after || 0),
+        reference_type: t.reference_type,
+        reference_id: t.reference_id,
+        description: t.description,
+        created_at: t.created_at
+      }));
+      return c.json({
+        success: true,
+        transactions,
+        total,
+        limit,
+        offset
+      });
+    } catch (error) {
+      console.error("Error fetching wallet transactions:", error);
+      return c.json({
+        error: error.message || "Failed to fetch wallet transactions"
+      }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/wallet/loyalty-transactions", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const limit = parseInt(c.req.query("limit") || "50");
+      const offset = parseInt(c.req.query("offset") || "0");
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const transactionsResult = await query(
+        `SELECT * FROM vendor_loyalty_transactions 
+         WHERE vendor_id = $1 
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [resolvedVendorId, limit, offset]
+      );
+      const countResult = await query(
+        `SELECT COUNT(*) as total FROM vendor_loyalty_transactions WHERE vendor_id = $1`,
+        [resolvedVendorId]
+      );
+      const total = parseInt(countResult.rows[0]?.total || "0");
+      const transactions = transactionsResult.rows.map((t) => ({
+        id: t.id,
+        transaction_type: t.transaction_type,
+        points: t.points,
+        reference_type: t.reference_type,
+        reference_id: t.reference_id,
+        description: t.description,
+        created_at: t.created_at
+      }));
+      return c.json({
+        success: true,
+        transactions,
+        total,
+        limit,
+        offset
+      });
+    } catch (error) {
+      console.error("Error fetching loyalty transactions:", error);
+      return c.json({
+        error: error.message || "Failed to fetch loyalty transactions"
+      }, 500);
+    }
+  });
+}
 
 // src/endpoints/customer-profile.ts
 init_rds_connection();
@@ -187603,6 +189052,85 @@ function registerAppointmentReminderEndpoints(app3) {
 // src/endpoints/vendor-booking-actions.ts
 init_rds_connection();
 init_vendor_resolve();
+async function processCustomerReferralOnBooking(customerId, bookingId2) {
+  try {
+    const { query: query13, select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const completedBookings = await query13(
+      `SELECT COUNT(*) as count 
+       FROM bookings 
+       WHERE customer_id = $1 AND status = 'completed'`,
+      [customerId]
+    );
+    const bookingCount = parseInt(completedBookings.rows[0]?.count || "0", 10);
+    if (bookingCount !== 1) {
+      return;
+    }
+    const customers = await select28("customers", { id: customerId });
+    if (customers.length === 0) {
+      return;
+    }
+    const customer = customers[0];
+    const customerPhone = customer.phone || "";
+    const phoneDigits = customerPhone.replace(/\D/g, "");
+    const phoneFormats = [
+      phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`,
+      customerPhone.startsWith("+") ? customerPhone : `+${phoneDigits}`,
+      phoneDigits,
+      customerPhone
+    ];
+    const uniqueFormats = [...new Set(phoneFormats.filter((f) => f))];
+    let referralCodeId = null;
+    let referrerCustomerId = null;
+    if (customer.customer_identity_id) {
+      const identities = await select28("customer_identity", { id: customer.customer_identity_id });
+      if (identities.length > 0) {
+        const identity = identities[0];
+        if (identity.metadata) {
+          const metadata = typeof identity.metadata === "string" ? JSON.parse(identity.metadata) : identity.metadata;
+          referralCodeId = metadata.referral_code_id || null;
+          referrerCustomerId = metadata.referrer_customer_id || null;
+        }
+      }
+    }
+    if (!referralCodeId) {
+      let referralCheck = null;
+      for (const phoneFormat of uniqueFormats) {
+        referralCheck = await query13(
+          `SELECT * FROM customer_referrals
+           WHERE (referred_phone = $1 OR referred_customer_id = $2)
+           AND status = 'applied'
+           ORDER BY created_at DESC LIMIT 1`,
+          [phoneFormat, customerId]
+        );
+        if (referralCheck.rows.length > 0) break;
+      }
+      if (referralCheck && referralCheck.rows.length > 0) {
+        referralCodeId = referralCheck.rows[0].id;
+        referrerCustomerId = referralCheck.rows[0].referrer_customer_id;
+      }
+    }
+    if (referralCodeId && referrerCustomerId) {
+      await query13(
+        `UPDATE customer_referrals
+         SET referred_customer_id = $1, status = 'approved', approved_at = NOW(), updated_at = NOW()
+         WHERE id = $2 AND status = 'applied'`,
+        [customerId, referralCodeId]
+      );
+      const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+      await loyaltyPointsService2.awardPoints({
+        customerId: referrerCustomerId,
+        actionName: "customer_referral",
+        referenceType: "customer_referral",
+        referenceId: referralCodeId,
+        description: `Customer referral: ${customer.full_name || "Customer"} completed first booking`
+      });
+      console.log(`\u2705 [REFERRAL] Awarded points to referrer ${referrerCustomerId} for customer ${customerId}'s first booking`);
+    }
+  } catch (error) {
+    console.error("[REFERRAL] Error processing customer referral:", error);
+    throw error;
+  }
+}
 async function getExpectedOTPForBooking(booking, bookingId2, action = "complete") {
   let isWalkerService = false;
   let expectedOTP = "";
@@ -187679,7 +189207,7 @@ function registerVendorBookingActionsEndpoints(app3) {
         console.log(`\u2705 [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
         if (booking.payment_status === "paid") {
           try {
-            const { insert: insert14, query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+            const { insert: insert15, query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
             const { getVendorTierCommission: getVendorTierCommission2 } = await Promise.resolve().then(() => (init_razorpay(), razorpay_exports));
             const commissionRate = await getVendorTierCommission2(booking.vendor_id);
             const totalAmount = parseFloat(booking.total_amount || "0");
@@ -187691,7 +189219,7 @@ function registerVendorBookingActionsEndpoints(app3) {
             );
             const existingRows = Array.isArray(existingEarnings) ? existingEarnings : existingEarnings.rows || [];
             if (existingRows.length === 0) {
-              await insert14("vendor_earnings", {
+              await insert15("vendor_earnings", {
                 vendor_id: booking.vendor_id,
                 booking_id: bookingId2,
                 amount: vendorAmount,
@@ -187765,9 +189293,16 @@ function registerVendorBookingActionsEndpoints(app3) {
         }
       );
       console.log(`\u2705 [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
+      if (booking.customer_id && booking.status === "completed") {
+        try {
+          await processCustomerReferralOnBooking(booking.customer_id, bookingId2);
+        } catch (referralError) {
+          console.error("Error processing customer referral:", referralError);
+        }
+      }
       if (booking.payment_status === "paid") {
         try {
-          const { insert: insert14, query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+          const { insert: insert15, query: query13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
           const { getVendorTierCommission: getVendorTierCommission2 } = await Promise.resolve().then(() => (init_razorpay(), razorpay_exports));
           const commissionRate = await getVendorTierCommission2(booking.vendor_id);
           const totalAmount = parseFloat(booking.total_amount || "0");
@@ -187779,7 +189314,7 @@ function registerVendorBookingActionsEndpoints(app3) {
           );
           const existingRows = Array.isArray(existingEarnings) ? existingEarnings : existingEarnings.rows || [];
           if (existingRows.length === 0) {
-            await insert14("vendor_earnings", {
+            await insert15("vendor_earnings", {
               vendor_id: booking.vendor_id,
               booking_id: bookingId2,
               amount: vendorAmount,
@@ -188257,8 +189792,8 @@ function registerVendorBookingActionsEndpoints(app3) {
             status: "active"
           });
           if (existingSessions.length === 0) {
-            const { insert: insert14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-            const newSessions = await insert14("gps_tracking_sessions", {
+            const { insert: insert15 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+            const newSessions = await insert15("gps_tracking_sessions", {
               booking_id: bookingId2,
               vendor_id: vendorId,
               status: "active",
@@ -207158,23 +208693,418 @@ function registerCommunityEndpoints(app3) {
 
 // src/endpoints/referrals.ts
 init_rds_connection();
+init_entities();
+init_sms_service();
+async function resolveCustomerIdFromAuth(userId) {
+  console.log(`[REFERRALS] Resolving customer ID for userId: ${userId}`);
+  if (isValidUUID(userId)) {
+    try {
+      const customersById = await query(
+        `SELECT id FROM customers WHERE id = $1::uuid LIMIT 1`,
+        [userId]
+      );
+      if (customersById.rows.length > 0) {
+        console.log(`[REFERRALS] Found customer by ID: ${customersById.rows[0].id}`);
+        return customersById.rows[0].id;
+      }
+    } catch (e) {
+      console.log(`[REFERRALS] UUID lookup failed: ${e.message}`);
+    }
+  }
+  const normalizedPhone = userId.replace(/\D/g, "");
+  if (normalizedPhone.length >= 10) {
+    const phone10 = normalizedPhone.slice(-10);
+    try {
+      const customersByPhone10 = await query(
+        `SELECT id FROM customers WHERE phone = $1 LIMIT 1`,
+        [phone10]
+      );
+      if (customersByPhone10.rows.length > 0) {
+        console.log(`[REFERRALS] Found customer by phone (10-digit): ${customersByPhone10.rows[0].id}`);
+        return customersByPhone10.rows[0].id;
+      }
+    } catch (e) {
+      console.log(`[REFERRALS] Phone 10-digit lookup failed: ${e.message}`);
+    }
+    try {
+      const phoneWithPrefix = `+91${phone10}`;
+      const customersByPrefix = await query(
+        `SELECT id FROM customers WHERE phone = $1 LIMIT 1`,
+        [phoneWithPrefix]
+      );
+      if (customersByPrefix.rows.length > 0) {
+        console.log(`[REFERRALS] Found customer by phone (+91): ${customersByPrefix.rows[0].id}`);
+        return customersByPrefix.rows[0].id;
+      }
+    } catch (e) {
+      console.log(`[REFERRALS] Phone +91 lookup failed: ${e.message}`);
+    }
+  }
+  if (normalizedPhone.length >= 10) {
+    const phone10 = normalizedPhone.slice(-10);
+    try {
+      const identities = await query(
+        `SELECT customer_id FROM customer_identity WHERE phone = $1 AND customer_id IS NOT NULL LIMIT 1`,
+        [phone10]
+      );
+      if (identities.rows.length > 0 && identities.rows[0].customer_id) {
+        console.log(`[REFERRALS] Found customer via customer_identity: ${identities.rows[0].customer_id}`);
+        return identities.rows[0].customer_id;
+      }
+    } catch (e) {
+      console.log(`[REFERRALS] customer_identity lookup failed: ${e.message}`);
+    }
+  }
+  console.error(`[REFERRALS] Could not resolve customer ID for userId: ${userId}`);
+  return null;
+}
 function registerReferralEndpoints(app3) {
+  app3.get("/referrals/stats", requireCustomer(), async (c) => {
+    try {
+      const userId = c.get("userId");
+      const isUAT = c.get("isUAT") === true;
+      const phoneHeader = c.req.header("x-phone") || c.req.header("X-Phone");
+      console.log(`[REFERRALS] /stats endpoint called`);
+      console.log(`[REFERRALS] userId: ${userId}`);
+      console.log(`[REFERRALS] isUAT: ${isUAT}`);
+      console.log(`[REFERRALS] phoneHeader: ${phoneHeader}`);
+      if (!userId) {
+        console.error(`[REFERRALS] No userId in context`);
+        return c.json({ error: "Authentication required" }, 401);
+      }
+      let identifierToUse = userId;
+      if (isUAT && phoneHeader) {
+        console.log(`[REFERRALS] UAT mode detected, using phone header: ${phoneHeader}`);
+        identifierToUse = phoneHeader;
+      } else if (userId.startsWith("uat-")) {
+        console.log(`[REFERRALS] UAT mode detected but no phone header, userId: ${userId}`);
+        if (!phoneHeader) {
+          return c.json({
+            error: "Phone number required for UAT mode. Please provide X-Phone header.",
+            userId,
+            isUAT: true
+          }, 400);
+        }
+        identifierToUse = phoneHeader;
+      }
+      const customerId = await resolveCustomerIdFromAuth(identifierToUse);
+      if (!customerId) {
+        console.error(`[REFERRALS] Customer not found for identifier: ${identifierToUse}`);
+        return c.json({
+          error: "Customer not found. Please ensure you are logged in with a valid account.",
+          debug: true ? {
+            userId,
+            identifierToUse,
+            isUAT,
+            phoneHeader
+          } : void 0
+        }, 404);
+      }
+      console.log(`[REFERRALS] Resolved customer ID: ${customerId}`);
+      console.log(`[REFERRALS] Customer ID is valid UUID: ${isValidUUID(customerId)}`);
+      console.log(`[REFERRALS] Customer ID type: ${typeof customerId}`);
+      if (!isValidUUID(customerId)) {
+        console.error(`[REFERRALS] Invalid customer ID format: ${customerId}`);
+        return c.json({ error: "Invalid customer ID format. Please contact support." }, 500);
+      }
+      const customerIdStr = String(customerId);
+      let referralCode;
+      try {
+        const referralCodeResult = await query(
+          `SELECT referral_code FROM customer_referrals 
+           WHERE referrer_customer_id = CAST($1 AS uuid) 
+           ORDER BY created_at ASC 
+           LIMIT 1`,
+          [customerIdStr]
+        );
+        referralCode = referralCodeResult.rows[0]?.referral_code || `CREF${customerIdStr.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+      } catch (e) {
+        console.error(`[REFERRALS] Error getting referral code: ${e.message}`);
+        referralCode = `CREF${customerIdStr.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+      }
+      let totalReferrals;
+      try {
+        totalReferrals = await query(
+          `SELECT COUNT(*) as count FROM customer_referrals WHERE referrer_customer_id = $1::uuid`,
+          [customerIdStr]
+        );
+      } catch (e) {
+        console.error(`[REFERRALS] Error getting total referrals: ${e.message}, customerId: ${customerIdStr}`);
+        throw e;
+      }
+      let successfulReferrals;
+      try {
+        successfulReferrals = await query(
+          `SELECT COUNT(*) as count
+           FROM customer_referrals
+           WHERE referrer_customer_id = CAST($1 AS uuid) AND status = 'approved'`,
+          [customerIdStr]
+        );
+      } catch (e) {
+        console.error(`[REFERRALS] Error getting successful referrals: ${e.message}`);
+        throw e;
+      }
+      let pendingReferrals;
+      try {
+        pendingReferrals = await query(
+          `SELECT COUNT(*) as count 
+           FROM customer_referrals 
+           WHERE referrer_customer_id = CAST($1 AS uuid) AND status IN ('pending', 'applied')`,
+          [customerIdStr]
+        );
+      } catch (e) {
+        console.error(`[REFERRALS] Error getting pending referrals: ${e.message}`);
+        throw e;
+      }
+      let walletRewards;
+      try {
+        walletRewards = await query(
+          `SELECT COALESCE(SUM(wt.amount), 0) as total_rewards
+           FROM wallet_transactions wt
+           JOIN customer_wallets cw ON wt.wallet_id = cw.id
+           WHERE cw.customer_id = CAST($1 AS uuid)
+           AND wt.reference_type = 'customer_referral'
+           AND wt.transaction_type = 'credit'`,
+          [customerIdStr]
+        );
+      } catch (e) {
+        console.error(`[REFERRALS] Error getting wallet rewards: ${e.message}, query: ${e.query || "N/A"}`);
+        throw e;
+      }
+      let pendingRewards;
+      try {
+        pendingRewards = await query(
+          `SELECT COALESCE(SUM(lt.points), 0) as pending_points
+           FROM loyalty_transactions lt
+           WHERE lt.customer_id = CAST($1 AS uuid) 
+           AND lt.reference_type = 'customer_referral'
+           AND lt.transaction_type = 'earned'
+           AND NOT EXISTS (
+             SELECT 1 FROM wallet_transactions wt
+             JOIN customer_wallets cw ON wt.wallet_id = cw.id
+             WHERE cw.customer_id = CAST($1 AS uuid)
+             AND wt.reference_id = lt.id::text
+           )`,
+          [customerIdStr]
+        );
+      } catch (e) {
+        console.error(`[REFERRALS] Error getting pending rewards: ${e.message}`);
+        throw e;
+      }
+      const referralLink = `${process.env.FRONTEND_URL || "https://warmpawz.com"}/auth?ref=${referralCode}`;
+      return c.json({
+        success: true,
+        stats: {
+          referral_code: referralCode,
+          referral_link: referralLink,
+          total_referrals: parseInt(totalReferrals.rows[0]?.count || "0", 10),
+          successful_signups: parseInt(successfulReferrals.rows[0]?.count || "0", 10),
+          pending_signups: parseInt(pendingReferrals.rows[0]?.count || "0", 10),
+          total_rewards_earned: parseFloat(walletRewards.rows[0]?.total_rewards || "0"),
+          pending_rewards: parseFloat(pendingRewards.rows[0]?.pending_points || "0") / 100
+          // Convert points to rupees (assuming 100 points = 1 rupee)
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching referral stats:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/referrals/list", requireCustomer(), async (c) => {
+    try {
+      const userId = c.get("userId");
+      const isUAT = c.get("isUAT") === true;
+      const phoneHeader = c.req.header("x-phone") || c.req.header("X-Phone");
+      if (!userId) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+      let identifierToUse = userId;
+      if ((isUAT || userId.startsWith("uat-")) && phoneHeader) {
+        identifierToUse = phoneHeader;
+      }
+      const customerId = await resolveCustomerIdFromAuth(identifierToUse);
+      if (!customerId) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      if (!isValidUUID(customerId)) {
+        console.error(`[REFERRALS] Invalid customer ID format: ${customerId}`);
+        return c.json({ error: "Invalid customer ID format" }, 500);
+      }
+      const customerIdStr = String(customerId);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const referrals = await query(
+        `SELECT 
+          cr.id,
+          cr.referral_code,
+          cr.referred_phone,
+          cr.status,
+          cr.applied_at,
+          cr.approved_at,
+          cr.created_at,
+          c.id as referred_customer_id,
+          c.full_name as referred_user_name,
+          c.phone as referred_user_phone,
+          (SELECT COALESCE(SUM(wt.amount), 0)
+           FROM wallet_transactions wt
+           JOIN customer_wallets cw ON wt.wallet_id = cw.id
+           WHERE cw.customer_id = $1::uuid
+           AND wt.reference_type = 'customer_referral'
+           AND wt.reference_id = cr.id::text
+           AND wt.transaction_type = 'credit') as reward_earned,
+          CASE 
+            WHEN EXISTS (
+              SELECT 1 FROM wallet_transactions wt
+              JOIN customer_wallets cw ON wt.wallet_id = cw.id
+              WHERE cw.customer_id = CAST($1 AS uuid)
+              AND wt.reference_type = 'customer_referral'
+              AND wt.reference_id = cr.id::text
+            ) THEN true
+            ELSE false
+          END as reward_paid
+         FROM customer_referrals cr
+         LEFT JOIN customers c ON cr.referred_customer_id = c.id
+         WHERE cr.referrer_customer_id = $1::uuid
+         ORDER BY cr.created_at DESC
+         LIMIT $2`,
+        [customerId, limit]
+      );
+      const referralsList = referrals.rows.map((r) => ({
+        id: r.id,
+        referred_user_id: r.referred_customer_id || null,
+        referred_user_name: r.referred_user_name || "Pending",
+        referred_user_phone: r.referred_user_phone || r.referred_phone || "N/A",
+        status: r.status === "approved" ? "completed" : r.status === "applied" ? "pending" : "pending",
+        signup_date: r.applied_at || r.created_at,
+        first_booking_date: r.approved_at || null,
+        reward_earned: parseFloat(r.reward_earned || "0"),
+        reward_paid: r.reward_paid || false,
+        created_at: r.created_at
+      }));
+      return c.json({
+        success: true,
+        referrals: referralsList
+      });
+    } catch (error) {
+      console.error("Error fetching referral list:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/referrals/rewards", requireCustomer(), async (c) => {
+    try {
+      const userId = c.get("userId");
+      const isUAT = c.get("isUAT") === true;
+      const phoneHeader = c.req.header("x-phone") || c.req.header("X-Phone");
+      console.log(`[REFERRALS] /rewards endpoint called`);
+      console.log(`[REFERRALS] userId: ${userId}, isUAT: ${isUAT}, phoneHeader: ${phoneHeader}`);
+      if (!userId) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+      let identifierToUse = userId;
+      if ((isUAT || userId.startsWith("uat-")) && phoneHeader) {
+        console.log(`[REFERRALS] Using phone header for UAT mode: ${phoneHeader}`);
+        identifierToUse = phoneHeader;
+      }
+      const customerId = await resolveCustomerIdFromAuth(identifierToUse);
+      if (!customerId) {
+        console.error(`[REFERRALS] Customer not found for identifier: ${identifierToUse}`);
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      if (!isValidUUID(customerId)) {
+        console.error(`[REFERRALS] Invalid customer ID format: ${customerId}`);
+        return c.json({ error: "Invalid customer ID format" }, 500);
+      }
+      console.log(`[REFERRALS] Resolved customer ID: ${customerId}`);
+      const rewards = await query(
+        `SELECT 
+          wt.id,
+          wt.reference_id as referral_id,
+          wt.amount,
+          wt.transaction_type,
+          wt.description,
+          wt.created_at as credited_at,
+          CASE 
+            WHEN wt.transaction_type = 'credit' THEN 'credited'
+            ELSE 'pending'
+          END as status,
+          CASE
+            WHEN wt.description LIKE '%signup%' OR wt.description LIKE '%registration%' THEN 'signup_bonus'
+            WHEN wt.description LIKE '%booking%' THEN 'booking_bonus'
+            ELSE 'referral_bonus'
+          END as type
+         FROM wallet_transactions wt
+         JOIN customer_wallets cw ON wt.wallet_id = cw.id
+         WHERE cw.customer_id = $1::uuid
+         AND wt.reference_type = 'customer_referral'
+         AND wt.transaction_type = 'credit'
+         ORDER BY wt.created_at DESC
+         LIMIT 100`,
+        [customerId]
+      );
+      const rewardsList = rewards.rows.map((r) => ({
+        id: r.id,
+        referral_id: r.referral_id,
+        amount: parseFloat(r.amount || "0"),
+        type: r.type,
+        status: r.status,
+        credited_at: r.credited_at,
+        expires_at: null
+        // Not implemented yet
+      }));
+      return c.json({
+        success: true,
+        rewards: rewardsList
+      });
+    } catch (error) {
+      console.error("Error fetching referral rewards:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app3.get("/customer/:customerId/referral", async (c) => {
     try {
       const { customerId } = c.req.param();
-      let referrals = await select("referrals", { referrer_id: customerId });
-      if (referrals.length === 0) {
-        const code = `WARM${customerId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-        const newReferral = await insert("referrals", {
-          referrer_id: customerId,
+      const customers = await select("customers", { id: customerId });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      let referrals = await query(
+        `SELECT referral_code FROM customer_referrals 
+         WHERE referrer_customer_id = $1::uuid 
+         ORDER BY created_at ASC 
+         LIMIT 1`,
+        [customerId]
+      );
+      if (referrals.rows.length === 0) {
+        let attempts = 0;
+        let isUnique = false;
+        let code = "";
+        while (!isUnique && attempts < 10) {
+          code = `CREF${customerId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+          const checkUnique = await query(
+            `SELECT id FROM customer_referrals WHERE referral_code = $1 LIMIT 1`,
+            [code]
+          );
+          if (checkUnique.rows.length === 0) {
+            isUnique = true;
+          }
+          attempts++;
+        }
+        if (!isUnique) {
+          return c.json({ error: "Failed to generate unique referral code. Please try again." }, 500);
+        }
+        const newReferral = await insert("customer_referrals", {
+          referrer_customer_id: customerId,
           referral_code: code,
-          created_at: (/* @__PURE__ */ new Date()).toISOString()
+          referred_phone: "",
+          // Will be set when code is sent
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
         });
-        referrals = newReferral;
+        referrals = { rows: [{ referral_code: code }] };
       }
       return c.json({
         success: true,
-        referralCode: referrals[0].referral_code
+        referralCode: referrals.rows[0].referral_code
       });
     } catch (error) {
       console.error("Error fetching referral code:", error);
@@ -207185,55 +209115,57 @@ function registerReferralEndpoints(app3) {
     try {
       const { customerId } = c.req.param();
       const totalReferrals = await query(
-        `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND referred_id IS NOT NULL`,
+        `SELECT COUNT(*) as count FROM customer_referrals WHERE referrer_customer_id = $1::uuid`,
         [customerId]
       );
-      const completedReferrals = await query(
-        `SELECT COUNT(DISTINCT r.referred_id) as count
-         FROM referrals r
-         INNER JOIN bookings b ON r.referred_id = b.customer_id
-         WHERE r.referrer_id = $1 AND r.referred_id IS NOT NULL`,
+      const approvedReferrals = await query(
+        `SELECT COUNT(*) as count
+         FROM customer_referrals
+         WHERE referrer_customer_id = $1::uuid AND status = 'approved'`,
         [customerId]
       );
       const pendingReferrals = await query(
         `SELECT COUNT(*) as count 
-         FROM referrals 
-         WHERE referrer_id = $1 AND referred_id IS NOT NULL 
-         AND NOT EXISTS (
-           SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
-         )`,
+         FROM customer_referrals 
+         WHERE referrer_customer_id = $1::uuid AND status = 'pending'`,
+        [customerId]
+      );
+      const appliedReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM customer_referrals 
+         WHERE referrer_customer_id = $1::uuid AND status = 'applied'`,
         [customerId]
       );
       const earnings = await query(
         `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
          FROM loyalty_transactions lt
-         WHERE lt.customer_id = $1 
-         AND lt.reference_type = 'referral'
-         AND lt.type = 'earned'`,
+         WHERE lt.customer_id = $1::uuid 
+         AND lt.reference_type = 'customer_referral'
+         AND lt.transaction_type = 'earned'`,
         [customerId]
       );
       const monthlyReferrals = await query(
         `SELECT COUNT(*) as count 
-         FROM referrals 
-         WHERE referrer_id = $1 
-         AND referred_id IS NOT NULL
+         FROM customer_referrals 
+         WHERE referrer_customer_id = $1::uuid 
          AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
         [customerId]
       );
       const monthlyEarnings = await query(
         `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
          FROM loyalty_transactions lt
-         WHERE lt.customer_id = $1 
-         AND lt.reference_type = 'referral'
-         AND lt.type = 'earned'
+         WHERE lt.customer_id = $1::uuid 
+         AND lt.reference_type = 'customer_referral'
+         AND lt.transaction_type = 'earned'
          AND lt.created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
         [customerId]
       );
       return c.json({
         success: true,
         totalReferrals: parseInt(totalReferrals.rows[0]?.count || "0", 10),
-        completedReferrals: parseInt(completedReferrals.rows[0]?.count || "0", 10),
+        approvedReferrals: parseInt(approvedReferrals.rows[0]?.count || "0", 10),
         pendingReferrals: parseInt(pendingReferrals.rows[0]?.count || "0", 10),
+        appliedReferrals: parseInt(appliedReferrals.rows[0]?.count || "0", 10),
         totalEarnings: parseInt(earnings.rows[0]?.total_earnings || "0", 10),
         monthlyReferrals: parseInt(monthlyReferrals.rows[0]?.count || "0", 10),
         monthlyEarnings: parseInt(monthlyEarnings.rows[0]?.total_earnings || "0", 10)
@@ -207243,62 +209175,108 @@ function registerReferralEndpoints(app3) {
       return c.json({ error: error.message }, 500);
     }
   });
-  app3.post("/referral/invite", async (c) => {
+  app3.post("/customer/:customerId/referral/invite", async (c) => {
     try {
-      const { customerId, email, phone, message: message2 } = await c.req.json();
-      if (!customerId || !email && !phone) {
-        return c.json({ error: "customerId and either email or phone are required" }, 400);
+      const { customerId } = c.req.param();
+      const { phone, message: message2 } = await c.req.json();
+      const customers = await select("customers", { id: customerId });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
       }
-      const referrals = await select("referrals", { referrer_id: customerId });
-      const referralCode = referrals.length > 0 ? referrals[0].referral_code : null;
-      if (!referralCode) {
-        return c.json({ error: "Referral code not found" }, 404);
+      const customer = customers[0];
+      if (!phone) {
+        return c.json({ error: "Phone number is required" }, 400);
       }
-      try {
-        const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const customers = await select("customers", { id: customerId });
-        if (customers.length > 0) {
-          const customer = customers[0];
-          const phone2 = customer.phone || customer.phone_number;
-          const email2 = customer.email;
-          if (phone2) {
-            await publishToSNS2("customer-notifications", {
-              type: "sms",
-              phone: phone2,
-              message: `\u{1F389} Welcome to Warmpawz! Use referral code ${referralCode.code} to get \u20B9${referralCode.reward_amount} off your first booking. Share with friends to earn more rewards!`
-            }, {
-              messageType: "Transactional"
-            });
+      const normalizedPhone = phone.replace(/\D/g, "");
+      if (normalizedPhone.length < 10) {
+        return c.json({ error: "Invalid phone number" }, 400);
+      }
+      const fullPhone = normalizedPhone.length === 10 ? `+91${normalizedPhone}` : `+${normalizedPhone}`;
+      const existingForPhone = await query(
+        `SELECT * FROM customer_referrals 
+         WHERE referrer_customer_id = $1::uuid 
+         AND referred_phone = $2 
+         LIMIT 1`,
+        [customerId, fullPhone]
+      );
+      let referralCode;
+      let referralRecord;
+      if (existingForPhone.rows.length > 0) {
+        referralRecord = existingForPhone.rows[0];
+        referralCode = referralRecord.referral_code;
+        console.log(`Reusing existing customer referral record ${referralRecord.id} for phone ${fullPhone}`);
+      } else {
+        const customerReferrals = await query(
+          `SELECT referral_code FROM customer_referrals 
+           WHERE referrer_customer_id = CAST($1 AS uuid) 
+           ORDER BY created_at ASC 
+           LIMIT 1`,
+          [customerId]
+        );
+        if (customerReferrals.rows.length > 0) {
+          referralCode = customerReferrals.rows[0].referral_code;
+        } else {
+          let attempts = 0;
+          let isUnique = false;
+          while (!isUnique && attempts < 10) {
+            referralCode = `CREF${customerId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+            const checkUnique = await query(
+              `SELECT id FROM customer_referrals WHERE referral_code = $1 LIMIT 1`,
+              [referralCode]
+            );
+            if (checkUnique.rows.length === 0) {
+              isUnique = true;
+            }
+            attempts++;
           }
-          if (email2) {
-            await publishToSNS2("customer-notifications", {
-              type: "email",
-              email: email2,
-              subject: "Welcome to Warmpawz - Your Referral Code",
-              body: `Hi ${customer.name || "there"}!
-
-Welcome to Warmpawz! Your referral code is: ${referralCode.code}
-
-Use it to get \u20B9${referralCode.reward_amount} off your first booking. Share with friends to earn more rewards!
-
-Happy pet caring! \u{1F43E}`
-            }, {
-              messageType: "Transactional"
-            });
+          if (!isUnique) {
+            return c.json({ error: "Failed to generate unique referral code. Please try again." }, 500);
           }
-          console.log(`\u2705 Referral code sent to customer ${customerId}`);
         }
-      } catch (error) {
-        console.error("Error sending referral code:", error);
+        const newReferral = await insert("customer_referrals", {
+          referrer_customer_id: customerId,
+          referral_code: referralCode,
+          referred_phone: fullPhone,
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        referralRecord = newReferral[0];
+      }
+      const customerName = customer.full_name || customer.first_name || "Warmpawz";
+      const smsMessage = message2 || `\u{1F389} Join Warmpawz! Use referral code ${referralCode} during registration to get started. Referred by ${customerName}. Download the app or visit warmpawz.com`;
+      try {
+        const smsResult = await sendSMS({
+          to: fullPhone,
+          message: smsMessage,
+          type: "transactional"
+        });
+        if (!smsResult.success) {
+          console.error("Failed to send SMS:", smsResult);
+          return c.json({
+            error: "Failed to send SMS. Please try again later."
+          }, 500);
+        }
+        console.log(`\u2705 Customer referral SMS sent to ${fullPhone} with code ${referralCode}`);
+      } catch (smsError) {
+        console.error("Error sending referral SMS:", smsError);
+        return c.json({
+          error: "Failed to send SMS. Please try again later."
+        }, 500);
       }
       return c.json({
         success: true,
-        message: "Invite sent successfully",
-        referralCode
+        message: "Referral code sent successfully",
+        referralCode,
+        phone: fullPhone
       });
     } catch (error) {
-      console.error("Error sending invite:", error);
-      return c.json({ error: error.message }, 500);
+      console.error("Error sending customer referral invite:", error);
+      const errorMessage = error?.message || error?.detail || String(error) || "Service Unavailable";
+      return c.json({
+        error: errorMessage,
+        details: error?.constraint ? `Database constraint violation: ${error.constraint}` : void 0
+      }, 500);
     }
   });
   app3.get("/customer/:customerId/referral/history", async (c) => {
@@ -207307,23 +209285,18 @@ Happy pet caring! \u{1F43E}`
       const limit = parseInt(c.req.query("limit") || "50", 10);
       const history = await query(
         `SELECT 
-          r.*,
-          c.first_name || ' ' || c.last_name as referee_name,
+          cr.*,
+          c.full_name as referee_name,
           c.phone as referee_phone,
-          CASE 
-            WHEN EXISTS(SELECT 1 FROM bookings WHERE customer_id = r.referred_id) THEN 'completed'
-            WHEN r.referred_id IS NOT NULL THEN 'pending'
-            ELSE 'expired'
-          END as status,
           (SELECT COALESCE(SUM(lt.points), 0) 
            FROM loyalty_transactions lt 
-           WHERE lt.customer_id = $1 
-           AND lt.reference_type = 'referral' 
-           AND lt.reference_id = r.id::text) as referrer_earnings
-         FROM referrals r
-         LEFT JOIN customers c ON r.referred_id = c.id
-         WHERE r.referrer_id = $1
-         ORDER BY r.created_at DESC
+           WHERE lt.customer_id = CAST($1 AS uuid) 
+           AND lt.reference_type = 'customer_referral' 
+           AND lt.reference_id = cr.id::text) as referrer_earnings
+         FROM customer_referrals cr
+         LEFT JOIN customers c ON cr.referred_customer_id = c.id
+         WHERE cr.referrer_customer_id = $1::uuid
+         ORDER BY cr.created_at DESC
          LIMIT $2`,
         [customerId, limit]
       );
@@ -207351,7 +209324,7 @@ Happy pet caring! \u{1F43E}`
       const reward = rewards[0];
       const claimed = await query(
         `SELECT * FROM referral_reward_claims 
-         WHERE customer_id = $1 AND reward_id = $2`,
+         WHERE customer_id = $1::uuid AND reward_id = $2`,
         [customerId, rewardId]
       );
       if (claimed.rows.length > 0) {
@@ -207378,6 +209351,261 @@ Happy pet caring! \u{1F43E}`
       });
     } catch (error) {
       console.error("Error claiming reward:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
+// src/endpoints/vendor-referrals.ts
+init_rds_connection();
+init_sms_service();
+init_vendor_profile();
+function registerVendorReferralEndpoints(app3) {
+  app3.get("/vendor/:vendorId/referral", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      let referrals = await select("vendor_referrals", {
+        referrer_vendor_id: resolvedVendorId,
+        status: "pending"
+      });
+      if (referrals.length === 0) {
+        const existingReferrals = await query(
+          `SELECT referral_code FROM vendor_referrals 
+           WHERE referrer_vendor_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT 1`,
+          [resolvedVendorId]
+        );
+        if (existingReferrals.rows.length > 0) {
+          return c.json({
+            success: true,
+            referralCode: existingReferrals.rows[0].referral_code
+          });
+        }
+        const code = `VREF${resolvedVendorId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        const newReferral = await insert("vendor_referrals", {
+          referrer_vendor_id: resolvedVendorId,
+          referral_code: code,
+          referred_phone: "",
+          // Will be set when code is sent
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        referrals = newReferral;
+      }
+      return c.json({
+        success: true,
+        referralCode: referrals[0].referral_code
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral code:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/referral/invite", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { phone, message: message2 } = await c.req.json();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      if (!phone) {
+        return c.json({ error: "Phone number is required" }, 400);
+      }
+      const normalizedPhone = phone.replace(/\D/g, "");
+      if (normalizedPhone.length < 10) {
+        return c.json({ error: "Invalid phone number" }, 400);
+      }
+      const fullPhone = normalizedPhone.length === 10 ? `+91${normalizedPhone}` : `+${normalizedPhone}`;
+      const existingForPhone = await query(
+        `SELECT * FROM vendor_referrals 
+         WHERE referrer_vendor_id = $1 
+         AND referred_phone = $2 
+         LIMIT 1`,
+        [resolvedVendorId, fullPhone]
+      );
+      let referralCode;
+      let referralRecord;
+      if (existingForPhone.rows.length > 0) {
+        referralRecord = existingForPhone.rows[0];
+        referralCode = referralRecord.referral_code;
+        console.log(`Reusing existing referral record ${referralRecord.id} for phone ${fullPhone}`);
+      } else {
+        const vendorReferrals = await query(
+          `SELECT referral_code FROM vendor_referrals 
+           WHERE referrer_vendor_id = $1 
+           ORDER BY created_at ASC 
+           LIMIT 1`,
+          [resolvedVendorId]
+        );
+        if (vendorReferrals.rows.length > 0) {
+          referralCode = vendorReferrals.rows[0].referral_code;
+        } else {
+          let attempts = 0;
+          let isUnique = false;
+          while (!isUnique && attempts < 10) {
+            referralCode = `VREF${resolvedVendorId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+            const checkUnique = await query(
+              `SELECT id FROM vendor_referrals WHERE referral_code = $1 LIMIT 1`,
+              [referralCode]
+            );
+            if (checkUnique.rows.length === 0) {
+              isUnique = true;
+            }
+            attempts++;
+          }
+          if (!isUnique) {
+            return c.json({ error: "Failed to generate unique referral code. Please try again." }, 500);
+          }
+        }
+        const newReferral = await insert("vendor_referrals", {
+          referrer_vendor_id: resolvedVendorId,
+          referral_code: referralCode,
+          referred_phone: fullPhone,
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        referralRecord = newReferral[0];
+      }
+      const vendorName = vendor?.business_name || vendor?.owner_name || "Warmpawz";
+      const smsMessage = message2 || `\u{1F389} Join Warmpawz as a vendor! Use referral code ${referralCode} during registration to get started. Referred by ${vendorName}. Download the vendor app or visit vendor.warmpawz.com`;
+      try {
+        const smsResult = await sendSMS({
+          to: fullPhone,
+          message: smsMessage,
+          type: "transactional"
+        });
+        if (!smsResult.success) {
+          console.error("Failed to send SMS:", smsResult);
+          return c.json({
+            error: "Failed to send SMS. Please try again later."
+          }, 500);
+        }
+        console.log(`\u2705 Vendor referral SMS sent to ${fullPhone} with code ${referralCode}`);
+      } catch (smsError) {
+        console.error("Error sending referral SMS:", smsError);
+        return c.json({
+          error: "Failed to send SMS. Please try again later."
+        }, 500);
+      }
+      return c.json({
+        success: true,
+        message: "Referral code sent successfully",
+        referralCode,
+        phone: fullPhone
+      });
+    } catch (error) {
+      console.error("Error sending vendor referral invite:", error);
+      const errorMessage = error?.message || error?.detail || String(error) || "Service Unavailable";
+      console.error("Error details:", {
+        message: error?.message,
+        detail: error?.detail,
+        code: error?.code,
+        constraint: error?.constraint,
+        stack: error?.stack
+      });
+      return c.json({
+        error: errorMessage,
+        details: error?.constraint ? `Database constraint violation: ${error.constraint}` : void 0
+      }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/referral/stats", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const totalReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = $1 
+         AND status IN ('applied', 'approved')`,
+        [resolvedVendorId]
+      );
+      const pendingReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = $1 
+         AND status = 'pending'`,
+        [resolvedVendorId]
+      );
+      const appliedReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = $1 
+         AND status = 'applied'`,
+        [resolvedVendorId]
+      );
+      const approvedReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = $1 
+         AND status = 'approved'`,
+        [resolvedVendorId]
+      );
+      const monthlyReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = $1 
+         AND status = 'approved'
+         AND approved_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+        [resolvedVendorId]
+      );
+      return c.json({
+        success: true,
+        totalReferrals: parseInt(totalReferrals.rows[0]?.count || "0", 10),
+        pendingReferrals: parseInt(pendingReferrals.rows[0]?.count || "0", 10),
+        appliedReferrals: parseInt(appliedReferrals.rows[0]?.count || "0", 10),
+        approvedReferrals: parseInt(approvedReferrals.rows[0]?.count || "0", 10),
+        monthlyReferrals: parseInt(monthlyReferrals.rows[0]?.count || "0", 10)
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral stats:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/referral/history", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const history = await query(
+        `SELECT 
+          vr.*,
+          v.business_name as referred_vendor_name,
+          v.owner_name as referred_vendor_owner,
+          v.phone as referred_vendor_phone,
+          v.status as referred_vendor_status
+         FROM vendor_referrals vr
+         LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
+         WHERE vr.referrer_vendor_id = $1
+         ORDER BY vr.created_at DESC
+         LIMIT $2`,
+        [resolvedVendorId, limit]
+      );
+      return c.json({
+        success: true,
+        history: history.rows,
+        count: history.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral history:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -208556,9 +210784,9 @@ function registerSupportCrmEndpoints(app3) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select27 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select28 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select27("platform_settings", {
+        const settings = await select28("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -210660,25 +212888,14 @@ var AdminLoginHandler = class extends BaseHandler {
       }
       const isUATMode2 = process.env.UAT_MODE === "true";
       if (isUATMode2) {
-        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
-        const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-        const tokens2 = await generateUATJWTToken2({
-          userId: "uat-admin",
-          phone: email,
-          // Use email as identifier
-          role: "admin",
-          expiresIn: 60
-          // 60 seconds for UAT mode testing
-        });
+        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} - returning UAT token`);
+        const uatToken = `uat-token-admin-${Date.now()}`;
         return this.success({
           success: true,
-          token: {
-            access_token: tokens2.accessToken,
-            id_token: tokens2.idToken,
-            refresh_token: tokens2.refreshToken,
-            expires_in: tokens2.expiresIn,
-            token_type: "Bearer"
-          },
+          token: uatToken,
+          // Simple string token for dev
+          access_token: uatToken,
+          // Also provide as access_token for compatibility
           admin: {
             id: "uat-admin",
             email,
@@ -234776,6 +236993,7 @@ registerDeliveryPartnerAutomationEndpoints(app2);
 registerMealPlanEndpoints(app2);
 registerNutritionOrderEndpoints(app2);
 registerVendorBankAccountEndpoints(app2);
+registerVendorWalletEndpoints(app2);
 registerDeliveryTrackingEndpoints(app2);
 registerDeliveryOtpEndpoints(app2);
 registerMedicalRecordsEndpoints(app2);
@@ -234850,6 +237068,7 @@ registerLoyaltyActionRulesManagementEndpoints(app2);
 registerLoyaltySegmentsManagementEndpoints(app2);
 registerCommunityEndpoints(app2);
 registerReferralEndpoints(app2);
+registerVendorReferralEndpoints(app2);
 registerRewardsEndpoints(app2);
 registerAdminSellersEndpoints(app2);
 registerAIChatbotEndpoints(app2);

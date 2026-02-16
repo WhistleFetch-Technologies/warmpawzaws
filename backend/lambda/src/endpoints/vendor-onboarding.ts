@@ -226,12 +226,46 @@ class GetOnboardingStatusHandler extends BaseHandler {
           console.log(`[ONBOARDING STATUS] Created vendor_identity for staff phone ${normalizedPhone} with user_type='staff'`);
         } else {
           // Regular vendor - create with INIT status
+          // ✅ NEW: Check for referral code in vendor_referrals
+          let referralMetadata: any = {};
+          try {
+            const phoneDigits = normalizedPhone.replace(/\D/g, '');
+            const fullPhone = phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`;
+            
+            const referralCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE referred_phone = $1 
+               AND status IN ('pending', 'applied')
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [fullPhone]
+            );
+            
+            if (referralCheck.rows.length > 0) {
+              const referral = referralCheck.rows[0];
+              referralMetadata = {
+                referral_code_id: referral.id,
+                referrer_vendor_id: referral.referrer_vendor_id,
+                referral_code: referral.referral_code,
+              };
+              console.log(`[ONBOARDING STATUS] Found referral code ${referral.referral_code} for phone ${normalizedPhone}`);
+            }
+          } catch (refError: any) {
+            console.error('[ONBOARDING STATUS] Error checking referral code:', refError);
+            // Don't fail if referral check fails
+          }
+          
           const insertFields = ['phone', 'onboarding_status'];
           const insertValues: any[] = [normalizedPhone, 'INIT'];
           
           if (viSchema.has_user_type) {
             insertFields.push('user_type');
             insertValues.push('vendor');
+          }
+          
+          if (viSchema.has_metadata && Object.keys(referralMetadata).length > 0) {
+            insertFields.push('metadata');
+            insertValues.push(JSON.stringify(referralMetadata));
           }
           
           const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
@@ -1050,12 +1084,81 @@ class SubmitApplicationHandler extends BaseHandler {
       // ✅ FIX: Auto-create vendor identity if not found
       if (identities.length === 0) {
         console.log('📦 [SUBMIT] Creating new vendor identity for phone:', phone);
+        
+        // ✅ NEW: Check for referral code in vendor_referrals
+        let referralMetadata: any = {};
+        try {
+          const phoneDigits = phone.replace(/\D/g, '');
+          const fullPhone = phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`;
+          
+          const referralCheck = await query(
+            `SELECT * FROM vendor_referrals 
+             WHERE referred_phone = $1 
+             AND status IN ('pending', 'applied')
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [fullPhone]
+          );
+          
+          if (referralCheck.rows.length > 0) {
+            const referral = referralCheck.rows[0];
+            referralMetadata = {
+              referral_code_id: referral.id,
+              referrer_vendor_id: referral.referrer_vendor_id,
+              referral_code: referral.referral_code,
+            };
+            console.log(`📦 [SUBMIT] Found referral code ${referral.referral_code} for phone ${phone}`);
+          }
+        } catch (refError: any) {
+          console.error('[SUBMIT] Error checking referral code:', refError);
+          // Don't fail if referral check fails
+        }
+        
         const newIdentity = await insert('vendor_identity', {
           phone,
           onboarding_status: 'FORM_PENDING',
-          metadata: {},
+          metadata: referralMetadata,
         });
         identities = newIdentity;
+      } else {
+        // ✅ NEW: Update existing identity metadata if referral code exists but not in metadata
+        let identity = identities[0];
+        let metadata = identity.metadata || {};
+        if (typeof metadata === 'string') {
+          try {
+            metadata = JSON.parse(metadata);
+          } catch (e) {
+            metadata = {};
+          }
+        }
+        
+        if (!metadata.referral_code_id) {
+          try {
+            const phoneDigits = phone.replace(/\D/g, '');
+            const fullPhone = phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`;
+            
+            const referralCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE referred_phone = $1 
+               AND status IN ('pending', 'applied')
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [fullPhone]
+            );
+            
+            if (referralCheck.rows.length > 0) {
+              const referral = referralCheck.rows[0];
+              metadata.referral_code_id = referral.id;
+              metadata.referrer_vendor_id = referral.referrer_vendor_id;
+              metadata.referral_code = referral.referral_code;
+              
+              await update('vendor_identity', { id: identity.id }, { metadata });
+              console.log(`📦 [SUBMIT] Updated metadata with referral code ${referral.referral_code}`);
+            }
+          } catch (refError: any) {
+            console.error('[SUBMIT] Error updating referral code in metadata:', refError);
+          }
+        }
       }
 
       let identity = identities[0];

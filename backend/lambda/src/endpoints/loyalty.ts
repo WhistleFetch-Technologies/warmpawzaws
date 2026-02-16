@@ -60,10 +60,11 @@ export function registerLoyaltyEndpoints(app: Hono) {
         success: true,
         rules: rows.map((r: any) => ({
           id: r.id,
-          category: r.action_category || r.category || 'loyalty',
+          category: r.action_category || r.category || 'loyalty', // 'loyalty' or 'referral_rewards'
+          userType: r.user_type || 'customer', // 'customer', 'vendor', or 'both'
           action: r.action_name,
           points: r.points_value ?? 0,
-          type: r.points_type || 'fixed',
+          type: (r.points_type === 'per_amount' ? 'percentage_spend' : r.points_type) || 'fixed', // Map per_amount to percentage_spend for frontend compatibility
           thresholdAmount: r.base_amount ?? r.threshold_amount,
           frequency: (r.frequency_type || r.frequency || 'one_time').replace('_', '-'),
           isActive: r.is_active !== false,
@@ -73,6 +74,46 @@ export function registerLoyaltyEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching loyalty rules:', error);
       return c.json({ success: true, rules: [] });
+    }
+  });
+
+  /**
+   * PUT /loyalty/rules
+   * Bulk update loyalty action rules (for admin UI)
+   */
+  app.put("/loyalty/rules", async (c) => {
+    try {
+      const { rules } = await c.req.json();
+      
+      if (!Array.isArray(rules)) {
+        return c.json({ error: 'rules must be an array' }, 400);
+      }
+
+      // Update each rule
+      for (const rule of rules) {
+        if (!rule.id) {
+          console.warn('Skipping rule without id:', rule);
+          continue;
+        }
+
+        const updateData: any = {};
+        if (rule.isActive !== undefined) updateData.is_active = rule.isActive;
+        if (rule.points !== undefined) updateData.points_value = rule.points;
+        // Note: category, userType, action, type, frequency are typically not updated via bulk endpoint
+        // They are managed via the dedicated /admin/loyalty-action-rules endpoints
+
+        if (Object.keys(updateData).length > 0) {
+          await update('loyalty_action_rules', { id: rule.id }, updateData);
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Loyalty rules updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating loyalty rules:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 
@@ -422,11 +463,13 @@ export function registerLoyaltyEndpoints(app: Hono) {
       }
 
       const rule = await insert('loyalty_rules', {
-        name,
+        rule_name: name, // rule_name is NOT NULL, name is the alias
+        name, // Also set name for consistency
         description,
         points_per_rupee,
         redemption_rate,
         min_points_to_redeem: min_points_to_redeem || 100,
+        min_redemption_points: min_points_to_redeem || 100, // Also set legacy column
         max_redemption_per_transaction,
         expiry_days,
         is_active,
@@ -453,11 +496,17 @@ export function registerLoyaltyEndpoints(app: Hono) {
       const body = await c.req.json();
 
       const updateData: any = {};
-      if (body.name !== undefined) updateData.name = body.name;
+      if (body.name !== undefined) {
+        updateData.name = body.name;
+        updateData.rule_name = body.name; // rule_name is NOT NULL, keep it in sync
+      }
       if (body.description !== undefined) updateData.description = body.description;
       if (body.points_per_rupee !== undefined) updateData.points_per_rupee = body.points_per_rupee;
       if (body.redemption_rate !== undefined) updateData.redemption_rate = body.redemption_rate;
-      if (body.min_points_to_redeem !== undefined) updateData.min_points_to_redeem = body.min_points_to_redeem;
+      if (body.min_points_to_redeem !== undefined) {
+        updateData.min_points_to_redeem = body.min_points_to_redeem;
+        updateData.min_redemption_points = body.min_points_to_redeem; // Also update legacy column
+      }
       if (body.max_redemption_per_transaction !== undefined) updateData.max_redemption_per_transaction = body.max_redemption_per_transaction;
       if (body.expiry_days !== undefined) updateData.expiry_days = body.expiry_days;
       if (body.is_active !== undefined) updateData.is_active = body.is_active;

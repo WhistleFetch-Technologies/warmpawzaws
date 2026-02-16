@@ -884,6 +884,234 @@ export function registerAdminEndpoints(app: Hono) {
         );
       }
       
+      // ✅ CRITICAL FIX: Process vendor referral and award points
+      // This must be robust and find referrals even if vendor_identity metadata is missing
+      try {
+        console.log(`[Vendor Approval] ========================================`);
+        console.log(`[Vendor Approval] 🔍 PROCESSING VENDOR REFERRAL`);
+        console.log(`[Vendor Approval] Vendor ID: ${vendorId}`);
+        console.log(`[Vendor Approval] ========================================`);
+        
+        // Get vendor_identity to check for referral code
+        let vendorIdentityCheck = identity;
+        if (!vendorIdentityCheck) {
+          const identityResult = await query(
+            `SELECT * FROM vendor_identity WHERE vendor_id = $1 OR id = $1 OR phone IN (
+              SELECT phone FROM vendors WHERE id = $1
+            ) LIMIT 1`,
+            [vendorId]
+          );
+          vendorIdentityCheck = identityResult.rows[0] || null;
+        }
+        
+        // Also get vendor phone directly from vendors table as fallback
+        const vendorResult = await query(
+          `SELECT phone FROM vendors WHERE id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        const vendorPhone = vendorResult.rows.length > 0 ? vendorResult.rows[0].phone : null;
+        
+        console.log(`[Vendor Approval] Vendor Identity Found: ${!!vendorIdentityCheck}`);
+        console.log(`[Vendor Approval] Vendor Phone: ${vendorPhone}`);
+        
+        let referralCodeId: string | null = null;
+        let referrerVendorId: string | null = null;
+        
+        // ✅ STEP 1: Check metadata for referral code
+        if (vendorIdentityCheck && vendorIdentityCheck.metadata) {
+          try {
+            const metadata = typeof vendorIdentityCheck.metadata === 'string' 
+              ? JSON.parse(vendorIdentityCheck.metadata) 
+              : vendorIdentityCheck.metadata;
+            referralCodeId = metadata.referral_code_id || null;
+            referrerVendorId = metadata.referrer_vendor_id || null;
+            console.log(`[Vendor Approval] ✅ Found referral in metadata: referralCodeId=${referralCodeId}, referrerVendorId=${referrerVendorId}`);
+          } catch (metaError: any) {
+            console.error('[Vendor Approval] Error parsing metadata:', metaError);
+          }
+        }
+        
+        // ✅ STEP 2: If not found in metadata, check vendor_referrals by phone or vendor_id
+        // Try multiple phone formats to handle normalization issues
+        if (!referralCodeId) {
+          const phoneToCheck = vendorIdentityCheck?.phone || vendorPhone || '';
+          console.log(`[Vendor Approval] 🔍 Checking vendor_referrals for phone: ${phoneToCheck}`);
+          
+          // Normalize phone in multiple formats
+          const phoneDigits = phoneToCheck.replace(/\D/g, '');
+          const phoneFormats = [
+            phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`, // +91XXXXXXXXXX
+            phoneToCheck.startsWith('+') ? phoneToCheck : `+${phoneDigits}`, // Original with +
+            phoneDigits, // Just digits
+            phoneToCheck, // Original format
+          ];
+          
+          // Remove duplicates
+          const uniqueFormats = [...new Set(phoneFormats.filter(f => f))];
+          console.log(`[Vendor Approval] 🔍 Checking phone formats: ${uniqueFormats.join(', ')}`);
+          
+          // Try to find referral by phone (check 'applied' status first, then 'pending')
+          let referralCheck: any = null;
+          
+          for (const phoneFormat of uniqueFormats) {
+            // First try 'applied' status
+            const appliedCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE (referred_phone = $1 OR referred_phone LIKE $2)
+               AND status = 'applied'
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [phoneFormat, `%${phoneFormat.replace('+', '')}%`]
+            );
+            
+            if (appliedCheck.rows.length > 0) {
+              referralCheck = appliedCheck;
+              console.log(`[Vendor Approval] ✅ Found referral with 'applied' status for phone format: ${phoneFormat}`);
+              break;
+            }
+            
+            // Then try 'pending' status
+            const pendingCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE (referred_phone = $1 OR referred_phone LIKE $2)
+               AND status = 'pending'
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [phoneFormat, `%${phoneFormat.replace('+', '')}%`]
+            );
+            
+            if (pendingCheck.rows.length > 0) {
+              referralCheck = pendingCheck;
+              console.log(`[Vendor Approval] ✅ Found referral with 'pending' status for phone format: ${phoneFormat}`);
+              break;
+            }
+          }
+          
+          // ✅ STEP 3: Also check by vendor_id directly (in case phone lookup fails)
+          if (!referralCheck || referralCheck.rows.length === 0) {
+            const vendorIdCheck = await query(
+              `SELECT * FROM vendor_referrals 
+               WHERE referred_vendor_id = $1
+               AND status IN ('applied', 'pending')
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [vendorId]
+            );
+            
+            if (vendorIdCheck.rows.length > 0) {
+              referralCheck = vendorIdCheck;
+              console.log(`[Vendor Approval] ✅ Found referral by vendor_id: ${vendorId}`);
+            }
+          }
+          
+          if (referralCheck && referralCheck.rows.length > 0) {
+            referralCodeId = referralCheck.rows[0].id;
+            referrerVendorId = referralCheck.rows[0].referrer_vendor_id;
+            
+            // If status is 'pending', mark it as 'applied' first
+            if (referralCheck.rows[0].status === 'pending') {
+              await query(
+                `UPDATE vendor_referrals 
+                 SET status = 'applied',
+                     applied_at = NOW(),
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [referralCodeId]
+              );
+              console.log(`✅ [Vendor Approval] Marked referral ${referralCodeId} as 'applied'`);
+            }
+            
+            // ✅ CRITICAL: Update vendor_identity metadata if it exists but metadata is missing
+            if (vendorIdentityCheck && (!vendorIdentityCheck.metadata || 
+                (typeof vendorIdentityCheck.metadata === 'string' && vendorIdentityCheck.metadata === '{}') ||
+                (typeof vendorIdentityCheck.metadata === 'object' && Object.keys(vendorIdentityCheck.metadata).length === 0))) {
+              try {
+                const referralMetadata = {
+                  referral_code_id: referralCodeId,
+                  referrer_vendor_id: referrerVendorId,
+                  referral_code: referralCheck.rows[0].referral_code,
+                };
+                await query(
+                  `UPDATE vendor_identity 
+                   SET metadata = $1::jsonb, updated_at = NOW()
+                   WHERE id = $2`,
+                  [JSON.stringify(referralMetadata), vendorIdentityCheck.id]
+                );
+                console.log(`✅ [Vendor Approval] Updated vendor_identity metadata with referral info`);
+              } catch (updateError: any) {
+                console.error('[Vendor Approval] Error updating vendor_identity metadata:', updateError);
+              }
+            }
+          } else {
+            console.log(`[Vendor Approval] ⚠️  No referral found for vendor ${vendorId}`);
+          }
+        }
+        
+        // ✅ STEP 4: If referral found, update status and award points
+        if (referralCodeId && referrerVendorId) {
+          console.log(`[Vendor Approval] ========================================`);
+          console.log(`[Vendor Approval] ✅ REFERRAL FOUND - PROCESSING`);
+          console.log(`[Vendor Approval] Referral Code ID: ${referralCodeId}`);
+          console.log(`[Vendor Approval] Referrer Vendor ID: ${referrerVendorId}`);
+          console.log(`[Vendor Approval] Referred Vendor ID: ${vendorId}`);
+          console.log(`[Vendor Approval] ========================================`);
+          
+          // Update vendor_referrals record
+          await query(
+            `UPDATE vendor_referrals 
+             SET referred_vendor_id = $1,
+                 status = 'approved',
+                 approved_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [vendorId, referralCodeId]
+          );
+          
+          console.log(`✅ [Vendor Approval] Updated vendor_referrals record to 'approved' status`);
+          
+          // Award points to referring vendor using LoyaltyPointsService
+          try {
+            const { LoyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+            const loyaltyPointsService = new LoyaltyPointsService();
+            
+            // Get referred vendor details for description
+            const referredVendor = await select('vendors', { id: vendorId });
+            const vendorName = referredVendor.length > 0 
+              ? (referredVendor[0].business_name || referredVendor[0].owner_name || 'Vendor')
+              : 'Vendor';
+            
+            console.log(`[Vendor Approval] 🎁 Awarding points to referrer ${referrerVendorId}...`);
+            
+            const pointsResult = await loyaltyPointsService.awardPoints({
+              vendorId: referrerVendorId,
+              actionName: 'vendor_referral',
+              referenceType: 'vendor_referral',
+              referenceId: referralCodeId,
+              description: `Vendor referral: ${vendorName} approved`,
+            });
+            
+            console.log(`✅ [Vendor Approval] ========================================`);
+            console.log(`✅ [Vendor Approval] POINTS AWARDED SUCCESSFULLY`);
+            console.log(`✅ [Vendor Approval] Points: ${pointsResult.points}`);
+            console.log(`✅ [Vendor Approval] Wallet Credited: ₹${pointsResult.walletCredited}`);
+            console.log(`✅ [Vendor Approval] Referrer Vendor: ${referrerVendorId}`);
+            console.log(`✅ [Vendor Approval] ========================================`);
+          } catch (pointsError: any) {
+            console.error('[Vendor Approval] ❌ ERROR awarding referral points:', pointsError);
+            console.error('[Vendor Approval] ❌ Error message:', pointsError.message);
+            console.error('[Vendor Approval] ❌ Error stack:', pointsError.stack);
+            // Don't fail approval if points awarding fails, but log aggressively
+          }
+        } else {
+          console.log(`[Vendor Approval] ⚠️  No referral code found - skipping points award`);
+        }
+      } catch (referralErr: any) {
+        console.error('[Vendor Approval] ❌ CRITICAL ERROR processing referral:', referralErr);
+        console.error('[Vendor Approval] ❌ Error message:', referralErr.message);
+        console.error('[Vendor Approval] ❌ Error stack:', referralErr.stack);
+        // Don't fail approval if referral processing fails, but log aggressively
+      }
+      
       // Create notification
       await insert('notifications', {
         recipient_id: vendorId,

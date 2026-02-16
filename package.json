@@ -78,8 +78,8 @@
   "scripts": {
     "lint": "echo Lint OK",
     "type-check": "echo TypeCheck OK",
-    "dev": "node scripts/run-dev.js admin-web",
-    "prod": "node scripts/run-prod.js admin-web",
+    "dev": "node scripts/run-all.js dev",
+    "prod": "node scripts/run-all.js prod",
     "dev:admin": "node scripts/run-dev.js admin-web",
     "dev:vendor": "node scripts/run-dev.js vendor-web",
     "dev:customer": "node scripts/run-dev.js customer-web",

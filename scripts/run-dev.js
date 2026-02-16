@@ -23,10 +23,16 @@ const port = portMap[app] || '3001';
 const env = {
   ...process.env,
   NEXT_PUBLIC_API_BASE_URL: apiUrl,
+  NEXT_PUBLIC_ENVIRONMENT: 'development',
+  NEXT_PUBLIC_UAT_MODE: 'true',
   NODE_ENV: process.env.NODE_ENV || 'development',
 };
 
-console.log(`📦 Environment variable set: NEXT_PUBLIC_API_BASE_URL=${env.NEXT_PUBLIC_API_BASE_URL}`);
+console.log(`📦 Environment variables set:`);
+console.log(`   NEXT_PUBLIC_API_BASE_URL=${env.NEXT_PUBLIC_API_BASE_URL}`);
+console.log(`   NEXT_PUBLIC_ENVIRONMENT=${env.NEXT_PUBLIC_ENVIRONMENT}`);
+console.log(`   NEXT_PUBLIC_UAT_MODE=${env.NEXT_PUBLIC_UAT_MODE}`);
+console.log(`   NODE_ENV=${env.NODE_ENV}`);
 console.log(`📦 Port: ${port}`);
 
 // Call next dev directly instead of npm run dev to ensure env vars are passed

@@ -98,6 +98,7 @@ import { registerOrderManagementEndpoints } from '../endpoints/order-management'
 import { registerEnhancedOtpEndpoints } from '../endpoints/otp-enhanced';
 import { registerSmsNotificationEndpoints } from '../endpoints/sms-notifications';
 import { registerVendorProfileEndpoints } from '../endpoints/vendor-profile';
+import { registerVendorWalletEndpoints } from '../endpoints/vendor-wallet';
 import { registerCustomerProfileEndpoints } from '../endpoints/customer-profile';
 import { registerSystemHealthEndpoints } from '../endpoints/system-health';
 import { registerVendorSettingsEndpoints } from '../endpoints/vendor-settings';
@@ -135,6 +136,7 @@ import { registerLoyaltyActionRulesManagementEndpoints } from '../endpoints/loya
 import { registerLoyaltySegmentsManagementEndpoints } from '../endpoints/loyalty-segments-management';
 import { registerCommunityEndpoints } from '../endpoints/community';
 import { registerReferralEndpoints } from '../endpoints/referrals';
+import { registerVendorReferralEndpoints } from '../endpoints/vendor-referrals';
 import { registerRewardsEndpoints } from '../endpoints/rewards';
 import { registerAdminSellersEndpoints } from '../endpoints/admin-sellers';
 import { registerAIChatbotEndpoints } from '../endpoints/ai-chatbot';
@@ -432,6 +434,7 @@ registerDeliveryPartnerAutomationEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
 registerVendorBankAccountEndpoints(app);
+registerVendorWalletEndpoints(app);
 registerDeliveryTrackingEndpoints(app);
 registerDeliveryOtpEndpoints(app); // Delivery OTP verification for pharmacy and meal orders
 registerMedicalRecordsEndpoints(app);
@@ -513,6 +516,7 @@ registerLoyaltyActionRulesManagementEndpoints(app);
 registerLoyaltySegmentsManagementEndpoints(app);
 registerCommunityEndpoints(app);
 registerReferralEndpoints(app);
+registerVendorReferralEndpoints(app);
 registerRewardsEndpoints(app);
 registerAdminSellersEndpoints(app);
 registerAIChatbotEndpoints(app);

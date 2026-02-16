@@ -22,6 +22,112 @@ import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
 
 /**
+ * Process customer referral points when referred customer completes first booking
+ */
+async function processCustomerReferralOnBooking(customerId: string, bookingId: string): Promise<void> {
+  try {
+    const { query, select } = await import('../database/rds-connection');
+    
+    // Check if this is customer's first completed booking
+    const completedBookings = await query(
+      `SELECT COUNT(*) as count 
+       FROM bookings 
+       WHERE customer_id = $1 AND status = 'completed'`,
+      [customerId]
+    );
+    
+    const bookingCount = parseInt(completedBookings.rows[0]?.count || '0', 10);
+    if (bookingCount !== 1) {
+      // Not the first booking, skip referral processing
+      return;
+    }
+    
+    // Get customer details
+    const customers = await select('customers', { id: customerId });
+    if (customers.length === 0) {
+      return;
+    }
+    
+    const customer = customers[0];
+    const customerPhone = customer.phone || '';
+    
+    // Normalize phone for lookup
+    const phoneDigits = customerPhone.replace(/\D/g, '');
+    const phoneFormats = [
+      phoneDigits.length === 10 ? `+91${phoneDigits}` : `+${phoneDigits}`,
+      customerPhone.startsWith('+') ? customerPhone : `+${phoneDigits}`,
+      phoneDigits,
+      customerPhone,
+    ];
+    const uniqueFormats = [...new Set(phoneFormats.filter(f => f))];
+    
+    // Check customer_identity for referral metadata
+    let referralCodeId: string | null = null;
+    let referrerCustomerId: string | null = null;
+    
+    if (customer.customer_identity_id) {
+      const identities = await select('customer_identity', { id: customer.customer_identity_id });
+      if (identities.length > 0) {
+        const identity = identities[0];
+        if (identity.metadata) {
+          const metadata = typeof identity.metadata === 'string'
+            ? JSON.parse(identity.metadata)
+            : identity.metadata;
+          referralCodeId = metadata.referral_code_id || null;
+          referrerCustomerId = metadata.referrer_customer_id || null;
+        }
+      }
+    }
+    
+    // If not found in metadata, check customer_referrals table by phone
+    if (!referralCodeId) {
+      let referralCheck: any = null;
+      for (const phoneFormat of uniqueFormats) {
+        referralCheck = await query(
+          `SELECT * FROM customer_referrals
+           WHERE (referred_phone = $1 OR referred_customer_id = $2)
+           AND status = 'applied'
+           ORDER BY created_at DESC LIMIT 1`,
+          [phoneFormat, customerId]
+        );
+        if (referralCheck.rows.length > 0) break;
+      }
+      
+      if (referralCheck && referralCheck.rows.length > 0) {
+        referralCodeId = referralCheck.rows[0].id;
+        referrerCustomerId = referralCheck.rows[0].referrer_customer_id;
+      }
+    }
+    
+    // If referral found, update status and award points
+    if (referralCodeId && referrerCustomerId) {
+      // Update customer_referrals record
+      await query(
+        `UPDATE customer_referrals
+         SET referred_customer_id = $1, status = 'approved', approved_at = NOW(), updated_at = NOW()
+         WHERE id = $2 AND status = 'applied'`,
+        [customerId, referralCodeId]
+      );
+      
+      // Award points to referrer
+      const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+      await loyaltyPointsService.awardPoints({
+        customerId: referrerCustomerId,
+        actionName: 'customer_referral',
+        referenceType: 'customer_referral',
+        referenceId: referralCodeId,
+        description: `Customer referral: ${customer.full_name || 'Customer'} completed first booking`,
+      });
+      
+      console.log(`✅ [REFERRAL] Awarded points to referrer ${referrerCustomerId} for customer ${customerId}'s first booking`);
+    }
+  } catch (error: any) {
+    console.error('[REFERRAL] Error processing customer referral:', error);
+    throw error;
+  }
+}
+
+/**
  * Helper function to get the correct OTP for a booking based on action and service type
  * @param booking - The booking object
  * @param bookingId - The booking ID
@@ -250,6 +356,16 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       );
 
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
+
+      // ✅ NEW: Process customer referral points on first booking completion
+      if (booking.customer_id && booking.status === 'completed') {
+        try {
+          await processCustomerReferralOnBooking(booking.customer_id, bookingId);
+        } catch (referralError) {
+          console.error('Error processing customer referral:', referralError);
+          // Don't fail booking completion if referral processing fails
+        }
+      }
 
       // ✅ CRITICAL FIX: Create vendor_earnings record immediately when booking is completed
       if (booking.payment_status === 'paid') {

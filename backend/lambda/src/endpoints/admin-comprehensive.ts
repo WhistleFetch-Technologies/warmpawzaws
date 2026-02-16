@@ -255,28 +255,18 @@ class AdminLoginHandler extends BaseHandler {
       // Check UAT mode - ONLY check UAT_MODE env variable for security
       const isUATMode = process.env.UAT_MODE === 'true';
 
-      // In UAT mode, allow any admin login with 60s token expiry
+      // In UAT mode, allow any admin login and return simple UAT token format
       if (isUATMode) {
-        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
+        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} - returning UAT token`);
         
-        // Generate proper JWT tokens for UAT mode
-        const { generateUATJWTToken } = await import('../utils/jwt-generator');
-        const tokens = await generateUATJWTToken({
-          userId: 'uat-admin',
-          phone: email, // Use email as identifier
-          role: 'admin',
-          expiresIn: 60, // 60 seconds for UAT mode testing
-        });
+        // ✅ FIX: Dev environment uses simple uat-token-admin-{timestamp} format
+        // This matches what the frontend expects and what auto-login generates
+        const uatToken = `uat-token-admin-${Date.now()}`;
         
         return this.success({
           success: true,
-          token: {
-            access_token: tokens.accessToken,
-            id_token: tokens.idToken,
-            refresh_token: tokens.refreshToken,
-            expires_in: tokens.expiresIn,
-            token_type: 'Bearer',
-          },
+          token: uatToken, // Simple string token for dev
+          access_token: uatToken, // Also provide as access_token for compatibility
           admin: {
             id: 'uat-admin',
             email: email,
@@ -2401,6 +2391,9 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   });
 
   // Auth
+  // ✅ FIX: Login endpoint works in both dev and prod
+  // - Dev (UAT_MODE=true): Bypasses authentication, returns UAT tokens
+  // - Prod (UAT_MODE=false): Requires real credentials, returns JWT tokens
   app.post('/admin/auth/login', async (c) => {
     const handler = new AdminLoginHandler();
     const event = await createApiGatewayEvent(c);

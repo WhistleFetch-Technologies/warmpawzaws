@@ -248,7 +248,7 @@ module "lambda" {
     SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
     OPENSEARCH_ENDPOINT         = module.opensearch.domain_endpoint
     # CORS: Allow localhost for local development testing (only adding localhost:3002 as requested)
-    ALLOWED_ORIGINS             = "http://localhost:3002,${join(",", local.cors_allowed_origins)}"
+    ALLOWED_ORIGINS             = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,${join(",", local.cors_allowed_origins)}"
   }
 
   secrets_arns         = concat([module.rds.secret_arn], module.secrets.all_secret_arns)

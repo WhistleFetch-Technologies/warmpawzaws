@@ -51,10 +51,18 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
   const [upiId, setUpiId] = useState('');
   const [upiVerified, setUpiVerified] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
+  const [loadingWallet, setLoadingWallet] = useState(false);
 
   useEffect(() => {
     loadBankAccount();
   }, [vendorId]);
+
+  useEffect(() => {
+    if (paymentMethod === 'wallet') {
+      loadWallet();
+    }
+  }, [paymentMethod, vendorId]);
 
   const loadBankAccount = async () => {
     try {
@@ -88,6 +96,47 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       setBankStatus({ exists: false, is_verified: false });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadWallet = async () => {
+    try {
+      setLoadingWallet(true);
+      console.log(`[Wallet] Loading wallet for vendor: ${vendorId}`);
+      
+      // Load wallet balance
+      const walletResponse = await apiClient.get(`/vendor/${vendorId}/wallet`) as any;
+      console.log(`[Wallet] Wallet response:`, walletResponse);
+      
+      if (walletResponse && walletResponse.success) {
+        const balance = walletResponse.wallet?.balance || 0;
+        setWalletBalance(balance);
+        console.log(`[Wallet] Balance set to: ₹${balance}`);
+      } else {
+        setWalletBalance(0);
+        console.warn('[Wallet] No wallet data in response');
+      }
+
+      // Load wallet transactions
+      const transactionsResponse = await apiClient.get(`/vendor/${vendorId}/wallet/transactions?limit=10`) as any;
+      console.log(`[Wallet] Transactions response:`, transactionsResponse);
+      
+      if (transactionsResponse && transactionsResponse.success) {
+        setWalletTransactions(transactionsResponse.transactions || []);
+        console.log(`[Wallet] Loaded ${transactionsResponse.transactions?.length || 0} transactions`);
+      } else {
+        setWalletTransactions([]);
+      }
+    } catch (error: any) {
+      console.error('[Wallet] Error loading wallet:', error);
+      // If 404, wallet doesn't exist yet - that's fine, show 0 balance
+      if (error.status !== 404) {
+        toast.error('Failed to load wallet balance');
+      }
+      setWalletBalance(0);
+      setWalletTransactions([]);
+    } finally {
+      setLoadingWallet(false);
     }
   };
 
@@ -564,51 +613,61 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
             </div>
 
             <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <div className="text-center mb-6">
-                <p className="text-sm text-gray-500 mb-1">Current Balance</p>
-                <p className="text-4xl font-bold text-purple-600">₹{walletBalance.toLocaleString()}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPaymentMethod('bank');
-                    toast.info('Select bank account to withdraw');
-                  }}
-                >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  Withdraw to Bank
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPaymentMethod('upi');
-                    toast.info('Set up UPI to withdraw');
-                  }}
-                >
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Withdraw to UPI
-                </Button>
-              </div>
-
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h4 className="font-medium text-gray-900 mb-3">Recent Transactions</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-600">Booking #1234</span>
-                    <span className="text-green-600 font-medium">+₹500</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-600">Withdrawal</span>
-                    <span className="text-red-600 font-medium">-₹2,000</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-600">Booking #1233</span>
-                    <span className="text-green-600 font-medium">+₹750</span>
-                  </div>
+              {loadingWallet ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="text-center mb-6">
+                    <p className="text-sm text-gray-500 mb-1">Current Balance</p>
+                    <p className="text-4xl font-bold text-purple-600">₹{walletBalance.toLocaleString()}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setPaymentMethod('bank');
+                        toast.info('Select bank account to withdraw');
+                      }}
+                    >
+                      <Building2 className="w-4 h-4 mr-2" />
+                      Withdraw to Bank
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setPaymentMethod('upi');
+                        toast.info('Set up UPI to withdraw');
+                      }}
+                    >
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      Withdraw to UPI
+                    </Button>
+                  </div>
+
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <h4 className="font-medium text-gray-900 mb-3">Recent Transactions</h4>
+                    {walletTransactions.length > 0 ? (
+                      <div className="space-y-2 text-sm">
+                        {walletTransactions.map((tx: any) => (
+                          <div key={tx.id} className="flex justify-between py-2 border-b border-gray-100">
+                            <span className="text-gray-600">{tx.description || tx.reference_type || 'Transaction'}</span>
+                            <span className={`font-medium ${
+                              tx.transaction_type === 'credit' ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {tx.transaction_type === 'credit' ? '+' : '-'}₹{Math.abs(tx.amount || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 text-center py-4">No transactions yet</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

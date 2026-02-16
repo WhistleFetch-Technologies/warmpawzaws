@@ -84,62 +84,133 @@ export class LoyaltyPointsService {
 
       // Award points and auto-convert to wallet
       return await withTransaction(async (client) => {
-        // Get or create loyalty profile
+        // Determine if this is for a vendor or customer
+        const isVendor = !!params.vendorId;
         const userId = params.customerId || params.vendorId;
         if (!userId) {
           throw new Error('customerId or vendorId is required');
         }
 
-        let profile = await select('customer_loyalty_points', { customer_id: userId });
+        // Use vendor-specific tables for vendors, customer tables for customers
+        const loyaltyTable = isVendor ? 'vendor_loyalty_points' : 'customer_loyalty_points';
+        const loyaltyTxTable = isVendor ? 'vendor_loyalty_transactions' : 'loyalty_transactions';
+        const walletTable = isVendor ? 'vendor_wallets' : 'customer_wallets';
+        const walletTxTable = isVendor ? 'vendor_wallet_transactions' : 'wallet_transactions';
+        const idColumn = isVendor ? 'vendor_id' : 'customer_id';
+
+        // Get or create loyalty profile (using transaction client)
+        let profileResult = await client.query(
+          `SELECT * FROM ${loyaltyTable} WHERE ${idColumn} = $1`,
+          [userId]
+        );
+        let profile = profileResult.rows;
+        
         if (profile.length === 0) {
-          await insert('customer_loyalty_points', {
-            customer_id: userId,
-            total_points: 0,
-            lifetime_points_earned: 0,
-            lifetime_points_redeemed: 0,
-          });
-          profile = await select('customer_loyalty_points', { customer_id: userId });
+          const profileInsertResult = await client.query(
+            `INSERT INTO ${loyaltyTable} (${idColumn}, total_points, lifetime_points_earned, lifetime_points_redeemed, created_at, updated_at)
+             VALUES ($1, 0, 0, 0, NOW(), NOW())
+             RETURNING *`,
+            [userId]
+          );
+          profile = profileInsertResult.rows;
+          console.log(`[LOYALTY] Created new loyalty profile for ${isVendor ? 'vendor' : 'customer'} ${userId}`);
         }
 
-        // Create loyalty transaction
-        await insert('loyalty_transactions', {
-          customer_id: userId,
-          transaction_type: 'earned',
-          points: finalPoints,
-          reference_type: params.referenceType || params.actionName,
-          reference_id: params.referenceId || null,
-          description: params.description || `Earned ${finalPoints} points for ${params.actionName}`,
-        });
+        // Create loyalty transaction (using transaction client)
+        await client.query(
+          `INSERT INTO ${loyaltyTxTable} (${idColumn}, transaction_type, points, reference_type, reference_id, description, created_at)
+           VALUES ($1, 'earned', $2, $3, $4, $5, NOW())`,
+          [
+            userId,
+            finalPoints,
+            params.referenceType || params.actionName,
+            params.referenceId || null,
+            params.description || `Earned ${finalPoints} points for ${params.actionName}`,
+          ]
+        );
 
         // Update loyalty profile
         await client.query(
-          `UPDATE customer_loyalty_points
+          `UPDATE ${loyaltyTable}
            SET total_points = total_points + $1,
                lifetime_points_earned = lifetime_points_earned + $1,
                updated_at = NOW()
-           WHERE customer_id = $2`,
+           WHERE ${idColumn} = $2`,
           [finalPoints, userId]
         );
 
-        // Auto-convert to wallet (1 point = 1 rupee)
-        const walletAmount = finalPoints; // 1 point = 1 rupee
+        // Auto-convert to wallet using conversion_rate from loyalty_rules
+        // Fetch active loyalty rule to get conversion_rate (using transaction client)
+        const loyaltyRulesResult = await client.query(
+          `SELECT * FROM loyalty_rules WHERE is_active = true LIMIT 1`
+        );
+        const loyaltyRules = loyaltyRulesResult.rows;
+        let conversionRate = 1.0; // Default: 1 point = 1 rupee
+        
+        console.log(`[LOYALTY] Fetching conversion rate. Found ${loyaltyRules.length} active rule(s)`);
+        
+        if (loyaltyRules.length > 0) {
+          const rule = loyaltyRules[0];
+          console.log(`[LOYALTY] Rule: ${rule.rule_name}, conversion_rate: ${rule.conversion_rate}, redemption_rate: ${rule.redemption_rate}`);
+          
+          // Use conversion_rate if available, otherwise fall back to redemption_rate
+          // conversion_rate: points to rupees (e.g., 100.0 means 100 points = 1 rupee)
+          // redemption_rate: points per rupee (inverse relationship)
+          if (rule.conversion_rate !== null && rule.conversion_rate !== undefined) {
+            conversionRate = parseFloat(rule.conversion_rate);
+            console.log(`[LOYALTY] Using conversion_rate: ${conversionRate}`);
+          } else if (rule.redemption_rate !== null && rule.redemption_rate !== undefined) {
+            // If conversion_rate not set, use redemption_rate as inverse
+            // redemption_rate is "points per rupee", so conversion_rate = redemption_rate
+            conversionRate = parseFloat(rule.redemption_rate);
+            console.log(`[LOYALTY] Using redemption_rate: ${conversionRate}`);
+          } else {
+            console.log(`[LOYALTY] Both rates are NULL, using default: ${conversionRate}`);
+          }
+        } else {
+          console.log(`[LOYALTY] No active rules found, using default: ${conversionRate}`);
+        }
+        
+        // Calculate wallet amount: points / conversion_rate
+        // Example: 500 points / 100.0 = ₹5 (if conversion_rate = 100)
+        // Example: 500 points / 1.0 = ₹500 (if conversion_rate = 1)
+        const walletAmount = finalPoints / conversionRate;
+        
+        console.log(`[LOYALTY] Conversion calculation: ${finalPoints} points / ${conversionRate} = ₹${walletAmount.toFixed(2)}`);
 
-        // Get or create wallet
-        let wallets = await select('customer_wallets', { customer_id: userId });
+        // Get or create wallet (using transaction client)
+        let walletResult = await client.query(
+          `SELECT * FROM ${walletTable} WHERE ${idColumn} = $1`,
+          [userId]
+        );
+        let wallets = walletResult.rows;
+        
         if (wallets.length === 0) {
-          await insert('customer_wallets', {
-            customer_id: userId,
+          const walletData: any = {
+            [idColumn]: userId,
             balance: 0,
-            currency: 'INR',
-          });
-          wallets = await select('customer_wallets', { customer_id: userId });
+          };
+          // Only add currency for customer_wallets (vendor_wallets doesn't have it)
+          if (!isVendor) {
+            walletData.currency = 'INR';
+          }
+          
+          // Insert wallet using transaction client
+          const keys = Object.keys(walletData);
+          const values = Object.values(walletData);
+          const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+          const insertQuery = `INSERT INTO ${walletTable} (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+          const insertResult = await client.query(insertQuery, values);
+          wallets = insertResult.rows;
+          
+          console.log(`[LOYALTY] Created new wallet for ${isVendor ? 'vendor' : 'customer'} ${userId}`);
         }
 
         const wallet = wallets[0];
 
         // Credit wallet
         await client.query(
-          `UPDATE customer_wallets
+          `UPDATE ${walletTable}
            SET balance = balance + $1,
                updated_at = NOW()
            WHERE id = $2`,
@@ -147,17 +218,37 @@ export class LoyaltyPointsService {
         );
 
         // Create wallet transaction
-        await insert('wallet_transactions', {
+        // Base fields that exist in both wallet_transactions and vendor_wallet_transactions
+        const walletTxData: any = {
           wallet_id: wallet.id,
-          customer_id: userId,
           transaction_type: 'credit',
           amount: walletAmount,
-          source: 'loyalty_points',
-          description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount}`,
-          reference_id: null,
-        });
+          balance_after: parseFloat(wallet.balance || 0) + walletAmount,
+          reference_type: params.referenceType || params.actionName,
+          reference_id: params.referenceId || null,
+          description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (rate: ${conversionRate} points/rupee)`,
+        };
+        
+        // Add vendor_id for vendor_wallet_transactions
+        // Note: wallet_transactions may or may not have customer_id depending on schema version
+        // We'll let the insert handle missing columns gracefully
+        if (isVendor) {
+          walletTxData.vendor_id = userId;
+        }
+        // For customer wallets, some schemas have customer_id, some don't
+        // The insert will handle it - if column doesn't exist, it will be ignored
 
-        console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount} to wallet) for action: ${params.actionName}`);
+        // Insert wallet transaction using transaction client
+        const walletTxKeys = Object.keys(walletTxData);
+        const walletTxValues = Object.values(walletTxData);
+        const walletTxPlaceholders = walletTxValues.map((_, i) => `$${i + 1}`).join(', ');
+        await client.query(
+          `INSERT INTO ${walletTxTable} (${walletTxKeys.join(', ')}, created_at)
+           VALUES (${walletTxPlaceholders}, NOW())`,
+          walletTxValues
+        );
+
+        console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount.toFixed(2)} to wallet, conversion_rate: ${conversionRate}) for action: ${params.actionName} to ${isVendor ? 'vendor' : 'customer'}`);
 
         return {
           points: finalPoints,

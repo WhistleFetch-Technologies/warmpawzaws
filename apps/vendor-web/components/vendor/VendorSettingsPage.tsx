@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Settings, User, Building2, CreditCard, Bell, Power } from 'lucide-react';
+import { ArrowLeft, Settings, User, Building2, CreditCard, Bell, Power, UserPlus } from 'lucide-react';
+import { VendorReferralModal } from './VendorReferralModal';
 
 interface VendorProfile {
   id: string;
@@ -54,6 +55,7 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
   const [saving, setSaving] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [goLiveLoading, setGoLiveLoading] = useState(false);
+  const [showReferralModal, setShowReferralModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -246,6 +248,15 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
                   <strong>💡 Tip:</strong> Toggle anytime. Existing bookings stay active when offline.
                 </p>
               </div>
+
+              {/* Refer Vendor Button */}
+              <button
+                onClick={() => setShowReferralModal(true)}
+                className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl p-4 flex items-center justify-center gap-2 font-medium transition-all shadow-md"
+              >
+                <UserPlus className="w-5 h-5" />
+                Refer Vendor & Earn Points
+              </button>
             </div>
           )}
 
@@ -577,6 +588,19 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
       >
         {saving ? 'Saving...' : 'Save Preferences'}
       </button>
+        </div>
+      )}
+        </div>
+      </div>
+
+      {/* Referral Modal */}
+      {vendorId && (
+        <VendorReferralModal
+          open={showReferralModal}
+          onOpenChange={setShowReferralModal}
+          vendorId={vendorId}
+        />
+      )}
     </div>
   );
 }

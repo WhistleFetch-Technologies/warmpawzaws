@@ -6,8 +6,19 @@
   const defaultUatMode = true;
   
   // Determine environment
+  // Priority: window.__NEXT_PUBLIC_ENVIRONMENT__ (injected) > window.__NEXT_DATA__.env > hostname detection
   function isProduction() {
-    // Check hostname (production CloudFront domains)
+    // 1. Check if environment was explicitly set via inline script (highest priority)
+    if (typeof window !== 'undefined' && window.__NEXT_PUBLIC_ENVIRONMENT__) {
+      return window.__NEXT_PUBLIC_ENVIRONMENT__ === 'production';
+    }
+    
+    // 2. Check Next.js injected environment variables
+    if (typeof window !== 'undefined' && window.__NEXT_DATA__?.env?.NEXT_PUBLIC_ENVIRONMENT) {
+      return window.__NEXT_DATA__.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+    }
+    
+    // 3. Check hostname (production CloudFront domains)
     if (typeof window !== 'undefined' && window.location) {
       const hostname = window.location.hostname;
       if (hostname.includes('cloudfront.net') || 
@@ -31,27 +42,50 @@
   }
   
   // Injected at build/deploy as __API_BASE_URL__ or set NEXT_PUBLIC_API_BASE_URL in env
-  // Priority: Injected __API_BASE_URL__ > NEXT_PUBLIC_API_BASE_URL env var > environment-based fallback
+  // Priority: window.__NEXT_PUBLIC_API_BASE_URL__ (injected) > __API_BASE_URL__ > window.__NEXT_DATA__.env > environment-based fallback
   let apiBaseUrl = '';
-  if (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__) {
+  if (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) {
+    // Highest priority: explicitly set via inline script
+    apiBaseUrl = window.__NEXT_PUBLIC_API_BASE_URL__;
+  } else if (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__) {
     apiBaseUrl = __API_BASE_URL__;
-  } else if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) {
-    apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  } else if (typeof window !== 'undefined' && window.__NEXT_DATA__?.env?.NEXT_PUBLIC_API_BASE_URL) {
+    // Next.js injected env var
+    apiBaseUrl = window.__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL;
   } else {
     apiBaseUrl = getApiGatewayUrl();
   }
 
-  const environment = isProduction() ? 'production' : 'development';
+  // Determine environment: check injected env var first, then hostname
+  const envFromVar = typeof window !== 'undefined' && window.__NEXT_PUBLIC_ENVIRONMENT__;
+  const environment = envFromVar || (isProduction() ? 'production' : 'development');
   
-  // ✅ FIX: Disable UAT mode in production for security
-  // UAT mode should only be enabled in development/staging
-  const uatMode = isProduction() ? false : defaultUatMode;
+  // Determine UAT mode: check injected env var first, then environment
+  const uatModeFromVar = typeof window !== 'undefined' && window.__NEXT_PUBLIC_UAT_MODE__;
+  let uatMode;
+  if (uatModeFromVar !== undefined) {
+    // Explicitly set via environment variable
+    uatMode = uatModeFromVar === true || uatModeFromVar === 'true';
+  } else {
+    // Fallback: disable UAT mode in production for security
+    uatMode = isProduction() ? false : defaultUatMode;
+  }
 
-  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: apiBaseUrl,
-    uatMode: uatMode,
-    environment: environment
-  };
+  // Only override if config doesn't exist or if explicitly set via environment variables
+  // This preserves values set by the inline script in layout.tsx
+  if (!window.__WARMPAWZ_RUNTIME_CONFIG__ || window.__NEXT_PUBLIC_ENVIRONMENT__) {
+    window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+      apiBaseUrl: apiBaseUrl,
+      uatMode: uatMode,
+      environment: environment
+    };
+  } else {
+    // If config already exists from inline script, just update missing fields
+    const existing = window.__WARMPAWZ_RUNTIME_CONFIG__;
+    if (!existing.apiBaseUrl) existing.apiBaseUrl = apiBaseUrl;
+    if (existing.uatMode === undefined) existing.uatMode = uatMode;
+    if (!existing.environment) existing.environment = environment;
+  }
 
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
