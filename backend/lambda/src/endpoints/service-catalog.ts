@@ -15,7 +15,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, query, insert, update } from '../database/rds-connection';
+import { select, query, insert, update, deleteRows } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -1527,7 +1527,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
   /**
    * DELETE /admin/service-catalog/:serviceId
-   * Delete (archive) service
+   * Delete service from database completely
    */
   app.delete("/admin/service-catalog/:serviceId", async (c) => {
     try {
@@ -1555,15 +1555,16 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       const service = existing.rows[0];
 
-      // Soft delete: archive the service
-      await update('service_catalog', { id: service.id }, {
-        status: 'archived',
-        publish_status: 'archived',
-      });
+      // Hard delete: completely remove from database
+      const deletedCount = await deleteRows('service_catalog', { id: service.id });
+
+      if (deletedCount === 0) {
+        return c.json({ error: 'Failed to delete service' }, 500);
+      }
 
       return c.json({
         success: true,
-        message: 'Service archived successfully',
+        message: 'Service deleted successfully',
       });
     } catch (error: any) {
       console.error('Error deleting service:', error);

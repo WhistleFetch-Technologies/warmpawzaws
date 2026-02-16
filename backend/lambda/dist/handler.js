@@ -124708,20 +124708,56 @@ async function validateBankAccountStrict(account_number, ifsc_code, beneficiary_
   if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
     return { valid: false, error: "Invalid IFSC code", details: "IFSC must be 11 characters (e.g. HDFC0001234)." };
   }
-  const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`);
-  if (!ifscResponse.ok) {
-    return { valid: false, error: "Invalid IFSC code", details: "IFSC code not found in bank database." };
+  const FETCH_TIMEOUT_MS = 2e4;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[BANK-VALIDATE] IFSC lookup timeout after ${FETCH_TIMEOUT_MS}ms for ${ifsc}`);
+    controller.abort();
+  }, FETCH_TIMEOUT_MS);
+  try {
+    const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "WarmPawz/1.0",
+        "Accept": "application/json"
+      }
+    });
+    clearTimeout(timeoutId);
+    if (!ifscResponse.ok) {
+      if (ifscResponse.status === 404) {
+        return { valid: false, error: "Invalid IFSC code", details: "IFSC code not found in bank database." };
+      }
+      const errorText = await ifscResponse.text().catch(() => ifscResponse.statusText);
+      console.error(`[BANK-VALIDATE] IFSC lookup HTTP error ${ifscResponse.status} for ${ifsc}: ${errorText}`);
+      return { valid: false, error: "IFSC lookup failed", details: `HTTP ${ifscResponse.status}: ${errorText}` };
+    }
+    const ifscData = await ifscResponse.json();
+    if (!/^\d{9,18}$/.test(account)) {
+      return { valid: false, error: "Invalid account number", details: "Account number must be 9\u201318 digits." };
+    }
+    return {
+      valid: false,
+      bank_details: { bank: ifscData.BANK || "", branch: ifscData.BRANCH || "", city: ifscData.CITY || "", state: ifscData.STATE || "", ifsc },
+      account_number_masked: account.replace(/\d(?=\d{4})/g, "*"),
+      message: "Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation."
+    };
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+    if (fetchError.name === "AbortError" || fetchError.message?.includes("aborted")) {
+      console.error(`[BANK-VALIDATE] IFSC lookup timeout for ${ifsc}`);
+      return { valid: false, error: "IFSC lookup timeout", details: "Request timed out. Please try again." };
+    }
+    if (fetchError.message?.includes("fetch failed") || fetchError.code === "ENOTFOUND" || fetchError.code === "ECONNREFUSED" || fetchError.code === "ETIMEDOUT" || fetchError.message?.includes("network") || fetchError.message?.includes("ECONNRESET")) {
+      console.error(`[BANK-VALIDATE] Network error for IFSC ${ifsc}:`, {
+        message: fetchError.message,
+        code: fetchError.code,
+        cause: fetchError.cause
+      });
+      return { valid: false, error: "Network error", details: "Failed to connect to Razorpay IFSC API. Please check Lambda VPC configuration and internet connectivity." };
+    }
+    console.error(`[BANK-VALIDATE] Unexpected error for IFSC ${ifsc}:`, fetchError);
+    throw fetchError;
   }
-  const ifscData = await ifscResponse.json();
-  if (!/^\d{9,18}$/.test(account)) {
-    return { valid: false, error: "Invalid account number", details: "Account number must be 9\u201318 digits." };
-  }
-  return {
-    valid: false,
-    bank_details: { bank: ifscData.BANK || "", branch: ifscData.BRANCH || "", city: ifscData.CITY || "", state: ifscData.STATE || "", ifsc },
-    account_number_masked: account.replace(/\d(?=\d{4})/g, "*"),
-    message: "Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation."
-  };
 }
 function registerRazorpayEndpoints(app3) {
   const createOrderHandler = new CreateRazorpayOrderHandler();
@@ -124826,37 +124862,101 @@ function registerRazorpayEndpoints(app3) {
           error: "Invalid IFSC code format. Must be 11 characters (e.g., HDFC0001234)"
         }, 400);
       }
-      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode.toUpperCase()}`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          return c.json({
-            error: "IFSC code not found",
-            ifsc: ifscCode.toUpperCase()
-          }, 404);
+      const upperIfsc = ifscCode.toUpperCase();
+      const url = `https://ifsc.razorpay.com/${upperIfsc}`;
+      console.log(`[RAZORPAY-IFSC] Looking up IFSC: ${upperIfsc}`);
+      const FETCH_TIMEOUT_MS = 2e4;
+      const MAX_RETRIES = 2;
+      let lastError = null;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          console.log(`[RAZORPAY-IFSC] Retry attempt ${attempt} of ${MAX_RETRIES} for ${upperIfsc}`);
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1e3));
         }
-        throw new Error(`IFSC lookup failed: ${response.statusText}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          console.warn(`[RAZORPAY-IFSC] Request timeout after ${FETCH_TIMEOUT_MS}ms for ${upperIfsc} (attempt ${attempt + 1})`);
+          controller.abort();
+        }, FETCH_TIMEOUT_MS);
+        try {
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "WarmPawz/1.0",
+              "Accept": "application/json"
+            }
+          });
+          clearTimeout(timeoutId);
+          if (!response.ok) {
+            if (response.status === 404) {
+              console.log(`[RAZORPAY-IFSC] IFSC code not found: ${upperIfsc}`);
+              return c.json({
+                error: "IFSC code not found",
+                ifsc: upperIfsc
+              }, 404);
+            }
+            const errorText = await response.text().catch(() => response.statusText);
+            console.error(`[RAZORPAY-IFSC] HTTP error ${response.status} for ${upperIfsc}: ${errorText}`);
+            throw new Error(`IFSC lookup failed: HTTP ${response.status} ${errorText}`);
+          }
+          const bankData = await response.json();
+          console.log(`[RAZORPAY-IFSC] Successfully retrieved data for ${upperIfsc}: ${bankData.BANK || "Unknown"}`);
+          return c.json({
+            success: true,
+            ifsc: bankData.IFSC || upperIfsc,
+            bank: bankData.BANK || "",
+            branch: bankData.BRANCH || "",
+            address: bankData.ADDRESS || "",
+            city: bankData.CITY || "",
+            district: bankData.DISTRICT || "",
+            state: bankData.STATE || "",
+            contact: bankData.CONTACT || "",
+            imps: bankData.IMPS === true,
+            neft: bankData.NEFT === true,
+            rtgs: bankData.RTGS === true,
+            upi: bankData.UPI === true,
+            micr: bankData.MICR || ""
+          });
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          lastError = fetchError;
+          const isRetryable = fetchError.name === "AbortError" || fetchError.message?.includes("aborted") || fetchError.message?.includes("fetch failed") || fetchError.code === "ENOTFOUND" || fetchError.code === "ECONNREFUSED" || fetchError.code === "ETIMEDOUT" || fetchError.message?.includes("network") || fetchError.message?.includes("ECONNRESET");
+          if (!isRetryable || attempt === MAX_RETRIES) {
+            if (fetchError.name === "AbortError" || fetchError.message?.includes("aborted")) {
+              console.error(`[RAZORPAY-IFSC] Request timeout for ${upperIfsc} after ${attempt + 1} attempts`);
+              return c.json({
+                error: "Request timeout. Please try again.",
+                ifsc: upperIfsc
+              }, 504);
+            }
+            if (fetchError.message?.includes("fetch failed") || fetchError.code === "ENOTFOUND" || fetchError.code === "ECONNREFUSED" || fetchError.code === "ETIMEDOUT" || fetchError.message?.includes("network") || fetchError.message?.includes("ECONNRESET")) {
+              console.error(`[RAZORPAY-IFSC] Network error for ${upperIfsc} after ${attempt + 1} attempts:`, {
+                message: fetchError.message,
+                code: fetchError.code,
+                cause: fetchError.cause
+              });
+              return c.json({
+                error: "Network error connecting to Razorpay IFSC API. Please check Lambda VPC configuration and internet connectivity.",
+                ifsc: upperIfsc,
+                details: fetchError.message || fetchError.code || "Unknown network error"
+              }, 503);
+            }
+            throw fetchError;
+          }
+          console.warn(`[RAZORPAY-IFSC] Retryable error on attempt ${attempt + 1}, will retry:`, fetchError.message);
+        }
       }
-      const bankData = await response.json();
-      return c.json({
-        success: true,
-        ifsc: bankData.IFSC || ifscCode.toUpperCase(),
-        bank: bankData.BANK || "",
-        branch: bankData.BRANCH || "",
-        address: bankData.ADDRESS || "",
-        city: bankData.CITY || "",
-        district: bankData.DISTRICT || "",
-        state: bankData.STATE || "",
-        contact: bankData.CONTACT || "",
-        imps: bankData.IMPS === true,
-        neft: bankData.NEFT === true,
-        rtgs: bankData.RTGS === true,
-        upi: bankData.UPI === true,
-        micr: bankData.MICR || ""
-      });
     } catch (error) {
-      console.error("Error looking up IFSC code:", error);
+      console.error("[RAZORPAY-IFSC] Error looking up IFSC code:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        code: error.code
+      });
+      const errorMessage = error.message || "Failed to lookup IFSC code";
       return c.json({
-        error: error.message || "Failed to lookup IFSC code"
+        error: errorMessage.includes("Network error") || errorMessage.includes("timeout") ? errorMessage : "Failed to lookup IFSC code. Please try again later.",
+        ifsc: c.req.param("ifscCode")?.toUpperCase()
       }, 500);
     }
   });
@@ -126126,6 +126226,63 @@ function registerVendorProfileEndpoints(app3) {
         uiStatus = appStatus === "approved" ? vendor.is_active ? "active" : "approved" : appStatus;
       }
       console.log(`\u2705 [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
+      let profilePhotoUrl = vendor.profile_photo_url || null;
+      if (profilePhotoUrl) {
+        if (profilePhotoUrl.startsWith("http")) {
+          try {
+            const url = new URL(profilePhotoUrl);
+            const key = url.pathname.substring(1);
+            if (key && key.length > 0) {
+              profilePhotoUrl = decodeURIComponent(key);
+              console.log(`\u2705 [PROFILE-GET] Extracted S3 key from presigned URL: ${profilePhotoUrl}`);
+            } else {
+              console.warn(`\u26A0\uFE0F [PROFILE-GET] Could not extract S3 key from presigned URL: ${profilePhotoUrl.substring(0, 100)}`);
+              profilePhotoUrl = null;
+            }
+          } catch (urlError) {
+            console.warn(`\u26A0\uFE0F [PROFILE-GET] Failed to parse presigned URL: ${urlError.message}`);
+            profilePhotoUrl = null;
+          }
+        }
+        if (profilePhotoUrl && !profilePhotoUrl.startsWith("http")) {
+          try {
+            const { S3Client: S3Client7, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+            const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+            const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+            const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
+            try {
+              const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+              await s3Client6.send(new HeadObjectCommand({
+                Bucket: BUCKET_NAME3,
+                Key: profilePhotoUrl
+              }));
+            } catch (headError) {
+              if (headError.name === "NotFound" || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`\u26A0\uFE0F [PROFILE-GET] S3 object not found: ${profilePhotoUrl}`);
+                profilePhotoUrl = null;
+              } else {
+                console.warn(`\u26A0\uFE0F [PROFILE-GET] Error checking S3 object: ${headError.message}`);
+              }
+            }
+            if (profilePhotoUrl) {
+              const signedUrl = await getSignedUrl4(
+                s3Client6,
+                new GetObjectCommand5({
+                  Bucket: BUCKET_NAME3,
+                  Key: profilePhotoUrl
+                }),
+                { expiresIn: 604800 }
+                // 7 days
+              );
+              profilePhotoUrl = signedUrl;
+              console.log(`\u2705 [PROFILE-GET] Generated fresh presigned URL for profile photo: ${vendor.profile_photo_url}`);
+            }
+          } catch (photoError) {
+            console.warn(`\u26A0\uFE0F [PROFILE-GET] Failed to generate presigned URL for profile photo: ${photoError.message}`);
+            profilePhotoUrl = null;
+          }
+        }
+      }
       return c.json({
         success: true,
         vendor: {
@@ -126145,7 +126302,11 @@ function registerVendorProfileEndpoints(app3) {
           serviceStyle: vendor.service_style,
           applicationId: applicationData?.id,
           applicationStatus: applicationData?.status,
-          createdAt: vendor.created_at
+          createdAt: vendor.created_at,
+          profilePhotoUrl,
+          // ✅ Fresh presigned URL or null
+          profile_photo_url: profilePhotoUrl
+          // ✅ Also include for backward compatibility
         }
       });
     } catch (error) {
@@ -126182,6 +126343,11 @@ function registerVendorProfileEndpoints(app3) {
         Body: uint8Array,
         ContentType: photo.type || "image/jpeg"
       }));
+      await update("vendors", { id: actualVendorId }, {
+        profile_photo_url: fileName,
+        // Store S3 key, not presigned URL
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
       const signedUrl = await getSignedUrl4(
         s3Client6,
         new GetObjectCommand5({
@@ -126191,14 +126357,11 @@ function registerVendorProfileEndpoints(app3) {
         { expiresIn: 604800 }
         // 7 days (max for presigned URLs)
       );
-      await update("vendors", { id: actualVendorId }, {
-        profile_photo_url: signedUrl,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
+      console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}, stored S3 key: ${fileName}`);
       return c.json({
         success: true,
         photo_url: signedUrl,
+        // Return fresh presigned URL for immediate use
         fileName
       });
     } catch (error) {
@@ -126249,6 +126412,8 @@ function registerVendorProfileEndpoints(app3) {
         WHERE table_name = 'vendors'
       `);
       const existingColumns = new Set(schemaResult.rows.map((r) => r.column_name));
+      console.log(`\u{1F4CB} [PROFILE-UPDATE] Existing columns in vendors table: ${Array.from(existingColumns).sort().join(", ")}`);
+      console.log(`\u{1F4CB} [PROFILE-UPDATE] Requested updates: ${Object.keys(updates).join(", ")}`);
       const safeColumns = [
         "business_name",
         "owner_name",
@@ -126278,12 +126443,29 @@ function registerVendorProfileEndpoints(app3) {
       for (const [key, value] of Object.entries(updates)) {
         if (safeColumns.includes(key) && existingColumns.has(key)) {
           updateData[key] = value;
+          console.log(`\u2705 [PROFILE-UPDATE] Including field: ${key} = ${typeof value === "string" ? value.substring(0, 50) : value}`);
+        } else {
+          console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Skipping field: ${key} (safe: ${safeColumns.includes(key)}, exists: ${existingColumns.has(key)})`);
         }
       }
       const skippedFields = Object.keys(updates).filter((k) => !existingColumns.has(k) && safeColumns.includes(k));
       if (skippedFields.length > 0) {
-        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(", ")}`);
+        console.warn(`\u26A0\uFE0F [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(", ")}`);
+        console.warn(`\u26A0\uFE0F [PROFILE-UPDATE] These columns need migration 528 to be applied.`);
       }
+      if (Object.keys(updateData).length === 0) {
+        const requestedFields = Object.keys(updates);
+        const missingColumns = requestedFields.filter((k) => !existingColumns.has(k));
+        const notSafeColumns = requestedFields.filter((k) => !safeColumns.includes(k));
+        console.error(`\u274C [PROFILE-UPDATE] No fields to update. Requested: ${requestedFields.join(", ")}, Missing columns: ${missingColumns.join(", ")}, Not safe: ${notSafeColumns.join(", ")}`);
+        return c.json({
+          error: `No fields to update. Missing columns: ${missingColumns.join(", ")}. Please ensure migration 528 has been applied.`,
+          requestedFields,
+          missingColumns,
+          existingColumns: Array.from(existingColumns).sort()
+        }, 400);
+      }
+      console.log(`\u2705 [PROFILE-UPDATE] Will update ${Object.keys(updateData).length} fields: ${Object.keys(updateData).join(", ")}`);
       if (criticalFieldsChanged && wasApproved) {
         console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Critical fields changed - requiring re-approval`);
         updateData.status = "pending";
@@ -126330,13 +126512,15 @@ function registerVendorProfileEndpoints(app3) {
             console.warn("[PROFILE-UPDATE] vendor_specializations sync failed (non-fatal):", syncErr?.message);
           }
         }
+        const updatedVendor = await select("vendors", { id: vendor.id });
+        const vendorResponse = updatedVendor.length > 0 ? updatedVendor[0] : updated[0] || vendor;
         return c.json({
           success: true,
           message: "Profile updated. Re-approval required for critical changes.",
           requiresReapproval: true,
           changedFields,
           status: "pending",
-          vendor: updated[0]
+          vendor: vendorResponse
         });
       } else {
         console.log(`\u2705 [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
@@ -126353,12 +126537,14 @@ function registerVendorProfileEndpoints(app3) {
             console.warn("[PROFILE-UPDATE] vendor_specializations sync failed (non-fatal):", syncErr?.message);
           }
         }
+        const updatedVendor = await select("vendors", { id: vendor.id });
+        const vendorResponse = updatedVendor.length > 0 ? updatedVendor[0] : updated[0] || vendor;
         return c.json({
           success: true,
           message: "Profile updated successfully",
           requiresReapproval: false,
-          status: vendor.status,
-          vendor: updated[0]
+          status: vendorResponse.status || vendor.status,
+          vendor: vendorResponse
         });
       }
     } catch (error) {
@@ -126448,6 +126634,63 @@ function registerVendorProfileEndpoints(app3) {
           console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
         }
       }
+      let profilePhotoUrl = vendor.profile_photo_url || null;
+      if (profilePhotoUrl) {
+        if (profilePhotoUrl.startsWith("http")) {
+          try {
+            const url = new URL(profilePhotoUrl);
+            const key = url.pathname.substring(1);
+            if (key && key.length > 0) {
+              profilePhotoUrl = decodeURIComponent(key);
+              console.log(`\u2705 [PROFILE-GET] Extracted S3 key from presigned URL: ${profilePhotoUrl}`);
+            } else {
+              console.warn(`\u26A0\uFE0F [PROFILE-GET] Could not extract S3 key from presigned URL: ${profilePhotoUrl.substring(0, 100)}`);
+              profilePhotoUrl = null;
+            }
+          } catch (urlError) {
+            console.warn(`\u26A0\uFE0F [PROFILE-GET] Failed to parse presigned URL: ${urlError.message}`);
+            profilePhotoUrl = null;
+          }
+        }
+        if (profilePhotoUrl && !profilePhotoUrl.startsWith("http")) {
+          try {
+            const { S3Client: S3Client7, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+            const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+            const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+            const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
+            try {
+              const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+              await s3Client6.send(new HeadObjectCommand({
+                Bucket: BUCKET_NAME3,
+                Key: profilePhotoUrl
+              }));
+            } catch (headError) {
+              if (headError.name === "NotFound" || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`\u26A0\uFE0F [PROFILE-GET] S3 object not found: ${profilePhotoUrl}`);
+                profilePhotoUrl = null;
+              } else {
+                console.warn(`\u26A0\uFE0F [PROFILE-GET] Error checking S3 object: ${headError.message}`);
+              }
+            }
+            if (profilePhotoUrl) {
+              const signedUrl = await getSignedUrl4(
+                s3Client6,
+                new GetObjectCommand5({
+                  Bucket: BUCKET_NAME3,
+                  Key: profilePhotoUrl
+                }),
+                { expiresIn: 604800 }
+                // 7 days
+              );
+              profilePhotoUrl = signedUrl;
+              console.log(`\u2705 [PROFILE-GET] Generated fresh presigned URL for profile photo: ${vendor.profile_photo_url}`);
+            }
+          } catch (photoError) {
+            console.warn(`\u26A0\uFE0F [PROFILE-GET] Failed to generate presigned URL for profile photo: ${photoError.message}`);
+            profilePhotoUrl = null;
+          }
+        }
+      }
       return c.json({
         success: true,
         vendor: {
@@ -126457,6 +126700,8 @@ function registerVendorProfileEndpoints(app3) {
           service_area: vendor.service_area || null,
           description: vendor.description || null,
           experience_years: vendor.experience_years ?? null,
+          profile_photo_url: profilePhotoUrl,
+          // ✅ Fresh presigned URL or null
           // Include role info directly in response
           role: role ? {
             id: role.id,
@@ -126677,6 +126922,7 @@ function registerVendorProfileEndpoints(app3) {
   app3.post("/vendor/:vendorId/bank-account/verify", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
       if (!isValidUUID(vendorId)) {
         return c.json({ error: "Invalid vendor ID" }, 400);
       }
@@ -126711,14 +126957,70 @@ function registerVendorProfileEndpoints(app3) {
           console.warn("Error querying vendor_bank_details for verify:", e);
         }
       }
+      let bank;
+      let sourceTable;
       if (bankAccounts.length === 0) {
-        return c.json({ error: "Bank account not found. Please add bank account details first." }, 404);
+        const accountHolderName2 = (body.account_holder_name || body.accountHolderName || "").trim();
+        const accountNumber2 = (body.account_number || body.accountNumber || "").replace(/\s/g, "");
+        const ifscCode2 = (body.ifsc_code || body.ifscCode || "").toUpperCase().trim();
+        const bankName = (body.bank_name || body.bankName || "").trim();
+        const branchName = (body.branch_name || body.branchName || "").trim();
+        if (!accountHolderName2 || !accountNumber2 || !ifscCode2 || !bankName) {
+          return c.json({
+            error: "Bank account not found. Please add bank account details first or provide them in the request body.",
+            requiredFields: ["account_holder_name", "account_number", "ifsc_code", "bank_name"]
+          }, 404);
+        }
+        if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode2)) {
+          return c.json({ error: "Invalid IFSC code format" }, 400);
+        }
+        console.log(`[BANK-VERIFY] No saved bank account found. Creating/updating with provided details for vendor ${resolvedVendorId}`);
+        const columnCheck = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'vendor_bank_details' AND column_name = 'branch_name'
+          ) as has_branch_name
+        `);
+        const hasBranchName = columnCheck.rows?.[0]?.has_branch_name || false;
+        const bankData = {
+          vendor_id: resolvedVendorId,
+          account_holder_name: accountHolderName2,
+          account_number: accountNumber2,
+          ifsc_code: ifscCode2,
+          bank_name: bankName,
+          is_verified: false,
+          verified_at: null,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        if (hasBranchName && branchName) {
+          bankData.branch_name = branchName;
+        }
+        const hasVerifiedBy = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'vendor_bank_details' AND column_name = 'verified_by'
+          ) as has_verified_by
+        `).then((r) => r.rows?.[0]?.has_verified_by || false);
+        if (hasVerifiedBy) {
+          bankData.verified_by = null;
+        }
+        const existing = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+        if (existing.length > 0) {
+          await update("vendor_bank_details", { vendor_id: resolvedVendorId }, bankData);
+          bank = { ...bankData, id: existing[0].id };
+        } else {
+          const inserted = await insert("vendor_bank_details", bankData);
+          bank = inserted[0] || bankData;
+        }
+        sourceTable = "vendor_bank_details";
+        bank._source = "vendor_bank_details";
+      } else {
+        bank = bankAccounts[0];
+        sourceTable = bank._source || (schema.has_accounts_table ? "vendor_bank_accounts" : "vendor_bank_details");
       }
-      const bank = bankAccounts[0];
       const accountHolderName = (bank.account_holder_name || "").trim();
       const accountNumber = (bank.account_number || "").replace(/\s/g, "");
       const ifscCode = (bank.ifsc_code || "").toUpperCase().trim();
-      const sourceTable = bank._source || (schema.has_accounts_table ? "vendor_bank_accounts" : "vendor_bank_details");
       if (!accountHolderName || !accountNumber || !ifscCode) {
         return c.json({
           success: false,
@@ -168864,13 +169166,13 @@ function registerServiceCatalogEndpoints(app3) {
         return c.json({ error: "Service not found" }, 404);
       }
       const service = existing.rows[0];
-      await update("service_catalog", { id: service.id }, {
-        status: "archived",
-        publish_status: "archived"
-      });
+      const deletedCount = await deleteRows("service_catalog", { id: service.id });
+      if (deletedCount === 0) {
+        return c.json({ error: "Failed to delete service" }, 500);
+      }
       return c.json({
         success: true,
-        message: "Service archived successfully"
+        message: "Service deleted successfully"
       });
     } catch (error) {
       console.error("Error deleting service:", error);
@@ -220850,7 +221152,13 @@ function registerVendorBankAccountEndpoints(app3) {
   app3.get("/vendor/:vendorId/upi", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors = await select("vendors", { id: vendorId });
+      const { resolveVendorById: resolveVendorById2 } = await Promise.resolve().then(() => (init_vendor_profile(), vendor_profile_exports));
+      const vendor = await resolveVendorById2(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const vendors = await select("vendors", { id: resolvedVendorId });
       if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
@@ -220873,7 +221181,13 @@ function registerVendorBankAccountEndpoints(app3) {
       if (!upi_id || !upi_id.includes("@")) {
         return c.json({ error: "Invalid UPI ID format" }, 400);
       }
-      await update("vendors", { id: vendorId }, {
+      const { resolveVendorById: resolveVendorById2 } = await Promise.resolve().then(() => (init_vendor_profile(), vendor_profile_exports));
+      const vendor = await resolveVendorById2(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      await update("vendors", { id: resolvedVendorId }, {
         upi_id,
         upi_verified: false,
         // Will need verification
