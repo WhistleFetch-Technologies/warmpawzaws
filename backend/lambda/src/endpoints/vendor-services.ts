@@ -1523,6 +1523,9 @@ export function registerVendorServicesEndpoints(app: Hono) {
         (vendorMetadata as any).packageDetails = (catalogService.metadata as any).packageDetails;
       }
 
+      // ✅ FIX: Generate vendorServiceId before using it
+      const vendorServiceId = randomUUID();
+
       const newService = await insert('vendor_services', {
         id: vendorServiceId,
         vendor_id: actualVendorId,

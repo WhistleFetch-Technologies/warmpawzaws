@@ -228,14 +228,50 @@ export function UniversalServicesByStyle({
             } catch (serviceError) {
               console.warn(`⚠️ [${config.roleName}] Could not fetch services for provider ${providerId}:`, serviceError);
               console.warn(`⚠️ [${config.roleName}] Provider details:`, { providerId, isStaff, vendorId: provider.vendorId });
-              // ✅ FIX: Return null to filter out providers with no services
-              return null;
+              
+              // ✅ FIX: Fallback to featuredOfferings if service fetch fails
+              if (provider.featuredOfferings && Array.isArray(provider.featuredOfferings) && provider.featuredOfferings.length > 0) {
+                console.log(`✅ [${config.roleName}] Using featuredOfferings as fallback for provider ${providerId}`);
+                services = provider.featuredOfferings.map((offering: any) => ({
+                  id: offering.id || offering.serviceId,
+                  serviceId: offering.id || offering.serviceId,
+                  name: offering.name || offering.serviceName || `${config.roleName} Service`,
+                  price: Number(offering.price || 0),
+                  originalPrice: Number(offering.price || 0),
+                  vendorDiscount: 0,
+                  duration: Number(offering.duration || 30),
+                  description: offering.description,
+                  category: offering.category || offering.category_name,
+                  isPackage: false,
+                  inActivePackage: false,
+                }));
+              } else {
+                // ✅ FIX: Return null to filter out providers with no services
+                return null;
+              }
             }
             
-            // ✅ FIX: If no services found, filter out this provider
+            // ✅ FIX: If no services found, try featuredOfferings as fallback
             if (!services || services.length === 0) {
-              console.warn(`⚠️ [${config.roleName}] No services found for provider ${providerId}`);
-              return null;
+              if (provider.featuredOfferings && Array.isArray(provider.featuredOfferings) && provider.featuredOfferings.length > 0) {
+                console.log(`✅ [${config.roleName}] Using featuredOfferings as fallback for provider ${providerId}`);
+                services = provider.featuredOfferings.map((offering: any) => ({
+                  id: offering.id || offering.serviceId,
+                  serviceId: offering.id || offering.serviceId,
+                  name: offering.name || offering.serviceName || `${config.roleName} Service`,
+                  price: Number(offering.price || 0),
+                  originalPrice: Number(offering.price || 0),
+                  vendorDiscount: 0,
+                  duration: Number(offering.duration || 30),
+                  description: offering.description,
+                  category: offering.category || offering.category_name,
+                  isPackage: false,
+                  inActivePackage: false,
+                }));
+              } else {
+                console.warn(`⚠️ [${config.roleName}] No services found for provider ${providerId}`);
+                return null;
+              }
             }
             
             console.log(`✅ [${config.roleName}] Fetched ${services.length} service(s) for provider ${providerId}`);

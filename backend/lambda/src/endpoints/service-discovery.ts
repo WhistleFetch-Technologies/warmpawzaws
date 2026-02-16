@@ -812,16 +812,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         )`;
         // Vendor-defined radius applies only to at_home (travel); tele uses rule-book only, no travel.
         const hasLogoUrl = await columnExists('vendors', 'logo_url');
+        const hasLanguages = await columnExists('vendors', 'languages');
+        const hasIsVerified = await columnExists('vendors', 'is_verified');
+        const hasProfileImage = await columnExists('vendors', 'profile_image');
+        const hasSpecializations = await columnExists('vendors', 'specializations');
+        const hasIsOnline = await columnExists('vendors', 'is_online');
+        const hasServiceRadius = await columnExists('vendors', 'service_radius');
+        const hasVendorIdentityVendorId = await columnExists('vendor_identity', 'vendor_id');
         const logoColumn = hasLogoUrl ? 'v.logo_url' : 'NULL';
+        const languagesColumn = hasLanguages ? 'v.languages' : 'NULL';
+        const isVerifiedColumn = hasIsVerified ? 'v.is_verified' : 'NULL';
+        const profileImageColumn = hasProfileImage ? 'v.profile_image' : 'NULL';
+        const specializationsColumn = hasSpecializations ? 'v.specializations' : 'NULL';
+        const isOnlineColumn = hasIsOnline ? 'v.is_online' : 'TRUE';
+        const serviceRadiusColumn = hasServiceRadius ? 'v.service_radius' : 'NULL';
+        // Build availability EXISTS clause - handle vendor_identity.vendor_id column if it exists
+        // ✅ FIX: Simplify availability check - vendor_availability_v2.vendor_id should directly match vendors.id
+        // The vendor_identity lookup is only needed for staff/individual providers, not for direct vendor availability
+        // For vendors, va.vendor_id should directly match v.id, so we can simplify this
+        const availabilityExistsClause = `va.vendor_id::text = v.id::text`;
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
-                 v.languages, v.is_verified, v.profile_photo_url, v.profile_image, ${logoColumn} as logo_url, v.specializations, v.is_online,
+                 ${languagesColumn} as languages, ${isVerifiedColumn} as is_verified, v.profile_photo_url, ${profileImageColumn} as profile_image, ${logoColumn} as logo_url, ${specializationsColumn} as specializations, COALESCE(${isOnlineColumn}, true) as is_online,
                  v.vendor_type, v.metadata, r.config as role_config,
-                 v.service_radius,
-                 (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
-                  WHERE vs.vendor_id = v.id AND vs.is_enabled = true
-                    AND vs.service_style = 'at_home') AS service_radius_km_min_home
+                 ${serviceRadiusColumn} as service_radius,
+                 NULL AS service_radius_km_min_home
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
@@ -829,7 +845,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
             AND EXISTS (
               SELECT 1 FROM vendor_availability_v2 va
-              WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+              WHERE ${availabilityExistsClause}
                 AND (va.is_available IS NULL OR va.is_available = true)
                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${styleParamIndex}::text[])
             )
@@ -844,29 +860,65 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         let vendorResults: { rows: any[] };
         try {
+          console.log('[discover-services] at_home/tele executing query with params:', JSON.stringify(vendorParams));
+          console.log('[discover-services] at_home/tele query (first 1000 chars):', vendorQuery.substring(0, 1000));
+          console.log('[discover-services] at_home/tele query (full length):', vendorQuery.length, 'chars');
+          console.log('[discover-services] at_home/tele styleParamIndex:', styleParamIndex);
+          console.log('[discover-services] at_home/tele targetRolesLower:', JSON.stringify(targetRolesLower));
+          console.log('[discover-services] at_home/tele acceptableServiceStyles:', JSON.stringify(acceptableServiceStyles));
           vendorResults = await query(vendorQuery, vendorParams);
+          console.log('[discover-services] at_home/tele query returned %s vendors', vendorResults.rows?.length ?? 0);
+          if (vendorResults.rows?.length > 0) {
+            console.log('[discover-services] at_home/tele first vendor:', JSON.stringify({
+              id: vendorResults.rows[0].id,
+              business_name: vendorResults.rows[0].business_name,
+              role_name: vendorResults.rows[0].role_name,
+              vendor_type: vendorResults.rows[0].vendor_type,
+              role_config: vendorResults.rows[0].role_config ? 'present' : 'missing'
+            }));
+          } else {
+            console.log('[discover-services] at_home/tele query returned 0 vendors - checking why...');
+            // Test a simplified query to see if vendor exists
+            const testQuery = await query(
+              `SELECT v.id, v.business_name, v.status, v.is_active, v.vendor_type, r.name as role_name
+               FROM vendors v
+               LEFT JOIN roles r ON v.role_id = r.id
+               WHERE v.id = $1`,
+              ['13b59aea-00a8-4679-bfc9-c0e211a160a0']
+            );
+            console.log('[discover-services] at_home/tele test query result:', testQuery.rows.length > 0 ? 'vendor exists' : 'vendor not found');
+          }
         } catch (err: any) {
-          console.error('[discover-services] at_home query error:', err?.message, err?.stack);
+          console.error('[discover-services] at_home/tele query error:', err?.message, err?.stack);
+          console.error('[discover-services] at_home/tele query (first 500 chars):', vendorQuery.substring(0, 500));
+          console.error('[discover-services] at_home/tele params:', JSON.stringify(vendorParams));
           vendorResults = { rows: [] };
         }
         console.log('[discover-services] at_home found %s vendors', vendorResults.rows?.length ?? 0);
         
         for (const vendor of vendorResults.rows) {
-          if (!roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) continue;
+          console.log('[discover-services] at_home/tele processing vendor:', vendor.id, vendor.business_name);
+          const roleConfigAllows = roleConfigAllowsStyle((vendor as any).role_config, serviceStyle);
+          console.log('[discover-services] at_home/tele roleConfigAllowsStyle result:', roleConfigAllows, 'for serviceStyle:', serviceStyle);
+          if (!roleConfigAllows) {
+            console.log('[discover-services] at_home/tele vendor filtered out by roleConfigAllowsStyle:', vendor.id);
+            continue;
+          }
           // ✅ ENRICHED: Get next available slot for solo vendor
           let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
           try {
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
+            // ✅ FIX: Simplify vendor_identity lookup - use direct vendor_id match for vendors
             const nextSlotsResult = await query(
               `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
                FROM vendor_availability_v2 va
-               WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+               WHERE va.vendor_id = $1
                  AND (va.is_available IS NULL OR va.is_available = true)
-                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[])
+                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $2::text[])
                ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
-              [vendor.id, vendor.phone || '', acceptableServiceStyles]
+              [vendor.id, acceptableServiceStyles]
             );
             
             if (nextSlotsResult.rows.length > 0) {
@@ -940,6 +992,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
           } else {
             // tele: no vendor radius; rule-book only. discovery_radius_km_tele default 0 = no distance limit
+            // ✅ FIX: For tele services, distance should not be a filter since it's remote/virtual
             const teleRadiusKm = typeof discoveryRules.discovery_radius_km_tele === 'number'
               ? discoveryRules.discovery_radius_km_tele
               : (typeof discoveryRules.discovery_radius_km === 'number' ? discoveryRules.discovery_radius_km : 0);
@@ -947,10 +1000,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               withinRadius = true; // no limit
             } else {
               effectiveRadiusKm = teleRadiusKm;
-              withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
+              // ✅ FIX: For tele, if vendor doesn't have coordinates, don't filter out (tele is location-independent)
+              if (!vendor.latitude || !vendor.longitude) {
+                withinRadius = true; // Tele vendors without coordinates are still valid
+              } else {
+                withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
+              }
             }
           }
-          if (!withinRadius) continue;
+          if (!withinRadius) {
+            console.log('[discover-services] at_home/tele vendor %s filtered out by radius check: distance=%s, effectiveRadiusKm=%s, serviceStyle=%s', vendor.id, distance, effectiveRadiusKm, serviceStyle);
+            continue;
+          }
 
           // ✅ FIX: Get rating from reviews
           let avgRating = 0;
@@ -1197,9 +1258,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         paramIndex = params.length + 1;
       } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
+        // ✅ FIX: Simplify vendor_identity lookup - use direct vendor_id match
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va
-          WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+          WHERE va.vendor_id::text = v.id::text
             AND (va.is_available IS NULL OR va.is_available = true)
             AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[])
         )`;
@@ -3069,7 +3131,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } catch (_) {}
       }
 
+      // ✅ FIX: Check if specialization_ids column exists in service_catalog
+      const hasSpecializationIds = await query(
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'service_catalog' AND column_name = 'specialization_ids'
+        ) as exists`
+      ).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
+
       // vendor_services.service_id can point to services.id (legacy) OR service_catalog.id (catalog-origin)
+      const specializationIdsColumn = hasSpecializationIds 
+        ? 'sc.specialization_ids as catalog_specialization_ids'
+        : 'NULL as catalog_specialization_ids';
+      
       let servicesQuery = `
         SELECT
           vs.id,
@@ -3090,7 +3164,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           sc.service_name as catalog_name,
           sc.display_name as catalog_display_name,
           sc.description as catalog_description,
-          sc.specialization_ids as catalog_specialization_ids
+          ${specializationIdsColumn}
         FROM vendor_services vs
         LEFT JOIN services s ON vs.service_id = s.id
         LEFT JOIN service_catalog sc ON vs.service_id = sc.id

@@ -35,9 +35,24 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Inline fallback config (ensures API URL is always available)
+              // ✅ ENVIRONMENT-AWARE: Inline fallback config
+              // Dev: Allows UAT mode, Prod: Disables UAT mode
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
+                const hostname = window.location.hostname;
+                const isProd = hostname.includes('cloudfront.net') || 
+                              hostname.includes('warmpawz.com') ||
+                              hostname.includes('admin.warmpawz.com');
+                const isDev = hostname === 'localhost' || 
+                             hostname === '127.0.0.1' || 
+                             hostname.includes('localhost') ||
+                             hostname.includes('.dev.warmpawz.com');
+                
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = { 
+                  apiBaseUrl: isProd 
+                    ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com' 
+                    : (isDev ? 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com' : ''), 
+                  uatMode: isDev && !isProd  // UAT mode only in dev, never in prod
+                };
               }
               (function() {
                 try {
@@ -52,16 +67,22 @@ export default function RootLayout({
                   document.head.insertBefore(script, document.head.firstChild);
                 } catch (e) { console.error('Error loading runtime-config.js', e); }
               })();
-              // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
+              // ✅ ENVIRONMENT-AWARE: UAT Mode auto-login only in dev environment
               (function() {
                 var config = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
                 var isUatMode = config.uatMode === true;
-                if (isUatMode && typeof localStorage !== 'undefined') {
+                var hostname = window.location.hostname;
+                var isProd = hostname.includes('cloudfront.net') || 
+                           hostname.includes('warmpawz.com') ||
+                           hostname.includes('admin.warmpawz.com');
+                
+                // Only auto-login in dev (UAT mode) and never in production
+                if (isUatMode && !isProd && typeof localStorage !== 'undefined') {
                   var token = localStorage.getItem('adminAuthToken');
                   if (!token) {
                     localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
                     localStorage.setItem('adminEmail', 'admin@warmpawz.com');
-                    console.log('🔧 [UAT Mode] Auto-logged in for direct page access');
+                    console.log('🔧 [UAT Mode] Auto-logged in for dev environment');
                   }
                 }
               })();

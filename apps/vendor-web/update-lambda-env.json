@@ -1,0 +1,30 @@
+﻿{
+    "Environment":  {
+                        "Variables":  {
+                                          "SNS_BOOKING_TOPIC_ARN":  "arn:aws:sns:ap-south-1:057442119249:warmpawz-prod-booking-updates",
+                                          "SQS_BOOKING_QUEUE_URL":  "https://sqs.ap-south-1.amazonaws.com/057442119249/warmpawz-prod-booking-processing",
+                                          "ENVIRONMENT":  "prod",
+                                          "SNS_NOTIFICATIONS_TOPIC_ARN":  "arn:aws:sns:ap-south-1:057442119249:warmpawz-prod-user-notifications",
+                                          "DYNAMODB_SESSIONS_TABLE":  "warmpawz-prod-sessions",
+                                          "DB_NAME":  "warmpawz",
+                                          "DB_HOST":  "warmpawz-prod-proxy.proxy-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+                                          "S3_UPLOADS_BUCKET":  "warmpawz-prod-user-uploads-057442119249",
+                                          "DB_READER_HOST":  "warmpawz-prod-proxy.proxy-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+                                          "OPENSEARCH_ENDPOINT":  "vpc-warmpawz-prod-qt2fyf5hirbvmwac3fdjterogu.ap-south-1.es.amazonaws.com",
+                                          "DB_SSL":  "true",
+                                          "SHIPROCKET_SECRET_ARN":  "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz/prod/shiprocket-q1jLUZ",
+                                          "SQS_NOTIFICATION_QUEUE_URL":  "https://sqs.ap-south-1.amazonaws.com/057442119249/warmpawz-prod-notification-delivery",
+                                          "UAT_MODE":  "false",
+                                          "GOOGLE_MAPS_SECRET_ARN":  "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz/prod/google-maps-muuCHl",
+                                          "DYNAMODB_ANALYTICS_TABLE":  "warmpawz-prod-analytics-events",
+                                          "NODE_ENV":  "production",
+                                          "RAZORPAY_SECRET_ARN":  "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz/prod/razorpay-bNyvFV",
+                                          "DB_SECRET_ARN":  "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+                                          "DYNAMODB_CACHE_TABLE":  "warmpawz-prod-cache",
+                                          "LOG_LEVEL":  "INFO",
+                                          "SQS_PAYMENT_QUEUE_URL":  "https://sqs.ap-south-1.amazonaws.com/057442119249/warmpawz-prod-payment-processing",
+                                          "SNS_PAYMENT_TOPIC_ARN":  "arn:aws:sns:ap-south-1:057442119249:warmpawz-prod-payment-events",
+                                          "ALLOWED_ORIGINS":  "http://localhost:3002,http://localhost:3000,http://localhost:3001,http://localhost:3003,https://d1s6ykkj381k58.cloudfront.net"
+                                      }
+                    }
+}

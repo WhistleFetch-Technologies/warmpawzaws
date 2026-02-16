@@ -60,11 +60,13 @@ function isPublicEndpoint(path: string): boolean {
 
 /**
  * Check if environment allows UAT mode
+ * SECURITY: Only checks UAT_MODE environment variable for consistency with rest of codebase
+ * This ensures production (UAT_MODE=false) never accepts UAT tokens
  */
 function isUATModeAllowed(): boolean {
-  const env = process.env.NODE_ENV || process.env.ENVIRONMENT || 'development';
-  // Only allow UAT mode in non-production environments
-  return env !== 'production' && env !== 'prod';
+  // ✅ FIX: Check UAT_MODE env var for consistency with rest of codebase
+  // This ensures production (UAT_MODE=false) correctly rejects UAT tokens
+  return process.env.UAT_MODE === 'true';
 }
 
 /**
@@ -197,6 +199,21 @@ export function requireAdmin() {
   return async (c: Context, next: Next) => {
     // Skip for OPTIONS
     if (c.req.method === 'OPTIONS') {
+      return next();
+    }
+
+    const path = c.req.path;
+    
+    // ✅ FIX: Skip authentication for public admin endpoints
+    // These endpoints handle their own authentication (login, signup, etc.)
+    const publicAdminPaths = [
+      '/admin/auth/login',
+      '/admin/auth/signup',
+      '/admin/test/ping', // Test endpoint
+      '/admin/setup/create-admin', // Setup endpoint for creating initial admin
+    ];
+    
+    if (publicAdminPaths.some(publicPath => path === publicPath || path.startsWith(publicPath + '/'))) {
       return next();
     }
 

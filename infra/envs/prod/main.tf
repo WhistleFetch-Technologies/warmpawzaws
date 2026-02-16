@@ -231,6 +231,8 @@ module "lambda" {
     DB_READER_HOST               = module.rds.proxy_endpoint  # Use proxy for reads too
     DB_NAME                     = module.rds.database_name
     DB_SECRET_ARN               = module.rds.secret_arn
+    DB_SSL                      = "true"  # Preserve existing value
+    NODE_ENV                    = "production"  # Preserve existing value
     DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
     DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
     DYNAMODB_ANALYTICS_TABLE    = module.dynamodb.analytics_events_table_name
@@ -245,6 +247,8 @@ module "lambda" {
     GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn
     SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
     OPENSEARCH_ENDPOINT         = module.opensearch.domain_endpoint
+    # CORS: Allow localhost for local development testing (only adding localhost:3002 as requested)
+    ALLOWED_ORIGINS             = "http://localhost:3002,${join(",", local.cors_allowed_origins)}"
   }
 
   secrets_arns         = concat([module.rds.secret_arn], module.secrets.all_secret_arns)

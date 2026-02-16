@@ -1,0 +1,196 @@
+﻿{
+    "events": [
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818298,
+            "message": "START RequestId: 21964cea-1998-443d-9f3e-8961f20c61ab Version: $LATEST\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815516685276336347483038862049046576341156233216"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818299,
+            "message": "2026-02-12T10:56:58.299Z\t08af4b8d-f78b-431c-9b0b-dbacd18c5cf3\tINFO\t[DB] Pool stats - Total: 1, Idle: 1, Waiting: 0\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815538986021534878106180397767319224702662213633"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818299,
+            "message": "2026-02-12T10:56:58.299Z\t08af4b8d-f78b-431c-9b0b-dbacd18c5cf3\tINFO\t[DB] Pool stats - Total: 1, Idle: 1, Waiting: 0\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815538986021534878106180397767319224702662213634"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818301,
+            "message": "2026-02-12T10:56:58.301Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[AuthAudit] POST /auth/send-otp - User: anonymous\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815583587511931939352463469203864521425674174467"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818301,
+            "message": "2026-02-12T10:56:58.301Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[RateLimit] Cleaned up 1 expired entries\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815583587511931939352463469203864521425674174468"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818301,
+            "message": "2026-02-12T10:56:58.301Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t{\"level\":\"INFO\",\"type\":\"REQUEST_START\",\"requestId\":\"req-1770893818301-2icf9p\",\"method\":\"POST\",\"path\":\"/auth/send-otp\",\"timestamp\":\"2026-02-12T10:56:58.301Z\"}\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815583587511931939352463469203864521425674174469"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818302,
+            "message": "2026-02-12T10:56:58.302Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[AUTH] Production Mode: Generated random OTP for 9326977987\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815605888257130469975605004922137169787180154886"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818302,
+            "message": "2026-02-12T10:56:58.302Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[DEBUG] OTP GENERATED FOR 9326977987: 254219\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815605888257130469975605004922137169787180154887"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818302,
+            "message": "2026-02-12T10:56:58.302Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[DEBUG] Phone normalized: +919326977987, OTP: 254219\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815605888257130469975605004922137169787180154888"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818302,
+            "message": "2026-02-12T10:56:58.302Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[DEBUG] Storing OTP: phone=+919326977987, otp=254219, role=vendor\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251815605888257130469975605004922137169787180154889"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818339,
+            "message": "2026-02-12T10:56:58.339Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[DB] Pool: 1 total, 0 idle, 0 waiting\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251816431015829476103031841826498225159162901430282"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818347,
+            "message": "2026-02-12T10:56:58.347Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[AUTH] OTP stored in 45ms\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251816609421791064348016974112244406346054949273611"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818347,
+            "message": "2026-02-12T10:56:58.347Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[AUTH] Sending OTP SMS to +919326977987 (templateId=1207177028377787269)\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251816609421791064348016974112244406346054949273612"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818350,
+            "message": "2026-02-12T10:56:58.350Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[SMS] Using DB credentials for SNS (Option A)\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251816676324026659939886398719399224291139467214861"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818383,
+            "message": "2026-02-12T10:56:58.383Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251817412248618211450450069398102221687069164568590"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818383,
+            "message": "2026-02-12T10:56:58.383Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t[AUTH] Send OTP handler completed in 81ms\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251817412248618211450450069398102221687069164568591"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818383,
+            "message": "2026-02-12T10:56:58.383Z\t21964cea-1998-443d-9f3e-8961f20c61ab\tINFO\t{\"level\":\"INFO\",\"type\":\"REQUEST_COMPLETE\",\"requestId\":\"req-1770893818301-2icf9p\",\"method\":\"POST\",\"path\":\"/auth/send-otp\",\"statusCode\":200,\"duration\":82,\"timestamp\":\"2026-02-12T10:56:58.383Z\"}\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251817412248618211450450069398102221687069164568592"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893818386,
+            "message": "END RequestId: 21964cea-1998-443d-9f3e-8961f20c61ab\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251817479150853807042319494005257039632153682509841"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+aws : 
+At C:\Users\itach\AppData\Local\Temp\ps-script-7f621546-56aa-4253-a3c4-69d00966e5d6.ps1:77 char:163
++ ... 893891813"; aws logs filter-log-events --log-group-name /aws/lambda/w ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+'charmap' codec can't encode character '\U0001f50d' in position 71: character maps to <undefined>
+            "timestamp": 1770893818386,
+            "message": "REPORT RequestId: 21964cea-1998-443d-9f3e-8961f20c61ab\tDuration: 87.34 ms\tBilled Duration: 88 ms\tMemory Size: 2048 MB\tMax Memory Used: 172 MB\t\nXRAY TraceId: 1-698db1fa-17d65d1d77cc86424d3c7af0\tSegmentId: aa6cc84740c2a192\tSampled: true\t\n",
+            "ingestionTime": 1770893827316,
+            "eventId": "39492251817479150853807042319494005257039632153682509842"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846688,
+            "message": "START RequestId: 9c8f84a1-af94-46a1-a853-8b1cc5d187ad Version: $LATEST\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252448634841462620738505552020652086360909453066240"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846699,
+            "message": "2026-02-12T10:57:26.699Z\t9c8f84a1-af94-46a1-a853-8b1cc5d187ad\tINFO\t[AuthAudit] POST /auth/verify-otp - User: anonymous\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252448880149659804575360108913553085492886018850817"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846700,
+            "message": "2026-02-12T10:57:26.700Z\t9c8f84a1-af94-46a1-a853-8b1cc5d187ad\tINFO\t{\"level\":\"INFO\",\"type\":\"REQUEST_START\",\"requestId\":\"req-1770893846700-urgmmk\",\"method\":\"POST\",\"path\":\"/auth/verify-otp\",\"timestamp\":\"2026-02-12T10:57:26.700Z\"}\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252448902450405003105983250449271358141247524831234"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846702,
+            "message": "2026-02-12T10:57:26.702Z\t9c8f84a1-af94-46a1-a853-8b1cc5d187ad\tINFO\t[AUTH] Production Mode: Verifying OTP against database for 9326977987\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252448947051895400167229533520707903437970536792067"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846702,
+            "message": "2026-02-12T10:57:26.702Z\t9c8f84a1-af94-46a1-a853-8b1cc5d187ad\tINFO\t[DEBUG] Verifying OTP: original phone=9326977987, normalized=+919326977987, otp=662814\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252448947051895400167229533520707903437970536792068"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846718,
+            "message": "2026-02-12T10:57:26.718Z\t9c8f84a1-af94-46a1-a853-8b1cc5d187ad\tINFO\t[DEBUG] verifyOtp called: phone=+919326977987, code=662814\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252449303863818576657199798092200265811754632478725"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846757,
+            "message": "2026-02-12T10:57:26.757Z\t9c8f84a1-af94-46a1-a853-8b1cc5d187ad\tINFO\t[DEBUG] Found 1 OTP records for phone=+919326977987, code=662814\n",
+            "ingestionTime": 1770893855700,
+            "eventId": "39492252450173592881319351502317985212899097853365714950"
+        },
+        {
+            "logStreamName": "2026/02/12/[$LATEST]393a56b725744e438e6ebdc5104ae975",
+            "timestamp": 1770893846770,
+            "message": 

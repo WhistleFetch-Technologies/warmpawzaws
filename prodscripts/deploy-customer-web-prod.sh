@@ -81,12 +81,18 @@ else
   rm -rf .next dist node_modules/.cache
   sleep 2
 
+  # ✅ FIX: Set NEXT_PUBLIC_API_BASE_URL to production API Gateway before building
+  echo -e "${BLUE}🔧 Setting NEXT_PUBLIC_API_BASE_URL to production API Gateway...${NC}"
+  export NEXT_PUBLIC_API_BASE_URL="${API_BASE_URL}"
+  echo -e "${GREEN}✅ NEXT_PUBLIC_API_BASE_URL=${API_BASE_URL}${NC}"
+
   # Build with retry on failure (Next.js static export can be flaky)
-  if ! npm run build; then
+  # Pass environment variable directly to npm to ensure it's used
+  if ! NEXT_PUBLIC_API_BASE_URL="${API_BASE_URL}" npm run build; then
     echo -e "${YELLOW}⚠️  First build failed, retrying with full clean...${NC}"
     rm -rf .next dist node_modules/.cache
     sleep 3
-    npm run build
+    NEXT_PUBLIC_API_BASE_URL="${API_BASE_URL}" npm run build
   fi
 
   if [ ! -d "dist" ]; then

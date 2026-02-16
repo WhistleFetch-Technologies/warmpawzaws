@@ -426,7 +426,15 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      const vendors = await select('vendors', { id: vendorId });
+      // Resolve vendor ID (may be identity id)
+      const { resolveVendorById } = await import('./vendor-profile');
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+
+      const vendors = await select('vendors', { id: resolvedVendorId });
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
@@ -457,7 +465,15 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Invalid UPI ID format' }, 400);
       }
 
-      await update('vendors', { id: vendorId }, {
+      // Resolve vendor ID (may be identity id)
+      const { resolveVendorById } = await import('./vendor-profile');
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+
+      await update('vendors', { id: resolvedVendorId }, {
         upi_id,
         upi_verified: false, // Will need verification
         updated_at: new Date().toISOString(),

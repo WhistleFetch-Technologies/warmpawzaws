@@ -80,6 +80,11 @@ else
   rm -rf .next dist node_modules/.cache
   sleep 2
   
+  # ✅ FIX: Set NEXT_PUBLIC_API_BASE_URL to production API Gateway before building
+  echo -e "${BLUE}🔧 Setting NEXT_PUBLIC_API_BASE_URL to production API Gateway...${NC}"
+  export NEXT_PUBLIC_API_BASE_URL="${API_BASE_URL}"
+  echo -e "${GREEN}✅ NEXT_PUBLIC_API_BASE_URL=${API_BASE_URL}${NC}"
+  
   # Build with retry on failure
   # Use cmd.exe on Windows to avoid WSL issues, or direct npm on Unix
   if command -v cmd.exe > /dev/null 2>&1; then

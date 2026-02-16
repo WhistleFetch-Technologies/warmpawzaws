@@ -45,14 +45,14 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
       console.log('🔐 Requesting OTP for:', `${countryCode}${cleanPhone}`);
       
-      const data = await apiClient.post('/auth/send-otp', { phone: `${countryCode}${cleanPhone}` }) as any;
+      // ✅ FIX: Pass role parameter for customer (same as vendor-web does for vendor)
+      const data = await apiClient.post('/auth/send-otp', { 
+        phone: `${countryCode}${cleanPhone}`,
+        role: 'customer'
+      }) as any;
       console.log('✅ OTP sent:', data);
       
-      if (data.uatMode) {
-        toast.success('OTP: 123456 (UAT Testing Mode)', { duration: 5000 });
-      } else {
-        toast.success('OTP sent to your phone');
-      }
+      toast.success('OTP sent to your phone');
       
       setShowOtpScreen(true);
       setLoading(false);
@@ -359,9 +359,6 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                 autoFocus
               />
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              🔐 UAT Mode: OTP is 123456 for all numbers
-            </p>
           </div>
 
           {/* Referral Code Section */}

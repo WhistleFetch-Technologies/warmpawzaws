@@ -14,6 +14,7 @@ import {
   AdminCreateUserCommand,
   AdminSetUserPasswordCommand,
   AdminInitiateAuthCommand,
+  InitiateAuthCommand,
   AdminGetUserCommand,
   AuthFlowType,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -48,10 +49,12 @@ export async function getOrCreateCognitoUser(
   email?: string,
   userType: 'customer' | 'vendor' | 'admin' = 'customer'
 ): Promise<CognitoUser> {
-  const username = `phone_${phone}`;
+  // ✅ FIX: Generate email-like username if User Pool requires email
+  // Use phone number as email format: phone_+919326977987@warmpawz.local
+  const username = email || `${phone.replace(/[^0-9]/g, '')}@warmpawz.local`;
 
   try {
-    // Try to get existing user
+    // Try to get existing user by username (email format)
     const getUserResponse = await cognitoClient.send(
       new AdminGetUserCommand({
         UserPoolId: USER_POOL_ID,
@@ -90,8 +93,42 @@ async function createCognitoUser(
   email?: string,
   userType: 'customer' | 'vendor' | 'admin' = 'customer'
 ): Promise<CognitoUser> {
-  const username = `phone_${phone}`;
+  // ✅ FIX: Generate email-like username if User Pool requires email
+  // Use phone number as email format: 9326977987@warmpawz.local
+  const username = email || `${phone.replace(/[^0-9]/g, '')}@warmpawz.local`;
   const tempPassword = generateTemporaryPassword();
+
+  // ✅ FIX: Ensure phone number is in E.164 format for Cognito
+  // Cognito requires phone numbers in E.164 format: +[country code][number]
+  let phoneFormatted = phone;
+  if (!phone.startsWith('+')) {
+    // If phone doesn't start with +, assume it's Indian number and add +91
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (digits.length === 10) {
+      phoneFormatted = `+91${digits}`;
+    } else if (digits.startsWith('91') && digits.length === 12) {
+      phoneFormatted = `+${digits}`;
+    } else {
+      phoneFormatted = `+${digits}`;
+    }
+  }
+  
+  // Create user with email attribute (required if UsernameAttributes includes email)
+  const userAttributes = [
+    { Name: 'phone_number', Value: phoneFormatted }, // Use E.164 formatted phone
+    { Name: 'phone_number_verified', Value: 'true' },
+    { Name: 'email', Value: username }, // Use email-like username as email attribute
+    { Name: 'email_verified', Value: 'true' }, // Mark as verified since it's phone-based
+    { Name: 'custom:user_type', Value: userType },
+  ];
+  
+  if (email && email !== username) {
+    // If real email provided, use it instead
+    const emailIndex = userAttributes.findIndex(attr => attr.Name === 'email');
+    if (emailIndex >= 0) {
+      userAttributes[emailIndex] = { Name: 'email', Value: email };
+    }
+  }
 
   // Create user
   const createResponse = await cognitoClient.send(
@@ -99,12 +136,7 @@ async function createCognitoUser(
       UserPoolId: USER_POOL_ID,
       Username: username,
       TemporaryPassword: tempPassword,
-      UserAttributes: [
-        { Name: 'phone_number', Value: phone },
-        { Name: 'phone_number_verified', Value: 'true' },
-        ...(email ? [{ Name: 'email', Value: email }, { Name: 'email_verified', Value: 'false' }] : []),
-        { Name: 'custom:user_type', Value: userType },
-      ],
+      UserAttributes: userAttributes,
       MessageAction: 'SUPPRESS', // Don't send email/SMS from Cognito
     })
   );
@@ -142,14 +174,17 @@ async function createCognitoUser(
 export async function authenticateCognitoUser(
   phone: string
 ): Promise<CognitoTokens> {
-  const username = `phone_${phone}`;
+  // ✅ FIX: Use same email-format username as getOrCreateCognitoUser
+  const username = `${phone.replace(/[^0-9]/g, '')}@warmpawz.local`;
   const password = generatePermanentPassword(phone);
 
+  // ✅ FIX: Use InitiateAuthCommand with USER_PASSWORD_AUTH (not AdminInitiateAuthCommand)
+  // AdminInitiateAuthCommand doesn't support USER_PASSWORD_AUTH
+  // InitiateAuthCommand works with USER_PASSWORD_AUTH which is enabled on the client
   const authResponse = await cognitoClient.send(
-    new AdminInitiateAuthCommand({
-      UserPoolId: USER_POOL_ID,
+    new InitiateAuthCommand({
       ClientId: CLIENT_ID,
-      AuthFlow: AuthFlowType.ADMIN_NO_SRP_AUTH,
+      AuthFlow: AuthFlowType.USER_PASSWORD_AUTH,
       AuthParameters: {
         USERNAME: username,
         PASSWORD: password,

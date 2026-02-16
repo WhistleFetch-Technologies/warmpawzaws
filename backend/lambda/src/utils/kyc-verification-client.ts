@@ -335,6 +335,11 @@ export async function kycRequest<T>(
     // Build headers based on provider
     const headers = buildAuthHeaders(config, accessToken);
     
+    // DEBUG: Log request body for troubleshooting
+    if (body) {
+      console.log(`[KYC-REQUEST] Request body for ${endpoint}:`, JSON.stringify(body, null, 2));
+    }
+    
     const response = await fetch(url, {
       method,
       headers: {

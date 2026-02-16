@@ -189,16 +189,27 @@ class SendOtpHandler extends BaseHandler {
       return this.error('Phone number is required', 400);
     }
 
+    // ✅ FIX: Normalize phone number before storing and sending SMS
+    // This ensures consistent format in database and SMS delivery
+    const normalizedPhoneForSms = (() => {
+      const raw = String(phone || '').trim();
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length === 10) return `+91${digits}`;
+      if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+      if (raw.startsWith('+')) return raw;
+      return digits ? `+${digits}` : raw;
+    })();
+
     // Check UAT mode - ONLY check UAT_MODE env variable for security
     const UAT_MODE = process.env.UAT_MODE === 'true';
 
     // Generate 6-digit OTP (or use 123456 for UAT)
     const otp = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
     
-    console.log(`[AUTH] Generating OTP for ${phone}: ${UAT_MODE ? '123456 (UAT Mode)' : otp}`);
+    console.log(`[AUTH] Generating OTP for ${phone} (normalized: ${normalizedPhoneForSms}): ${UAT_MODE ? '123456 (UAT Mode)' : otp}`);
 
-    // Store OTP in database
-    await createOtp(phone, otp, 'login');
+    // Store OTP in database with normalized phone for consistency
+    await createOtp(normalizedPhoneForSms, otp, 'login');
 
     if (UAT_MODE) {
       // UAT Mode: Skip SMS sending, return OTP
@@ -209,9 +220,9 @@ class SendOtpHandler extends BaseHandler {
       });
     }
 
-    // Production Mode: Send SMS via SNS
+    // Production Mode: Send SMS via SNS (use normalized phone)
     const message = `Your Warmpawz verification code is: ${otp}. Valid for 5 minutes.`;
-    const sent = await sendSmsViaSns(phone, message);
+    const sent = await sendSmsViaSns(normalizedPhoneForSms, message);
 
     if (sent) {
       return this.success({ message: 'OTP sent via SMS' });
@@ -236,18 +247,28 @@ class VerifyOtpHandler extends BaseHandler {
       return this.error('Phone and OTP are required', 400);
     }
 
+    // ✅ FIX: Normalize phone number to match the format stored in database
+    const normalizedPhone = (() => {
+      const raw = String(phone || '').trim();
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length === 10) return `+91${digits}`;
+      if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+      if (raw.startsWith('+')) return raw;
+      return digits ? `+${digits}` : raw;
+    })();
+
     // Check UAT mode - ONLY check UAT_MODE env variable
     const UAT_MODE = process.env.UAT_MODE === 'true';
     
     let isValid = false;
     if (UAT_MODE && otp === '123456') {
       // In UAT mode, accept 123456 without checking database
-      console.log(`[AUTH] UAT MODE: Accepting fixed OTP 123456 for ${phone}`);
+      console.log(`[AUTH] UAT MODE: Accepting fixed OTP 123456 for ${phone} (normalized: ${normalizedPhone})`);
       isValid = true;
       // Try to mark any existing OTP as used to clean up
       try {
         const records = await select('otp_tokens', {
-          phone,
+          phone: normalizedPhone,
           is_used: false,
         });
         if (records.length > 0) {
@@ -260,26 +281,27 @@ class VerifyOtpHandler extends BaseHandler {
         console.warn('[AUTH] Could not mark existing OTP as used:', e);
       }
     } else {
-      // Normal verification
-      isValid = await verifyOtp(phone, otp);
+      // Normal verification (use normalized phone)
+      isValid = await verifyOtp(normalizedPhone, otp);
     }
 
     if (!isValid) {
       return this.error('Invalid or expired OTP', 401);
     }
 
-    // ✅ FIX: Normalize phone number (remove non-digits, handle country codes)
-    // Phone numbers in database are stored as digits only (10 digits for India)
-    const phoneDigits = phone.replace(/\D/g, ''); // Remove all non-digits
+    // ✅ FIX: Normalize phone number for database lookup (extract 10 digits for India)
+    // OTP tokens are stored with +91 prefix (e.g., "+919326977987")
+    // But vendor_identity/staff tables use 10-digit format, so extract last 10 digits
+    const phoneDigits = normalizedPhone.replace(/\D/g, ''); // Remove all non-digits from normalized phone
     // If phone has country code (11+ digits), take last 10 digits
     // If phone is 9 digits, pad with leading 0 to make it 10 digits (handles cases like "985342940" -> "0985342940")
-    let normalizedPhone = phoneDigits.length > 10 
+    let normalizedPhoneForDb = phoneDigits.length > 10 
       ? phoneDigits.slice(-10)  // Take last 10 digits if longer
       : phoneDigits.length === 9 
         ? '0' + phoneDigits      // Pad with 0 if 9 digits
         : phoneDigits;            // Use as-is if 10 digits
     
-    console.log(`[AUTH] Normalized phone: ${phone} -> ${normalizedPhone}`);
+    console.log(`[AUTH] Normalized phone: ${phone} -> ${normalizedPhone} (for DB lookup: ${normalizedPhoneForDb})`);
 
     // ✅ FIX: Check BOTH vendor_identity AND staff table, prioritize staff if phone belongs to staff
     let vendorIdentity = null;
@@ -701,14 +723,28 @@ export function registerAuthEndpoints(app: Hono) {
 
   // Primary routes
   app.post('/auth/send-otp', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono request before creating API Gateway event
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await sendOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/auth/verify-otp', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono request before creating API Gateway event
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -716,14 +752,26 @@ export function registerAuthEndpoints(app: Hono) {
 
   // Compatibility aliases (web/mobile clients)
   app.post('/auth/otp/send', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await sendOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/auth/otp/verify', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -731,14 +779,26 @@ export function registerAuthEndpoints(app: Hono) {
 
   // Legacy mobile endpoints
   app.post('/otp/generate', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await sendOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/otp/verify', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    let body: any = {};
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -746,12 +806,31 @@ export function registerAuthEndpoints(app: Hono) {
 }
 
 // Helper to convert Hono request to API Gateway event (for compatibility)
-function createApiGatewayEvent(req: any): any {
+// ✅ FIX: Accept parsed body as parameter since Hono doesn't have req.body
+function createApiGatewayEvent(req: any, parsedBody?: any): any {
+  // Get headers from Hono request
+  let headers: Record<string, string> = {};
+  try {
+    if (req.raw && req.raw.headers) {
+      const rawHeaders = req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else if (req.headers) {
+      headers = req.headers;
+    }
+  } catch (e) {
+    console.warn('[AUTH] Error processing headers:', e);
+  }
+
   return {
     httpMethod: req.method,
     path: req.url,
-    headers: req.headers,
-    body: JSON.stringify(req.body || {}),
+    headers: headers,
+    body: parsedBody ? JSON.stringify(parsedBody) : undefined,
     requestContext: {
       requestId: randomUUID(),
     },

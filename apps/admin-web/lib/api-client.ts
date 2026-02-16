@@ -92,14 +92,23 @@ function getApiBaseUrl(): string {
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
+// ✅ FIX: Respect explicit uatMode: false from runtime config (production)
 export function isUatMode(): boolean {
-  if (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true) {
-    return true;
+  if (typeof window !== 'undefined') {
+    const cfg = getRuntimeConfig();
+    // If uatMode is explicitly set in runtime config, use that value
+    if (cfg.uatMode !== undefined) {
+      return cfg.uatMode === true;
   }
+  }
+  // Only check env vars if runtime config doesn't specify uatMode
   return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
 }
 
-const UAT_MODE = isUatMode();
+// ✅ FIX: Make getUatMode() a function call instead of constant to get fresh value
+function getUatMode(): boolean {
+  return isUatMode();
+}
 
 // Rate limiting: Track last request time per endpoint to prevent rapid retries
 const rateLimitCache = new Map<string, { lastRequest: number; retryAfter?: number }>();
@@ -125,7 +134,7 @@ export class ApiClient {
     this.baseUrl = url || '';
     
     // UAT Mode: Log API configuration for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
+    if (getUatMode() && typeof window !== 'undefined') {
       console.log('🔧 [UAT Mode] API Client Initialized (Admin)');
       console.log('   Base URL:', this.baseUrl || '(will be loaded dynamically)');
       console.log('   Environment:', process.env.NODE_ENV);
@@ -143,7 +152,7 @@ export class ApiClient {
     const newUrl = getApiBaseUrl();
     if (newUrl && newUrl !== this.baseUrl) {
       this.baseUrl = newUrl;
-      if (UAT_MODE && typeof window !== 'undefined') {
+      if (getUatMode() && typeof window !== 'undefined') {
         console.log('✅ [API Client] Base URL refreshed:', this.baseUrl);
       }
     }
@@ -193,7 +202,7 @@ export class ApiClient {
     // Update baseUrl if it was empty but now we have a value
     if (!this.baseUrl && currentBaseUrl) {
       this.baseUrl = currentBaseUrl;
-      if (UAT_MODE && typeof window !== 'undefined') {
+      if (getUatMode() && typeof window !== 'undefined') {
         console.log('✅ [API Client] Base URL updated:', this.baseUrl);
       }
     }
@@ -230,6 +239,15 @@ export class ApiClient {
     const url = `${base}${path}`;
     const token = this.getAuthToken();
     
+    // ✅ FIX: Reject UAT tokens in production - clear them if found
+    if (token && token.startsWith('uat-token-') && !getUatMode()) {
+      console.warn('⚠️ [API Client] UAT token detected in production - clearing invalid token');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('adminAuthToken');
+      }
+      throw new Error('Invalid authentication token. Please log in again.');
+    }
+    
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -239,8 +257,10 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    // UAT Mode: Add special header to bypass Cognito authorizer
-    if (UAT_MODE && typeof window !== 'undefined') {
+    // ✅ FIX: Only add UAT headers if UAT mode is actually enabled
+    // In production (uatMode: false), never send UAT headers
+    const uatMode = getUatMode();
+    if (uatMode && typeof window !== 'undefined') {
       headers['X-UAT-Mode'] = 'true';
       // Also add X-UAT-Token for Lambda to validate
       if (token && token.startsWith('uat-token-')) {
@@ -310,7 +330,7 @@ export class ApiClient {
       
       // Handle 404: Endpoint not found - provide helpful error message
       if (response.status === 404) {
-        if (UAT_MODE && typeof window !== 'undefined') {
+        if (getUatMode() && typeof window !== 'undefined') {
           console.error(`❌ [API Client] 404 Error for ${endpoint}:`, errorMsg);
           console.error('   Full URL:', url);
           console.error('   Base URL:', currentBaseUrl);
@@ -348,7 +368,7 @@ export class ApiClient {
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
           // Check if we're in UAT mode - if so, don't redirect, just throw error
-          const isUat = getRuntimeConfig().uatMode || UAT_MODE;
+          const isUat = getUatMode();
           const isAdminRoute = endpoint.startsWith('/admin');
           
           // Don't redirect if in UAT mode OR if it's an admin route (admin app should handle auth differently)
@@ -359,7 +379,7 @@ export class ApiClient {
             window.location.href = '/';
           } else {
             // In UAT mode or admin routes, just throw error with helpful message
-            if (UAT_MODE) {
+            if (getUatMode()) {
               console.warn('⚠️ [API Client] 401 Unauthorized - Check authentication token');
               console.warn('   Endpoint:', endpoint);
               console.warn('   Token present:', !!token);
@@ -370,7 +390,7 @@ export class ApiClient {
       
       // Handle 500: Server error
       if (response.status >= 500) {
-        if (UAT_MODE && typeof window !== 'undefined') {
+        if (getUatMode() && typeof window !== 'undefined') {
           console.error(`❌ [API Client] Server error for ${endpoint}:`, errorMsg);
         }
         throw new Error(`Server error: ${errorMsg}`);

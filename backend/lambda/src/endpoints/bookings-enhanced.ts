@@ -672,74 +672,98 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (packagePurchaseId) {
           try {
-            const packageResult = await query(
-              `SELECT id, remaining_sessions, unlimited_usage, total_sessions
-               FROM package_purchases
-               WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
-                 AND status = 'active'
-                 AND (expires_at IS NULL OR expires_at > NOW())
-                 AND (remaining_sessions > 0 OR unlimited_usage = true)`,
-              [packagePurchaseId, customerId, vendorId]
-            );
-            if (packageResult.rows?.length > 0) {
-              const pkg = packageResult.rows[0];
-              const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
-              packagePurchaseIdToUse = pkg.id;
-              packageSessionNumberToUse = sessionsUsed + 1;
-              pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
-              isPackageBooking = true;
-              finalAmount = 0;
-              console.log(`[BOOKING] ✅ Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount ₹0.`);
+            // ✅ FIX: Check if package_purchases table exists before querying
+            const packageTableExists = await client.query(`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = 'package_purchases'
+              ) as exists
+            `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
+            
+            if (packageTableExists) {
+              const packageResult = await client.query(
+                `SELECT id, remaining_sessions, unlimited_usage, total_sessions
+                 FROM package_purchases
+                 WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
+                   AND status = 'active'
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                   AND (remaining_sessions > 0 OR unlimited_usage = true)`,
+                [packagePurchaseId, customerId, vendorId]
+              );
+              if (packageResult.rows?.length > 0) {
+                const pkg = packageResult.rows[0];
+                const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
+                packagePurchaseIdToUse = pkg.id;
+                packageSessionNumberToUse = sessionsUsed + 1;
+                pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
+                isPackageBooking = true;
+                finalAmount = 0;
+                console.log(`[BOOKING] ✅ Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount ₹0.`);
+              }
+            } else {
+              console.warn('[BOOKING] package_purchases table does not exist, skipping package check');
             }
-          } catch (pkgErr) {
-            console.warn('[BOOKING] Package check failed:', pkgErr);
+          } catch (pkgErr: any) {
+            console.warn('[BOOKING] Package check failed:', pkgErr?.message);
           }
         }
 
         try {
           // Skip subscription check when already using package
           if (!isPackageBooking) {
-          // Get service category for subscription matching
-          const serviceCategory = service.category || baseServices[0]?.category || null;
-          
-          const activeSubscriptions = await query(
-            `SELECT * FROM customer_subscriptions 
-             WHERE customer_id = $1 
-             AND status = 'active'
-             AND start_date <= CURRENT_DATE
-             AND end_date >= CURRENT_DATE
-             AND plan_type = 'unlimited'
-             AND (service_category IS NULL OR service_category = $2)
-             AND (vendor_id IS NULL OR vendor_id = $3)
-             AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
-             ORDER BY 
-               CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
-               CASE WHEN service_category = $2 THEN 0 ELSE 1 END
-             LIMIT 1`,
-            [customerId, serviceCategory, vendorId]
-          );
-          
-          const subscriptions = (activeSubscriptions as any).rows || [];
-          
-          if (subscriptions.length > 0) {
-            const subscription = subscriptions[0];
-            subscriptionId = subscription.id;
-            isSubscriptionBooking = true;
-            finalAmount = 0; // Zero payment for unlimited subscription
+            // ✅ FIX: Check if customer_subscriptions table exists before querying
+            const subscriptionTableExists = await client.query(`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = 'customer_subscriptions'
+              ) as exists
+            `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
             
-            // Increment usage count
-            await query(
-              `UPDATE customer_subscriptions 
-               SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
-               WHERE id = $1`,
-              [subscriptionId]
-            );
-            
-            console.log(`[BOOKING] ✅ Active unlimited subscription found: ${subscriptionId}. Setting amount to ₹0.`);
+            if (subscriptionTableExists) {
+              // Get service category for subscription matching
+              const serviceCategory = service.category || baseServices[0]?.category || null;
+              
+              const activeSubscriptions = await client.query(
+                `SELECT * FROM customer_subscriptions 
+                 WHERE customer_id = $1 
+                 AND status = 'active'
+                 AND start_date <= CURRENT_DATE
+                 AND end_date >= CURRENT_DATE
+                 AND plan_type = 'unlimited'
+                 AND (service_category IS NULL OR service_category = $2)
+                 AND (vendor_id IS NULL OR vendor_id = $3)
+                 AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
+                 ORDER BY 
+                   CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
+                   CASE WHEN service_category = $2 THEN 0 ELSE 1 END
+                 LIMIT 1`,
+                [customerId, serviceCategory, vendorId]
+              );
+              
+              const subscriptions = (activeSubscriptions as any).rows || [];
+              
+              if (subscriptions.length > 0) {
+                const subscription = subscriptions[0];
+                subscriptionId = subscription.id;
+                isSubscriptionBooking = true;
+                finalAmount = 0; // Zero payment for unlimited subscription
+                
+                // Increment usage count
+                await client.query(
+                  `UPDATE customer_subscriptions 
+                   SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
+                   WHERE id = $1`,
+                  [subscriptionId]
+                );
+                
+                console.log(`[BOOKING] ✅ Active unlimited subscription found: ${subscriptionId}. Setting amount to ₹0.`);
+              }
+            } else {
+              console.warn('[BOOKING] customer_subscriptions table does not exist, skipping subscription check');
+            }
           }
-          }
-        } catch (subError) {
-          console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError);
+        } catch (subError: any) {
+          console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError?.message);
         }
         
         // ✅ Calculate final amounts considering multiple services
@@ -830,9 +854,27 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
-        // Insert booking
-        const columns = Object.keys(bookingData);
-        const values = Object.values(bookingData);
+        // ✅ FIX: Check which columns exist in bookings table before inserting
+        const existingColumnsResult = await client.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'bookings' AND table_schema = 'public'
+        `);
+        const existingColumns = new Set((existingColumnsResult.rows || []).map((r: any) => r.column_name));
+        
+        // Filter bookingData to only include columns that exist
+        const filteredBookingData: Record<string, any> = {};
+        for (const [key, value] of Object.entries(bookingData)) {
+          if (existingColumns.has(key)) {
+            filteredBookingData[key] = value;
+          } else {
+            console.warn(`[BOOKING] Column '${key}' does not exist in bookings table, skipping`);
+          }
+        }
+        
+        // Insert booking with only existing columns
+        const columns = Object.keys(filteredBookingData);
+        const values = Object.values(filteredBookingData);
         const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
 
         const insertResult = await client.query(
@@ -850,17 +892,29 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               [packagePurchaseIdToUse]
             );
           }
-          await client.query(
-            `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
-             VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
-            [
-              packagePurchaseIdToUse,
-              insertedBooking.id,
-              packageSessionNumberToUse,
-              pkgForDeduction.remaining_sessions,
-              pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
-            ]
-          );
+          // ✅ FIX: Check if package_usage_log table exists before inserting
+          const packageLogTableExists = await client.query(`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.tables 
+              WHERE table_schema = 'public' AND table_name = 'package_usage_log'
+            ) as exists
+          `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
+          
+          if (packageLogTableExists) {
+            await client.query(
+              `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
+               VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
+              [
+                packagePurchaseIdToUse,
+                insertedBooking.id,
+                packageSessionNumberToUse,
+                pkgForDeduction.remaining_sessions,
+                pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
+              ]
+            );
+          } else {
+            console.warn('[BOOKING] package_usage_log table does not exist, skipping usage log');
+          }
         }
 
         return insertedBooking;
@@ -868,33 +922,42 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
       const booking = result;
 
+      // ✅ FIX: Wrap all post-booking operations in try-catch to prevent SYSTEM_ERROR
       // Log audit entry
-      await logAuditEntry({
-        entityType: 'booking',
-        entityId: booking.id,
-        action: 'create',
-        newValues: {
-          status: booking.status,
-          customerId,
-          vendorId,
-          serviceId,
-          bookingDate,
-          bookingTime,
-        },
-        actorId: customerId,
-        actorType: 'customer',
-        requestId,
-      });
+      try {
+        await logAuditEntry({
+          entityType: 'booking',
+          entityId: booking.id,
+          action: 'create',
+          newValues: {
+            status: booking.status,
+            customerId,
+            vendorId,
+            serviceId,
+            bookingDate,
+            bookingTime,
+          },
+          actorId: customerId,
+          actorType: 'customer',
+          requestId,
+        });
+      } catch (auditErr: any) {
+        console.warn('[BOOKING] Failed to log audit entry (table may not exist):', auditErr?.message);
+      }
 
       // Log initial status
-      await logBookingStatusChange(
-        booking.id,
-        null,
-        'pending',
-        customerId,
-        'customer',
-        'Booking created'
-      );
+      try {
+        await logBookingStatusChange(
+          booking.id,
+          null,
+          'pending',
+          customerId,
+          'customer',
+          'Booking created'
+        );
+      } catch (statusErr: any) {
+        console.warn('[BOOKING] Failed to log booking status change (table may not exist):', statusErr?.message);
+      }
 
       // Publish event
       try {
@@ -910,7 +973,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           ...generateEventMetadata(requestId),
         });
       } catch (error) {
-        console.error('Failed to publish booking created event:', error);
+        console.error('[BOOKING] Failed to publish booking created event:', error);
       }
 
       // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
@@ -919,29 +982,59 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
         const serviceName = service?.service_name || service?.name || 'Service';
         const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
-        // ✅ FIX: Use notification_type instead of type (schema column name)
-        await insert('notifications', {
-          recipient_id: booking.vendor_id,
-          recipient_type: 'vendor',
-          notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
-          title: 'New appointment',
-          message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
-          channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
-          data: JSON.stringify({
-            bookingId: booking.id,
-            customerId: booking.customer_id,
-            customerName,
-            serviceName,
-            serviceType: booking.service_type,
-            bookingDate: booking.booking_date,
-            bookingTime: booking.booking_time,
-            address: booking.address,
-          }),
-          is_read: false,
-          created_at: new Date(),
-        });
-      } catch (notifErr) {
-        console.warn('Failed to create vendor notification for new booking:', notifErr);
+        
+        // ✅ FIX: Check if notifications table exists before inserting
+        const notificationsTableExists = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'notifications'
+          ) as exists
+        `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
+        
+        if (notificationsTableExists) {
+          // ✅ FIX: Check which columns exist in notifications table
+          const notificationColumnsResult = await query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'notifications' AND table_schema = 'public'
+          `);
+          const notificationColumns = new Set((notificationColumnsResult.rows || []).map((r: any) => r.column_name));
+          
+          const notificationData: Record<string, any> = {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            title: 'New appointment',
+            message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+            is_read: false,
+            created_at: new Date(),
+          };
+          
+          // Only add columns that exist
+          if (notificationColumns.has('notification_type')) {
+            notificationData.notification_type = 'new_booking';
+          }
+          if (notificationColumns.has('channels')) {
+            notificationData.channels = { email: false, sms: false, inApp: true, push: false };
+          }
+          if (notificationColumns.has('data')) {
+            notificationData.data = JSON.stringify({
+              bookingId: booking.id,
+              customerId: booking.customer_id,
+              customerName,
+              serviceName,
+              serviceType: booking.service_type,
+              bookingDate: booking.booking_date,
+              bookingTime: booking.booking_time,
+              address: booking.address,
+            });
+          }
+          
+          await insert('notifications', notificationData);
+        } else {
+          console.warn('[BOOKING] notifications table does not exist, skipping notification');
+        }
+      } catch (notifErr: any) {
+        console.warn('[BOOKING] Failed to create vendor notification for new booking:', notifErr?.message);
       }
 
       const response = {

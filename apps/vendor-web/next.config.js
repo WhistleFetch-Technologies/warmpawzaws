@@ -8,6 +8,10 @@ const path = require('path');
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    // Expose API base URL to the client
+    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  },
   // Static export for S3/CloudFront (same as admin-web). Disable with ENABLE_STATIC_EXPORT=false for local server build.
   ...(process.env.NODE_ENV === 'production' && process.env.ENABLE_STATIC_EXPORT !== 'false'
     ? { output: 'export' }

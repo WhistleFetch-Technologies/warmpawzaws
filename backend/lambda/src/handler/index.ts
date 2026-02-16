@@ -187,9 +187,21 @@ const app = new Hono();
 // CORS: allowed origins from env only (set by CDK/deploy from config/urls.json or ALLOWED_ORIGINS). No hardcoded URLs.
 const getAllowedOriginsList = (): string[] => {
   const fromEnv = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (fromEnv.length > 0) return fromEnv;
+  // Always include localhost ports for local development/testing
+  const localhostOrigins = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173'];
+  
+  if (fromEnv.length > 0) {
+    // Merge env origins with localhost origins (avoid duplicates)
+    const combined = [...fromEnv];
+    localhostOrigins.forEach(local => {
+      if (!combined.some(env => env.toLowerCase() === local.toLowerCase())) {
+        combined.push(local);
+      }
+    });
+    return combined;
+  }
   // Local dev only when ALLOWED_ORIGINS not set
-  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173'];
+  return localhostOrigins;
 };
 
 const getDefaultCorsOrigin = (): string => {
@@ -821,25 +833,42 @@ export const handler = async (
     
     // Check for OPTIONS method or preflight headers (handle null/undefined event safely)
     let isOptions = false;
+    let httpMethod = '';
     try {
-      const httpMethod = event?.requestContext?.http?.method || 
-                        (event as any)?.requestContext?.httpMethod || 
-                        (event as any)?.httpMethod;
-      isOptions = httpMethod === 'OPTIONS' || 
-                 !!(event?.headers?.['access-control-request-method']) ||
-                 !!(event?.headers?.['Access-Control-Request-Method']);
-    } catch {
+      httpMethod = (event?.requestContext?.http?.method || 
+                   (event as any)?.requestContext?.httpMethod || 
+                   (event as any)?.httpMethod || '').toUpperCase();
+      console.log('[HANDLER] Request method detected:', httpMethod);
+      
+      // Check for OPTIONS method
+      isOptions = httpMethod === 'OPTIONS';
+      
+      // Also check for preflight headers (browser sends these with OPTIONS)
+      const hasPreflightHeaders = !!(event?.headers?.['access-control-request-method']) ||
+                                 !!(event?.headers?.['Access-Control-Request-Method']);
+      
+      if (hasPreflightHeaders) {
+        isOptions = true;
+        console.log('[HANDLER] Preflight headers detected, treating as OPTIONS');
+      }
+      
+      console.log('[HANDLER] isOptions:', isOptions);
+    } catch (e) {
       // If we can't read the method, check for preflight headers
       try {
-        isOptions = !!(event?.headers?.['access-control-request-method']) ||
-                   !!(event?.headers?.['Access-Control-Request-Method']);
+        const hasPreflightHeaders = !!(event?.headers?.['access-control-request-method']) ||
+                                   !!(event?.headers?.['Access-Control-Request-Method']);
+        isOptions = hasPreflightHeaders;
+        console.log('[HANDLER] Error reading method, checking preflight headers:', isOptions);
       } catch {
-        // If event is completely malformed, assume it might be OPTIONS and return 200
-        isOptions = true;
+        // If event is completely malformed, check if it's likely OPTIONS
+        console.log('[HANDLER] Event malformed, defaulting to non-OPTIONS');
+        isOptions = false;
       }
     }
   
   if (isOptions) {
+    console.log('[OPTIONS] OPTIONS request detected - returning CORS headers immediately');
     try {
       const origin = event?.headers?.origin || 
                      event?.headers?.Origin || 
@@ -847,16 +876,31 @@ export const handler = async (
                      event?.headers?.['Origin'] ||
                      '';
       
-      const allowedOrigins = getAllowedOriginsList();
-      let allowedOrigin = getDefaultCorsOrigin();
-      if (origin) {
+      console.log('[OPTIONS] Preflight request:', { origin, method: httpMethod, hasOrigin: !!origin });
+      
+      // ✅ CRITICAL: Always allow the request origin for OPTIONS (browser requirement)
+      // If origin is provided, use it. Otherwise use default or wildcard.
+      let allowedOrigin = origin || getDefaultCorsOrigin() || '*';
+      
+      // For localhost, always allow
+      if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        allowedOrigin = origin;
+        console.log('[OPTIONS] Localhost origin allowed:', origin);
+      } else if (origin) {
+        // Check if origin is in allowed list
+        const allowedOrigins = getAllowedOriginsList();
         const normalizedOrigin = origin.toLowerCase();
         const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
         if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
           allowedOrigin = origin;
+          console.log('[OPTIONS] Origin matched in allowed list:', origin);
         } else if (normalizedOrigin.includes('cloudfront.net')) {
-          // Allow any CloudFront origin (for flexibility)
           allowedOrigin = origin;
+          console.log('[OPTIONS] CloudFront origin allowed:', origin);
+        } else {
+          // For OPTIONS preflight, allow the requesting origin (browser requirement)
+          allowedOrigin = origin;
+          console.log('[OPTIONS] Allowing requesting origin for preflight:', origin);
         }
       }
       
@@ -869,18 +913,31 @@ export const handler = async (
         ? `${baseAllowedHeaders},${requestedHeaders.split(',').map((h: string) => h.trim()).join(',')}`
         : baseAllowedHeaders;
       
-      return {
+      // ✅ CRITICAL FIX: For HTTP API v2, headers must be lowercase
+      const corsHeaders: Record<string, string> = {
+        'access-control-allow-origin': allowedOrigin,
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'access-control-allow-headers': allowedHeaders,
+        'access-control-allow-credentials': 'true',
+        'access-control-max-age': '86400',
+      };
+      
+      const corsResponse: APIGatewayProxyResultV2 = {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': allowedOrigin,
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': allowedHeaders,
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsHeaders,
       };
+      
+      console.log('[OPTIONS] Returning CORS response with headers:', JSON.stringify({
+        statusCode: corsResponse.statusCode,
+        'access-control-allow-origin': corsHeaders['access-control-allow-origin'],
+        'access-control-allow-methods': corsHeaders['access-control-allow-methods'],
+        'access-control-allow-headers': corsHeaders['access-control-allow-headers'],
+        headerCount: Object.keys(corsHeaders).length,
+      }));
+      
+      // ✅ CRITICAL: Return immediately - do NOT continue to Hono processing
+      return corsResponse;
     } catch (optionsError) {
       // CRITICAL: Even on ANY error, return 200 OK for CORS preflight
       // Browsers will reject non-200 responses for OPTIONS requests

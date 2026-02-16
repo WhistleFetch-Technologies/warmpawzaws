@@ -1,0 +1,35 @@
+﻿aws : 
+At C:\Users\itach\AppData\Local\Temp\ps-script-37831378-1dac-446c-a9bb-8887a2d062c1.ps1:77 char:49
++ ... p logs..."; aws logs tail /aws/lambda/warmpawz-prod-api-handler --reg ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+'charmap' codec can't encode character '\U0001f50d' in position 87: character maps to <undefined>
+2026-02-12T10:56:58 START RequestId: 21964cea-1998-443d-9f3e-8961f20c61ab Version: $LATEST
+2026-02-12T10:56:58 2026-02-12T10:56:58.299Z	08af4b8d-f78b-431c-9b0b-dbacd18c5cf3	INFO	[DB] Pool stats - Total: 1, Idle: 1, Waiting: 0
+2026-02-12T10:56:58 2026-02-12T10:56:58.299Z	08af4b8d-f78b-431c-9b0b-dbacd18c5cf3	INFO	[DB] Pool stats - Total: 1, Idle: 1, Waiting: 0
+2026-02-12T10:56:58 2026-02-12T10:56:58.301Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[AuthAudit] POST /auth/send-otp - User: anonymous
+2026-02-12T10:56:58 2026-02-12T10:56:58.301Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[RateLimit] Cleaned up 1 expired entries
+2026-02-12T10:56:58 2026-02-12T10:56:58.301Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	{"level":"INFO","type":"REQUEST_START","requestId":"req-1770893818301-2icf9p","method":"POST","path":"/auth/send-otp","timestamp":"2026-02-12T10:56:58.301Z"}
+2026-02-12T10:56:58 2026-02-12T10:56:58.302Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[AUTH] Production Mode: Generated random OTP for 9326977987
+2026-02-12T10:56:58 2026-02-12T10:56:58.302Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[DEBUG] OTP GENERATED FOR 9326977987: 254219
+2026-02-12T10:56:58 2026-02-12T10:56:58.302Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[DEBUG] Phone normalized: +919326977987, OTP: 254219
+2026-02-12T10:56:58 2026-02-12T10:56:58.302Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[DEBUG] Storing OTP: phone=+919326977987, otp=254219, role=vendor
+2026-02-12T10:56:58 2026-02-12T10:56:58.339Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[DB] Pool: 1 total, 0 idle, 0 waiting
+2026-02-12T10:56:58 2026-02-12T10:56:58.347Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[AUTH] OTP stored in 45ms
+2026-02-12T10:56:58 2026-02-12T10:56:58.347Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[AUTH] Sending OTP SMS to +919326977987 (templateId=1207177028377787269)
+2026-02-12T10:56:58 2026-02-12T10:56:58.350Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[SMS] Using DB credentials for SNS (Option A)
+2026-02-12T10:56:58 2026-02-12T10:56:58.383Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)
+2026-02-12T10:56:58 2026-02-12T10:56:58.383Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	[AUTH] Send OTP handler completed in 81ms
+2026-02-12T10:56:58 2026-02-12T10:56:58.383Z	21964cea-1998-443d-9f3e-8961f20c61ab	INFO	{"level":"INFO","type":"REQUEST_COMPLETE","requestId":"req-1770893818301-2icf9p","method":"POST","path":"/auth/send-otp","statusCode":200,"duration":82,"timestamp":"2026-02-12T10:56:58.383Z"}
+2026-02-12T10:56:58 END RequestId: 21964cea-1998-443d-9f3e-8961f20c61ab
+2026-02-12T10:56:58 REPORT RequestId: 21964cea-1998-443d-9f3e-8961f20c61ab	Duration: 87.34 ms	Billed Duration: 88 ms	Memory Size: 2048 MB	Max Memory Used: 172 MB	
+XRAY TraceId: 1-698db1fa-17d65d1d77cc86424d3c7af0	SegmentId: aa6cc84740c2a192	Sampled: true
+2026-02-12T10:57:26 START RequestId: 9c8f84a1-af94-46a1-a853-8b1cc5d187ad Version: $LATEST
+2026-02-12T10:57:26 2026-02-12T10:57:26.699Z	9c8f84a1-af94-46a1-a853-8b1cc5d187ad	INFO	[AuthAudit] POST /auth/verify-otp - User: anonymous
+2026-02-12T10:57:26 2026-02-12T10:57:26.700Z	9c8f84a1-af94-46a1-a853-8b1cc5d187ad	INFO	{"level":"INFO","type":"REQUEST_START","requestId":"req-1770893846700-urgmmk","method":"POST","path":"/auth/verify-otp","timestamp":"2026-02-12T10:57:26.700Z"}
+2026-02-12T10:57:26 2026-02-12T10:57:26.702Z	9c8f84a1-af94-46a1-a853-8b1cc5d187ad	INFO	[AUTH] Production Mode: Verifying OTP against database for 9326977987
+2026-02-12T10:57:26 2026-02-12T10:57:26.702Z	9c8f84a1-af94-46a1-a853-8b1cc5d187ad	INFO	[DEBUG] Verifying OTP: original phone=9326977987, normalized=+919326977987, otp=662814
+2026-02-12T10:57:26 2026-02-12T10:57:26.718Z	9c8f84a1-af94-46a1-a853-8b1cc5d187ad	INFO	[DEBUG] verifyOtp called: phone=+919326977987, code=662814
+2026-02-12T10:57:26 2026-02-12T10:57:26.757Z	9c8f84a1-af94-46a1-a853-8b1cc5d187ad	INFO	[DEBUG] Found 1 OTP records for phone=+919326977987, code=662814

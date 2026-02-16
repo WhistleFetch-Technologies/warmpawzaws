@@ -103,22 +103,21 @@ export function getApiBaseUrl(): string {
   
   const result = (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
   
-  // Debug log in UAT mode
-  if (typeof window !== 'undefined' && isUatMode()) {
+  // Debug log in development mode
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     if (!result || result === 'http://localhost:3000') {
-      console.warn('⚠️ [UAT] API Base URL is invalid. Using environment-based fallback:', getApiGatewayUrl());
+      console.warn('⚠️ [DEV] API Base URL is invalid. Using environment-based fallback:', getApiGatewayUrl());
     }
   }
   
   return result || getApiGatewayUrl();
 }
 
-// UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
+// UAT Mode: ONLY in development (never in production)
 export function isUatMode(): boolean {
-  if (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true) {
-    return true;
-  }
-  return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+  // Only enable UAT mode in development environment
+  // Production should NEVER use UAT mode
+  return process.env.NODE_ENV === 'development';
 }
 
 const UAT_MODE = isUatMode();
@@ -130,10 +129,10 @@ export class ApiClient {
     // Resolve base URL at construction; will be re-resolved lazily in request() if empty
     this._baseUrl = (baseUrl ?? getApiBaseUrl()) || '';
     
-    // UAT Mode: Log API configuration for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
+    // Development Mode: Log API configuration for debugging
+    if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
       const base = this.getBaseUrl();
-      console.log('🔧 [UAT Mode] API Client Initialized');
+      console.log('🔧 [DEV Mode] API Client Initialized');
       console.log('   Base URL:', base || '(will resolve from runtime-config)');
       console.log('   Environment:', process.env.NODE_ENV);
     }
@@ -173,9 +172,17 @@ export class ApiClient {
   ): Promise<T> {
     const baseUrl = this.getBaseUrl();
     if (!baseUrl) {
-      throw new Error(
-        'API_BASE_URL is not configured. Set via runtime-config.js (deploy) or NEXT_PUBLIC_API_BASE_URL (local dev).'
-      );
+      const errorMsg = 'API_BASE_URL is not configured. Set via runtime-config.js (deploy) or NEXT_PUBLIC_API_BASE_URL (local dev).';
+      console.error('❌ [API Client]', errorMsg);
+      console.error('❌ [API Client] Runtime config:', getRuntimeConfig());
+      throw new Error(errorMsg);
+    }
+    
+    // Log API request in production for debugging
+    if (typeof window !== 'undefined') {
+      console.log(`🌐 [API] ${options.method || 'GET'} ${endpoint}`);
+      console.log(`🌐 [API] Base URL: ${baseUrl}`);
+      console.log(`🌐 [API] Full URL: ${baseUrl}${endpoint}`);
     }
     
     // Import error handling utilities
@@ -192,8 +199,8 @@ export class ApiClient {
     const url = `${base}${path}`;
     let token = this.getAuthToken();
 
-    // ✅ UAT fallback: if no auth token but we have customer phone (e.g. after refresh), build a UAT token so authorizer allows profile/address routes
-    if (typeof window !== 'undefined' && UAT_MODE && (!token || !String(token).startsWith('uat-token-'))) {
+    // Development fallback: if no auth token but we have customer phone (e.g. after refresh), build a dev token so authorizer allows profile/address routes
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && (!token || !String(token).startsWith('uat-token-'))) {
       const customerPhone = localStorage.getItem('customerPhone');
       if (customerPhone && customerPhone.length >= 10) {
         const fallbackToken = `uat-token-customer-${customerPhone}-${Date.now()}`;
@@ -215,18 +222,18 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    // ✅ UAT Mode: Send headers so API Gateway authorizer allows the request (phone-based login has no Cognito JWT)
-    if (UAT_MODE) {
+    // Development Mode: Send headers so API Gateway authorizer allows the request (phone-based login has no Cognito JWT)
+    if (process.env.NODE_ENV === 'development') {
       headers['X-UAT-Mode'] = 'true';
-      // Authorizer requires X-UAT-Token when using UAT; send token so profile, add-address and other customer routes pass
+      // Authorizer requires X-UAT-Token when using dev mode; send token so profile, add-address and other customer routes pass
       if (token && typeof token === 'string' && token.startsWith('uat-token-')) {
         headers['X-UAT-Token'] = token;
       }
     }
     
-    // UAT Mode: Log API requests for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
-      console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
+    // Development Mode: Log API requests for debugging
+    if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+      console.log(`🌐 [DEV] API Request: ${options.method || 'GET'} ${endpoint}`);
       console.log('   Full URL:', url);
     }
     
@@ -322,9 +329,9 @@ export class ApiClient {
         (apiError as any).statusCode = response.status;
         (apiError as any).status = response.status;
         
-        // Log error details in UAT mode
-        if (UAT_MODE && typeof window !== 'undefined') {
-          console.error('🌐 [UAT] API Error Details:', {
+        // Log error details in development mode
+        if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+          console.error('🌐 [DEV] API Error Details:', {
             url,
             status: response.status,
             statusText: response.statusText,

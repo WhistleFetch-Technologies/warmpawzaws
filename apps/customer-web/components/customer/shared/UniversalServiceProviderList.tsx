@@ -605,15 +605,44 @@ export function UniversalServiceProviderList({
 
       if (response.success) {
         const providerData = response.providers || response.vendors || [];
-        // Clean provider names to remove trailing IDs
-        const cleanedProviders = providerData.map((p: any) => ({
-          ...p,
-          name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
-          vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
-          businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
-          providerId: p.providerId || p.vendorId || p.id,
-          vendorId: p.vendorId || p.id,
-        }));
+        // Clean provider names to remove trailing IDs and map featuredOfferings to services
+        const cleanedProviders = providerData.map((p: any) => {
+          // Map featuredOfferings to services if available
+          let services: any[] = [];
+          if (p.featuredOfferings && Array.isArray(p.featuredOfferings) && p.featuredOfferings.length > 0) {
+            services = p.featuredOfferings.map((offering: any) => ({
+              id: offering.id || offering.serviceId,
+              serviceId: offering.id || offering.serviceId,
+              name: offering.name || offering.serviceName || 'Service',
+              price: Number(offering.price || 0),
+              duration: Number(offering.duration || 30),
+              description: offering.description,
+              serviceStyle: offering.serviceStyle || serviceStyle,
+              category: offering.category,
+            }));
+          } else if (p.services && Array.isArray(p.services) && p.services.length > 0) {
+            services = p.services.map((s: any) => ({
+              id: s.id || s.serviceId,
+              serviceId: s.id || s.serviceId,
+              name: s.name || s.serviceName || 'Service',
+              price: Number(s.price || 0),
+              duration: Number(s.duration || 30),
+              description: s.description,
+              serviceStyle: s.serviceStyle || serviceStyle,
+              category: s.category,
+            }));
+          }
+          
+          return {
+            ...p,
+            name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
+            vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
+            businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
+            providerId: p.providerId || p.vendorId || p.id,
+            vendorId: p.vendorId || p.id,
+            services: services, // ✅ FIX: Include mapped services
+          };
+        });
         
         // ✅ FIX: If primary endpoint returns 0 providers, also try fallback
         if (cleanedProviders.length > 0) {
@@ -631,7 +660,7 @@ export function UniversalServiceProviderList({
         `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}${specializationParam}${problemTitleParam}`
       ) as any;
 
-      const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
+      const servicesData = fallbackResponse.vendors || fallbackResponse.providers || fallbackResponse.services || [];
       
       // Group by provider
       const providerMap = new Map<string, Provider>();
@@ -642,6 +671,21 @@ export function UniversalServiceProviderList({
           // Clean the name to remove trailing IDs/numbers
           const rawName = item.name || item.vendorName || item.businessName || 'Provider';
           const cleanedName = cleanProviderName(rawName);
+          
+          // ✅ FIX: Map featuredOfferings to services if available
+          let initialServices: any[] = [];
+          if (item.featuredOfferings && Array.isArray(item.featuredOfferings) && item.featuredOfferings.length > 0) {
+            initialServices = item.featuredOfferings.map((offering: any) => ({
+              id: offering.id || offering.serviceId,
+              serviceId: offering.id || offering.serviceId,
+              name: offering.name || offering.serviceName || 'Service',
+              price: Number(offering.price || 0),
+              duration: Number(offering.duration || 30),
+              description: offering.description,
+              serviceStyle: offering.serviceStyle || serviceStyle,
+              category: offering.category,
+            }));
+          }
           
           providerMap.set(providerId, {
             providerId,
@@ -667,27 +711,16 @@ export function UniversalServiceProviderList({
             isVerified: item.isVerified,
             isOnline: item.isOnline,
             nextAvailableSlot: item.nextAvailability ?? item.nextAvailableSlot?.formattedDisplay ?? item.nextAvailableSlot,
-            services: [],
+            services: initialServices, // ✅ FIX: Start with featuredOfferings mapped to services
             bestForProblem: item.bestForProblem,
             photos: item.photos,
             priceMin: item.priceMin,
             priceMax: item.priceMax,
             hasPackages: item.hasPackages,
           });
-          const prov = providerMap.get(providerId)!;
-          if ((item.price != null || item.consultationFee != null) && prov.services.length === 0) {
-            prov.services = [{
-              id: 'min',
-              serviceId: 'min',
-              name: 'Starting from',
-              price: item.price ?? item.consultationFee ?? 0,
-              duration: 0,
-              serviceStyle,
-            }];
-          }
         }
         
-        // Add service to provider
+        // Add service to provider from item properties
         // ✅ FIX: Only use serviceName or service_name, avoid using provider name as fallback
         const serviceName = item.serviceName || item.service_name;
         const providerName = item.vendorName || item.businessName || item.business_name || item.providerName;
@@ -695,30 +728,37 @@ export function UniversalServiceProviderList({
         // Only add if we have a valid service name that's different from the provider name
         if (serviceName && serviceName !== providerName) {
           const provider = providerMap.get(providerId)!;
-          provider.services.push({
-            id: item.id || item.serviceId,
-            serviceId: item.serviceId || item.id,
-            name: serviceName,
-            price: item.price || 0,
-            duration: item.duration || 30,
-            description: item.description,
-            serviceStyle: item.serviceStyle || serviceStyle,
-          });
+          // Check if service already exists (from featuredOfferings)
+          const existingService = provider.services.find(s => s.id === (item.id || item.serviceId));
+          if (!existingService) {
+            provider.services.push({
+              id: item.id || item.serviceId,
+              serviceId: item.serviceId || item.id,
+              name: serviceName,
+              price: item.price || 0,
+              duration: item.duration || 30,
+              description: item.description,
+              serviceStyle: item.serviceStyle || serviceStyle,
+            });
+          }
         } else if (!serviceName && item.services && Array.isArray(item.services)) {
           // If no serviceName but has services array, use that
           const provider = providerMap.get(providerId)!;
           item.services.forEach((svc: any) => {
             const svcName = typeof svc === 'string' ? svc : (svc.name || svc.serviceName);
             if (svcName && svcName !== providerName) {
-              provider.services.push({
-                id: svc.id || `${providerId}-${svcName}`,
-                serviceId: svc.serviceId || svc.id,
-                name: svcName,
-                price: svc.price || item.price || 0,
-                duration: svc.duration || item.duration || 30,
-                description: svc.description,
-                serviceStyle: svc.serviceStyle || item.serviceStyle || serviceStyle,
-              });
+              const existingService = provider.services.find(s => s.id === (svc.id || svc.serviceId));
+              if (!existingService) {
+                provider.services.push({
+                  id: svc.id || `${providerId}-${svcName}`,
+                  serviceId: svc.serviceId || svc.id,
+                  name: svcName,
+                  price: svc.price || item.price || 0,
+                  duration: svc.duration || item.duration || 30,
+                  description: svc.description,
+                  serviceStyle: svc.serviceStyle || item.serviceStyle || serviceStyle,
+                });
+              }
             }
           });
         }

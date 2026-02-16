@@ -68,20 +68,75 @@ export async function validateBankAccountStrict(
   if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
     return { valid: false, error: 'Invalid IFSC code', details: 'IFSC must be 11 characters (e.g. HDFC0001234).' };
   }
-  const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`);
-  if (!ifscResponse.ok) {
-    return { valid: false, error: 'Invalid IFSC code', details: 'IFSC code not found in bank database.' };
+  
+  // Add timeout to prevent hanging requests (increased for Lambda VPC network latency)
+  const FETCH_TIMEOUT_MS = 20000; // 20 seconds (increased from 10s for VPC network latency)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[BANK-VALIDATE] IFSC lookup timeout after ${FETCH_TIMEOUT_MS}ms for ${ifsc}`);
+    controller.abort();
+  }, FETCH_TIMEOUT_MS);
+
+  try {
+    const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'WarmPawz/1.0',
+        'Accept': 'application/json',
+      },
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!ifscResponse.ok) {
+      if (ifscResponse.status === 404) {
+        return { valid: false, error: 'Invalid IFSC code', details: 'IFSC code not found in bank database.' };
+      }
+      const errorText = await ifscResponse.text().catch(() => ifscResponse.statusText);
+      console.error(`[BANK-VALIDATE] IFSC lookup HTTP error ${ifscResponse.status} for ${ifsc}: ${errorText}`);
+      return { valid: false, error: 'IFSC lookup failed', details: `HTTP ${ifscResponse.status}: ${errorText}` };
+    }
+    
+    const ifscData = await ifscResponse.json();
+    
+    if (!/^\d{9,18}$/.test(account)) {
+      return { valid: false, error: 'Invalid account number', details: 'Account number must be 9–18 digits.' };
+    }
+    
+    return {
+      valid: false,
+      bank_details: { bank: ifscData.BANK || '', branch: ifscData.BRANCH || '', city: ifscData.CITY || '', state: ifscData.STATE || '', ifsc: ifsc },
+      account_number_masked: account.replace(/\d(?=\d{4})/g, '*'),
+      message: 'Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation.',
+    };
+  } catch (fetchError: any) {
+    clearTimeout(timeoutId);
+    
+    // Handle abort (timeout)
+    if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
+      console.error(`[BANK-VALIDATE] IFSC lookup timeout for ${ifsc}`);
+      return { valid: false, error: 'IFSC lookup timeout', details: 'Request timed out. Please try again.' };
+    }
+    
+    // Handle network errors
+    if (fetchError.message?.includes('fetch failed') || 
+        fetchError.code === 'ENOTFOUND' || 
+        fetchError.code === 'ECONNREFUSED' || 
+        fetchError.code === 'ETIMEDOUT' ||
+        fetchError.message?.includes('network') ||
+        fetchError.message?.includes('ECONNRESET')) {
+      console.error(`[BANK-VALIDATE] Network error for IFSC ${ifsc}:`, {
+        message: fetchError.message,
+        code: fetchError.code,
+        cause: fetchError.cause
+      });
+      return { valid: false, error: 'Network error', details: 'Failed to connect to Razorpay IFSC API. Please check Lambda VPC configuration and internet connectivity.' };
+    }
+    
+    // Re-throw other errors
+    console.error(`[BANK-VALIDATE] Unexpected error for IFSC ${ifsc}:`, fetchError);
+    throw fetchError;
   }
-  const ifscData = await ifscResponse.json();
-  if (!/^\d{9,18}$/.test(account)) {
-    return { valid: false, error: 'Invalid account number', details: 'Account number must be 9–18 digits.' };
-  }
-  return {
-    valid: false,
-    bank_details: { bank: ifscData.BANK || '', branch: ifscData.BRANCH || '', city: ifscData.CITY || '', state: ifscData.STATE || '', ifsc: ifsc },
-    account_number_masked: account.replace(/\d(?=\d{4})/g, '*'),
-    message: 'Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation.',
-  };
 }
 
 // ============================================================================
@@ -1203,41 +1258,141 @@ export function registerRazorpayEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Razorpay IFSC API is public and doesn't require authentication
-      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode.toUpperCase()}`);
+      const upperIfsc = ifscCode.toUpperCase();
+      const url = `https://ifsc.razorpay.com/${upperIfsc}`;
       
-      if (!response.ok) {
-        if (response.status === 404) {
-          return c.json({ 
-            error: 'IFSC code not found',
-            ifsc: ifscCode.toUpperCase()
-          }, 404);
-        }
-        throw new Error(`IFSC lookup failed: ${response.statusText}`);
-      }
+      console.log(`[RAZORPAY-IFSC] Looking up IFSC: ${upperIfsc}`);
+      
+      // Add timeout to prevent hanging requests (increased for Lambda VPC network latency)
+      const FETCH_TIMEOUT_MS = 20000; // 20 seconds (increased from 10s for VPC network latency)
+      const MAX_RETRIES = 2; // Retry up to 2 times for transient network failures
+      let lastError: any = null;
 
-      const bankData = await response.json();
-      
-      return c.json({
-        success: true,
-        ifsc: bankData.IFSC || ifscCode.toUpperCase(),
-        bank: bankData.BANK || '',
-        branch: bankData.BRANCH || '',
-        address: bankData.ADDRESS || '',
-        city: bankData.CITY || '',
-        district: bankData.DISTRICT || '',
-        state: bankData.STATE || '',
-        contact: bankData.CONTACT || '',
-        imps: bankData.IMPS === true,
-        neft: bankData.NEFT === true,
-        rtgs: bankData.RTGS === true,
-        upi: bankData.UPI === true,
-        micr: bankData.MICR || '',
-      });
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          console.log(`[RAZORPAY-IFSC] Retry attempt ${attempt} of ${MAX_RETRIES} for ${upperIfsc}`);
+          // Wait before retry (exponential backoff: 1s, 2s)
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          console.warn(`[RAZORPAY-IFSC] Request timeout after ${FETCH_TIMEOUT_MS}ms for ${upperIfsc} (attempt ${attempt + 1})`);
+          controller.abort();
+        }, FETCH_TIMEOUT_MS);
+
+        try {
+          // Razorpay IFSC API is public and doesn't require authentication
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'WarmPawz/1.0',
+              'Accept': 'application/json',
+            },
+          });
+          
+          clearTimeout(timeoutId);
+        
+          if (!response.ok) {
+            if (response.status === 404) {
+              console.log(`[RAZORPAY-IFSC] IFSC code not found: ${upperIfsc}`);
+              return c.json({ 
+                error: 'IFSC code not found',
+                ifsc: upperIfsc
+              }, 404);
+            }
+            const errorText = await response.text().catch(() => response.statusText);
+            console.error(`[RAZORPAY-IFSC] HTTP error ${response.status} for ${upperIfsc}: ${errorText}`);
+            throw new Error(`IFSC lookup failed: HTTP ${response.status} ${errorText}`);
+          }
+
+          const bankData = await response.json();
+          console.log(`[RAZORPAY-IFSC] Successfully retrieved data for ${upperIfsc}: ${bankData.BANK || 'Unknown'}`);
+          
+          return c.json({
+            success: true,
+            ifsc: bankData.IFSC || upperIfsc,
+            bank: bankData.BANK || '',
+            branch: bankData.BRANCH || '',
+            address: bankData.ADDRESS || '',
+            city: bankData.CITY || '',
+            district: bankData.DISTRICT || '',
+            state: bankData.STATE || '',
+            contact: bankData.CONTACT || '',
+            imps: bankData.IMPS === true,
+            neft: bankData.NEFT === true,
+            rtgs: bankData.RTGS === true,
+            upi: bankData.UPI === true,
+            micr: bankData.MICR || '',
+          });
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          lastError = fetchError;
+          
+          // Check if this is a retryable error
+          const isRetryable = 
+            fetchError.name === 'AbortError' || 
+            fetchError.message?.includes('aborted') ||
+            fetchError.message?.includes('fetch failed') || 
+            fetchError.code === 'ENOTFOUND' || 
+            fetchError.code === 'ECONNREFUSED' || 
+            fetchError.code === 'ETIMEDOUT' ||
+            fetchError.message?.includes('network') ||
+            fetchError.message?.includes('ECONNRESET');
+          
+          // If not retryable or we've exhausted retries, handle the error
+          if (!isRetryable || attempt === MAX_RETRIES) {
+            // Handle abort (timeout)
+            if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
+              console.error(`[RAZORPAY-IFSC] Request timeout for ${upperIfsc} after ${attempt + 1} attempts`);
+              return c.json({ 
+                error: 'Request timeout. Please try again.',
+                ifsc: upperIfsc
+              }, 504);
+            }
+            
+            // Handle network errors
+            if (fetchError.message?.includes('fetch failed') || 
+                fetchError.code === 'ENOTFOUND' || 
+                fetchError.code === 'ECONNREFUSED' || 
+                fetchError.code === 'ETIMEDOUT' ||
+                fetchError.message?.includes('network') ||
+                fetchError.message?.includes('ECONNRESET')) {
+              console.error(`[RAZORPAY-IFSC] Network error for ${upperIfsc} after ${attempt + 1} attempts:`, {
+                message: fetchError.message,
+                code: fetchError.code,
+                cause: fetchError.cause
+              });
+              return c.json({ 
+                error: 'Network error connecting to Razorpay IFSC API. Please check Lambda VPC configuration and internet connectivity.',
+                ifsc: upperIfsc,
+                details: fetchError.message || fetchError.code || 'Unknown network error'
+              }, 503);
+            }
+            
+            // Re-throw other errors
+            throw fetchError;
+          }
+          
+          // If retryable and we have retries left, continue to next iteration
+          console.warn(`[RAZORPAY-IFSC] Retryable error on attempt ${attempt + 1}, will retry:`, fetchError.message);
+        }
+      }
     } catch (error: any) {
-      console.error('Error looking up IFSC code:', error);
+      console.error('[RAZORPAY-IFSC] Error looking up IFSC code:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        code: error.code
+      });
+      
+      // Don't expose internal error details in production
+      const errorMessage = error.message || 'Failed to lookup IFSC code';
       return c.json({ 
-        error: error.message || 'Failed to lookup IFSC code' 
+        error: errorMessage.includes('Network error') || errorMessage.includes('timeout') 
+          ? errorMessage 
+          : 'Failed to lookup IFSC code. Please try again later.',
+        ifsc: c.req.param('ifscCode')?.toUpperCase()
       }, 500);
     }
   });

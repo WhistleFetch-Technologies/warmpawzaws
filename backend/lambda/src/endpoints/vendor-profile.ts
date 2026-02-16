@@ -368,6 +368,74 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       console.log(`✅ [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
 
+      // ✅ FIX: Generate fresh presigned URL for profile photo
+      // Handle both S3 keys (stored as "vendors/...") and legacy presigned URLs
+      let profilePhotoUrl = vendor.profile_photo_url || null;
+      if (profilePhotoUrl) {
+        // Check if it's a presigned URL (starts with http) or an S3 key
+        if (profilePhotoUrl.startsWith('http')) {
+          // Legacy presigned URL - extract S3 key from URL
+          try {
+            const url = new URL(profilePhotoUrl);
+            // Extract key from pathname (remove leading slash)
+            const key = url.pathname.substring(1);
+            if (key && key.length > 0) {
+              profilePhotoUrl = decodeURIComponent(key);
+              console.log(`✅ [PROFILE-GET] Extracted S3 key from presigned URL: ${profilePhotoUrl}`);
+            } else {
+              console.warn(`⚠️ [PROFILE-GET] Could not extract S3 key from presigned URL: ${profilePhotoUrl.substring(0, 100)}`);
+              profilePhotoUrl = null; // Can't extract key, set to null
+            }
+          } catch (urlError: any) {
+            console.warn(`⚠️ [PROFILE-GET] Failed to parse presigned URL: ${urlError.message}`);
+            profilePhotoUrl = null; // Invalid URL, set to null
+          }
+        }
+        
+        // If it's an S3 key (doesn't start with http), generate fresh presigned URL
+        if (profilePhotoUrl && !profilePhotoUrl.startsWith('http')) {
+          try {
+            const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+            const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+            const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+            
+            // Verify object exists before generating presigned URL
+            try {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              await s3Client.send(new HeadObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: profilePhotoUrl,
+              }));
+            } catch (headError: any) {
+              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`⚠️ [PROFILE-GET] S3 object not found: ${profilePhotoUrl}`);
+                profilePhotoUrl = null;
+              } else {
+                // Other errors - continue to try generating presigned URL
+                console.warn(`⚠️ [PROFILE-GET] Error checking S3 object: ${headError.message}`);
+              }
+            }
+            
+            if (profilePhotoUrl) {
+              const signedUrl = await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({
+                  Bucket: BUCKET_NAME,
+                  Key: profilePhotoUrl,
+                }),
+                { expiresIn: 604800 } // 7 days
+              );
+              profilePhotoUrl = signedUrl;
+              console.log(`✅ [PROFILE-GET] Generated fresh presigned URL for profile photo: ${vendor.profile_photo_url}`);
+            }
+          } catch (photoError: any) {
+            console.warn(`⚠️ [PROFILE-GET] Failed to generate presigned URL for profile photo: ${photoError.message}`);
+            profilePhotoUrl = null; // Don't return invalid URL
+          }
+        }
+      }
+
       return c.json({
         success: true,
         vendor: {
@@ -387,7 +455,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
           serviceStyle: vendor.service_style,
           applicationId: applicationData?.id,
           applicationStatus: applicationData?.status,
-          createdAt: vendor.created_at
+          createdAt: vendor.created_at,
+          profilePhotoUrl: profilePhotoUrl, // ✅ Fresh presigned URL or null
+          profile_photo_url: profilePhotoUrl // ✅ Also include for backward compatibility
         }
       });
     } catch (error: any) {
@@ -444,7 +514,14 @@ export function registerVendorProfileEndpoints(app: Hono) {
         ContentType: photo.type || 'image/jpeg',
       }));
       
-      // Generate presigned URL for access (valid for 1 year)
+      // ✅ FIX: Store S3 key instead of presigned URL to avoid expiration issues
+      // Presigned URLs will be generated on-demand when retrieving vendor profile
+      await update('vendors', { id: actualVendorId }, {
+        profile_photo_url: fileName, // Store S3 key, not presigned URL
+        updated_at: new Date().toISOString(),
+      });
+      
+      // Generate fresh presigned URL for immediate response (not stored in DB)
       const signedUrl = await getSignedUrl(
         s3Client,
         new GetObjectCommand({
@@ -454,17 +531,11 @@ export function registerVendorProfileEndpoints(app: Hono) {
         { expiresIn: 604800 } // 7 days (max for presigned URLs)
       );
       
-      // Update vendor with new photo URL (use resolved vendor.id, not URL param)
-      await update('vendors', { id: actualVendorId }, {
-        profile_photo_url: signedUrl,
-        updated_at: new Date().toISOString(),
-      });
-      
-      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
+      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}, stored S3 key: ${fileName}`);
       
       return c.json({
         success: true,
-        photo_url: signedUrl,
+        photo_url: signedUrl, // Return fresh presigned URL for immediate use
         fileName: fileName,
       });
     } catch (error: any) {
@@ -533,6 +604,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
       `);
       const existingColumns = new Set(schemaResult.rows.map((r: any) => r.column_name));
       
+      console.log(`📋 [PROFILE-UPDATE] Existing columns in vendors table: ${Array.from(existingColumns).sort().join(', ')}`);
+      console.log(`📋 [PROFILE-UPDATE] Requested updates: ${Object.keys(updates).join(', ')}`);
+      
       // Known safe columns that can be updated
       const safeColumns = [
         'business_name', 'owner_name', 'phone', 'email', 'address', 'city', 'state', 'pincode',
@@ -546,14 +620,34 @@ export function registerVendorProfileEndpoints(app: Hono) {
         // Only include if it's a safe column AND exists in the database
         if (safeColumns.includes(key) && existingColumns.has(key)) {
           updateData[key] = value;
+          console.log(`✅ [PROFILE-UPDATE] Including field: ${key} = ${typeof value === 'string' ? value.substring(0, 50) : value}`);
+        } else {
+          console.log(`⚠️ [PROFILE-UPDATE] Skipping field: ${key} (safe: ${safeColumns.includes(key)}, exists: ${existingColumns.has(key)})`);
         }
       }
       
       // Log skipped fields for debugging
       const skippedFields = Object.keys(updates).filter(k => !existingColumns.has(k) && safeColumns.includes(k));
       if (skippedFields.length > 0) {
-        console.log(`⚠️ [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(', ')}`);
+        console.warn(`⚠️ [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(', ')}`);
+        console.warn(`⚠️ [PROFILE-UPDATE] These columns need migration 528 to be applied.`);
       }
+      
+      // ✅ FIX: Check if updateData is empty and provide better error message
+      if (Object.keys(updateData).length === 0) {
+        const requestedFields = Object.keys(updates);
+        const missingColumns = requestedFields.filter(k => !existingColumns.has(k));
+        const notSafeColumns = requestedFields.filter(k => !safeColumns.includes(k));
+        console.error(`❌ [PROFILE-UPDATE] No fields to update. Requested: ${requestedFields.join(', ')}, Missing columns: ${missingColumns.join(', ')}, Not safe: ${notSafeColumns.join(', ')}`);
+        return c.json({ 
+          error: `No fields to update. Missing columns: ${missingColumns.join(', ')}. Please ensure migration 528 has been applied.`,
+          requestedFields,
+          missingColumns,
+          existingColumns: Array.from(existingColumns).sort()
+        }, 400);
+      }
+      
+      console.log(`✅ [PROFILE-UPDATE] Will update ${Object.keys(updateData).length} fields: ${Object.keys(updateData).join(', ')}`);
 
       // If critical fields changed and vendor was approved, require re-approval
       if (criticalFieldsChanged && wasApproved) {
@@ -610,13 +704,17 @@ export function registerVendorProfileEndpoints(app: Hono) {
           }
         }
 
+        // ✅ FIX: Fetch the updated vendor to ensure all fields are returned (including qualifications, description)
+        const updatedVendor = await select('vendors', { id: vendor.id });
+        const vendorResponse = updatedVendor.length > 0 ? updatedVendor[0] : (updated[0] || vendor);
+
         return c.json({
           success: true,
           message: 'Profile updated. Re-approval required for critical changes.',
           requiresReapproval: true,
           changedFields: changedFields,
           status: 'pending',
-          vendor: updated[0],
+          vendor: vendorResponse,
         });
       } else {
         // Non-critical fields only - no re-approval needed
@@ -638,12 +736,16 @@ export function registerVendorProfileEndpoints(app: Hono) {
           }
         }
 
+        // ✅ FIX: Fetch the updated vendor to ensure all fields are returned (including qualifications, description)
+        const updatedVendor = await select('vendors', { id: vendor.id });
+        const vendorResponse = updatedVendor.length > 0 ? updatedVendor[0] : (updated[0] || vendor);
+
         return c.json({
           success: true,
           message: 'Profile updated successfully',
           requiresReapproval: false,
-          status: vendor.status,
-          vendor: updated[0],
+          status: vendorResponse.status || vendor.status,
+          vendor: vendorResponse,
         });
       }
     } catch (error: any) {
@@ -766,6 +868,74 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
+      // ✅ FIX: Generate fresh presigned URL for profile photo
+      // Handle both S3 keys (stored as "vendors/...") and legacy presigned URLs
+      let profilePhotoUrl = vendor.profile_photo_url || null;
+      if (profilePhotoUrl) {
+        // Check if it's a presigned URL (starts with http) or an S3 key
+        if (profilePhotoUrl.startsWith('http')) {
+          // Legacy presigned URL - extract S3 key from URL
+          try {
+            const url = new URL(profilePhotoUrl);
+            // Extract key from pathname (remove leading slash)
+            const key = url.pathname.substring(1);
+            if (key && key.length > 0) {
+              profilePhotoUrl = decodeURIComponent(key);
+              console.log(`✅ [PROFILE-GET] Extracted S3 key from presigned URL: ${profilePhotoUrl}`);
+            } else {
+              console.warn(`⚠️ [PROFILE-GET] Could not extract S3 key from presigned URL: ${profilePhotoUrl.substring(0, 100)}`);
+              profilePhotoUrl = null; // Can't extract key, set to null
+            }
+          } catch (urlError: any) {
+            console.warn(`⚠️ [PROFILE-GET] Failed to parse presigned URL: ${urlError.message}`);
+            profilePhotoUrl = null; // Invalid URL, set to null
+          }
+        }
+        
+        // If it's an S3 key (doesn't start with http), generate fresh presigned URL
+        if (profilePhotoUrl && !profilePhotoUrl.startsWith('http')) {
+          try {
+            const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+            const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+            const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+            
+            // Verify object exists before generating presigned URL
+            try {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              await s3Client.send(new HeadObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: profilePhotoUrl,
+              }));
+            } catch (headError: any) {
+              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`⚠️ [PROFILE-GET] S3 object not found: ${profilePhotoUrl}`);
+                profilePhotoUrl = null;
+              } else {
+                // Other errors - continue to try generating presigned URL
+                console.warn(`⚠️ [PROFILE-GET] Error checking S3 object: ${headError.message}`);
+              }
+            }
+            
+            if (profilePhotoUrl) {
+              const signedUrl = await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({
+                  Bucket: BUCKET_NAME,
+                  Key: profilePhotoUrl,
+                }),
+                { expiresIn: 604800 } // 7 days
+              );
+              profilePhotoUrl = signedUrl;
+              console.log(`✅ [PROFILE-GET] Generated fresh presigned URL for profile photo: ${vendor.profile_photo_url}`);
+            }
+          } catch (photoError: any) {
+            console.warn(`⚠️ [PROFILE-GET] Failed to generate presigned URL for profile photo: ${photoError.message}`);
+            profilePhotoUrl = null; // Don't return invalid URL
+          }
+        }
+      }
+
       return c.json({
         success: true,
         vendor: {
@@ -775,6 +945,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           service_area: vendor.service_area || null,
           description: vendor.description || null,
           experience_years: vendor.experience_years ?? null,
+          profile_photo_url: profilePhotoUrl, // ✅ Fresh presigned URL or null
           // Include role info directly in response
           role: role ? {
             id: role.id,
@@ -1059,11 +1230,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
    * POST /vendor/:vendorId/bank-account/verify
    * Verify bank account using Razorpay (name, IFSC, account number).
    * Uses Razorpay IFSC API + format validation. Config from AWS Secrets Manager.
+   * ✅ FIX: Accept bank account details in request body. If no saved account exists, create/update it first.
    * ✅ FIX: Check both vendor_bank_accounts and vendor_bank_details tables.
    */
   app.post("/vendor/:vendorId/bank-account/verify", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
       
       if (!isValidUUID(vendorId)) {
         return c.json({ error: 'Invalid vendor ID' }, 400);
@@ -1105,15 +1278,89 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
+      // ✅ FIX: If no bank account exists but details are provided in body, create/update it first
+      let bank: any;
+      let sourceTable: string;
+      
       if (bankAccounts.length === 0) {
-        return c.json({ error: 'Bank account not found. Please add bank account details first.' }, 404);
+        // Check if bank account details are provided in request body
+        const accountHolderName = (body.account_holder_name || body.accountHolderName || '').trim();
+        const accountNumber = (body.account_number || body.accountNumber || '').replace(/\s/g, '');
+        const ifscCode = (body.ifsc_code || body.ifscCode || '').toUpperCase().trim();
+        const bankName = (body.bank_name || body.bankName || '').trim();
+        const branchName = (body.branch_name || body.branchName || '').trim();
+
+        if (!accountHolderName || !accountNumber || !ifscCode || !bankName) {
+          return c.json({ 
+            error: 'Bank account not found. Please add bank account details first or provide them in the request body.',
+            requiredFields: ['account_holder_name', 'account_number', 'ifsc_code', 'bank_name']
+          }, 404);
+        }
+
+        // Validate IFSC format
+        if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+          return c.json({ error: 'Invalid IFSC code format' }, 400);
+        }
+
+        console.log(`[BANK-VERIFY] No saved bank account found. Creating/updating with provided details for vendor ${resolvedVendorId}`);
+
+        // Check if branch_name column exists in vendor_bank_details
+        const columnCheck = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'vendor_bank_details' AND column_name = 'branch_name'
+          ) as has_branch_name
+        `);
+        const hasBranchName = columnCheck.rows?.[0]?.has_branch_name || false;
+
+        // Create or update bank account in vendor_bank_details
+        const bankData: any = {
+          vendor_id: resolvedVendorId,
+          account_holder_name: accountHolderName,
+          account_number: accountNumber,
+          ifsc_code: ifscCode,
+          bank_name: bankName,
+          is_verified: false,
+          verified_at: null,
+          updated_at: new Date().toISOString(),
+        };
+
+        // Only include branch_name if the column exists
+        if (hasBranchName && branchName) {
+          bankData.branch_name = branchName;
+        }
+
+        // Only include verified_by if the column exists (check first)
+        const hasVerifiedBy = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'vendor_bank_details' AND column_name = 'verified_by'
+          ) as has_verified_by
+        `).then(r => r.rows?.[0]?.has_verified_by || false);
+        
+        if (hasVerifiedBy) {
+          bankData.verified_by = null;
+        }
+
+        const existing = await select('vendor_bank_details', { vendor_id: resolvedVendorId });
+        if (existing.length > 0) {
+          await update('vendor_bank_details', { vendor_id: resolvedVendorId }, bankData);
+          bank = { ...bankData, id: existing[0].id };
+        } else {
+          const inserted = await insert('vendor_bank_details', bankData);
+          bank = inserted[0] || bankData;
+        }
+        
+        sourceTable = 'vendor_bank_details';
+        (bank as any)._source = 'vendor_bank_details';
+      } else {
+        bank = bankAccounts[0] as any;
+        sourceTable = bank._source || (schema.has_accounts_table ? 'vendor_bank_accounts' : 'vendor_bank_details');
       }
 
-      const bank = bankAccounts[0] as any;
       const accountHolderName = (bank.account_holder_name || '').trim();
       const accountNumber = (bank.account_number || '').replace(/\s/g, '');
       const ifscCode = (bank.ifsc_code || '').toUpperCase().trim();
-      const sourceTable = bank._source || (schema.has_accounts_table ? 'vendor_bank_accounts' : 'vendor_bank_details');
 
       if (!accountHolderName || !accountNumber || !ifscCode) {
         return c.json({

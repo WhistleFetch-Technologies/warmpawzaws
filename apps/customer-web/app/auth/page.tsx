@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { apiClient, isUatMode } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
-// UAT Mode Configuration - uses runtime config (deploy-time) for static exports
-const UAT_OTP = '123456'; // Static OTP for UAT testing
+// Development Mode Configuration - only for localhost
+const DEV_OTP = '123456'; // Static OTP for development testing (only on localhost)
 
 function AuthPageContent() {
   const router = useRouter();
@@ -19,18 +19,18 @@ function AuthPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendTimer, setResendTimer] = useState(0);
-  const [uatHint, setUatHint] = useState(false);
   
   // Referral code state
   const [showReferralModal, setShowReferralModal] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const [referralApplied, setReferralApplied] = useState(false);
   
-  // UAT_MODE must be computed at runtime (after hydration) for static exports
-  const [UAT_MODE, setUatMode] = useState(false);
-  useEffect(() => {
-    setUatMode(isUatMode());
-  }, []);
+  // Development mode check (only for localhost - never in production)
+  // In production builds, process.env.NODE_ENV might not be reliable, so check hostname
+  const isDevelopment = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || 
+     window.location.hostname === '127.0.0.1' || 
+     window.location.hostname.includes('localhost'));
 
   useEffect(() => {
     // Initialize session (clears on hard refresh)
@@ -82,28 +82,30 @@ function AuthPageContent() {
       setLoading(true);
       setError(null);
 
-      // UAT Mode: Skip API call, use static OTP
-      if (UAT_MODE) {
-        console.log('🔧 [UAT Mode] OTP bypassed. Use:', UAT_OTP);
-        setOtpSent(true);
-        setResendTimer(60);
-        setUatHint(true);
-        return;
-      }
-
-      await apiClient.post('/auth/otp/send', { phone: `${countryCode}${phone}` });
+      // ✅ ALWAYS call the API endpoint (even in development, to test production API)
+      const phoneNumber = `${countryCode}${phone}`;
+      console.log('📤 [AUTH] Sending OTP request:', { phone: phoneNumber, role: 'customer' });
+      console.log('📤 [AUTH] API Base URL:', apiClient.baseUrl);
+      console.log('📤 [AUTH] isDevelopment:', isDevelopment);
+      
+      const response = await apiClient.post('/auth/send-otp', { 
+        phone: phoneNumber,
+        role: 'customer'
+      });
+      
+      console.log('✅ [AUTH] OTP sent successfully:', response);
       setOtpSent(true);
       setResendTimer(60);
     } catch (err: any) {
-      // UAT Fallback: If API fails, allow UAT mode
-      if (UAT_MODE) {
-        console.log('🔧 [UAT Fallback] API failed, using static OTP:', UAT_OTP);
+      console.error('❌ [AUTH] Error sending OTP:', err);
+      setError(err.message || 'Failed to send OTP');
+      
+      // Development fallback: If API fails in development, allow static OTP
+      if (isDevelopment) {
+        console.log('🔧 [DEV Fallback] API failed, using static OTP:', DEV_OTP);
         setOtpSent(true);
         setResendTimer(60);
-        setUatHint(true);
-        return;
       }
-      setError(err.message || 'Failed to send OTP');
     } finally {
       setLoading(false);
     }
@@ -119,9 +121,9 @@ function AuthPageContent() {
       setLoading(true);
       setError(null);
 
-      // UAT Mode: Accept static OTP without API call
-      if (UAT_MODE && otp === UAT_OTP) {
-        console.log('🔧 [UAT Mode] OTP verified successfully (static)');
+      // Development Mode: Accept static OTP without API call (only in development)
+      if (isDevelopment && otp === DEV_OTP) {
+        console.log('🔧 [DEV Mode] OTP verified successfully (static)');
         const cleanPhone = phone.replace(/\D/g, '').slice(-10);
         localStorage.setItem('customerPhone', cleanPhone);
         localStorage.setItem('customer_phone', cleanPhone);
@@ -137,7 +139,7 @@ function AuthPageContent() {
         // ✅ FIX: Set sessionStorage flags BEFORE navigation to prevent hard refresh detection
         sessionStorage.setItem('_warmpawz_has_session', 'true');
         sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
-        console.log('✅ [Auth] UAT Mode - sessionStorage flags set before navigation');
+        console.log('✅ [Auth] DEV Mode - sessionStorage flags set before navigation');
         
         // Try to fetch profile to set onboarding state (non-blocking)
         try {
@@ -172,41 +174,68 @@ function AuthPageContent() {
         return;
       }
 
-      // UAT Mode: Wrong OTP
-      if (UAT_MODE && otp !== UAT_OTP) {
-        setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
+      // Development Mode: Wrong OTP
+      if (isDevelopment && otp !== DEV_OTP) {
+        setError(`Invalid OTP. For development testing, use: ${DEV_OTP}`);
         return;
       }
 
       const fullPhoneForApi = `${countryCode}${phone}`;
-      const response = await apiClient.post<any>('/auth/otp/verify', { 
+      console.log('📤 [AUTH] Verifying OTP:', { phone: fullPhoneForApi, otp: otp.substring(0, 2) + '****' });
+      console.log('📤 [AUTH] API Base URL:', apiClient.baseUrl);
+      
+      // ✅ FIX: Use /auth/verify-otp endpoint (same as vendor-web)
+      const response = await apiClient.post<any>('/auth/verify-otp', { 
         phone: fullPhoneForApi, 
         otp,
+        role: 'customer',
         referralCode: referralCode || undefined 
       });
       
-      if (response.success || response.verified) {
+      console.log('✅ [AUTH] OTP verified successfully:', response);
+      
+      // Handle response structure from auth-enhanced endpoint
+      // Response structure: { success: true, data: { success: true, data: { token: {...}, user: {...} } } }
+      const responseData = response.data?.data || response.data || response;
+      const isSuccess = response.success || responseData?.success || response.verified || responseData?.verified;
+      
+      if (isSuccess) {
         const shortPhone = phone.replace(/\D/g, '').slice(-10);
         localStorage.setItem('customerPhone', shortPhone);
         localStorage.setItem('customer_phone', shortPhone);
         localStorage.setItem('phone', shortPhone);
         localStorage.setItem('customerCountryCode', countryCode);
         
+        // Handle token structure from auth-enhanced endpoint
+        // Token is nested: response.data.data.token or response.data.token
+        const tokenData = responseData?.token || responseData;
+        const accessToken = tokenData?.access_token || tokenData?.accessToken || response.accessToken;
+        const idToken = tokenData?.id_token || tokenData?.idToken || response.idToken;
+        const refreshToken = tokenData?.refresh_token || tokenData?.refreshToken || response.refreshToken;
+        const expiresIn = tokenData?.expires_in || tokenData?.expiresIn || response.expiresIn || 86400;
+        
+        console.log('🔑 [AUTH] Token extracted:', { 
+          hasAccessToken: !!accessToken, 
+          hasIdToken: !!idToken,
+          hasRefreshToken: !!refreshToken 
+        });
+        
         // Store Cognito tokens (AWS Serverless compatible)
-        if (response.idToken && response.accessToken) {
+        if (idToken && accessToken) {
           const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
           storeCognitoTokens({
-            accessToken: response.accessToken,
-            idToken: response.idToken,
-            refreshToken: response.refreshToken || '',
-            expiresIn: response.expiresIn || 3600,
+            accessToken: accessToken,
+            idToken: idToken,
+            refreshToken: refreshToken || '',
+            expiresIn: expiresIn,
           });
-          if (response.userId) {
-            storeUserInfo({ userId: response.userId, phone, username: response.username });
+          const userData = responseData?.user || response.user;
+          if (userData?.id) {
+            storeUserInfo({ userId: userData.id, phone, username: userData.phone || phone });
           }
-        } else if (response.accessToken) {
+        } else if (accessToken) {
           // Fallback to legacy token
-          localStorage.setItem('authToken', response.accessToken);
+          localStorage.setItem('authToken', accessToken);
         }
         
         // Set sessionStorage flags to track that user is logged in
@@ -305,9 +334,9 @@ function AuthPageContent() {
         setError('Invalid OTP. Please try again.');
       }
     } catch (err: any) {
-      // UAT Fallback: If API fails but OTP matches, allow login
-      if (UAT_MODE && otp === UAT_OTP) {
-        console.log('🔧 [UAT Fallback] API failed, using static OTP verification');
+      // Development Fallback: If API fails but OTP matches, allow login (only in development)
+      if (isDevelopment && otp === DEV_OTP) {
+        console.log('🔧 [DEV Fallback] API failed, using static OTP verification');
         const cleanPhone = phone.replace(/\D/g, '').slice(-10);
         localStorage.setItem('customerPhone', cleanPhone);
         localStorage.setItem('customer_phone', cleanPhone);
@@ -424,14 +453,6 @@ function AuthPageContent() {
                 </div>
               )}
 
-              {/* UAT Hint */}
-              {uatHint && (
-                <div className="mb-6 p-4 bg-gradient-to-r from-[#FF8C42]/10 to-[#FF6B9D]/10 rounded-xl text-center">
-                  <p className="text-[#FF8C42] text-sm font-medium">
-                    🧪 UAT Mode: Use OTP <strong>{UAT_OTP}</strong>
-                  </p>
-                </div>
-              )}
 
               {/* OTP Input Section */}
               <div className="space-y-4">

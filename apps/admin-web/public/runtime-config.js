@@ -31,15 +31,25 @@
   }
   
   // Injected at build/deploy as __API_BASE_URL__ or set NEXT_PUBLIC_API_BASE_URL in env
-  const apiBaseUrl = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || 
-                     (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) || 
-                     getApiGatewayUrl();
+  // Priority: Injected __API_BASE_URL__ > NEXT_PUBLIC_API_BASE_URL env var > environment-based fallback
+  let apiBaseUrl = '';
+  if (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__) {
+    apiBaseUrl = __API_BASE_URL__;
+  } else if (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) {
+    apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  } else {
+    apiBaseUrl = getApiGatewayUrl();
+  }
 
   const environment = isProduction() ? 'production' : 'development';
+  
+  // ✅ FIX: Disable UAT mode in production for security
+  // UAT mode should only be enabled in development/staging
+  const uatMode = isProduction() ? false : defaultUatMode;
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: apiBaseUrl,
-    uatMode: defaultUatMode,
+    uatMode: uatMode,
     environment: environment
   };
 
