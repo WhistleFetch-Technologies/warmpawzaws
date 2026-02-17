@@ -61,7 +61,7 @@ export function registerVendorSupportEndpoints(app: Hono) {
       // Generate ticket number
       const ticketNumber = `VT-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${Date.now().toString().slice(-6)}`;
 
-      // Create ticket
+      // Create ticket (source = 'vendor' so admin CRM shows it as vendor-origin)
       const ticket = await insert('support_tickets', {
         ticket_number: ticketNumber,
         subject,
@@ -70,6 +70,7 @@ export function registerVendorSupportEndpoints(app: Hono) {
         category: category || 'general',
         priority: priority || 'medium',
         status: 'open',
+        source: 'vendor',
         vendor_id: vendorId,
         booking_id: bookingId || null,
         order_id: orderId || null,
@@ -409,6 +410,68 @@ export function registerVendorSupportEndpoints(app: Hono) {
       return c.json({
         success: false,
         error: error.message || 'Failed to fetch categories',
+      }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/support/escalate-from-chat
+   * Create a support ticket from vendor AI chat escalation (no customer AI flow).
+   * Tickets land in admin CRM with source 'vendor_ai_chatbot'.
+   */
+  app.post('/vendor/support/escalate-from-chat', async (c) => {
+    try {
+      const {
+        vendorId,
+        subject,
+        message,
+        conversationHistory,
+        reason,
+      } = await c.req.json();
+
+      if (!vendorId || !message) {
+        return c.json({
+          success: false,
+          error: 'vendorId and message are required',
+        }, 400);
+      }
+
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+      const vendor = vendors[0];
+
+      const ticketNumber = `VT-AI-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${Date.now().toString().slice(-6)}`;
+      const ticket = await insert('support_tickets', {
+        ticket_number: ticketNumber,
+        subject: subject || `Vendor AI Chat Escalation - ${reason || 'User Request'}`,
+        message: typeof conversationHistory === 'string' ? conversationHistory : (message + (conversationHistory ? `\n\nConversation:\n${JSON.stringify(conversationHistory)}` : '')),
+        description: message,
+        category: 'general',
+        priority: 'high',
+        status: 'open',
+        source: 'vendor_ai_chatbot',
+        vendor_id: vendorId,
+        customer_name: (vendor as any).business_name || (vendor as any).owner_name,
+        customer_phone: (vendor as any).phone,
+        customer_email: (vendor as any).email,
+        metadata: JSON.stringify({ reason: reason || 'Vendor AI chat escalation', source: 'vendor_ai_chat' }),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        ticketId: ticket[0].id,
+        ticketNumber,
+        message: 'Your conversation has been escalated to support. They will contact you shortly.',
+      });
+    } catch (error: any) {
+      console.error('Error in vendor escalate-from-chat:', error);
+      return c.json({
+        success: false,
+        error: error.message || 'Failed to escalate to support',
       }, 500);
     }
   });

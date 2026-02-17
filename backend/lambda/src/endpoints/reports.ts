@@ -15,7 +15,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../database/rds-connection';
+import { select, query, insert, update } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { resolveVendorId } from '../utils/vendor-resolve';
@@ -233,6 +233,52 @@ export function registerReportEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching reports:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/reports/save
+   * Save a new report configuration (name, type, dateRange) to platform_settings
+   */
+  app.post("/admin/reports/save", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { name, type, reportType, dateRange } = body;
+      const reportName = name || body.reportName || 'Untitled Report';
+      const reportTypeVal = reportType || type || 'revenue';
+      const dateRangeVal = dateRange || '30d';
+
+      const settings = await select('platform_settings', { setting_key: 'reports' });
+      const existing = settings.length > 0 ? (settings[0].setting_value as any[]) : [];
+      const list = Array.isArray(existing) ? [...existing] : [];
+      const newReport = {
+        id: `report-${Date.now()}`,
+        name: reportName,
+        type: reportTypeVal,
+        dateRange: dateRangeVal,
+        format: 'CSV',
+        lastGenerated: null,
+        schedule: { enabled: false },
+        generationCount: 0,
+      };
+      list.push(newReport);
+
+      if (settings.length > 0) {
+        await update('platform_settings', { setting_key: 'reports' }, { setting_value: list });
+      } else {
+        await insert('platform_settings', {
+          setting_key: 'reports',
+          setting_value: list,
+          setting_type: 'array',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      return c.json({ success: true, report: newReport, message: 'Report saved' });
+    } catch (error: any) {
+      console.error('Error saving report:', error);
       return c.json({ error: error.message }, 500);
     }
   });

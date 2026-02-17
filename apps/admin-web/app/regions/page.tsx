@@ -263,23 +263,25 @@ export default function RegionManager() {
 	const handleCreateFromTemplate = async (templateId: string) => {
 		try {
 			setLoading(true);
-			const res = await apiClient.post<any>(
-				`/admin/regions/init-${templateId}`,
-				{}
-			);
-
-			if (res.success) {
+			let res: any;
+			try {
+				res = await apiClient.post<any>(`/admin/regions/init-${templateId}`, {});
+			} catch (pathErr) {
+				// Fallback: some gateways strip path params; use POST /admin/regions/init with body
+				res = await apiClient.post<any>("/admin/regions/init", { templateId });
+			}
+			if (res?.success) {
 				toast.success(
 					res.message || `${templateId.toUpperCase()} region created successfully!`
 				);
 				await loadRegions();
 				setView("list");
 			} else {
-				toast.error(res.error || "Failed to create region");
+				toast.error(res?.error || "Failed to create region");
 			}
 		} catch (error: any) {
 			console.error("Error creating region:", error);
-			toast.error(`Error: ${String(error)}`);
+			toast.error(error?.message || String(error));
 		} finally {
 			setLoading(false);
 		}

@@ -139,6 +139,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '5', 10);
       const featured = c.req.query('featured') === 'true';
 
+      // Northbound: include 'other' so admin-created content (Marketing > Content) appears on customer home
       let articlesQuery = `
         SELECT 
           id,
@@ -152,7 +153,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
           updated_at
         FROM content_pages
         WHERE is_published = true
-        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior')
+        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'other')
       `;
 
       const params: any[] = [];

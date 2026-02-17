@@ -119321,6 +119321,323 @@ var require_payments = __commonJS({
   }
 });
 
+// src/utils/secrets-manager.ts
+var secrets_manager_exports = {};
+__export(secrets_manager_exports, {
+  getSecret: () => getSecret,
+  getSecretJson: () => getSecretJson,
+  putSecret: () => putSecret,
+  putSecretJson: () => putSecretJson
+});
+async function getSecret(secretName) {
+  try {
+    const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
+    const command = new import_client_secrets_manager2.GetSecretValueCommand({ SecretId: fullSecretName });
+    const response = await secretsClient2.send(command);
+    if (!response.SecretString) {
+      console.warn(`[SECRETS] Secret ${fullSecretName} exists but has no value`);
+      return null;
+    }
+    return response.SecretString;
+  } catch (error) {
+    if (error.name === "ResourceNotFoundException") {
+      console.warn(`[SECRETS] Secret warmpawz/${STAGE}/${secretName} not found`);
+      return null;
+    }
+    console.error(`[SECRETS] Error fetching secret ${secretName}:`, error);
+    throw error;
+  }
+}
+async function getSecretJson(secretName) {
+  const secretString = await getSecret(secretName);
+  if (!secretString) {
+    return null;
+  }
+  try {
+    return JSON.parse(secretString);
+  } catch (error) {
+    console.error(`[SECRETS] Error parsing JSON secret ${secretName}:`, error);
+    throw new Error(`Failed to parse secret ${secretName} as JSON`);
+  }
+}
+async function putSecret(secretName, secretValue, description) {
+  const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
+  try {
+    const describeCommand = new import_client_secrets_manager2.DescribeSecretCommand({ SecretId: fullSecretName });
+    try {
+      await secretsClient2.send(describeCommand);
+      const updateCommand = new import_client_secrets_manager2.PutSecretValueCommand({
+        SecretId: fullSecretName,
+        SecretString: secretValue
+      });
+      await secretsClient2.send(updateCommand);
+      console.log(`[SECRETS] Updated secret ${fullSecretName}`);
+    } catch (error) {
+      if (error.name === "ResourceNotFoundException") {
+        const createCommand = new import_client_secrets_manager2.CreateSecretCommand({
+          Name: fullSecretName,
+          SecretString: secretValue,
+          Description: description || `Warmpawz ${STAGE} ${secretName}`
+        });
+        await secretsClient2.send(createCommand);
+        console.log(`[SECRETS] Created secret ${fullSecretName}`);
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    console.error(`[SECRETS] Error storing secret ${secretName}:`, error);
+    throw error;
+  }
+}
+async function putSecretJson(secretName, secretValue, description) {
+  const secretString = JSON.stringify(secretValue);
+  await putSecret(secretName, secretString, description);
+}
+var import_client_secrets_manager2, secretsClient2, STAGE_RAW, STAGE;
+var init_secrets_manager = __esm({
+  "src/utils/secrets-manager.ts"() {
+    "use strict";
+    import_client_secrets_manager2 = require("@aws-sdk/client-secrets-manager");
+    secretsClient2 = new import_client_secrets_manager2.SecretsManagerClient({
+      region: process.env.AWS_REGION || "ap-south-1"
+    });
+    STAGE_RAW = process.env.ENVIRONMENT || process.env.STAGE || "development";
+    STAGE = STAGE_RAW === "production" ? "prod" : STAGE_RAW === "development" ? "dev" : STAGE_RAW;
+  }
+});
+
+// src/utils/razorpay-client.ts
+var razorpay_client_exports = {};
+__export(razorpay_client_exports, {
+  getRazorpayAuthHeader: () => getRazorpayAuthHeader,
+  getRazorpayClient: () => getRazorpayClient,
+  getRazorpayConfig: () => getRazorpayConfig,
+  razorpayRequest: () => razorpayRequest
+});
+async function getRazorpayConfig() {
+  try {
+    const secretConfig = await Promise.race([
+      getSecretJson("razorpay"),
+      new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Secrets Manager timeout")), 5e3)
+        // 5s timeout
+      )
+    ]).catch((error) => {
+      if (error.message === "Secrets Manager timeout") {
+        console.warn("[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback");
+        return null;
+      }
+      throw error;
+    });
+    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
+      console.log("[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager");
+      const xAccount = secretConfig.razorpayXAccountNumber || secretConfig.xAccountNumber || "";
+      return {
+        keyId: secretConfig.keyId,
+        keySecret: secretConfig.keySecret,
+        webhookSecret: secretConfig.webhookSecret || "",
+        razorpayXAccountNumber: xAccount?.trim() || void 0
+      };
+    }
+  } catch (error) {
+    console.warn("[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:", error.message);
+  }
+  try {
+    const integrations = await select("platform_integrations", {
+      integration_name: "razorpay"
+    });
+    if (integrations.length > 0 && integrations[0].integration_config) {
+      const config = integrations[0].integration_config;
+      if (config.keyId && config.keySecret) {
+        console.log("[RAZORPAY-CONFIG] Loaded from database");
+        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || "";
+        return {
+          keyId: config.keyId,
+          keySecret: config.keySecret,
+          webhookSecret: config.webhookSecret || "",
+          razorpayXAccountNumber: xAccount?.trim() || void 0
+        };
+      }
+    }
+  } catch (error) {
+    console.warn("[RAZORPAY-CONFIG] Failed to load from database, trying env vars:", error.message);
+  }
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (keyId && keySecret) {
+    console.log("[RAZORPAY-CONFIG] Loaded from environment variables");
+    return {
+      keyId,
+      keySecret,
+      webhookSecret: webhookSecret || ""
+    };
+  }
+  throw new Error("Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.");
+}
+async function getRazorpayAuthHeader() {
+  const config = await getRazorpayConfig();
+  const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString("base64");
+  return `Basic ${auth}`;
+}
+async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, extraHeaders) {
+  const authHeader = await getRazorpayAuthHeader();
+  const url = `https://api.razorpay.com/v1${endpoint}`;
+  console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
+  const headers = {
+    "Authorization": authHeader,
+    "Content-Type": "application/json",
+    ...extraHeaders
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const startTime = Date.now();
+    console.log(`[RAZORPAY-REQUEST] Attempting ${method} ${url}`, {
+      hasBody: !!body,
+      bodySize: body ? JSON.stringify(body).length : 0,
+      timeout: timeoutMs
+    });
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : void 0,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`, {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const errorMsg = error?.error?.description || error?.error?.message || response.statusText || "Unknown error";
+      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`, {
+        errorDetails: error,
+        responseHeaders: Object.fromEntries(response.headers.entries())
+      });
+      throw new Error(`Razorpay API error: ${errorMsg}`);
+    }
+    const result = await response.json();
+    console.log(`[RAZORPAY-REQUEST] Success for ${endpoint}`);
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    const errorDetails = {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      cause: error.cause,
+      endpoint,
+      method,
+      url
+    };
+    if (error.name === "AbortError" || error.message?.includes("aborted")) {
+      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`, errorDetails);
+      throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
+    }
+    if (error.message?.includes("fetch failed") || error.code === "ENOTFOUND" || error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
+      console.error(`[RAZORPAY-REQUEST] Network error for ${endpoint}:`, errorDetails);
+      throw new Error(`Network error connecting to Razorpay API: ${error.message || error.code || "Unknown network error"}. Please check Lambda VPC configuration and internet connectivity.`);
+    }
+    if (error.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || error.code === "CERT_HAS_EXPIRED" || error.message?.includes("certificate")) {
+      console.error(`[RAZORPAY-REQUEST] SSL/TLS error for ${endpoint}:`, errorDetails);
+      throw new Error(`SSL/TLS error connecting to Razorpay API: ${error.message || error.code}`);
+    }
+    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, errorDetails);
+    if (error.message) {
+      throw new Error(`Razorpay API request failed: ${error.message}`);
+    }
+    throw error;
+  }
+}
+function getRazorpayClient() {
+  const payments = {
+    async refund(params) {
+      const { payment_id, amount } = params;
+      return razorpayRequest(`/payments/${payment_id}/refund`, "POST", amount ? { amount } : void 0);
+    }
+  };
+  const payouts = {
+    /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
+    async create(body, idempotencyKey) {
+      const extraHeaders = {};
+      if (idempotencyKey) extraHeaders["X-Payout-Idempotency"] = idempotencyKey;
+      return razorpayRequest("/payouts", "POST", body, 2e4, Object.keys(extraHeaders).length ? extraHeaders : void 0);
+    }
+  };
+  const validateBankAccount = async (params) => {
+    const sourceAccount = await getRazorpayXAccountNumber();
+    if (!sourceAccount?.trim()) {
+      return { valid: false, error: "RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)" };
+    }
+    const ref = params.reference_id || `val-${Date.now()}`;
+    const body = {
+      source_account_number: sourceAccount,
+      validation_type: "optimized",
+      reference_id: ref.slice(0, 40),
+      fund_account: {
+        account_type: "bank_account",
+        bank_account: {
+          name: params.beneficiary_name,
+          ifsc: params.ifsc.toUpperCase(),
+          account_number: String(params.account_number).replace(/\s/g, "")
+        }
+      },
+      contact: {
+        name: params.beneficiary_name,
+        email: params.contact_email || `vendor-${ref}@validation.warmpawz.com`,
+        contact: (params.contact_phone || "0000000000").replace(/\D/g, "").slice(-10) || "0000000000",
+        type: "vendor",
+        reference_id: ref.slice(0, 40)
+      }
+    };
+    try {
+      const res = await razorpayRequest("/fund_accounts/validations", "POST", body, 15e3);
+      const status = res?.status;
+      const validationId = res?.id;
+      if (status === "completed") return { valid: true, validationId };
+      if (status === "failed") return { valid: false, error: res?.status_details?.description || "Validation failed", validationId };
+      return { valid: false, error: status === "created" ? "Validation initiated; check RazorpayX dashboard for result" : "Validation incomplete", validationId };
+    } catch (e) {
+      const msg = e?.message || "Validation API error";
+      return { valid: false, error: msg };
+    }
+  };
+  const getRazorpayXAccountNumber = async () => {
+    try {
+      const config = await getRazorpayConfig();
+      if (config.razorpayXAccountNumber) return config.razorpayXAccountNumber.trim();
+    } catch (_) {
+    }
+    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    return env || null;
+  };
+  return {
+    request: razorpayRequest,
+    getConfig: getRazorpayConfig,
+    getAuthHeader: getRazorpayAuthHeader,
+    getRazorpayXAccountNumber,
+    payments,
+    payouts,
+    validateBankAccount
+  };
+}
+var init_razorpay_client = __esm({
+  "src/utils/razorpay-client.ts"() {
+    "use strict";
+    init_rds_connection();
+    init_secrets_manager();
+  }
+});
+
 // src/lib/services/tax-calculation-service.ts
 var tax_calculation_service_exports = {};
 __export(tax_calculation_service_exports, {
@@ -121695,92 +122012,6 @@ var init_push_notification_service = __esm({
     sendVendorOnWay = (customerId, bookingId2, vendorName, etaMinutes, trackingUrl) => pushNotificationService.sendVendorOnWay(customerId, bookingId2, vendorName, etaMinutes, trackingUrl);
     sendRatingRequest = (customerId, bookingId2, vendorName, serviceName) => pushNotificationService.sendRatingRequest(customerId, bookingId2, vendorName, serviceName);
     scheduleNotification = (recipient, payload, scheduledAt, relatedId) => pushNotificationService.scheduleNotification(recipient, payload, scheduledAt, relatedId);
-  }
-});
-
-// src/utils/secrets-manager.ts
-var secrets_manager_exports = {};
-__export(secrets_manager_exports, {
-  getSecret: () => getSecret,
-  getSecretJson: () => getSecretJson,
-  putSecret: () => putSecret,
-  putSecretJson: () => putSecretJson
-});
-async function getSecret(secretName) {
-  try {
-    const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
-    const command = new import_client_secrets_manager3.GetSecretValueCommand({ SecretId: fullSecretName });
-    const response = await secretsClient2.send(command);
-    if (!response.SecretString) {
-      console.warn(`[SECRETS] Secret ${fullSecretName} exists but has no value`);
-      return null;
-    }
-    return response.SecretString;
-  } catch (error) {
-    if (error.name === "ResourceNotFoundException") {
-      console.warn(`[SECRETS] Secret warmpawz/${STAGE}/${secretName} not found`);
-      return null;
-    }
-    console.error(`[SECRETS] Error fetching secret ${secretName}:`, error);
-    throw error;
-  }
-}
-async function getSecretJson(secretName) {
-  const secretString = await getSecret(secretName);
-  if (!secretString) {
-    return null;
-  }
-  try {
-    return JSON.parse(secretString);
-  } catch (error) {
-    console.error(`[SECRETS] Error parsing JSON secret ${secretName}:`, error);
-    throw new Error(`Failed to parse secret ${secretName} as JSON`);
-  }
-}
-async function putSecret(secretName, secretValue, description) {
-  const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
-  try {
-    const describeCommand = new import_client_secrets_manager3.DescribeSecretCommand({ SecretId: fullSecretName });
-    try {
-      await secretsClient2.send(describeCommand);
-      const updateCommand = new import_client_secrets_manager3.PutSecretValueCommand({
-        SecretId: fullSecretName,
-        SecretString: secretValue
-      });
-      await secretsClient2.send(updateCommand);
-      console.log(`[SECRETS] Updated secret ${fullSecretName}`);
-    } catch (error) {
-      if (error.name === "ResourceNotFoundException") {
-        const createCommand = new import_client_secrets_manager3.CreateSecretCommand({
-          Name: fullSecretName,
-          SecretString: secretValue,
-          Description: description || `Warmpawz ${STAGE} ${secretName}`
-        });
-        await secretsClient2.send(createCommand);
-        console.log(`[SECRETS] Created secret ${fullSecretName}`);
-      } else {
-        throw error;
-      }
-    }
-  } catch (error) {
-    console.error(`[SECRETS] Error storing secret ${secretName}:`, error);
-    throw error;
-  }
-}
-async function putSecretJson(secretName, secretValue, description) {
-  const secretString = JSON.stringify(secretValue);
-  await putSecret(secretName, secretString, description);
-}
-var import_client_secrets_manager3, secretsClient2, STAGE_RAW, STAGE;
-var init_secrets_manager = __esm({
-  "src/utils/secrets-manager.ts"() {
-    "use strict";
-    import_client_secrets_manager3 = require("@aws-sdk/client-secrets-manager");
-    secretsClient2 = new import_client_secrets_manager3.SecretsManagerClient({
-      region: process.env.AWS_REGION || "ap-south-1"
-    });
-    STAGE_RAW = process.env.ENVIRONMENT || process.env.STAGE || "development";
-    STAGE = STAGE_RAW === "production" ? "prod" : STAGE_RAW === "development" ? "dev" : STAGE_RAW;
   }
 });
 
@@ -124436,237 +124667,6 @@ var init_opensearch_client = __esm({
         }
       }
     };
-  }
-});
-
-// src/utils/razorpay-client.ts
-var razorpay_client_exports = {};
-__export(razorpay_client_exports, {
-  getRazorpayAuthHeader: () => getRazorpayAuthHeader,
-  getRazorpayClient: () => getRazorpayClient,
-  getRazorpayConfig: () => getRazorpayConfig,
-  razorpayRequest: () => razorpayRequest
-});
-async function getRazorpayConfig() {
-  try {
-    const secretConfig = await Promise.race([
-      getSecretJson("razorpay"),
-      new Promise(
-        (_, reject) => setTimeout(() => reject(new Error("Secrets Manager timeout")), 5e3)
-        // 5s timeout
-      )
-    ]).catch((error) => {
-      if (error.message === "Secrets Manager timeout") {
-        console.warn("[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback");
-        return null;
-      }
-      throw error;
-    });
-    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
-      console.log("[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager");
-      const xAccount = secretConfig.razorpayXAccountNumber || secretConfig.xAccountNumber || "";
-      return {
-        keyId: secretConfig.keyId,
-        keySecret: secretConfig.keySecret,
-        webhookSecret: secretConfig.webhookSecret || "",
-        razorpayXAccountNumber: xAccount?.trim() || void 0
-      };
-    }
-  } catch (error) {
-    console.warn("[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:", error.message);
-  }
-  try {
-    const integrations = await select("platform_integrations", {
-      integration_name: "razorpay"
-    });
-    if (integrations.length > 0 && integrations[0].integration_config) {
-      const config = integrations[0].integration_config;
-      if (config.keyId && config.keySecret) {
-        console.log("[RAZORPAY-CONFIG] Loaded from database");
-        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || "";
-        return {
-          keyId: config.keyId,
-          keySecret: config.keySecret,
-          webhookSecret: config.webhookSecret || "",
-          razorpayXAccountNumber: xAccount?.trim() || void 0
-        };
-      }
-    }
-  } catch (error) {
-    console.warn("[RAZORPAY-CONFIG] Failed to load from database, trying env vars:", error.message);
-  }
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-  if (keyId && keySecret) {
-    console.log("[RAZORPAY-CONFIG] Loaded from environment variables");
-    return {
-      keyId,
-      keySecret,
-      webhookSecret: webhookSecret || ""
-    };
-  }
-  throw new Error("Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.");
-}
-async function getRazorpayAuthHeader() {
-  const config = await getRazorpayConfig();
-  const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString("base64");
-  return `Basic ${auth}`;
-}
-async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, extraHeaders) {
-  const authHeader = await getRazorpayAuthHeader();
-  const url = `https://api.razorpay.com/v1${endpoint}`;
-  console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
-  const headers = {
-    "Authorization": authHeader,
-    "Content-Type": "application/json",
-    ...extraHeaders
-  };
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
-    controller.abort();
-  }, timeoutMs);
-  try {
-    const startTime = Date.now();
-    console.log(`[RAZORPAY-REQUEST] Attempting ${method} ${url}`, {
-      hasBody: !!body,
-      bodySize: body ? JSON.stringify(body).length : 0,
-      timeout: timeoutMs
-    });
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : void 0,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    const duration = Date.now() - startTime;
-    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`, {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      const errorMsg = error?.error?.description || error?.error?.message || response.statusText || "Unknown error";
-      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`, {
-        errorDetails: error,
-        responseHeaders: Object.fromEntries(response.headers.entries())
-      });
-      throw new Error(`Razorpay API error: ${errorMsg}`);
-    }
-    const result = await response.json();
-    console.log(`[RAZORPAY-REQUEST] Success for ${endpoint}`);
-    return result;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    const errorDetails = {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-      cause: error.cause,
-      endpoint,
-      method,
-      url
-    };
-    if (error.name === "AbortError" || error.message?.includes("aborted")) {
-      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`, errorDetails);
-      throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
-    }
-    if (error.message?.includes("fetch failed") || error.code === "ENOTFOUND" || error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
-      console.error(`[RAZORPAY-REQUEST] Network error for ${endpoint}:`, errorDetails);
-      throw new Error(`Network error connecting to Razorpay API: ${error.message || error.code || "Unknown network error"}. Please check Lambda VPC configuration and internet connectivity.`);
-    }
-    if (error.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || error.code === "CERT_HAS_EXPIRED" || error.message?.includes("certificate")) {
-      console.error(`[RAZORPAY-REQUEST] SSL/TLS error for ${endpoint}:`, errorDetails);
-      throw new Error(`SSL/TLS error connecting to Razorpay API: ${error.message || error.code}`);
-    }
-    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, errorDetails);
-    if (error.message) {
-      throw new Error(`Razorpay API request failed: ${error.message}`);
-    }
-    throw error;
-  }
-}
-function getRazorpayClient() {
-  const payments = {
-    async refund(params) {
-      const { payment_id, amount } = params;
-      return razorpayRequest(`/payments/${payment_id}/refund`, "POST", amount ? { amount } : void 0);
-    }
-  };
-  const payouts = {
-    /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
-    async create(body, idempotencyKey) {
-      const extraHeaders = {};
-      if (idempotencyKey) extraHeaders["X-Payout-Idempotency"] = idempotencyKey;
-      return razorpayRequest("/payouts", "POST", body, 2e4, Object.keys(extraHeaders).length ? extraHeaders : void 0);
-    }
-  };
-  const validateBankAccount = async (params) => {
-    const sourceAccount = await getRazorpayXAccountNumber();
-    if (!sourceAccount?.trim()) {
-      return { valid: false, error: "RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)" };
-    }
-    const ref = params.reference_id || `val-${Date.now()}`;
-    const body = {
-      source_account_number: sourceAccount,
-      validation_type: "optimized",
-      reference_id: ref.slice(0, 40),
-      fund_account: {
-        account_type: "bank_account",
-        bank_account: {
-          name: params.beneficiary_name,
-          ifsc: params.ifsc.toUpperCase(),
-          account_number: String(params.account_number).replace(/\s/g, "")
-        }
-      },
-      contact: {
-        name: params.beneficiary_name,
-        email: params.contact_email || `vendor-${ref}@validation.warmpawz.com`,
-        contact: (params.contact_phone || "0000000000").replace(/\D/g, "").slice(-10) || "0000000000",
-        type: "vendor",
-        reference_id: ref.slice(0, 40)
-      }
-    };
-    try {
-      const res = await razorpayRequest("/fund_accounts/validations", "POST", body, 15e3);
-      const status = res?.status;
-      const validationId = res?.id;
-      if (status === "completed") return { valid: true, validationId };
-      if (status === "failed") return { valid: false, error: res?.status_details?.description || "Validation failed", validationId };
-      return { valid: false, error: status === "created" ? "Validation initiated; check RazorpayX dashboard for result" : "Validation incomplete", validationId };
-    } catch (e) {
-      const msg = e?.message || "Validation API error";
-      return { valid: false, error: msg };
-    }
-  };
-  const getRazorpayXAccountNumber = async () => {
-    try {
-      const config = await getRazorpayConfig();
-      if (config.razorpayXAccountNumber) return config.razorpayXAccountNumber.trim();
-    } catch (_) {
-    }
-    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-    return env || null;
-  };
-  return {
-    request: razorpayRequest,
-    getConfig: getRazorpayConfig,
-    getAuthHeader: getRazorpayAuthHeader,
-    getRazorpayXAccountNumber,
-    payments,
-    payouts,
-    validateBankAccount
-  };
-}
-var init_razorpay_client = __esm({
-  "src/utils/razorpay-client.ts"() {
-    "use strict";
-    init_rds_connection();
-    init_secrets_manager();
   }
 });
 
@@ -137394,6 +137394,7 @@ function registerFeeConfigEndpoints(app3) {
 }
 
 // src/endpoints/payments-enhanced.ts
+init_razorpay_client();
 var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const body = this.parseBody(context.event);
@@ -137817,7 +137818,17 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
     const headers = this.getHeaders(context.event);
     const signature = headers["x-razorpay-signature"] || headers["X-Razorpay-Signature"] || "";
     const requestId = context.requestId;
-    if (!this.verifyWebhookSignature(rawBody, signature)) {
+    let webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "";
+    try {
+      const config = await getRazorpayConfig();
+      if (config?.webhookSecret) webhookSecret = config.webhookSecret;
+    } catch (e) {
+    }
+    if (!webhookSecret) {
+      console.error("[SECURITY] Razorpay webhook secret not configured (secret or RAZORPAY_WEBHOOK_SECRET)");
+      return this.error("Webhook not configured", 503, "CONFIG_ERROR", void 0, requestId);
+    }
+    if (!this.verifyWebhookSignature(rawBody, signature, webhookSecret)) {
       console.error("[SECURITY] Invalid Razorpay webhook signature");
       return this.error("Invalid signature", 401, "UNAUTHORIZED", void 0, requestId);
     }
@@ -137959,19 +137970,14 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
     return this.success({ message: "Webhook processed" }, requestId);
   }
   /**
-   * Verify Razorpay webhook signature using HMAC SHA256
+   * Verify Razorpay webhook signature using HMAC SHA256.
+   * webhookSecret is passed in (from getRazorpayConfig() or env) so we use a single source of truth.
    */
-  verifyWebhookSignature(body, signature) {
-    if (!signature) {
+  verifyWebhookSignature(body, signature, webhookSecret) {
+    if (!signature || !webhookSecret) {
       return false;
     }
     try {
-      const crypto16 = require("crypto");
-      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-      if (!webhookSecret) {
-        console.error("[SECURITY] RAZORPAY_WEBHOOK_SECRET not configured");
-        return false;
-      }
       const expectedSignature = (0, import_crypto13.createHmac)("sha256", webhookSecret).update(body).digest("hex");
       return (0, import_crypto13.timingSafeEqual)(
         Buffer.from(signature),
@@ -139789,7 +139795,7 @@ function createLambdaContext5() {
 
 // src/endpoints/tracking.ts
 init_rds_connection();
-var import_client_secrets_manager2 = require("@aws-sdk/client-secrets-manager");
+var import_client_secrets_manager3 = require("@aws-sdk/client-secrets-manager");
 var REGION = process.env.AWS_REGION || "ap-south-1";
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -139801,10 +139807,10 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 async function getGoogleMapsApiKey() {
   try {
-    const secretsClient3 = new import_client_secrets_manager2.SecretsManagerClient({ region: REGION });
+    const secretsClient3 = new import_client_secrets_manager3.SecretsManagerClient({ region: REGION });
     const secretName = process.env.GOOGLE_MAPS_SECRET_NAME || "warmpawz-google-maps-api-key";
     const secretValue = await secretsClient3.send(
-      new import_client_secrets_manager2.GetSecretValueCommand({ SecretId: secretName })
+      new import_client_secrets_manager3.GetSecretValueCommand({ SecretId: secretName })
     );
     const secret = JSON.parse(secretValue.SecretString);
     return secret.apiKey || secret.api_key || secret.key || null;
@@ -140434,8 +140440,8 @@ var DeleteRoleHandler = class extends BaseHandler {
     try {
       if (permanent) {
         const vendorsUsingRole = await query(
-          `SELECT COUNT(*) as count FROM vendors WHERE role_id = $1 OR role = $2`,
-          [roleId, role.name]
+          `SELECT COUNT(*) as count FROM vendors WHERE role_id = $1`,
+          [roleId]
         );
         const vendorCount = parseInt(vendorsUsingRole.rows[0]?.count || "0", 10);
         if (vendorCount > 0) {
@@ -142491,6 +142497,10 @@ function registerOnboardingFormManagementEndpoints(app3) {
         ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS sections JSONB
       `).catch(() => {
       });
+      await query(`
+        ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS deleted_kyc_field_ids JSONB DEFAULT '[]'
+      `).catch(() => {
+      });
       console.log(`[GET /admin/onboarding-fields/:roleId] Looking up active role: "${roleId}"`);
       const role = await getRoleByName(roleId);
       if (!role) {
@@ -142559,10 +142569,19 @@ function registerOnboardingFormManagementEndpoints(app3) {
             declarationType: f.declarationType || f.id
             // Use explicit declarationType if set, otherwise fallback to id
           }));
+          const deletedRaw = forms[0].deleted_kyc_field_ids;
+          const deletedList = Array.isArray(deletedRaw) ? deletedRaw : typeof deletedRaw === "string" ? (() => {
+            try {
+              return JSON.parse(deletedRaw);
+            } catch {
+              return [];
+            }
+          })() : [];
+          const deletedSet = new Set(deletedList);
           const kycFieldIds = new Set(kycFormFields.map((f) => f.id));
           const dbFields = [...fields];
           const nonKycFields = fields.filter((f) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName));
-          const mergedKycFields = kycFormFields.map((kf) => {
+          const mergedKycFields = kycFormFields.filter((kf) => !deletedSet.has(kf.id) && !deletedSet.has(kf.fieldName)).map((kf) => {
             const stored = dbFields.find((f) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
             return stored ? { ...kf, ...stored } : kf;
           });
@@ -142606,7 +142625,8 @@ function registerOnboardingFormManagementEndpoints(app3) {
       if (!role) {
         return c.json({ error: "Role not found" }, 404);
       }
-      const forms = await select("onboarding_forms", { role_id: roleId });
+      const actualRoleName = role.name;
+      const forms = await select("onboarding_forms", { role_id: actualRoleName });
       let existingFields = [];
       if (forms.length > 0) {
         existingFields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
@@ -142637,14 +142657,14 @@ function registerOnboardingFormManagementEndpoints(app3) {
       existingFields.push(newField);
       existingFields.sort((a, b) => a.displayOrder - b.displayOrder);
       if (forms.length > 0) {
-        await update("onboarding_forms", { role_id: roleId }, {
+        await update("onboarding_forms", { role_id: actualRoleName }, {
           fields: JSON.stringify(existingFields),
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         });
-        await incrementFormVersion(roleId);
+        await incrementFormVersion(actualRoleName);
       } else {
         await insert("onboarding_forms", {
-          role_id: roleId,
+          role_id: actualRoleName,
           fields: JSON.stringify(existingFields),
           status: "active",
           version: 1,
@@ -142741,28 +142761,68 @@ function registerOnboardingFormManagementEndpoints(app3) {
   app3.delete("/admin/onboarding-fields/:roleId/:fieldId", async (c) => {
     try {
       const { roleId, fieldId } = c.req.param();
-      const forms = await select("onboarding_forms", { role_id: roleId });
-      if (forms.length === 0) {
-        return c.json({ error: "Form not found for this role" }, 404);
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: "Role not found", requestedRole: roleId }, 404);
       }
-      let fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
-      const filteredFields = fields.filter((f) => f.id !== fieldId);
-      if (fields.length === filteredFields.length) {
+      const actualRoleName = role.name;
+      await query(`
+        ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS deleted_kyc_field_ids JSONB DEFAULT '[]'
+      `).catch(() => {
+      });
+      let forms = await select("onboarding_forms", { role_id: actualRoleName });
+      let fields = [];
+      let deletedKycIds = [];
+      if (forms.length > 0) {
+        fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
+        const raw2 = forms[0].deleted_kyc_field_ids;
+        deletedKycIds = Array.isArray(raw2) ? raw2 : typeof raw2 === "string" ? (() => {
+          try {
+            return JSON.parse(raw2);
+          } catch {
+            return [];
+          }
+        })() : [];
+      }
+      const filteredFields = fields.filter((f) => f.id !== fieldId && f.fieldName !== fieldId && f.name !== fieldId);
+      const foundInDb = fields.length !== filteredFields.length;
+      if (foundInDb) {
+        filteredFields.forEach((f, idx) => {
+          f.displayOrder = idx;
+          f.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        });
+        await update("onboarding_forms", { role_id: actualRoleName }, {
+          fields: JSON.stringify(filteredFields),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        await incrementFormVersion(actualRoleName);
+        return c.json({ success: true, message: "Field deleted successfully" });
+      }
+      const { getKYCFieldsForRole: getKYCFieldsForRole2 } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+      const kycFields = getKYCFieldsForRole2(actualRoleName, "solo") || getKYCFieldsForRole2(actualRoleName, "business") || getKYCFieldsForRole2(actualRoleName);
+      const isKycField = Array.isArray(kycFields) && kycFields.some((f) => f.id === fieldId || f.fieldName === fieldId);
+      if (!isKycField) {
         return c.json({ error: "Field not found" }, 404);
       }
-      filteredFields.forEach((f, idx) => {
-        f.displayOrder = idx;
-        f.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      });
-      await update("onboarding_forms", { role_id: roleId }, {
-        fields: JSON.stringify(filteredFields),
+      if (deletedKycIds.includes(fieldId)) {
+        return c.json({ success: true, message: "Field already removed" });
+      }
+      deletedKycIds = [...deletedKycIds, fieldId];
+      const updatePayload = {
+        deleted_kyc_field_ids: JSON.stringify(deletedKycIds),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      await incrementFormVersion(roleId);
-      return c.json({
-        success: true,
-        message: "Field deleted successfully"
-      });
+      };
+      if (forms.length === 0) {
+        await query(`
+          INSERT INTO onboarding_forms (role_id, fields, deleted_kyc_field_ids, updated_at)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (role_id) DO UPDATE SET deleted_kyc_field_ids = EXCLUDED.deleted_kyc_field_ids, updated_at = EXCLUDED.updated_at
+        `, [actualRoleName, JSON.stringify([]), JSON.stringify(deletedKycIds), updatePayload.updated_at]);
+      } else {
+        await update("onboarding_forms", { role_id: actualRoleName }, updatePayload);
+      }
+      await incrementFormVersion(actualRoleName);
+      return c.json({ success: true, message: "Field deleted successfully" });
     } catch (error) {
       console.error("Error deleting onboarding field:", error);
       return c.json({ error: error.message || "Failed to delete field" }, 500);
@@ -162999,17 +163059,20 @@ function registerEcommerceEndpoints(app3) {
       );
       const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || "0");
       const totalCommission = totalRevenue * 0.1;
-      return c.json({
-        success: true,
-        data: {
-          totalRevenue,
-          totalCommission,
-          totalOrders: parseInt(revenueStats.rows[0]?.total_orders || "0", 10),
-          activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || "0", 10),
-          totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || "0", 10),
-          thisMonthRevenue: parseFloat(revenueStats.rows[0]?.this_month_revenue || "0")
-        }
-      });
+      const data = {
+        totalRevenue,
+        totalGMV: totalRevenue,
+        totalCommission,
+        totalOrders: parseInt(revenueStats.rows[0]?.total_orders || "0", 10),
+        activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || "0", 10),
+        totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || "0", 10),
+        thisMonthRevenue: parseFloat(revenueStats.rows[0]?.this_month_revenue || "0"),
+        activeProducts: 0,
+        pendingApprovals: 0,
+        processingOrders: 0,
+        pendingSettlements: 0
+      };
+      return c.json({ success: true, data, ...data });
     } catch (error) {
       console.error("Error fetching platform analytics:", error);
       return c.json({ error: error.message }, 500);
@@ -163035,7 +163098,7 @@ function registerEcommerceEndpoints(app3) {
         `SELECT 
            p.name,
            COUNT(oi.id) as sales,
-           COALESCE(SUM(oi.total), 0) as revenue
+           COALESCE(SUM(oi.total_price), 0) as revenue
          FROM order_items oi
          INNER JOIN products p ON oi.product_id = p.id
          INNER JOIN orders o ON oi.order_id = o.id
@@ -163660,7 +163723,7 @@ function registerAnalyticsEndpoints(app3) {
          FROM vendors v
          LEFT JOIN roles rl ON v.role_id = rl.id
          LEFT JOIN bookings b ON v.id = b.vendor_id AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-         LEFT JOIN reviews rev ON v.id = rev.vendor_id AND rev.is_approved = true
+         LEFT JOIN reviews rev ON v.id = rev.vendor_id AND (rev.is_approved = true OR rev.is_approved IS NULL)
          WHERE v.status = 'approved' AND v.is_active = true
          GROUP BY v.id, v.business_name, v.city, v.status, COALESCE(rl.name, rl.display_name, v.category, 'Other')
          ORDER BY revenue DESC
@@ -163866,11 +163929,11 @@ function registerAnalyticsEndpoints(app3) {
       const peakTimesData = await query(
         `SELECT 
             CASE 
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 6 AND 8 THEN '6-9 AM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 9 AND 11 THEN '9-12 PM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 12 AND 14 THEN '12-3 PM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 15 AND 17 THEN '3-6 PM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 18 AND 20 THEN '6-9 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 6 AND 8 THEN '6-9 AM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 9 AND 11 THEN '9-12 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 12 AND 14 THEN '12-3 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 15 AND 17 THEN '3-6 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 18 AND 20 THEN '6-9 PM'
               ELSE '9-12 AM'
             END as time_slot,
             COUNT(*) as bookings
@@ -163958,9 +164021,8 @@ function registerAnalyticsEndpoints(app3) {
            AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
          WHERE v.status = 'approved' AND v.is_active = true
          GROUP BY COALESCE(rl.name, rl.display_name, 'Other')
-         HAVING COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) > 0
          ORDER BY revenue DESC
-         LIMIT 10`
+         LIMIT 20`
       ).catch(() => ({ rows: [] }));
       const totalRevenue = salesByRole.rows.reduce((sum, r) => sum + parseFloat(r.revenue || 0), 0);
       return c.json({
@@ -171015,8 +171077,8 @@ function registerSettlementEndpoints(app3) {
       }).catch(() => null);
       const payoutId = payoutInsert?.[0]?.id;
       try {
-        const razorpayClient2 = await getRazorpayClient();
-        const payoutResponse = await razorpayClient2.payouts.create({
+        const razorpayClient = await getRazorpayClient();
+        const payoutResponse = await razorpayClient.payouts.create({
           account_number: bank.account_number,
           fund_account: {
             account_type: "bank_account",
@@ -171149,8 +171211,8 @@ function registerSettlementEndpoints(app3) {
         payout_status: "processing"
       });
       try {
-        const razorpayClient2 = await getRazorpayClient();
-        const payoutResponse = await razorpayClient2.payouts.create({
+        const razorpayClient = await getRazorpayClient();
+        const payoutResponse = await razorpayClient.payouts.create({
           account_number: bank.account_number,
           fund_account: {
             account_type: "bank_account",
@@ -171241,8 +171303,8 @@ function registerSettlementEndpoints(app3) {
             created_at: (/* @__PURE__ */ new Date()).toISOString()
           });
           try {
-            const razorpayClient2 = await getRazorpayClient();
-            const payoutResponse = await razorpayClient2.payouts.create({
+            const razorpayClient = await getRazorpayClient();
+            const payoutResponse = await razorpayClient.payouts.create({
               account_number: bank.account_number,
               fund_account: {
                 account_type: "bank_account",
@@ -171528,7 +171590,9 @@ function registerSettlementEndpoints(app3) {
     });
     const payoutId = payoutRecord[0]?.id;
     if (!payoutId) return;
-    const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    const razorpayClient = getRazorpayClient();
+    const xFromConfig = await razorpayClient.getRazorpayXAccountNumber();
+    const razorpayXAccountNumber = (xFromConfig || process.env.RAZORPAY_X_ACCOUNT_NUMBER || "").trim();
     if (!razorpayXAccountNumber) {
       return;
     }
@@ -171538,7 +171602,6 @@ function registerSettlementEndpoints(app3) {
       if (v?.rows?.[0]?.phone) vendorPhone = String(v.rows[0].phone).replace(/\D/g, "").slice(-10) || vendorPhone;
     } catch (_) {
     }
-    const razorpayClient2 = getRazorpayClient();
     const compositeBody = {
       account_number: razorpayXAccountNumber,
       amount: Math.round(amount * 100),
@@ -171560,7 +171623,7 @@ function registerSettlementEndpoints(app3) {
       reference_id: `PAYOUT-${payoutId}`.slice(0, 40)
     };
     try {
-      const payoutResponse = await razorpayClient2.payouts.create(compositeBody, payoutId);
+      const payoutResponse = await razorpayClient.payouts.create(compositeBody, payoutId);
       await query(
         `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
         ["processing", payoutResponse?.id ?? null, payoutId]
@@ -172369,40 +172432,62 @@ function registerRegionEndpoints(app3) {
       return c.json({ error: `Seeding failed: ${error.message}` }, 500);
     }
   });
+  const handleInitRegion = async (templateId) => {
+    const template = REGION_TEMPLATES[templateId.toLowerCase()];
+    if (!template) {
+      return { error: `Template '${templateId}' not found. Available templates: ${Object.keys(REGION_TEMPLATES).join(", ")}`, status: 404 };
+    }
+    const existingResult = await query(
+      `SELECT * FROM regions WHERE code = $1 OR region_config->>'regionId' = $2 LIMIT 1`,
+      [template.regionCode, template.regionId]
+    );
+    const existing = existingResult.rows || [];
+    const regionData = prepareRegionForDatabase(template);
+    let result;
+    if (existing.length > 0) {
+      const updated = await update("regions", { id: existing[0].id }, {
+        ...regionData,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      result = transformRegionForFrontend(updated[0]);
+    } else {
+      const created = await insert("regions", regionData);
+      result = transformRegionForFrontend(created[0]);
+    }
+    return {
+      success: true,
+      region: result,
+      message: `${template.regionName} region ${existing.length > 0 ? "updated" : "created"} successfully`
+    };
+  };
+  app3.post("/admin/regions/init", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const templateId = body.templateId || c.req.query("templateId");
+      if (!templateId) {
+        return c.json({ error: "Template ID is required (body.templateId or query templateId)" }, 400);
+      }
+      const out = await handleInitRegion(String(templateId));
+      if ("status" in out && out.status === 404) {
+        return c.json({ error: out.error }, 404);
+      }
+      return c.json(out);
+    } catch (error) {
+      console.error("Error initializing region:", error);
+      return c.json({ error: `Failed to initialize region: ${error.message}` }, 500);
+    }
+  });
   app3.post("/admin/regions/init-:templateId", async (c) => {
     try {
       const templateId = c.req.param("templateId");
       if (!templateId) {
         return c.json({ error: "Template ID is required" }, 400);
       }
-      const template = REGION_TEMPLATES[templateId.toLowerCase()];
-      if (!template) {
-        return c.json({
-          error: `Template '${templateId}' not found. Available templates: ${Object.keys(REGION_TEMPLATES).join(", ")}`
-        }, 404);
+      const out = await handleInitRegion(templateId);
+      if ("status" in out && out.status === 404) {
+        return c.json({ error: out.error }, 404);
       }
-      const existingResult = await query(
-        `SELECT * FROM regions WHERE code = $1 OR region_config->>'regionId' = $2 LIMIT 1`,
-        [template.regionCode, template.regionId]
-      );
-      const existing = existingResult.rows || [];
-      const regionData = prepareRegionForDatabase(template);
-      let result;
-      if (existing.length > 0) {
-        const updated = await update("regions", { id: existing[0].id }, {
-          ...regionData,
-          updated_at: (/* @__PURE__ */ new Date()).toISOString()
-        });
-        result = transformRegionForFrontend(updated[0]);
-      } else {
-        const created = await insert("regions", regionData);
-        result = transformRegionForFrontend(created[0]);
-      }
-      return c.json({
-        success: true,
-        region: result,
-        message: `${template.regionName} region ${existing.length > 0 ? "updated" : "created"} successfully`
-      });
+      return c.json(out);
     } catch (error) {
       console.error("Error initializing region:", error);
       return c.json({ error: `Failed to initialize region: ${error.message}` }, 500);
@@ -176552,21 +176637,30 @@ function registerPromotionEndpoints(app3) {
       const params = [now];
       let paramIndex = 2;
       if (serviceType !== "all") {
-        promotionsQuery += ` AND ($${paramIndex} = ANY(applicable_services) OR applicable_services IS NULL)`;
-        params.push(serviceType);
+        promotionsQuery += ` AND (
+          applicable_services IS NULL 
+          OR applicable_services = '[]'::jsonb 
+          OR applicable_services @> $${paramIndex}::jsonb
+        )`;
+        params.push(JSON.stringify([serviceType]));
         paramIndex++;
       }
       if (vendorRoleId) {
-        promotionsQuery += ` AND ($${paramIndex} = ANY(applicable_roles) OR applicable_roles IS NULL)`;
-        params.push(vendorRoleId);
+        promotionsQuery += ` AND (
+          applicable_roles IS NULL 
+          OR applicable_roles = '[]'::jsonb 
+          OR applicable_roles @> $${paramIndex}::jsonb
+        )`;
+        params.push(JSON.stringify([vendorRoleId]));
         paramIndex++;
       }
       promotionsQuery += ` ORDER BY priority DESC, created_at DESC`;
-      const promotions = await query(promotionsQuery, params);
+      const promotionsResult = await query(promotionsQuery, params);
+      const promoRows = Array.isArray(promotionsResult) ? promotionsResult : promotionsResult.rows || [];
       return c.json({
         success: true,
-        promotions: promotions.rows,
-        total: promotions.rows.length
+        promotions: promoRows,
+        total: promoRows.length
       });
     } catch (error) {
       console.error("Error fetching promotions:", error);
@@ -177405,6 +177499,69 @@ function registerPromotionEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error creating coupon:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/admin/coupons/bulk-generate", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const {
+        prefix = "SAVE",
+        quantity = 10,
+        format = "alphanumeric",
+        length = 8,
+        type: discountType = "percentage",
+        value: discountValue = 10,
+        minOrderAmount = 0,
+        maxDiscountAmount = 0,
+        validFrom,
+        validUntil,
+        usageLimit = 1,
+        isActive = true
+      } = body;
+      const qty = Math.min(Math.max(parseInt(String(quantity), 10) || 10, 1), 500);
+      const len = Math.min(Math.max(parseInt(String(length), 10) || 8, 4), 20);
+      const chars = format === "numeric" ? "0123456789" : "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      const used = /* @__PURE__ */ new Set();
+      const codes = [];
+      while (codes.length < qty) {
+        let code = String(prefix || "").toUpperCase().replace(/\s/g, "");
+        for (let i = 0; i < len; i++) {
+          code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        if (!used.has(code)) {
+          used.add(code);
+          codes.push(code);
+        }
+      }
+      const validFromDate = validFrom ? new Date(validFrom) : /* @__PURE__ */ new Date();
+      const validUntilDate = validUntil ? new Date(validUntil) : new Date(Date.now() + 30 * 864e5);
+      const inserted = [];
+      for (const code of codes) {
+        const couponData = {
+          code,
+          name: code,
+          discount_type: discountType,
+          discount_value: parseFloat(String(discountValue)) || 0,
+          min_order_amount: minOrderAmount > 0 ? minOrderAmount : null,
+          start_date: validFromDate,
+          end_date: validUntilDate,
+          max_uses: usageLimit > 0 ? usageLimit : null,
+          is_active: isActive !== false
+        };
+        if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+        if (couponData.max_uses === null) delete couponData.max_uses;
+        const row = await insert("coupons", couponData);
+        if (row?.[0]) inserted.push(row[0]);
+      }
+      return c.json({
+        success: true,
+        message: `Generated ${inserted.length} coupons`,
+        count: inserted.length,
+        coupons: inserted
+      });
+    } catch (error) {
+      console.error("Error bulk-generating coupons:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -178878,7 +179035,7 @@ function registerCustomerContentEndpoints(app3) {
           updated_at
         FROM content_pages
         WHERE is_published = true
-        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior')
+        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'other')
       `;
       const params = [];
       let paramIndex = 1;
@@ -180683,6 +180840,44 @@ function registerReportEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error fetching reports:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/admin/reports/save", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { name, type, reportType, dateRange } = body;
+      const reportName = name || body.reportName || "Untitled Report";
+      const reportTypeVal = reportType || type || "revenue";
+      const dateRangeVal = dateRange || "30d";
+      const settings = await select("platform_settings", { setting_key: "reports" });
+      const existing = settings.length > 0 ? settings[0].setting_value : [];
+      const list = Array.isArray(existing) ? [...existing] : [];
+      const newReport = {
+        id: `report-${Date.now()}`,
+        name: reportName,
+        type: reportTypeVal,
+        dateRange: dateRangeVal,
+        format: "CSV",
+        lastGenerated: null,
+        schedule: { enabled: false },
+        generationCount: 0
+      };
+      list.push(newReport);
+      if (settings.length > 0) {
+        await update("platform_settings", { setting_key: "reports" }, { setting_value: list });
+      } else {
+        await insert("platform_settings", {
+          setting_key: "reports",
+          setting_value: list,
+          setting_type: "array",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      return c.json({ success: true, report: newReport, message: "Report saved" });
+    } catch (error) {
+      console.error("Error saving report:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -184616,8 +184811,8 @@ function registerReturnsEndpoints(app3) {
         return sum + parseFloat(item.price || "0") * (item.quantity || 1);
       }, 0);
       try {
-        const razorpayClient2 = await getRazorpayClient();
-        const refund = await razorpayClient2.payments.refund({
+        const razorpayClient = await getRazorpayClient();
+        const refund = await razorpayClient.payments.refund({
           payment_id: order.payment_id || "",
           amount: Math.round(refundAmount * 100)
           // Convert to paise
@@ -192441,25 +192636,8 @@ init_rds_connection();
 init_razorpay_client();
 init_aws_clients();
 init_entities();
-var RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "";
-var RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
-var RAZORPAY_BASE_URL = "https://api.razorpay.com/v1";
 async function razorpayRequest2(endpoint, method = "GET", body) {
-  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64");
-  const response = await fetch(`${RAZORPAY_BASE_URL}${endpoint}`, {
-    method,
-    headers: {
-      "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : void 0
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    console.error("Razorpay API error:", data);
-    throw new Error(data.error?.description || "Razorpay API error");
-  }
-  return data;
+  return getRazorpayClient().request(endpoint, method, body, 2e4);
 }
 var CreateLinkedAccountHandler = class extends BaseHandler {
   async handle(context) {
@@ -192764,7 +192942,7 @@ var ProcessSettlementHandler = class extends BaseHandler {
    */
   async handleProcessBySettlementIds(settlementIds) {
     const results = [];
-    const razorpayClient2 = getRazorpayClient();
+    const razorpayClient = getRazorpayClient();
     for (const sid of settlementIds) {
       if (!sid || !isValidUUID(sid)) {
         results.push({ id: sid, success: false, error: "Invalid settlement ID" });
@@ -192833,7 +193011,7 @@ var ProcessSettlementHandler = class extends BaseHandler {
         });
         const payoutId = payoutInsert?.[0]?.id;
         try {
-          const payoutResponse = await razorpayClient2.payouts.create({
+          const payoutResponse = await razorpayClient.payouts.create({
             account_number: bank.account_number,
             fund_account: {
               account_type: "bank_account",
@@ -192902,7 +193080,7 @@ var GetSettlementStatusHandler = class extends BaseHandler {
     const settlement = settlements[0];
     if (settlement.status === "processing" && settlement.razorpay_transfer_id) {
       try {
-        const transfer = await razorpayRequest2(`/transfers/${settlement.razorpay_transfer_id}`);
+        const transfer = await razorpayRequest2(`/transfers/${settlement.razorpay_transfer_id}`, "GET");
         if (transfer.status !== settlement.status) {
           await update("vendor_settlements", { id: settlementId }, {
             status: transfer.status === "processed" ? "completed" : transfer.status,
@@ -194252,6 +194430,7 @@ function createLambdaContext20() {
 var import_crypto35 = require("crypto");
 init_base_handler();
 init_rds_connection();
+init_razorpay_client();
 
 // src/utils/error-serialization.ts
 function getErrorMessage(error) {
@@ -195397,6 +195576,31 @@ function registerAdminAdvancedEndpoints(app3) {
         ORDER BY count DESC
         LIMIT 10
       `).catch(() => ({ rows: [] }));
+      const ageDistribution = await query(`
+        SELECT 
+          CASE 
+            WHEN (COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12) < 1 THEN '0-1 yrs'
+            WHEN (COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12) < 3 THEN '1-3 yrs'
+            WHEN (COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12) < 7 THEN '3-7 yrs'
+            ELSE '7+ yrs'
+          END as age_group,
+          COUNT(*) as count
+        FROM pets
+        GROUP BY 1
+        ORDER BY 1
+      `).catch(() => ({ rows: [] }));
+      const healthTrends = await query(`
+        SELECT condition_type as condition, COUNT(*) as count
+        FROM (
+          SELECT unnest(string_to_array(COALESCE(health_conditions, ''), ',')) as condition_type
+          FROM pets
+          WHERE COALESCE(health_conditions, '') != ''
+        ) t
+        WHERE condition_type != ''
+        GROUP BY condition_type
+        ORDER BY count DESC
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
         stats: {
@@ -195407,6 +195611,14 @@ function registerAdminAdvancedEndpoints(app3) {
           avgAge: parseFloat(stats.rows[0]?.avg_age || "0"),
           topBreeds: topBreeds.rows.map((r) => ({
             breed: r.breed,
+            count: parseInt(r.count, 10)
+          })),
+          ageDistribution: (ageDistribution.rows || []).map((r) => ({
+            ageGroup: r.age_group,
+            count: parseInt(r.count, 10)
+          })),
+          healthTrends: (healthTrends.rows || []).map((r) => ({
+            condition: r.condition,
             count: parseInt(r.count, 10)
           }))
         }
@@ -195421,7 +195633,9 @@ function registerAdminAdvancedEndpoints(app3) {
           catCount: 0,
           otherCount: 0,
           avgAge: 0,
-          topBreeds: []
+          topBreeds: [],
+          ageDistribution: [],
+          healthTrends: []
         }
       });
     }
@@ -197071,6 +197285,13 @@ function registerAdminAdvancedEndpoints(app3) {
     const rows = q?.rows ?? (Array.isArray(q) ? q : []);
     return rows.length > 0;
   }
+  function hsnCodesEqual(a, b) {
+    const x = String(a ?? "").trim();
+    const y = String(b ?? "").trim();
+    if (x === y) return true;
+    if (/^\d+$/.test(x) && /^\d+$/.test(y)) return Number(x) === Number(y);
+    return false;
+  }
   app3.get("/admin/finance/gst/hsn-codes", async (c) => {
     try {
       let rows;
@@ -197196,7 +197417,7 @@ function registerAdminAdvancedEndpoints(app3) {
         const rows = existing?.rows ?? (Array.isArray(existing) ? existing : []);
         const currentRow = rows[0];
         const currentCode = currentRow ? String(currentRow.code_val ?? "").trim() : "";
-        if (newCode === currentCode) {
+        if (hsnCodesEqual(newCode, currentCode)) {
         } else {
           if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
             console.log("[HSN] Update rejected: duplicate code", { id, code: newCode, column: codeColumn });
@@ -199054,11 +199275,13 @@ function registerAdminAdvancedEndpoints(app3) {
       if (!accountNumber || !ifscCode || !accountHolder) {
         return c.json({ success: false, error: "Incomplete bank details (account number, IFSC, or holder name missing)" }, 400);
       }
-      const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+      const razorpayClient = getRazorpayClient();
+      const xFromConfig = await razorpayClient.getRazorpayXAccountNumber();
+      const razorpayXAccountNumber = (xFromConfig || process.env.RAZORPAY_X_ACCOUNT_NUMBER || "").trim();
       if (!razorpayXAccountNumber) {
         return c.json({
           success: false,
-          error: "RazorpayX payout source account not configured. Set RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account / Customer Identifier from x.razorpay.com \u2192 Banking)."
+          error: "RazorpayX payout source account not configured. Set razorpayXAccountNumber in AWS Secrets Manager (warmpawz/{env}/razorpay) or RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account from x.razorpay.com \u2192 Banking)."
         }, 503);
       }
       let vendorPhone = "0000000000";
@@ -199153,10 +199376,42 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/policies", async (c) => {
     try {
-      const policies = await query("SELECT * FROM policies ORDER BY created_at DESC");
-      return c.json({ success: true, policies: policies.rows });
+      const policyKeys = ["refund", "payment", "commission", "verification"];
+      const rows = await query(
+        `SELECT setting_key, setting_value FROM admin_settings WHERE setting_key = ANY($1)`,
+        [policyKeys.map((k) => `policy_${k}`)]
+      ).catch(() => ({ rows: [] }));
+      const data = {};
+      for (const row of rows.rows || []) {
+        const key = (row.setting_key || "").replace(/^policy_/, "");
+        if (key && row.setting_value != null) {
+          try {
+            data[key] = typeof row.setting_value === "string" ? JSON.parse(row.setting_value) : row.setting_value;
+          } catch {
+            data[key] = row.setting_value;
+          }
+        }
+      }
+      return c.json({ success: true, ...data, data });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app3.put("/admin/policies/:type", async (c) => {
+    try {
+      const type = c.req.param("type");
+      const allowed = ["refund", "payment", "commission", "verification"];
+      if (!allowed.includes(type)) {
+        return c.json({ error: `Invalid policy type. Allowed: ${allowed.join(", ")}` }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const settingKey = `policy_${type}`;
+      const value = JSON.stringify(body);
+      await upsertAdminSetting(settingKey, value, "all");
+      return c.json({ success: true, message: `${type} policy saved` });
+    } catch (error) {
+      const errorResponse = createSafeErrorResponse(error, "Failed to save policy", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
@@ -204867,7 +205122,7 @@ var GetProductPerformanceHandler = class extends BaseHandler {
           p.images,
           COUNT(oi.id) as units_sold,
           SUM(oi.quantity) as total_quantity,
-          COALESCE(SUM(oi.total) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
+          COALESCE(SUM(oi.total_price) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
         FROM order_items oi
         INNER JOIN orders o ON oi.order_id = o.id
         INNER JOIN products p ON oi.product_id = p.id
@@ -204883,7 +205138,7 @@ var GetProductPerformanceHandler = class extends BaseHandler {
           COALESCE(ec.name, p.category) as category,
           COUNT(DISTINCT p.id) as product_count,
           COUNT(oi.id) as units_sold,
-          COALESCE(SUM(oi.total) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
+          COALESCE(SUM(oi.total_price) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
         FROM order_items oi
         INNER JOIN orders o ON oi.order_id = o.id
         INNER JOIN products p ON oi.product_id = p.id
@@ -209670,35 +209925,64 @@ function registerRewardsEndpoints(app3) {
       const pointsToNextTier = nextTier?.min_points ? Math.max(0, parseInt(nextTier.min_points, 10) - currentPoints) : 0;
       const tierName = tier?.name || "Bronze";
       const nextTierName = nextTier?.name || null;
+      const points = currentPoints;
+      const tierKey = String(tierName || "bronze").toLowerCase();
+      const lifetimeEarned = parseInt(profile[0]?.lifetime_points_earned || "0", 10);
+      const lifetimeRedeemed = parseInt(profile[0]?.lifetime_points_redeemed || "0", 10);
+      const balancePayload = {
+        points,
+        totalPoints: points,
+        total_points: points,
+        tier,
+        tierKey,
+        tierName,
+        currentTierMinPoints: parseInt(tier?.min_points || "0", 10),
+        current_tier_min_points: parseInt(tier?.min_points || "0", 10),
+        nextTier: nextTierName,
+        next_tier: nextTierName,
+        nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
+        next_tier_min_points: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
+        pointsToNextTier,
+        points_to_next_tier: pointsToNextTier,
+        lifetimePointsEarned: lifetimeEarned,
+        lifetime_points: lifetimeEarned,
+        lifetime_points_earned: lifetimeEarned,
+        lifetimePointsRedeemed: lifetimeRedeemed,
+        lifetime_points_redeemed: lifetimeRedeemed
+      };
       return c.json({
         success: true,
-        points: currentPoints,
-        totalPoints: currentPoints,
-        tier,
-        tierName,
-        tierKey: String(tierName || "bronze").toLowerCase(),
-        currentTierMinPoints: parseInt(tier?.min_points || "0", 10),
-        nextTier: nextTierName,
-        nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
-        pointsToNextTier,
-        lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || "0", 10),
-        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || "0", 10)
+        balance: balancePayload,
+        ...balancePayload
       });
     } catch (error) {
       console.error("Error fetching points:", error);
-      return c.json({
-        success: true,
+      const fallbackTier = { name: "Bronze", min_points: 0, multiplier: 1 };
+      const fallbackBalance = {
         points: 0,
         totalPoints: 0,
-        tier: { name: "Bronze", min_points: 0, multiplier: 1 },
+        total_points: 0,
+        tier: fallbackTier,
         tierName: "Bronze",
         tierKey: "bronze",
         currentTierMinPoints: 0,
+        current_tier_min_points: 0,
         nextTier: null,
+        next_tier: null,
         nextTierMinPoints: null,
+        next_tier_min_points: null,
         pointsToNextTier: 0,
+        points_to_next_tier: 0,
         lifetimePointsEarned: 0,
+        lifetime_points: 0,
+        lifetime_points_earned: 0,
         lifetimePointsRedeemed: 0,
+        lifetime_points_redeemed: 0
+      };
+      return c.json({
+        success: true,
+        balance: fallbackBalance,
+        ...fallbackBalance,
         message: "Loyalty program initializing"
       });
     }
@@ -210682,21 +210966,45 @@ OUTPUT FORMAT (JSON only):
   });
   app3.post("/ai-chatbot/escalate-to-agent", async (c) => {
     try {
-      const { conversationId, customerId, customerPhone, reason, conversationHistory } = await c.req.json();
+      const { conversationId, customerId, customerPhone, vendorId, reason, conversationHistory } = await c.req.json();
       if (!conversationId) {
         return c.json({ error: "conversationId is required" }, 400);
       }
+      const isVendor = !!vendorId;
+      const ticketNumber = `TKT-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      let vendor_id = null;
+      let customer_name = null;
+      let customer_phone = customerPhone || null;
+      let customer_email = null;
+      if (isVendor) {
+        vendor_id = vendorId;
+        try {
+          const { select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+          const vendors = await select28("vendors", { id: vendorId });
+          if (vendors.length > 0) {
+            const v = vendors[0];
+            customer_name = v.business_name || v.owner_name || "Vendor";
+            customer_phone = v.phone || null;
+            customer_email = v.email || null;
+          }
+        } catch (_) {
+        }
+      }
       const ticket = await insert("support_tickets", {
+        ticket_number: ticketNumber,
         customer_id: customerId || null,
-        customer_phone: customerPhone || null,
-        subject: `AI Chatbot Escalation - ${reason || "User Request"}`,
+        customer_phone,
+        customer_name,
+        customer_email,
+        vendor_id,
+        subject: isVendor ? `Vendor AI Chat Escalation - ${reason || "User Request"}` : `AI Chatbot Escalation - ${reason || "User Request"}`,
         message: `Conversation ID: ${conversationId}
 
 Reason: ${reason || "User requested human agent"}
 
 Conversation History:
 ${conversationHistory || "N/A"}`,
-        source: "ai_chatbot",
+        source: isVendor ? "vendor_ai_chatbot" : "ai_chatbot",
         status: "open",
         priority: "high",
         created_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -210751,6 +211059,11 @@ ${conversationHistory || "N/A"}`,
 init_rds_connection();
 init_sns_client();
 var import_client_sns11 = require("@aws-sdk/client-sns");
+function generateTicketNumber(prefix = "TKT") {
+  const date = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10).replace(/-/g, "");
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${prefix}-${date}-${rand}`;
+}
 function registerSupportCrmEndpoints(app3) {
   app3.post("/support/tickets", async (c) => {
     try {
@@ -210769,7 +211082,9 @@ function registerSupportCrmEndpoints(app3) {
       if (!subject || !message2) {
         return c.json({ error: "subject and message are required" }, 400);
       }
+      const ticketNumber = generateTicketNumber("TKT");
       const ticket = await insert("support_tickets", {
+        ticket_number: ticketNumber,
         customer_id: customerId || null,
         customer_phone: customerPhone || null,
         subject,
@@ -210780,7 +211095,6 @@ function registerSupportCrmEndpoints(app3) {
         booking_id: bookingId2 || null,
         order_id: orderId || null,
         status: "open",
-        attachments: attachments || [],
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
@@ -210875,6 +211189,12 @@ function registerSupportCrmEndpoints(app3) {
         return c.json({ error: "Support ticket not found" }, 404);
       }
       const ticket = tickets[0];
+      if (ticket.vendor_id) {
+        const vendors = await select("vendors", { id: ticket.vendor_id }).catch(() => []);
+        if (vendors.length > 0) {
+          ticket.vendor_name = vendors[0].business_name || vendors[0].owner_name;
+        }
+      }
       const responses = await query(
         `SELECT * FROM support_ticket_responses 
          WHERE ticket_id = $1 
@@ -211054,10 +211374,14 @@ function registerSupportCrmEndpoints(app3) {
           c.full_name as customer_name,
           c.phone as customer_phone,
           c.email as customer_email,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          v.email as vendor_email,
           s.name as assigned_agent_name,
           t.assigned_to as assigned_agent_id
         FROM support_tickets t
         LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vendors v ON t.vendor_id = v.id
         LEFT JOIN staff s ON t.assigned_to = s.id
         WHERE 1=1
       `;
@@ -211079,18 +211403,22 @@ function registerSupportCrmEndpoints(app3) {
       const safeTickets = (tickets.rows || []).map((t) => ({
         id: String(t.id || ""),
         customerId: t.customer_id ? String(t.customer_id) : "",
+        vendorId: t.vendor_id ? String(t.vendor_id) : "",
         subject: String(t.subject || ""),
-        // Use message as primary content, fallback to description
         description: String(t.message || t.description || ""),
         status: String(t.status || "open"),
         priority: String(t.priority || "medium"),
-        source: String(t.source || "customer"),
+        source: String(t.source || (t.vendor_id ? "vendor" : "customer")),
         createdAt: String(t.created_at || ""),
         assignedTo: t.assigned_agent_id ? String(t.assigned_agent_id) : void 0,
         assignedAgent: t.assigned_agent_name || void 0,
         category: t.category || void 0,
         customerName: t.customer_name || "",
-        customerEmail: t.customer_email || ""
+        customerEmail: t.customer_email || "",
+        customerPhone: t.customer_phone || "",
+        vendorName: t.vendor_name || "",
+        vendorPhone: t.vendor_phone || "",
+        requesterName: t.vendor_id ? t.vendor_name || t.customer_name || "Vendor" : t.customer_name || t.customer_phone || "Customer"
       }));
       return c.json({
         success: true,
@@ -211494,7 +211822,9 @@ function registerSupportCrmEndpoints(app3) {
           time: m.created_at
         }))
       };
+      const handoffTicketNumber = generateTicketNumber("TKT");
       const ticket = await insert("support_tickets", {
+        ticket_number: handoffTicketNumber,
         customer_id: booking.customer_id || customerId || null,
         customer_phone: customerPhone || customer[0]?.phone || null,
         vendor_id: booking.vendor_id || vendorId || null,
@@ -213975,13 +214305,24 @@ var GetVendorReverificationRequestsHandler = class extends BaseHandler {
 var CreateVendorHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const body = this.parseBody(context.event);
-      const vendor = await insert("vendors", {
-        ...body,
+      const body = this.parseBody(context.event) || {};
+      const vendorRow = {
+        phone: body.phone || body.Phone || "",
+        email: body.email || body.Email || `vendor-${(body.phone || body.Phone || "").replace(/\D/g, "")}@warmpawz.app`,
+        owner_name: body.ownerName ?? body.owner_name ?? body.OwnerName ?? "",
+        business_name: body.businessName ?? body.business_name ?? body.BusinessName ?? "",
+        role_id: body.roleId ?? body.role_id ?? null,
+        vendor_type: body.vendorType ?? body.vendor_type ?? "solo",
         status: "pending",
         is_active: false,
+        address: body.address ?? body.Address ?? "",
+        city: body.city ?? body.City ?? "",
+        state: body.state ?? body.State ?? "",
+        pincode: body.pincode ?? body.pinCode ?? body.Pincode ?? "",
         created_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      if (body.approved_at !== void 0) vendorRow.approved_at = body.approved_at;
+      const vendor = await insert("vendors", vendorRow);
       return this.success({ success: true, vendor: vendor[0] });
     } catch (error) {
       return this.error(error.message || "Failed to create vendor", 500);
@@ -215552,6 +215893,7 @@ function registerAdminComprehensiveEndpoints(app3) {
       try {
         let sql = `
           SELECT o.*, 
+                 o.order_status as status,
                  c.full_name as customer_name, c.email as customer_email,
                  v.business_name as vendor_name
           FROM orders o
@@ -215559,7 +215901,7 @@ function registerAdminComprehensiveEndpoints(app3) {
           LEFT JOIN vendors v ON o.vendor_id = v.id
         `;
         if (status) {
-          sql += ` WHERE o.status = $1`;
+          sql += ` WHERE o.order_status = $1`;
           sql += ` ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`;
           orders = await query(sql, [status, limit, offset]);
         } else {
@@ -215568,15 +215910,16 @@ function registerAdminComprehensiveEndpoints(app3) {
         }
       } catch {
         try {
-          orders = await query(`SELECT * FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+          orders = await query(`SELECT o.*, o.order_status as status FROM orders o ORDER BY o.created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
         } catch {
           orders = { rows: [] };
         }
       }
       const countResult = await query(`SELECT COUNT(*) as count FROM orders`).catch(() => ({ rows: [{ count: "0" }] }));
+      const rows = (orders.rows || []).map((o) => ({ ...o, status: o.status ?? o.order_status }));
       return c.json({
         success: true,
-        orders: orders.rows || [],
+        orders: rows,
         total: parseInt(countResult.rows[0]?.count || "0", 10),
         limit,
         offset
@@ -215584,6 +215927,37 @@ function registerAdminComprehensiveEndpoints(app3) {
     } catch (error) {
       console.error("Error fetching orders:", error);
       return c.json({ success: true, orders: [], total: 0, limit: 10, offset: 0 });
+    }
+  });
+  app3.put("/admin/orders/:id/status", async (c) => {
+    try {
+      const id = c.req.param("id");
+      const body = await c.req.json().catch(() => ({}));
+      const status = body.status;
+      if (!status) {
+        return c.json({ success: false, error: "status is required" }, 400);
+      }
+      const valid = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"];
+      if (!valid.includes(status)) {
+        return c.json({ success: false, error: "Invalid status" }, 400);
+      }
+      const existing = await query("SELECT id, order_status FROM orders WHERE id = $1", [id]).catch(() => ({ rows: [] }));
+      if (!existing.rows?.length) {
+        return c.json({ success: false, error: "Order not found" }, 404);
+      }
+      await query(
+        `UPDATE orders SET order_status = $1, updated_at = NOW()${status === "shipped" ? ", shipped_at = NOW()" : ""}${status === "delivered" ? ", delivered_at = NOW()" : ""}${status === "cancelled" ? ", cancelled_at = NOW()" : ""} WHERE id = $2`,
+        [status, id]
+      );
+      const updated = await query("SELECT * FROM orders WHERE id = $1", [id]);
+      return c.json({
+        success: true,
+        order: updated.rows?.[0],
+        message: "Order status updated"
+      });
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      return c.json({ success: false, error: error?.message || "Failed to update order status" }, 500);
     }
   });
   app3.get("/admin/products", async (c) => {
@@ -215690,14 +216064,36 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.post("/admin/platform-settings", async (c) => {
     try {
-      const body = await c.req.json();
-      const { key, value } = body;
+      const body = await c.req.json().catch(() => ({}));
+      const key = body.key ?? body.settingKey;
+      const value = body.value ?? body.settingValue ?? body.setting_value;
       if (!key) {
-        return c.json({ success: false, error: "Key is required" }, 400);
+        return c.json({ success: false, error: "Key or settingKey is required" }, 400);
       }
+      const settingValue = typeof value === "string" && (body.settingType === "array" || body.settingType === "object") ? value : typeof value === "object" ? JSON.stringify(value) : value;
       await upsert("platform_settings", {
         setting_key: key,
-        setting_value: value,
+        setting_value: settingValue,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      }, "setting_key");
+      return c.json({ success: true, message: "Setting saved successfully" });
+    } catch (error) {
+      console.error("Error saving platform setting:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app3.put("/admin/platform-settings", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const key = body.settingKey ?? body.key;
+      const value = body.settingValue ?? body.setting_value ?? body.value;
+      if (!key) {
+        return c.json({ success: false, error: "settingKey or key is required" }, 400);
+      }
+      const settingValue = typeof value === "object" ? JSON.stringify(value) : value;
+      await upsert("platform_settings", {
+        setting_key: key,
+        setting_value: settingValue,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return c.json({ success: true, message: "Setting saved successfully" });
@@ -215742,11 +216138,38 @@ function registerAdminComprehensiveEndpoints(app3) {
       } catch {
         agentStats = { rows: [{ total_agents: "0", active_agents: "0" }] };
       }
+      const row = ticketStats.rows[0] || {};
+      const agentRow = agentStats.rows[0] || {};
+      const totalTickets = parseInt(row.total_tickets || "0", 10);
+      const openTickets = parseInt(row.open_tickets || "0", 10);
+      const inProgressTickets = parseInt(row.in_progress_tickets || "0", 10);
+      const resolvedTickets = parseInt(row.resolved_tickets || "0", 10);
+      const escalatedTickets = parseInt(row.escalated_tickets || "0", 10);
+      const todayTickets = parseInt(row.today_tickets || "0", 10);
+      const avgResolutionHours = parseFloat(row.avg_resolution_hours || "0");
+      const avgResponseTime = avgResolutionHours < 1 ? `${Math.round(avgResolutionHours * 60)}m` : avgResolutionHours < 24 ? `${Math.round(avgResolutionHours)}h` : `${Math.round(avgResolutionHours / 24)}d`;
       return c.json({
         success: true,
+        totalTickets,
+        openTickets,
+        inProgressTickets,
+        resolvedTickets,
+        escalatedTickets,
+        todayTickets,
+        avgResponseTime,
+        pendingRefunds: 0,
         stats: {
-          ...ticketStats.rows[0],
-          ...agentStats.rows[0]
+          ...row,
+          ...agentRow,
+          totalTickets,
+          openTickets,
+          inProgressTickets,
+          resolvedTickets,
+          escalatedTickets,
+          todayTickets,
+          avgResponseTime,
+          total_agents: agentRow.total_agents,
+          active_agents: agentRow.active_agents
         }
       });
     } catch (error) {
@@ -218784,6 +219207,7 @@ function registerVendorSupportEndpoints(app3) {
         category: category || "general",
         priority: priority || "medium",
         status: "open",
+        source: "vendor",
         vendor_id: vendorId,
         booking_id: bookingId2 || null,
         order_id: orderId || null,
@@ -219055,6 +219479,61 @@ function registerVendorSupportEndpoints(app3) {
       return c.json({
         success: false,
         error: error.message || "Failed to fetch categories"
+      }, 500);
+    }
+  });
+  app3.post("/vendor/support/escalate-from-chat", async (c) => {
+    try {
+      const {
+        vendorId,
+        subject,
+        message: message2,
+        conversationHistory,
+        reason
+      } = await c.req.json();
+      if (!vendorId || !message2) {
+        return c.json({
+          success: false,
+          error: "vendorId and message are required"
+        }, 400);
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ success: false, error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const ticketNumber = `VT-AI-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0].replace(/-/g, "")}-${Date.now().toString().slice(-6)}`;
+      const ticket = await insert("support_tickets", {
+        ticket_number: ticketNumber,
+        subject: subject || `Vendor AI Chat Escalation - ${reason || "User Request"}`,
+        message: typeof conversationHistory === "string" ? conversationHistory : message2 + (conversationHistory ? `
+
+Conversation:
+${JSON.stringify(conversationHistory)}` : ""),
+        description: message2,
+        category: "general",
+        priority: "high",
+        status: "open",
+        source: "vendor_ai_chatbot",
+        vendor_id: vendorId,
+        customer_name: vendor.business_name || vendor.owner_name,
+        customer_phone: vendor.phone,
+        customer_email: vendor.email,
+        metadata: JSON.stringify({ reason: reason || "Vendor AI chat escalation", source: "vendor_ai_chat" }),
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return c.json({
+        success: true,
+        ticketId: ticket[0].id,
+        ticketNumber,
+        message: "Your conversation has been escalated to support. They will contact you shortly."
+      });
+    } catch (error) {
+      console.error("Error in vendor escalate-from-chat:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to escalate to support"
       }, 500);
     }
   });

@@ -986,6 +986,57 @@ export function registerRegionEndpoints(app: Hono) {
     }
   });
 
+  const handleInitRegion = async (templateId: string) => {
+    const template = REGION_TEMPLATES[templateId.toLowerCase()];
+    if (!template) {
+      return { error: `Template '${templateId}' not found. Available templates: ${Object.keys(REGION_TEMPLATES).join(', ')}`, status: 404 as const };
+    }
+    const existingResult = await query(
+      `SELECT * FROM regions WHERE code = $1 OR region_config->>'regionId' = $2 LIMIT 1`,
+      [(template as any).regionCode, (template as any).regionId]
+    );
+    const existing = existingResult.rows || [];
+    const regionData = prepareRegionForDatabase(template as Region);
+    let result;
+    if (existing.length > 0) {
+      const updated = await update('regions', { id: existing[0].id }, {
+        ...regionData,
+        updated_at: new Date().toISOString(),
+      });
+      result = transformRegionForFrontend(updated[0]);
+    } else {
+      const created = await insert('regions', regionData);
+      result = transformRegionForFrontend(created[0]);
+    }
+    return {
+      success: true,
+      region: result,
+      message: `${(template as any).regionName} region ${existing.length > 0 ? 'updated' : 'created'} successfully`,
+    };
+  };
+
+  /**
+   * POST /admin/regions/init
+   * Initialize region from template (body: { templateId })
+   */
+  app.post("/admin/regions/init", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const templateId = body.templateId || c.req.query('templateId');
+      if (!templateId) {
+        return c.json({ error: 'Template ID is required (body.templateId or query templateId)' }, 400);
+      }
+      const out = await handleInitRegion(String(templateId));
+      if ('status' in out && out.status === 404) {
+        return c.json({ error: out.error }, 404);
+      }
+      return c.json(out);
+    } catch (error: any) {
+      console.error('Error initializing region:', error);
+      return c.json({ error: `Failed to initialize region: ${error.message}` }, 500);
+    }
+  });
+
   /**
    * POST /admin/regions/init-{templateId}
    * Initialize a specific region from template
@@ -996,42 +1047,11 @@ export function registerRegionEndpoints(app: Hono) {
       if (!templateId) {
         return c.json({ error: 'Template ID is required' }, 400);
       }
-
-      const template = REGION_TEMPLATES[templateId.toLowerCase()];
-      if (!template) {
-        return c.json({ 
-          error: `Template '${templateId}' not found. Available templates: ${Object.keys(REGION_TEMPLATES).join(', ')}` 
-        }, 404);
+      const out = await handleInitRegion(templateId);
+      if ('status' in out && out.status === 404) {
+        return c.json({ error: out.error }, 404);
       }
-
-      // Check if region already exists
-      const existingResult = await query(
-        `SELECT * FROM regions WHERE code = $1 OR region_config->>'regionId' = $2 LIMIT 1`,
-        [template.regionCode, template.regionId]
-      );
-      const existing = existingResult.rows || [];
-
-      const regionData = prepareRegionForDatabase(template as Region);
-
-      let result;
-      if (existing.length > 0) {
-        // Update existing region
-        const updated = await update('regions', { id: existing[0].id }, {
-          ...regionData,
-          updated_at: new Date().toISOString(),
-        });
-        result = transformRegionForFrontend(updated[0]);
-      } else {
-        // Create new region
-        const created = await insert('regions', regionData);
-        result = transformRegionForFrontend(created[0]);
-      }
-
-      return c.json({
-        success: true,
-        region: result,
-        message: `${template.regionName} region ${existing.length > 0 ? 'updated' : 'created'} successfully`,
-      });
+      return c.json(out);
     } catch (error: any) {
       console.error('Error initializing region:', error);
       return c.json({ error: `Failed to initialize region: ${error.message}` }, 500);

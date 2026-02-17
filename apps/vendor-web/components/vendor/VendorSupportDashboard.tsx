@@ -25,8 +25,8 @@ import {
   Ticket as TicketIcon,
   BarChart3,
 } from 'lucide-react';
-import { CreateTicketModal } from './CreateTicketModal';
-import { TicketDetailModal } from './TicketDetailModal';
+import { CreateTicketModal } from './support/CreateTicketModal';
+import { TicketDetailModal } from './support/TicketDetailModal';
 
 interface Ticket {
   id: string;

@@ -488,23 +488,48 @@ OUTPUT FORMAT (JSON only):
 
   /**
    * POST /ai-chatbot/escalate-to-agent
-   * Escalate conversation to human agent
+   * Escalate conversation to human agent (customer or vendor).
+   * When vendorId is provided, creates ticket with source 'vendor_ai_chatbot' and vendor_id for admin CRM.
    */
   app.post("/ai-chatbot/escalate-to-agent", async (c) => {
     try {
-      const { conversationId, customerId, customerPhone, reason, conversationHistory } = await c.req.json();
+      const { conversationId, customerId, customerPhone, vendorId, reason, conversationHistory } = await c.req.json();
 
       if (!conversationId) {
         return c.json({ error: 'conversationId is required' }, 400);
       }
 
-      // Create support ticket
+      const isVendor = !!vendorId;
+      const ticketNumber = `TKT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      let vendor_id: string | null = null;
+      let customer_name: string | null = null;
+      let customer_phone: string | null = customerPhone || null;
+      let customer_email: string | null = null;
+
+      if (isVendor) {
+        vendor_id = vendorId;
+        try {
+          const { select } = await import('../database/rds-connection');
+          const vendors = await select('vendors', { id: vendorId });
+          if (vendors.length > 0) {
+            const v = vendors[0];
+            customer_name = (v as any).business_name || (v as any).owner_name || 'Vendor';
+            customer_phone = (v as any).phone || null;
+            customer_email = (v as any).email || null;
+          }
+        } catch (_) {}
+      }
+
       const ticket = await insert('support_tickets', {
+        ticket_number: ticketNumber,
         customer_id: customerId || null,
-        customer_phone: customerPhone || null,
-        subject: `AI Chatbot Escalation - ${reason || 'User Request'}`,
+        customer_phone: customer_phone,
+        customer_name: customer_name,
+        customer_email: customer_email,
+        vendor_id: vendor_id,
+        subject: isVendor ? `Vendor AI Chat Escalation - ${reason || 'User Request'}` : `AI Chatbot Escalation - ${reason || 'User Request'}`,
         message: `Conversation ID: ${conversationId}\n\nReason: ${reason || 'User requested human agent'}\n\nConversation History:\n${conversationHistory || 'N/A'}`,
-        source: 'ai_chatbot',
+        source: isVendor ? 'vendor_ai_chatbot' : 'ai_chatbot',
         status: 'open',
         priority: 'high',
         created_at: new Date().toISOString(),

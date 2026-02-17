@@ -62,6 +62,7 @@ const BRAND_ORANGE_DARK = "#E07830";
 interface Ticket {
 	id: string;
 	customerId: string;
+	vendorId?: string;
 	subject: string;
 	description: string;
 	status: "open" | "in_progress" | "resolved" | "closed" | "escalated";
@@ -72,6 +73,9 @@ interface Ticket {
 	assignedTo?: string;
 	assignedAgent?: string;
 	category?: string;
+	customerName?: string;
+	vendorName?: string;
+	requesterName?: string;
 }
 
 interface TicketMessage {
@@ -258,6 +262,7 @@ export default function SupportCRM() {
 				const fullTicket: Ticket = {
 					id: res.ticket.id,
 					customerId: res.ticket.customer_id || '',
+					vendorId: res.ticket.vendor_id,
 					subject: res.ticket.subject || '',
 					description: res.ticket.message || res.ticket.description || '',
 					status: res.ticket.status || 'open',
@@ -267,6 +272,9 @@ export default function SupportCRM() {
 					assignedTo: res.ticket.assigned_agent_id,
 					assignedAgent: res.ticket.assigned_agent_name,
 					category: res.ticket.category,
+					customerName: res.ticket.customer_name,
+					vendorName: res.ticket.vendor_name,
+					requesterName: res.ticket.vendor_id ? (res.ticket.vendor_name || 'Vendor') : (res.ticket.customer_name || res.ticket.customer_phone || 'Customer'),
 					messages,
 				};
 				setSelectedTicket(fullTicket);
@@ -551,6 +559,20 @@ export default function SupportCRM() {
 		}
 	};
 
+	/** Human-readable labels for ticket source (Customer, Vendor, AI Chatbot, Vendor AI Chat, etc.) */
+	const getSourceLabel = (source: string) => {
+		switch (String(source || "").toLowerCase()) {
+			case "customer": return "Customer";
+			case "vendor": return "Vendor";
+			case "ai_chatbot": return "AI Chatbot";
+			case "vendor_ai_chatbot": return "Vendor AI Chat";
+			case "chat_handoff": return "Chat handoff";
+			case "admin": return "Admin";
+			case "system": return "System";
+			default: return source || "Customer";
+		}
+	};
+
 	// Loading state with brand spinner
 	if (loading && tickets.length === 0) {
 		return (
@@ -761,6 +783,14 @@ export default function SupportCRM() {
 										<p className="text-sm text-gray-500 line-clamp-2">
 											{ticket.description}
 										</p>
+										<div className="mt-2 flex items-center gap-2 flex-wrap">
+											<span className="text-xs text-gray-500">
+												{(ticket as any).requesterName || ticket.customerName || (ticket as any).customerId?.slice(0, 8) || '—'}
+											</span>
+											<span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
+												{getSourceLabel((ticket as any).source || 'customer')}
+											</span>
+										</div>
 										<div className="mt-3 flex items-center justify-between">
 											<div className="flex items-center gap-2">
 												{ticket.category && (
@@ -803,8 +833,8 @@ export default function SupportCRM() {
 												<Badge className={`${getPriorityColor(selectedTicket.priority)} px-3 py-1 border`}>
 													{selectedTicket.priority.toUpperCase()}
 												</Badge>
-												<Badge variant="outline" className="uppercase text-xs">
-													{selectedTicket.source}
+												<Badge variant="outline" className="text-xs">
+													{getSourceLabel(selectedTicket.source)}
 												</Badge>
 												{selectedTicket.category && (
 													<Badge variant="outline" className="text-xs bg-gray-50">
@@ -819,7 +849,7 @@ export default function SupportCRM() {
 											<div className="flex items-center gap-4 text-sm text-gray-500 flex-wrap">
 												<div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded">
 													<User className="w-4 h-4 text-gray-400" /> 
-													<span>{selectedTicket.customerId.slice(0, 8) || "N/A"}</span>
+													<span>{(selectedTicket as any).requesterName || selectedTicket.customerName || (selectedTicket as any).vendorName || selectedTicket.customerId?.slice(0, 8) || "N/A"}</span>
 												</div>
 												<div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded">
 													<Clock className="w-4 h-4 text-gray-400" />

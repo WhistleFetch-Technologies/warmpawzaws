@@ -220,9 +220,25 @@ export function OnboardingDesigner() {
       });
 
       if (response.success) {
-        // Reload form for this role
+        // Reload form so sections have the latest data
         await loadFormForRole(selectedRole);
-        setEditingField(newField);
+        // Use the field returned by the API (correct id) so Save Field finds the section and updates the right field
+        const created = response.field;
+        if (created) {
+          setEditingField({
+            id: created.id,
+            label: created.label ?? 'New Field',
+            type: (created.type as FormField['type']) ?? 'text',
+            required: created.required ?? created.isMandatory ?? false,
+            order: created.displayOrder ?? created.order ?? 0,
+            placeholder: created.placeholder,
+            options: created.options,
+            declarationText: created.declarationText,
+            helpText: created.helpText,
+          });
+        } else {
+          setEditingField(newField);
+        }
       } else {
         alert('Failed to create field. Please try again.');
       }
@@ -506,9 +522,14 @@ export function OnboardingDesigner() {
         <FieldEditModal
           field={editingField}
           onSave={(updates) => {
-            const section = sections.find(s => s.fields.some(f => f.id === editingField.id));
+            const section = sections.find(s =>
+              s.fields.some(f => f.id === editingField.id || (f as any).fieldName === editingField.id || (f as any).name === editingField.id)
+            );
             if (section) {
-              updateField(section.id, editingField.id, updates);
+              const fieldId = editingField.id;
+              updateField(section.id, fieldId, updates);
+            } else {
+              alert('Could not find field in form. Please close and try again.');
             }
           }}
           onClose={() => setEditingField(null)}
@@ -638,12 +659,13 @@ function FieldEditModal({
           </div>
 
           <div className="flex gap-2 pt-4 border-t border-gray-200">
-            <Button onClick={onClose} variant="outline" className="flex-1 border-gray-300 text-gray-900 hover:bg-gray-100">
+            <Button type="button" onClick={onClose} variant="outline" className="flex-1 border-gray-300 text-gray-900 hover:bg-gray-100">
               Cancel
             </Button>
             <Button
+              type="button"
               onClick={() => {
-                if (!formData.label) {
+                if (!formData.label?.trim()) {
                   alert('Field label is required');
                   return;
                 }

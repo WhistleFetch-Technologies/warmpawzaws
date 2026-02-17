@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	Plus,
 	Trash2,
@@ -42,8 +42,11 @@ interface PricingRule {
 	isActive: boolean;
 }
 
+interface ServiceCategory { id: string; name: string; category_id?: string; }
+
 export function PricingRulesEngine() {
 	const [rules, setRules] = useState<PricingRule[]>([]);
+	const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
 	const [showAddForm, setShowAddForm] = useState(false);
 	const [newRule, setNewRule] = useState<Partial<PricingRule>>({
 		name: "",
@@ -53,6 +56,17 @@ export function PricingRulesEngine() {
 		conditions: { daysOfWeek: [] },
 		isActive: true,
 	});
+
+	useEffect(() => {
+		apiClient.get<any>("/admin/catalog/categories").then((r) => {
+			const list = r?.categories || r?.data || [];
+			setServiceCategories(Array.isArray(list) ? list : []);
+		}).catch(() => {});
+		apiClient.get<any>("/admin/enterprise/pricing-rules").then((r) => {
+			const list = r?.rules || [];
+			setRules(Array.isArray(list) ? list : []);
+		}).catch(() => {});
+	}, []);
 
 	const handleToggleRule = async (id: string) => {
 		try {
@@ -181,9 +195,11 @@ export function PricingRulesEngine() {
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="all">All Services</SelectItem>
-									<SelectItem value="walker">Dog Walking</SelectItem>
-									<SelectItem value="vet">Veterinary</SelectItem>
-									<SelectItem value="grooming">Grooming</SelectItem>
+									{serviceCategories.map((c) => (
+										<SelectItem key={c.id} value={c.id || c.category_id || c.name}>
+											{c.name}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</div>

@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Tabs,
   TabsContent,
@@ -50,6 +50,7 @@ import {
   XCircle,
   AlertTriangle,
   Headphones,
+  Search,
 } from 'lucide-react';
 import {
   PieChart,
@@ -140,6 +141,51 @@ export default function AnalyticsPage() {
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
   const [salesByRoleData, setSalesByRoleData] = useState<SalesByRoleData[]>([]);
   const [loadingBehavioral, setLoadingBehavioral] = useState(false);
+  const [vendorSearchQuery, setVendorSearchQuery] = useState('');
+  const [vendorSearchOpen, setVendorSearchOpen] = useState(false);
+  const [vendorSuggestions, setVendorSuggestions] = useState<{ id: string; name: string; email?: string; phone?: string }[]>([]);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [createReportOpen, setCreateReportOpen] = useState(false);
+  const [newReportName, setNewReportName] = useState('');
+  const [newReportType, setNewReportType] = useState('revenue');
+  const [savingReport, setSavingReport] = useState(false);
+  const vendorSearchRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close vendor search dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (vendorSearchRef.current && !vendorSearchRef.current.contains(event.target as Node)) {
+        setVendorSearchOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Vendor search suggestions by name with email
+  useEffect(() => {
+    if (vendorSearchQuery.length < 1) {
+      setVendorSuggestions([]);
+      setVendorSearchOpen(false);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiClient.get<any>(`/admin/vendors?search=${encodeURIComponent(vendorSearchQuery)}&limit=10`);
+        const list = res?.vendors || res?.data || [];
+        setVendorSuggestions(list.map((v: any) => ({
+          id: v.id,
+          name: v.business_name || v.name || v.owner_name || 'Vendor',
+          email: v.email,
+          phone: v.phone,
+        })));
+        setVendorSearchOpen(true);
+      } catch {
+        setVendorSuggestions([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [vendorSearchQuery]);
 
   // Use real data from hook
   const {
@@ -286,11 +332,36 @@ export default function AnalyticsPage() {
 
   const generateReport = async (reportId: string) => {
     try {
-      await apiClient.post(`/admin/reports/${reportId}/generate`, {});
+      await apiClient.post(`/admin/reports/generate`, { reportId });
       toast.success('Report generated successfully');
       loadSavedReports();
     } catch (error) {
       toast.error('Failed to generate report');
+    }
+  };
+
+  const saveNewReport = async () => {
+    if (!newReportName.trim()) {
+      toast.error('Please enter a report name');
+      return;
+    }
+    setSavingReport(true);
+    try {
+      await apiClient.post('/admin/reports/save', {
+        name: newReportName.trim(),
+        type: newReportType,
+        reportType: newReportType,
+        dateRange,
+      });
+      toast.success('Report saved successfully');
+      setCreateReportOpen(false);
+      setNewReportName('');
+      setNewReportType('revenue');
+      loadSavedReports();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save report');
+    } finally {
+      setSavingReport(false);
     }
   };
 
@@ -445,13 +516,43 @@ export default function AnalyticsPage() {
         <div className="bg-white border-b sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-1">
                 <div>
-                  {/* ✅ FIX: Match wireframe - text-xl font-semibold (consistent with wireframe) */}
                   <h1 className="text-xl font-semibold">Analytics Dashboard</h1>
                   <p className="text-sm text-gray-500">
                     Platform performance metrics
                   </p>
+                </div>
+                {/* Vendor search: suggest by name with email */}
+                <div className="relative w-72" ref={vendorSearchRef}>
+                  <input
+                    type="text"
+                    placeholder="Search vendor by name..."
+                    value={vendorSearchQuery}
+                    onChange={(e) => setVendorSearchQuery(e.target.value)}
+                    onFocus={() => vendorSearchQuery.length >= 1 && setVendorSearchOpen(true)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 pl-9 text-sm focus:border-[#FF8C42] focus:ring-1 focus:ring-[#FF8C42]"
+                  />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  {vendorSearchOpen && vendorSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-auto">
+                      {vendorSuggestions.slice(0, 8).map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col border-b border-gray-100 last:border-0"
+                          onClick={() => {
+                            setVendorSearchQuery(v.name);
+                            setVendorSearchOpen(false);
+                            setSelectedVendorId(v.id);
+                          }}
+                        >
+                          <span className="font-medium text-gray-900">{v.name}</span>
+                          <span className="text-xs text-gray-500">{v.email || v.phone || '—'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -537,15 +638,15 @@ export default function AnalyticsPage() {
             console.log('🔧 Analytics tab clicked:', value);
             setActiveTab(value);
           }}>
-            <TabsList className="mb-6 flex-wrap">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="revenue">Revenue</TabsTrigger>
-              <TabsTrigger value="refunds">Refunds & Support</TabsTrigger>
-              <TabsTrigger value="vendors">Vendor Performance</TabsTrigger>
-              <TabsTrigger value="customers">Customer Reports</TabsTrigger>
-              <TabsTrigger value="behavioral">Behavioral Patterns</TabsTrigger>
-              <TabsTrigger value="sales">Sales by Category/Role</TabsTrigger>
-              <TabsTrigger value="reports">Saved Reports</TabsTrigger>
+            <TabsList className="mb-6 flex-wrap h-auto p-0 bg-transparent gap-0 border-b border-gray-200 rounded-none">
+              <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Overview</TabsTrigger>
+              <TabsTrigger value="revenue" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Revenue</TabsTrigger>
+              <TabsTrigger value="refunds" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Refunds & Support</TabsTrigger>
+              <TabsTrigger value="vendors" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Vendor Performance</TabsTrigger>
+              <TabsTrigger value="customers" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Customer Reports</TabsTrigger>
+              <TabsTrigger value="behavioral" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Behavioral Patterns</TabsTrigger>
+              <TabsTrigger value="sales" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Sales by Category/Role</TabsTrigger>
+              <TabsTrigger value="reports" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">Saved Reports</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -857,8 +958,8 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
 
-                {/* Updated Table Component */}
-                <VendorPerformanceTable data={vendorData} />
+                {/* Updated Table Component - filter by selected vendor when search used */}
+                <VendorPerformanceTable data={selectedVendorId ? vendorData.filter((v: any) => v.id === selectedVendorId) : vendorData} />
               </Card>
             </TabsContent>
 
@@ -988,10 +1089,9 @@ export default function AnalyticsPage() {
                         <Pie
                           data={categoryData || []}
                           cx="50%"
-                          cy="50%"
+                          cy="45%"
                           labelLine={false}
-                          label={(entry) => `${entry.name}: ${entry.value}%`}
-                          outerRadius={80}
+                          outerRadius={70}
                           fill="#8884d8"
                           dataKey="value"
                         >
@@ -1004,7 +1104,8 @@ export default function AnalyticsPage() {
                             )
                           )}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip formatter={(val: number) => [`${val}`, 'Count']} />
+                        <Legend layout="vertical" align="right" verticalAlign="middle" formatter={(_, entry: any) => entry.payload?.name || ''} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -1054,12 +1155,12 @@ export default function AnalyticsPage() {
                   </h3>
                   <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={categoryData || []} layout="vertical">
+                      <BarChart data={(categoryData || []).map((c: any) => ({ ...c, revenue: c.revenue ?? c.value }))} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis type="number" />
-                        <YAxis dataKey="name" type="category" width={100} />
+                        <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
                         <Tooltip />
-                        <Bar dataKey="revenue" fill="#FF8C42" />
+                        <Bar dataKey="revenue" fill="#FF8C42" name="Revenue" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1155,7 +1256,10 @@ export default function AnalyticsPage() {
                     Generate and manage custom reports
                   </p>
                 </div>
-                <Button className="bg-[#FF8C42] hover:bg-[#ff7a28]">
+                <Button
+                  className="bg-[#FF8C42] hover:bg-[#ff7a28]"
+                  onClick={() => setCreateReportOpen(true)}
+                >
                   <Plus className="w-4 h-4 mr-2" />
                   Create Report
                 </Button>
@@ -1312,6 +1416,49 @@ export default function AnalyticsPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* Create Report modal */}
+      {createReportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateReportOpen(false)}>
+          <Card className="w-full max-w-md p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Create Report</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Report Name</label>
+                <input
+                  type="text"
+                  value={newReportName}
+                  onChange={(e) => setNewReportName(e.target.value)}
+                  placeholder="e.g. Monthly Revenue"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
+                <Select value={newReportType} onValueChange={setNewReportType}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="revenue">Revenue</SelectItem>
+                    <SelectItem value="bookings">Bookings</SelectItem>
+                    <SelectItem value="vendors">Vendors</SelectItem>
+                    <SelectItem value="customers">Customers</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-gray-500">Date range: {dateRange}</p>
+            </div>
+            <div className="flex gap-2 mt-6 justify-end">
+              <Button variant="outline" onClick={() => setCreateReportOpen(false)}>Cancel</Button>
+              <Button className="bg-[#FF8C42] hover:bg-[#ff7a28]" onClick={saveNewReport} disabled={savingReport}>
+                {savingReport ? 'Saving...' : 'Save Report'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </AdminLayout>
   );
 }

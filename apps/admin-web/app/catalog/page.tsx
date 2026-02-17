@@ -74,6 +74,9 @@ export default function ServiceCatalogPage() {
   
   // Modal states
   const [showModal, setShowModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
+  const [savingCategory, setSavingCategory] = useState(false);
   const [editingService, setEditingService] = useState<ServiceCatalogItem | null>(null);
   const [formData, setFormData] = useState<Partial<ServiceCatalogItem>>({});
   const [saving, setSaving] = useState(false);
@@ -198,6 +201,33 @@ export default function ServiceCatalogPage() {
       display_order: services.length + 1,
     });
     setShowModal(true);
+  };
+
+  const handleCreateCategory = () => {
+    setCategoryForm({ name: '', description: '' });
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      setError('Category name is required');
+      return;
+    }
+    try {
+      setSavingCategory(true);
+      setError(null);
+      await apiClient.post('/admin/catalog/categories', {
+        name: categoryForm.name.trim(),
+        description: categoryForm.description || '',
+      });
+      setSuccess('Category created successfully');
+      setShowCategoryModal(false);
+      loadData();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create category');
+    } finally {
+      setSavingCategory(false);
+    }
   };
 
   const handleEdit = (service: ServiceCatalogItem) => {
@@ -477,13 +507,29 @@ export default function ServiceCatalogPage() {
                   className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm w-64"
                 />
                 <button
-                  onClick={() => setActiveTab('servicecatalog')}
+                  onClick={async () => {
+                    try {
+                      const rows = categories.length ? categories : (await apiClient.get<any>('/service-catalog/categories').then((r: any) => r.categories || r || []));
+                      const list = Array.isArray(rows) ? rows : [];
+                      const csv = ['Name,Display Name,ID'].concat(list.map((c: any) => [c.name || '', c.display_name || c.name || '', c.id || c.category_id || ''].join(','))).join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `catalog-export-${new Date().toISOString().split('T')[0]}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      setSuccess('Export started');
+                    } catch (e: any) {
+                      setError(e?.message || 'Export failed');
+                    }
+                  }}
                   className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg font-medium hover:bg-gray-50 transition text-sm"
                 >
                   Export
                 </button>
                 <button
-                  onClick={handleCreate}
+                  onClick={handleCreateCategory}
                   className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
                 >
                   <span>+</span> Add Category
@@ -1123,6 +1169,46 @@ export default function ServiceCatalogPage() {
               >
                 {saving ? 'Saving...' : editingService ? 'Update Service' : 'Create Service'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Category Modal */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md text-gray-900">
+            <div className="p-6 border-b border-gray-300">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-gray-900">Add Category</h3>
+                <button onClick={() => setShowCategoryModal(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold" aria-label="Close">×</button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category Name *</label>
+                <input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCategoryForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                  placeholder="e.g., Grooming"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCategoryForm(prev => ({ ...prev, description: e.target.value }))}
+                  rows={2}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none resize-none"
+                  placeholder="Brief description"
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-300 flex justify-end gap-3">
+              <button onClick={() => setShowCategoryModal(false)} className="px-6 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg font-medium hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={handleSaveCategory} disabled={savingCategory} className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50">{savingCategory ? 'Saving...' : 'Create Category'}</button>
             </div>
           </div>
         </div>

@@ -1,7 +1,6 @@
 'use client';
 
 import { 
-  LayoutDashboard, 
   Users, 
   ShoppingCart,
   Globe, 
@@ -51,12 +50,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   };
 
   const navigationItems = [
-    { 
-      icon: LayoutDashboard, 
-      label: 'Dashboard', 
-      id: 'dashboard',
-      onClick: () => onNavigate('dashboard')
-    },
     { 
       icon: BarChart3, 
       label: 'Analytics & Insights', 
@@ -136,12 +129,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       label: 'Content Management', 
       id: 'content',
       onClick: () => onNavigate('content')
-    },
-    { 
-      icon: IndianRupee, 
-      label: 'Payment & Refund', 
-      id: 'payment-refund',
-      onClick: () => onNavigate('payment-refund')
     },
     { 
       icon: Package, 

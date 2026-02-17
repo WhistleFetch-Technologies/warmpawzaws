@@ -38,23 +38,19 @@ export function ECommerceDashboard({
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      
-      // Load analytics
-      const analyticsData = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({}));
-      setAnalytics(analyticsData || {});
-      
-      // Load recent orders
+      // Southbound: normalize API responses so UI gets consistent shape
+      const analyticsRes = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({}));
+      const analyticsPayload = (analyticsRes as any)?.data ?? analyticsRes ?? {};
+      setAnalytics(analyticsPayload);
+
       const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
-      setRecentOrders((ordersData as any)?.orders || []);
-      
-      // Load pending approvals
+      setRecentOrders((ordersData as any)?.orders ?? []);
+
       const approvalsData = await apiClient.get<any>('/admin/products?status=pending_approval&limit=5').catch(() => ({ products: [] }));
-      setPendingApprovals((approvalsData as any)?.products || []);
-      
-      // Load top sellers
+      setPendingApprovals((approvalsData as any)?.products ?? []);
+
       const sellersData = await apiClient.get<any>('/admin/vendors/top-sellers?limit=5').catch(() => ({ sellers: [] }));
-      setTopSellers((sellersData as any)?.sellers || []);
-      
+      setTopSellers((sellersData as any)?.sellers ?? (sellersData as any)?.topSellers ?? []);
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -62,11 +58,11 @@ export function ECommerceDashboard({
     }
   };
 
-  // Stats cards
+  const totalRevenue = analytics?.totalRevenue ?? analytics?.totalGMV ?? 0;
   const stats = [
     {
       title: 'Total GMV',
-      value: `₹${(analytics?.totalGMV || analytics?.totalRevenue || 0).toLocaleString()}`,
+      value: `₹${Number(totalRevenue).toLocaleString()}`,
       change: '+18.5%',
       trend: 'up',
       icon: IndianRupee,

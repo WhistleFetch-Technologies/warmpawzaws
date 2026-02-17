@@ -818,17 +818,20 @@ export function registerEcommerceEndpoints(app: Hono) {
       const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || '0');
       const totalCommission = totalRevenue * 0.1;
 
-      return c.json({
-        success: true,
-        data: {
-          totalRevenue,
-          totalCommission,
-          totalOrders: parseInt(revenueStats.rows[0]?.total_orders || '0', 10),
-          activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
-          totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || '0', 10),
-          thisMonthRevenue: parseFloat(revenueStats.rows[0]?.this_month_revenue || '0'),
-        },
-      });
+      const data = {
+        totalRevenue,
+        totalGMV: totalRevenue,
+        totalCommission,
+        totalOrders: parseInt(revenueStats.rows[0]?.total_orders || '0', 10),
+        activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
+        totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || '0', 10),
+        thisMonthRevenue: parseFloat(revenueStats.rows[0]?.this_month_revenue || '0'),
+        activeProducts: 0,
+        pendingApprovals: 0,
+        processingOrders: 0,
+        pendingSettlements: 0,
+      };
+      return c.json({ success: true, data, ...data });
     } catch (error: any) {
       console.error('Error fetching platform analytics:', error);
       return c.json({ error: error.message }, 500);
@@ -863,7 +866,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         `SELECT 
            p.name,
            COUNT(oi.id) as sales,
-           COALESCE(SUM(oi.total), 0) as revenue
+           COALESCE(SUM(oi.total_price), 0) as revenue
          FROM order_items oi
          INNER JOIN products p ON oi.product_id = p.id
          INNER JOIN orders o ON oi.order_id = o.id

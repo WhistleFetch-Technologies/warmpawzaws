@@ -14,21 +14,14 @@ export function AdminLayout({
 	const router = useRouter();
 	const pathname = usePathname();
 	
-	// Determine active view from current path
-	// Improved activeView logic: always use the first segment after root
+	// Determine active view from current path (Dashboard removed; default to analytics)
 	const activeView =
-		pathname && pathname !== "/" ? pathname.split("/")[1] : "dashboard";
+		pathname && pathname !== "/" ? pathname.split("/")[1] : "analytics";
 
 	// Handle navigation from sidebar
 	const handleNavigate = (view: string) => {
-		console.log('🔧 [AdminLayout] Navigating to:', view);
-		if (view === "dashboard") {
-			router.push("/");
-		} else {
-			const route = `/${view}`;
-			console.log('🔧 [AdminLayout] Pushing route:', route);
-			router.push(route);
-		}
+		const route = view ? `/${view}` : "/";
+		router.push(route);
 	};
 
 	return (
@@ -44,9 +37,12 @@ export function AdminLayout({
 					<div className="max-w-7xl mx-auto px-6 py-3">
 						<div className="flex items-center justify-between">
 							<Breadcrumbs />
-							<div className="w-80">
-								<GlobalSearch />
-							</div>
+							{/* Hide global search (vendor/orders/bookings) on Region Manager and Pet Info as per requirements */}
+							{pathname && !pathname.startsWith("/regions") && !pathname.startsWith("/pet-info") && (
+								<div className="w-80">
+									<GlobalSearch />
+								</div>
+							)}
 						</div>
 					</div>
 				</header>

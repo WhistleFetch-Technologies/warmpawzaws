@@ -169,7 +169,9 @@ export function VendorInsightsDashboard() {
                   {insights.activities.completedBookings} completed
                 </span>
                 <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
-                  {((insights.activities.completedBookings / insights.activities.totalBookings) * 100).toFixed(1)}%
+                  {insights.activities.totalBookings
+                    ? ((insights.activities.completedBookings / insights.activities.totalBookings) * 100).toFixed(1)
+                    : 0}%
                 </span>
               </div>
             </div>
@@ -280,16 +282,16 @@ export function VendorInsightsDashboard() {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 outerRadius={100}
                 fill="#8884d8"
                 dataKey="value"
               >
                 {insights.distribution.byCategory.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+                  <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip />
+              <Legend />
             </RechartsPieChart>
           </ResponsiveContainer>
         </Card>
@@ -303,21 +305,24 @@ export function VendorInsightsDashboard() {
             <BarChart3 className="w-5 h-5 text-gray-400" />
           </div>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={[
-              { name: 'Completed', value: insights.activities.completedBookings, color: COLORS[1] },
-              { name: 'Cancelled', value: insights.activities.cancelledBookings, color: COLORS[4] }
-            ]}>
+            <BarChart
+              data={[
+                { name: 'Completed', value: insights.activities.completedBookings || 0 },
+                { name: 'Cancelled', value: insights.activities.cancelledBookings || 0 },
+                { name: 'Pending', value: Math.max(0, (insights.activities.totalBookings || 0) - (insights.activities.completedBookings || 0) - (insights.activities.cancelledBookings || 0)) }
+              ]}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
-              <YAxis stroke="#6b7280" fontSize={12} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
+              <YAxis stroke="#6b7280" fontSize={12} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'white',
                   border: '1px solid #e5e7eb',
                   borderRadius: '8px'
                 }}
               />
-              <Bar dataKey="value" fill="#FF8C42" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="value" fill="#FF8C42" radius={[8, 8, 0, 0]} name="Count" />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -342,7 +347,7 @@ export function VendorInsightsDashboard() {
                     <div
                       className="h-2 rounded-full transition-all"
                       style={{
-                        width: `${(status.value / insights.distribution.byStatus.reduce((sum, s) => sum + s.value, 0)) * 100}%`,
+                        width: `${(() => { const total = insights.distribution.byStatus.reduce((sum, s) => sum + s.value, 0); return total ? (status.value / total) * 100 : 0; })()}%`,
                         backgroundColor: status.color
                       }}
                     />

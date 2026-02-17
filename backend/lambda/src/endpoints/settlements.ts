@@ -1313,7 +1313,9 @@ export function registerSettlementEndpoints(app: Hono) {
     const payoutId = payoutRecord[0]?.id;
     if (!payoutId) return;
 
-    const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    const razorpayClient = getRazorpayClient();
+    const xFromConfig = await razorpayClient.getRazorpayXAccountNumber();
+    const razorpayXAccountNumber = (xFromConfig || process.env.RAZORPAY_X_ACCOUNT_NUMBER || '').trim();
     if (!razorpayXAccountNumber) {
       return;
     }
@@ -1322,7 +1324,6 @@ export function registerSettlementEndpoints(app: Hono) {
       const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
       if (v?.rows?.[0]?.phone) vendorPhone = String(v.rows[0].phone).replace(/\D/g, '').slice(-10) || vendorPhone;
     } catch (_) {}
-    const razorpayClient = getRazorpayClient();
     const compositeBody = {
       account_number: razorpayXAccountNumber,
       amount: Math.round(amount * 100),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	Search,
 	Filter,
@@ -42,6 +42,71 @@ interface Product {
 export function InventoryManager() {
 	const [products, setProducts] = useState<Product[]>([]);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [filterStatus, setFilterStatus] = useState<string>("all");
+	const [filterCategory, setFilterCategory] = useState<string>("all");
+	const [filterOpen, setFilterOpen] = useState(false);
+	const [addProductOpen, setAddProductOpen] = useState(false);
+	const [loading, setLoading] = useState(true);
+	const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "0" });
+	const [savingProduct, setSavingProduct] = useState(false);
+
+	useEffect(() => {
+		loadProducts();
+	}, []);
+
+	const loadProducts = async () => {
+		setLoading(true);
+		try {
+			const res = await apiClient.get<any>("/admin/enterprise/inventory");
+			const list = res?.products || [];
+			const mapped: Product[] = (list || []).map((p: any) => {
+				const stock = parseInt(p.stock ?? p.stock_quantity ?? 0, 10);
+				const minStock = 5;
+				let status: Product["status"] = "in_stock";
+				if (stock === 0) status = "out_of_stock";
+				else if (stock <= minStock) status = "low_stock";
+				return {
+					id: String(p.id),
+					name: String(p.name || ""),
+					sku: String(p.sku || `SKU-${p.id}`),
+					category: String(p.category || p.categoryId || ""),
+					stock,
+					minStock,
+					price: parseFloat(p.price || 0),
+					status,
+					lastUpdated: String(p.lastUpdated || p.updated_at || ""),
+				};
+			});
+			setProducts(mapped);
+		} catch {
+			setProducts([]);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleAddProduct = async () => {
+		if (!newProduct.name.trim() || !newProduct.price) {
+			toast.error("Name and price are required");
+			return;
+		}
+		setSavingProduct(true);
+		try {
+			await apiClient.post("/admin/catalog/products", {
+				name: newProduct.name.trim(),
+				price: parseFloat(newProduct.price) || 0,
+				stock: parseInt(newProduct.stock || "0", 10),
+			});
+			toast.success("Product added");
+			setAddProductOpen(false);
+			setNewProduct({ name: "", price: "", stock: "0" });
+			loadProducts();
+		} catch (err: any) {
+			toast.error(err.message || "Failed to add product");
+		} finally {
+			setSavingProduct(false);
+		}
+	};
 
 	const getStatusColor = (status: string) => {
 		switch (status) {
@@ -86,11 +151,14 @@ export function InventoryManager() {
 		}
 	};
 
-	const filteredProducts = products.filter(
-		(p) =>
+	const filteredProducts = products.filter((p) => {
+		const matchesSearch =
 			p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-	);
+			p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+		const matchesStatus = filterStatus === "all" || p.status === filterStatus;
+		const matchesCategory = filterCategory === "all" || (p.category && p.category === filterCategory);
+		return matchesSearch && matchesStatus && matchesCategory;
+	});
 
 	return (
 		<div className="space-y-6">
@@ -141,15 +209,93 @@ export function InventoryManager() {
 						className="pl-10 bg-white"
 					/>
 				</div>
-				<div className="flex gap-2">
-					<Button variant="outline" className="gap-2 bg-white">
-						<Filter className="w-4 h-4" /> Filter
-					</Button>
-					<Button className="gap-2 bg-[#FF8C42] hover:bg-[#e67a30]">
+				<div className="flex gap-2 relative">
+					<div className="relative">
+						<Button
+							variant="outline"
+							className="gap-2 bg-white"
+							onClick={() => setFilterOpen((o) => !o)}
+						>
+							<Filter className="w-4 h-4" /> Filter
+						</Button>
+						{filterOpen && (
+							<>
+								<div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+								<div className="absolute right-0 top-full mt-1 z-20 w-56 p-3 bg-white border border-gray-200 rounded-lg shadow-lg">
+									<p className="text-sm font-medium mb-2">Status</p>
+									<select
+										value={filterStatus}
+										onChange={(e) => setFilterStatus(e.target.value)}
+										className="w-full border rounded px-2 py-1 text-sm mb-3"
+									>
+										<option value="all">All</option>
+										<option value="in_stock">In stock</option>
+										<option value="low_stock">Low stock</option>
+										<option value="out_of_stock">Out of stock</option>
+									</select>
+									<p className="text-sm font-medium mb-2">Category</p>
+									<select
+										value={filterCategory}
+										onChange={(e) => setFilterCategory(e.target.value)}
+										className="w-full border rounded px-2 py-1 text-sm"
+									>
+										<option value="all">All</option>
+										{[...new Set(products.map((p) => p.category).filter(Boolean))].map((c) => (
+											<option key={c} value={c}>{c}</option>
+										))}
+									</select>
+								</div>
+							</>
+						)}
+					</div>
+					<Button
+						className="gap-2 bg-[#FF8C42] hover:bg-[#e67a30]"
+						onClick={() => setAddProductOpen(true)}
+					>
 						<Plus className="w-4 h-4" /> Add Product
 					</Button>
 				</div>
 			</div>
+
+			{addProductOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setAddProductOpen(false)}>
+					<div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+						<h3 className="text-lg font-semibold">Add Product</h3>
+						<div>
+							<label className="block text-sm font-medium mb-1">Name</label>
+							<Input
+								value={newProduct.name}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, name: e.target.value })}
+								placeholder="Product name"
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-1">Price (₹)</label>
+							<Input
+								type="number"
+								value={newProduct.price}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, price: e.target.value })}
+								placeholder="0"
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-1">Initial stock</label>
+							<Input
+								type="number"
+								value={newProduct.stock}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, stock: e.target.value })}
+								placeholder="0"
+							/>
+						</div>
+						<div className="flex gap-2 justify-end">
+							<Button variant="outline" onClick={() => setAddProductOpen(false)}>Cancel</Button>
+							<Button className="bg-[#FF8C42] hover:bg-[#e67a30]" onClick={handleAddProduct} disabled={savingProduct}>
+								{savingProduct ? "Saving..." : "Add Product"}
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			<div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
 				<Table>
@@ -164,7 +310,13 @@ export function InventoryManager() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{filteredProducts.length === 0 ? (
+						{loading ? (
+							<TableRow>
+								<TableCell colSpan={6} className="text-center py-8 text-gray-500">
+									Loading...
+								</TableCell>
+							</TableRow>
+						) : filteredProducts.length === 0 ? (
 							<TableRow>
 								<TableCell colSpan={6} className="text-center py-8 text-gray-500">
 									No products found

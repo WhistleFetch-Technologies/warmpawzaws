@@ -1642,15 +1642,25 @@ class GetVendorReverificationRequestsHandler extends BaseHandler {
 class CreateVendorHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const body = this.parseBody(context.event);
-      
-      const vendor = await insert('vendors', {
-        ...body,
+      const body = this.parseBody(context.event) || {};
+      // Map camelCase payload to vendors table snake_case columns (fix: column "business name" does not exist)
+      const vendorRow: Record<string, any> = {
+        phone: body.phone || body.Phone || '',
+        email: body.email || body.Email || `vendor-${(body.phone || body.Phone || '').replace(/\D/g, '')}@warmpawz.app`,
+        owner_name: body.ownerName ?? body.owner_name ?? body.OwnerName ?? '',
+        business_name: body.businessName ?? body.business_name ?? body.BusinessName ?? '',
+        role_id: body.roleId ?? body.role_id ?? null,
+        vendor_type: body.vendorType ?? body.vendor_type ?? 'solo',
         status: 'pending',
         is_active: false,
+        address: body.address ?? body.Address ?? '',
+        city: body.city ?? body.City ?? '',
+        state: body.state ?? body.State ?? '',
+        pincode: body.pincode ?? body.pinCode ?? body.Pincode ?? '',
         created_at: new Date().toISOString(),
-      });
-
+      };
+      if (body.approved_at !== undefined) vendorRow.approved_at = body.approved_at;
+      const vendor = await insert('vendors', vendorRow);
       return this.success({ success: true, vendor: vendor[0] });
     } catch (error: any) {
       return this.error(error.message || 'Failed to create vendor', 500);
@@ -3464,6 +3474,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       try {
         let sql = `
           SELECT o.*, 
+                 o.order_status as status,
                  c.full_name as customer_name, c.email as customer_email,
                  v.business_name as vendor_name
           FROM orders o
@@ -3471,7 +3482,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           LEFT JOIN vendors v ON o.vendor_id = v.id
         `;
         if (status) {
-          sql += ` WHERE o.status = $1`;
+          sql += ` WHERE o.order_status = $1`;
           sql += ` ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`;
           orders = await query(sql, [status, limit, offset]);
         } else {
@@ -3479,19 +3490,19 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           orders = await query(sql, [limit, offset]);
         }
       } catch {
-        // Try simpler query if joins fail
         try {
-          orders = await query(`SELECT * FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+          orders = await query(`SELECT o.*, o.order_status as status FROM orders o ORDER BY o.created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
         } catch {
           orders = { rows: [] };
         }
       }
 
       const countResult = await query(`SELECT COUNT(*) as count FROM orders`).catch(() => ({ rows: [{ count: '0' }] }));
+      const rows = (orders.rows || []).map((o: any) => ({ ...o, status: o.status ?? o.order_status }));
 
       return c.json({
         success: true,
-        orders: orders.rows || [],
+        orders: rows,
         total: parseInt(countResult.rows[0]?.count || '0', 10),
         limit,
         offset
@@ -3499,6 +3510,38 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching orders:', error);
       return c.json({ success: true, orders: [], total: 0, limit: 10, offset: 0 });
+    }
+  });
+
+  app.put('/admin/orders/:id/status', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+      const status = body.status;
+      if (!status) {
+        return c.json({ success: false, error: 'status is required' }, 400);
+      }
+      const valid = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'];
+      if (!valid.includes(status)) {
+        return c.json({ success: false, error: 'Invalid status' }, 400);
+      }
+      const existing = await query('SELECT id, order_status FROM orders WHERE id = $1', [id]).catch(() => ({ rows: [] }));
+      if (!existing.rows?.length) {
+        return c.json({ success: false, error: 'Order not found' }, 404);
+      }
+      await query(
+        `UPDATE orders SET order_status = $1, updated_at = NOW()${status === 'shipped' ? ', shipped_at = NOW()' : ''}${status === 'delivered' ? ', delivered_at = NOW()' : ''}${status === 'cancelled' ? ', cancelled_at = NOW()' : ''} WHERE id = $2`,
+        [status, id]
+      );
+      const updated = await query('SELECT * FROM orders WHERE id = $1', [id]);
+      return c.json({
+        success: true,
+        order: updated.rows?.[0],
+        message: 'Order status updated',
+      });
+    } catch (error: any) {
+      console.error('Error updating order status:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to update order status' }, 500);
     }
   });
 
@@ -3623,19 +3666,39 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
   app.post('/admin/platform-settings', async (c) => {
     try {
-      const body = await c.req.json();
-      const { key, value } = body;
-      
+      const body = await c.req.json().catch(() => ({}));
+      const key = body.key ?? body.settingKey;
+      const value = body.value ?? body.settingValue ?? body.setting_value;
       if (!key) {
-        return c.json({ success: false, error: 'Key is required' }, 400);
+        return c.json({ success: false, error: 'Key or settingKey is required' }, 400);
       }
-
+      const settingValue = typeof value === 'string' && (body.settingType === 'array' || body.settingType === 'object') ? value : (typeof value === 'object' ? JSON.stringify(value) : value);
       await upsert('platform_settings', {
         setting_key: key,
-        setting_value: value,
+        setting_value: settingValue,
         updated_at: new Date().toISOString()
       }, 'setting_key');
+      return c.json({ success: true, message: 'Setting saved successfully' });
+    } catch (error: any) {
+      console.error('Error saving platform setting:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
 
+  app.put('/admin/platform-settings', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const key = body.settingKey ?? body.key;
+      const value = body.settingValue ?? body.setting_value ?? body.value;
+      if (!key) {
+        return c.json({ success: false, error: 'settingKey or key is required' }, 400);
+      }
+      const settingValue = typeof value === 'object' ? JSON.stringify(value) : value;
+      await upsert('platform_settings', {
+        setting_key: key,
+        setting_value: settingValue,
+        updated_at: new Date().toISOString()
+      }, 'setting_key');
       return c.json({ success: true, message: 'Setting saved successfully' });
     } catch (error: any) {
       console.error('Error saving platform setting:', error);
@@ -3682,11 +3745,43 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         agentStats = { rows: [{ total_agents: '0', active_agents: '0' }] };
       }
 
+      const row = ticketStats.rows[0] || {};
+      const agentRow = agentStats.rows[0] || {};
+      const totalTickets = parseInt(row.total_tickets || '0', 10);
+      const openTickets = parseInt(row.open_tickets || '0', 10);
+      const inProgressTickets = parseInt(row.in_progress_tickets || '0', 10);
+      const resolvedTickets = parseInt(row.resolved_tickets || '0', 10);
+      const escalatedTickets = parseInt(row.escalated_tickets || '0', 10);
+      const todayTickets = parseInt(row.today_tickets || '0', 10);
+      const avgResolutionHours = parseFloat(row.avg_resolution_hours || '0');
+      const avgResponseTime = avgResolutionHours < 1
+        ? `${Math.round(avgResolutionHours * 60)}m`
+        : avgResolutionHours < 24
+          ? `${Math.round(avgResolutionHours)}h`
+          : `${Math.round(avgResolutionHours / 24)}d`;
+
       return c.json({
         success: true,
+        totalTickets,
+        openTickets,
+        inProgressTickets,
+        resolvedTickets,
+        escalatedTickets,
+        todayTickets,
+        avgResponseTime,
+        pendingRefunds: 0,
         stats: {
-          ...ticketStats.rows[0],
-          ...agentStats.rows[0]
+          ...row,
+          ...agentRow,
+          totalTickets,
+          openTickets,
+          inProgressTickets,
+          resolvedTickets,
+          escalatedTickets,
+          todayTickets,
+          avgResponseTime,
+          total_agents: agentRow.total_agents,
+          active_agents: agentRow.active_agents,
         }
       });
     } catch (error: any) {

@@ -22,6 +22,13 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
+/** Generate unique ticket number for support_tickets (required by DB). */
+function generateTicketNumber(prefix = 'TKT'): string {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${prefix}-${date}-${rand}`;
+}
+
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
    * POST /support/tickets
@@ -46,8 +53,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
         return c.json({ error: 'subject and message are required' }, 400);
       }
 
-      // Create support ticket
+      const ticketNumber = generateTicketNumber('TKT');
+
+      // Create support ticket (ticket_number required by schema)
       const ticket = await insert('support_tickets', {
+        ticket_number: ticketNumber,
         customer_id: customerId || null,
         customer_phone: customerPhone || null,
         subject,
@@ -58,7 +68,6 @@ export function registerSupportCrmEndpoints(app: Hono) {
         booking_id: bookingId || null,
         order_id: orderId || null,
         status: 'open',
-        attachments: attachments || [],
         created_at: new Date().toISOString(),
       });
 
@@ -182,6 +191,13 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       const ticket = tickets[0];
+      // Enrich with vendor name when ticket is from vendor
+      if (ticket.vendor_id) {
+        const vendors = await select('vendors', { id: ticket.vendor_id }).catch(() => []);
+        if (vendors.length > 0) {
+          ticket.vendor_name = vendors[0].business_name || vendors[0].owner_name;
+        }
+      }
 
       // Get ticket responses/conversation
       const responses = await query(
@@ -416,10 +432,14 @@ export function registerSupportCrmEndpoints(app: Hono) {
           c.full_name as customer_name,
           c.phone as customer_phone,
           c.email as customer_email,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          v.email as vendor_email,
           s.name as assigned_agent_name,
           t.assigned_to as assigned_agent_id
         FROM support_tickets t
         LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vendors v ON t.vendor_id = v.id
         LEFT JOIN staff s ON t.assigned_to = s.id
         WHERE 1=1
       `;
@@ -446,18 +466,22 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const safeTickets = (tickets.rows || []).map((t: any) => ({
         id: String(t.id || ''),
         customerId: t.customer_id ? String(t.customer_id) : '',
+        vendorId: t.vendor_id ? String(t.vendor_id) : '',
         subject: String(t.subject || ''),
-        // Use message as primary content, fallback to description
         description: String(t.message || t.description || ''),
         status: String(t.status || 'open'),
         priority: String(t.priority || 'medium'),
-        source: String(t.source || 'customer'),
+        source: String(t.source || (t.vendor_id ? 'vendor' : 'customer')),
         createdAt: String(t.created_at || ''),
         assignedTo: t.assigned_agent_id ? String(t.assigned_agent_id) : undefined,
         assignedAgent: t.assigned_agent_name || undefined,
         category: t.category || undefined,
         customerName: t.customer_name || '',
         customerEmail: t.customer_email || '',
+        customerPhone: t.customer_phone || '',
+        vendorName: t.vendor_name || '',
+        vendorPhone: t.vendor_phone || '',
+        requesterName: t.vendor_id ? (t.vendor_name || t.customer_name || 'Vendor') : (t.customer_name || t.customer_phone || 'Customer'),
       }));
 
       return c.json({
@@ -956,8 +980,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
         })),
       };
 
-      // Create detailed support ticket
+      const handoffTicketNumber = generateTicketNumber('TKT');
+
+      // Create detailed support ticket (ticket_number required by schema)
       const ticket = await insert('support_tickets', {
+        ticket_number: handoffTicketNumber,
         customer_id: booking.customer_id || customerId || null,
         customer_phone: customerPhone || customer[0]?.phone || null,
         vendor_id: booking.vendor_id || vendorId || null,

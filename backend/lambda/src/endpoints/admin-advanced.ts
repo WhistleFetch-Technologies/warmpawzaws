@@ -1334,6 +1334,33 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         LIMIT 10
       `).catch(() => ({ rows: [] }));
 
+      const ageDistribution = await query(`
+        SELECT 
+          CASE 
+            WHEN (COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12) < 1 THEN '0-1 yrs'
+            WHEN (COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12) < 3 THEN '1-3 yrs'
+            WHEN (COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12) < 7 THEN '3-7 yrs'
+            ELSE '7+ yrs'
+          END as age_group,
+          COUNT(*) as count
+        FROM pets
+        GROUP BY 1
+        ORDER BY 1
+      `).catch(() => ({ rows: [] }));
+
+      const healthTrends = await query(`
+        SELECT condition_type as condition, COUNT(*) as count
+        FROM (
+          SELECT unnest(string_to_array(COALESCE(health_conditions, ''), ',')) as condition_type
+          FROM pets
+          WHERE COALESCE(health_conditions, '') != ''
+        ) t
+        WHERE condition_type != ''
+        GROUP BY condition_type
+        ORDER BY count DESC
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+
       return c.json({
         success: true,
         stats: {
@@ -1344,6 +1371,14 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           avgAge: parseFloat(stats.rows[0]?.avg_age || '0'),
           topBreeds: topBreeds.rows.map((r: any) => ({
             breed: r.breed,
+            count: parseInt(r.count, 10),
+          })),
+          ageDistribution: (ageDistribution.rows || []).map((r: any) => ({
+            ageGroup: r.age_group,
+            count: parseInt(r.count, 10),
+          })),
+          healthTrends: (healthTrends.rows || []).map((r: any) => ({
+            condition: r.condition,
             count: parseInt(r.count, 10),
           })),
         },
@@ -1359,6 +1394,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           otherCount: 0,
           avgAge: 0,
           topBreeds: [],
+          ageDistribution: [],
+          healthTrends: [],
         }
       });
     }
@@ -3229,6 +3266,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     return rows.length > 0;
   }
 
+  /** Treat two HSN code values as equal (trim, and if both numeric compare as numbers to avoid 998351 vs "998351" mismatch). */
+  function hsnCodesEqual(a: string | number | null | undefined, b: string | number | null | undefined): boolean {
+    const x = String(a ?? '').trim();
+    const y = String(b ?? '').trim();
+    if (x === y) return true;
+    if (/^\d+$/.test(x) && /^\d+$/.test(y)) return Number(x) === Number(y);
+    return false;
+  }
+
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       let rows: any[];
@@ -3365,7 +3411,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         const rows = (existing as any)?.rows ?? (Array.isArray(existing) ? existing : []);
         const currentRow = rows[0];
         const currentCode = currentRow ? String(currentRow.code_val ?? '').trim() : '';
-        if (newCode === currentCode) {
+        if (hsnCodesEqual(newCode, currentCode)) {
           // No change to code – don't set it so we don't trigger unique check
         } else {
           if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
@@ -5395,11 +5441,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!accountNumber || !ifscCode || !accountHolder) {
         return c.json({ success: false, error: 'Incomplete bank details (account number, IFSC, or holder name missing)' }, 400);
       }
-      const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+      const razorpayClient = getRazorpayClient();
+      const xFromConfig = await razorpayClient.getRazorpayXAccountNumber();
+      const razorpayXAccountNumber = (xFromConfig || process.env.RAZORPAY_X_ACCOUNT_NUMBER || '').trim();
       if (!razorpayXAccountNumber) {
         return c.json({
           success: false,
-          error: 'RazorpayX payout source account not configured. Set RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account / Customer Identifier from x.razorpay.com → Banking).',
+          error: 'RazorpayX payout source account not configured. Set razorpayXAccountNumber in AWS Secrets Manager (warmpawz/{env}/razorpay) or RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account from x.razorpay.com → Banking).',
         }, 503);
       }
       let vendorPhone = '0000000000';
@@ -5501,10 +5549,44 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/policies', async (c) => {
     try {
-      const policies = await query('SELECT * FROM policies ORDER BY created_at DESC');
-      return c.json({ success: true, policies: policies.rows });
+      // E-commerce policy config (refund, payment, commission, verification) from admin_settings
+      const policyKeys = ['refund', 'payment', 'commission', 'verification'];
+      const rows = await query(
+        `SELECT setting_key, setting_value FROM admin_settings WHERE setting_key = ANY($1)`,
+        [policyKeys.map((k) => `policy_${k}`)]
+      ).catch(() => ({ rows: [] }));
+      const data: Record<string, unknown> = {};
+      for (const row of rows.rows || []) {
+        const key = (row.setting_key as string || '').replace(/^policy_/, '');
+        if (key && row.setting_value != null) {
+          try {
+            data[key] = typeof row.setting_value === 'string' ? JSON.parse(row.setting_value) : row.setting_value;
+          } catch {
+            data[key] = row.setting_value;
+          }
+        }
+      }
+      return c.json({ success: true, ...data, data: data });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/policies/:type', async (c) => {
+    try {
+      const type = c.req.param('type');
+      const allowed = ['refund', 'payment', 'commission', 'verification'];
+      if (!allowed.includes(type)) {
+        return c.json({ error: `Invalid policy type. Allowed: ${allowed.join(', ')}` }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const settingKey = `policy_${type}`;
+      const value = JSON.stringify(body);
+      await upsertAdminSetting(settingKey, value, 'all');
+      return c.json({ success: true, message: `${type} policy saved` });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Failed to save policy', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });

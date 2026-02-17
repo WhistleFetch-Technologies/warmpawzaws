@@ -32,6 +32,7 @@ import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
 import { calculateFees } from './fee-config';
+import { getRazorpayConfig } from '../utils/razorpay-client';
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -562,8 +563,21 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
     const signature = headers['x-razorpay-signature'] || headers['X-Razorpay-Signature'] || '';
     const requestId = context.requestId;
 
+    // Webhook secret: prefer Secrets Manager / DB (getRazorpayConfig), fallback to env
+    let webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+    try {
+      const config = await getRazorpayConfig();
+      if (config?.webhookSecret) webhookSecret = config.webhookSecret;
+    } catch (e) {
+      // keep env fallback
+    }
+    if (!webhookSecret) {
+      console.error('[SECURITY] Razorpay webhook secret not configured (secret or RAZORPAY_WEBHOOK_SECRET)');
+      return this.error('Webhook not configured', 503, 'CONFIG_ERROR', undefined, requestId);
+    }
+
     // Verify Razorpay webhook signature
-    if (!this.verifyWebhookSignature(rawBody, signature)) {
+    if (!this.verifyWebhookSignature(rawBody, signature, webhookSecret)) {
       console.error('[SECURITY] Invalid Razorpay webhook signature');
       return this.error('Invalid signature', 401, 'UNAUTHORIZED', undefined, requestId);
     }
@@ -741,22 +755,15 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
   }
 
   /**
-   * Verify Razorpay webhook signature using HMAC SHA256
+   * Verify Razorpay webhook signature using HMAC SHA256.
+   * webhookSecret is passed in (from getRazorpayConfig() or env) so we use a single source of truth.
    */
-  private verifyWebhookSignature(body: string, signature: string): boolean {
-    if (!signature) {
+  private verifyWebhookSignature(body: string, signature: string, webhookSecret: string): boolean {
+    if (!signature || !webhookSecret) {
       return false;
     }
 
     try {
-      const crypto = require('crypto');
-      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-      
-      if (!webhookSecret) {
-        console.error('[SECURITY] RAZORPAY_WEBHOOK_SECRET not configured');
-        return false;
-      }
-
       const expectedSignature = createHmac('sha256', webhookSecret)
         .update(body)
         .digest('hex');

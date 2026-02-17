@@ -14,10 +14,12 @@ import {
 	Download,
 	RefreshCw,
 	BarChart3,
+	Package,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
+import { PricingRulesEngine, InventoryManager } from "@/components/admin/enterprise";
 
 interface RevenueStats {
 	totalRevenue: number;
@@ -42,7 +44,7 @@ interface EnterpriseCustomer {
 export default function EnterpriseRevenue() {
 	const router = useRouter();
 	const [activeTab, setActiveTab] = useState<
-		"overview" | "revenue" | "customers"
+		"overview" | "revenue" | "customers" | "logic"
 	>("overview");
 	const [loading, setLoading] = useState(true);
 	const [stats, setStats] = useState<RevenueStats | null>(null);
@@ -50,6 +52,7 @@ export default function EnterpriseRevenue() {
 		EnterpriseCustomer[]
 	>([]);
 	const [dateRange, setDateRange] = useState("30d");
+	const [logicSubTab, setLogicSubTab] = useState<"pricing" | "inventory">("pricing");
 
 	useEffect(() => {
 		loadData();
@@ -177,8 +180,12 @@ export default function EnterpriseRevenue() {
 								return (
 									<button
 										key={tab.id}
-										onClick={() => router.push("/enterprise/logic-tab")}
-										className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-600 hover:text-gray-900`}
+										onClick={() => setActiveTab("logic")}
+										className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+											activeTab === "logic"
+												? "border-orange-500 text-orange-600"
+												: "border-transparent text-gray-600 hover:text-gray-900"
+										}`}
 									>
 										<Icon className="w-4 h-4 inline mr-2" />
 										{tab.label}
@@ -393,6 +400,31 @@ export default function EnterpriseRevenue() {
 									</table>
 								</div>
 							</Card>
+						</div>
+					) : activeTab === "logic" ? (
+						<div className="space-y-6">
+							<div className="flex gap-2 p-1 bg-gray-100 rounded-lg w-fit">
+								<button
+									onClick={() => setLogicSubTab("pricing")}
+									className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${
+										logicSubTab === "pricing" ? "bg-[#FF8C42] text-white" : "text-gray-600 hover:bg-gray-200"
+									}`}
+								>
+									<TrendingUp className="w-4 h-4" />
+									Pricing Engine
+								</button>
+								<button
+									onClick={() => setLogicSubTab("inventory")}
+									className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${
+										logicSubTab === "inventory" ? "bg-[#FF8C42] text-white" : "text-gray-600 hover:bg-gray-200"
+									}`}
+								>
+									<Package className="w-4 h-4" />
+									Inventory & Stock
+								</button>
+							</div>
+							{logicSubTab === "pricing" && <PricingRulesEngine />}
+							{logicSubTab === "inventory" && <InventoryManager />}
 						</div>
 					) : null}
 					</div>

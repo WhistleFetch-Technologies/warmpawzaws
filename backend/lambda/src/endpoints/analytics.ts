@@ -430,7 +430,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
          FROM vendors v
          LEFT JOIN roles rl ON v.role_id = rl.id
          LEFT JOIN bookings b ON v.id = b.vendor_id AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-         LEFT JOIN reviews rev ON v.id = rev.vendor_id AND rev.is_approved = true
+         LEFT JOIN reviews rev ON v.id = rev.vendor_id AND (rev.is_approved = true OR rev.is_approved IS NULL)
          WHERE v.status = 'approved' AND v.is_active = true
          GROUP BY v.id, v.business_name, v.city, v.status, COALESCE(rl.name, rl.display_name, v.category, 'Other')
          ORDER BY revenue DESC
@@ -677,11 +677,11 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const peakTimesData = await query(
         `SELECT 
             CASE 
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 6 AND 8 THEN '6-9 AM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 9 AND 11 THEN '9-12 PM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 12 AND 14 THEN '12-3 PM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 15 AND 17 THEN '3-6 PM'
-              WHEN EXTRACT(HOUR FROM booking_time) BETWEEN 18 AND 20 THEN '6-9 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 6 AND 8 THEN '6-9 AM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 9 AND 11 THEN '9-12 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 12 AND 14 THEN '12-3 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 15 AND 17 THEN '3-6 PM'
+              WHEN EXTRACT(HOUR FROM COALESCE(booking_datetime, (CASE WHEN booking_date IS NOT NULL AND booking_time IS NOT NULL THEN (booking_date + booking_time)::timestamp ELSE NULL END), created_at) AT TIME ZONE 'UTC') BETWEEN 18 AND 20 THEN '6-9 PM'
               ELSE '9-12 AM'
             END as time_slot,
             COUNT(*) as bookings
@@ -790,9 +790,8 @@ export function registerAnalyticsEndpoints(app: Hono) {
            AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
          WHERE v.status = 'approved' AND v.is_active = true
          GROUP BY COALESCE(rl.name, rl.display_name, 'Other')
-         HAVING COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) > 0
          ORDER BY revenue DESC
-         LIMIT 10`
+         LIMIT 20`
       ).catch(() => ({ rows: [] }));
 
       // Calculate total revenue for percentage

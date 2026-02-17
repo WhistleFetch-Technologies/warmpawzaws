@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Database, RefreshCw, Trash2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Database, RefreshCw, Trash2, CheckCircle, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 export default function DatabaseSeedingPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [seedStatus, setSeedStatus] = useState<Record<string, any>>({});
 
@@ -104,10 +107,19 @@ export default function DatabaseSeedingPage() {
   };
 
   return (
+    <AdminLayout>
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Back button + Header */}
         <div className="mb-8">
+          <Button
+            variant="ghost"
+            className="mb-4 -ml-2"
+            onClick={() => router.push('/analytics')}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back
+          </Button>
           <div className="flex items-center gap-3 mb-2">
             <Database className="w-8 h-8 text-[#FF8C42]" />
             <h1 className="text-3xl font-bold text-gray-900">Database Seeding</h1>
@@ -231,5 +243,6 @@ export default function DatabaseSeedingPage() {
         )}
       </div>
     </div>
+    </AdminLayout>
   );
 }

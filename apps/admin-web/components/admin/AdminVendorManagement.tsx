@@ -116,18 +116,44 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
               </div>
 
               <div className="flex items-center gap-3">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={loadData}
                   className="border-gray-300 hover:bg-gray-50"
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Refresh
                 </Button>
-                <Button 
-                  size="sm" 
-                  className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] hover:from-[#FF7A2E] hover:to-[#FF6B1A] text-white shadow-md hover:shadow-lg transition-all" 
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const data = await apiClient.get<any>('/admin/vendors?limit=5000');
+                      const list = data.vendors ?? data.data ?? Array.isArray(data) ? data : [];
+                      const csv = ['Business Name,Owner,Email,Status,Role'].concat(
+                        list.map((v: any) => [v.business_name ?? v.businessName ?? '', v.owner_name ?? v.ownerName ?? '', v.email ?? '', v.status ?? '', v.role ?? v.role_id ?? ''].join(','))
+                      ).join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `vendors-export-${new Date().toISOString().slice(0, 10)}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }}
+                  className="border-gray-300 hover:bg-gray-50"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] hover:from-[#FF7A2E] hover:to-[#FF6B1A] text-white shadow-md hover:shadow-lg transition-all"
                   onClick={() => setShowAddVendor(true)}
                 >
                   <Plus className="w-4 h-4 mr-2" />

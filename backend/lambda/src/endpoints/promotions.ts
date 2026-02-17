@@ -249,26 +249,36 @@ export function registerPromotionEndpoints(app: Hono) {
       const params: any[] = [now];
       let paramIndex = 2;
 
+      // applicable_services is JSONB: use @> for array containment (same as /promotions/list)
       if (serviceType !== 'all') {
-        promotionsQuery += ` AND ($${paramIndex} = ANY(applicable_services) OR applicable_services IS NULL)`;
-        params.push(serviceType);
+        promotionsQuery += ` AND (
+          applicable_services IS NULL 
+          OR applicable_services = '[]'::jsonb 
+          OR applicable_services @> $${paramIndex}::jsonb
+        )`;
+        params.push(JSON.stringify([serviceType]));
         paramIndex++;
       }
 
       if (vendorRoleId) {
-        promotionsQuery += ` AND ($${paramIndex} = ANY(applicable_roles) OR applicable_roles IS NULL)`;
-        params.push(vendorRoleId);
+        promotionsQuery += ` AND (
+          applicable_roles IS NULL 
+          OR applicable_roles = '[]'::jsonb 
+          OR applicable_roles @> $${paramIndex}::jsonb
+        )`;
+        params.push(JSON.stringify([vendorRoleId]));
         paramIndex++;
       }
 
       promotionsQuery += ` ORDER BY priority DESC, created_at DESC`;
 
-      const promotions = await query(promotionsQuery, params);
+      const promotionsResult = await query(promotionsQuery, params);
+      const promoRows = Array.isArray(promotionsResult) ? promotionsResult : (promotionsResult as any).rows || [];
 
       return c.json({
         success: true,
-        promotions: promotions.rows,
-        total: promotions.rows.length,
+        promotions: promoRows,
+        total: promoRows.length,
       });
     } catch (error: any) {
       console.error('Error fetching promotions:', error);
@@ -1364,6 +1374,77 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error creating coupon:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/coupons/bulk-generate
+   * Generate multiple coupon codes (admin)
+   */
+  app.post("/admin/coupons/bulk-generate", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const {
+        prefix = 'SAVE',
+        quantity = 10,
+        format = 'alphanumeric',
+        length = 8,
+        type: discountType = 'percentage',
+        value: discountValue = 10,
+        minOrderAmount = 0,
+        maxDiscountAmount = 0,
+        validFrom,
+        validUntil,
+        usageLimit = 1,
+        isActive = true,
+      } = body;
+
+      const qty = Math.min(Math.max(parseInt(String(quantity), 10) || 10, 1), 500);
+      const len = Math.min(Math.max(parseInt(String(length), 10) || 8, 4), 20);
+      const chars = format === 'numeric' ? '0123456789' : 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const used = new Set<string>();
+      const codes: string[] = [];
+      while (codes.length < qty) {
+        let code = String(prefix || '').toUpperCase().replace(/\s/g, '');
+        for (let i = 0; i < len; i++) {
+          code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        if (!used.has(code)) {
+          used.add(code);
+          codes.push(code);
+        }
+      }
+
+      const validFromDate = validFrom ? new Date(validFrom) : new Date();
+      const validUntilDate = validUntil ? new Date(validUntil) : new Date(Date.now() + 30 * 86400000);
+      const inserted: any[] = [];
+      for (const code of codes) {
+        const couponData: any = {
+          code,
+          name: code,
+          discount_type: discountType,
+          discount_value: parseFloat(String(discountValue)) || 0,
+          min_order_amount: minOrderAmount > 0 ? minOrderAmount : null,
+          start_date: validFromDate,
+          end_date: validUntilDate,
+          max_uses: usageLimit > 0 ? usageLimit : null,
+          is_active: isActive !== false,
+        };
+        if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+        if (couponData.max_uses === null) delete couponData.max_uses;
+        const row = await insert('coupons', couponData);
+        if (row?.[0]) inserted.push(row[0]);
+      }
+
+      return c.json({
+        success: true,
+        message: `Generated ${inserted.length} coupons`,
+        count: inserted.length,
+        coupons: inserted,
+      });
+    } catch (error: any) {
+      console.error('Error bulk-generating coupons:', error);
       return c.json({ error: error.message }, 500);
     }
   });

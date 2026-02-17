@@ -24,15 +24,7 @@ import { isValidUUID } from '../types/entities';
 import crypto from 'crypto';
 
 // ============================================================================
-// RAZORPAY CONFIGURATION
-// ============================================================================
-
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
-const RAZORPAY_BASE_URL = 'https://api.razorpay.com/v1';
-
-// ============================================================================
-// RAZORPAY API HELPERS
+// RAZORPAY API HELPERS (use shared client – Secrets Manager / DB / env)
 // ============================================================================
 
 async function razorpayRequest(
@@ -40,25 +32,7 @@ async function razorpayRequest(
   method: 'GET' | 'POST' | 'PATCH' = 'GET',
   body?: any
 ): Promise<any> {
-  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
-  
-  const response = await fetch(`${RAZORPAY_BASE_URL}${endpoint}`, {
-    method,
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  const data: any = await response.json();
-  
-  if (!response.ok) {
-    console.error('Razorpay API error:', data);
-    throw new Error(data.error?.description || 'Razorpay API error');
-  }
-  
-  return data;
+  return getRazorpayClient().request(endpoint, method as 'GET' | 'POST', body, 20000);
 }
 
 // ============================================================================
@@ -605,7 +579,7 @@ class GetSettlementStatusHandler extends BaseHandler {
     // Get latest status from Razorpay if processing
     if (settlement.status === 'processing' && settlement.razorpay_transfer_id) {
       try {
-        const transfer = await razorpayRequest(`/transfers/${settlement.razorpay_transfer_id}`);
+        const transfer = await razorpayRequest(`/transfers/${settlement.razorpay_transfer_id}`, 'GET');
         
         if (transfer.status !== settlement.status) {
           await update('vendor_settlements', { id: settlementId }, {

@@ -587,13 +587,6 @@ export default function EventManagementPage() {
           />
         )}
 
-        {/* Floating Action Button */}
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="fixed bottom-8 right-8 w-14 h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-full flex items-center justify-center shadow-lg z-50 transition-all hover:scale-110"
-        >
-          <Plus className="w-6 h-6 text-white" />
-        </button>
       </div>
       {/* Rejection Modal */}
       {approvalModalOpen && approvingEvent && (

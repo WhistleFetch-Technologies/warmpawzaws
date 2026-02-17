@@ -440,10 +440,17 @@ export default function MarketingPromotionsTab() {
 
 	const handleSavePromo = async () => {
 		try {
+			const payload = {
+				...promoForm,
+				name: promoForm.title || "Promotion",
+				promotionType: (promoForm as { promotionType?: string }).promotionType || "flash_sale",
+				validFrom: promoForm.validFrom || new Date().toISOString().split("T")[0],
+				validUntil: promoForm.validUntil || null,
+			};
 			if (editingPromo) {
-				await apiClient.put(`/marketing/promotions/${editingPromo.id}`, promoForm);
+				await apiClient.put(`/marketing/promotions/${editingPromo.id}`, payload);
 			} else {
-				await apiClient.post("/marketing/promotions", promoForm);
+				await apiClient.post("/marketing/promotions", payload);
 			}
 			toast.success(
 				`Promotion ${editingPromo ? "updated" : "created"} successfully`
@@ -451,9 +458,9 @@ export default function MarketingPromotionsTab() {
 			setShowPromoModal(false);
 			loadPromotions();
 			resetForm();
-		} catch (error) {
+		} catch (error: any) {
 			console.error("Error saving promotion:", error);
-			toast.error("Error saving promotion");
+			toast.error(error?.message || "Error saving promotion");
 		}
 	};
 
@@ -708,17 +715,16 @@ export default function MarketingPromotionsTab() {
 	const loadAnnouncements = async () => {
 		setLoading(true);
 		try {
-			// Use platform_settings for announcements
-			const data = await apiClient.get("/admin/platform-settings?key=home_announcements");
-			if ((data as any).success && (data as any).setting?.setting_value) {
-				const announcementList = Array.isArray((data as any).setting.setting_value) 
-					? (data as any).setting.setting_value 
-					: [];
-				setAnnouncements(announcementList);
-			} else {
-				// Default announcements if none exist
-				setAnnouncements([]);
+			const data = await apiClient.get<any>("/admin/platform-settings?key=home_announcements");
+			const raw = (data as any).settings ?? (data as any).setting_value ?? (data as any).setting?.setting_value;
+			let list: any[] = [];
+			if (raw != null) {
+				if (Array.isArray(raw)) list = raw;
+				else if (typeof raw === 'string') {
+					try { list = JSON.parse(raw); } catch { list = []; }
+				}
 			}
+			setAnnouncements(Array.isArray(list) ? list : []);
 		} catch (error) {
 			console.error("Error loading announcements:", error);
 			setAnnouncements([]);
@@ -727,7 +733,7 @@ export default function MarketingPromotionsTab() {
 		}
 	};
 
-	const handleSaveAnnouncement = async () => {
+		const handleSaveAnnouncement = async () => {
 		try {
 			const updatedAnnouncements = editingAnnouncement 
 				? announcements.map((a) => a.id === editingAnnouncement.id ? { ...announcementForm, id: editingAnnouncement.id } : a)
@@ -736,8 +742,6 @@ export default function MarketingPromotionsTab() {
 			await apiClient.put("/admin/platform-settings", {
 				settingKey: "home_announcements",
 				settingValue: updatedAnnouncements,
-				settingType: "array",
-				description: "Customer home page announcements (What's New section)",
 			});
 			toast.success(`Announcement ${editingAnnouncement ? "updated" : "created"} successfully`);
 			setShowAnnouncementModal(false);
@@ -756,8 +760,6 @@ export default function MarketingPromotionsTab() {
 			await apiClient.put("/admin/platform-settings", {
 				settingKey: "home_announcements",
 				settingValue: updatedAnnouncements,
-				settingType: "array",
-				description: "Customer home page announcements (What's New section)",
 			});
 			toast.success("Announcement deleted");
 			setAnnouncements(updatedAnnouncements);
@@ -1443,18 +1445,14 @@ export default function MarketingPromotionsTab() {
 												<div className="text-sm text-gray-500 flex justify-between items-center pt-2 border-t mt-2">
 													<span>Expires in:</span>
 													<span className="font-medium text-gray-900">
-														{Math.max(
-															0,
-															Math.ceil(
-																(new Date(
-																	new Date(spot.startDate).getTime() +
-																		spot.durationDays * 86400000
-																).getTime() -
-																	new Date().getTime()) /
-																	(1000 * 3600 * 24)
-															)
-														)}{" "}
-														days
+														{(() => {
+															const start = spot.startDate ? new Date(spot.startDate).getTime() : Date.now();
+															const days = Number(spot.durationDays) || 7;
+															const end = start + days * 86400000;
+															const diff = Math.ceil((end - Date.now()) / (1000 * 3600 * 24));
+															const val = Math.max(0, isNaN(diff) ? 0 : diff);
+															return `${val} days`;
+														})()}
 													</span>
 												</div>
 											</div>

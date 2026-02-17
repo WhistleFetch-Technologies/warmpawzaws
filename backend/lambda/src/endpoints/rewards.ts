@@ -91,36 +91,65 @@ export function registerRewardsEndpoints(app: Hono) {
       const tierName = (tier as any)?.name || 'Bronze';
       const nextTierName = nextTier?.name || null;
 
+      const points = currentPoints;
+      const tierKey = String(tierName || 'bronze').toLowerCase();
+      const lifetimeEarned = parseInt(profile[0]?.lifetime_points_earned || '0', 10);
+      const lifetimeRedeemed = parseInt(profile[0]?.lifetime_points_redeemed || '0', 10);
+      const balancePayload = {
+        points,
+        totalPoints: points,
+        total_points: points,
+        tier: tier,
+        tierKey,
+        tierName,
+        currentTierMinPoints: parseInt((tier as any)?.min_points || '0', 10),
+        current_tier_min_points: parseInt((tier as any)?.min_points || '0', 10),
+        nextTier: nextTierName,
+        next_tier: nextTierName,
+        nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
+        next_tier_min_points: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
+        pointsToNextTier,
+        points_to_next_tier: pointsToNextTier,
+        lifetimePointsEarned: lifetimeEarned,
+        lifetime_points: lifetimeEarned,
+        lifetime_points_earned: lifetimeEarned,
+        lifetimePointsRedeemed: lifetimeRedeemed,
+        lifetime_points_redeemed: lifetimeRedeemed,
+      };
       return c.json({
         success: true,
-        points: currentPoints,
-        totalPoints: currentPoints,
-        tier: tier,
-        tierName,
-        tierKey: String(tierName || 'bronze').toLowerCase(),
-        currentTierMinPoints: parseInt((tier as any)?.min_points || '0', 10),
-        nextTier: nextTierName,
-        nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
-        pointsToNextTier,
-        lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || '0', 10),
-        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || '0', 10),
+        balance: balancePayload,
+        ...balancePayload,
       });
     } catch (error: any) {
       console.error('Error fetching points:', error);
       // Return graceful fallback instead of 500
-      return c.json({
-        success: true,
+      const fallbackTier = { name: 'Bronze', min_points: 0, multiplier: 1 };
+      const fallbackBalance = {
         points: 0,
         totalPoints: 0,
-        tier: { name: 'Bronze', min_points: 0, multiplier: 1 },
+        total_points: 0,
+        tier: fallbackTier,
         tierName: 'Bronze',
         tierKey: 'bronze',
         currentTierMinPoints: 0,
+        current_tier_min_points: 0,
         nextTier: null,
+        next_tier: null,
         nextTierMinPoints: null,
+        next_tier_min_points: null,
         pointsToNextTier: 0,
+        points_to_next_tier: 0,
         lifetimePointsEarned: 0,
+        lifetime_points: 0,
+        lifetime_points_earned: 0,
         lifetimePointsRedeemed: 0,
+        lifetime_points_redeemed: 0,
+      };
+      return c.json({
+        success: true,
+        balance: fallbackBalance,
+        ...fallbackBalance,
         message: 'Loyalty program initializing'
       });
     }

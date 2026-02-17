@@ -1117,10 +1117,10 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       {/* Vendor Settings - navigates to /settings (mobile-optimized VendorSettingsScreen) */}
 
-      {/* AI Support Bot */}
+      {/* AI Support Bot - tickets land in admin CRM as Vendor AI Chat */}
       <AIChatBot
-        customerId={vendorId}
-        customerName={vendor?.fullName || vendor?.businessName || 'Provider'}
+        vendorId={vendorId}
+        vendorName={vendor?.fullName || vendor?.businessName || vendor?.business_name || 'Provider'}
       />
 
       {/* Debug Overlay */}

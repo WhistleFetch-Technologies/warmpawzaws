@@ -624,8 +624,8 @@ class DeleteRoleHandler extends BaseHandler {
         // HARD DELETE: Permanently remove the role and its permissions
         // First check if any vendors are using this role
         const vendorsUsingRole = await query(
-          `SELECT COUNT(*) as count FROM vendors WHERE role_id = $1 OR role = $2`,
-          [roleId, role.name]
+          `SELECT COUNT(*) as count FROM vendors WHERE role_id = $1`,
+          [roleId]
         );
         
         const vendorCount = parseInt(vendorsUsingRole.rows[0]?.count || '0', 10);

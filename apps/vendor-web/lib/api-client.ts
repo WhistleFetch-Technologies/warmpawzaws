@@ -376,3 +376,35 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+/** AI Chatbot API (shared backend with customer app). Vendor passes vendorId for escalation. */
+export const aiChatbotApi = {
+  chat: (data: {
+    message: string;
+    customerId?: string;
+    customerPhone?: string;
+    vendorId?: string;
+    conversationId?: string;
+    petId?: string;
+  }) => apiClient.post<{ success: boolean; response: string; conversationId?: string; intent?: string; requiresAgent?: boolean; suggestedActions?: string[] }>('/ai-chatbot/chat', data),
+
+  escalateToAgent: (data: {
+    conversationId: string;
+    customerId?: string;
+    customerPhone?: string;
+    vendorId?: string;
+    reason?: string;
+    conversationHistory?: string;
+  }) => apiClient.post<{ success: boolean; ticketId?: string; message: string }>('/ai-chatbot/escalate-to-agent', data),
+};
+
+/** Vendor support: escalate from AI chat (creates ticket with source vendor_ai_chatbot). */
+export const vendorSupportEscalateApi = {
+  escalateFromChat: (data: {
+    vendorId: string;
+    subject?: string;
+    message: string;
+    conversationHistory?: string;
+    reason?: string;
+  }) => apiClient.post<{ success: boolean; ticketId?: string; ticketNumber?: string; message: string }>('/vendor/support/escalate-from-chat', data),
+};

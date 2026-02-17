@@ -110,7 +110,33 @@ export function OrderManagementAdmin() {
             <option value="90d">Last 90 days</option>
             <option value="all">All time</option>
           </select>
-          <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-medium shadow-lg shadow-orange-500/25">
+          <button
+            onClick={async () => {
+              try {
+                const rows = filteredOrders.map((o: any) => ({
+                  order_number: o.order_number || o.id,
+                  customer: o.customer_name || o.customer_email || '',
+                  vendor: o.vendor_name || '',
+                  total: o.total_amount ?? o.total ?? '',
+                  status: o.status ?? o.order_status ?? '',
+                  date: o.created_at ? new Date(o.created_at).toISOString().slice(0, 10) : '',
+                }));
+                const csv = ['Order,Customer,Vendor,Amount,Status,Date'].concat(
+                  rows.map((r: any) => [r.order_number, r.customer, r.vendor, r.total, r.status, r.date].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+                ).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `orders-export-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-medium shadow-lg shadow-orange-500/25"
+          >
             <Download className="w-4 h-4" />
             Export
           </button>

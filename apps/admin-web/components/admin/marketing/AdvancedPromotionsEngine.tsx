@@ -284,6 +284,7 @@ export function AdvancedPromotionsEngine({
 	};
 
 	const getPromotionTypeLabel = (type: string) => {
+		if (type == null || typeof type !== "string") return "";
 		return type
 			.split("_")
 			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))

@@ -60,7 +60,37 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Step 1: Build the app (skip only when --deploy-only was passed and dist exists)
+# Resolve API_BASE_URL BEFORE build so we can bake correct env into the build
+if [ "$PROD" = true ]; then
+  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+    if command -v aws &>/dev/null; then
+      API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+    fi
+    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+      API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
+    fi
+  fi
+  echo -e "${GREEN}✅ PROD API Gateway: $API_BASE_URL${NC}"
+else
+  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+    if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+      API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+    fi
+    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+      if command -v aws &>/dev/null; then
+        API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+      fi
+    fi
+    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+      echo -e "${YELLOW}❌ DEV API Gateway URL not found. Set config/urls.json or ensure warmpawz-dev-api exists.${NC}"
+      exit 1
+    fi
+  fi
+  echo -e "${GREEN}✅ DEV API Gateway: $API_BASE_URL${NC}"
+fi
+API_BASE_URL="${API_BASE_URL%/}"
+
+# Step 1: Build the app with TARGET environment baked in (no cross-contamination)
 cd "$PROJECT_ROOT/apps/${APP_NAME}"
 
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
@@ -70,49 +100,29 @@ elif [ -d "dist-export" ] && [ ! -d "dist" ]; then
   cp -R dist-export dist
   echo -e "${GREEN}✅ dist ready from dist-export${NC}"
 else
-  echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
+  echo -e "${BLUE}📦 Building ${APP_NAME} for $([ "$PROD" = true ] && echo 'PROD' || echo 'DEV') (API: ${API_BASE_URL})...${NC}"
+  # Clean .next and dist so we never reuse the other environment's cached build
+  rm -rf .next dist
+  # CRITICAL: Bake correct API URL and environment into the build so PROD never gets dev URL
+  export NEXT_PUBLIC_API_BASE_URL="$API_BASE_URL"
+  if [ "$PROD" = true ]; then
+    export NEXT_PUBLIC_ENVIRONMENT="production"
+    export NEXT_PUBLIC_UAT_MODE="false"
+  else
+    export NEXT_PUBLIC_ENVIRONMENT="development"
+    export NEXT_PUBLIC_UAT_MODE="true"
+  fi
   npm run build
   if [ ! -d "dist" ]; then
     echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
     exit 1
   fi
-  echo -e "${GREEN}✅ Build completed successfully${NC}"
+  echo -e "${GREEN}✅ Build completed successfully (baked: $NEXT_PUBLIC_ENVIRONMENT, $NEXT_PUBLIC_API_BASE_URL)${NC}"
 fi
 
-# Step 1.5: Inject runtime-config.js with API Gateway URL (API calls must go to backend, not CloudFront)
-echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
+# Step 1.5: Inject runtime-config.js (must match baked build: PROD vs DEV)
+echo -e "${BLUE}🔧 Injecting runtime-config.js (${PROD:-false})...${NC}"
 cd "$PROJECT_ROOT"
-if [ "$PROD" = false ] && [ -z "$API_BASE_URL" ]; then
-  CDK_OUTPUTS="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
-  if [ -f "$CDK_OUTPUTS" ] && command -v jq &>/dev/null; then
-    API_BASE_URL=$(jq -r '.["WarmpawzStack-dev"].ApiGatewayUrl // empty' "$CDK_OUTPUTS")
-  fi
-  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
-    if command -v aws &>/dev/null; then
-      API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
-    fi
-    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-      if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-        API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
-      fi
-    fi
-  fi
-  if [ -z "$API_BASE_URL" ]; then
-    echo -e "${YELLOW}⚠️  API Gateway URL not found. Set in config/urls.json or run CDK deploy first.${NC}"
-    exit 1
-  fi
-  echo -e "${GREEN}✅ API Gateway endpoint (dev): $API_BASE_URL${NC}"
-elif [ "$PROD" = true ] && { [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; }; then
-  if command -v aws &>/dev/null; then
-    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
-  fi
-  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-    echo -e "${YELLOW}⚠️  Could not get prod API Gateway; using default.${NC}"
-    API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
-  fi
-  echo -e "${GREEN}✅ API Gateway endpoint (prod): $API_BASE_URL${NC}"
-fi
-API_BASE_URL="${API_BASE_URL%/}"
 
 # Inject runtime-config.js into dist folder
 if [ "$PROD" = true ]; then

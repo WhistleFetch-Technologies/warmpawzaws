@@ -58,7 +58,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             tokenToStore = result.token.access_token || result.token.accessToken || result.token;
           }
           // In prod, reject UAT tokens
-          if (tokenToStore.startsWith('uat-token-')) {
+          if (tokenToStore != null && tokenToStore.startsWith('uat-token-')) {
             throw new Error('Invalid token received from server');
           }
         }
