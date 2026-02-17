@@ -18,12 +18,12 @@ test.describe('Admin Portal - Authentication', () => {
     await expect(page).toHaveTitle(/Warmpawz Admin/i);
   });
 
-  test('should login with UAT credentials', async ({ page }) => {
+  test('should login with admin credentials', async ({ page }) => {
     await page.goto('/');
     
     // Fill login form
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     
     // Wait for navigation to dashboard
@@ -37,7 +37,7 @@ test.describe('Admin Portal - Analytics Dashboard', () => {
     // Login first
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });
@@ -71,7 +71,7 @@ test.describe('Admin Portal - Vendor Management', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });
@@ -95,7 +95,7 @@ test.describe('Admin Portal - Finance & Policies', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });
@@ -131,7 +131,7 @@ test.describe('Admin Portal - Problem Grid', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });
@@ -163,7 +163,7 @@ test.describe('Admin Portal - Reports', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });
@@ -196,7 +196,7 @@ test.describe('Admin Portal - Subscriptions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });
@@ -220,7 +220,7 @@ test.describe('Admin Portal - Navigation', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.fill('input[type="email"]', 'admin@warmpawz.com');
-    await page.fill('input[type="password"]', 'Warmpawz2025');
+    await page.fill('input[type="password"]', 'Admin123!');
     await page.click('button[type="submit"]');
     await page.waitForURL(/\/(analytics|dashboard)/, { timeout: 10000 });
   });

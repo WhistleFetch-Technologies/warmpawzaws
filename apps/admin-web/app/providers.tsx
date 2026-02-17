@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { useState } from 'react';
 import React from 'react';
 import { NoSSR } from '@/components/NoSSR';
+import { AdminAuthProvider } from '@/context/AdminAuthContext';
 
 // Create QueryClient factory that works in both SSR and client
 function makeQueryClient() {
@@ -43,12 +44,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
-      {/* Use NoSSR to prevent hydration mismatch with Toaster */}
-      {/* Toaster uses client-side features (DOM manipulation) that can cause hydration issues */}
-      <NoSSR>
-        <Toaster position="top-right" />
-      </NoSSR>
+      <AdminAuthProvider>
+        {children}
+        {/* Use NoSSR to prevent hydration mismatch with Toaster */}
+        {/* Toaster uses client-side features (DOM manipulation) that can cause hydration issues */}
+        <NoSSR>
+          <Toaster position="top-right" />
+        </NoSSR>
+      </AdminAuthProvider>
     </QueryClientProvider>
   );
 }

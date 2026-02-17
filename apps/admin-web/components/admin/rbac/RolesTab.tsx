@@ -41,7 +41,7 @@ export function RolesTab() {
   const handleDelete = async (roleId: string) => {
     if (!confirm('Are you sure you want to delete this role?')) return;
     try {
-      await apiClient.delete(`/admin/rbac/roles/${roleId}`);
+      await apiClient.delete(`/admin/roles/${roleId}`);
       loadRoles();
     } catch (error) {
       console.error('Error deleting role:', error);

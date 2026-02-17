@@ -2,13 +2,15 @@
  * ============================================================================
  * AWS BEDROCK CLIENT UTILITY
  * ============================================================================
- * 
+ *
  * Handles AWS Bedrock integration for AI features:
  * - Chat completions
  * - Symptoms checker
  * - Smart booking assist
  * - Customer support
- * 
+ *
+ * Config source order: 1) AWS Secrets Manager (warmpawz/{stage}/bedrock), 2) platform_settings.
+ *
  * Date: 2026-01-07
  * Phase 3: AI Chatbot Integration
  * ============================================================================
@@ -16,6 +18,7 @@
 
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { query } from '../database/rds-connection';
+import { getSecretJson } from './secrets-manager';
 
 export interface BedrockConfig {
   client: BedrockRuntimeClient;
@@ -23,49 +26,73 @@ export interface BedrockConfig {
   region: string;
 }
 
+interface BedrockSecretShape {
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+  modelId?: string;
+  enabled?: boolean;
+}
+
+const DEFAULT_BEDROCK_REGION = 'ap-south-1';
+const DEFAULT_BEDROCK_MODEL = 'amazon.nova-lite-v1:0';
+
+function buildClient(region: string, modelId: string, credentials?: { accessKeyId: string; secretAccessKey: string }): BedrockConfig {
+  const finalRegion = region.trim();
+  const client = new BedrockRuntimeClient({
+    region: finalRegion,
+    ...(credentials
+      ? { credentials: { accessKeyId: credentials.accessKeyId.trim(), secretAccessKey: credentials.secretAccessKey.trim() } }
+      : {}),
+  });
+  return { client, modelId, region: finalRegion };
+}
+
 /**
- * Get Bedrock client configuration from platform settings
+ * Get Bedrock client configuration.
+ * 1) Try AWS Secrets Manager secret warmpawz/{stage}/bedrock (JSON: accessKeyId, secretAccessKey, region?, modelId?).
+ * 2) Fall back to platform_settings (aws_config) for backwards compatibility.
  */
 export async function getBedrockConfig(): Promise<BedrockConfig | null> {
   try {
+    // 1) AWS Secrets Manager (preferred). Use ap-south-1 by default; supports IAM role (no keys) or explicit credentials.
+    const secret = await getSecretJson<BedrockSecretShape>('bedrock');
+    if (secret && secret.enabled !== false) {
+      const region = (secret.region || DEFAULT_BEDROCK_REGION).trim();
+      const modelId = (secret.modelId || DEFAULT_BEDROCK_MODEL).trim();
+      const hasCredentials = !!(secret.accessKeyId && secret.secretAccessKey);
+      if (hasCredentials) {
+        console.log('[BEDROCK] Using config from AWS Secrets Manager (credentials)');
+        return buildClient(region, modelId, { accessKeyId: secret.accessKeyId!, secretAccessKey: secret.secretAccessKey! });
+      }
+      console.log('[BEDROCK] Using config from AWS Secrets Manager (IAM role), region=', region, 'model=', modelId);
+      return buildClient(region, modelId);
+    }
+
+    // 2) Platform settings (DB)
     const settingsResult = await query(
       `SELECT setting_value FROM platform_settings WHERE setting_key = 'aws_config' LIMIT 1`
     );
-    
     const awsSettings = settingsResult.rows[0]?.setting_value as any || null;
-    
+
     if (!awsSettings?.bedrock?.enabled) {
       console.warn('AWS Bedrock is not enabled in platform settings');
       return null;
     }
-    
+
     if (!awsSettings.credentials?.accessKeyId || !awsSettings.credentials?.secretAccessKey) {
-      throw new Error('AWS credentials not configured');
+      console.warn('AWS Bedrock credentials not set in platform settings');
+      return null;
     }
-    
-    let modelId = awsSettings.bedrock.modelId || 'us.amazon.nova-lite-v1:0';
-    
-    // Fix: Remap base Nova ID to US Cross-Region Inference Profile
-    if (modelId === 'amazon.nova-lite-v1:0') {
-      modelId = 'us.amazon.nova-lite-v1:0';
-    }
-    
-    let region = (awsSettings.bedrock.region || 'ap-south-1').trim();
-    
-    // Fix: US Inference Profiles are not accessible from ap-south-1
-    if (modelId.startsWith('us.') && region === 'ap-south-1') {
-      region = 'us-east-1';
-    }
-    
-    const client = new BedrockRuntimeClient({
-      region,
-      credentials: {
-        accessKeyId: String(awsSettings.credentials.accessKeyId).trim(),
-        secretAccessKey: String(awsSettings.credentials.secretAccessKey).trim(),
-      },
+
+    const modelId = (awsSettings.bedrock.modelId || DEFAULT_BEDROCK_MODEL).trim();
+    const region = (awsSettings.bedrock.region || DEFAULT_BEDROCK_REGION).trim();
+
+    console.log('[BEDROCK] Using config from platform_settings');
+    return buildClient(region, modelId, {
+      accessKeyId: awsSettings.credentials.accessKeyId,
+      secretAccessKey: awsSettings.credentials.secretAccessKey,
     });
-    
-    return { client, modelId, region };
   } catch (error: any) {
     console.error('Error getting Bedrock config:', error);
     return null;

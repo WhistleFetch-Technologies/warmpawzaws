@@ -1,5 +1,6 @@
 /**
  * HSN Codes Manager Component
+ * Aligned with GSTConfigurationManagement: 409 handling, inline error, toast, keep modal open on error.
  */
 
 'use client';
@@ -7,11 +8,17 @@
 import { useState } from 'react';
 import { useHSNCodes, HSNCode } from '../../../hooks/useHSNCodes';
 import { Button } from '@warmpawz/ui/button';
+import { toast } from 'sonner';
+import { AlertCircle } from 'lucide-react';
+
+const DUPLICATE_MSG = 'An HSN code with this code already exists. Use a different code or edit the existing one.';
 
 export function HSNCodesManager() {
   const { hsnCodes, loading, error, createHSNCode, updateHSNCode, deleteHSNCode } = useHSNCodes();
   const [showModal, setShowModal] = useState(false);
   const [editingCode, setEditingCode] = useState<HSNCode | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<HSNCode>>({
     hsn_code: '',
     description: '',
@@ -20,6 +27,7 @@ export function HSNCodesManager() {
   });
 
   const handleOpenModal = (code?: HSNCode) => {
+    setFormError(null);
     if (code) {
       setEditingCode(code);
       setFormData(code);
@@ -38,19 +46,41 @@ export function HSNCodesManager() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingCode(null);
+    setFormError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    const codeVal = (formData.hsn_code || '').trim();
+    if (!codeVal) {
+      setFormError('HSN code is required.');
+      toast.error('HSN code is required.');
+      return;
+    }
+    const others = hsnCodes.filter((h) => h.id !== editingCode?.id);
+    if (others.some((h) => (h.hsn_code || '').trim() === codeVal)) {
+      setFormError(DUPLICATE_MSG);
+      toast.error(DUPLICATE_MSG);
+      return;
+    }
+    setSaving(true);
     try {
       if (editingCode) {
         await updateHSNCode(editingCode.id, formData);
+        toast.success('HSN code updated successfully');
       } else {
         await createHSNCode(formData);
+        toast.success('HSN code created successfully');
       }
       handleCloseModal();
     } catch (err: any) {
-      alert(err.message || 'Failed to save HSN code');
+      const message = err?.message || 'Failed to save HSN code';
+      setFormError(message);
+      toast.error(message);
+      // Keep modal open so user can fix duplicate or other errors
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -58,8 +88,9 @@ export function HSNCodesManager() {
     if (!confirm('Are you sure you want to delete this HSN code?')) return;
     try {
       await deleteHSNCode(id);
+      toast.success('HSN code deleted');
     } catch (err: any) {
-      alert(err.message || 'Failed to delete HSN code');
+      toast.error(err?.message || 'Failed to delete HSN code');
     }
   };
 
@@ -154,9 +185,19 @@ export function HSNCodesManager() {
                   type="text"
                   required
                   value={formData.hsn_code}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, hsn_code: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    setFormData({ ...formData, hsn_code: e.target.value });
+                    if (formError) setFormError(null);
+                  }}
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500 ${formError ? 'border-red-500' : 'border-gray-300'}`}
+                  placeholder="e.g. 9983, 2309"
                 />
+                {formError && (
+                  <p className="text-sm text-red-600 flex items-center gap-1 mt-1" role="alert">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {formError}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -196,7 +237,9 @@ export function HSNCodesManager() {
                 <Button type="button" variant="outline" onClick={handleCloseModal}>
                   Cancel
                 </Button>
-                <Button type="submit">Save</Button>
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
               </div>
             </form>
           </div>

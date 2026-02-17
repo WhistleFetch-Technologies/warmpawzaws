@@ -739,7 +739,10 @@ export default function MarketingPromotionsTab() {
 				? announcements.map((a) => a.id === editingAnnouncement.id ? { ...announcementForm, id: editingAnnouncement.id } : a)
 				: [...announcements, { ...announcementForm, id: `ann_${Date.now()}` }];
 
+			// Support both handlers: admin-advanced (setting_key/setting_value) and admin-comprehensive (settingKey/settingValue)
 			await apiClient.put("/admin/platform-settings", {
+				setting_key: "home_announcements",
+				setting_value: updatedAnnouncements,
 				settingKey: "home_announcements",
 				settingValue: updatedAnnouncements,
 			});
@@ -747,9 +750,9 @@ export default function MarketingPromotionsTab() {
 			setShowAnnouncementModal(false);
 			setAnnouncements(updatedAnnouncements);
 			resetAnnouncementForm();
-		} catch (error) {
+		} catch (error: any) {
 			console.error("Error saving announcement:", error);
-			toast.error("Error saving announcement");
+			toast.error(error?.message || "Error saving announcement");
 		}
 	};
 
@@ -758,13 +761,15 @@ export default function MarketingPromotionsTab() {
 		try {
 			const updatedAnnouncements = announcements.filter((a) => a.id !== id);
 			await apiClient.put("/admin/platform-settings", {
+				setting_key: "home_announcements",
+				setting_value: updatedAnnouncements,
 				settingKey: "home_announcements",
 				settingValue: updatedAnnouncements,
 			});
 			toast.success("Announcement deleted");
 			setAnnouncements(updatedAnnouncements);
-		} catch (error) {
-			toast.error("Failed to delete announcement");
+		} catch (error: any) {
+			toast.error(error?.message || "Failed to delete announcement");
 		}
 	};
 
@@ -1892,6 +1897,11 @@ export default function MarketingPromotionsTab() {
 										<SelectItem value="walking">Walking</SelectItem>
 										<SelectItem value="training">Training</SelectItem>
 										<SelectItem value="boarding">Boarding</SelectItem>
+										<SelectItem value="pet_sitting">Pet Sitting</SelectItem>
+										<SelectItem value="daycare">Daycare</SelectItem>
+										<SelectItem value="nutrition">Nutrition</SelectItem>
+										<SelectItem value="ecommerce">E-Commerce</SelectItem>
+										<SelectItem value="events">Events</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>

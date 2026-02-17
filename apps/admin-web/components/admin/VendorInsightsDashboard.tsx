@@ -46,11 +46,29 @@ export function VendorInsightsDashboard() {
   const loadInsights = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<any>(`/admin/vendors/insights?range=${timeRange}`);
+      const raw = await apiClient.get<any>(`/admin/vendors/insights?range=${timeRange}`);
+      const data = (raw && typeof raw === 'object' && (raw as any).data) ? (raw as any).data : raw;
       
-      // Use real data from API
-      if (data) {
-        setInsights(data);
+      // Use real data from API (backend returns { sales, activities, distribution, trends })
+      if (data && typeof data === 'object') {
+        setInsights({
+          sales: data.sales ?? {
+            total: 0,
+            growth: 0,
+            thisMonth: 0,
+            lastMonth: 0,
+            trend: 'up' as const,
+          },
+          activities: data.activities ?? {
+            totalBookings: 0,
+            completedBookings: 0,
+            cancelledBookings: 0,
+            cancellationRate: 0,
+            avgRating: 0,
+          },
+          distribution: data.distribution ?? { byCategory: [], byStatus: [] },
+          trends: Array.isArray(data.trends) ? data.trends : [],
+        });
       } else {
         // Fallback to empty structure if no data
         setInsights({
@@ -163,14 +181,14 @@ export function VendorInsightsDashboard() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 mb-1">Total Bookings</p>
-              <p className="text-2xl font-bold text-gray-900">{insights.activities.totalBookings.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-gray-900">{(insights.activities?.totalBookings ?? 0).toLocaleString()}</p>
               <div className="flex items-center gap-2 mt-2">
                 <span className="text-sm text-gray-600">
-                  {insights.activities.completedBookings} completed
+                  {insights.activities?.completedBookings ?? 0} completed
                 </span>
                 <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
-                  {insights.activities.totalBookings
-                    ? ((insights.activities.completedBookings / insights.activities.totalBookings) * 100).toFixed(1)
+                  {(insights.activities?.totalBookings ?? 0)
+                    ? (((insights.activities?.completedBookings ?? 0) / (insights.activities?.totalBookings ?? 1)) * 100).toFixed(1)
                     : 0}%
                 </span>
               </div>

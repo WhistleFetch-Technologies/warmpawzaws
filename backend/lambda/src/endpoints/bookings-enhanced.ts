@@ -126,6 +126,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
 
+    // ✅ Guard: avoid 500 when body is null/empty (e.g. body already consumed or invalid)
+    if (!body || typeof body !== 'object') {
+      return this.error('Invalid or missing request body', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
     // ✅ FORENSIC FIX: Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
     if (!body.customerId && body.customerPhone) {
       try {
@@ -212,10 +217,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     if (idempotencyKey) {
       const existing = await checkIdempotencyKey(idempotencyKey);
       if (existing.exists) {
+        // ✅ Ensure body is string (DB may return JSONB as object); route does JSON.parse(result.body)
+        const bodyStr = typeof existing.response === 'string' ? existing.response : JSON.stringify(existing.response ?? {});
         return {
           statusCode: existing.httpStatus || 200,
           headers: { 'X-Idempotent-Replay': 'true' },
-          body: existing.response,
+          body: bodyStr,
         };
       }
     }
@@ -483,13 +490,13 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const newBookingStartMinutes = bookingHour * 60 + bookingMin;
         const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;  // ✅ NO buffer
 
-        // Fetch existing bookings for overlap check
+        // Fetch existing bookings for overlap check ($1 vendor_id, $2 booking_date, $3 staff_id when staffId present)
         const overlapQuery = staffId
           ? `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
              FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
-             AND staff_id = $4
+             AND staff_id = $3
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
              FOR UPDATE`
           : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
@@ -512,25 +519,20 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const normalizedServiceStyle = (serviceType === 'at_vendor' || serviceType === 'at_center') ? 'at_center' : serviceType;
         if (normalizedServiceStyle === 'at_center') {
           try {
-            // Get minNoticeMinutes first (same as available-slots endpoint)
+            // Use pool query() for optional reads so a failure does not abort the transaction
             let minNoticeMinutes = 30;
             try {
-              const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
-              const bufferPolicy = policiesResult.rows?.find((p: any) => p.policy_type === 'buffer_time');
+              const policiesResult = await query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`);
+              const bufferPolicy = (policiesResult.rows || []).find((p: any) => p.policy_type === 'buffer_time');
               if (bufferPolicy?.policy_config) {
                 const cfg = bufferPolicy.policy_config as any;
                 minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
               }
             } catch (_) { /* ignore */ }
-            
-            // Get buffer time from vendor_availability_v2 (lead_time_by_style or buffer_time)
-            // Use the same logic as available-slots endpoint
+
             const dayOfWeek = new Date(bookingDate).getDay();
-            
-            // First try to get from vendor_availability_v2 (same query pattern as available-slots)
-            // Note: vendor_availability_v2 only has service_styles (plural, array), not service_style or service_type
             try {
-              const va2Result = await client.query(
+              const va2Result = await query(
                 `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
                  FROM vendor_availability_v2
                  WHERE vendor_id = $1
@@ -540,7 +542,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                  LIMIT 1`,
                 [vendorId, dayOfWeek]
               );
-              
+
               if (va2Result.rows && va2Result.rows.length > 0) {
                 const row = va2Result.rows[0];
                 const leadByStyle = row.lead_time_by_style != null
@@ -551,7 +553,6 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
                 console.log(`[BOOKING] at_center: Found buffer from vendor_availability_v2: ${bufferMinutes} minutes`);
               } else {
-                // Fallback to minNoticeMinutes (same as available-slots)
                 bufferMinutes = minNoticeMinutes;
                 console.log(`[BOOKING] at_center: No vendor_availability_v2 record, using minNoticeMinutes: ${bufferMinutes} minutes`);
               }
@@ -561,7 +562,6 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             }
           } catch (err) {
             console.warn('[BOOKING] Could not get buffer time, using minNoticeMinutes as fallback:', err);
-            // Fallback: use 30 minutes buffer for at_center (matches available-slots default)
             bufferMinutes = 30;
           }
           
@@ -672,16 +672,21 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (packagePurchaseId) {
           try {
-            // ✅ FIX: Check if package_purchases table exists before querying
-            const packageTableExists = await client.query(`
-              SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name = 'package_purchases'
-              ) as exists
-            `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
-            
+            // Use pool query() for table-exists check so failure does not abort the transaction
+            let packageTableExists = false;
+            try {
+              const existsResult = await query(`
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.tables 
+                  WHERE table_schema = 'public' AND table_name = 'package_purchases'
+                ) as exists
+              `);
+              packageTableExists = existsResult.rows?.[0]?.exists === true || existsResult.rows?.[0]?.exists === 't';
+            } catch (_) { /* ignore */ }
+
             if (packageTableExists) {
-              const packageResult = await client.query(
+              // Use pool query() so failure does not abort the transaction
+              const packageResult = await query(
                 `SELECT id, remaining_sessions, unlimited_usage, total_sessions
                  FROM package_purchases
                  WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
@@ -709,53 +714,55 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         try {
-          // Skip subscription check when already using package
           if (!isPackageBooking) {
-            // ✅ FIX: Check if customer_subscriptions table exists before querying
-            const subscriptionTableExists = await client.query(`
-              SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name = 'customer_subscriptions'
-              ) as exists
-            `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
-            
+            // Use pool query() for table-exists check so failure does not abort the transaction
+            let subscriptionTableExists = false;
+            try {
+              const existsResult = await query(`
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.tables 
+                  WHERE table_schema = 'public' AND table_name = 'customer_subscriptions'
+                ) as exists
+              `);
+              subscriptionTableExists = existsResult.rows?.[0]?.exists === true || existsResult.rows?.[0]?.exists === 't';
+            } catch (_) { /* ignore */ }
+
             if (subscriptionTableExists) {
-              // Get service category for subscription matching
               const serviceCategory = service.category || baseServices[0]?.category || null;
-              
-              const activeSubscriptions = await client.query(
-                `SELECT * FROM customer_subscriptions 
-                 WHERE customer_id = $1 
-                 AND status = 'active'
-                 AND start_date <= CURRENT_DATE
-                 AND end_date >= CURRENT_DATE
-                 AND plan_type = 'unlimited'
-                 AND (service_category IS NULL OR service_category = $2)
-                 AND (vendor_id IS NULL OR vendor_id = $3)
-                 AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
-                 ORDER BY 
-                   CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
-                   CASE WHEN service_category = $2 THEN 0 ELSE 1 END
-                 LIMIT 1`,
-                [customerId, serviceCategory, vendorId]
-              );
-              
-              const subscriptions = (activeSubscriptions as any).rows || [];
-              
+              let subscriptions: any[] = [];
+              try {
+                const activeSubscriptions = await query(
+                  `SELECT * FROM customer_subscriptions 
+                   WHERE customer_id = $1 
+                   AND status = 'active'
+                   AND start_date <= CURRENT_DATE
+                   AND end_date >= CURRENT_DATE
+                   AND plan_type = 'unlimited'
+                   AND (service_category IS NULL OR service_category = $2)
+                   AND (vendor_id IS NULL OR vendor_id = $3)
+                   AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
+                   ORDER BY 
+                     CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
+                     CASE WHEN service_category = $2 THEN 0 ELSE 1 END
+                   LIMIT 1`,
+                  [customerId, serviceCategory, vendorId]
+                );
+                subscriptions = (activeSubscriptions.rows || []) as any[];
+              } catch (subSelectErr: any) {
+                console.warn('[BOOKING] Subscription SELECT failed (skip):', subSelectErr?.message);
+              }
               if (subscriptions.length > 0) {
                 const subscription = subscriptions[0];
                 subscriptionId = subscription.id;
                 isSubscriptionBooking = true;
-                finalAmount = 0; // Zero payment for unlimited subscription
-                
-                // Increment usage count
+                finalAmount = 0;
+                // UPDATE must use client; do not catch so transaction rolls back on failure
                 await client.query(
                   `UPDATE customer_subscriptions 
                    SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
                    WHERE id = $1`,
                   [subscriptionId]
                 );
-                
                 console.log(`[BOOKING] ✅ Active unlimited subscription found: ${subscriptionId}. Setting amount to ₹0.`);
               }
             } else {
@@ -763,7 +770,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
         } catch (subError: any) {
-          console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError?.message);
+          // Any error here is from client.query(UPDATE) — rethrow so transaction rolls back
+          throw subError;
         }
         
         // ✅ Calculate final amounts considering multiple services
@@ -854,13 +862,19 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
-        // ✅ FIX: Check which columns exist in bookings table before inserting
-        const existingColumnsResult = await client.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'bookings' AND table_schema = 'public'
-        `);
-        const existingColumns = new Set((existingColumnsResult.rows || []).map((r: any) => r.column_name));
+        // Use pool query() for schema read so failure does not abort the transaction
+        let existingColumns = new Set<string>();
+        try {
+          const existingColumnsResult = await query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'bookings' AND table_schema = 'public'
+          `);
+          existingColumns = new Set((existingColumnsResult.rows || []).map((r: any) => r.column_name));
+        } catch (colsErr: any) {
+          console.warn('[BOOKING] Could not fetch bookings columns, using all keys:', colsErr?.message);
+          Object.keys(bookingData).forEach(k => existingColumns.add(k));
+        }
         
         // Filter bookingData to only include columns that exist
         const filteredBookingData: Record<string, any> = {};
@@ -892,14 +906,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               [packagePurchaseIdToUse]
             );
           }
-          // ✅ FIX: Check if package_usage_log table exists before inserting
-          const packageLogTableExists = await client.query(`
-            SELECT EXISTS (
-              SELECT 1 FROM information_schema.tables 
-              WHERE table_schema = 'public' AND table_name = 'package_usage_log'
-            ) as exists
-          `).then(r => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === 't').catch(() => false);
-          
+          let packageLogTableExists = false;
+          try {
+            const logExistsResult = await query(`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = 'package_usage_log'
+              ) as exists
+            `);
+            packageLogTableExists = logExistsResult.rows?.[0]?.exists === true || logExistsResult.rows?.[0]?.exists === 't';
+          } catch (_) { /* ignore */ }
+
           if (packageLogTableExists) {
             await client.query(
               `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
@@ -2479,11 +2496,25 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       
       const context = createLambdaContext();
       const result: any = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      // ✅ Safely parse body (may be string or already object; avoid JSON.parse on non-string)
+      let data: any;
+      if (typeof result.body === 'string') {
+        try {
+          data = JSON.parse(result.body);
+        } catch (parseErr) {
+          console.error('Error parsing bookings/create response body:', parseErr);
+          data = { error: result.body || 'Internal server error' };
+        }
+      } else {
+        data = result.body ?? {};
+      }
+      const status = result.statusCode ?? 500;
+      return c.json(data, status);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in bookings/create:', error);
-      return c.json({ error: err?.message || 'Internal server error' }, 500);
+      const message = err?.message || err?.error || 'Internal server error';
+      return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message }, meta: {} }, 500);
     }
   });
 
@@ -2522,12 +2553,22 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result: any = await createHandler.execute(event, context);
+      let data: any;
+      if (typeof result.body === 'string') {
+        try {
+          data = JSON.parse(result.body);
+        } catch {
+          data = { error: result.body || 'Internal server error' };
+        }
+      } else {
+        data = result.body ?? {};
+      }
+      return c.json(data, result.statusCode ?? 500);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in booking/create:', error);
-      return c.json({ error: err?.message || 'Internal server error' }, 500);
+      return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: err?.message || 'Internal server error' }, meta: {} }, 500);
     }
   });
   
@@ -2566,7 +2607,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const data = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      return c.json(data, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/booking/create:', error);
@@ -2610,7 +2652,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const data = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      return c.json(data, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/bookings/create:', error);

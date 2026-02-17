@@ -284,6 +284,11 @@ jobs:
 - Check cache headers
 - Verify origin configuration
 
+#### 5. Razorpay create-order returns 500 "Network error connecting to payment gateway"
+- Lambda in a VPC has no outbound internet by default, so calls to `api.razorpay.com` fail.
+- **Fix:** Add a NAT Gateway and route `0.0.0.0/0` from the Lambda subnet’s route table to that NAT Gateway.
+- See **docs/RAZORPAY_LAMBDA_VPC_FIX.md** for step-by-step instructions.
+
 ---
 
 ## 📚 Additional Resources

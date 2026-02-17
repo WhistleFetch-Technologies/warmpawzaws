@@ -5,6 +5,11 @@
 #   --prod         Deploy to PRODUCTION (S3 + CloudFront prod, prod API URL).
 #   --yes, -y      Skip confirmation prompt when using --prod.
 #   Default: deploy to dev. Correct API URL is set before build so PROD never gets dev URL.
+#
+# This script only: builds, uploads to S3, and creates a CloudFront invalidation.
+# It does NOT modify CloudFront distribution config (aliases/SSL). Protected URLs
+# (dev.vendor.warmpawz.com, vendor.warmpawz.com) require aliases/SSL via
+# ./scripts/fix-cloudfront-ssl-dev-prod.sh if they show SSL errors.
 
 set -e
 
@@ -164,7 +169,7 @@ for f in index.html 404.html runtime-config.js; do
 done
 echo -e "${GREEN}✅ Cache headers set (HTML/config revalidate; chunks remain long-cached)${NC}"
 
-# Step 3: Invalidate CloudFront cache
+# Step 3: Invalidate CloudFront cache (deploy never modifies distribution config: aliases/SSL are unchanged)
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
@@ -179,6 +184,17 @@ else
   echo -e "${YELLOW}⚠️  Warning: CloudFront invalidation failed (but files are uploaded)${NC}"
 fi
 
+# Protected URL (canonical custom domain)
+PROTECTED_URL=""
+if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+  if [ "$PROD" = true ]; then
+    PROTECTED_URL=$(jq -r '.protectedUrls.prod.vendor // empty' "$PROJECT_ROOT/config/urls.json")
+  else
+    PROTECTED_URL=$(jq -r '.protectedUrls.dev.vendor // empty' "$PROJECT_ROOT/config/urls.json")
+  fi
+fi
+PROTECTED_URL="${PROTECTED_URL:-$CLOUDFRONT_URL}"
+
 # Summary
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
@@ -192,12 +208,14 @@ echo ""
 echo -e "📦 Deployment Summary:"
 echo -e "   ✅ ${APP_NAME}: Built successfully"
 echo -e "   ✅ S3 Upload: Synced to ${S3_BUCKET}"
-echo -e "   ✅ CloudFront: Cache invalidation created (${CLOUDFRONT_DIST_ID})"
+echo -e "   ✅ CloudFront: Cache invalidation created (this script does not change aliases/SSL)"
 echo ""
-echo -e "🌐 Access URLs:"
-echo -e "   - Vendor Web: ${CLOUDFRONT_URL}"
+echo -e "🌐 Access URLs (use protected URL for HTTPS custom domain):"
+echo -e "   - Vendor Web: ${PROTECTED_URL}"
+echo -e "   - Fallback:  ${CLOUDFRONT_URL}"
 echo -e "   - Direct S3: s3://${S3_BUCKET}"
 echo ""
+echo -e "⏰ If custom URL shows SSL errors: ./scripts/fix-cloudfront-ssl-dev-prod.sh $([ "$PROD" = true ] && echo '--prod-only' || echo '--dev-only')"
 echo -e "${BLUE}💡 If you see \"Unexpected token '<'\" for .js files: hard-refresh (Ctrl+Shift+R) or ensure CloudFront does NOT serve index.html for 404 on /_next/*.${NC}"
 echo ""
 

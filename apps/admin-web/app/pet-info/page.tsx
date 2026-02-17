@@ -22,7 +22,6 @@ import {
 import {
 	Dog,
 	Cat,
-	Search,
 	TrendingUp,
 	Heart,
 	Activity,
@@ -272,20 +271,20 @@ export default function PetIntelligenceSystem() {
 					</div>
 
 					<Tabs value={activeTab} onValueChange={setActiveTab}>
-						<TabsList className="mb-6">
-							<TabsTrigger value="overview">
+						<TabsList className="mb-6 rounded-none border-b border-gray-200 bg-transparent p-0 h-auto gap-0">
+							<TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
 								<BarChart3 className="w-4 h-4 mr-2" />
 								Overview
 							</TabsTrigger>
-							<TabsTrigger value="breeds">
+							<TabsTrigger value="breeds" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
 								<PieChartIcon className="w-4 h-4 mr-2" />
 								Breed Insights
 							</TabsTrigger>
-							<TabsTrigger value="database">
-								<Search className="w-4 h-4 mr-2" />
+							<TabsTrigger value="database" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+								<Info className="w-4 h-4 mr-2" />
 								Pet Database
 							</TabsTrigger>
-							<TabsTrigger value="health">
+							<TabsTrigger value="health" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
 								<Activity className="w-4 h-4 mr-2" />
 								Health Trends
 							</TabsTrigger>
@@ -432,34 +431,20 @@ export default function PetIntelligenceSystem() {
 
 						{/* Pet Database Tab */}
 						<TabsContent value="database" className="space-y-6">
-							{/* Search & Filters */}
-							<Card className="p-4">
-								<div className="flex gap-4">
-									<div className="flex-1 relative">
-										<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-										<Input
-											type="text"
-											value={searchQuery}
-											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-												setSearchQuery(e.target.value)
-											}
-											placeholder="Search by pet name, breed, or owner..."
-											className="w-full pl-10 pr-4 py-2"
-										/>
-									</div>
-									<Select value={speciesFilter} onValueChange={setSpeciesFilter}>
-										<SelectTrigger className="w-40">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="all">All Species</SelectItem>
-											<SelectItem value="dog">Dogs Only</SelectItem>
-											<SelectItem value="cat">Cats Only</SelectItem>
-											<SelectItem value="other">Others</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-							</Card>
+							{/* Species filter only (search bar removed) */}
+							<div className="flex gap-4">
+								<Select value={speciesFilter} onValueChange={setSpeciesFilter}>
+									<SelectTrigger className="w-40">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="all">All Species</SelectItem>
+										<SelectItem value="dog">Dogs Only</SelectItem>
+										<SelectItem value="cat">Cats Only</SelectItem>
+										<SelectItem value="other">Others</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
 
 							{/* Pet List */}
 							<Card className="p-6">

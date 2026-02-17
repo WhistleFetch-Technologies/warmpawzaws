@@ -3084,37 +3084,55 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   const mapPaymentRuleServiceLocation = (raw: string) =>
     paymentRuleServiceLocationMap[String(raw)] ?? (['home', 'clinic', 'both', 'tele', 'all'].includes(String(raw)) ? String(raw) : 'all');
 
+  const pickPaymentRuleRow = (body: any) => {
+    const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? 'all');
+    return {
+      name: body.name ?? '',
+      description: body.description ?? null,
+      vendor_types: Array.isArray(body.vendorTypes) ? body.vendorTypes : (body.vendor_types ?? []),
+      service_location,
+      reservation_type: (body.reservationType ?? body.reservation_type ?? 'flat') === 'full' ? 'flat' : (body.reservationType ?? body.reservation_type ?? 'flat'),
+      reservation_percentage: body.reservationPercentage ?? body.reservation_percentage ?? null,
+      flat_amount: body.flatAmount ?? body.flat_amount ?? null,
+      minimum_advance_payment: body.minimumAdvancePayment ?? body.minimum_advance_payment ?? 0,
+      partial_payment_allowed: body.partialPaymentAllowed !== false,
+      escrow_hold_period_hours: body.escrowHoldPeriodHours ?? body.escrow_hold_period_hours ?? 24,
+      cancellation_grace_period_hours: body.cancellationGracePeriodHours ?? body.cancellation_grace_period_hours ?? 2,
+      auto_capture_payment: body.autoCapturePayment !== false,
+      is_active: body.isActive !== false,
+      priority: body.priority ?? 0,
+    };
+  };
+
   app.post('/admin/vendor-settings/payment-rules', async (c) => {
     try {
-      const body = await c.req.json();
-      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? 'all');
-      const rule = await insert('vendor_payment_rules', {
-        ...body,
-        service_location,
+      const body = await c.req.json().catch(() => ({}));
+      const row = {
+        ...pickPaymentRuleRow(body),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      };
+      const rule = await insert('vendor_payment_rules', row);
       return c.json({ success: true, rule: rule[0] });
     } catch (error: any) {
       console.error('Error creating payment rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: error?.message ?? 'Failed to create payment rule' }, 500);
     }
   });
 
   app.put('/admin/vendor-settings/payment-rules/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await c.req.json();
-      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? 'all');
-      const updated = await update('vendor_payment_rules', { id }, {
-        ...body,
-        service_location,
+      const body = await c.req.json().catch(() => ({}));
+      const row = {
+        ...pickPaymentRuleRow(body),
         updated_at: new Date().toISOString(),
-      });
+      };
+      const updated = await update('vendor_payment_rules', { id }, row);
       return c.json({ success: true, rule: updated[0] });
     } catch (error: any) {
       console.error('Error updating payment rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: error?.message ?? 'Failed to update payment rule' }, 500);
     }
   });
 
@@ -3673,9 +3691,13 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Key or settingKey is required' }, 400);
       }
       const settingValue = typeof value === 'string' && (body.settingType === 'array' || body.settingType === 'object') ? value : (typeof value === 'object' ? JSON.stringify(value) : value);
+      const settingType = body.settingType ?? (typeof value === 'object' ? (Array.isArray(value) ? 'array' : 'object') : 'string');
+      const allowedTypes = ['string', 'number', 'boolean', 'object', 'array', 'json'];
+      const settingTypeVal = allowedTypes.includes(String(settingType)) ? String(settingType) : (typeof value === 'object' ? (Array.isArray(value) ? 'array' : 'object') : 'string');
       await upsert('platform_settings', {
         setting_key: key,
         setting_value: settingValue,
+        setting_type: settingTypeVal,
         updated_at: new Date().toISOString()
       }, 'setting_key');
       return c.json({ success: true, message: 'Setting saved successfully' });
@@ -3694,9 +3716,13 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         return c.json({ success: false, error: 'settingKey or key is required' }, 400);
       }
       const settingValue = typeof value === 'object' ? JSON.stringify(value) : value;
+      const settingType = body.settingType ?? (typeof value === 'object' ? (Array.isArray(value) ? 'array' : 'object') : 'string');
+      const allowedTypes = ['string', 'number', 'boolean', 'object', 'array', 'json'];
+      const settingTypeVal = allowedTypes.includes(String(settingType)) ? String(settingType) : (typeof value === 'object' ? (Array.isArray(value) ? 'array' : 'object') : 'string');
       await upsert('platform_settings', {
         setting_key: key,
         setting_value: settingValue,
+        setting_type: settingTypeVal,
         updated_at: new Date().toISOString()
       }, 'setting_key');
       return c.json({ success: true, message: 'Setting saved successfully' });

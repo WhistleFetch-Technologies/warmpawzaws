@@ -84,11 +84,19 @@ export function DynamicSettlementRulesManager() {
   const handleSaveRule = async (rule: SettlementRule) => {
     setSaving(true);
     try {
+      const payload = {
+        name: rule.name,
+        conditions: rule.conditions || {},
+        settlement: rule.settlement,
+        isActive: rule.enabled,
+        priority: rule.priority,
+        ...(rule.id && { id: rule.id }),
+      };
       if (rule.id) {
-        await apiClient.put(`/admin/finance/settlement-rules/${rule.id}`, rule);
+        await apiClient.put(`/admin/finance/settlement-rules/${rule.id}`, payload);
         toast.success('Settlement rule saved successfully');
       } else {
-        await apiClient.post('/admin/finance/settlement-rules', rule);
+        await apiClient.post('/admin/finance/settlement-rules', payload);
         toast.success('Settlement rule created successfully');
       }
       setEditingRule(null);

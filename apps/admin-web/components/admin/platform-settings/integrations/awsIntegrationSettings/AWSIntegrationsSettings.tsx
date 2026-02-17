@@ -115,8 +115,8 @@ export function AWSIntegrationsSettings() {
 		chime: { enabled: false, region: "us-east-1" },
 		bedrock: {
 			enabled: false,
-			region: "us-east-1",
-			modelId: "anthropic.claude-v2",
+			region: "ap-south-1",
+			modelId: "amazon.nova-lite-v1:0",
 		},
 	});
 
@@ -186,8 +186,8 @@ export function AWSIntegrationsSettings() {
 					},
 					bedrock: {
 						enabled: awsRes.settings.bedrock?.enabled || false,
-						region: awsRes.settings.bedrock?.region || "us-east-1",
-						modelId: awsRes.settings.bedrock?.modelId || "anthropic.claude-v2",
+						region: awsRes.settings.bedrock?.region || "ap-south-1",
+						modelId: awsRes.settings.bedrock?.modelId || "amazon.nova-lite-v1:0",
 					},
 				};
 				setAws(loadedAws);
@@ -787,9 +787,12 @@ export function AWSIntegrationsSettings() {
 												bedrock: { ...aws.bedrock, region: e.target.value },
 											})
 										}
-										placeholder="us-east-1"
+										placeholder="ap-south-1"
 										disabled={!isEditMode}
 									/>
+									<p className="text-xs text-slate-500">
+										ap-south-1 (Mumbai) recommended; Nova Lite and Claude available there.
+									</p>
 								</div>
 							</CardContent>
 						)}

@@ -172,7 +172,7 @@ export abstract class BaseHandlerEnhanced {
   }
 
   /**
-   * Parse request body
+   * Parse request body. Returns null for missing/empty body or invalid JSON (avoids 500).
    */
   protected parseBody(event: APIGatewayProxyEvent | APIGatewayProxyEventV2): any {
     if (!event.body) return null;
@@ -182,9 +182,13 @@ export abstract class BaseHandlerEnhanced {
         ? Buffer.from(event.body, 'base64').toString()
         : event.body;
       
-      return body ? JSON.parse(body) : null;
+      const trimmed = typeof body === 'string' ? body.trim() : body;
+      if (!trimmed || trimmed === '') return null;
+      
+      return JSON.parse(trimmed);
     } catch (error) {
-      throw new Error('Invalid JSON in request body');
+      // Don't throw: return null so handler can return 400 with message
+      return null;
     }
   }
 

@@ -3,18 +3,14 @@ import {
 	Ticket,
 	Plus,
 	Search,
-	Download,
 	Copy,
 	Calendar,
 	IndianRupee,
 	Percent,
-	Check,
-	X,
 	Loader2,
-	MoreVertical,
 	Trash2,
-	RefreshCcw,
 	Layers,
+	Edit2,
 } from "lucide-react";
 import {
 	Dialog,
@@ -58,6 +54,16 @@ export function CouponManagement() {
 		validUntil: new Date(Date.now() + 30 * 86400000)
 			.toISOString()
 			.split("T")[0],
+		usageLimit: 0,
+		isActive: true,
+	});
+	const [editingCoupon, setEditingCoupon] = useState<any>(null);
+	const [showEditModal, setShowEditModal] = useState(false);
+	const [editFormData, setEditFormData] = useState({
+		code: "",
+		type: "percentage",
+		value: 0,
+		validUntil: "",
 		usageLimit: 0,
 		isActive: true,
 	});
@@ -153,6 +159,63 @@ export function CouponManagement() {
 	const copyToClipboard = (text: string) => {
 		navigator.clipboard.writeText(text);
 		toast.success("Copied to clipboard");
+	};
+
+	const handleEditCoupon = (coupon: any) => {
+		setEditingCoupon(coupon);
+		setEditFormData({
+			code: coupon.code ?? "",
+			type: coupon.type ?? "percentage",
+			value: Number(coupon.value ?? 0),
+			validUntil: coupon.validUntil || coupon.valid_until
+				? new Date(coupon.validUntil || coupon.valid_until).toISOString().split("T")[0]
+				: "",
+			usageLimit: Number(coupon.usageLimit ?? coupon.usage_limit ?? 0),
+			isActive: coupon.isActive ?? coupon.is_active ?? true,
+		});
+		setShowEditModal(true);
+	};
+
+	const handleUpdateCoupon = async () => {
+		if (!editingCoupon?.id) return;
+		try {
+			setSubmitting(true);
+			const payload = {
+				code: editFormData.code,
+				type: editFormData.type,
+				value: editFormData.value,
+				valid_until: editFormData.validUntil || null,
+				usage_limit: editFormData.usageLimit || null,
+				is_active: editFormData.isActive,
+			};
+			const res = await apiClient.put<any>(`/admin/coupons/${editingCoupon.id}`, payload);
+			if (res?.success !== false) {
+				toast.success("Coupon updated");
+				setShowEditModal(false);
+				setEditingCoupon(null);
+				fetchCoupons();
+			} else {
+				toast.error(res?.error || "Update failed");
+			}
+		} catch {
+			toast.error("Error updating coupon");
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	const handleDeleteCoupon = async (coupon: any) => {
+		if (!confirm(`Delete coupon ${coupon.code}?`)) return;
+		try {
+			setSubmitting(true);
+			await apiClient.delete(`/admin/coupons/${coupon.id}`);
+			toast.success("Coupon deleted");
+			fetchCoupons();
+		} catch {
+			toast.error("Error deleting coupon");
+		} finally {
+			setSubmitting(false);
+		}
 	};
 
 	return (
@@ -382,10 +445,33 @@ export function CouponManagement() {
 											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
-													usageLimit: parseInt(e.target.value),
+													usageLimit: parseInt(e.target.value) || 0,
 												})
 											}
 											placeholder="0 for unlimited"
+										/>
+									</div>
+								</div>
+								<div className="grid grid-cols-2 gap-4">
+									<div className="space-y-2">
+										<label className="text-sm font-medium">Valid From</label>
+										<Input
+											type="date"
+											value={formData.validFrom}
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+												setFormData({ ...formData, validFrom: e.target.value })
+											}
+										/>
+									</div>
+									<div className="space-y-2">
+										<label className="text-sm font-medium">Expiry Date</label>
+										<Input
+											type="date"
+											value={formData.validUntil}
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+												setFormData({ ...formData, validUntil: e.target.value })
+											}
+											placeholder="Optional"
 										/>
 									</div>
 								</div>
@@ -491,22 +577,35 @@ export function CouponManagement() {
 								</div>
 
 								<div className="text-sm">
-									<span className="font-medium">{coupon.usageCount || 0}</span>
+									<span className="font-medium">{coupon.usageCount ?? coupon.used_count ?? 0}</span>
 									<span className="text-gray-400">
-										{" "}
-										/ {coupon.usageLimit || "∞"}
+										{" / "}
+										{(coupon.usageLimit ?? coupon.usage_limit) ? (coupon.usageLimit ?? coupon.usage_limit) : "∞"}
 									</span>
 								</div>
 
 								<div className="text-sm text-gray-600">
-									{coupon.validUntil
-										? new Date(coupon.validUntil).toLocaleDateString()
+									{coupon.validUntil || coupon.valid_until
+										? new Date(coupon.validUntil || coupon.valid_until).toLocaleDateString()
 										: "No expiry"}
 								</div>
 
-								<div className="flex justify-end gap-2">
-									<Button variant="ghost" size="sm">
-										<MoreVertical className="w-4 h-4" />
+								<div className="flex justify-end gap-2 items-center">
+									<Button
+										variant="ghost"
+										size="sm"
+										title="Edit"
+										onClick={() => handleEditCoupon(coupon)}
+									>
+										<Edit2 className="w-4 h-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="sm"
+										title="Delete"
+										onClick={() => handleDeleteCoupon(coupon)}
+									>
+										<Trash2 className="w-4 h-4" />
 									</Button>
 								</div>
 							</div>
@@ -514,6 +613,92 @@ export function CouponManagement() {
 					</div>
 				)}
 			</div>
+
+		{/* Edit Coupon Modal */}
+		<Dialog open={showEditModal} onOpenChange={(open) => { if (!open) { setShowEditModal(false); setEditingCoupon(null); } }}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Edit Coupon</DialogTitle>
+						<DialogDescription>Update coupon details.</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						<div className="space-y-2">
+							<label className="text-sm font-medium">Code</label>
+							<Input
+								value={editFormData.code}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+									setEditFormData({ ...editFormData, code: e.target.value })
+								}
+							/>
+						</div>
+						<div className="grid grid-cols-2 gap-4">
+							<div className="space-y-2">
+								<label className="text-sm font-medium">Type</label>
+								<Select
+									value={editFormData.type}
+									onValueChange={(v: string) => setEditFormData({ ...editFormData, type: v })}
+								>
+									<SelectTrigger><SelectValue /></SelectTrigger>
+									<SelectContent>
+										<SelectItem value="percentage">Percentage (%)</SelectItem>
+										<SelectItem value="fixed">Fixed (₹)</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="space-y-2">
+								<label className="text-sm font-medium">Value</label>
+								<Input
+									type="number"
+									value={editFormData.value}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+										setEditFormData({ ...editFormData, value: parseFloat(e.target.value) || 0 })
+									}
+								/>
+							</div>
+						</div>
+						<div className="space-y-2">
+							<label className="text-sm font-medium">Expiry Date</label>
+							<Input
+								type="date"
+								value={editFormData.validUntil}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+									setEditFormData({ ...editFormData, validUntil: e.target.value })
+								}
+							/>
+						</div>
+						<div className="space-y-2">
+							<label className="text-sm font-medium">Usage Limit (0 = unlimited)</label>
+							<Input
+								type="number"
+								min={0}
+								value={editFormData.usageLimit}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+									setEditFormData({ ...editFormData, usageLimit: parseInt(e.target.value, 10) || 0 })
+								}
+							/>
+						</div>
+						<div className="flex items-center gap-2">
+							<input
+								type="checkbox"
+								id="edit-active"
+								checked={editFormData.isActive}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+									setEditFormData({ ...editFormData, isActive: e.target.checked })
+								}
+								className="rounded"
+							/>
+							<label htmlFor="edit-active" className="text-sm font-medium">Active</label>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => { setShowEditModal(false); setEditingCoupon(null); }}>Cancel</Button>
+						<Button onClick={handleUpdateCoupon} disabled={submitting}>
+							{submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+							Save
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

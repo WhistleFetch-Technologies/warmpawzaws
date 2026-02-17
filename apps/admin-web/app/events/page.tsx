@@ -395,14 +395,11 @@ export default function EventManagementPage() {
               <div className="text-center py-12">
                 <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">No Events Found</h3>
-                <p className="text-gray-600 mb-6">
+                <p className="text-gray-600">
                   {events.length === 0
-                    ? 'Get started by creating your first event'
+                    ? 'Get started by clicking "New Event" above to create your first event'
                     : 'Try adjusting your search or filter criteria'}
                 </p>
-                <EnhancedButton icon={Plus} onClick={() => setCreateModalOpen(true)}>
-                  Create Event
-                </EnhancedButton>
               </div>
             ) : (
               <div className="space-y-3">
@@ -657,6 +654,7 @@ function CreateEventModal({
   event?: Event | null;
 }) {
   const [loading, setLoading] = useState(false);
+  const [vendors, setVendors] = useState<{ id: string; business_name?: string; name?: string }[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -667,8 +665,18 @@ function CreateEventModal({
     location: '',
     expected_attendees: '',
     status: 'draft',
+    vendor_id: '',
     banner: null as File | null,
   });
+
+  useEffect(() => {
+    if (isOpen && !event) {
+      apiClient.get<any>('/admin/vendors?limit=500').then((r) => {
+        const list = r?.vendors ?? r?.data ?? [];
+        setVendors(Array.isArray(list) ? list : []);
+      }).catch(() => setVendors([]));
+    }
+  }, [isOpen, event]);
 
   useEffect(() => {
     if (event) {
@@ -686,6 +694,7 @@ function CreateEventModal({
         location: event.location || '',
         expected_attendees: event.max_participants?.toString() || '',
         status: event.status || 'draft',
+        vendor_id: event.vendor_id || '',
         banner: null,
       });
     } else {
@@ -699,6 +708,7 @@ function CreateEventModal({
         location: '',
         expected_attendees: '',
         status: 'draft',
+        vendor_id: '',
         banner: null,
       });
     }
@@ -709,10 +719,14 @@ function CreateEventModal({
       toast.error('Please fill in all required fields');
       return;
     }
+    if (!event && !formData.vendor_id) {
+      toast.error('Please select a host vendor for the event');
+      return;
+    }
 
     try {
       setLoading(true);
-      const payload = {
+      const payload: Record<string, unknown> = {
         title: formData.title,
         description: formData.description,
         category: formData.category || 'other',
@@ -724,6 +738,7 @@ function CreateEventModal({
         max_participants: parseInt(formData.expected_attendees) || undefined,
         status: formData.status,
       };
+      if (formData.vendor_id) payload.vendor_id = formData.vendor_id;
 
       if (event) {
         await apiClient.put(`/admin/events/${event.id}`, payload);
@@ -779,6 +794,24 @@ function CreateEventModal({
           />
         </div>
 
+        {!event && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Host Vendor <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={formData.vendor_id}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, vendor_id: e.target.value })}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
+              required
+            >
+              <option value="">Select vendor</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>{v.business_name || v.name || v.id}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Category Name
@@ -794,6 +827,11 @@ function CreateEventModal({
             <option value="exhibition">Exhibition</option>
             <option value="charity">Charity</option>
             <option value="training">Training</option>
+            <option value="meetup">Meetup</option>
+            <option value="competition">Competition</option>
+            <option value="festival">Festival</option>
+            <option value="webinar">Webinar</option>
+            <option value="fundraiser">Fundraiser</option>
             <option value="other">Other</option>
           </select>
         </div>

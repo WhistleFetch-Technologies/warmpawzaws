@@ -538,7 +538,7 @@ export default function ServiceCatalogPage() {
                   onClick={handleCreate}
                   className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
                 >
-                  <span>+</span> Add Product
+                  <span>+</span> Add Service
                 </button>
               </div>
             </div>
@@ -798,22 +798,6 @@ export default function ServiceCatalogPage() {
                       onClick={async () => {
                         try {
                           setLoading(true);
-                          await apiClient.post<any>('/admin/catalog/seed', { type: 'vet_only' });
-                          setSuccess('Vet services seeded successfully! Refresh to see changes.');
-                        } catch (err: any) {
-                          setError(err.message || 'Failed to seed vet data');
-                        } finally {
-                          setLoading(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
-                    >
-                      Seed Vet Only
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        try {
-                          setLoading(true);
                           await apiClient.post<any>('/admin/catalog/seed', { type: 'all' });
                           setSuccess('All services seeded successfully! Refresh to see changes.');
                         } catch (err: any) {
@@ -867,6 +851,7 @@ export default function ServiceCatalogPage() {
                   searchQuery={searchTerm}
                   filterCategory={filterCategory}
                   filterStatus={filterStatus}
+                  filterStyle={filterStyle}
                   onEdit={(service) => {
                     const normRoles = (service.applicable_roles || []).map((r: string) => toCanonicalRoleCode(r)).filter(Boolean);
                     const serviceData: Partial<ServiceCatalogItem> = {

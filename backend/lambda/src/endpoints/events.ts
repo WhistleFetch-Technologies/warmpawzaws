@@ -753,11 +753,14 @@ export function registerEventEndpoints(app: Hono) {
       if (!title || !start_date || !start_time) {
         return c.json({ error: 'title, start_date, and start_time are required' }, 400);
       }
+      if (!vendor_id) {
+        return c.json({ error: 'vendor_id is required for admin event creation' }, 400);
+      }
 
       const venue = typeof location === 'string' ? { address: location } : location || {};
 
       const event = await insert('events', {
-        vendor_id: vendor_id || null,
+        vendor_id,
         name: title,
         description: description || null,
         category: category || 'other',

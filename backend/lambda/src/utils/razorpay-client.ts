@@ -24,8 +24,9 @@ export interface RazorpayConfig {
  * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback).
  *
  * AWS Secrets Manager (recommended for production):
- * - Secret name: warmpawz/{STAGE}/razorpay (e.g. warmpawz/dev/razorpay)
- * - Value (JSON): { "keyId": "rzp_...", "keySecret": "...", "webhookSecret": "..." }
+ * - Secret name: warmpawz/{STAGE}/razorpay (e.g. warmpawz/dev/razorpay, warmpawz/prod/razorpay)
+ * - Value (JSON): { "keyId": "rzp_...", "keySecret": "...", "webhookSecret": "...", "razorpayXAccountNumber": "..." }
+ *   Required: keyId, keySecret. Optional: webhookSecret, razorpayXAccountNumber (or xAccountNumber).
  * - Lambda must have IAM permission secretsmanager:GetSecretValue for this secret.
  * - If Lambda runs in a VPC, ensure NAT Gateway or VPC endpoint for Secrets Manager.
  */
@@ -206,7 +207,10 @@ export async function razorpayRequest(
     // ✅ Check for network/DNS errors
     if (error.message?.includes('fetch failed') || error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
       console.error(`[RAZORPAY-REQUEST] Network error for ${endpoint}:`, errorDetails);
-      throw new Error(`Network error connecting to Razorpay API: ${error.message || error.code || 'Unknown network error'}. Please check Lambda VPC configuration and internet connectivity.`);
+      throw new Error(
+        `Network error connecting to Razorpay API: ${error.message || error.code || 'Unknown'}. ` +
+        'Lambda in VPC needs a NAT Gateway for outbound internet. Add route 0.0.0.0/0 → NAT Gateway to the Lambda subnet route table. See docs/RAZORPAY_LAMBDA_VPC_FIX.md.'
+      );
     }
     
     // ✅ Check for SSL/TLS errors

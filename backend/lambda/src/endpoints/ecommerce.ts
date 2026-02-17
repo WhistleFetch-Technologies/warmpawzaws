@@ -688,14 +688,16 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      // Create order items
+      // Create order items (schema: name, quantity, unit_price, total_price; product_id optional)
       for (const item of orderItems) {
+        const lineTotal = item.total != null ? Number(item.total) : (Number(item.price || 0) * (item.quantity || 1));
         await insert('order_items', {
           order_id: order[0].id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price,
-          total: item.total,
+          product_id: item.product_id || null,
+          name: item.name || 'Product',
+          quantity: item.quantity ?? 1,
+          unit_price: item.price ?? 0,
+          total_price: lineTotal,
         });
       }
 

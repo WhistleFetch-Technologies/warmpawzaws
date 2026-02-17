@@ -22,6 +22,18 @@ import { withRetry } from '../utils/error-recovery';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
+/** Timeout for Bedrock calls to avoid Lambda/API Gateway 503 (leave headroom under 30s). */
+const BEDROCK_TIMEOUT_MS = 18000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 export function registerAIChatbotEndpoints(app: Hono) {
   /**
    * POST /ai-chatbot/chat
@@ -29,7 +41,7 @@ export function registerAIChatbotEndpoints(app: Hono) {
    */
   app.post("/ai-chatbot/chat", async (c) => {
     try {
-      const { message, customerId, customerPhone, conversationId, context, petId } = await c.req.json();
+      const { message, customerId, customerPhone, conversationId, context, petId, vendorId, userType } = await c.req.json();
 
       if (!message) {
         return c.json({ error: 'message is required' }, 400);
@@ -38,12 +50,32 @@ export function registerAIChatbotEndpoints(app: Hono) {
       // Generate or use conversation ID
       const currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
+      // Vendor context (for vendor-side Warmpawz Assistant)
+      let vendorContext = '';
+      const isVendorChat = !!(vendorId || userType === 'vendor');
+      if (isVendorChat && (vendorId || context?.userName)) {
+        try {
+          if (vendorId) {
+            const vendors = await select('vendors', { id: vendorId });
+            if (vendors.length > 0) {
+              const v = vendors[0] as any;
+              vendorContext = `Vendor: ${v.business_name || v.owner_name || 'Vendor'}, Phone: ${v.phone || 'N/A'}. You are helping a business partner (vendor) with platform use, bookings, payments, or support.`;
+            }
+          }
+          if (!vendorContext && context?.userName) {
+            vendorContext = `Vendor: ${context.userName}. You are helping a Warmpawz vendor with platform use, bookings, payments, or support.`;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch vendor context', e);
+        }
+      }
+
       // Fetch customer context
       let customerContext = '';
       let petContext = '';
       let bookingContext = '';
 
-      if (customerId || customerPhone) {
+      if (!isVendorChat && (customerId || customerPhone)) {
         try {
           const customerResult = customerId
             ? await select('customers', { id: customerId })
@@ -104,8 +136,33 @@ export function registerAIChatbotEndpoints(app: Hono) {
         console.warn('Failed to fetch product context', e);
       }
 
-      // Build system prompt
-      const systemPrompt = `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
+      // Build system prompt (vendor vs customer)
+      const systemPrompt = isVendorChat
+        ? `You are the Warmpawz Assistant for vendors (business partners). Be helpful and professional.
+
+ROLE: Help vendors with managing their business on Warmpawz—bookings, payments, settlements, services, and getting support from admin.
+
+CONTEXT:
+${vendorContext ? `- ${vendorContext}\n` : ''}
+
+CAPABILITIES:
+1. Bookings: Explain how to view/manage bookings, confirm, reschedule, or cancel.
+2. Payments & settlements: Explain payouts, commission, and how to check payment status.
+3. Services: Help with adding/editing services, pricing, and availability.
+4. Support: Answer platform questions; if they need human help (admin), set requiresAgent: true.
+
+INTENT: Classify as 'booking', 'payment', 'support', 'services', or 'general'.
+
+OUTPUT FORMAT: Respond with a VALID JSON object ONLY:
+{
+  "response": "Your helpful response text here...",
+  "intent": "detected_intent",
+  "confidence": 0.95,
+  "suggestedActions": ["action1", "action2"],
+  "requiresAgent": false
+}
+If the vendor asks to speak to admin or contact support, set requiresAgent: true.`
+        : `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
 
 ROLE: Help customers with pet care, shopping, bookings, and support.
 
@@ -151,19 +208,23 @@ IMPORTANT RULES:
       let requiresAgent = false;
       let usedBedrock = false;
 
-      // Try AWS Bedrock with retry
+      // Try AWS Bedrock with retry and timeout (avoid Lambda/API Gateway 503)
       try {
-        const completion = await withRetry(
-          () => invokeBedrock(message, systemPrompt, {
-            maxTokens: 1024,
-            temperature: 0.5,
-            topP: 0.9,
-          }),
-          {
-            maxAttempts: 3,
-            initialDelayMs: 1000,
-            retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
-          }
+        const completion = await withTimeout(
+          withRetry(
+            () => invokeBedrock(message, systemPrompt, {
+              maxTokens: 1024,
+              temperature: 0.5,
+              topP: 0.9,
+            }),
+            {
+              maxAttempts: 2,
+              initialDelayMs: 500,
+              retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
+            }
+          ),
+          BEDROCK_TIMEOUT_MS,
+          'ai-chatbot/chat'
         );
 
         // Extract JSON from response
@@ -239,22 +300,34 @@ IMPORTANT RULES:
         console.warn('Failed to save conversation', e);
       }
 
-      // Check if agent handoff is needed
+      // Check if agent handoff is needed (customer or vendor)
       if (requiresAgent || confidence < 0.7) {
-        // Create support ticket for agent handoff
         try {
-          await insert('support_tickets', {
-            customer_id: customerId || null,
-            customer_phone: customerPhone || null,
-            subject: `AI Chatbot Handoff - ${intent}`,
+          const ticketNum = `TKT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+          const ticketPayload: Record<string, any> = {
+            ticket_number: ticketNum,
+            subject: isVendorChat ? `Vendor AI Assistant handoff - ${intent}` : `AI Chatbot Handoff - ${intent}`,
             message: `User: ${message}\n\nAI Response: ${responseText}\n\nIntent: ${intent}, Confidence: ${confidence}`,
-            source: 'ai_chatbot',
+            source: isVendorChat ? 'vendor_ai_chatbot' : 'ai_chatbot',
             status: 'open',
             priority: 'medium',
+            category: 'general',
             created_at: new Date().toISOString(),
-          }).catch(() => {
-            // Graceful fallback
-          });
+          };
+          if (isVendorChat && vendorId) {
+            const vendors = await select('vendors', { id: vendorId });
+            if (vendors.length > 0) {
+              const v = vendors[0] as any;
+              ticketPayload.vendor_id = vendorId;
+              ticketPayload.customer_phone = v?.phone || null;
+              ticketPayload.customer_name = v?.business_name || v?.owner_name || 'Vendor';
+              ticketPayload.customer_email = v?.email || null;
+            }
+          } else {
+            ticketPayload.customer_id = customerId || null;
+            ticketPayload.customer_phone = customerPhone || null;
+          }
+          await insert('support_tickets', ticketPayload).catch(() => {});
         } catch (e) {
           console.warn('Failed to create support ticket', e);
         }
@@ -324,17 +397,21 @@ OUTPUT FORMAT (JSON only):
 
       let analysis;
       try {
-        const completion = await withRetry(
-          () => invokeBedrock(symptoms, systemPrompt, {
-            maxTokens: 1024,
-            temperature: 0.3, // Lower temperature for medical advice
-            topP: 0.9,
-          }),
-          {
-            maxAttempts: 3,
-            initialDelayMs: 1000,
-            retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
-          }
+        const completion = await withTimeout(
+          withRetry(
+            () => invokeBedrock(symptoms, systemPrompt, {
+              maxTokens: 1024,
+              temperature: 0.3,
+              topP: 0.9,
+            }),
+            {
+              maxAttempts: 2,
+              initialDelayMs: 500,
+              retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
+            }
+          ),
+          BEDROCK_TIMEOUT_MS,
+          'ai-chatbot/symptoms-checker'
         );
 
         const jsonMatch = completion.match(/\{[\s\S]*\}/);
@@ -440,17 +517,21 @@ OUTPUT FORMAT (JSON only):
 
       let assistance;
       try {
-        const completion = await withRetry(
-          () => invokeBedrock(bookingQuery, systemPrompt, {
-            maxTokens: 512,
-            temperature: 0.6,
-            topP: 0.9,
-          }),
-          {
-            maxAttempts: 3,
-            initialDelayMs: 1000,
-            retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
-          }
+        const completion = await withTimeout(
+          withRetry(
+            () => invokeBedrock(bookingQuery, systemPrompt, {
+              maxTokens: 512,
+              temperature: 0.6,
+              topP: 0.9,
+            }),
+            {
+              maxAttempts: 2,
+              initialDelayMs: 500,
+              retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
+            }
+          ),
+          BEDROCK_TIMEOUT_MS,
+          'ai-chatbot/booking-assist'
         );
 
         const jsonMatch = completion.match(/\{[\s\S]*\}/);
@@ -506,18 +587,23 @@ OUTPUT FORMAT (JSON only):
       let customer_phone: string | null = customerPhone || null;
       let customer_email: string | null = null;
 
+      let escalationMessage = `Conversation ID: ${conversationId}\n\nReason: ${reason || 'User requested human agent'}\n\nConversation History:\n${conversationHistory || 'N/A'}`;
       if (isVendor) {
-        vendor_id = vendorId;
         try {
           const { select } = await import('../database/rds-connection');
           const vendors = await select('vendors', { id: vendorId });
           if (vendors.length > 0) {
             const v = vendors[0];
+            vendor_id = vendorId;
             customer_name = (v as any).business_name || (v as any).owner_name || 'Vendor';
             customer_phone = (v as any).phone || null;
             customer_email = (v as any).email || null;
+          } else {
+            escalationMessage += `\n\n(Requested vendor ID: ${vendorId} - not found in DB; ticket created without FK.)`;
           }
-        } catch (_) {}
+        } catch (_) {
+          escalationMessage += `\n\n(Requested vendor ID: ${vendorId}; lookup failed.)`;
+        }
       }
 
       const ticket = await insert('support_tickets', {
@@ -528,10 +614,11 @@ OUTPUT FORMAT (JSON only):
         customer_email: customer_email,
         vendor_id: vendor_id,
         subject: isVendor ? `Vendor AI Chat Escalation - ${reason || 'User Request'}` : `AI Chatbot Escalation - ${reason || 'User Request'}`,
-        message: `Conversation ID: ${conversationId}\n\nReason: ${reason || 'User requested human agent'}\n\nConversation History:\n${conversationHistory || 'N/A'}`,
+        message: escalationMessage,
         source: isVendor ? 'vendor_ai_chatbot' : 'ai_chatbot',
         status: 'open',
         priority: 'high',
+        category: 'general',
         created_at: new Date().toISOString(),
       });
 

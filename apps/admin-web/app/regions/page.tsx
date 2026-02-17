@@ -27,13 +27,13 @@ import {
 	XCircle,
 	Save,
 	Loader2,
-	Search,
 	Calendar,
 	IndianRupee,
 	Phone,
 	Languages,
 	Package,
 	Sparkles,
+	Search,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -197,41 +197,40 @@ export default function RegionManager() {
 		loadRegions();
 	}, []);
 
+	const normalizeRegion = (item: any): Region => ({
+		regionId: item.regionId || item.regionCode || item.id,
+		regionName: item.regionName || item.name,
+		regionCode: item.regionCode || item.code || item.regionId,
+		isActive:
+			item.isActive !== undefined
+				? item.isActive
+				: item.is_active !== undefined
+					? item.is_active
+					: true,
+		...item,
+	});
+
 	const loadRegions = async () => {
 		try {
 			setLoading(true);
-			const res = await apiClient.get<any>("/regions");
-			if (res.success) {
+			let res = await apiClient.get<any>("/admin/regions").catch(() => null);
+			if (!res?.success && !res?.regions) {
+				res = await apiClient.get<any>("/regions").catch(() => null);
+			}
+			if (res?.success || res?.regions) {
 				const regionsData = res.regions || [];
-				if (regionsData.length > 0) {
-					const extractedRegions: Region[] = regionsData.map((item: any) => ({
-						regionId: item.regionId || item.regionCode,
-						regionName: item.regionName || item.name,
-						regionCode: item.regionCode || item.code || item.regionId,
-						isActive:
-							item.isActive !== undefined
-								? item.isActive
-								: item.is_active !== undefined
-									? item.is_active
-									: true,
-						...item,
-					}));
-					setRegions(extractedRegions);
-					toast.success(`Loaded ${extractedRegions.length} regions`);
-				} else {
-					setRegions([]);
-					if (!autoInitAttempted) {
-						setAutoInitAttempted(true);
-						toast.info("No regions found. Create your first region to get started.");
-					}
+				const extractedRegions: Region[] = (regionsData || []).map(normalizeRegion);
+				setRegions(extractedRegions);
+				if (extractedRegions.length > 0 && !autoInitAttempted) {
+					setAutoInitAttempted(true);
 				}
+			} else {
+				setRegions([]);
 			}
 		} catch (error: any) {
 			console.error("Error loading regions:", error);
-			if (error.response?.status === 404) {
-				setRegions([]);
-				toast.info("No regions found. Create your first region to get started.");
-			} else {
+			setRegions([]);
+			if (error.response?.status !== 404) {
 				toast.error(`Error loading regions: ${error.message}`);
 			}
 		} finally {
@@ -450,31 +449,27 @@ export default function RegionManager() {
 					{/* List View */}
 					{view === "list" && (
 						<div className="space-y-6">
-							{/* Search and Filter */}
-							<Card className="p-4">
-								<div className="flex items-center gap-4">
-									<div className="relative flex-1">
-										<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-										<Input
-											placeholder="Search regions..."
-											value={searchQuery}
-											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-												setSearchQuery(e.target.value)
-											}
-											className="pl-10"
-										/>
-									</div>
-									<div className="flex items-center gap-2 text-sm text-gray-600">
-										<span className="font-medium">{regions.length}</span>
-										<span>total regions</span>
-										<span className="mx-2">•</span>
-										<span className="font-medium">
-											{regions.filter((r) => r.isActive).length}
-										</span>
-										<span>active</span>
-									</div>
+							{/* Search and count */}
+							<div className="flex flex-wrap items-center gap-4">
+								<div className="relative flex-1 min-w-[200px] max-w-md">
+									<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+									<Input
+										placeholder="Search regions by name or code..."
+										value={searchQuery}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+										className="pl-9 bg-white"
+									/>
 								</div>
-							</Card>
+								<div className="flex items-center gap-2 text-sm text-gray-600">
+									<span className="font-medium">{regions.length}</span>
+									<span>total regions</span>
+									<span className="mx-2">•</span>
+									<span className="font-medium">
+										{regions.filter((r) => r.isActive).length}
+									</span>
+									<span>active</span>
+								</div>
+							</div>
 
 							{/* Regions Grid */}
 							{loading ? (

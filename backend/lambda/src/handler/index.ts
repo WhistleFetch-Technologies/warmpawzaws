@@ -40,6 +40,7 @@ import { registerVendorDashboardEndpoints } from '../endpoints/vendor-dashboard'
 import { registerCustomerEndpoints } from '../endpoints/customer';
 import { registerGpsTrackingEndpoints } from '../endpoints/gps-tracking';
 import { registerAdminEndpoints } from '../endpoints/admin';
+import { registerAdminUserEndpoints } from '../endpoints/admin-users';
 import { registerVideoCallEndpoints } from '../endpoints/video-call';
 import { registerPackageSessionEndpoints } from '../endpoints/package-sessions';
 import { registerSearchEndpoints } from '../endpoints/search';
@@ -411,6 +412,7 @@ registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be b
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
+registerAdminUserEndpoints(app);
 registerVideoCallEndpoints(app);
 registerPackageSessionEndpoints(app);
 registerSearchEndpoints(app);

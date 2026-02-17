@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Plus, Edit2, Trash2, Loader2, Save, X, Users, Key, Check } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useAdminAuth } from '@/context/AdminAuthContext';
+import { AdminUsersTab } from './AdminUsersTab';
 
 interface Permission {
   permissionId: string;
@@ -35,7 +37,11 @@ const PERMISSION_CATEGORIES = [
   'Support & CRM',
 ];
 
+type TabId = 'vendor-roles' | 'admin-users';
+
 export function RBACManagement() {
+  const { hasPermission } = useAdminAuth();
+  const [activeTab, setActiveTab] = useState<TabId>('vendor-roles');
   const [loading, setLoading] = useState(true);
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
@@ -43,6 +49,8 @@ export function RBACManagement() {
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const showAdminUsersTab = hasPermission('admin:users:view');
 
   const [formData, setFormData] = useState({
     roleName: '',
@@ -271,19 +279,51 @@ export function RBACManagement() {
             <Shield className="w-6 h-6 text-indigo-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">RBAC Management</h1>
-            <p className="text-sm text-gray-600">Manage roles and permissions</p>
+            <h1 className="text-2xl font-bold text-gray-900">Role & User Management</h1>
+            <p className="text-sm text-gray-600">Vendor roles and admin users</p>
           </div>
         </div>
-        <button
-          onClick={() => handleOpenRoleModal()}
-          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-        >
-          <Plus className="w-4 h-4" />
-          Create Role
-        </button>
+        {activeTab === 'vendor-roles' && (
+          <button
+            onClick={() => handleOpenRoleModal()}
+            className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          >
+            <Plus className="w-4 h-4" />
+            Create Role
+          </button>
+        )}
       </div>
 
+      {showAdminUsersTab && (
+        <div className="flex gap-1 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('vendor-roles')}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'vendor-roles'
+                ? 'bg-white border border-b-0 border-gray-200 text-orange-600 -mb-px'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            Vendor roles
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('admin-users')}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'admin-users'
+                ? 'bg-white border border-b-0 border-gray-200 text-orange-600 -mb-px'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            Admin users
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'admin-users' ? (
+        <AdminUsersTab />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {roles.map((role) => (
           <div key={role.roleId} className="bg-white rounded-xl border-2 border-gray-200 p-5">
@@ -358,6 +398,7 @@ export function RBACManagement() {
           </div>
         ))}
       </div>
+      )}
 
       {showRoleModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

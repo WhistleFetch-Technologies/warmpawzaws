@@ -174,7 +174,7 @@ fi
 
 echo -e "${GREEN}✅ S3 upload completed successfully${NC}"
 
-# Step 3: Invalidate CloudFront cache
+# Step 3: Invalidate CloudFront cache (this script does not change distribution aliases/SSL)
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
@@ -189,6 +189,10 @@ else
   echo -e "${YELLOW}⚠️  Warning: CloudFront invalidation failed (but files are uploaded)${NC}"
 fi
 
+PROTECTED_URL="https://admin.warmpawz.com"
+[ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null && PROTECTED_URL=$(jq -r '.protectedUrls.prod.admin // empty' "$PROJECT_ROOT/config/urls.json") || true
+PROTECTED_URL="${PROTECTED_URL:-$CLOUDFRONT_URL}"
+
 # Summary
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
@@ -198,14 +202,12 @@ echo ""
 echo -e "📦 Deployment Summary:"
 echo -e "   ✅ ${APP_NAME}: Built successfully"
 echo -e "   ✅ S3 Upload: Synced to ${S3_BUCKET}"
-echo -e "   ✅ CloudFront: Cache invalidation created (${INVALIDATION_ID})"
+echo -e "   ✅ CloudFront: Cache invalidation created (this script does not change aliases/SSL)"
 echo ""
-echo -e "🌐 Access URLs:"
-echo -e "   - Admin Web (PROD): ${CLOUDFRONT_URL}"
+echo -e "🌐 Access URLs (use protected URL for HTTPS):"
+echo -e "   - Admin Web (PROD): ${PROTECTED_URL}"
+echo -e "   - Fallback: ${CLOUDFRONT_URL}"
 echo -e "   - Direct S3: s3://${S3_BUCKET}"
 echo ""
-echo -e "⏰ Next Steps:"
-echo -e "   1. Wait 5-15 minutes for CloudFront propagation"
-echo -e "   2. Test the deployed application at ${CLOUDFRONT_URL}"
-echo -e "   3. Verify all features work correctly in production"
+echo -e "⏰ If custom URL shows SSL errors: ./scripts/fix-cloudfront-ssl-dev-prod.sh --prod-only"
 echo ""

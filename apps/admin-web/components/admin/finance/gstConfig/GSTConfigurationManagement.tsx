@@ -81,6 +81,7 @@ export function GSTConfigurationManagement() {
   const [editingHSN, setEditingHSN] = useState<HSNCode | null>(null);
   const [editingCategory, setEditingCategory] = useState<TaxCategory | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hsnFormError, setHsnFormError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -137,15 +138,30 @@ export function GSTConfigurationManagement() {
 
   const handleSaveHSN = async () => {
     if (!editingHSN) return;
+    setHsnFormError(null);
     setSaving(true);
     try {
       const payload = {
-        code: editingHSN.code,
+        code: (editingHSN.code || '').trim(),
         description: editingHSN.description,
         gstRate: editingHSN.gstRate,
         isActive: editingHSN.isActive,
         categoryId: editingHSN.categoryId || null,
       };
+      if (!payload.code) {
+        setHsnFormError('HSN code is required.');
+        setSaving(false);
+        return;
+      }
+      // Client-side duplicate check to avoid unnecessary 409
+      const others = safeHsnCodes.filter((h) => h.id !== editingHSN.id);
+      if (others.some((h) => (h.code || '').trim() === payload.code)) {
+        const msg = 'An HSN code with this code already exists. Use a different code or edit the existing one.';
+        setHsnFormError(msg);
+        toast.error(msg);
+        setSaving(false);
+        return;
+      }
       if (editingHSN.id) {
         await apiClient.put(`/admin/finance/gst/hsn-codes/${editingHSN.id}`, payload);
         toast.success('HSN code updated successfully');
@@ -155,9 +171,13 @@ export function GSTConfigurationManagement() {
       }
       setShowHSNModal(false);
       setEditingHSN(null);
+      setHsnFormError(null);
       loadData();
-    } catch (error) {
-      toast.error('Failed to save HSN code');
+    } catch (error: any) {
+      const message = error?.message || 'Failed to save HSN code';
+      setHsnFormError(message);
+      toast.error(message);
+      // Keep modal open so user can fix duplicate code or other errors
     } finally {
       setSaving(false);
     }
@@ -312,6 +332,7 @@ export function GSTConfigurationManagement() {
                   gstRate: 0,
                   isActive: true,
                 });
+                setHsnFormError(null);
                 setShowHSNModal(true);
               }}
               className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
@@ -360,6 +381,7 @@ export function GSTConfigurationManagement() {
                             size="sm"
                             onClick={() => {
                               setEditingHSN(hsn);
+                              setHsnFormError(null);
                               setShowHSNModal(true);
                             }}
                           >
@@ -452,20 +474,36 @@ export function GSTConfigurationManagement() {
 
       {/* HSN Code Modal */}
       {showHSNModal && editingHSN && (
-        <Dialog open={showHSNModal} onOpenChange={setShowHSNModal}>
+        <Dialog
+          open={showHSNModal}
+          onOpenChange={(open) => {
+            if (!open) setHsnFormError(null);
+            setShowHSNModal(open);
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingHSN.id ? 'Edit HSN Code' : 'Add HSN Code'}</DialogTitle>
-              <DialogDescription>Configure HSN code details and GST rates</DialogDescription>
+              <DialogDescription>Configure HSN code details and GST rates. Each code must be unique.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>HSN Code</Label>
                 <Input
                   value={editingHSN.code}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingHSN({ ...editingHSN, code: e.target.value })}
-                  placeholder="e.g., 12345678"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    setEditingHSN({ ...editingHSN, code: e.target.value });
+                    if (hsnFormError) setHsnFormError(null);
+                  }}
+                  placeholder="e.g. 9983, 2309"
+                  className={hsnFormError ? 'border-red-500' : ''}
                 />
+                {hsnFormError && (
+                  <p className="text-sm text-red-600 flex items-center gap-1" role="alert">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {hsnFormError}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>

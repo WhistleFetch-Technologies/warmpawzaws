@@ -43,6 +43,7 @@ interface HierarchicalServiceListProps {
   searchQuery?: string;
   filterCategory?: string;
   filterStatus?: string;
+  filterStyle?: string;
   onEdit?: (service: ServiceItem) => void;
   onDelete?: (service: ServiceItem) => void;
   onAddService?: (categoryId?: string, subcategoryId?: string) => void;
@@ -53,6 +54,7 @@ export function HierarchicalServiceList({
   searchQuery = '',
   filterCategory,
   filterStatus,
+  filterStyle,
   onEdit,
   onDelete,
   onAddService,
@@ -159,12 +161,12 @@ export function HierarchicalServiceList({
   };
 
   const filterServices = (service: ServiceItem): boolean => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
       if (
-        !service.service_name.toLowerCase().includes(query) &&
-        !service.display_name.toLowerCase().includes(query) &&
-        !service.description?.toLowerCase().includes(query) &&
+        !service.service_name?.toLowerCase().includes(query) &&
+        !service.display_name?.toLowerCase().includes(query) &&
+        !(service.description || '').toLowerCase().includes(query) &&
         !service.category_name?.toLowerCase().includes(query) &&
         !service.sub_category_name?.toLowerCase().includes(query)
       ) {
@@ -173,6 +175,10 @@ export function HierarchicalServiceList({
     }
     if (filterCategory && service.category_id !== filterCategory) return false;
     if (filterStatus && service.status !== filterStatus) return false;
+    if (filterStyle) {
+      const style = (service.service_style || '').replace('at_center', 'centre').replace('at_home', 'home');
+      if (style !== filterStyle) return false;
+    }
     return true;
   };
 

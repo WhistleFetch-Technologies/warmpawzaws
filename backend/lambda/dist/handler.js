@@ -25944,7 +25944,7 @@ var require_config = __commonJS({
        *     the configuration object. Defaults to `false`.
        *   @see constructor
        */
-      update: function update19(options, allowUnknownKeys) {
+      update: function update20(options, allowUnknownKeys) {
         allowUnknownKeys = allowUnknownKeys || false;
         options = this.extractCredentials(options);
         AWS.util.each.call(this, options, function(key, value) {
@@ -31532,7 +31532,7 @@ var require_util = __commonJS({
           }
         }
       },
-      update: function update19(obj1, obj2) {
+      update: function update20(obj1, obj2) {
         util3.each(obj2, function iterator(key, item) {
           obj1[key] = item;
         });
@@ -44407,12 +44407,12 @@ var require_channel_credentials = __commonJS({
           this.secureContextWatchers = [];
         }
       }
-      handleCaCertificateUpdate(update19) {
-        this.latestCaUpdate = update19;
+      handleCaCertificateUpdate(update20) {
+        this.latestCaUpdate = update20;
         this.maybeUpdateWatchers();
       }
-      handleIdentityCertitificateUpdate(update19) {
-        this.latestIdentityUpdate = update19;
+      handleIdentityCertitificateUpdate(update20) {
+        this.latestIdentityUpdate = update20;
         this.maybeUpdateWatchers();
       }
       hasReceivedUpdates() {
@@ -62528,12 +62528,12 @@ var require_server_credentials = __commonJS({
         const secureContextOptions = this.calculateSecureContextOptions();
         this.updateSecureContextOptions(secureContextOptions);
       }
-      handleCaCertificateUpdate(update19) {
-        this.latestCaUpdate = update19;
+      handleCaCertificateUpdate(update20) {
+        this.latestCaUpdate = update20;
         this.finalizeUpdate();
       }
-      handleIdentityCertitificateUpdate(update19) {
-        this.latestIdentityUpdate = update19;
+      handleIdentityCertitificateUpdate(update20) {
+        this.latestIdentityUpdate = update20;
         this.finalizeUpdate();
       }
     };
@@ -122514,6 +122514,183 @@ var init_uat_mode = __esm({
   }
 });
 
+// src/endpoints/admin-auth-helpers.ts
+async function resolveAdminByIdOrEmail(adminId, email) {
+  try {
+    const byId = await query(
+      `SELECT id, email, name, phone, role, admin_role_id, is_active
+       FROM admins WHERE id = $1 LIMIT 1`,
+      [adminId]
+    );
+    if (byId.rows?.length) {
+      const row = byId.rows[0];
+      if (row.is_active === false) return null;
+      return {
+        id: row.id,
+        email: row.email,
+        name: row.name ?? row.email,
+        phone: row.phone ?? null,
+        role: row.role ?? "admin",
+        admin_role_id: row.admin_role_id ?? null,
+        is_active: row.is_active !== false
+      };
+    }
+    if (email) {
+      const byEmail = await query(
+        `SELECT id, email, name, phone, role, admin_role_id, is_active
+         FROM admins WHERE email = $1 LIMIT 1`,
+        [email]
+      );
+      if (byEmail.rows?.length) {
+        const row = byEmail.rows[0];
+        if (row.is_active === false) return null;
+        return {
+          id: row.id,
+          email: row.email,
+          name: row.name ?? row.email,
+          phone: row.phone ?? null,
+          role: row.role ?? "admin",
+          admin_role_id: row.admin_role_id ?? null,
+          is_active: row.is_active !== false
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[ADMIN AUTH HELPERS] resolveAdminByIdOrEmail error:", e?.message);
+  }
+  return null;
+}
+async function resolveAdminPermissions(adminRoleId) {
+  if (!adminRoleId) return [];
+  try {
+    const result = await query(
+      `SELECT permission_name FROM role_permissions WHERE role_id = $1`,
+      [adminRoleId]
+    );
+    return (result.rows || []).map((r) => String(r.permission_name)).filter(Boolean);
+  } catch (e) {
+    console.warn("[ADMIN AUTH HELPERS] resolveAdminPermissions error:", e?.message);
+    return [];
+  }
+}
+function setAdminContext(c, admin2, permissions) {
+  if (typeof c.set === "function") {
+    c.set(ADMIN_CONTEXT_KEY, admin2);
+    c.set(ADMIN_PERMISSIONS_KEY, permissions);
+  }
+}
+function getAdminIdentity(c) {
+  if (typeof c.get === "function") return c.get(ADMIN_CONTEXT_KEY) ?? null;
+  return null;
+}
+function getAdminPermissions(c) {
+  if (typeof c.get === "function") return c.get(ADMIN_PERMISSIONS_KEY) ?? [];
+  return [];
+}
+function setUatAdminContext(c) {
+  const synthetic = {
+    id: "uat-admin-user",
+    email: "uat@warmpawz.com",
+    name: "UAT Admin",
+    phone: null,
+    role: "super-admin",
+    admin_role_id: null,
+    is_active: true
+  };
+  setAdminContext(c, synthetic, FULL_ADMIN_PERMISSIONS);
+}
+async function attachAdminContext(c, userId, email) {
+  const admin2 = await resolveAdminByIdOrEmail(userId, email);
+  if (!admin2) return null;
+  const permissions = await resolveAdminPermissions(admin2.admin_role_id);
+  setAdminContext(c, admin2, permissions);
+  return admin2;
+}
+function requirePermission(c, permissionCode) {
+  const permissions = getAdminPermissions(c);
+  if (permissions.includes(permissionCode)) return true;
+  const admin2 = getAdminIdentity(c);
+  if (admin2?.role === "super-admin" && !admin2.admin_role_id) return true;
+  return false;
+}
+async function logAdminAction(params) {
+  const {
+    action,
+    performedBy,
+    actorType = "admin",
+    resourceType,
+    resourceId,
+    section,
+    details = {},
+    status = "success"
+  } = params;
+  const safeDetails = section ? { ...details, section } : details;
+  try {
+    await query(
+      `INSERT INTO audit_logs (action, performed_by, actor_type, resource_type, resource_id, details, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        action,
+        performedBy,
+        actorType,
+        resourceType ?? null,
+        resourceId ?? null,
+        JSON.stringify(safeDetails),
+        status
+      ]
+    );
+  } catch (e) {
+    console.warn("[ADMIN AUDIT] logAdminAction failed (table may not exist):", e?.message);
+  }
+}
+var ADMIN_CONTEXT_KEY, ADMIN_PERMISSIONS_KEY, FULL_ADMIN_PERMISSIONS;
+var init_admin_auth_helpers = __esm({
+  "src/endpoints/admin-auth-helpers.ts"() {
+    "use strict";
+    init_rds_connection();
+    ADMIN_CONTEXT_KEY = "adminIdentity";
+    ADMIN_PERMISSIONS_KEY = "adminPermissions";
+    FULL_ADMIN_PERMISSIONS = [
+      "admin:analytics:view",
+      "admin:enterprise:view",
+      "admin:enterprise:edit",
+      "admin:vendors:view",
+      "admin:vendors:approve",
+      "admin:vendors:reject",
+      "admin:ecommerce:view",
+      "admin:ecommerce:edit",
+      "admin:regions:view",
+      "admin:regions:edit",
+      "admin:marketing:view",
+      "admin:marketing:edit",
+      "admin:loyalty:view",
+      "admin:loyalty:edit",
+      "admin:support:view",
+      "admin:support:edit",
+      "admin:catalog:view",
+      "admin:catalog:edit",
+      "admin:finance:view",
+      "admin:finance:edit",
+      "admin:roles:view",
+      "admin:roles:edit",
+      "admin:users:view",
+      "admin:users:create",
+      "admin:users:edit",
+      "admin:users:reset_password",
+      "admin:platform_settings:view",
+      "admin:platform_settings:edit",
+      "admin:reports:view",
+      "admin:audit:view",
+      "admin:events:view",
+      "admin:events:edit",
+      "admin:content:view",
+      "admin:content:edit",
+      "admin:pet_info:view",
+      "admin:pet_info:edit"
+    ];
+  }
+});
+
 // src/endpoints/webhooks.ts
 var webhooks_exports = {};
 __export(webhooks_exports, {
@@ -122908,7 +123085,8 @@ var init_webhooks = __esm({
 // src/endpoints/admin.ts
 var admin_exports = {};
 __export(admin_exports, {
-  registerAdminEndpoints: () => registerAdminEndpoints
+  registerAdminEndpoints: () => registerAdminEndpoints,
+  requireAdminAuth: () => requireAdminAuth
 });
 async function requireAdminAuth(c) {
   const authHeader = c.req.header("authorization") || c.req.header("Authorization");
@@ -122916,6 +123094,7 @@ async function requireAdminAuth(c) {
   if (uatMode) {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       console.log("[ADMIN AUTH] UAT Mode: Allowing admin access without auth header");
+      setUatAdminContext(c);
       return { authorized: true, userId: "uat-admin-user" };
     }
     const token2 = authHeader.replace(/^Bearer\s+/i, "");
@@ -122923,6 +123102,7 @@ async function requireAdminAuth(c) {
       const suffix = token2.replace("uat-token-", "");
       if (suffix.length >= 10) {
         console.log("[ADMIN AUTH] UAT Mode: Allowing admin access with UAT token");
+        setUatAdminContext(c);
         return { authorized: true, userId: "uat-admin-user" };
       }
     }
@@ -122933,20 +123113,22 @@ async function requireAdminAuth(c) {
         headers["authorization"] = authHeader;
         const result = await extractAndVerifyAuthToken2(headers);
         if (result.valid && result.payload) {
-          const groups = result.payload["cognito:groups"];
-          const userType = result.payload["custom:user_type"];
-          const role = result.payload["custom:user_type"];
-          const isAdmin = groups?.includes("admin") || groups?.includes("super-admin") || userType === "admin" || role === "admin";
-          if (isAdmin || uatMode) {
-            return { authorized: true, userId: result.payload.sub || result.payload["cognito:username"] || "uat-admin-user" };
+          const sub = result.payload.sub || result.payload["cognito:username"] || "uat-admin-user";
+          const admin2 = await attachAdminContext(c, sub, result.payload.email || result.payload["cognito:username"]);
+          if (admin2) {
+            return { authorized: true, userId: admin2.id };
           }
+          setUatAdminContext(c);
+          return { authorized: true, userId: sub };
         }
         console.log("[ADMIN AUTH] UAT Mode: Allowing admin access with valid token");
+        setUatAdminContext(c);
         return { authorized: true, userId: result.payload?.sub || "uat-admin-user" };
       } catch (tokenError) {
         const isProduction = process.env.STAGE === "prod" || process.env.AWS_LAMBDA_FUNCTION_NAME?.includes("prod");
         if (!isProduction && token2.startsWith("eyJ")) {
           console.log("[ADMIN AUTH] UAT Mode (DEV ONLY): Allowing admin access (token verification skipped)");
+          setUatAdminContext(c);
           return { authorized: true, userId: "uat-admin-user" };
         }
         console.warn("[ADMIN AUTH] Token verification failed in production");
@@ -122973,7 +123155,13 @@ async function requireAdminAuth(c) {
     if (!isAdmin) {
       return { authorized: false, error: "Admin access required" };
     }
-    return { authorized: true, userId: result.payload.sub || result.payload["cognito:username"] };
+    const sub = result.payload.sub || result.payload["cognito:username"];
+    const email = result.payload.email || result.payload["cognito:username"];
+    const admin2 = await attachAdminContext(c, sub, email);
+    if (!admin2) {
+      return { authorized: false, error: "Admin not found or inactive" };
+    }
+    return { authorized: true, userId: admin2.id };
   } catch (error) {
     console.error("[ADMIN AUTH] Token verification failed:", error);
     return { authorized: false, error: "Token verification failed" };
@@ -123761,6 +123949,7 @@ var init_admin = __esm({
     import_crypto19 = require("crypto");
     init_base_handler();
     init_rds_connection();
+    init_admin_auth_helpers();
     VendorStatsHandler2 = class extends BaseHandler {
       async handle(context) {
         try {
@@ -124103,6 +124292,31 @@ var init_admin = __esm({
         }
       }
     };
+  }
+});
+
+// src/utils/password-utils.ts
+var password_utils_exports = {};
+__export(password_utils_exports, {
+  comparePassword: () => comparePassword,
+  hashPassword: () => hashPassword
+});
+async function hashPassword(password) {
+  const salt = crypto14.randomBytes(16).toString("hex");
+  const hash = crypto14.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  return `${salt}:${hash}`;
+}
+async function comparePassword(password, storedHash) {
+  const [salt, hash] = storedHash.split(":");
+  if (!salt || !hash) return false;
+  const derivedHash = crypto14.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  return hash === derivedHash;
+}
+var crypto14;
+var init_password_utils = __esm({
+  "src/utils/password-utils.ts"() {
+    "use strict";
+    crypto14 = __toESM(require("crypto"));
   }
 });
 
@@ -125093,33 +125307,41 @@ function registerRazorpayEndpoints(app3) {
       }, 504);
     }
   });
+  const safeParseResultBody = (result, route) => {
+    try {
+      return typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+    } catch (e) {
+      console.error(`[RAZORPAY-${route}] Failed to parse result body:`, e);
+      return { error: "Invalid response format", message: String(result.body || "Unknown error") };
+    }
+  };
   app3.post("/razorpay/verify-payment", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
     const context = createLambdaContext12();
     const result = await verifyHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, "verify-payment"), result.statusCode);
   });
   app3.post("/razorpay/webhook", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
     const context = createLambdaContext12();
     const result = await webhookHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, "webhook"), result.statusCode);
   });
   app3.post("/razorpay/marketplace/settlement", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
     const context = createLambdaContext12();
     const result = await settlementHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, "settlement"), result.statusCode);
   });
   app3.post("/razorpay/refund", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
     const context = createLambdaContext12();
     const result = await refundHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, "refund"), result.statusCode);
   });
   app3.get("/razorpay/ifsc/:ifscCode", async (c) => {
     try {
@@ -127823,31 +128045,6 @@ var require_dist5 = __commonJS({
   }
 });
 
-// src/utils/password-utils.ts
-var password_utils_exports = {};
-__export(password_utils_exports, {
-  comparePassword: () => comparePassword2,
-  hashPassword: () => hashPassword2
-});
-async function hashPassword2(password) {
-  const salt = crypto15.randomBytes(16).toString("hex");
-  const hash = crypto15.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
-  return `${salt}:${hash}`;
-}
-async function comparePassword2(password, storedHash) {
-  const [salt, hash] = storedHash.split(":");
-  if (!salt || !hash) return false;
-  const derivedHash = crypto15.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
-  return hash === derivedHash;
-}
-var crypto15;
-var init_password_utils = __esm({
-  "src/utils/password-utils.ts"() {
-    "use strict";
-    crypto15 = __toESM(require("crypto"));
-  }
-});
-
 // src/handler/index.ts
 var index_exports = {};
 __export(index_exports, {
@@ -130308,8 +130505,12 @@ function requireAdmin() {
       "/admin/auth/signup",
       "/admin/test/ping",
       // Test endpoint
-      "/admin/setup/create-admin"
+      "/admin/setup/create-admin",
       // Setup endpoint for creating initial admin
+      "/admin/users/verify-otp-set-password",
+      // Public: OTP + set/reset password
+      "/admin/users/forgot-password"
+      // Public: request password reset OTP by email
     ];
     if (publicAdminPaths.some((publicPath) => path === publicPath || path.startsWith(publicPath + "/"))) {
       return next();
@@ -130651,15 +130852,17 @@ var BaseHandlerEnhanced = class {
     return context.awsRequestId || `req-${Date.now()}`;
   }
   /**
-   * Parse request body
+   * Parse request body. Returns null for missing/empty body or invalid JSON (avoids 500).
    */
   parseBody(event) {
     if (!event.body) return null;
     try {
       const body = event.isBase64Encoded && event.body ? Buffer.from(event.body, "base64").toString() : event.body;
-      return body ? JSON.parse(body) : null;
+      const trimmed = typeof body === "string" ? body.trim() : body;
+      if (!trimmed || trimmed === "") return null;
+      return JSON.parse(trimmed);
     } catch (error) {
-      throw new Error("Invalid JSON in request body");
+      return null;
     }
   }
   /**
@@ -134265,15 +134468,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select28("staff", { id: staffId });
+    const { select: select30 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select30("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors = await select28("vendors", { id: vendorId });
+    const vendors = await select30("vendors", { id: vendorId });
     if (vendors.length > 0 && vendors[0].latitude && vendors[0].longitude) {
       return {
         latitude: parseFloat(vendors[0].latitude),
@@ -134288,8 +134491,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select28("staff", { id: staffId });
+    const { select: select30 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select30("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -134811,6 +135014,9 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
+    if (!body || typeof body !== "object") {
+      return this.error("Invalid or missing request body", 400, "VALIDATION_ERROR", void 0, requestId);
+    }
     if (!body.customerId && body.customerPhone) {
       try {
         const custResult = await query(
@@ -134883,10 +135089,11 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     if (idempotencyKey) {
       const existing = await checkIdempotencyKey(idempotencyKey);
       if (existing.exists) {
+        const bodyStr = typeof existing.response === "string" ? existing.response : JSON.stringify(existing.response ?? {});
         return {
           statusCode: existing.httpStatus || 200,
           headers: { "X-Idempotent-Replay": "true" },
-          body: existing.response
+          body: bodyStr
         };
       }
     }
@@ -135105,7 +135312,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
              FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
-             AND staff_id = $4
+             AND staff_id = $3
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
              FOR UPDATE` : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
              FROM bookings 
@@ -135122,8 +135329,8 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           try {
             let minNoticeMinutes = 30;
             try {
-              const policiesResult = await client2.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
-              const bufferPolicy = policiesResult.rows?.find((p) => p.policy_type === "buffer_time");
+              const policiesResult = await query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`);
+              const bufferPolicy = (policiesResult.rows || []).find((p) => p.policy_type === "buffer_time");
               if (bufferPolicy?.policy_config) {
                 const cfg = bufferPolicy.policy_config;
                 minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
@@ -135132,7 +135339,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             }
             const dayOfWeek = new Date(bookingDate).getDay();
             try {
-              const va2Result = await client2.query(
+              const va2Result = await query(
                 `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
                  FROM vendor_availability_v2
                  WHERE vendor_id = $1
@@ -135229,14 +135436,19 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         let pkgForDeduction = null;
         if (packagePurchaseId) {
           try {
-            const packageTableExists = await client2.query(`
-              SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name = 'package_purchases'
-              ) as exists
-            `).then((r) => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === "t").catch(() => false);
+            let packageTableExists = false;
+            try {
+              const existsResult = await query(`
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.tables 
+                  WHERE table_schema = 'public' AND table_name = 'package_purchases'
+                ) as exists
+              `);
+              packageTableExists = existsResult.rows?.[0]?.exists === true || existsResult.rows?.[0]?.exists === "t";
+            } catch (_) {
+            }
             if (packageTableExists) {
-              const packageResult = await client2.query(
+              const packageResult = await query(
                 `SELECT id, remaining_sessions, unlimited_usage, total_sessions
                  FROM package_purchases
                  WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
@@ -135264,31 +135476,41 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         }
         try {
           if (!isPackageBooking) {
-            const subscriptionTableExists = await client2.query(`
-              SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name = 'customer_subscriptions'
-              ) as exists
-            `).then((r) => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === "t").catch(() => false);
+            let subscriptionTableExists = false;
+            try {
+              const existsResult = await query(`
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.tables 
+                  WHERE table_schema = 'public' AND table_name = 'customer_subscriptions'
+                ) as exists
+              `);
+              subscriptionTableExists = existsResult.rows?.[0]?.exists === true || existsResult.rows?.[0]?.exists === "t";
+            } catch (_) {
+            }
             if (subscriptionTableExists) {
               const serviceCategory = service.category || baseServices[0]?.category || null;
-              const activeSubscriptions = await client2.query(
-                `SELECT * FROM customer_subscriptions 
-                 WHERE customer_id = $1 
-                 AND status = 'active'
-                 AND start_date <= CURRENT_DATE
-                 AND end_date >= CURRENT_DATE
-                 AND plan_type = 'unlimited'
-                 AND (service_category IS NULL OR service_category = $2)
-                 AND (vendor_id IS NULL OR vendor_id = $3)
-                 AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
-                 ORDER BY 
-                   CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
-                   CASE WHEN service_category = $2 THEN 0 ELSE 1 END
-                 LIMIT 1`,
-                [customerId, serviceCategory, vendorId]
-              );
-              const subscriptions = activeSubscriptions.rows || [];
+              let subscriptions = [];
+              try {
+                const activeSubscriptions = await query(
+                  `SELECT * FROM customer_subscriptions 
+                   WHERE customer_id = $1 
+                   AND status = 'active'
+                   AND start_date <= CURRENT_DATE
+                   AND end_date >= CURRENT_DATE
+                   AND plan_type = 'unlimited'
+                   AND (service_category IS NULL OR service_category = $2)
+                   AND (vendor_id IS NULL OR vendor_id = $3)
+                   AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
+                   ORDER BY 
+                     CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
+                     CASE WHEN service_category = $2 THEN 0 ELSE 1 END
+                   LIMIT 1`,
+                  [customerId, serviceCategory, vendorId]
+                );
+                subscriptions = activeSubscriptions.rows || [];
+              } catch (subSelectErr) {
+                console.warn("[BOOKING] Subscription SELECT failed (skip):", subSelectErr?.message);
+              }
               if (subscriptions.length > 0) {
                 const subscription = subscriptions[0];
                 subscriptionId = subscription.id;
@@ -135307,7 +135529,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             }
           }
         } catch (subError) {
-          console.warn("[BOOKING] Could not check subscriptions (table may not exist):", subError?.message);
+          throw subError;
         }
         const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : amount || 0;
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
@@ -135383,12 +135605,18 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             }
           }
         }
-        const existingColumnsResult = await client2.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'bookings' AND table_schema = 'public'
-        `);
-        const existingColumns = new Set((existingColumnsResult.rows || []).map((r) => r.column_name));
+        let existingColumns = /* @__PURE__ */ new Set();
+        try {
+          const existingColumnsResult = await query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'bookings' AND table_schema = 'public'
+          `);
+          existingColumns = new Set((existingColumnsResult.rows || []).map((r) => r.column_name));
+        } catch (colsErr) {
+          console.warn("[BOOKING] Could not fetch bookings columns, using all keys:", colsErr?.message);
+          Object.keys(bookingData).forEach((k) => existingColumns.add(k));
+        }
         const filteredBookingData = {};
         for (const [key, value] of Object.entries(bookingData)) {
           if (existingColumns.has(key)) {
@@ -135412,12 +135640,17 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
               [packagePurchaseIdToUse]
             );
           }
-          const packageLogTableExists = await client2.query(`
-            SELECT EXISTS (
-              SELECT 1 FROM information_schema.tables 
-              WHERE table_schema = 'public' AND table_name = 'package_usage_log'
-            ) as exists
-          `).then((r) => r.rows?.[0]?.exists === true || r.rows?.[0]?.exists === "t").catch(() => false);
+          let packageLogTableExists = false;
+          try {
+            const logExistsResult = await query(`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = 'package_usage_log'
+              ) as exists
+            `);
+            packageLogTableExists = logExistsResult.rows?.[0]?.exists === true || logExistsResult.rows?.[0]?.exists === "t";
+          } catch (_) {
+          }
           if (packageLogTableExists) {
             await client2.query(
               `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
@@ -136734,11 +136967,24 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext3();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      let data;
+      if (typeof result.body === "string") {
+        try {
+          data = JSON.parse(result.body);
+        } catch (parseErr) {
+          console.error("Error parsing bookings/create response body:", parseErr);
+          data = { error: result.body || "Internal server error" };
+        }
+      } else {
+        data = result.body ?? {};
+      }
+      const status = result.statusCode ?? 500;
+      return c.json(data, status);
     } catch (error) {
       const err = error;
       console.error("Error in bookings/create:", error);
-      return c.json({ error: err?.message || "Internal server error" }, 500);
+      const message2 = err?.message || err?.error || "Internal server error";
+      return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: message2 }, meta: {} }, 500);
     }
   });
   app3.post("/booking/create", async (c) => {
@@ -136772,11 +137018,21 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext3();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      let data;
+      if (typeof result.body === "string") {
+        try {
+          data = JSON.parse(result.body);
+        } catch {
+          data = { error: result.body || "Internal server error" };
+        }
+      } else {
+        data = result.body ?? {};
+      }
+      return c.json(data, result.statusCode ?? 500);
     } catch (error) {
       const err = error;
       console.error("Error in booking/create:", error);
-      return c.json({ error: err?.message || "Internal server error" }, 500);
+      return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Internal server error" }, meta: {} }, 500);
     }
   });
   app3.post("/customer/booking/create", async (c) => {
@@ -136810,7 +137066,8 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext3();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const data = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+      return c.json(data, result.statusCode);
     } catch (error) {
       const err = error;
       console.error("Error in customer/booking/create:", error);
@@ -136848,7 +137105,8 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext3();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const data = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+      return c.json(data, result.statusCode);
     } catch (error) {
       const err = error;
       console.error("Error in customer/bookings/create:", error);
@@ -138148,23 +138406,23 @@ function createLambdaContext4() {
 async function triggerAutoShipment(orderId, orderType) {
   console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
   try {
-    const { select: select28, insert: insert15, update: update19, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const { select: select30, insert: insert15, update: update20, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
     const { logisticsPartnerService: logisticsPartnerService2 } = await Promise.resolve().then(() => (init_logistics_partner_service(), logistics_partner_service_exports));
     let order = null;
     let orderItems = [];
     let vendorId = null;
     if (orderType === "ecommerce") {
-      const orders = await select28("orders", { id: orderId });
+      const orders = await select30("orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Order not found: ${orderId}`);
         return;
       }
       order = orders[0];
-      const items = await select28("order_items", { order_id: orderId });
+      const items = await select30("order_items", { order_id: orderId });
       orderItems = items;
       vendorId = order.vendor_id;
     } else if (orderType === "pharmacy") {
-      const orders = await select28("pharmacy_orders", { id: orderId });
+      const orders = await select30("pharmacy_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Pharmacy order not found: ${orderId}`);
         return;
@@ -138177,14 +138435,14 @@ async function triggerAutoShipment(orderId, orderType) {
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update19("pharmacy_orders", { id: orderId }, {
+      await update20("pharmacy_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
       console.log(`[AUTO-SHIPMENT] Pharmacy delivery tracking created for ${orderId}`);
       return;
     } else if (orderType === "meal") {
-      const orders = await select28("meal_orders", { id: orderId });
+      const orders = await select30("meal_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Meal order not found: ${orderId}`);
         return;
@@ -138197,7 +138455,7 @@ async function triggerAutoShipment(orderId, orderType) {
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update19("meal_orders", { id: orderId }, {
+      await update20("meal_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
@@ -138214,7 +138472,7 @@ async function triggerAutoShipment(orderId, orderType) {
     }
     let customer = null;
     if (order.customer_id) {
-      const customers = await select28("customers", { id: order.customer_id });
+      const customers = await select30("customers", { id: order.customer_id });
       if (customers.length > 0) customer = customers[0];
     }
     const shippingAddress = typeof order.shipping_address === "string" ? JSON.parse(order.shipping_address) : order.shipping_address;
@@ -138233,7 +138491,7 @@ async function triggerAutoShipment(orderId, orderType) {
     });
     if (!partner) {
       console.log(`[AUTO-SHIPMENT] No partner available, marking for manual processing: ${orderId}`);
-      await update19("orders", { id: orderId }, {
+      await update20("orders", { id: orderId }, {
         order_status: "processing",
         logistics_notes: "Pending manual shipment creation"
       });
@@ -138245,7 +138503,7 @@ async function triggerAutoShipment(orderId, orderType) {
       logistics_partner_id: partner.id,
       status: "pending_creation"
     });
-    await update19("orders", { id: orderId }, {
+    await update20("orders", { id: orderId }, {
       order_status: "processing"
     });
     console.log(`[AUTO-SHIPMENT] Shipment record created for ${orderId}, partner: ${partner.partner_name}`);
@@ -140068,6 +140326,7 @@ var GetRolesHandler = class extends BaseHandler {
         display_name: role.display_name || role.name,
         name: role.name,
         description: role.description || "",
+        role_type: role.role_type || null,
         category,
         icon,
         customer_service: customerService,
@@ -140085,7 +140344,6 @@ var GetRolesHandler = class extends BaseHandler {
         userCount: 0,
         // TODO: Count users with this role
         createdAt: role.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-        // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
         config: role.config || {}
       };
     });
@@ -144402,6 +144660,494 @@ function registerGpsTrackingEndpoints(app3) {
 
 // src/handler/index.ts
 init_admin();
+
+// src/endpoints/admin-users.ts
+init_rds_connection();
+init_password_utils();
+init_sms_service();
+init_admin_auth_helpers();
+init_admin();
+var OTP_EXPIRY_MINUTES = 10;
+var OTP_RATE_LIMIT_MINUTES = 5;
+function normalizePhone2(phone) {
+  const raw2 = String(phone || "").trim();
+  const digits = raw2.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith("91") && digits.length === 12) return `+${digits}`;
+  if (raw2.startsWith("+")) return raw2;
+  return digits ? `+${digits}` : raw2;
+}
+function generateOTP() {
+  return process.env.UAT_MODE === "true" ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
+}
+async function requireAdminAuthWithContext(c) {
+  const admin2 = getAdminIdentity(c);
+  const permissions = getAdminPermissions(c);
+  if (admin2 && permissions) return { admin: admin2, permissions };
+  return null;
+}
+function registerAdminUserEndpoints(app3) {
+  app3.get("/admin/me", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ success: false, error: authResult.error || "Not authenticated" }, 401);
+    }
+    const admin2 = getAdminIdentity(c);
+    const permissions = getAdminPermissions(c);
+    if (!admin2) {
+      return c.json({ success: false, error: "Not authenticated" }, 401);
+    }
+    return c.json({
+      success: true,
+      admin: {
+        id: admin2.id,
+        email: admin2.email,
+        name: admin2.name,
+        phone: admin2.phone ?? void 0,
+        role: admin2.role
+      },
+      permissions
+    });
+  });
+  app3.post("/admin/users", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) return c.json({ success: false, error: authResult.error || "Authentication required" }, 401);
+    const ctx = await requireAdminAuthWithContext(c);
+    if (!ctx) return c.json({ success: false, error: "Authentication required" }, 401);
+    if (!requirePermission(c, "admin:users:create")) {
+      return c.json({ success: false, error: "Permission denied" }, 403);
+    }
+    const body = await c.req.json().catch(() => ({}));
+    const { email, name, phone, admin_role_id } = body;
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return c.json({ success: false, error: "Email is required" }, 400);
+    }
+    if (!phone || typeof phone !== "string" || !phone.trim()) {
+      return c.json({ success: false, error: "Phone is required for OTP" }, 400);
+    }
+    const normalizedPhone = normalizePhone2(phone);
+    const emailTrim = email.trim().toLowerCase();
+    const nameTrim = name && String(name).trim() || emailTrim;
+    const existing = await query(
+      `SELECT id FROM admins WHERE LOWER(email) = $1 LIMIT 1`,
+      [emailTrim]
+    );
+    if (existing.rows?.length) {
+      return c.json({ success: false, error: "Admin with this email already exists" }, 409);
+    }
+    const recentOtp = await query(
+      `SELECT id FROM otp_tokens WHERE phone = $1 AND purpose IN ('admin_set_password','admin_reset_password')
+       AND created_at > NOW() - INTERVAL '1 minute' * $2 LIMIT 1`,
+      [normalizedPhone, OTP_RATE_LIMIT_MINUTES]
+    );
+    if (recentOtp.rows?.length) {
+      return c.json(
+        { success: false, error: `OTP was already sent. Please wait ${OTP_RATE_LIMIT_MINUTES} minutes before requesting again.` },
+        429
+      );
+    }
+    let roleId = null;
+    if (admin_role_id) {
+      const roleRow = await query(
+        `SELECT id FROM roles WHERE id = $1 AND role_type = 'admin' AND is_active = true LIMIT 1`,
+        [admin_role_id]
+      );
+      if (roleRow.rows?.length) roleId = roleRow.rows[0].id;
+    }
+    if (!roleId) {
+      const defaultRole = await query(
+        `SELECT id FROM roles WHERE name = 'admin' AND role_type = 'admin' LIMIT 1`
+      );
+      roleId = defaultRole.rows?.[0]?.id ?? null;
+    }
+    const insertResult = await query(
+      `INSERT INTO admins (email, name, phone, admin_role_id, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, true, NOW(), NOW())
+       RETURNING id, email, name, phone`,
+      [emailTrim, nameTrim, normalizedPhone, roleId]
+    );
+    const newAdmin = insertResult.rows[0];
+    const adminId = newAdmin.id;
+    const otp = generateOTP();
+    const expiresAt = /* @__PURE__ */ new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRY_MINUTES);
+    await insert("otp_tokens", {
+      phone: normalizedPhone,
+      email: emailTrim,
+      code: otp,
+      purpose: "admin_set_password",
+      expires_at: expiresAt,
+      is_used: false
+    });
+    const message2 = `Your Warmpawz admin verification code is ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Use it to set your password. Do not share.`;
+    const sent = await sendSMS({ to: normalizedPhone, message: message2, type: "otp" }).catch((err) => {
+      console.warn("[ADMIN USERS] SMS send failed:", err?.message);
+      return { success: false };
+    });
+    await logAdminAction({
+      action: "admin_user.created",
+      performedBy: ctx.admin.id,
+      resourceType: "admin",
+      resourceId: adminId,
+      section: "roles",
+      details: { email: emailTrim, sentOtp: sent.success }
+    });
+    return c.json({
+      success: true,
+      message: "User created. OTP sent to their phone for setting password.",
+      adminId,
+      admin: { id: adminId, email: emailTrim, name: nameTrim, phone: normalizedPhone },
+      otpSent: sent.success
+    }, 201);
+  });
+  app3.post("/admin/users/verify-otp-set-password", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { email, phone, otp, newPassword } = body;
+    if (!email || !phone || !otp || !newPassword) {
+      return c.json({ success: false, error: "Email, phone, OTP and new password are required" }, 400);
+    }
+    const code = String(otp).trim();
+    if (code.length !== 6) {
+      return c.json({ success: false, error: "Invalid OTP format" }, 400);
+    }
+    if (String(newPassword).length < 8) {
+      return c.json({ success: false, error: "Password must be at least 8 characters" }, 400);
+    }
+    const normalizedPhone = normalizePhone2(phone);
+    const emailTrim = String(email).trim().toLowerCase();
+    const otpRows = await query(
+      `SELECT id, email FROM otp_tokens
+       WHERE phone = $1 AND code = $2 AND purpose IN ('admin_set_password','admin_reset_password')
+         AND is_used = false AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [normalizedPhone, code]
+    );
+    if (!otpRows.rows?.length) {
+      return c.json({ success: false, error: "Invalid or expired OTP" }, 400);
+    }
+    const otpRecord = otpRows.rows[0];
+    const otpEmail = (otpRecord.email || "").trim().toLowerCase();
+    if (otpEmail && otpEmail !== emailTrim) {
+      return c.json({ success: false, error: "Invalid or expired OTP" }, 400);
+    }
+    await query(
+      `UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1`,
+      [otpRecord.id]
+    );
+    const adminRows = await query(
+      `SELECT id FROM admins WHERE LOWER(email) = $1 LIMIT 1`,
+      [otpEmail || emailTrim]
+    );
+    if (!adminRows.rows?.length) {
+      return c.json({ success: false, error: "Admin account not found" }, 404);
+    }
+    const targetAdminId = adminRows.rows[0].id;
+    const passwordHash = await hashPassword(String(newPassword));
+    await query(
+      `UPDATE admins SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      [passwordHash, targetAdminId]
+    );
+    await logAdminAction({
+      action: "admin_password.set_via_otp",
+      performedBy: targetAdminId,
+      actorType: "admin",
+      resourceType: "admin",
+      resourceId: targetAdminId,
+      section: "roles",
+      details: {}
+    });
+    return c.json({
+      success: true,
+      message: "Password set successfully. You can log in with email and password."
+    });
+  });
+  app3.post("/admin/users/forgot-password", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!email) {
+      return c.json({ success: false, error: "Email is required" }, 400);
+    }
+    const targetRows = await query(
+      `SELECT id, email, name, phone FROM admins WHERE LOWER(email) = $1 AND is_active = true LIMIT 1`,
+      [email]
+    );
+    const genericSuccess = {
+      success: true,
+      message: "If this email is registered, an OTP has been sent to your registered phone. Use the Set password page to enter the code and set a new password."
+    };
+    if (!targetRows.rows?.length) {
+      return c.json(genericSuccess, 200);
+    }
+    const target = targetRows.rows[0];
+    const phone = target.phone ? normalizePhone2(target.phone) : null;
+    if (!phone) {
+      return c.json(genericSuccess, 200);
+    }
+    const recentOtp = await query(
+      `SELECT id FROM otp_tokens WHERE phone = $1 AND purpose = 'admin_reset_password'
+       AND created_at > NOW() - INTERVAL '1 minute' * $2 LIMIT 1`,
+      [phone, OTP_RATE_LIMIT_MINUTES]
+    );
+    if (recentOtp.rows?.length) {
+      return c.json(
+        { success: false, error: `Please wait ${OTP_RATE_LIMIT_MINUTES} minutes before requesting another code.` },
+        429
+      );
+    }
+    const otp = generateOTP();
+    const expiresAt = /* @__PURE__ */ new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRY_MINUTES);
+    await insert("otp_tokens", {
+      phone,
+      email: target.email,
+      code: otp,
+      purpose: "admin_reset_password",
+      expires_at: expiresAt,
+      is_used: false
+    });
+    const message2 = `Your Warmpawz admin password reset code is ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Do not share.`;
+    const sent = await sendSMS({ to: phone, message: message2, type: "otp" }).catch((err) => {
+      console.warn("[ADMIN USERS] Forgot-password OTP SMS failed:", err?.message);
+      return { success: false };
+    });
+    await logAdminAction({
+      action: "admin_password.forgot_requested",
+      performedBy: target.id,
+      actorType: "admin",
+      resourceType: "admin",
+      resourceId: target.id,
+      section: "roles",
+      details: { targetEmail: target.email, sentOtp: sent.success }
+    });
+    return c.json(genericSuccess, 200);
+  });
+  app3.post("/admin/users/reset-password-request", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) return c.json({ success: false, error: authResult.error || "Authentication required" }, 401);
+    const ctx = await requireAdminAuthWithContext(c);
+    if (!ctx) return c.json({ success: false, error: "Authentication required" }, 401);
+    const body = await c.req.json().catch(() => ({}));
+    const adminIdParam = body.adminId ?? body.admin_id;
+    const targetAdminId = adminIdParam ? String(adminIdParam).trim() : ctx.admin.id;
+    const isSelf = targetAdminId === ctx.admin.id;
+    if (!isSelf && !requirePermission(c, "admin:users:reset_password")) {
+      return c.json({ success: false, error: "Permission denied" }, 403);
+    }
+    const targetRows = await query(
+      `SELECT id, email, name, phone FROM admins WHERE id = $1 AND is_active = true LIMIT 1`,
+      [targetAdminId]
+    );
+    if (!targetRows.rows?.length) {
+      return c.json({ success: false, error: "User not found or inactive" }, 404);
+    }
+    const target = targetRows.rows[0];
+    const phone = target.phone ? normalizePhone2(target.phone) : null;
+    if (!phone) {
+      return c.json({ success: false, error: "User has no phone number; cannot send OTP" }, 400);
+    }
+    const recentOtp = await query(
+      `SELECT id FROM otp_tokens WHERE phone = $1 AND purpose = 'admin_reset_password'
+       AND created_at > NOW() - INTERVAL '1 minute' * $2 LIMIT 1`,
+      [phone, OTP_RATE_LIMIT_MINUTES]
+    );
+    if (recentOtp.rows?.length) {
+      return c.json(
+        { success: false, error: `Please wait ${OTP_RATE_LIMIT_MINUTES} minutes before requesting another OTP.` },
+        429
+      );
+    }
+    const otp = generateOTP();
+    const expiresAt = /* @__PURE__ */ new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRY_MINUTES);
+    await insert("otp_tokens", {
+      phone,
+      email: target.email,
+      code: otp,
+      purpose: "admin_reset_password",
+      expires_at: expiresAt,
+      is_used: false
+    });
+    const message2 = `Your Warmpawz admin password reset code is ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Do not share.`;
+    const sent = await sendSMS({ to: phone, message: message2, type: "otp" }).catch((err) => {
+      console.warn("[ADMIN USERS] Reset OTP SMS failed:", err?.message);
+      return { success: false };
+    });
+    await logAdminAction({
+      action: "admin_password.reset_requested",
+      performedBy: ctx.admin.id,
+      resourceType: "admin",
+      resourceId: targetAdminId,
+      section: "roles",
+      details: { targetEmail: target.email, sentOtp: sent.success }
+    });
+    return c.json({
+      success: true,
+      message: "OTP sent to user\u2019s phone. They can set a new password using the set-password page.",
+      otpSent: sent.success
+    });
+  });
+  app3.post("/admin/users/:id/send-set-password-otp", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) return c.json({ success: false, error: authResult.error || "Authentication required" }, 401);
+    const ctx = await requireAdminAuthWithContext(c);
+    if (!ctx) return c.json({ success: false, error: "Authentication required" }, 401);
+    if (!requirePermission(c, "admin:users:create") && !requirePermission(c, "admin:users:edit")) {
+      return c.json({ success: false, error: "Permission denied" }, 403);
+    }
+    const id = c.req.param("id");
+    const adminRows = await query(
+      `SELECT id, email, name, phone FROM admins WHERE id = $1 AND is_active = true LIMIT 1`,
+      [id]
+    );
+    if (!adminRows.rows?.length) {
+      return c.json({ success: false, error: "User not found" }, 404);
+    }
+    const target = adminRows.rows[0];
+    const phone = target.phone ? normalizePhone2(target.phone) : null;
+    if (!phone) {
+      return c.json({ success: false, error: "User has no phone" }, 400);
+    }
+    const recentOtp = await query(
+      `SELECT id FROM otp_tokens WHERE phone = $1 AND purpose = 'admin_set_password'
+       AND created_at > NOW() - INTERVAL '1 minute' * $2 LIMIT 1`,
+      [phone, OTP_RATE_LIMIT_MINUTES]
+    );
+    if (recentOtp.rows?.length) {
+      return c.json(
+        { success: false, error: `Please wait ${OTP_RATE_LIMIT_MINUTES} minutes before resending.` },
+        429
+      );
+    }
+    const otp = generateOTP();
+    const expiresAt = /* @__PURE__ */ new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRY_MINUTES);
+    await insert("otp_tokens", {
+      phone,
+      email: target.email,
+      code: otp,
+      purpose: "admin_set_password",
+      expires_at: expiresAt,
+      is_used: false
+    });
+    const message2 = `Your Warmpawz admin verification code is ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Use it to set your password. Do not share.`;
+    const sent = await sendSMS({ to: phone, message: message2, type: "otp" }).catch((err) => {
+      console.warn("[ADMIN USERS] Send set-password OTP failed:", err?.message);
+      return { success: false };
+    });
+    await logAdminAction({
+      action: "admin_user.send_set_password_otp",
+      performedBy: ctx.admin.id,
+      resourceType: "admin",
+      resourceId: id,
+      section: "roles",
+      details: { sentOtp: sent.success }
+    });
+    return c.json({
+      success: true,
+      message: "OTP sent to user\u2019s phone.",
+      otpSent: sent.success
+    });
+  });
+  app3.get("/admin/users", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) return c.json({ success: false, error: authResult.error || "Authentication required" }, 401);
+    const ctx = await requireAdminAuthWithContext(c);
+    if (!ctx) return c.json({ success: false, error: "Authentication required" }, 401);
+    if (!requirePermission(c, "admin:users:view")) {
+      return c.json({ success: false, error: "Permission denied" }, 403);
+    }
+    const list = await query(
+      `SELECT a.id, a.email, a.name, a.phone, a.role, a.admin_role_id, a.is_active, a.created_at,
+              r.name as role_name, r.display_name as role_display_name
+       FROM admins a
+       LEFT JOIN roles r ON r.id = a.admin_role_id
+       ORDER BY a.created_at DESC`
+    );
+    const users = (list.rows || []).map((row) => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      phone: row.phone ?? void 0,
+      role: row.role,
+      admin_role_id: row.admin_role_id ?? void 0,
+      role_name: row.role_name ?? void 0,
+      role_display_name: row.role_display_name ?? void 0,
+      is_active: row.is_active !== false,
+      created_at: row.created_at
+    }));
+    return c.json({ success: true, users });
+  });
+  app3.get("/admin/audit-log", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) return c.json({ success: false, error: authResult.error || "Authentication required" }, 401);
+    const ctx = await requireAdminAuthWithContext(c);
+    if (!ctx) return c.json({ success: false, error: "Authentication required" }, 401);
+    if (!requirePermission(c, "admin:audit:view")) {
+      return c.json({ success: false, error: "Permission denied" }, 403);
+    }
+    const section = c.req.query("section");
+    const performedBy = c.req.query("performed_by");
+    const resourceType = c.req.query("resource_type");
+    const resourceId = c.req.query("resource_id");
+    const action = c.req.query("action");
+    const fromDate = c.req.query("from_date");
+    const toDate = c.req.query("to_date");
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10) || 50, 200);
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10) || 0);
+    const conditions = ["1=1"];
+    const params = [];
+    let idx = 1;
+    if (section) {
+      conditions.push(`details->>'section' = $${idx}`);
+      params.push(section);
+      idx++;
+    }
+    if (performedBy) {
+      conditions.push(`performed_by = $${idx}`);
+      params.push(performedBy);
+      idx++;
+    }
+    if (resourceType) {
+      conditions.push(`resource_type = $${idx}`);
+      params.push(resourceType);
+      idx++;
+    }
+    if (resourceId) {
+      conditions.push(`resource_id::text = $${idx}`);
+      params.push(resourceId);
+      idx++;
+    }
+    if (action) {
+      conditions.push(`action = $${idx}`);
+      params.push(action);
+      idx++;
+    }
+    if (fromDate) {
+      conditions.push(`performed_at >= $${idx}::timestamptz`);
+      params.push(fromDate);
+      idx++;
+    }
+    if (toDate) {
+      conditions.push(`performed_at <= $${idx}::timestamptz`);
+      params.push(toDate);
+      idx++;
+    }
+    params.push(limit, offset);
+    const result = await query(
+      `SELECT id, action, performed_by, actor_type, resource_type, resource_id, details, status, performed_at
+       FROM audit_logs
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY performed_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      params
+    );
+    return c.json({
+      success: true,
+      logs: result.rows || [],
+      count: (result.rows || []).length
+    });
+  });
+}
 
 // src/endpoints/video-call.ts
 init_base_handler();
@@ -155067,8 +155813,8 @@ function registerServiceDiscoveryEndpoints(app3) {
         return c.json({ error: "No valid fields to update. Please provide at least one facility field" }, 400);
       }
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      const { update: update19 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      const updated = await update19("vendors", { id: actualVendorId }, updateData);
+      const { update: update20 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      const updated = await update20("vendors", { id: actualVendorId }, updateData);
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
@@ -155152,8 +155898,8 @@ function registerServiceDiscoveryEndpoints(app3) {
       const existingMetadata = vendor.metadata || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
-      const { update: update19 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      await update19("vendors", { id: actualVendorId }, {
+      const { update: update20 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      await update20("vendors", { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -162967,12 +163713,14 @@ function registerEcommerceEndpoints(app3) {
         }
       }
       for (const item of orderItems) {
+        const lineTotal = item.total != null ? Number(item.total) : Number(item.price || 0) * (item.quantity || 1);
         await insert("order_items", {
           order_id: order[0].id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price,
-          total: item.total
+          product_id: item.product_id || null,
+          name: item.name || "Product",
+          quantity: item.quantity ?? 1,
+          unit_price: item.price ?? 0,
+          total_price: lineTotal
         });
       }
       await query("DELETE FROM cart_items WHERE customer_id = $1", [customerId]);
@@ -167895,26 +168643,26 @@ function validateBulkPricing(data) {
     errors.push("Maximum 100 updates allowed per bulk operation");
   }
   const serviceIds = /* @__PURE__ */ new Set();
-  data.updates.forEach((update19, index) => {
-    if (!update19.serviceId || !isValidUUID(update19.serviceId)) {
+  data.updates.forEach((update20, index) => {
+    if (!update20.serviceId || !isValidUUID(update20.serviceId)) {
       errors.push(`Update ${index + 1}: Valid serviceId is required`);
     } else {
-      if (serviceIds.has(update19.serviceId)) {
+      if (serviceIds.has(update20.serviceId)) {
         errors.push(`Update ${index + 1}: Duplicate serviceId found`);
       }
-      serviceIds.add(update19.serviceId);
+      serviceIds.add(update20.serviceId);
     }
-    if (update19.price === void 0 || update19.price === null) {
+    if (update20.price === void 0 || update20.price === null) {
       errors.push(`Update ${index + 1}: Price is required`);
-    } else if (update19.price < 0) {
+    } else if (update20.price < 0) {
       errors.push(`Update ${index + 1}: Price cannot be negative`);
-    } else if (update19.price > 1e6) {
+    } else if (update20.price > 1e6) {
       errors.push(`Update ${index + 1}: Price exceeds maximum allowed value`);
     }
-    if (update19.duration !== void 0) {
-      if (update19.duration < 1) {
+    if (update20.duration !== void 0) {
+      if (update20.duration < 1) {
         errors.push(`Update ${index + 1}: Duration must be at least 1 minute`);
-      } else if (update19.duration > 1440) {
+      } else if (update20.duration > 1440) {
         errors.push(`Update ${index + 1}: Duration cannot exceed 1440 minutes`);
       }
     }
@@ -179874,9 +180622,12 @@ function registerEventEndpoints(app3) {
       if (!title || !start_date || !start_time) {
         return c.json({ error: "title, start_date, and start_time are required" }, 400);
       }
+      if (!vendor_id) {
+        return c.json({ error: "vendor_id is required for admin event creation" }, 400);
+      }
       const venue = typeof location === "string" ? { address: location } : location || {};
       const event = await insert("events", {
-        vendor_id: vendor_id || null,
+        vendor_id,
         name: title,
         description: description || null,
         category: category || "other",
@@ -181684,16 +182435,16 @@ function registerAddressEndpoints(app3) {
 // src/endpoints/customer-password.ts
 init_base_handler();
 init_rds_connection();
-var crypto14 = __toESM(require("crypto"));
-var hashPassword = async (password) => {
-  const salt = crypto14.randomBytes(16).toString("hex");
-  const hash = crypto14.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+var crypto15 = __toESM(require("crypto"));
+var hashPassword2 = async (password) => {
+  const salt = crypto15.randomBytes(16).toString("hex");
+  const hash = crypto15.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
   return `${salt}:${hash}`;
 };
-var comparePassword = async (password, storedHash) => {
+var comparePassword2 = async (password, storedHash) => {
   const [salt, hash] = storedHash.split(":");
   if (!salt || !hash) return false;
-  const derivedHash = crypto14.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  const derivedHash = crypto15.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
   return hash === derivedHash;
 };
 var ChangePasswordHandler = class extends BaseHandler {
@@ -181727,13 +182478,13 @@ var ChangePasswordHandler = class extends BaseHandler {
       }
       const customer = customers.rows[0];
       if (customer.password_hash) {
-        const isValid = await comparePassword(currentPassword, customer.password_hash);
+        const isValid = await comparePassword2(currentPassword, customer.password_hash);
         if (!isValid) {
           return this.error("Current password is incorrect", 401);
         }
       } else {
       }
-      const newPasswordHash = await hashPassword(newPassword);
+      const newPasswordHash = await hashPassword2(newPassword);
       await query(
         `UPDATE customers SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
         [newPasswordHash, customer.id]
@@ -185157,7 +185908,7 @@ function registerOrderManagementEndpoints(app3) {
 // src/endpoints/otp-enhanced.ts
 init_rds_connection();
 init_sms_service();
-function generateOTP() {
+function generateOTP2() {
   return Math.floor(1e5 + Math.random() * 9e5).toString();
 }
 function registerEnhancedOtpEndpoints(app3) {
@@ -185170,7 +185921,7 @@ function registerEnhancedOtpEndpoints(app3) {
         return c.json({ error: "Booking not found" }, 404);
       }
       const booking = bookings[0];
-      const otp = generateOTP();
+      const otp = generateOTP2();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3);
       await insert("otp_tokens", {
         phone: null,
@@ -185391,8 +186142,8 @@ function registerEnhancedOtpEndpoints(app3) {
       }
       const remainingDue = Math.max(0, totalAmount - amountPaid);
       const paymentStatus = totalAmount === 0 ? "paid" : remainingDue > 0 ? "partial" : "paid";
-      const startOTP = generateOTP();
-      const endOTP = generateOTP();
+      const startOTP = generateOTP2();
+      const endOTP = generateOTP2();
       const initialStatus = "pending";
       const booking = await insert("bookings", {
         customer_id: customerId,
@@ -185618,7 +186369,7 @@ function registerVendorWalletEndpoints(app3) {
 // src/endpoints/customer-profile.ts
 init_rds_connection();
 var import_api_contracts = __toESM(require_dist5());
-function normalizePhone2(phone) {
+function normalizePhone3(phone) {
   return phone.replace(/\D/g, "");
 }
 async function resolveCustomerId(identifier) {
@@ -185627,7 +186378,7 @@ async function resolveCustomerId(identifier) {
     const customers2 = await select("customers", { id: identifier });
     return customers2.length > 0 ? customers2[0].id : null;
   }
-  const cleanPhone = normalizePhone2(identifier);
+  const cleanPhone = normalizePhone3(identifier);
   const customers = await select("customers", { phone: cleanPhone });
   return customers.length > 0 ? customers[0].id : null;
 }
@@ -185786,7 +186537,7 @@ function registerCustomerProfileEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "Phone number is required as query param" }, 400);
       }
-      const cleanPhone = normalizePhone2(phone);
+      const cleanPhone = normalizePhone3(phone);
       let customers;
       try {
         customers = await select("customers", { phone: cleanPhone });
@@ -185908,7 +186659,7 @@ function registerCustomerProfileEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "Phone number is required" }, 400);
       }
-      const cleanPhone = normalizePhone2(phone);
+      const cleanPhone = normalizePhone3(phone);
       let customerId = await resolveCustomerId(cleanPhone);
       if (!customerId) {
         try {
@@ -186141,7 +186892,7 @@ function registerCustomerProfileEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "Phone number is required" }, 400);
       }
-      const cleanPhone = normalizePhone2(phone);
+      const cleanPhone = normalizePhone3(phone);
       const customers = await select("customers", { phone: cleanPhone });
       if (customers.length === 0) {
         return c.json({ error: "Customer not found", customer: null }, 404);
@@ -189249,7 +190000,7 @@ init_rds_connection();
 init_vendor_resolve();
 async function processCustomerReferralOnBooking(customerId, bookingId2) {
   try {
-    const { query: query13, select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const { query: query13, select: select30 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
     const completedBookings = await query13(
       `SELECT COUNT(*) as count 
        FROM bookings 
@@ -189260,7 +190011,7 @@ async function processCustomerReferralOnBooking(customerId, bookingId2) {
     if (bookingCount !== 1) {
       return;
     }
-    const customers = await select28("customers", { id: customerId });
+    const customers = await select30("customers", { id: customerId });
     if (customers.length === 0) {
       return;
     }
@@ -189277,7 +190028,7 @@ async function processCustomerReferralOnBooking(customerId, bookingId2) {
     let referralCodeId = null;
     let referrerCustomerId = null;
     if (customer.customer_identity_id) {
-      const identities = await select28("customer_identity", { id: customer.customer_identity_id });
+      const identities = await select30("customer_identity", { id: customer.customer_identity_id });
       if (identities.length > 0) {
         const identity = identities[0];
         if (identity.metadata) {
@@ -196797,6 +197548,18 @@ function registerAdminAdvancedEndpoints(app3) {
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
+  const safeParseSettingValue = (val) => {
+    if (val == null) return void 0;
+    if (typeof val === "object") return val;
+    if (typeof val === "string") {
+      try {
+        return JSON.parse(val);
+      } catch {
+        return [];
+      }
+    }
+    return val;
+  };
   app3.get("/admin/finance/settlement-rules", async (c) => {
     try {
       const rules = await query("SELECT * FROM settlement_rules ORDER BY priority ASC, created_at DESC").catch(async () => {
@@ -196804,7 +197567,8 @@ function registerAdminAdvancedEndpoints(app3) {
           const settings = await query(`
             SELECT setting_value FROM admin_settings WHERE setting_category = 'settlement' AND setting_key = 'rules'
           `);
-          return { rows: settings.rows.length > 0 ? JSON.parse(settings.rows[0].setting_value) : [] };
+          const parsed = settings.rows.length > 0 ? safeParseSettingValue(settings.rows[0].setting_value) : [];
+          return { rows: Array.isArray(parsed) ? parsed : [] };
         } catch {
           return { rows: [] };
         }
@@ -196865,7 +197629,9 @@ function registerAdminAdvancedEndpoints(app3) {
             FROM admin_settings 
             WHERE setting_category = 'settlement' AND setting_key = 'rules'
           `);
-          const existingRules = existing.rows.length > 0 ? JSON.parse(existing.rows[0].setting_value) : [];
+          const raw2 = existing.rows.length > 0 ? existing.rows[0].setting_value : void 0;
+          const parsed = safeParseSettingValue(raw2);
+          const existingRules = Array.isArray(parsed) ? parsed : [];
           const newRule = {
             id: `rule-${Date.now()}`,
             name,
@@ -196954,7 +197720,8 @@ function registerAdminAdvancedEndpoints(app3) {
           if (existing.rows.length === 0) {
             return c.json({ success: false, error: "Settlement rule not found" }, 404);
           }
-          const existingRules = JSON.parse(existing.rows[0].setting_value);
+          const parsed = safeParseSettingValue(existing.rows[0].setting_value);
+          const existingRules = Array.isArray(parsed) ? parsed : [];
           const ruleIndex = existingRules.findIndex((r) => r.id === ruleId);
           if (ruleIndex === -1) {
             return c.json({ success: false, error: "Settlement rule not found" }, 404);
@@ -200359,7 +201126,7 @@ function registerAdminAdvancedEndpoints(app3) {
         sns: { enabled: false, region: "ap-south-1", smsOriginationNumber: "WARMPZ", entityId: "1201176605406673276", templateId: "1207177028377787269", emailSourceAddress: "" },
         sqs: { enabled: false, queueUrl: "", region: "ap-south-1" },
         chime: { enabled: false, region: "us-east-1" },
-        bedrock: { enabled: false, region: "us-east-1", modelId: "anthropic.claude-v2" }
+        bedrock: { enabled: false, region: "ap-south-1", modelId: "amazon.nova-lite-v1:0" }
       };
       return c.json({ success: true, settings });
     } catch (error) {
@@ -210394,8 +211161,31 @@ init_rds_connection();
 // src/utils/bedrock-client.ts
 var import_client_bedrock_runtime = require("@aws-sdk/client-bedrock-runtime");
 init_rds_connection();
+init_secrets_manager();
+var DEFAULT_BEDROCK_REGION = "ap-south-1";
+var DEFAULT_BEDROCK_MODEL = "amazon.nova-lite-v1:0";
+function buildClient(region, modelId, credentials) {
+  const finalRegion = region.trim();
+  const client2 = new import_client_bedrock_runtime.BedrockRuntimeClient({
+    region: finalRegion,
+    ...credentials ? { credentials: { accessKeyId: credentials.accessKeyId.trim(), secretAccessKey: credentials.secretAccessKey.trim() } } : {}
+  });
+  return { client: client2, modelId, region: finalRegion };
+}
 async function getBedrockConfig() {
   try {
+    const secret = await getSecretJson("bedrock");
+    if (secret && secret.enabled !== false) {
+      const region2 = (secret.region || DEFAULT_BEDROCK_REGION).trim();
+      const modelId2 = (secret.modelId || DEFAULT_BEDROCK_MODEL).trim();
+      const hasCredentials = !!(secret.accessKeyId && secret.secretAccessKey);
+      if (hasCredentials) {
+        console.log("[BEDROCK] Using config from AWS Secrets Manager (credentials)");
+        return buildClient(region2, modelId2, { accessKeyId: secret.accessKeyId, secretAccessKey: secret.secretAccessKey });
+      }
+      console.log("[BEDROCK] Using config from AWS Secrets Manager (IAM role), region=", region2, "model=", modelId2);
+      return buildClient(region2, modelId2);
+    }
     const settingsResult = await query(
       `SELECT setting_value FROM platform_settings WHERE setting_key = 'aws_config' LIMIT 1`
     );
@@ -210405,24 +211195,16 @@ async function getBedrockConfig() {
       return null;
     }
     if (!awsSettings.credentials?.accessKeyId || !awsSettings.credentials?.secretAccessKey) {
-      throw new Error("AWS credentials not configured");
+      console.warn("AWS Bedrock credentials not set in platform settings");
+      return null;
     }
-    let modelId = awsSettings.bedrock.modelId || "us.amazon.nova-lite-v1:0";
-    if (modelId === "amazon.nova-lite-v1:0") {
-      modelId = "us.amazon.nova-lite-v1:0";
-    }
-    let region = (awsSettings.bedrock.region || "ap-south-1").trim();
-    if (modelId.startsWith("us.") && region === "ap-south-1") {
-      region = "us-east-1";
-    }
-    const client2 = new import_client_bedrock_runtime.BedrockRuntimeClient({
-      region,
-      credentials: {
-        accessKeyId: String(awsSettings.credentials.accessKeyId).trim(),
-        secretAccessKey: String(awsSettings.credentials.secretAccessKey).trim()
-      }
+    const modelId = (awsSettings.bedrock.modelId || DEFAULT_BEDROCK_MODEL).trim();
+    const region = (awsSettings.bedrock.region || DEFAULT_BEDROCK_REGION).trim();
+    console.log("[BEDROCK] Using config from platform_settings");
+    return buildClient(region, modelId, {
+      accessKeyId: awsSettings.credentials.accessKeyId,
+      secretAccessKey: awsSettings.credentials.secretAccessKey
     });
-    return { client: client2, modelId, region };
   } catch (error) {
     console.error("Error getting Bedrock config:", error);
     return null;
@@ -210554,18 +211336,45 @@ function sleep(ms) {
 }
 
 // src/endpoints/ai-chatbot.ts
+var BEDROCK_TIMEOUT_MS = 18e3;
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise(
+      (_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    )
+  ]);
+}
 function registerAIChatbotEndpoints(app3) {
   app3.post("/ai-chatbot/chat", async (c) => {
     try {
-      const { message: message2, customerId, customerPhone, conversationId, context, petId } = await c.req.json();
+      const { message: message2, customerId, customerPhone, conversationId, context, petId, vendorId, userType } = await c.req.json();
       if (!message2) {
         return c.json({ error: "message is required" }, 400);
       }
       const currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      let vendorContext = "";
+      const isVendorChat = !!(vendorId || userType === "vendor");
+      if (isVendorChat && (vendorId || context?.userName)) {
+        try {
+          if (vendorId) {
+            const vendors = await select("vendors", { id: vendorId });
+            if (vendors.length > 0) {
+              const v = vendors[0];
+              vendorContext = `Vendor: ${v.business_name || v.owner_name || "Vendor"}, Phone: ${v.phone || "N/A"}. You are helping a business partner (vendor) with platform use, bookings, payments, or support.`;
+            }
+          }
+          if (!vendorContext && context?.userName) {
+            vendorContext = `Vendor: ${context.userName}. You are helping a Warmpawz vendor with platform use, bookings, payments, or support.`;
+          }
+        } catch (e) {
+          console.warn("Failed to fetch vendor context", e);
+        }
+      }
       let customerContext = "";
       let petContext = "";
       let bookingContext = "";
-      if (customerId || customerPhone) {
+      if (!isVendorChat && (customerId || customerPhone)) {
         try {
           const customerResult = customerId ? await select("customers", { id: customerId }) : await query(`SELECT * FROM customers WHERE phone = $1 LIMIT 1`, [customerPhone]);
           const customers = Array.isArray(customerResult) ? customerResult : customerResult.rows || [];
@@ -210617,7 +211426,31 @@ ${products.rows.map((p) => `- ${p.name} (\u20B9${p.sale_price || p.base_price ||
       } catch (e) {
         console.warn("Failed to fetch product context", e);
       }
-      const systemPrompt = `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
+      const systemPrompt = isVendorChat ? `You are the Warmpawz Assistant for vendors (business partners). Be helpful and professional.
+
+ROLE: Help vendors with managing their business on Warmpawz\u2014bookings, payments, settlements, services, and getting support from admin.
+
+CONTEXT:
+${vendorContext ? `- ${vendorContext}
+` : ""}
+
+CAPABILITIES:
+1. Bookings: Explain how to view/manage bookings, confirm, reschedule, or cancel.
+2. Payments & settlements: Explain payouts, commission, and how to check payment status.
+3. Services: Help with adding/editing services, pricing, and availability.
+4. Support: Answer platform questions; if they need human help (admin), set requiresAgent: true.
+
+INTENT: Classify as 'booking', 'payment', 'support', 'services', or 'general'.
+
+OUTPUT FORMAT: Respond with a VALID JSON object ONLY:
+{
+  "response": "Your helpful response text here...",
+  "intent": "detected_intent",
+  "confidence": 0.95,
+  "suggestedActions": ["action1", "action2"],
+  "requiresAgent": false
+}
+If the vendor asks to speak to admin or contact support, set requiresAgent: true.` : `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
 
 ROLE: Help customers with pet care, shopping, bookings, and support.
 
@@ -210666,17 +211499,21 @@ IMPORTANT RULES:
       let requiresAgent = false;
       let usedBedrock = false;
       try {
-        const completion = await withRetry(
-          () => invokeBedrock(message2, systemPrompt, {
-            maxTokens: 1024,
-            temperature: 0.5,
-            topP: 0.9
-          }),
-          {
-            maxAttempts: 3,
-            initialDelayMs: 1e3,
-            retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
-          }
+        const completion = await withTimeout(
+          withRetry(
+            () => invokeBedrock(message2, systemPrompt, {
+              maxTokens: 1024,
+              temperature: 0.5,
+              topP: 0.9
+            }),
+            {
+              maxAttempts: 2,
+              initialDelayMs: 500,
+              retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
+            }
+          ),
+          BEDROCK_TIMEOUT_MS,
+          "ai-chatbot/chat"
         );
         try {
           const jsonMatch = completion.match(/\{[\s\S]*\}/);
@@ -210743,20 +211580,35 @@ IMPORTANT RULES:
       }
       if (requiresAgent || confidence < 0.7) {
         try {
-          await insert("support_tickets", {
-            customer_id: customerId || null,
-            customer_phone: customerPhone || null,
-            subject: `AI Chatbot Handoff - ${intent}`,
+          const ticketNum = `TKT-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+          const ticketPayload = {
+            ticket_number: ticketNum,
+            subject: isVendorChat ? `Vendor AI Assistant handoff - ${intent}` : `AI Chatbot Handoff - ${intent}`,
             message: `User: ${message2}
 
 AI Response: ${responseText}
 
 Intent: ${intent}, Confidence: ${confidence}`,
-            source: "ai_chatbot",
+            source: isVendorChat ? "vendor_ai_chatbot" : "ai_chatbot",
             status: "open",
             priority: "medium",
+            category: "general",
             created_at: (/* @__PURE__ */ new Date()).toISOString()
-          }).catch(() => {
+          };
+          if (isVendorChat && vendorId) {
+            const vendors = await select("vendors", { id: vendorId });
+            if (vendors.length > 0) {
+              const v = vendors[0];
+              ticketPayload.vendor_id = vendorId;
+              ticketPayload.customer_phone = v?.phone || null;
+              ticketPayload.customer_name = v?.business_name || v?.owner_name || "Vendor";
+              ticketPayload.customer_email = v?.email || null;
+            }
+          } else {
+            ticketPayload.customer_id = customerId || null;
+            ticketPayload.customer_phone = customerPhone || null;
+          }
+          await insert("support_tickets", ticketPayload).catch(() => {
           });
         } catch (e) {
           console.warn("Failed to create support ticket", e);
@@ -210817,18 +211669,21 @@ OUTPUT FORMAT (JSON only):
 }`;
       let analysis;
       try {
-        const completion = await withRetry(
-          () => invokeBedrock(symptoms, systemPrompt, {
-            maxTokens: 1024,
-            temperature: 0.3,
-            // Lower temperature for medical advice
-            topP: 0.9
-          }),
-          {
-            maxAttempts: 3,
-            initialDelayMs: 1e3,
-            retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
-          }
+        const completion = await withTimeout(
+          withRetry(
+            () => invokeBedrock(symptoms, systemPrompt, {
+              maxTokens: 1024,
+              temperature: 0.3,
+              topP: 0.9
+            }),
+            {
+              maxAttempts: 2,
+              initialDelayMs: 500,
+              retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
+            }
+          ),
+          BEDROCK_TIMEOUT_MS,
+          "ai-chatbot/symptoms-checker"
         );
         const jsonMatch = completion.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -210921,17 +211776,21 @@ OUTPUT FORMAT (JSON only):
 }`;
       let assistance;
       try {
-        const completion = await withRetry(
-          () => invokeBedrock(bookingQuery, systemPrompt, {
-            maxTokens: 512,
-            temperature: 0.6,
-            topP: 0.9
-          }),
-          {
-            maxAttempts: 3,
-            initialDelayMs: 1e3,
-            retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
-          }
+        const completion = await withTimeout(
+          withRetry(
+            () => invokeBedrock(bookingQuery, systemPrompt, {
+              maxTokens: 512,
+              temperature: 0.6,
+              topP: 0.9
+            }),
+            {
+              maxAttempts: 2,
+              initialDelayMs: 500,
+              retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
+            }
+          ),
+          BEDROCK_TIMEOUT_MS,
+          "ai-chatbot/booking-assist"
         );
         const jsonMatch = completion.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -210976,18 +211835,31 @@ OUTPUT FORMAT (JSON only):
       let customer_name = null;
       let customer_phone = customerPhone || null;
       let customer_email = null;
+      let escalationMessage = `Conversation ID: ${conversationId}
+
+Reason: ${reason || "User requested human agent"}
+
+Conversation History:
+${conversationHistory || "N/A"}`;
       if (isVendor) {
-        vendor_id = vendorId;
         try {
-          const { select: select28 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-          const vendors = await select28("vendors", { id: vendorId });
+          const { select: select30 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+          const vendors = await select30("vendors", { id: vendorId });
           if (vendors.length > 0) {
             const v = vendors[0];
+            vendor_id = vendorId;
             customer_name = v.business_name || v.owner_name || "Vendor";
             customer_phone = v.phone || null;
             customer_email = v.email || null;
+          } else {
+            escalationMessage += `
+
+(Requested vendor ID: ${vendorId} - not found in DB; ticket created without FK.)`;
           }
         } catch (_) {
+          escalationMessage += `
+
+(Requested vendor ID: ${vendorId}; lookup failed.)`;
         }
       }
       const ticket = await insert("support_tickets", {
@@ -210998,15 +211870,11 @@ OUTPUT FORMAT (JSON only):
         customer_email,
         vendor_id,
         subject: isVendor ? `Vendor AI Chat Escalation - ${reason || "User Request"}` : `AI Chatbot Escalation - ${reason || "User Request"}`,
-        message: `Conversation ID: ${conversationId}
-
-Reason: ${reason || "User requested human agent"}
-
-Conversation History:
-${conversationHistory || "N/A"}`,
+        message: escalationMessage,
         source: isVendor ? "vendor_ai_chatbot" : "ai_chatbot",
         status: "open",
         priority: "high",
+        category: "general",
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
@@ -211091,16 +211959,16 @@ function registerSupportCrmEndpoints(app3) {
         message: message2,
         source,
         priority,
-        category: category || null,
+        category: category || "general",
         booking_id: bookingId2 || null,
         order_id: orderId || null,
         status: "open",
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select28 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select30 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select28("platform_settings", {
+        const settings = await select30("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -211432,21 +212300,35 @@ function registerSupportCrmEndpoints(app3) {
   });
   app3.get("/crm/agents", async (c) => {
     try {
-      const agents = await query(
-        `SELECT s.*, v.business_name as vendor_name
-         FROM staff s
-         LEFT JOIN vendors v ON s.vendor_id = v.id
-         WHERE s.role = 'support' OR s.can_handle_support = true
-         AND s.is_active = true
-         ORDER BY s.name ASC`
-      ).catch(() => ({ rows: [] }));
-      const safeAgents = (agents.rows || []).map((a) => ({
+      let rows = [];
+      try {
+        const result = await query(
+          `SELECT s.id, s.name, s.email, sa.specialties
+           FROM support_agents sa
+           JOIN staff s ON sa.staff_id = s.id
+           WHERE sa.is_active = true AND s.is_active = true
+           ORDER BY s.name ASC`
+        );
+        rows = result.rows || [];
+      } catch (tableErr) {
+        if (tableErr?.message?.includes("support_agents") || tableErr?.code === "42P01") {
+          const fallback = await query(
+            `SELECT s.id, s.name, s.email, s.specialties
+             FROM staff s
+             WHERE (s.role = 'support' OR s.can_handle_support = true) AND s.is_active = true
+             ORDER BY s.name ASC`
+          ).catch(() => ({ rows: [] }));
+          rows = fallback.rows || [];
+        } else {
+          throw tableErr;
+        }
+      }
+      const safeAgents = rows.map((a) => ({
         id: String(a.id || ""),
         name: String(a.name || ""),
         email: a.email || void 0,
-        specialties: a.specialties || ["general"],
+        specialties: Array.isArray(a.specialties) ? a.specialties : a.specialties || "general",
         workload: 0
-        // Could calculate from assigned tickets
       }));
       return c.json({
         success: true,
@@ -215533,36 +216415,53 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   const paymentRuleServiceLocationMap = { at_home: "home", at_center: "clinic", both: "both", tele: "tele", all: "all" };
   const mapPaymentRuleServiceLocation = (raw2) => paymentRuleServiceLocationMap[String(raw2)] ?? (["home", "clinic", "both", "tele", "all"].includes(String(raw2)) ? String(raw2) : "all");
+  const pickPaymentRuleRow = (body) => {
+    const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? "all");
+    return {
+      name: body.name ?? "",
+      description: body.description ?? null,
+      vendor_types: Array.isArray(body.vendorTypes) ? body.vendorTypes : body.vendor_types ?? [],
+      service_location,
+      reservation_type: (body.reservationType ?? body.reservation_type ?? "flat") === "full" ? "flat" : body.reservationType ?? body.reservation_type ?? "flat",
+      reservation_percentage: body.reservationPercentage ?? body.reservation_percentage ?? null,
+      flat_amount: body.flatAmount ?? body.flat_amount ?? null,
+      minimum_advance_payment: body.minimumAdvancePayment ?? body.minimum_advance_payment ?? 0,
+      partial_payment_allowed: body.partialPaymentAllowed !== false,
+      escrow_hold_period_hours: body.escrowHoldPeriodHours ?? body.escrow_hold_period_hours ?? 24,
+      cancellation_grace_period_hours: body.cancellationGracePeriodHours ?? body.cancellation_grace_period_hours ?? 2,
+      auto_capture_payment: body.autoCapturePayment !== false,
+      is_active: body.isActive !== false,
+      priority: body.priority ?? 0
+    };
+  };
   app3.post("/admin/vendor-settings/payment-rules", async (c) => {
     try {
-      const body = await c.req.json();
-      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? "all");
-      const rule = await insert("vendor_payment_rules", {
-        ...body,
-        service_location,
+      const body = await c.req.json().catch(() => ({}));
+      const row = {
+        ...pickPaymentRuleRow(body),
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      const rule = await insert("vendor_payment_rules", row);
       return c.json({ success: true, rule: rule[0] });
     } catch (error) {
       console.error("Error creating payment rule:", error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: error?.message ?? "Failed to create payment rule" }, 500);
     }
   });
   app3.put("/admin/vendor-settings/payment-rules/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body = await c.req.json();
-      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? "all");
-      const updated = await update("vendor_payment_rules", { id }, {
-        ...body,
-        service_location,
+      const body = await c.req.json().catch(() => ({}));
+      const row = {
+        ...pickPaymentRuleRow(body),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      const updated = await update("vendor_payment_rules", { id }, row);
       return c.json({ success: true, rule: updated[0] });
     } catch (error) {
       console.error("Error updating payment rule:", error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: error?.message ?? "Failed to update payment rule" }, 500);
     }
   });
   app3.delete("/admin/vendor-settings/payment-rules/:id", async (c) => {
@@ -216071,9 +216970,13 @@ function registerAdminComprehensiveEndpoints(app3) {
         return c.json({ success: false, error: "Key or settingKey is required" }, 400);
       }
       const settingValue = typeof value === "string" && (body.settingType === "array" || body.settingType === "object") ? value : typeof value === "object" ? JSON.stringify(value) : value;
+      const settingType = body.settingType ?? (typeof value === "object" ? Array.isArray(value) ? "array" : "object" : "string");
+      const allowedTypes = ["string", "number", "boolean", "object", "array", "json"];
+      const settingTypeVal = allowedTypes.includes(String(settingType)) ? String(settingType) : typeof value === "object" ? Array.isArray(value) ? "array" : "object" : "string";
       await upsert("platform_settings", {
         setting_key: key,
         setting_value: settingValue,
+        setting_type: settingTypeVal,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return c.json({ success: true, message: "Setting saved successfully" });
@@ -216091,9 +216994,13 @@ function registerAdminComprehensiveEndpoints(app3) {
         return c.json({ success: false, error: "settingKey or key is required" }, 400);
       }
       const settingValue = typeof value === "object" ? JSON.stringify(value) : value;
+      const settingType = body.settingType ?? (typeof value === "object" ? Array.isArray(value) ? "array" : "object" : "string");
+      const allowedTypes = ["string", "number", "boolean", "object", "array", "json"];
+      const settingTypeVal = allowedTypes.includes(String(settingType)) ? String(settingType) : typeof value === "object" ? Array.isArray(value) ? "array" : "object" : "string";
       await upsert("platform_settings", {
         setting_key: key,
         setting_value: settingValue,
+        setting_type: settingTypeVal,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return c.json({ success: true, message: "Setting saved successfully" });
@@ -237450,6 +238357,7 @@ registerRefundPolicyEngineEndpoints(app2);
 registerCustomerEndpointsEnhanced(app2);
 registerGpsTrackingEndpoints(app2);
 registerAdminEndpoints(app2);
+registerAdminUserEndpoints(app2);
 registerVideoCallEndpoints(app2);
 registerPackageSessionEndpoints(app2);
 registerSearchEndpoints(app2);

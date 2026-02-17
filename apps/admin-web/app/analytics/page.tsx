@@ -50,7 +50,6 @@ import {
   XCircle,
   AlertTriangle,
   Headphones,
-  Search,
 } from 'lucide-react';
 import {
   PieChart,
@@ -70,6 +69,7 @@ import { useAnalyticsData } from '@/hooks/analytics/useAnalyticsData';
 import { apiClient } from '@/lib/api-client';
 import { toast, Toaster } from 'sonner';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
+import { AuditLogPanel } from '@/components/admin/audit/AuditLogPanel';
 
 interface KPICard {
   title: string;
@@ -141,51 +141,12 @@ export default function AnalyticsPage() {
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
   const [salesByRoleData, setSalesByRoleData] = useState<SalesByRoleData[]>([]);
   const [loadingBehavioral, setLoadingBehavioral] = useState(false);
-  const [vendorSearchQuery, setVendorSearchQuery] = useState('');
-  const [vendorSearchOpen, setVendorSearchOpen] = useState(false);
-  const [vendorSuggestions, setVendorSuggestions] = useState<{ id: string; name: string; email?: string; phone?: string }[]>([]);
-  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [createReportOpen, setCreateReportOpen] = useState(false);
   const [newReportName, setNewReportName] = useState('');
   const [newReportType, setNewReportType] = useState('revenue');
   const [savingReport, setSavingReport] = useState(false);
-  const vendorSearchRef = useRef<HTMLDivElement>(null);
-
-  // Click outside to close vendor search dropdown
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (vendorSearchRef.current && !vendorSearchRef.current.contains(event.target as Node)) {
-        setVendorSearchOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Vendor search suggestions by name with email
-  useEffect(() => {
-    if (vendorSearchQuery.length < 1) {
-      setVendorSuggestions([]);
-      setVendorSearchOpen(false);
-      return;
-    }
-    const t = setTimeout(async () => {
-      try {
-        const res = await apiClient.get<any>(`/admin/vendors?search=${encodeURIComponent(vendorSearchQuery)}&limit=10`);
-        const list = res?.vendors || res?.data || [];
-        setVendorSuggestions(list.map((v: any) => ({
-          id: v.id,
-          name: v.business_name || v.name || v.owner_name || 'Vendor',
-          email: v.email,
-          phone: v.phone,
-        })));
-        setVendorSearchOpen(true);
-      } catch {
-        setVendorSuggestions([]);
-      }
-    }, 200);
-    return () => clearTimeout(t);
-  }, [vendorSearchQuery]);
+  const [viewReportModal, setViewReportModal] = useState<{ report: any; content: string } | null>(null);
+  const [shareReportModal, setShareReportModal] = useState<any>(null);
 
   // Use real data from hook
   const {
@@ -208,15 +169,22 @@ export default function AnalyticsPage() {
         apiClient.get<any>(`/admin/analytics/sales-by-role?period=${dateRange}`).catch(() => ({ data: [] })),
       ]);
 
-      if (peakTimesRes?.data) {
-        setPeakTimesData(peakTimesRes.data);
-      }
-      if (funnelRes?.data) {
+      const peakData = Array.isArray(peakTimesRes?.data) ? peakTimesRes.data : (peakTimesRes as any)?.peakTimes ?? [];
+      setPeakTimesData(peakData.length > 0 ? peakData : [
+        { time: '6-9 AM', bookings: 0 },
+        { time: '9-12 PM', bookings: 0 },
+        { time: '12-3 PM', bookings: 0 },
+        { time: '3-6 PM', bookings: 0 },
+        { time: '6-9 PM', bookings: 0 },
+        { time: '9-12 AM', bookings: 0 },
+      ]);
+      if (funnelRes?.data && typeof funnelRes.data === 'object') {
         setFunnelData(funnelRes.data);
+      } else {
+        setFunnelData(null);
       }
-      if (salesByRoleRes?.data) {
-        setSalesByRoleData(salesByRoleRes.data);
-      }
+      const salesData = Array.isArray(salesByRoleRes?.data) ? salesByRoleRes.data : (salesByRoleRes as any)?.salesByRole ?? [];
+      setSalesByRoleData(salesData);
     } catch (error) {
       console.error('Error loading behavioral data:', error);
     } finally {
@@ -338,6 +306,108 @@ export default function AnalyticsPage() {
     } catch (error) {
       toast.error('Failed to generate report');
     }
+  };
+
+  const getReportContent = (): string => {
+    const rows: string[] = [];
+    rows.push('Warmpawz Analytics Report');
+    rows.push(`Date Range: ${dateRange}`);
+    rows.push(`Generated: ${new Date().toLocaleString()}`);
+    rows.push('');
+    rows.push('KEY PERFORMANCE INDICATORS');
+    rows.push('Metric,Value');
+    rows.push(`Total GMV,₹${safeKpiData.totalGMV.toLocaleString()}`);
+    rows.push(`Total Revenue,₹${safeKpiData.totalRevenue.toLocaleString()}`);
+    rows.push(`Commission Earned,₹${safeKpiData.commissionEarned.toLocaleString()}`);
+    rows.push(`Active Customers,${safeKpiData.activeCustomers.toLocaleString()}`);
+    rows.push(`Active Vendors,${safeKpiData.activeVendors.toLocaleString()}`);
+    rows.push(`Total Orders,${safeKpiData.totalOrders.toLocaleString()}`);
+    rows.push(`Average Order Value,₹${safeKpiData.avgOrderValue.toLocaleString()}`);
+    rows.push(`Conversion Rate,${(safeKpiData.conversionRate || 0).toFixed(2)}%`);
+    if (revenueData?.length) {
+      rows.push('');
+      rows.push('REVENUE TREND');
+      rows.push('Date,Revenue,Commission,Orders');
+      revenueData.forEach((item: any) => rows.push(`${item.date},₹${item.revenue},₹${item.commission},${item.count || 0}`));
+    }
+    if (categoryData?.length) {
+      rows.push('');
+      rows.push('CATEGORY PERFORMANCE');
+      rows.push('Category,Revenue,Orders');
+      categoryData.forEach((item: any) => rows.push(`${item.name},₹${item.revenue ?? item.value ?? 0},${item.count ?? 0}`));
+    }
+    if (vendorData?.length) {
+      rows.push('');
+      rows.push('TOP VENDORS');
+      rows.push('Vendor,Revenue,Orders,Rating');
+      vendorData.slice(0, 20).forEach((v: any) => rows.push(`${v.name},₹${v.totalRevenue ?? 0},${v.totalBookings ?? 0},${v.rating ?? '-'}`));
+    }
+    return rows.join('\n');
+  };
+
+  const viewReport = (report: any) => {
+    setViewReportModal({ report, content: getReportContent() });
+  };
+
+  const downloadReport = (report: any) => {
+    try {
+      const content = getReportContent();
+      const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(report.name || 'report').replace(/\s+/g, '-')}-${dateRange}-${Date.now()}.csv`;
+      a.style.visibility = 'hidden';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Report downloaded');
+    } catch (e) {
+      toast.error('Failed to download report');
+    }
+  };
+
+  const shareReport = (report: any) => {
+    setShareReportModal(report);
+  };
+
+  const handleShareCopy = (report: any) => {
+    const content = getReportContent();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(content);
+      toast.success('Report content copied to clipboard');
+    } else {
+      toast.info('Copy not supported in this browser');
+    }
+    setShareReportModal(null);
+  };
+
+  const handleShareEmail = (report: any) => {
+    const content = getReportContent();
+    const subject = encodeURIComponent(`Report: ${report.name || 'Analytics'}`);
+    const body = encodeURIComponent(content);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    setShareReportModal(null);
+  };
+
+  const handleShareNative = async (report: any) => {
+    const content = getReportContent();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: report.name || 'Analytics Report',
+          text: content.slice(0, 500) + (content.length > 500 ? '...' : ''),
+          url: window.location.href,
+        });
+        toast.success('Report shared');
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') toast.error('Share failed');
+      }
+    } else {
+      toast.info('Sharing not supported');
+    }
+    setShareReportModal(null);
   };
 
   const saveNewReport = async () => {
@@ -522,37 +592,6 @@ export default function AnalyticsPage() {
                   <p className="text-sm text-gray-500">
                     Platform performance metrics
                   </p>
-                </div>
-                {/* Vendor search: suggest by name with email */}
-                <div className="relative w-72" ref={vendorSearchRef}>
-                  <input
-                    type="text"
-                    placeholder="Search vendor by name..."
-                    value={vendorSearchQuery}
-                    onChange={(e) => setVendorSearchQuery(e.target.value)}
-                    onFocus={() => vendorSearchQuery.length >= 1 && setVendorSearchOpen(true)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 pl-9 text-sm focus:border-[#FF8C42] focus:ring-1 focus:ring-[#FF8C42]"
-                  />
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  {vendorSearchOpen && vendorSuggestions.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-auto">
-                      {vendorSuggestions.slice(0, 8).map((v) => (
-                        <button
-                          key={v.id}
-                          type="button"
-                          className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col border-b border-gray-100 last:border-0"
-                          onClick={() => {
-                            setVendorSearchQuery(v.name);
-                            setVendorSearchOpen(false);
-                            setSelectedVendorId(v.id);
-                          }}
-                        >
-                          <span className="font-medium text-gray-900">{v.name}</span>
-                          <span className="text-xs text-gray-500">{v.email || v.phone || '—'}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -958,8 +997,7 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
 
-                {/* Updated Table Component - filter by selected vendor when search used */}
-                <VendorPerformanceTable data={selectedVendorId ? vendorData.filter((v: any) => v.id === selectedVendorId) : vendorData} />
+                <VendorPerformanceTable data={vendorData} />
               </Card>
             </TabsContent>
 
@@ -1121,26 +1159,38 @@ export default function AnalyticsPage() {
                     <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                      <span className="font-medium">Visitors</span>
-                      <span className="text-2xl font-bold">{(funnelData?.visitors || 0).toLocaleString()}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                      <span className="font-medium">Registered Users</span>
-                      <span className="text-2xl font-bold">{(funnelData?.registeredUsers || 0).toLocaleString()}</span>
-                      <Badge className="bg-green-100 text-green-800">{funnelData?.registrationRate || 0}%</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg">
-                      <span className="font-medium">First Booking</span>
-                      <span className="text-2xl font-bold">{(funnelData?.firstBooking || 0).toLocaleString()}</span>
-                      <Badge className="bg-yellow-100 text-yellow-800">{funnelData?.bookingRate || 0}%</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg">
-                      <span className="font-medium">Repeat Customers</span>
-                      <span className="text-2xl font-bold">{(funnelData?.repeatCustomers || 0).toLocaleString()}</span>
-                      <Badge className="bg-orange-100 text-orange-800">{funnelData?.retentionRate || 0}%</Badge>
-                    </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="font-semibold">Stage</TableHead>
+                          <TableHead className="font-semibold">Count</TableHead>
+                          <TableHead className="font-semibold">Conversion %</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow className="bg-blue-50">
+                          <TableCell className="font-medium">Visitors</TableCell>
+                          <TableCell className="text-lg font-bold">{(funnelData?.visitors || 0).toLocaleString()}</TableCell>
+                          <TableCell>—</TableCell>
+                        </TableRow>
+                        <TableRow className="bg-green-50">
+                          <TableCell className="font-medium">Registered Users</TableCell>
+                          <TableCell className="text-lg font-bold">{(funnelData?.registeredUsers || 0).toLocaleString()}</TableCell>
+                          <TableCell><Badge className="bg-green-100 text-green-800">{funnelData?.registrationRate ?? 0}%</Badge></TableCell>
+                        </TableRow>
+                        <TableRow className="bg-yellow-50">
+                          <TableCell className="font-medium">First Booking</TableCell>
+                          <TableCell className="text-lg font-bold">{(funnelData?.firstBooking || 0).toLocaleString()}</TableCell>
+                          <TableCell><Badge className="bg-yellow-100 text-yellow-800">{funnelData?.bookingRate ?? 0}%</Badge></TableCell>
+                        </TableRow>
+                        <TableRow className="bg-orange-50">
+                          <TableCell className="font-medium">Repeat Customers</TableCell>
+                          <TableCell className="text-lg font-bold">{(funnelData?.repeatCustomers || 0).toLocaleString()}</TableCell>
+                          <TableCell><Badge className="bg-orange-100 text-orange-800">{funnelData?.retentionRate ?? 0}%</Badge></TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </Card>
@@ -1393,14 +1443,25 @@ export default function AnalyticsPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => generateReport(report.id)}
+                                  onClick={() => viewReport(report)}
+                                  title="View report"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </Button>
-                                <Button variant="ghost" size="sm">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => downloadReport(report)}
+                                  title="Download report"
+                                >
                                   <Download className="w-4 h-4" />
                                 </Button>
-                                <Button variant="ghost" size="sm">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => shareReport(report)}
+                                  title="Share report"
+                                >
                                   <Share2 className="w-4 h-4" />
                                 </Button>
                               </div>
@@ -1417,10 +1478,43 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      {/* View Report modal */}
+      {viewReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setViewReportModal(null)}>
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-xl bg-white" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="text-lg font-semibold">{viewReportModal.report?.name || 'Report'}</h3>
+              <Button variant="ghost" size="sm" onClick={() => setViewReportModal(null)}>Close</Button>
+            </div>
+            <div className="p-4 overflow-auto max-h-[70vh]">
+              <pre className="text-sm whitespace-pre-wrap font-mono bg-gray-50 p-4 rounded-lg">{viewReportModal.content}</pre>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Share Report modal */}
+      {shareReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShareReportModal(null)}>
+          <Card className="w-full max-w-md p-6 shadow-xl bg-white" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Share report</h3>
+            <p className="text-sm text-gray-600 mb-4">Choose how to share &quot;{shareReportModal.name || 'Report'}&quot;</p>
+            <div className="flex flex-col gap-2">
+              <Button variant="outline" onClick={() => handleShareCopy(shareReportModal)}>Copy report content to clipboard</Button>
+              <Button variant="outline" onClick={() => handleShareEmail(shareReportModal)}>Share via email</Button>
+              {typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function' && (
+                <Button variant="outline" onClick={() => handleShareNative(shareReportModal)}>Share (device options)</Button>
+              )}
+            </div>
+            <Button variant="ghost" className="mt-4 w-full" onClick={() => setShareReportModal(null)}>Cancel</Button>
+          </Card>
+        </div>
+      )}
+
       {/* Create Report modal */}
       {createReportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateReportOpen(false)}>
-          <Card className="w-full max-w-md p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setCreateReportOpen(false)}>
+          <Card className="w-full max-w-md p-6 shadow-xl bg-white" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Create Report</h3>
             <div className="space-y-4">
               <div>
@@ -1459,6 +1553,9 @@ export default function AnalyticsPage() {
           </Card>
         </div>
       )}
+      <div className="p-6 pt-0">
+        <AuditLogPanel />
+      </div>
     </AdminLayout>
   );
 }

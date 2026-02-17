@@ -2363,12 +2363,13 @@ export function CustomerHomeComplete({
         </button>
       )}
 
-      {/* AI Assistant Chat Modal */}
+      {/* AI Assistant Chat Modal - customerId (UUID) for context when available; onNavigate for Symptoms/Booking flows */}
       {showAIChat && (
         <AIChatbotWidget
-          customerId={phone}
+          customerId={customerId || undefined}
           customerPhone={phone}
           onClose={() => setShowAIChat(false)}
+          onNavigate={onNavigate}
         />
       )}
 

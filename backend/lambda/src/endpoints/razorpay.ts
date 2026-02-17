@@ -396,7 +396,10 @@ class CreateRazorpayOrderHandler extends BaseHandler {
       }
       
       if (errorMessage.includes('Network error') || errorMessage.includes('fetch failed') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) {
-        return this.error('Network error connecting to payment gateway. Please check Lambda VPC configuration and ensure internet connectivity is available.', 500);
+        return this.error(
+          'Network error connecting to payment gateway. Lambda is in a VPC without outbound internet. Add a NAT Gateway: VPC → Route Tables → for the Lambda subnet add route 0.0.0.0/0 → NAT Gateway. See docs/RAZORPAY_LAMBDA_VPC_FIX.md.',
+          500
+        );
       }
       
       if (errorMessage.includes('SSL') || errorMessage.includes('certificate') || errorMessage.includes('TLS')) {
@@ -1207,40 +1210,45 @@ export function registerRazorpayEndpoints(app: Hono) {
     }
   });
 
+  const safeParseResultBody = (result: { body: any }, route: string): any => {
+    try {
+      return typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+    } catch (e) {
+      console.error(`[RAZORPAY-${route}] Failed to parse result body:`, e);
+      return { error: 'Invalid response format', message: String(result.body || 'Unknown error') };
+    }
+  };
+
   app.post('/razorpay/verify-payment', async (c) => {
-    // ✅ FIX: Parse body from Hono context FIRST
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await verifyHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, 'verify-payment'), result.statusCode);
   });
 
   app.post('/razorpay/webhook', async (c) => {
-    // ✅ FIX: Parse body from Hono context FIRST
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await webhookHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, 'webhook'), result.statusCode);
   });
 
   app.post('/razorpay/marketplace/settlement', async (c) => {
-    // ✅ FIX: Parse body from Hono context FIRST
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await settlementHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, 'settlement'), result.statusCode);
   });
 
   app.post('/razorpay/refund', async (c) => {
-    // ✅ FIX: Parse body from Hono context FIRST
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await refundHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return c.json(safeParseResultBody(result, 'refund'), result.statusCode);
   });
 
   /**

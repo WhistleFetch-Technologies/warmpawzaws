@@ -1,31 +1,30 @@
 'use client';
 
-import { 
-  Users, 
+import {
+  Users,
   ShoppingCart,
-  Globe, 
-  Megaphone, 
-  Headphones, 
-  BookOpen, 
-  Database, 
-  Calendar, 
-  FileText, 
-  IndianRupee, 
-  Package, 
-  Wallet, 
-  UserCog, 
-  BarChart3, 
+  Globe,
+  Megaphone,
+  Headphones,
+  BookOpen,
+  Calendar,
+  FileText,
+  Package,
+  Wallet,
+  UserCog,
+  BarChart3,
   Settings,
   LogOut,
   Briefcase,
   Gift,
-  Image,
   Menu,
   X
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { useAdminAuth } from '@/context/AdminAuthContext';
+import { getPermissionForSection } from '@/lib/admin-permissions';
 
 const logoImage = '/logo.png';
 
@@ -35,9 +34,9 @@ interface UnifiedAdminSidebarProps {
 }
 
 export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSidebarProps) {
-  // Desktop (md+): sidebar open by default so "entry point" to other menus is visible. Mobile: closed.
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const { loaded, hasPermission } = useAdminAuth();
 
   useEffect(() => {
     const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
@@ -89,12 +88,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       onClick: () => onNavigate('marketing')
     },
     { 
-      icon: Image, 
-      label: 'Banner Management', 
-      id: 'banners',
-      onClick: () => onNavigate('banners')
-    },
-    { 
       icon: Gift, 
       label: 'Loyalty & Rewards', 
       id: 'loyalty',
@@ -111,12 +104,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       label: 'Catalog & Services', 
       id: 'catalog',
       onClick: () => onNavigate('catalog')
-    },
-    { 
-      icon: Database, 
-      label: 'Database Seeding', 
-      id: 'database-seeding',
-      onClick: () => onNavigate('database-seeding')
     },
     { 
       icon: Calendar, 
@@ -142,13 +129,25 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       id: 'finance',
       onClick: () => onNavigate('finance')
     },
-    { 
-      icon: UserCog, 
-      label: 'Role & User Management', 
+    {
+      icon: UserCog,
+      label: 'Role & User Management',
       id: 'roles',
       onClick: () => onNavigate('roles')
     },
   ];
+
+  const visibleNavItems = useMemo(() => {
+    if (!loaded) return navigationItems;
+    return navigationItems.filter((item) => {
+      const perm = getPermissionForSection(item.id);
+      if (!perm) return true;
+      return hasPermission(perm);
+    });
+  }, [loaded, hasPermission]);
+
+  const canSeeReports = !loaded || hasPermission('admin:reports:view');
+  const canSeePlatformSettings = !loaded || hasPermission('admin:platform_settings:view');
 
   // Sidebar width
   const sidebarWidth = 256; // 64 * 4 (w-64)
@@ -209,7 +208,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
               Main Menu
             </h3>
             <nav className="space-y-1">
-              {navigationItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeView === item.id || 
                                (item.id === 'vendors' && (activeView === 'vendor-admin' || activeView === 'vendor-management' || pathname === '/vendors')) ||
@@ -240,34 +239,38 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
 
         {/* Bottom Items - Reports & Platform Settings (with active state) */}
         <div className="border-t border-gray-200 p-3 space-y-1">
-          <button
-            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
-              activeView === 'reports'
-                ? 'text-[#FF8C42] bg-orange-50 font-medium'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-            onClick={() => {
-              onNavigate('reports');
-              setOpen(false);
-            }}
-          >
-            <BarChart3 className="w-4 h-4 shrink-0" />
-            <span>Reports</span>
-          </button>
-          <button
-            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
-              activeView === 'platform-settings'
-                ? 'text-[#FF8C42] bg-orange-50 font-medium'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-            onClick={() => {
-              onNavigate('platform-settings');
-              setOpen(false);
-            }}
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            <span>Platform Settings</span>
-          </button>
+          {canSeeReports && (
+            <button
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
+                activeView === 'reports'
+                  ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+              onClick={() => {
+                onNavigate('reports');
+                setOpen(false);
+              }}
+            >
+              <BarChart3 className="w-4 h-4 shrink-0" />
+              <span>Reports</span>
+            </button>
+          )}
+          {canSeePlatformSettings && (
+            <button
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
+                activeView === 'platform-settings'
+                  ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+              onClick={() => {
+                onNavigate('platform-settings');
+                setOpen(false);
+              }}
+            >
+              <Settings className="w-4 h-4 shrink-0" />
+              <span>Platform Settings</span>
+            </button>
+          )}
           <button
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
             onClick={handleSignOut}

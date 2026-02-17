@@ -69,10 +69,17 @@ interface VendorTier {
   color: string;
 }
 
+interface CommissionCategory {
+  id: string;
+  name: string;
+  slug?: string;
+}
+
 export function CommissionSettings() {
   const [defaultRate, setDefaultRate] = useState(15);
   const [rules, setRules] = useState<CommissionRule[]>([]);
   const [vendorTiers, setVendorTiers] = useState<VendorTier[]>([]);
+  const [categories, setCategories] = useState<CommissionCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
@@ -143,11 +150,28 @@ export function CommissionSettings() {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<any>('/admin/ecommerce/commission/settings');
-      const settings = (data as any).data?.settings || (data as any).settings || {};
+      const settingsRes = await apiClient.get<any>('/admin/ecommerce/commission/settings');
+      const settings = (settingsRes as any)?.data?.settings || (settingsRes as any)?.settings || {};
       setDefaultRate(settings.defaultRate || 15);
       setRules(settings.rules || []);
       setVendorTiers(settings.vendorTiers || getDefaultVendorTiers());
+
+      const ecomRes = await apiClient.get<any>('/admin/ecommerce/categories').catch(() => ({}));
+      const ecomCats = (ecomRes as any)?.data?.categories ?? (ecomRes as any)?.categories;
+      let catList: CommissionCategory[] = [];
+      if (Array.isArray(ecomCats) && ecomCats.length > 0) {
+        catList = ecomCats.map((c: any) => ({ id: c.id ?? c.slug, name: c.name ?? c.slug, slug: c.slug }));
+      } else {
+        const catalogRes = await apiClient.get<any>('/admin/catalog/categories').catch(() => ({}));
+        const catalogCats = (catalogRes as any)?.data ?? (Array.isArray(catalogRes) ? catalogRes : []);
+        const arr = Array.isArray(catalogCats) ? catalogCats : [];
+        catList = arr.map((c: any) => ({
+          id: c.id ?? c.category_id ?? c.slug ?? '',
+          name: c.name ?? c.category_id ?? c.slug ?? '',
+          slug: c.slug ?? c.category_id,
+        }));
+      }
+      setCategories(catList);
     } catch (error) {
       console.error('Error loading settings:', error);
       setVendorTiers(getDefaultVendorTiers());
@@ -654,6 +678,7 @@ export function CommissionSettings() {
           defaultRate={defaultRate}
           rules={rules}
           vendorTiers={vendorTiers}
+          categories={categories}
           calculateCommission={calculateCommission}
         />
       </div>
@@ -678,19 +703,21 @@ function CommissionCalculator({
   defaultRate,
   rules,
   vendorTiers,
+  categories,
   calculateCommission,
 }: {
   defaultRate: number;
   rules: CommissionRule[];
   vendorTiers: VendorTier[];
+  categories: CommissionCategory[];
   calculateCommission: (orderValue: number, category?: string, vendorTier?: string) => number;
 }) {
   const [orderValue, setOrderValue] = useState(1000);
   const [category, setCategory] = useState('');
   const [vendorTier, setVendorTier] = useState('');
 
-  const commission = calculateCommission(orderValue, category, vendorTier);
-  const commissionRate = (commission / orderValue) * 100;
+  const commission = calculateCommission(orderValue, category || undefined, vendorTier || undefined);
+  const commissionRate = orderValue > 0 ? (commission / orderValue) * 100 : 0;
   const vendorEarnings = orderValue - commission;
 
   return (
@@ -717,11 +744,20 @@ function CommissionCalculator({
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select category</option>
-            <option value="food">Food</option>
-            <option value="toys">Toys</option>
-            <option value="accessories">Accessories</option>
-            <option value="medicine">Medicine</option>
-            <option value="grooming">Grooming</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id || c.slug || c.name}>
+                {c.name}
+              </option>
+            ))}
+            {categories.length === 0 && (
+              <>
+                <option value="food">Food</option>
+                <option value="toys">Toys</option>
+                <option value="accessories">Accessories</option>
+                <option value="medicine">Medicine</option>
+                <option value="grooming">Grooming</option>
+              </>
+            )}
           </select>
         </div>
         <div>

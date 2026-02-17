@@ -295,16 +295,16 @@ export default function LoyaltyPage() {
 
           {/* Tabs for Rules, Action Rules, and Segments */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="mb-6">
-              <TabsTrigger value="rules">
+            <TabsList className="mb-6 rounded-none border-b border-gray-200 bg-transparent p-0 h-auto gap-0">
+              <TabsTrigger value="rules" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
                 <Gift className="w-4 h-4 mr-2" />
                 Basic Rules
               </TabsTrigger>
-              <TabsTrigger value="action-rules">
+              <TabsTrigger value="action-rules" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
                 <Award className="w-4 h-4 mr-2" />
                 Action Rules
               </TabsTrigger>
-              <TabsTrigger value="segments">
+              <TabsTrigger value="segments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#FF8C42] data-[state=active]:bg-transparent data-[state=active]:shadow-none">
                 <Filter className="w-4 h-4 mr-2" />
                 Segments
               </TabsTrigger>

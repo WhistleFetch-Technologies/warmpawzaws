@@ -54,7 +54,40 @@ export function ECommerceAnalytics() {
 
     try {
       const data = await apiClient.get<any>(`/admin/ecommerce/analytics?days=${dateRange}`);
-      setAnalytics((data as any).data || data);
+      const raw = (data as any).data || data;
+      // Map API revenue array (date, order_count, revenue) to byPeriod (period, amount)
+      const revenueRows = Array.isArray(raw?.revenue) ? raw.revenue : [];
+      const byPeriod = revenueRows.map((r: any) => ({
+        period: r.date ?? r.period ?? '',
+        amount: Number(r.revenue ?? r.amount ?? 0),
+      }));
+      const totalRevenue = Number(raw?.totalRevenue ?? 0) || revenueRows.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0);
+      const totalOrders = Number(raw?.totalOrders ?? 0) || revenueRows.reduce((s: number, r: any) => s + Number(r.order_count ?? 0), 0);
+      const normalized: AnalyticsData | null = raw && typeof raw === 'object' ? {
+        revenue: {
+          total: totalRevenue,
+          growth: Number(raw.revenue?.growth ?? 0),
+          byPeriod,
+        },
+        orders: {
+          total: totalOrders,
+          growth: Number(raw.orders?.growth ?? 0),
+          byStatus: raw.orders?.byStatus ?? {},
+        },
+        sellers: {
+          total: Number(raw.sellers?.total ?? 0),
+          active: Number(raw.sellers?.active ?? 0),
+          growth: Number(raw.sellers?.growth ?? 0),
+        },
+        products: {
+          total: Number(raw.products?.total ?? 0),
+          active: Number(raw.products?.active ?? 0),
+          lowStock: Number(raw.products?.lowStock ?? 0),
+        },
+        topSellers: Array.isArray(raw.topSellers) ? raw.topSellers : [],
+        topProducts: Array.isArray(raw.topProducts) ? raw.topProducts.map((p: any) => ({ name: p.name ?? '', sales: Number(p.sales ?? 0), revenue: Number(p.revenue ?? 0) })) : [],
+      } : null;
+      setAnalytics(normalized);
     } catch (err: any) {
       console.error('Error fetching analytics:', err);
       // In UAT mode, don't show error - show empty state instead
@@ -82,16 +115,16 @@ export function ECommerceAnalytics() {
       ['Generated', new Date().toISOString()],
       [''],
       ['Revenue'],
-      ['Total', analytics.revenue.total],
-      ['Growth', `${analytics.revenue.growth}%`],
+      ['Total', analytics.revenue?.total ?? 0],
+      ['Growth', `${analytics.revenue?.growth ?? 0}%`],
       [''],
       ['Orders'],
-      ['Total', analytics.orders.total],
-      ['Growth', `${analytics.orders.growth}%`],
+      ['Total', analytics.orders?.total ?? 0],
+      ['Growth', `${analytics.orders?.growth ?? 0}%`],
       [''],
       ['Top Sellers'],
       ['Name', 'Revenue', 'Orders'],
-      ...analytics.topSellers.map((s) => [s.name, s.revenue, s.orders]),
+      ...(analytics.topSellers ?? []).map((s: any) => [s.name, s.revenue, s.orders]),
     ]
       .map((row) => row.join(','))
       .join('\n');
@@ -164,20 +197,20 @@ export function ECommerceAnalytics() {
               </div>
               <div
                 className={`flex items-center gap-1 text-sm ${
-                  analytics.revenue.growth >= 0 ? 'text-green-600' : 'text-red-600'
+                  (analytics.revenue?.growth ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}
               >
-                {analytics.revenue.growth >= 0 ? (
+                {(analytics.revenue?.growth ?? 0) >= 0 ? (
                   <ArrowUp className="w-4 h-4" />
                 ) : (
                   <ArrowDown className="w-4 h-4" />
                 )}
-                {Math.abs(analytics.revenue.growth)}%
+                {Math.abs(analytics.revenue?.growth ?? 0)}%
               </div>
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
-              <p className="text-2xl font-bold">₹{analytics.revenue.total.toLocaleString()}</p>
+              <p className="text-2xl font-bold">₹{(analytics.revenue?.total ?? 0).toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
@@ -191,20 +224,20 @@ export function ECommerceAnalytics() {
               </div>
               <div
                 className={`flex items-center gap-1 text-sm ${
-                  analytics.orders.growth >= 0 ? 'text-green-600' : 'text-red-600'
+                  (analytics.orders?.growth ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}
               >
-                {analytics.orders.growth >= 0 ? (
+                {(analytics.orders?.growth ?? 0) >= 0 ? (
                   <ArrowUp className="w-4 h-4" />
                 ) : (
                   <ArrowDown className="w-4 h-4" />
                 )}
-                {Math.abs(analytics.orders.growth)}%
+                {Math.abs(analytics.orders?.growth ?? 0)}%
               </div>
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-1">Total Orders</p>
-              <p className="text-2xl font-bold">{analytics.orders.total.toLocaleString()}</p>
+              <p className="text-2xl font-bold">{(analytics.orders?.total ?? 0).toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
@@ -218,21 +251,21 @@ export function ECommerceAnalytics() {
               </div>
               <div
                 className={`flex items-center gap-1 text-sm ${
-                  analytics.sellers.growth >= 0 ? 'text-green-600' : 'text-red-600'
+                  (analytics.sellers?.growth ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}
               >
-                {analytics.sellers.growth >= 0 ? (
+                {(analytics.sellers?.growth ?? 0) >= 0 ? (
                   <ArrowUp className="w-4 h-4" />
                 ) : (
                   <ArrowDown className="w-4 h-4" />
                 )}
-                {Math.abs(analytics.sellers.growth)}%
+                {Math.abs(analytics.sellers?.growth ?? 0)}%
               </div>
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-1">Active Sellers</p>
               <p className="text-2xl font-bold">
-                {analytics.sellers.active}/{analytics.sellers.total}
+                {analytics.sellers?.active ?? 0}/{analytics.sellers?.total ?? 0}
               </p>
             </div>
           </CardContent>
@@ -245,14 +278,14 @@ export function ECommerceAnalytics() {
               <div className="p-3 bg-orange-50 rounded-lg">
                 <Package className="w-6 h-6 text-orange-600" />
               </div>
-              {analytics.products.lowStock > 0 && (
+              {(analytics.products?.lowStock ?? 0) > 0 && (
                 <div className="text-sm text-orange-600">{analytics.products.lowStock} low stock</div>
               )}
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-1">Active Products</p>
               <p className="text-2xl font-bold">
-                {analytics.products.active}/{analytics.products.total}
+                {analytics.products?.active ?? 0}/{analytics.products?.total ?? 0}
               </p>
             </div>
           </CardContent>
@@ -267,15 +300,17 @@ export function ECommerceAnalytics() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {analytics.revenue.byPeriod.map((period, index) => {
-              const maxAmount = Math.max(...analytics.revenue.byPeriod.map((p) => p.amount));
-              const percentage = (period.amount / maxAmount) * 100;
+            {(analytics.revenue?.byPeriod ?? []).map((period: any, index: number) => {
+              const byPeriod = analytics.revenue?.byPeriod ?? [];
+              const amount = Number(period?.amount ?? 0);
+              const maxAmount = byPeriod.length ? Math.max(...byPeriod.map((p: any) => Number(p?.amount ?? 0))) : 0;
+              const percentage = maxAmount ? (amount / maxAmount) * 100 : 0;
 
               return (
                 <div key={index}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">{period.period}</span>
-                    <span className="text-sm font-semibold">₹{period.amount.toLocaleString()}</span>
+                    <span className="text-sm font-medium">{period?.period ?? ''}</span>
+                    <span className="text-sm font-semibold">₹{(amount).toLocaleString()}</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-3">
                     <div
@@ -299,8 +334,9 @@ export function ECommerceAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {Object.entries(analytics.orders.byStatus).map(([status, count]) => {
-                const percentage = ((count / analytics.orders.total) * 100).toFixed(1);
+              {Object.entries(analytics.orders?.byStatus ?? {}).map(([status, count]) => {
+                const total = analytics.orders?.total ?? 1;
+                const percentage = total ? ((Number(count) / total) * 100).toFixed(1) : '0';
                 const colors: Record<string, string> = {
                   pending: 'bg-yellow-500',
                   confirmed: 'bg-blue-500',
@@ -334,18 +370,18 @@ export function ECommerceAnalytics() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {analytics.topSellers.map((seller, index) => (
+              {(analytics.topSellers ?? []).map((seller: any, index: number) => (
                 <div key={index} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-[#FF8C42] text-white rounded-full flex items-center justify-center font-semibold text-sm">
                       {index + 1}
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{seller.name}</p>
-                      <p className="text-xs text-gray-600">{seller.orders} orders</p>
+                      <p className="font-medium text-sm">{seller?.name ?? '—'}</p>
+                      <p className="text-xs text-gray-600">{(seller?.orders ?? 0)} orders</p>
                     </div>
                   </div>
-                  <p className="font-semibold">₹{seller.revenue.toLocaleString()}</p>
+                  <p className="font-semibold">₹{(Number(seller?.revenue ?? 0)).toLocaleString()}</p>
                 </div>
               ))}
             </div>
@@ -361,18 +397,18 @@ export function ECommerceAnalytics() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {analytics.topProducts.map((product, index) => (
+            {(analytics.topProducts ?? []).map((product: any, index: number) => (
               <div key={index} className="flex items-center justify-between">
                 <div className="flex items-center gap-3 flex-1">
                   <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center font-semibold text-sm">
                     {index + 1}
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{product.name}</p>
-                    <p className="text-xs text-gray-600">{product.sales} units sold</p>
+                    <p className="font-medium text-sm">{product?.name ?? '—'}</p>
+                    <p className="text-xs text-gray-600">{(product?.sales ?? 0)} units sold</p>
                   </div>
                 </div>
-                <p className="font-semibold">₹{product.revenue.toLocaleString()}</p>
+                <p className="font-semibold">₹{(Number(product?.revenue ?? 0)).toLocaleString()}</p>
               </div>
             ))}
           </div>

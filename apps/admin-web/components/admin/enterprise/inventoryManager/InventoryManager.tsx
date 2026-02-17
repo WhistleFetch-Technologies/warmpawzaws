@@ -32,6 +32,7 @@ interface Product {
 	name: string;
 	sku: string;
 	category: string;
+	categoryId?: string;
 	stock: number;
 	minStock: number;
 	price: number;
@@ -39,20 +40,51 @@ interface Product {
 	lastUpdated: string;
 }
 
+interface CategoryOption {
+	id: string;
+	name: string;
+}
+
 export function InventoryManager() {
 	const [products, setProducts] = useState<Product[]>([]);
+	const [categories, setCategories] = useState<CategoryOption[]>([]);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterStatus, setFilterStatus] = useState<string>("all");
 	const [filterCategory, setFilterCategory] = useState<string>("all");
 	const [filterOpen, setFilterOpen] = useState(false);
 	const [addProductOpen, setAddProductOpen] = useState(false);
 	const [loading, setLoading] = useState(true);
-	const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "0" });
+	const [newProduct, setNewProduct] = useState({
+		name: "",
+		description: "",
+		categoryId: "",
+		price: "",
+		stock: "0",
+		status: "in_stock" as "in_stock" | "low_stock" | "out_of_stock",
+	});
 	const [savingProduct, setSavingProduct] = useState(false);
 
 	useEffect(() => {
 		loadProducts();
+		loadCategories();
 	}, []);
+
+	const loadCategories = async () => {
+		try {
+			const res = await apiClient.get<any>("/admin/catalog/categories");
+			const list = res?.categories || [];
+			setCategories(
+				(list || []).map((c: any) => ({
+					id: String(c.id ?? ""),
+					name: String(c.name ?? ""),
+				})).filter((c: CategoryOption) => c.name)
+			);
+		} catch {
+			setCategories([]);
+		}
+	};
+
+	const categoryNameById = (id: string) => (id ? (categories.find((c) => c.id === id)?.name || id) : "—");
 
 	const loadProducts = async () => {
 		setLoading(true);
@@ -65,11 +97,13 @@ export function InventoryManager() {
 				let status: Product["status"] = "in_stock";
 				if (stock === 0) status = "out_of_stock";
 				else if (stock <= minStock) status = "low_stock";
+				const catId = String(p.categoryId ?? p.category_id ?? "");
 				return {
 					id: String(p.id),
 					name: String(p.name || ""),
 					sku: String(p.sku || `SKU-${p.id}`),
-					category: String(p.category || p.categoryId || ""),
+					category: String(p.category || catId),
+					categoryId: catId || undefined,
 					stock,
 					minStock,
 					price: parseFloat(p.price || 0),
@@ -94,13 +128,16 @@ export function InventoryManager() {
 		try {
 			await apiClient.post("/admin/catalog/products", {
 				name: newProduct.name.trim(),
+				description: newProduct.description || "",
+				categoryId: newProduct.categoryId || undefined,
 				price: parseFloat(newProduct.price) || 0,
 				stock: parseInt(newProduct.stock || "0", 10),
+				status: newProduct.status === "in_stock" ? "active" : newProduct.status === "low_stock" ? "active" : "inactive",
 			});
-			toast.success("Product added");
+			toast.success("Product added successfully");
 			setAddProductOpen(false);
-			setNewProduct({ name: "", price: "", stock: "0" });
-			loadProducts();
+			setNewProduct({ name: "", description: "", categoryId: "", price: "", stock: "0", status: "in_stock" });
+			await loadProducts();
 		} catch (err: any) {
 			toast.error(err.message || "Failed to add product");
 		} finally {
@@ -156,7 +193,7 @@ export function InventoryManager() {
 			p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
 			p.sku.toLowerCase().includes(searchQuery.toLowerCase());
 		const matchesStatus = filterStatus === "all" || p.status === filterStatus;
-		const matchesCategory = filterCategory === "all" || (p.category && p.category === filterCategory);
+		const matchesCategory = filterCategory === "all" || (p.categoryId && p.categoryId === filterCategory);
 		return matchesSearch && matchesStatus && matchesCategory;
 	});
 
@@ -240,8 +277,8 @@ export function InventoryManager() {
 										className="w-full border rounded px-2 py-1 text-sm"
 									>
 										<option value="all">All</option>
-										{[...new Set(products.map((p) => p.category).filter(Boolean))].map((c) => (
-											<option key={c} value={c}>{c}</option>
+										{categories.map((c) => (
+											<option key={c.id} value={c.id}>{c.name}</option>
 										))}
 									</select>
 								</div>
@@ -259,10 +296,10 @@ export function InventoryManager() {
 
 			{addProductOpen && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setAddProductOpen(false)}>
-					<div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+					<div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
 						<h3 className="text-lg font-semibold">Add Product</h3>
 						<div>
-							<label className="block text-sm font-medium mb-1">Name</label>
+							<label className="block text-sm font-medium mb-1">Product name</label>
 							<Input
 								value={newProduct.name}
 								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, name: e.target.value })}
@@ -270,22 +307,58 @@ export function InventoryManager() {
 							/>
 						</div>
 						<div>
+							<label className="block text-sm font-medium mb-1">Description (optional)</label>
+							<Input
+								value={newProduct.description}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, description: e.target.value })}
+								placeholder="Short description"
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-1">Category</label>
+							<select
+								value={newProduct.categoryId}
+								onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewProduct({ ...newProduct, categoryId: e.target.value })}
+								className="w-full border rounded-md px-3 py-2 text-sm"
+							>
+								<option value="">Select category</option>
+								{categories.map((c) => (
+									<option key={c.id} value={c.id}>{c.name}</option>
+								))}
+							</select>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-1">Stock level</label>
+							<Input
+								type="number"
+								min={0}
+								value={newProduct.stock}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, stock: e.target.value })}
+								placeholder="0"
+							/>
+						</div>
+						<div>
 							<label className="block text-sm font-medium mb-1">Price (₹)</label>
 							<Input
 								type="number"
+								min={0}
+								step="0.01"
 								value={newProduct.price}
 								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, price: e.target.value })}
 								placeholder="0"
 							/>
 						</div>
 						<div>
-							<label className="block text-sm font-medium mb-1">Initial stock</label>
-							<Input
-								type="number"
-								value={newProduct.stock}
-								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProduct({ ...newProduct, stock: e.target.value })}
-								placeholder="0"
-							/>
+							<label className="block text-sm font-medium mb-1">Status</label>
+							<select
+								value={newProduct.status}
+								onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewProduct({ ...newProduct, status: e.target.value as Product["status"] })}
+								className="w-full border rounded-md px-3 py-2 text-sm"
+							>
+								<option value="in_stock">In stock</option>
+								<option value="low_stock">Low stock</option>
+								<option value="out_of_stock">Out of stock</option>
+							</select>
 						</div>
 						<div className="flex gap-2 justify-end">
 							<Button variant="outline" onClick={() => setAddProductOpen(false)}>Cancel</Button>
@@ -333,7 +406,7 @@ export function InventoryManager() {
 									</TableCell>
 									<TableCell>
 										<Badge variant="secondary" className="font-normal">
-											{product.category}
+											{categoryNameById(product.categoryId || product.category) || "—"}
 										</Badge>
 									</TableCell>
 									<TableCell>

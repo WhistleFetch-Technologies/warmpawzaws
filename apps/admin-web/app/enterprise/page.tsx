@@ -220,43 +220,8 @@ export default function EnterpriseRevenue() {
 						</div>
 					) : activeTab === "overview" ? (
 						<div className="space-y-6">
-							{/* Stats Cards */}
+							{/* Stats Cards (revenue/commission only in Revenue tab) */}
 							<div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-								<Card className="p-6">
-									<div className="flex items-center justify-between mb-4">
-										<div className="p-2 bg-green-100 rounded-lg">
-											<IndianRupee className="w-5 h-5 text-green-600" />
-										</div>
-										{stats && stats.growthRate > 0 ? (
-											<div className="flex items-center text-green-600 text-sm">
-												<ArrowUp className="w-4 h-4 mr-1" />
-												{stats.growthRate.toFixed(1)}%
-											</div>
-										) : (
-											<div className="flex items-center text-red-600 text-sm">
-												<ArrowDown className="w-4 h-4 mr-1" />
-												{stats ? Math.abs(stats.growthRate).toFixed(1) : 0}%
-											</div>
-										)}
-									</div>
-									<p className="text-sm text-gray-600 mb-1">Total Revenue</p>
-									<p className="text-2xl font-bold text-gray-900">
-										₹{stats ? (stats.totalRevenue / 1000).toFixed(1) : 0}K
-									</p>
-								</Card>
-
-								<Card className="p-6">
-									<div className="flex items-center justify-between mb-4">
-										<div className="p-2 bg-purple-100 rounded-lg">
-											<TrendingUp className="w-5 h-5 text-purple-600" />
-										</div>
-									</div>
-									<p className="text-sm text-gray-600 mb-1">Commission Earned</p>
-									<p className="text-2xl font-bold text-gray-900">
-										₹{stats ? (stats.commissionEarned / 1000).toFixed(1) : 0}K
-									</p>
-								</Card>
-
 								<Card className="p-6">
 									<div className="flex items-center justify-between mb-4">
 										<div className="p-2 bg-blue-100 rounded-lg">

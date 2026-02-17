@@ -2712,6 +2712,16 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  // Safe parse for JSONB/string: pg may return setting_value as object already
+  const safeParseSettingValue = (val: unknown): any => {
+    if (val == null) return undefined;
+    if (typeof val === 'object') return val;
+    if (typeof val === 'string') {
+      try { return JSON.parse(val); } catch { return []; }
+    }
+    return val;
+  };
+
   app.get('/admin/finance/settlement-rules', async (c) => {
     try {
       // Check if settlement_rules table exists, fallback to querying from settings
@@ -2720,7 +2730,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           const settings = await query(`
             SELECT setting_value FROM admin_settings WHERE setting_category = 'settlement' AND setting_key = 'rules'
           `);
-          return { rows: settings.rows.length > 0 ? JSON.parse(settings.rows[0].setting_value) : [] };
+          const parsed = settings.rows.length > 0 ? safeParseSettingValue(settings.rows[0].setting_value) : [];
+          return { rows: Array.isArray(parsed) ? parsed : [] };
         } catch {
           return { rows: [] };
         }
@@ -2789,9 +2800,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             WHERE setting_category = 'settlement' AND setting_key = 'rules'
           `);
 
-          const existingRules = existing.rows.length > 0 
-            ? JSON.parse(existing.rows[0].setting_value) 
-            : [];
+          const raw = existing.rows.length > 0 ? existing.rows[0].setting_value : undefined;
+          const parsed = safeParseSettingValue(raw);
+          const existingRules = Array.isArray(parsed) ? parsed : [];
 
           const newRule = {
             id: `rule-${Date.now()}`,
@@ -2895,7 +2906,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             return c.json({ success: false, error: 'Settlement rule not found' }, 404);
           }
 
-          const existingRules = JSON.parse(existing.rows[0].setting_value);
+          const parsed = safeParseSettingValue(existing.rows[0].setting_value);
+          const existingRules = Array.isArray(parsed) ? parsed : [];
           const ruleIndex = existingRules.findIndex((r: any) => r.id === ruleId);
 
           if (ruleIndex === -1) {
@@ -6664,7 +6676,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         sns: { enabled: false, region: 'ap-south-1', smsOriginationNumber: 'WARMPZ', entityId: '1201176605406673276', templateId: '1207177028377787269', emailSourceAddress: '' },
         sqs: { enabled: false, queueUrl: '', region: 'ap-south-1' },
         chime: { enabled: false, region: 'us-east-1' },
-        bedrock: { enabled: false, region: 'us-east-1', modelId: 'anthropic.claude-v2' },
+        bedrock: { enabled: false, region: 'ap-south-1', modelId: 'amazon.nova-lite-v1:0' },
       };
       return c.json({ success: true, settings });
     } catch (error: unknown) {

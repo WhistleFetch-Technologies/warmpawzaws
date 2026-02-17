@@ -83,9 +83,18 @@ export function AdminPaymentSettings() {
 
   const loadGateways = async () => {
     try {
-      const data = await apiClient.get<any>('/admin/payments/gateways');
+      const data = await apiClient.get<any>('/admin/payment-gateways');
       const raw = (data as any)?.gateways ?? (data as any)?.data?.gateways;
-      setGateways(Array.isArray(raw) ? raw : []);
+      const list = Array.isArray(raw) ? raw : [];
+      setGateways(list.map((g: any) => ({
+        id: g.id,
+        name: g.gateway_name ?? g.name,
+        type: g.gateway_type ?? g.type ?? 'razorpay',
+        keyId: g.key_id ?? g.keyId,
+        keySecret: g.key_secret != null ? (g.key_secret === '' ? '' : '****************') : '****************',
+        webhookSecret: g.webhook_secret != null ? (g.webhook_secret === '' ? '' : '****************') : '****************',
+        enabled: g.enabled !== false,
+      })));
     } catch (error) {
       console.error('Error loading gateways:', error);
       setGateways([]);
@@ -179,11 +188,19 @@ export function AdminPaymentSettings() {
 
     setSaving(true);
     try {
+      const payload = {
+        gateway_name: editingGateway.name,
+        gateway_type: editingGateway.type || 'razorpay',
+        key_id: editingGateway.keyId,
+        key_secret: editingGateway.keySecret && editingGateway.keySecret !== '****************' ? editingGateway.keySecret : undefined,
+        webhook_secret: editingGateway.webhookSecret && editingGateway.webhookSecret !== '****************' ? editingGateway.webhookSecret : undefined,
+        enabled: editingGateway.enabled !== false,
+      };
       if (editingGateway.id) {
-        await apiClient.put(`/admin/payments/gateways/${editingGateway.id}`, editingGateway);
+        await apiClient.put(`/admin/payment-gateways/${editingGateway.id}`, payload);
         toast.success('Gateway updated successfully');
       } else {
-        await apiClient.post('/admin/payments/gateways', editingGateway);
+        await apiClient.post('/admin/payment-gateways', payload);
         toast.success('Gateway created successfully');
       }
       await loadGateways();
@@ -202,7 +219,7 @@ export function AdminPaymentSettings() {
     }
 
     try {
-      await apiClient.delete(`/admin/payments/gateways/${gatewayId}`);
+      await apiClient.delete(`/admin/payment-gateways/${gatewayId}`);
       toast.success('Gateway deleted successfully');
       await loadGateways();
     } catch (error: any) {

@@ -169,6 +169,7 @@ class GetRolesHandler extends BaseHandler {
           display_name: role.display_name || role.name,
           name: role.name,
           description: role.description || '',
+          role_type: (role as any).role_type || null,
           category,
           icon,
           customer_service: customerService,
@@ -185,7 +186,6 @@ class GetRolesHandler extends BaseHandler {
           isSystem: role.is_system_role || false,
           userCount: 0, // TODO: Count users with this role
           createdAt: role.created_at || new Date().toISOString(),
-          // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
           config: role.config || {},
         };
     });

@@ -211,6 +211,8 @@ export function requireAdmin() {
       '/admin/auth/signup',
       '/admin/test/ping', // Test endpoint
       '/admin/setup/create-admin', // Setup endpoint for creating initial admin
+      '/admin/users/verify-otp-set-password', // Public: OTP + set/reset password
+      '/admin/users/forgot-password', // Public: request password reset OTP by email
     ];
     
     if (publicAdminPaths.some(publicPath => path === publicPath || path.startsWith(publicPath + '/'))) {

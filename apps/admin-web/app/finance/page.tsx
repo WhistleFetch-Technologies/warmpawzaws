@@ -296,37 +296,6 @@ function FinanceManagementContent() {
 								</div>
 							</div>
 
-							{/* Quick Actions */}
-							<div className="bg-gradient-to-r from-orange-50 to-white border border-orange-200 rounded-lg p-6">
-								<div className="flex items-start gap-4">
-									<div className="w-12 h-12 rounded-full bg-[#FF8C42] flex items-center justify-center flex-shrink-0">
-										<Receipt className="w-6 h-6 text-white" />
-									</div>
-									<div className="flex-1">
-										<h3 className="font-semibold text-gray-900 mb-2">
-											Finance & Payout Hub
-										</h3>
-										<p className="text-sm text-gray-600 mb-4">
-											Manage vendor settlements, commission calculations, and
-											financial reporting from a single dashboard.
-										</p>
-										<div className="flex gap-3">
-											<button
-												onClick={() => setActiveTab("settlements")}
-												className="bg-[#FF8C42] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#FF7A2E] transition-colors"
-											>
-												Go to Settlements
-											</button>
-											<button
-												onClick={() => setActiveTab("tiers")}
-												className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-											>
-												Manage Tiers
-											</button>
-										</div>
-									</div>
-								</div>
-							</div>
 						</div>
 					)}
 

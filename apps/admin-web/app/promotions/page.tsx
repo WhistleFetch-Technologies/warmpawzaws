@@ -117,7 +117,15 @@ export default function PromotionsPage() {
         apiClient.get<any>(`/admin/coupons?${params.toString()}`),
       ]);
       
-      setPromotions(promotionsRes.promotions || promotionsRes || []);
+      const rawPromos = promotionsRes.promotions || promotionsRes || [];
+      setPromotions((Array.isArray(rawPromos) ? rawPromos : []).map((p: any) => ({
+        ...p,
+        name: p.name ?? p.title ?? '',
+        code: p.code ?? p.promo_code ?? '',
+        valid_from: p.valid_from ?? p.start_date ?? p.valid_from,
+        valid_until: p.valid_until ?? p.end_date ?? p.valid_until,
+        is_active: p.is_active ?? p.status === 'active',
+      })));
       setCoupons(couponsRes.coupons || couponsRes || []);
     } catch (err: any) {
       console.error('Error loading promotions:', err);
@@ -174,6 +182,12 @@ export default function PromotionsPage() {
   const handleSavePromotion = async () => {
     if (!promotionForm.code || !promotionForm.name) {
       setError('Please fill all required fields');
+      return;
+    }
+    const fromDate = new Date(promotionForm.valid_from);
+    const untilDate = new Date(promotionForm.valid_until);
+    if (untilDate < fromDate) {
+      setError('End date must be on or after start date.');
       return;
     }
     

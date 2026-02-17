@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Send, X, Minus, Bot, Sparkles } from 'lucide-react';
+import { MessageSquare, Send, X, Minus, Bot, Sparkles, Headphones } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, aiChatbotApi } from '@/lib/api-client';
 
 interface ChatWidgetProps {
   userId?: string;
@@ -60,10 +60,10 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
     setIsTyping(true);
 
     try {
-      // Call AI chatbot API
-      const response = await apiClient.post('/ai/chatbot', {
+      // Call AI chatbot API (correct path: /ai-chatbot/chat; supports vendor via vendorId)
+      const response = await apiClient.post('/ai-chatbot/chat', {
         message: userMessage.content,
-        userId,
+        vendorId: userType === 'vendor' ? userId : undefined,
         userType,
         context: {
           userName,
@@ -76,7 +76,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
 
       const assistantMessage: Message = {
         role: 'assistant',
-        content: response?.message || response?.response || "I'm here to help! How can I assist you today?",
+        content: response?.response ?? response?.message ?? "I'm here to help! How can I assist you today?",
         timestamp: new Date(),
       };
 
@@ -86,11 +86,25 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
       if (isMinimized) {
         setUnreadCount(prev => prev + 1);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI chatbot error:', error);
+      // Create a support ticket so admin sees the vendor's request (connects to Support CRM)
+      if (userType === 'vendor' && userId) {
+        try {
+          await apiClient.post('/vendor/support/tickets', {
+            vendorId: userId,
+            subject: 'Vendor requested help (AI Assistant connection issue)',
+            description: `Vendor tried to get help via the Warmpawz Assistant. Last message: "${userMessage.content}". The AI service was temporarily unavailable. Please follow up with the vendor.`,
+            category: 'general',
+            priority: 'medium',
+          });
+        } catch (ticketErr) {
+          console.warn('Could not create support ticket:', ticketErr);
+        }
+      }
       const errorMessage: Message = {
         role: 'assistant',
-        content: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment, or contact support if the issue persists.",
+        content: "The assistant is temporarily unavailable. Your request has been sent to support—someone will follow up shortly.",
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -126,6 +140,47 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Escalate to human support (creates ticket in admin Support CRM)
+  const handleContactSupport = async () => {
+    if (!userId) return;
+    setInput('I need to speak with admin support.');
+    try {
+      await aiChatbotApi.escalateToAgent({
+        conversationId: `vendor-${Date.now()}`,
+        vendorId: userId,
+        reason: 'Vendor requested human support from chat',
+        conversationHistory: messages.map(m => `${m.role}: ${m.content}`).join('\n') || 'No prior messages',
+      });
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: "Your request has been sent to the support team. An agent will follow up with you shortly.",
+        timestamp: new Date(),
+      }]);
+    } catch (e) {
+      console.warn('Escalate failed, creating ticket directly', e);
+      try {
+        await apiClient.post('/vendor/support/tickets', {
+          vendorId: userId,
+          subject: 'Vendor requested support from Warmpawz Assistant',
+          description: 'Vendor clicked "Contact support" in the chat. Please follow up.',
+          category: 'general',
+          priority: 'medium',
+        });
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: "Your request has been sent to support. Someone will follow up shortly.",
+          timestamp: new Date(),
+        }]);
+      } catch (_) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: "Could not reach support right now. Please try again or email support.",
+          timestamp: new Date(),
+        }]);
+      }
+    }
   };
 
   // Quick suggestions for first-time users
@@ -233,6 +288,15 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
                     ))}
                   </div>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleContactSupport}
+                  className="mt-4 border-[#FF8C42] text-[#FF8C42] hover:bg-[#FFF3E8]"
+                >
+                  <Headphones className="w-4 h-4 mr-2" />
+                  Contact support (admin)
+                </Button>
               </div>
             ) : (
               <>

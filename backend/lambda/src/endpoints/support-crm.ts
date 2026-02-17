@@ -55,7 +55,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       const ticketNumber = generateTicketNumber('TKT');
 
-      // Create support ticket (ticket_number required by schema)
+      // Create support ticket (ticket_number and category required by schema)
       const ticket = await insert('support_tickets', {
         ticket_number: ticketNumber,
         customer_id: customerId || null,
@@ -64,7 +64,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         message,
         source,
         priority,
-        category: category || null,
+        category: category || 'general',
         booking_id: bookingId || null,
         order_id: orderId || null,
         status: 'open',
@@ -497,25 +497,41 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
   /**
    * GET /crm/agents
-   * Get CRM agents (alias for /support/agents)
+   * Single source of truth: agents from support_agents JOIN staff (same list as Support Settings → Agents).
+   * Falls back to staff with can_handle_support if support_agents table is missing.
    */
   app.get("/crm/agents", async (c) => {
     try {
-      const agents = await query(
-        `SELECT s.*, v.business_name as vendor_name
-         FROM staff s
-         LEFT JOIN vendors v ON s.vendor_id = v.id
-         WHERE s.role = 'support' OR s.can_handle_support = true
-         AND s.is_active = true
-         ORDER BY s.name ASC`
-      ).catch(() => ({ rows: [] }));
+      let rows: any[] = [];
+      try {
+        const result = await query(
+          `SELECT s.id, s.name, s.email, sa.specialties
+           FROM support_agents sa
+           JOIN staff s ON sa.staff_id = s.id
+           WHERE sa.is_active = true AND s.is_active = true
+           ORDER BY s.name ASC`
+        );
+        rows = result.rows || [];
+      } catch (tableErr: any) {
+        if (tableErr?.message?.includes('support_agents') || tableErr?.code === '42P01') {
+          const fallback = await query(
+            `SELECT s.id, s.name, s.email, s.specialties
+             FROM staff s
+             WHERE (s.role = 'support' OR s.can_handle_support = true) AND s.is_active = true
+             ORDER BY s.name ASC`
+          ).catch(() => ({ rows: [] }));
+          rows = fallback.rows || [];
+        } else {
+          throw tableErr;
+        }
+      }
 
-      const safeAgents = (agents.rows || []).map((a: any) => ({
+      const safeAgents = rows.map((a: any) => ({
         id: String(a.id || ''),
         name: String(a.name || ''),
         email: a.email || undefined,
-        specialties: a.specialties || ['general'],
-        workload: 0, // Could calculate from assigned tickets
+        specialties: Array.isArray(a.specialties) ? a.specialties : (a.specialties || 'general'),
+        workload: 0,
       }));
 
       return c.json({

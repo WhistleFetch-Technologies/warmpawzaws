@@ -107,7 +107,7 @@ async function seedConfig(options) {
     },
     sqs: { enabled: false, queueUrl: '', region: 'ap-south-1' },
     chime: { enabled: false, region: 'us-east-1' },
-    bedrock: { enabled: false, region: 'us-east-1', modelId: 'anthropic.claude-v2' },
+    bedrock: { enabled: false, region: 'ap-south-1', modelId: 'amazon.nova-lite-v1:0' },
   };
 
   console.log('🔧 Seeding admin:settings:aws for SMS');

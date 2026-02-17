@@ -11,6 +11,8 @@ import {
 	Settings,
 	FileText,
 	CheckCircle2,
+	CreditCard,
+	Tag,
 } from "lucide-react";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
@@ -24,6 +26,8 @@ import {
 	ProductApproval,
 	OrderManagementAdmin,
 	SellerManagement,
+	SettlementsDashboard,
+	PromotionsManagement,
 } from "@/components/admin/ecommerce";
 
 type TabType =
@@ -35,7 +39,9 @@ type TabType =
 	| "commission"
 	| "categories"
 	| "analytics"
-	| "policies";
+	| "policies"
+	| "settlements"
+	| "promotions";
 
 // ✅ FIX: Import isUatMode from api-client to respect uatMode: false in production
 import { isUatMode } from "@/lib/api-client";
@@ -52,6 +58,8 @@ export default function ECommerceManagement() {
 		{ id: "products", label: "Product Approval", icon: Package },
 		{ id: "service-approval", label: "Service Approval", icon: CheckCircle2 },
 		{ id: "orders", label: "Orders", icon: ShoppingCart },
+		{ id: "settlements", label: "Settlements", icon: CreditCard },
+		{ id: "promotions", label: "Promotions", icon: Tag },
 		{ id: "commission", label: "Commission", icon: Percent },
 		{ id: "categories", label: "Categories", icon: FileText },
 		{ id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -112,7 +120,16 @@ export default function ECommerceManagement() {
 				{/* Content - Match wireframe: max-w-7xl mx-auto */}
 				<div className="flex-1 overflow-y-auto">
 					<div className="max-w-7xl mx-auto">
-						{activeTab === "dashboard" && <ECommerceDashboard />}
+						{activeTab === "dashboard" && (
+							<ECommerceDashboard
+								onNavigateToProducts={() => setActiveTab("products")}
+								onNavigateToSellers={() => setActiveTab("sellers")}
+								onNavigateToOrders={() => setActiveTab("orders")}
+								onNavigateToSettlements={() => setActiveTab("settlements")}
+								onNavigateToPromotions={() => setActiveTab("promotions")}
+								onNavigateToCategories={() => setActiveTab("categories")}
+							/>
+						)}
 						{activeTab === "sellers" && <SellerManagement />}
 						{activeTab === "products" && <ProductApproval />}
 						{activeTab === "service-approval" && <CustomServiceApproval />}
@@ -121,6 +138,8 @@ export default function ECommerceManagement() {
 						{activeTab === "categories" && <CategoryManagement />}
 						{activeTab === "analytics" && <ECommerceAnalytics />}
 						{activeTab === "policies" && <PolicyManagement />}
+						{activeTab === "settlements" && <SettlementsDashboard />}
+						{activeTab === "promotions" && <PromotionsManagement />}
 					</div>
 				</div>
 			</div>

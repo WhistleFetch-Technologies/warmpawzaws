@@ -17,14 +17,26 @@
     "http://localhost:3002",
     "http://localhost:3003",
     "http://localhost:5173",
-    "https://admin.dev.warmpawz.com",
-    "https://vendor.dev.warmpawz.com",
-    "https://customer.dev.warmpawz.com",
+    "https://dev.admin.warmpawz.com",
+    "https://dev.vendor.warmpawz.com",
+    "https://dev.customer.warmpawz.com",
     "https://admin.warmpawz.com",
     "https://vendor.warmpawz.com",
     "https://customer.warmpawz.com",
     "https://warmpawz.com",
     "https://www.warmpawz.com"
   ],
-  "_usage": "CloudFront = app URLs (browser). apiGatewayDefaultUrl = API base for apps (UAT-supporting). apiGatewayCdkUrl = CDK stack API (Cognito-only). allowedOrigins = CORS origins for Lambda."
+  "_usage": "CloudFront = fallback app URLs. protectedUrls = canonical HTTPS custom domains. Deploy scripts only do S3 + invalidation; they never change CloudFront aliases/SSL. If custom URLs show SSL errors run: scripts/fix-cloudfront-ssl-dev-prod.sh",
+  "protectedUrls": {
+    "dev": {
+      "admin": "https://dev.admin.warmpawz.com",
+      "vendor": "https://dev.vendor.warmpawz.com",
+      "customer": "https://dev.customer.warmpawz.com"
+    },
+    "prod": {
+      "admin": "https://admin.warmpawz.com",
+      "vendor": "https://vendor.warmpawz.com",
+      "customer": "https://customer.warmpawz.com"
+    }
+  }
 }

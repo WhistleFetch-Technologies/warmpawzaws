@@ -25,6 +25,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, update, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { attachAdminContext, setUatAdminContext } from './admin-auth-helpers';
 
 // ============================================================================
 // ADMIN HANDLERS
@@ -447,10 +448,11 @@ class ListVendorsHandler extends BaseHandler {
 // ============================================================================
 
 /**
- * Verify admin authentication for protected routes
- * Returns 401 for missing/invalid auth, 403 for non-admin users
+ * Verify admin authentication for protected routes and set admin context (identity + permissions).
+ * Returns 401 for missing/invalid auth, 403 for non-admin or inactive.
+ * Exported for use by admin-users and other admin route modules.
  */
-async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?: string; error?: string }> {
+export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?: string; error?: string }> {
   const authHeader = c.req.header('authorization') || c.req.header('Authorization');
   
   // Check for UAT mode - ONLY check UAT_MODE env variable for security
@@ -459,62 +461,50 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
   // ✅ FIX: In UAT mode, allow admin access with any valid token or UAT token
   if (uatMode) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      // In UAT mode, allow requests without auth header (for testing)
       console.log('[ADMIN AUTH] UAT Mode: Allowing admin access without auth header');
+      setUatAdminContext(c);
       return { authorized: true, userId: 'uat-admin-user' };
     }
-    
+
     const token = authHeader.replace(/^Bearer\s+/i, '');
-    
-    // Allow UAT tokens immediately (no JWT verification)
+
     if (token.startsWith('uat-token-')) {
       const suffix = token.replace('uat-token-', '');
       if (suffix.length >= 10) {
         console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with UAT token');
+        setUatAdminContext(c);
         return { authorized: true, userId: 'uat-admin-user' };
       }
     }
-    
-    // Allow JWT tokens (verify or allow in dev)
+
     if (token.startsWith('eyJ')) {
-      // JWT token or UAT token - verify it's valid
       try {
         const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');
         const headers: Record<string, string> = {};
         headers['authorization'] = authHeader;
-        
         const result = await extractAndVerifyAuthToken(headers);
-        
+
         if (result.valid && result.payload) {
-          // Check if token has admin role or allow in UAT mode
-          const groups = result.payload['cognito:groups'] as string[] | undefined;
-          const userType = result.payload['custom:user_type'] as string | undefined;
-          const role = result.payload['custom:user_type'] as string | undefined;
-          
-          const isAdmin = groups?.includes('admin') || 
-                          groups?.includes('super-admin') || 
-                          userType === 'admin' ||
-                          role === 'admin';
-          
-          if (isAdmin || uatMode) {
-            return { authorized: true, userId: result.payload.sub || result.payload['cognito:username'] || 'uat-admin-user' };
+          const sub = result.payload.sub || result.payload['cognito:username'] || 'uat-admin-user';
+          const admin = await attachAdminContext(c, sub, (result.payload as any).email || (result.payload as any)['cognito:username']);
+          if (admin) {
+            return { authorized: true, userId: admin.id };
           }
+          setUatAdminContext(c);
+          return { authorized: true, userId: sub };
         }
-        
-        // In UAT mode, allow any valid token for admin operations
         console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with valid token');
+        setUatAdminContext(c);
         return { authorized: true, userId: result.payload?.sub || 'uat-admin-user' };
       } catch (tokenError) {
-        // SECURITY FIX: Only allow UAT bypass in non-production environments
-        const isProduction = process.env.NODE_ENV === 'production' || 
-                             process.env.STAGE === 'prod' || 
-                             process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
-        
+        const isProduction = process.env.NODE_ENV === 'production' ||
+          process.env.STAGE === 'prod' ||
+          process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
         if (!isProduction && token.startsWith('eyJ')) {
           console.log('[ADMIN AUTH] UAT Mode (DEV ONLY): Allowing admin access (token verification skipped)');
+          setUatAdminContext(c);
           return { authorized: true, userId: 'uat-admin-user' };
         }
-        // In production, require valid token
         console.warn('[ADMIN AUTH] Token verification failed in production');
       }
     }
@@ -540,19 +530,23 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
       return { authorized: false, error: 'Invalid or expired token' };
     }
 
-    // Check for admin role in token claims
     const groups = result.payload['cognito:groups'] as string[] | undefined;
     const userType = result.payload['custom:user_type'] as string | undefined;
-    
-    const isAdmin = groups?.includes('admin') || 
-                    groups?.includes('super-admin') || 
-                    userType === 'admin';
+    const isAdmin = groups?.includes('admin') ||
+      groups?.includes('super-admin') ||
+      userType === 'admin';
 
     if (!isAdmin) {
       return { authorized: false, error: 'Admin access required' };
     }
 
-    return { authorized: true, userId: result.payload.sub || result.payload['cognito:username'] };
+    const sub = result.payload.sub || result.payload['cognito:username'];
+    const email = (result.payload as any).email || (result.payload as any)['cognito:username'];
+    const admin = await attachAdminContext(c, sub, email);
+    if (!admin) {
+      return { authorized: false, error: 'Admin not found or inactive' };
+    }
+    return { authorized: true, userId: admin.id };
   } catch (error) {
     console.error('[ADMIN AUTH] Token verification failed:', error);
     return { authorized: false, error: 'Token verification failed' };

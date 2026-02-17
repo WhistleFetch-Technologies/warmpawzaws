@@ -5,6 +5,11 @@
 #   --prod         Deploy to PRODUCTION (S3 + CloudFront prod).
 #   --yes, -y      Skip confirmation prompt when using --prod.
 #   Default: deploy to dev. Do NOT use SKIP_BUILD env (ignored).
+#
+# This script only: builds, uploads to S3, and creates a CloudFront invalidation.
+# It does NOT modify CloudFront distribution config (aliases/SSL). Protected URLs
+# (dev.admin.warmpawz.com, admin.warmpawz.com) require aliases/SSL to be set via
+# ./scripts/fix-cloudfront-ssl-dev-prod.sh if they show SSL errors.
 
 set -e
 
@@ -163,7 +168,7 @@ else
   exit 1
 fi
 
-# Step 3: Invalidate CloudFront cache
+# Step 3: Invalidate CloudFront cache (deploy never modifies distribution config: aliases/SSL are unchanged)
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
@@ -178,6 +183,17 @@ else
   echo -e "${YELLOW}⚠️  Warning: CloudFront invalidation failed (but files are uploaded)${NC}"
 fi
 
+# Protected URL (canonical custom domain; prefer over *.cloudfront.net)
+PROTECTED_URL=""
+if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+  if [ "$PROD" = true ]; then
+    PROTECTED_URL=$(jq -r '.protectedUrls.prod.admin // empty' "$PROJECT_ROOT/config/urls.json")
+  else
+    PROTECTED_URL=$(jq -r '.protectedUrls.dev.admin // empty' "$PROJECT_ROOT/config/urls.json")
+  fi
+fi
+PROTECTED_URL="${PROTECTED_URL:-$CLOUDFRONT_URL}"
+
 # Summary
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
@@ -191,14 +207,16 @@ echo ""
 echo -e "📦 Deployment Summary:"
 echo -e "   ✅ ${APP_NAME}: Built successfully"
 echo -e "   ✅ S3 Upload: Synced to ${S3_BUCKET}"
-echo -e "   ✅ CloudFront: Cache invalidation created"
+echo -e "   ✅ CloudFront: Cache invalidation created (this script does not change aliases/SSL)"
 echo ""
-echo -e "🌐 Access URLs:"
-echo -e "   - Admin Web: ${CLOUDFRONT_URL}"
+echo -e "🌐 Access URLs (use protected URL for HTTPS custom domain):"
+echo -e "   - Admin Web: ${PROTECTED_URL}"
+echo -e "   - Fallback:  ${CLOUDFRONT_URL}"
 echo -e "   - Direct S3: s3://${S3_BUCKET}"
 echo ""
 echo -e "⏰ Next Steps:"
 echo -e "   1. Wait 5-15 minutes for CloudFront propagation"
-echo -e "   2. Test at ${CLOUDFRONT_URL}"
+echo -e "   2. Test at ${PROTECTED_URL}"
+echo -e "   3. If custom URL shows SSL errors: ./scripts/fix-cloudfront-ssl-dev-prod.sh $([ "$PROD" = true ] && echo '--prod-only' || echo '--dev-only')"
 echo ""
 

@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import {
   Settings,
-  Shield,
-  CreditCard,
   Percent,
   CheckCircle,
   Save,
@@ -60,7 +58,7 @@ interface VerificationPolicy {
 }
 
 export function PolicyManagement() {
-  const [activeTab, setActiveTab] = useState('refund');
+  const [activeTab, setActiveTab] = useState('commission');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -148,17 +146,9 @@ export function PolicyManagement() {
         <p className="text-gray-500 text-sm mt-1">Configure marketplace policies and rules</p>
       </div>
 
-      {/* Policy Tabs */}
+      {/* Policy Tabs (Refund and Payment managed in Finance) */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="refund" className="gap-2">
-            <Shield className="w-4 h-4" />
-            Refund
-          </TabsTrigger>
-          <TabsTrigger value="payment" className="gap-2">
-            <CreditCard className="w-4 h-4" />
-            Payment
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="commission" className="gap-2">
             <Percent className="w-4 h-4" />
             Commission
@@ -168,253 +158,6 @@ export function PolicyManagement() {
             Verification
           </TabsTrigger>
         </TabsList>
-
-        {/* Refund Policy */}
-        <TabsContent value="refund" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Refund Policy Configuration</CardTitle>
-              <CardDescription>Configure refund rules and settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label htmlFor="refund-window" className="text-sm font-medium">
-                    Default Refund Window (days)
-                  </label>
-                  <Input
-                    id="refund-window"
-                    type="number"
-                    value={refundPolicy.defaultRefundWindow}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setRefundPolicy({
-                        ...refundPolicy,
-                        defaultRefundWindow: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                  <p className="text-sm text-gray-500">
-                    Number of days customers can request refunds
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="auto-approval" className="text-sm font-medium">
-                    Auto-approval Threshold (₹)
-                  </label>
-                  <Input
-                    id="auto-approval"
-                    type="number"
-                    value={refundPolicy.autoApprovalThreshold}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setRefundPolicy({
-                        ...refundPolicy,
-                        autoApprovalThreshold: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                  <p className="text-sm text-gray-500">
-                    Orders below this amount are auto-approved
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="restocking-fee" className="text-sm font-medium">
-                    Restocking Fee (%)
-                  </label>
-                  <Input
-                    id="restocking-fee"
-                    type="number"
-                    value={refundPolicy.restockingFeePercentage}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setRefundPolicy({
-                        ...refundPolicy,
-                        restockingFeePercentage: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                  <p className="text-sm text-gray-500">Percentage charged for restocking</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Partial Refunds</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={refundPolicy.partialRefundEnabled}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setRefundPolicy({
-                          ...refundPolicy,
-                          partialRefundEnabled: e.target.checked,
-                        })
-                      }
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Enable partial refunds</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Enabled Categories</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {['food', 'toys', 'accessories', 'healthcare', 'grooming', 'clothing'].map(
-                    (cat) => (
-                      <div key={cat} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={refundPolicy.enabledCategories.includes(cat)}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                            if (e.target.checked) {
-                              setRefundPolicy({
-                                ...refundPolicy,
-                                enabledCategories: [...refundPolicy.enabledCategories, cat],
-                              });
-                            } else {
-                              setRefundPolicy({
-                                ...refundPolicy,
-                                enabledCategories: refundPolicy.enabledCategories.filter(
-                                  (c) => c !== cat
-                                ),
-                              });
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm capitalize">{cat}</span>
-                      </div>
-                    )
-                  )}
-                </div>
-              </div>
-
-              <Button
-                onClick={() => savePolicy('refund', refundPolicy)}
-                disabled={saving}
-                className="bg-[#FF8C42] hover:bg-[#FF7029]"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                Save Refund Policy
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Payment Policy */}
-        <TabsContent value="payment" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Payment Policy Configuration</CardTitle>
-              <CardDescription>Configure payment methods and limits</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label htmlFor="min-order" className="text-sm font-medium">
-                    Minimum Order Amount (₹)
-                  </label>
-                  <Input
-                    id="min-order"
-                    type="number"
-                    value={paymentPolicy.minOrderAmount}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setPaymentPolicy({
-                        ...paymentPolicy,
-                        minOrderAmount: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="max-order" className="text-sm font-medium">
-                    Maximum Order Amount (₹)
-                  </label>
-                  <Input
-                    id="max-order"
-                    type="number"
-                    value={paymentPolicy.maxOrderAmount}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setPaymentPolicy({
-                        ...paymentPolicy,
-                        maxOrderAmount: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="cod-charges" className="text-sm font-medium">
-                    COD Charges (₹)
-                  </label>
-                  <Input
-                    id="cod-charges"
-                    type="number"
-                    value={paymentPolicy.codCharges}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setPaymentPolicy({
-                        ...paymentPolicy,
-                        codCharges: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                  <p className="text-sm text-gray-500">Fixed charge for COD orders</p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <label className="text-sm font-medium">Payment Methods</label>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={paymentPolicy.walletEnabled}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setPaymentPolicy({
-                          ...paymentPolicy,
-                          walletEnabled: e.target.checked,
-                        })
-                      }
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Enable Wallet Payment</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={paymentPolicy.codEnabled}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setPaymentPolicy({
-                          ...paymentPolicy,
-                          codEnabled: e.target.checked,
-                        })
-                      }
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Enable Cash on Delivery (COD)</span>
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => savePolicy('payment', paymentPolicy)}
-                disabled={saving}
-                className="bg-[#FF8C42] hover:bg-[#FF7029]"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                Save Payment Policy
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         {/* Commission Policy */}
         <TabsContent value="commission" className="space-y-6">

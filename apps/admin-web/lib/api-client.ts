@@ -364,6 +364,14 @@ export class ApiClient {
         );
       }
       
+      // Handle 403: Permission denied — do NOT clear token; show friendly message
+      if (response.status === 403) {
+        const friendlyMsg = error?.error && typeof error.error === 'string'
+          ? error.error
+          : 'You don\'t have permission to perform this action.';
+        throw new Error(friendlyMsg);
+      }
+
       // Handle 401: In UAT mode or for admin routes, don't redirect - let components handle gracefully
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
