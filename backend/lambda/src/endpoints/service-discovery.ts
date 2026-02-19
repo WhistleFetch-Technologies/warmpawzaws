@@ -2832,8 +2832,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
             // 3) Overlap check with existing bookings (slot start + slotDuration vs booking start + duration)
             // ✅ STRICT BUSINESS RULE: Each slot is atomic and independent
-            // Buffer is informational (travel/prep/setup) and MUST NOT block adjacent slots
-            // Only service duration blocks slots - buffer is used for scheduling spacing, not availability blocking
+            // ✅ CRITICAL: Buffer time is informational only for ALL services (tele, at_center, at_home)
+            // Buffer time (travel/prep/setup) is used for scheduling spacing but MUST NOT block adjacent slots
+            // Only service duration blocks slots - buffer is informational only, not used in overlap calculations
             // ✅ CRITICAL: Use slotDuration (actual slot size) not totalDuration (requested service duration) for overlap check
             // ✅ ATOMIC SLOT RULE: Booking 09:00 (30min) should ONLY block 09:00, NOT 09:30
             // Mathematical proof:
@@ -2844,21 +2845,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
               const bStart = timeToMinutes(b.booking_time);
               
-              // ✅ FIX: For at_center only, subtract buffer time from booking duration for overlap check
-              // at_home/tele use exact time matching (staff-based) so they don't have this issue
-              // Buffer is informational (prep time) and should NOT block adjacent slots for at_center
-              let bookingDuration = b.duration_minutes;
-              if (normalizedServiceStyle === 'at_center' && bufferMinutes > 0) {
-                // Subtract buffer from booking duration for overlap check only
-                // This ensures adjacent slots are not blocked by buffer time
-                // Minimum duration is slotDuration to prevent negative values
-                bookingDuration = Math.max(slotDuration, bookingDuration - bufferMinutes);
-              }
+              // ✅ CRITICAL FIX: Buffer time is informational only for ALL services
+              // Buffer time (travel/prep/setup) is used for scheduling spacing but does NOT block adjacent slots
+              // ALL services (tele, at_center, at_home) use EXACT service duration for overlap checks
+              // This ensures atomic slot behavior: booking at 2:00 PM (30min) ends at 2:30 PM
+              // Slot at 2:30 PM should be available (no overlap: 870 < 870 = false)
+              const bookingDuration = b.duration_minutes;  // ✅ Use exact duration, no buffer subtraction for ANY service
               
-              const bEnd = bStart + bookingDuration;  // ✅ Use adjusted duration for at_center (no buffer blocking)
+              console.log(`[SLOTS] ${normalizedServiceStyle} overlap: booking=${b.booking_time}, duration=${bookingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
+              
+              const bEnd = bStart + bookingDuration;  // ✅ Use exact duration for ALL services
               // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
               // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
-              return currentMinutes < bEnd && slotEnd > bStart;  // ✅ Strict < ensures atomic behavior
+              const overlaps = currentMinutes < bEnd && slotEnd > bStart;  // ✅ Strict < ensures atomic behavior
+              
+              if (overlaps) {
+                console.log(`[SLOTS] OVERLAP DETECTED: slot [${timeStr} (${currentMinutes}min)-${Math.floor(slotEnd/60)}:${String(slotEnd%60).padStart(2,'0')} (${slotEnd}min)] overlaps with booking [${b.booking_time} (${bStart}min)-${Math.floor(bEnd/60)}:${String(bEnd%60).padStart(2,'0')} (${bEnd}min)]`);
+              }
+              
+              return overlaps;
             });
 
             // ✅ FIX: Check max capacity first to determine availability

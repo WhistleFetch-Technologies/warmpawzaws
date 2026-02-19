@@ -1321,11 +1321,33 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
 
       const vendor = vendors[0];
 
-      // Update identity to ACTIVATED
+      // Update identity to ACTIVATED and link vendor_id
       await update('vendor_identity', { id: identity.id }, {
         onboarding_status: 'ACTIVATED',
+        vendor_id: vendor.id,
         updated_at: new Date().toISOString(),
       });
+
+      // Process vendor referral if metadata contains referral info
+      if (identity.metadata && identity.metadata.referral_code_id) {
+        try {
+          const { processVendorReferralSignup } = await import('../lib/services/referral-service');
+          const referralResult = await processVendorReferralSignup({
+            vendorId: vendor.id,
+            referralCode: identity.metadata.referral_code || '',
+            phone: identity.phone,
+          });
+          
+          if (referralResult.success) {
+            console.log(`[VENDOR-ACTIVATION] ✅ Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
+          } else {
+            console.warn(`[VENDOR-ACTIVATION] Vendor referral processing failed: ${referralResult.error}`);
+          }
+        } catch (refError: any) {
+          console.error('[VENDOR-ACTIVATION] Error processing vendor referral:', refError);
+          // Don't fail activation if referral processing fails
+        }
+      }
 
       return c.json({
         success: true,

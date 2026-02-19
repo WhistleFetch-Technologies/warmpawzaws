@@ -506,104 +506,87 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         const { rows: existingBookings } = await client.query(overlapQuery, overlapParams);
 
-        // ✅ FIX: For at_center only, get buffer time and subtract from existing booking durations
-        // This matches the logic in available-slots endpoint to prevent false conflicts
-        let bufferMinutes = 0;
+        // ✅ CRITICAL FIX: Buffer time is informational only for ALL services
+        // Buffer time (travel/prep/setup) is retrieved for informational purposes but is NOT used in overlap checks
+        // ALL services (tele, at_center, at_home) use EXACT service duration for overlap calculations
+        // This ensures atomic slot behavior: booking at 2:00 PM (30min) ends at 2:30 PM
+        // Slot at 2:30 PM should be available (no overlap: 870 < 870 = false)
+        let bufferMinutes = 0;  // Retrieved for informational purposes only, not used in overlap checks
         const normalizedServiceStyle = (serviceType === 'at_vendor' || serviceType === 'at_center') ? 'at_center' : serviceType;
-        if (normalizedServiceStyle === 'at_center') {
+        
+        // Get buffer time for informational purposes (logging, scheduling spacing, etc.)
+        // But do NOT use it in overlap calculations
+        try {
+          let minNoticeMinutes = 30;
           try {
-            // Get minNoticeMinutes first (same as available-slots endpoint)
-            let minNoticeMinutes = 30;
-            try {
-              const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
-              const bufferPolicy = policiesResult.rows?.find((p: any) => p.policy_type === 'buffer_time');
-              if (bufferPolicy?.policy_config) {
-                const cfg = bufferPolicy.policy_config as any;
-                minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
-              }
-            } catch (_) { /* ignore */ }
-            
-            // Get buffer time from vendor_availability_v2 (lead_time_by_style or buffer_time)
-            // Use the same logic as available-slots endpoint
-            const dayOfWeek = new Date(bookingDate).getDay();
-            
-            // First try to get from vendor_availability_v2 (same query pattern as available-slots)
-            // Note: vendor_availability_v2 only has service_styles (plural, array), not service_style or service_type
-            try {
-              const va2Result = await client.query(
-                `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
-                 FROM vendor_availability_v2
-                 WHERE vendor_id = $1
-                   AND day_of_week = $2
-                   AND (COALESCE(service_styles, ARRAY[]::text[]) && ARRAY['at_center', 'at_vendor']::text[])
-                   AND (COALESCE(is_available, true) = true)
-                 LIMIT 1`,
-                [vendorId, dayOfWeek]
-              );
-              
-              if (va2Result.rows && va2Result.rows.length > 0) {
-                const row = va2Result.rows[0];
-                const leadByStyle = row.lead_time_by_style != null
-                  ? (typeof row.lead_time_by_style === 'string' ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style)
-                  : {};
-                bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && (leadByStyle['at_center'] != null || leadByStyle['at_vendor'] != null))
-                  ? Number(leadByStyle['at_center'] ?? leadByStyle['at_vendor'])
-                  : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
-                console.log(`[BOOKING] at_center: Found buffer from vendor_availability_v2: ${bufferMinutes} minutes`);
-              } else {
-                // Fallback to minNoticeMinutes (same as available-slots)
-                bufferMinutes = minNoticeMinutes;
-                console.log(`[BOOKING] at_center: No vendor_availability_v2 record, using minNoticeMinutes: ${bufferMinutes} minutes`);
-              }
-            } catch (va2Err: any) {
-              console.warn('[BOOKING] Error querying vendor_availability_v2 for buffer, using minNoticeMinutes:', va2Err?.message);
-              bufferMinutes = minNoticeMinutes;
+            const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
+            const bufferPolicy = policiesResult.rows?.find((p: any) => p.policy_type === 'buffer_time');
+            if (bufferPolicy?.policy_config) {
+              const cfg = bufferPolicy.policy_config as any;
+              minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
             }
-          } catch (err) {
-            console.warn('[BOOKING] Could not get buffer time, using minNoticeMinutes as fallback:', err);
-            // Fallback: use 30 minutes buffer for at_center (matches available-slots default)
-            bufferMinutes = 30;
-          }
+          } catch (_) { /* ignore */ }
           
-          // ✅ CRITICAL: If buffer is still 0, use default 30 minutes for at_center
-          // This matches the available-slots endpoint behavior
-          if (bufferMinutes === 0) {
-            console.log('[BOOKING] at_center: Buffer is 0, using default 30 minutes');
-            bufferMinutes = 30;
+          const dayOfWeek = new Date(bookingDate).getDay();
+          try {
+            const va2Result = await client.query(
+              `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+                 AND day_of_week = $2
+                 AND (COALESCE(is_available, true) = true)
+               LIMIT 1`,
+              [vendorId, dayOfWeek]
+            );
+            
+            if (va2Result.rows && va2Result.rows.length > 0) {
+              const row = va2Result.rows[0];
+              const leadByStyle = row.lead_time_by_style != null
+                ? (typeof row.lead_time_by_style === 'string' ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style)
+                : {};
+              bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && leadByStyle[normalizedServiceStyle] != null)
+                ? Number(leadByStyle[normalizedServiceStyle])
+                : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+              console.log(`[BOOKING] ${normalizedServiceStyle}: Found buffer=${bufferMinutes}min (informational only, not used in overlap check)`);
+            }
+          } catch (va2Err: any) {
+            // Ignore - buffer is informational only
           }
+        } catch (err) {
+          // Ignore - buffer is informational only
         }
 
-        // ✅ FIX: Check overlap using ONLY service duration (buffer doesn't block)
-        // For at_center: subtract buffer from existing booking durations to match available-slots logic
-        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min`);
+        // ✅ FIX: Check overlap using ONLY service duration (buffer doesn't block for ANY service)
+        // Buffer time is informational only and does NOT affect overlap calculations
+        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min (informational only)`);
         console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
         
         const hasOverlap = existingBookings.some((existing: any) => {
           const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
           
-          // ✅ FIX: For at_center, subtract buffer time from existing booking duration
-          // Match the exact logic from available-slots endpoint
-          let existingDuration = existing.duration_minutes;
-          if (normalizedServiceStyle === 'at_center' && bufferMinutes > 0) {
-            // Subtract buffer from existing booking duration for overlap check only
-            // This matches available-slots: Math.max(slotDuration, bookingDuration - bufferMinutes)
-            // Minimum duration is slotDuration (30) to prevent negative values
-            const originalDuration = existingDuration;
-            const slotDuration = 30; // Default slot duration for at_center
-            existingDuration = Math.max(slotDuration, existingDuration - bufferMinutes);
-            console.log(`[BOOKING] at_center overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), originalDuration=${originalDuration}min, adjustedDuration=${existingDuration}min (subtracted ${bufferMinutes}min buffer, min=${slotDuration}min)`);
-          }
+          // ✅ CRITICAL FIX: Use EXACT duration for ALL services (no buffer subtraction)
+          // Buffer time is informational only and does NOT block adjacent slots
+          // This ensures atomic slot behavior: booking at 2:00 PM (30min) ends at 2:30 PM
+          // New booking at 2:30 PM should be allowed (no overlap: 870 < 870 = false)
+          const existingDuration = existing.duration_minutes;  // ✅ Use exact duration, no buffer subtraction for ANY service
           
-          const existingEndMinutes = existingStartMinutes + existingDuration;  // ✅ Use adjusted duration for at_center
+          console.log(`[BOOKING] ${normalizedServiceStyle} overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), duration=${existingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
+          
+          const existingEndMinutes = existingStartMinutes + existingDuration;  // ✅ Use exact duration for ALL services
           const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;
           
           // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
           // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
+          // Example: Booking 2:00 PM (30min) ends at 2:30 PM (870 min)
+          //          New booking 2:30 PM starts at 2:30 PM (870 min)
+          //          Overlap: 870 < 870 && 900 > 840 = false && true = false ✅ (NO overlap)
           const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
           
           if (overlaps) {
-            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${newBookingStartMinutes}-${newBookingEndMinutes}] overlaps with existing [${existingStartMinutes}-${existingEndMinutes}]`);
+            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes/60)}:${String(newBookingEndMinutes%60).padStart(2,'0')} (${newBookingEndMinutes}min)] overlaps with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes/60)}:${String(existingEndMinutes%60).padStart(2,'0')} (${existingEndMinutes}min)]`);
+          } else {
+            console.log(`[BOOKING] NO OVERLAP: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes/60)}:${String(newBookingEndMinutes%60).padStart(2,'0')} (${newBookingEndMinutes}min)] does NOT overlap with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes/60)}:${String(existingEndMinutes%60).padStart(2,'0')} (${existingEndMinutes}min)]`);
           }
           
           return overlaps;
@@ -771,6 +754,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : null,
           // ✅ NEW: Store total duration
           total_duration_minutes: totalDurationMinutes || null,
+          // ✅ CRITICAL: Store duration_minutes (service duration only, NO buffer time)
+          // For ALL services: duration_minutes = service duration (exact, no buffer)
+          // Buffer time is informational only (travel/prep/setup) and is NOT stored or used in overlap checks
+          // Buffer time is only used for scheduling spacing, not for blocking adjacent slots
+          duration_minutes: bookingDuration, // ✅ Service duration only, no buffer for ANY service
           // ✅ Store customer phone for easy access
           customer_phone: customerPhone || null,
         };

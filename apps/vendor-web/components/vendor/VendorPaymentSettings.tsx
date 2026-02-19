@@ -51,10 +51,50 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
   const [upiId, setUpiId] = useState('');
   const [upiVerified, setUpiVerified] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
+  const [loadingWallet, setLoadingWallet] = useState(false);
 
   useEffect(() => {
     loadBankAccount();
+    loadWalletData();
   }, [vendorId]);
+
+  const loadWalletData = async () => {
+    try {
+      setLoadingWallet(true);
+      // Load wallet balance using GET /wallet/:vendorId
+      const walletResponse = await apiClient.get(`/wallet/${vendorId}`) as any;
+      
+      if (walletResponse && walletResponse.balance !== undefined) {
+        setWalletBalance(parseFloat(walletResponse.balance) || 0);
+      } else if (walletResponse?.data?.balance !== undefined) {
+        setWalletBalance(parseFloat(walletResponse.data.balance) || 0);
+      }
+      
+      // Load wallet transactions
+      try {
+        const transactionsResponse = await apiClient.get(`/wallet/${vendorId}/transactions?limit=10`) as any;
+        if (transactionsResponse?.transactions) {
+          setWalletTransactions(transactionsResponse.transactions);
+        } else if (Array.isArray(transactionsResponse)) {
+          setWalletTransactions(transactionsResponse);
+        }
+      } catch (txnError) {
+        console.error('Error loading wallet transactions:', txnError);
+        setWalletTransactions([]);
+      }
+    } catch (error: any) {
+      console.error('Error loading wallet data:', error);
+      // If 404, wallet doesn't exist yet - that's fine, it will be created on first use
+      if (error.status !== 404) {
+        toast.error('Failed to load wallet data');
+      }
+      setWalletBalance(0);
+      setWalletTransactions([]);
+    } finally {
+      setLoadingWallet(false);
+    }
+  };
 
   const loadBankAccount = async () => {
     try {
@@ -293,7 +333,10 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               {upiVerified && <p className="text-xs text-green-600 mt-1">✓ Verified</p>}
             </button>
             <button
-              onClick={() => setPaymentMethod('wallet')}
+              onClick={() => {
+                setPaymentMethod('wallet');
+                loadWalletData(); // Reload wallet data when wallet tab is clicked
+              }}
               className={`p-4 rounded-lg border-2 transition-all ${
                 paymentMethod === 'wallet'
                   ? 'border-[#FF8C42] bg-orange-50'
@@ -304,7 +347,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               <p className={`font-semibold text-sm ${paymentMethod === 'wallet' ? 'text-[#FF8C42]' : 'text-gray-900'}`}>
                 Wallet
               </p>
-              <p className="text-xs text-gray-500 mt-1">₹{walletBalance}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {loadingWallet ? '...' : `₹${walletBalance.toLocaleString()}`}
+              </p>
             </button>
           </div>
         </div>
@@ -566,7 +611,13 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <div className="text-center mb-6">
                 <p className="text-sm text-gray-500 mb-1">Current Balance</p>
-                <p className="text-4xl font-bold text-purple-600">₹{walletBalance.toLocaleString()}</p>
+                {loadingWallet ? (
+                  <div className="flex items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+                  </div>
+                ) : (
+                  <p className="text-4xl font-bold text-purple-600">₹{walletBalance.toLocaleString()}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -593,21 +644,54 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               </div>
 
               <div className="mt-6 pt-6 border-t border-gray-200">
-                <h4 className="font-medium text-gray-900 mb-3">Recent Transactions</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-600">Booking #1234</span>
-                    <span className="text-green-600 font-medium">+₹500</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-600">Withdrawal</span>
-                    <span className="text-red-600 font-medium">-₹2,000</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-600">Booking #1233</span>
-                    <span className="text-green-600 font-medium">+₹750</span>
-                  </div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900">Recent Transactions</h4>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadWalletData}
+                    disabled={loadingWallet}
+                    className="text-xs"
+                  >
+                    {loadingWallet ? (
+                      <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                    ) : null}
+                    Refresh
+                  </Button>
                 </div>
+                {loadingWallet ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                  </div>
+                ) : walletTransactions.length > 0 ? (
+                  <div className="space-y-2 text-sm">
+                    {walletTransactions.slice(0, 10).map((txn: any, index: number) => {
+                      const isCredit = txn.transaction_type === 'credit' || txn.amount > 0;
+                      const amount = Math.abs(parseFloat(txn.amount || 0));
+                      const description = txn.description || txn.reference_type || 'Transaction';
+                      
+                      return (
+                        <div key={txn.id || index} className="flex justify-between py-2 border-b border-gray-100 last:border-b-0">
+                          <div className="flex-1">
+                            <span className="text-gray-600">{description}</span>
+                            {txn.created_at && (
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {new Date(txn.created_at).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`font-medium ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
+                            {isCredit ? '+' : '-'}₹{amount.toLocaleString()}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    No transactions yet
+                  </div>
+                )}
               </div>
             </div>
           </div>

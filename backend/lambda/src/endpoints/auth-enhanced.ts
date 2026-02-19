@@ -242,6 +242,66 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     const { phone, otp } = validationResult.data;
+    
+    // Extract referralCode from body (optional, not in schema)
+    // Try multiple possible locations in the request
+    let referralCode = (body as any)?.referralCode 
+                    || (body as any)?.pendingReferralCode
+                    || undefined;
+    
+    // Also try parsing from raw event body if needed
+    if (!referralCode && context.event?.body) {
+      try {
+        const rawBody = typeof context.event.body === 'string' 
+          ? JSON.parse(context.event.body) 
+          : context.event.body;
+        referralCode = rawBody?.referralCode || rawBody?.pendingReferralCode || undefined;
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+    
+    // CRITICAL FIX: Also check the parsed body from parseBody method
+    if (!referralCode) {
+      try {
+        const parsedBody = this.parseBody(context.event);
+        referralCode = (parsedBody as any)?.referralCode 
+                    || (parsedBody as any)?.pendingReferralCode
+                    || undefined;
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+    
+    // Enhanced logging for referral code
+    console.log(`[AUTH] 📝 Referral code extraction check:`);
+    console.log(`[AUTH] 📝 Body type: ${typeof body}, Body keys: ${body ? Object.keys(body).join(', ') : 'null'}`);
+    console.log(`[AUTH] 📝 Event body type: ${typeof context.event?.body}`);
+    console.log(`[AUTH] 📝 Extracted referralCode: ${referralCode || 'NOT FOUND'}`);
+    if (referralCode) {
+      console.log(`[AUTH] ✅ Referral code found: ${referralCode}`);
+    } else {
+      console.log(`[AUTH] ⚠️ No referral code found in request`);
+      if (body) {
+        console.log(`[AUTH] 📝 Full body: ${JSON.stringify(body).substring(0, 500)}`);
+        // Check all possible referral code fields
+        console.log(`[AUTH] 📝 body.referralCode: ${(body as any)?.referralCode || 'NOT FOUND'}`);
+        console.log(`[AUTH] 📝 body.pendingReferralCode: ${(body as any)?.pendingReferralCode || 'NOT FOUND'}`);
+      }
+      if (context.event?.body) {
+        const bodyStr = typeof context.event.body === 'string' ? context.event.body : JSON.stringify(context.event.body);
+        console.log(`[AUTH] 📝 Event body (first 500 chars): ${bodyStr.substring(0, 500)}`);
+        // Try to parse and check
+        try {
+          const parsed = typeof context.event.body === 'string' ? JSON.parse(context.event.body) : context.event.body;
+          console.log(`[AUTH] 📝 Parsed event body keys: ${Object.keys(parsed).join(', ')}`);
+          console.log(`[AUTH] 📝 Parsed event body.referralCode: ${parsed?.referralCode || 'NOT FOUND'}`);
+          console.log(`[AUTH] 📝 Parsed event body.pendingReferralCode: ${parsed?.pendingReferralCode || 'NOT FOUND'}`);
+        } catch (e) {
+          console.log(`[AUTH] 📝 Could not parse event body for referral code check`);
+        }
+      }
+    }
 
     // Check if UAT mode is enabled - ONLY check UAT_MODE env variable
     // This ensures PROD (UAT_MODE=false) never accepts fixed OTP 123456
@@ -376,6 +436,17 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           // Create customer with proper state
           isNewCustomer = true;
           
+          // Ensure loyalty_action_rules table and referral_signup rule exist (before creating customer)
+          if (referralCode) {
+            try {
+              const { loyaltyRulesInitService } = await import('../lib/services/loyalty-rules-init-service');
+              await loyaltyRulesInitService.ensureReferralSignupRule();
+            } catch (initError: any) {
+              console.warn('[AUTH] Could not initialize loyalty rules:', initError.message);
+              // Continue - rule initialization failure shouldn't block signup
+            }
+          }
+          
           // Create customer identity first (with timeout)
           let identityId: string | undefined;
           try {
@@ -435,6 +506,47 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             } catch (linkError: any) {
               console.warn('[AUTH] Could not link customer identity:', linkError.message);
               // Continue - linking is not critical
+            }
+          }
+
+          // Process referral code if provided (before signup bonus)
+          console.log(`[AUTH] 🔍 Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith('temp_')}`);
+          
+          if (referralCode && userId && !userId.startsWith('temp_')) {
+            try {
+              const { processReferralSignup } = await import('../lib/services/referral-service');
+              // Normalize referral code (trim and uppercase)
+              const normalizedCode = String(referralCode).trim().toUpperCase();
+              console.log(`[AUTH] 🎁 Processing referral code: ${normalizedCode} for customer: ${userId}`);
+              console.log(`[AUTH] 🎁 Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
+              
+              const startTime = Date.now();
+              const referralResult = await processReferralSignup({
+                customerId: userId,
+                referralCode: normalizedCode,
+              });
+              const duration = Date.now() - startTime;
+              
+              console.log(`[AUTH] 🎁 processReferralSignup completed in ${duration}ms`);
+              console.log(`[AUTH] 🎁 Result: ${JSON.stringify(referralResult)}`);
+              
+              if (referralResult.success) {
+                console.log(`[AUTH] ✅ Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
+              } else {
+                console.warn(`[AUTH] ⚠️ Referral code processing failed: ${referralResult.error}`);
+                console.warn(`[AUTH] ⚠️ Full error details: ${JSON.stringify(referralResult)}`);
+              }
+            } catch (refError: any) {
+              console.error('[AUTH] ❌ Error processing referral code during signup:', refError);
+              console.error('[AUTH] ❌ Error message:', refError.message);
+              console.error('[AUTH] ❌ Error stack:', refError.stack);
+              // Don't fail signup if referral processing fails
+            }
+          } else {
+            if (referralCode) {
+              console.warn(`[AUTH] ⚠️ Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith('temp_')}`);
+            } else {
+              console.log(`[AUTH] ℹ️ No referral code provided in request`);
             }
           }
 
@@ -567,6 +679,80 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             created_at: new Date().toISOString(),
           };
           console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
+          
+          // Process vendor referral code if provided (for new vendors only)
+          if (referralCode && normalizedPhone) {
+            try {
+              console.log(`[AUTH] Processing vendor referral code: ${referralCode} for phone: ${normalizedPhone}`);
+              
+              // Find or create vendor referral record
+              const normalizedCode = referralCode.trim().toUpperCase();
+              let referralRecords = await query(
+                `SELECT * FROM vendor_referrals 
+                 WHERE referral_code = $1 AND referred_phone = $2 
+                 ORDER BY created_at DESC LIMIT 1`,
+                [normalizedCode, normalizedPhone]
+              );
+
+              let referralRecord = referralRecords.rows[0];
+
+              // If no record exists, try to find by code only (referrer might have sent code to this phone)
+              if (!referralRecord) {
+                const codeRecords = await query(
+                  `SELECT * FROM vendor_referrals 
+                   WHERE referral_code = $1 
+                   ORDER BY created_at DESC LIMIT 1`,
+                  [normalizedCode]
+                );
+                
+                if (codeRecords.rows.length > 0) {
+                  // Create new referral record for this phone
+                  const newReferral = await insert('vendor_referrals', {
+                    referrer_vendor_id: codeRecords.rows[0].referrer_vendor_id,
+                    referred_phone: normalizedPhone,
+                    referral_code: normalizedCode,
+                    status: 'pending',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  });
+                  referralRecord = newReferral[0];
+                  console.log(`[AUTH] Created new vendor referral record for phone: ${normalizedPhone}`);
+                }
+              }
+
+              if (referralRecord) {
+                // Store referral metadata in vendor_identity metadata (similar to customer flow)
+                // We'll process the referral when vendor account is actually created
+                console.log(`[AUTH] ✅ Vendor referral record found/created: ${referralRecord.id}`);
+                console.log(`[AUTH] Referrer vendor ID: ${referralRecord.referrer_vendor_id}`);
+                
+                // Store in vendor_identity metadata if identity exists
+                if (vendorIdentity.length > 0) {
+                  const identity = vendorIdentity[0];
+                  const metadata = identity.metadata || {};
+                  metadata.referral_code_id = referralRecord.id;
+                  metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
+                  metadata.referral_code = normalizedCode;
+                  
+                  try {
+                    await update('vendor_identity', { id: identity.id }, {
+                      metadata: metadata,
+                      updated_at: new Date().toISOString(),
+                    });
+                    console.log(`[AUTH] ✅ Stored vendor referral metadata in vendor_identity`);
+                  } catch (metaError: any) {
+                    console.error(`[AUTH] Error storing referral metadata: ${metaError.message}`);
+                  }
+                }
+              } else {
+                console.log(`[AUTH] ⚠️ No vendor referral record found for code: ${normalizedCode}`);
+              }
+            } catch (refError: any) {
+              console.error('[AUTH] ❌ Error processing vendor referral code:', refError.message);
+              console.error('[AUTH] Error stack:', refError.stack);
+              // Don't fail vendor signup if referral processing fails
+            }
+          }
         }
       } else if (role === 'admin') {
         // Admin login via OTP (alternative to email/password)
@@ -823,6 +1009,10 @@ async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): P
         )
       ]);
     }
+    // Log referral code if present for debugging
+    if (body?.referralCode || body?.pendingReferralCode) {
+      console.log(`[AUTH] ✅ Referral code found in parsed body: ${body.referralCode || body.pendingReferralCode}`);
+    }
   } catch (error: any) {
     console.warn('[AUTH] Error parsing request body, using empty object:', error?.message);
     body = {};
@@ -852,9 +1042,16 @@ async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): P
   }
 
   const url = new URL(c.req.url);
+  // Ensure body is stringified for API Gateway event format
+  const bodyString = body && Object.keys(body).length > 0 ? JSON.stringify(body) : undefined;
+  if (body?.referralCode || body?.pendingReferralCode) {
+    console.log(`[AUTH] ✅ Body stringified with referral code: ${bodyString?.substring(0, 200)}`);
+  }
   return {
     rawPath: url.pathname,
     rawQueryString: url.search.substring(1), // Remove leading '?'
+    body: bodyString,
+    isBase64Encoded: false,
     requestContext: {
       http: {
         method: c.req.method || 'POST',
@@ -863,8 +1060,6 @@ async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): P
       requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`,
     },
     headers: headers,
-    body: body && Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-    isBase64Encoded: false,
   };
 }
 

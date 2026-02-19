@@ -546,8 +546,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
   // Service style: tele = video call; at_home/home = start travel (use both serviceType and serviceStyle from API)
   const rawStyle = (booking?.serviceType || booking?.serviceStyle || booking?.service_style || '').toString().toLowerCase();
-  const isTeleStyle = ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
-    (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video')));
+  
+  // ✅ FIX: Enhanced tele detection - check service name and service object for tele consultations
+  // This handles cases where service_type is "at_center" but the service itself is a tele consultation
+  const serviceName = (booking?.serviceName || booking?.service?.name || '').toString().toLowerCase();
+  const serviceStyleFromService = (booking?.service?.service_style || booking?.service?.serviceStyle || '').toString().toLowerCase();
+  
+  // Check if it's a tele service based on:
+  // 1. serviceType/serviceStyle (primary check)
+  // 2. Service name contains "tele" or "video" (for center-based tele consultations)
+  // 3. Service object's service_style field
+  const isTeleStyle = 
+    ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
+    (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video'))) ||
+    ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(serviceStyleFromService) ||
+    (serviceStyleFromService && (serviceStyleFromService.includes('tele') || serviceStyleFromService.includes('video'))) ||
+    (serviceName && (serviceName.includes('tele') || serviceName.includes('video') || serviceName.includes('consultation')));
+  
   const isHomeStyle = ['at_home', 'home', 'home_visit'].includes(rawStyle);
 
   // Helper to format booking time

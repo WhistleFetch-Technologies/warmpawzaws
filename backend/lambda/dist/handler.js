@@ -25944,7 +25944,7 @@ var require_config = __commonJS({
        *     the configuration object. Defaults to `false`.
        *   @see constructor
        */
-      update: function update18(options, allowUnknownKeys) {
+      update: function update19(options, allowUnknownKeys) {
         allowUnknownKeys = allowUnknownKeys || false;
         options = this.extractCredentials(options);
         AWS.util.each.call(this, options, function(key, value) {
@@ -31532,7 +31532,7 @@ var require_util = __commonJS({
           }
         }
       },
-      update: function update18(obj1, obj2) {
+      update: function update19(obj1, obj2) {
         util3.each(obj2, function iterator(key, item) {
           obj1[key] = item;
         });
@@ -44407,12 +44407,12 @@ var require_channel_credentials = __commonJS({
           this.secureContextWatchers = [];
         }
       }
-      handleCaCertificateUpdate(update18) {
-        this.latestCaUpdate = update18;
+      handleCaCertificateUpdate(update19) {
+        this.latestCaUpdate = update19;
         this.maybeUpdateWatchers();
       }
-      handleIdentityCertitificateUpdate(update18) {
-        this.latestIdentityUpdate = update18;
+      handleIdentityCertitificateUpdate(update19) {
+        this.latestIdentityUpdate = update19;
         this.maybeUpdateWatchers();
       }
       hasReceivedUpdates() {
@@ -62528,12 +62528,12 @@ var require_server_credentials = __commonJS({
         const secureContextOptions = this.calculateSecureContextOptions();
         this.updateSecureContextOptions(secureContextOptions);
       }
-      handleCaCertificateUpdate(update18) {
-        this.latestCaUpdate = update18;
+      handleCaCertificateUpdate(update19) {
+        this.latestCaUpdate = update19;
         this.finalizeUpdate();
       }
-      handleIdentityCertitificateUpdate(update18) {
-        this.latestIdentityUpdate = update18;
+      handleIdentityCertitificateUpdate(update19) {
+        this.latestIdentityUpdate = update19;
         this.finalizeUpdate();
       }
     };
@@ -116898,6 +116898,319 @@ var init_customer_state = __esm({
   }
 });
 
+// src/lib/services/loyalty-rules-init-service.ts
+var loyalty_rules_init_service_exports = {};
+__export(loyalty_rules_init_service_exports, {
+  LoyaltyRulesInitService: () => LoyaltyRulesInitService,
+  loyaltyRulesInitService: () => loyaltyRulesInitService
+});
+var LoyaltyRulesInitService, loyaltyRulesInitService;
+var init_loyalty_rules_init_service = __esm({
+  "src/lib/services/loyalty-rules-init-service.ts"() {
+    "use strict";
+    init_rds_connection();
+    LoyaltyRulesInitService = class _LoyaltyRulesInitService {
+      static {
+        this.tableExistsCache = null;
+      }
+      /**
+       * Check if loyalty_action_rules table exists
+       */
+      async checkTableExists() {
+        if (_LoyaltyRulesInitService.tableExistsCache !== null) {
+          return _LoyaltyRulesInitService.tableExistsCache;
+        }
+        try {
+          const result = await query(
+            `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'loyalty_action_rules'
+        ) as exists`
+          );
+          const exists = result.rows[0]?.exists === true;
+          _LoyaltyRulesInitService.tableExistsCache = exists;
+          return exists;
+        } catch (error) {
+          console.error("[LOYALTY_INIT] Error checking table existence:", error);
+          _LoyaltyRulesInitService.tableExistsCache = false;
+          return false;
+        }
+      }
+      /**
+       * Create loyalty_action_rules table if it doesn't exist
+       */
+      async ensureTableExists() {
+        const exists = await this.checkTableExists();
+        if (exists) {
+          return true;
+        }
+        try {
+          console.log("[LOYALTY_INIT] Creating loyalty_action_rules table...");
+          await query(`
+        CREATE TABLE IF NOT EXISTS loyalty_action_rules (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          action_name TEXT NOT NULL UNIQUE,
+          action_category TEXT NOT NULL CHECK (action_category IN ('loyalty', 'referral_rewards')),
+          user_type TEXT NOT NULL CHECK (user_type IN ('customer', 'vendor', 'both')),
+          
+          -- Point Calculation
+          points_type TEXT NOT NULL CHECK (points_type IN ('fixed', 'percentage', 'per_amount')),
+          points_value NUMERIC(10, 2) NOT NULL,
+          base_amount NUMERIC(10, 2),
+          min_amount NUMERIC(10, 2),
+          max_points_per_transaction INTEGER,
+          
+          -- Frequency/Limits
+          frequency_type TEXT CHECK (frequency_type IN ('one_time', 'recurring', 'unlimited', 'monthly_limit', 'yearly_limit')),
+          frequency_limit INTEGER,
+          frequency_period TEXT CHECK (frequency_period IN ('day', 'week', 'month', 'year')),
+          
+          -- Conditions
+          conditions JSONB DEFAULT '{}'::jsonb,
+          multiplier_conditions JSONB DEFAULT '{}'::jsonb,
+          
+          -- Status
+          is_active BOOLEAN DEFAULT true,
+          priority INTEGER DEFAULT 100,
+          
+          -- Metadata
+          description TEXT,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_action_name ON loyalty_action_rules(action_name)
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_category ON loyalty_action_rules(action_category)
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_user_type ON loyalty_action_rules(user_type)
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_active ON loyalty_action_rules(is_active) WHERE is_active = true
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_priority ON loyalty_action_rules(priority DESC) WHERE is_active = true
+      `);
+          _LoyaltyRulesInitService.tableExistsCache = true;
+          console.log("[LOYALTY_INIT] \u2705 loyalty_action_rules table created successfully");
+          return true;
+        } catch (error) {
+          console.error("[LOYALTY_INIT] \u274C Error creating table:", error);
+          return false;
+        }
+      }
+      /**
+       * Check if a specific rule exists
+       */
+      async checkRuleExists(actionName) {
+        try {
+          const rules = await select("loyalty_action_rules", { action_name: actionName });
+          return rules.length > 0;
+        } catch (error) {
+          return false;
+        }
+      }
+      /**
+       * Ensure referral_signup rule exists with 500 points
+       */
+      async ensureReferralSignupRule() {
+        try {
+          const tableExists2 = await this.ensureTableExists();
+          if (!tableExists2) {
+            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
+            return false;
+          }
+          const ruleExists = await this.checkRuleExists("referral_signup");
+          if (ruleExists) {
+            try {
+              await query(
+                `UPDATE loyalty_action_rules 
+             SET points_value = 500,
+                 action_category = 'referral_rewards',
+                 user_type = 'customer',
+                 points_type = 'fixed',
+                 frequency_type = 'one_time',
+                 description = 'Sign up with referral code',
+                 is_active = true,
+                 priority = 50,
+                 updated_at = NOW()
+             WHERE action_name = 'referral_signup'`
+              );
+              console.log("[LOYALTY_INIT] \u2705 Updated referral_signup rule to 500 points");
+            } catch (updateError) {
+              console.error("[LOYALTY_INIT] Error updating referral_signup rule:", updateError);
+            }
+            return true;
+          }
+          console.log("[LOYALTY_INIT] Creating referral_signup rule with 500 points...");
+          await insert("loyalty_action_rules", {
+            action_name: "referral_signup",
+            action_category: "referral_rewards",
+            user_type: "customer",
+            points_type: "fixed",
+            points_value: 500,
+            base_amount: null,
+            frequency_type: "one_time",
+            description: "Sign up with referral code",
+            is_active: true,
+            priority: 50,
+            notes: "Awarded to new users who sign up with a referral code"
+          });
+          console.log("[LOYALTY_INIT] \u2705 Created referral_signup rule with 500 points");
+          return true;
+        } catch (error) {
+          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+            console.log("[LOYALTY_INIT] referral_signup rule already exists");
+            return true;
+          }
+          console.error("[LOYALTY_INIT] \u274C Error ensuring referral_signup rule:", error);
+          return false;
+        }
+      }
+      /**
+       * Ensure refer_friend rule exists (for referrer rewards)
+       */
+      async ensureReferFriendRule() {
+        try {
+          const tableExists2 = await this.ensureTableExists();
+          if (!tableExists2) {
+            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
+            return false;
+          }
+          const ruleExists = await this.checkRuleExists("refer_friend");
+          if (ruleExists) {
+            try {
+              await query(
+                `UPDATE loyalty_action_rules 
+             SET points_value = 500,
+                 action_category = 'referral_rewards',
+                 user_type = 'customer',
+                 points_type = 'fixed',
+                 frequency_type = 'recurring',
+                 description = 'Refer a friend who joins',
+                 is_active = true,
+                 priority = 50,
+                 updated_at = NOW()
+             WHERE action_name = 'refer_friend'`
+              );
+              console.log("[LOYALTY_INIT] \u2705 Updated refer_friend rule to 500 points");
+            } catch (updateError) {
+              console.error("[LOYALTY_INIT] Error updating refer_friend rule:", updateError);
+            }
+            return true;
+          }
+          console.log("[LOYALTY_INIT] Creating refer_friend rule with 500 points...");
+          await insert("loyalty_action_rules", {
+            action_name: "refer_friend",
+            action_category: "referral_rewards",
+            user_type: "customer",
+            points_type: "fixed",
+            points_value: 500,
+            base_amount: null,
+            frequency_type: "recurring",
+            description: "Refer a friend who joins",
+            is_active: true,
+            priority: 50,
+            notes: "Awarded when someone signs up using your referral code"
+          });
+          console.log("[LOYALTY_INIT] \u2705 Created refer_friend rule");
+          return true;
+        } catch (error) {
+          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+            console.log("[LOYALTY_INIT] refer_friend rule already exists");
+            return true;
+          }
+          console.error("[LOYALTY_INIT] \u274C Error ensuring refer_friend rule:", error);
+          return false;
+        }
+      }
+      /**
+       * Ensure vendor_refer_friend rule exists
+       */
+      async ensureVendorReferFriendRule() {
+        try {
+          const tableExists2 = await this.ensureTableExists();
+          if (!tableExists2) {
+            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
+            return false;
+          }
+          const ruleExists = await this.checkRuleExists("vendor_refer_friend");
+          if (ruleExists) {
+            try {
+              await query(
+                `UPDATE loyalty_action_rules 
+             SET points_value = 500,
+                 action_category = 'referral_rewards',
+                 user_type = 'vendor',
+                 points_type = 'fixed',
+                 frequency_type = 'recurring',
+                 description = 'Refer a friend who joins',
+                 is_active = true,
+                 priority = 50,
+                 updated_at = NOW()
+             WHERE action_name = 'vendor_refer_friend'`
+              );
+              console.log("[LOYALTY_INIT] \u2705 Updated vendor_refer_friend rule to 500 points");
+            } catch (updateError) {
+              console.error("[LOYALTY_INIT] Error updating vendor_refer_friend rule:", updateError);
+            }
+            return true;
+          }
+          console.log("[LOYALTY_INIT] Creating vendor_refer_friend rule with 500 points...");
+          await insert("loyalty_action_rules", {
+            action_name: "vendor_refer_friend",
+            action_category: "referral_rewards",
+            user_type: "vendor",
+            points_type: "fixed",
+            points_value: 500,
+            base_amount: null,
+            frequency_type: "recurring",
+            description: "Refer a friend who joins",
+            is_active: true,
+            priority: 50,
+            notes: "Friend must Onboard 1 End User and complete 1 booking"
+          });
+          console.log("[LOYALTY_INIT] \u2705 Created vendor_refer_friend rule with 500 points");
+          return true;
+        } catch (error) {
+          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+            console.log("[LOYALTY_INIT] vendor_refer_friend rule already exists");
+            return true;
+          }
+          console.error("[LOYALTY_INIT] \u274C Error ensuring vendor_refer_friend rule:", error);
+          return false;
+        }
+      }
+      /**
+       * Initialize all required referral rules
+       */
+      async initializeReferralRules() {
+        const referralSignup = await this.ensureReferralSignupRule();
+        const referFriend = await this.ensureReferFriendRule();
+        return {
+          referralSignup,
+          referFriend
+        };
+      }
+      /**
+       * Initialize all vendor referral rules
+       */
+      async initializeVendorReferralRules() {
+        const vendorReferFriend = await this.ensureVendorReferFriendRule();
+        return {
+          vendorReferFriend
+        };
+      }
+    };
+    loyaltyRulesInitService = new LoyaltyRulesInitService();
+  }
+});
+
 // src/lib/services/loyalty-segmentation-service.ts
 var loyalty_segmentation_service_exports = {};
 __export(loyalty_segmentation_service_exports, {
@@ -117398,14 +117711,26 @@ var init_loyalty_points_service = __esm({
            WHERE customer_id = $2`,
               [finalPoints, userId]
             );
-            const walletAmount = finalPoints;
+            const conversionRate = 100;
+            const walletAmount = Math.round(finalPoints / conversionRate * 100) / 100;
             let wallets = await select("customer_wallets", { customer_id: userId });
             if (wallets.length === 0) {
-              await insert("customer_wallets", {
-                customer_id: userId,
-                balance: 0,
-                currency: "INR"
-              });
+              try {
+                await insert("customer_wallets", {
+                  customer_id: userId,
+                  balance: 0,
+                  currency: "INR"
+                });
+              } catch (error) {
+                if (error.message?.includes("currency")) {
+                  await insert("customer_wallets", {
+                    customer_id: userId,
+                    balance: 0
+                  });
+                } else {
+                  throw error;
+                }
+              }
               wallets = await select("customer_wallets", { customer_id: userId });
             }
             const wallet = wallets[0];
@@ -117416,15 +117741,33 @@ var init_loyalty_points_service = __esm({
            WHERE id = $2`,
               [walletAmount, wallet.id]
             );
-            await insert("wallet_transactions", {
-              wallet_id: wallet.id,
-              customer_id: userId,
-              transaction_type: "credit",
-              amount: walletAmount,
-              source: "loyalty_points",
-              description: `Loyalty points converted: ${finalPoints} points = \u20B9${walletAmount}`,
-              reference_id: null
-            });
+            const balanceAfter = await client2.query(
+              `SELECT balance FROM customer_wallets WHERE id = $1`,
+              [wallet.id]
+            );
+            const newBalance = parseFloat(balanceAfter.rows[0]?.balance || "0");
+            try {
+              await insert("wallet_transactions", {
+                customer_id: userId,
+                transaction_type: "credit",
+                amount: walletAmount,
+                balance_after: newBalance,
+                description: `Loyalty points converted: ${finalPoints} points = \u20B9${walletAmount.toFixed(2)} (100 points = \u20B91)`,
+                source: "loyalty_points"
+              });
+            } catch (error) {
+              if (error.message?.includes("source") || error.message?.includes("column")) {
+                await insert("wallet_transactions", {
+                  customer_id: userId,
+                  transaction_type: "credit",
+                  amount: walletAmount,
+                  balance_after: newBalance,
+                  description: `Loyalty points converted: ${finalPoints} points = \u20B9${walletAmount.toFixed(2)} (100 points = \u20B91)`
+                });
+              } else {
+                throw error;
+              }
+            }
             console.log(`\u2705 [LOYALTY] Awarded ${finalPoints} points (\u20B9${walletAmount} to wallet) for action: ${params.actionName}`);
             return {
               points: finalPoints,
@@ -117822,6 +118165,301 @@ var init_loyalty_points_service = __esm({
       }
     };
     loyaltyPointsService = new LoyaltyPointsService();
+  }
+});
+
+// src/lib/services/referral-service.ts
+var referral_service_exports = {};
+__export(referral_service_exports, {
+  processReferralSignup: () => processReferralSignup,
+  processVendorReferralSignup: () => processVendorReferralSignup
+});
+async function processReferralSignup(params) {
+  const { customerId, referralCode } = params;
+  try {
+    const rulesInit = await loyaltyRulesInitService.initializeReferralRules();
+    if (!rulesInit.referralSignup || !rulesInit.referFriend) {
+      console.error(`[REFERRAL] \u274C CRITICAL: Loyalty rules not initialized! referralSignup=${rulesInit.referralSignup}, referFriend=${rulesInit.referFriend}`);
+      return {
+        success: false,
+        error: "Loyalty rules not initialized. Please contact support."
+      };
+    }
+    console.log(`[REFERRAL] \u2705 Loyalty rules verified: referralSignup=${rulesInit.referralSignup}, referFriend=${rulesInit.referFriend}`);
+    const normalizedCode = referralCode.trim().toUpperCase();
+    console.log(`[REFERRAL] Looking up referral code: ${normalizedCode} (original: ${referralCode})`);
+    let referrals = await select("referrals", { referral_code: normalizedCode });
+    if (referrals.length === 0) {
+      const caseInsensitiveResult = await query(
+        `SELECT * FROM referrals WHERE UPPER(referral_code) = $1 LIMIT 1`,
+        [normalizedCode]
+      );
+      if (caseInsensitiveResult.rows.length === 0) {
+        console.log(`[REFERRAL] \u274C Invalid referral code: ${normalizedCode}`);
+        return {
+          success: false,
+          error: "Invalid referral code"
+        };
+      } else {
+        console.log(`[REFERRAL] \u26A0\uFE0F Found referral code with case-insensitive lookup (should normalize in database)`);
+        referrals = caseInsensitiveResult.rows;
+      }
+    }
+    const referral = referrals[0];
+    if (referral.referrer_id === customerId) {
+      console.log(`[REFERRAL] Customer ${customerId} tried to use their own referral code`);
+      return {
+        success: false,
+        error: "Cannot use your own referral code"
+      };
+    }
+    const existing = await query(
+      "SELECT * FROM referrals WHERE referred_id = $1",
+      [customerId]
+    );
+    if (existing.rows.length > 0) {
+      console.log(`[REFERRAL] Customer ${customerId} already used a referral code`);
+      return {
+        success: false,
+        error: "Referral code already used"
+      };
+    }
+    if (referral.referred_id) {
+      console.log(`[REFERRAL] Referral code ${referralCode} was already used`);
+      return {
+        success: false,
+        error: "This referral code has already been used"
+      };
+    }
+    let referredPoints = 0;
+    try {
+      const referredResult = await loyaltyPointsService.awardPoints({
+        customerId,
+        actionName: "referral_signup",
+        referenceType: "referral",
+        referenceId: referral.id,
+        description: "Signup bonus via referral code"
+      });
+      referredPoints = referredResult.points;
+      console.log(`[REFERRAL] \u2705 Awarded ${referredPoints} points to referred user ${customerId}`);
+    } catch (pointsError) {
+      console.error(`[REFERRAL] Error awarding points to referred user:`, pointsError);
+    }
+    let referrerPoints = 0;
+    let referrerPointsAttempts = 0;
+    const maxRetries = 2;
+    while (referrerPoints === 0 && referrerPointsAttempts < maxRetries) {
+      referrerPointsAttempts++;
+      try {
+        console.log(`[REFERRAL] Attempting to award referrer points (attempt ${referrerPointsAttempts}/${maxRetries})...`);
+        const referrerResult = await loyaltyPointsService.awardPoints({
+          customerId: referral.referrer_id,
+          actionName: "refer_friend",
+          referenceType: "referral",
+          referenceId: referral.id,
+          description: "Referral reward for friend signup"
+        });
+        referrerPoints = referrerResult.points;
+        if (referrerPoints > 0) {
+          console.log(`[REFERRAL] \u2705 Awarded ${referrerPoints} points to referrer ${referral.referrer_id}`);
+          break;
+        } else {
+          console.warn(`[REFERRAL] \u26A0\uFE0F Points awarding returned 0 points. Rule might not exist or frequency limit reached.`);
+          if (referrerPointsAttempts < maxRetries) {
+            console.log(`[REFERRAL] Retrying in 1 second...`);
+            await new Promise((resolve) => setTimeout(resolve, 1e3));
+          }
+        }
+      } catch (pointsError) {
+        console.error(`[REFERRAL] \u274C Error awarding points to referrer (attempt ${referrerPointsAttempts}):`, pointsError);
+        console.error(`[REFERRAL] Error details:`, {
+          message: pointsError.message,
+          stack: pointsError.stack,
+          referrer_id: referral.referrer_id,
+          referral_id: referral.id
+        });
+        if (referrerPointsAttempts < maxRetries) {
+          console.log(`[REFERRAL] Retrying in 1 second...`);
+          await new Promise((resolve) => setTimeout(resolve, 1e3));
+        }
+      }
+    }
+    if (referrerPoints === 0) {
+      console.error(`[REFERRAL] \u274C CRITICAL: Failed to award referrer points after ${maxRetries} attempts!`);
+    }
+    const updateResult = await query(
+      `UPDATE referrals
+       SET referred_id = $1,
+           referred_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [customerId, referral.id]
+    );
+    if (updateResult.rows.length === 0) {
+      console.error(`[REFERRAL] \u26A0\uFE0F Failed to update referral record ${referral.id} with referred_id ${customerId}`);
+    } else {
+      console.log(`[REFERRAL] \u2705 Updated referral record ${referral.id} with referred_id ${customerId}`);
+    }
+    if (referrerPoints === 0) {
+      console.error(`[REFERRAL] \u274C CRITICAL: Referrer points were not awarded! referrer_id=${referral.referrer_id}, referral_id=${referral.id}`);
+      return {
+        success: false,
+        error: "Failed to award points to referrer. Please check loyalty rules and try again.",
+        referredPoints,
+        referrerPoints: 0
+      };
+    }
+    if (referredPoints === 0) {
+      console.warn(`[REFERRAL] \u26A0\uFE0F WARNING: Referred user points were not awarded, but referrer points succeeded`);
+    }
+    console.log(`[REFERRAL] \u2705 Successfully processed referral signup for customer ${customerId} with code ${referralCode}`);
+    console.log(`[REFERRAL] Points awarded - Referred: ${referredPoints}pts, Referrer: ${referrerPoints}pts`);
+    return {
+      success: true,
+      referredPoints,
+      referrerPoints
+    };
+  } catch (error) {
+    console.error(`[REFERRAL] \u274C Error processing referral signup:`, error);
+    return {
+      success: false,
+      error: error.message || "Failed to process referral code"
+    };
+  }
+}
+async function processVendorReferralSignup(params) {
+  const { vendorId, referralCode, phone } = params;
+  try {
+    const { loyaltyRulesInitService: loyaltyRulesInitService2 } = await Promise.resolve().then(() => (init_loyalty_rules_init_service(), loyalty_rules_init_service_exports));
+    await loyaltyRulesInitService2.initializeVendorReferralRules();
+    console.log(`[VENDOR-REFERRAL] Processing vendor referral: vendorId=${vendorId}, code=${referralCode}, phone=${phone}`);
+    const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+    const normalizedCode = referralCode.trim().toUpperCase();
+    let referralRecords = await query(
+      `SELECT * FROM vendor_referrals 
+       WHERE referral_code = $1 AND referred_phone = $2 
+       ORDER BY created_at DESC LIMIT 1`,
+      [normalizedCode, normalizedPhone]
+    );
+    if (referralRecords.rows.length === 0) {
+      const codeRecords = await query(
+        `SELECT * FROM vendor_referrals 
+         WHERE referral_code = $1 
+         AND referrer_vendor_id IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [normalizedCode]
+      );
+      if (codeRecords.rows.length > 0) {
+        const newReferral = await insert("vendor_referrals", {
+          referrer_vendor_id: codeRecords.rows[0].referrer_vendor_id,
+          referred_phone: normalizedPhone,
+          referral_code: normalizedCode,
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        referralRecords = { rows: newReferral };
+        console.log(`[VENDOR-REFERRAL] Created new referral record for phone: ${normalizedPhone}`);
+      }
+    }
+    if (referralRecords.rows.length === 0) {
+      console.log(`[VENDOR-REFERRAL] No referral record found for code: ${normalizedCode}, phone: ${normalizedPhone}`);
+      return {
+        success: false,
+        error: "Invalid referral code"
+      };
+    }
+    const referralRecord = referralRecords.rows[0];
+    if (referralRecord.referrer_vendor_id === vendorId) {
+      console.log(`[VENDOR-REFERRAL] Vendor ${vendorId} tried to use their own referral code`);
+      return {
+        success: false,
+        error: "Cannot use your own referral code"
+      };
+    }
+    if (referralRecord.referred_vendor_id === vendorId && (referralRecord.status === "applied" || referralRecord.status === "approved")) {
+      const existingPoints = await query(
+        `SELECT COUNT(*) as count FROM loyalty_transactions 
+         WHERE customer_id = $1 
+         AND reference_type = 'vendor_referral' 
+         AND reference_id = $2`,
+        [referralRecord.referrer_vendor_id, referralRecord.id]
+      );
+      if (existingPoints.rows[0]?.count > 0) {
+        console.log(`[VENDOR-REFERRAL] Referral already processed and points already awarded for vendor ${vendorId}`);
+        return {
+          success: false,
+          error: "This referral code has already been used"
+        };
+      } else {
+        console.log(`[VENDOR-REFERRAL] Referral is approved but points not awarded yet. Awarding now...`);
+      }
+    }
+    const updateResult = await query(
+      `UPDATE vendor_referrals
+       SET referred_vendor_id = $1,
+           status = CASE 
+             WHEN status = 'pending' THEN 'applied'
+             ELSE status
+           END,
+           applied_at = COALESCE(applied_at, NOW()),
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [vendorId, referralRecord.id]
+    );
+    if (updateResult.rows.length > 0) {
+      console.log(`[VENDOR-REFERRAL] \u2705 Updated referral ${referralRecord.id} with vendor_id ${vendorId}`);
+      console.log(`[VENDOR-REFERRAL] Referral status: ${updateResult.rows[0].status}, vendor_id: ${updateResult.rows[0].referred_vendor_id}`);
+    } else {
+      console.error(`[VENDOR-REFERRAL] \u26A0\uFE0F Failed to update referral ${referralRecord.id} - no rows affected`);
+    }
+    let referrerPoints = 0;
+    try {
+      const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+      const pointsResult = await loyaltyPointsService2.awardPoints({
+        vendorId: referralRecord.referrer_vendor_id,
+        actionName: "vendor_refer_friend",
+        referenceType: "vendor_referral",
+        referenceId: referralRecord.id,
+        description: `Vendor referral: New vendor registered with code ${normalizedCode}`
+      });
+      referrerPoints = pointsResult.points;
+      console.log(`[VENDOR-REFERRAL] \u2705 Awarded ${referrerPoints} points to referrer vendor ${referralRecord.referrer_vendor_id}`);
+      console.log(`[VENDOR-REFERRAL] Wallet credited: \u20B9${pointsResult.walletCredited}`);
+      await query(
+        `UPDATE vendor_referrals
+         SET status = 'approved',
+             approved_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [referralRecord.id]
+      );
+      console.log(`[VENDOR-REFERRAL] \u2705 Updated referral record status to 'approved'`);
+    } catch (pointsError) {
+      console.error(`[VENDOR-REFERRAL] \u274C Error awarding referral points: ${pointsError.message}`);
+      console.error(`[VENDOR-REFERRAL] Error stack: ${pointsError.stack}`);
+    }
+    console.log(`[VENDOR-REFERRAL] \u2705 Successfully processed vendor referral for vendor ${vendorId} with code ${normalizedCode}`);
+    return {
+      success: true,
+      referrerPoints
+    };
+  } catch (error) {
+    console.error(`[VENDOR-REFERRAL] \u274C Error processing vendor referral signup:`, error);
+    return {
+      success: false,
+      error: error.message || "Failed to process vendor referral code"
+    };
+  }
+}
+var init_referral_service = __esm({
+  "src/lib/services/referral-service.ts"() {
+    "use strict";
+    init_rds_connection();
+    init_loyalty_points_service();
+    init_loyalty_rules_init_service();
   }
 });
 
@@ -122886,22 +123524,208 @@ function registerAdminEndpoints(app3) {
         `UPDATE vendor_onboarding_applications SET status = 'APPROVED', updated_at = NOW() WHERE id = $1`,
         [applicationId]
       );
+      let updatedIdentity = null;
       try {
-        await query(
+        const updateResult = await query(
           `UPDATE vendor_identity 
            SET onboarding_status = 'APPROVED', 
                vendor_id = COALESCE(vendor_id, $1),
                updated_at = NOW() 
-           WHERE (application_id = $2 OR id = $2 OR phone = $3) AND (vendor_id IS NULL OR vendor_id = $1)`,
+           WHERE (application_id = $2 OR id = $2 OR phone = $3) AND (vendor_id IS NULL OR vendor_id = $1)
+           RETURNING *`,
           [vendorId, applicationId, identity?.phone || ""]
         );
+        if (updateResult.rows.length > 0) {
+          updatedIdentity = updateResult.rows[0];
+        }
       } catch (updateErr) {
         console.error("Failed to update vendor_identity with vendor_id:", updateErr);
-        await query(
+        const fallbackResult = await query(
           `UPDATE vendor_identity SET onboarding_status = 'APPROVED', updated_at = NOW() 
-           WHERE application_id = $1 OR id = $1 OR phone = $2`,
+           WHERE application_id = $1 OR id = $1 OR phone = $2
+           RETURNING *`,
           [applicationId, identity?.phone || ""]
         );
+        if (fallbackResult.rows.length > 0) {
+          updatedIdentity = fallbackResult.rows[0];
+        }
+      }
+      let referralProcessed = false;
+      if (updatedIdentity && updatedIdentity.metadata && updatedIdentity.metadata.referral_code_id) {
+        try {
+          const { processVendorReferralSignup: processVendorReferralSignup2 } = await Promise.resolve().then(() => (init_referral_service(), referral_service_exports));
+          const referralResult = await processVendorReferralSignup2({
+            vendorId,
+            referralCode: updatedIdentity.metadata.referral_code || "",
+            phone: updatedIdentity.phone || identity?.phone || ""
+          });
+          if (referralResult.success) {
+            console.log(`[ADMIN-APPROVAL] \u2705 Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
+            referralProcessed = true;
+          } else {
+            console.warn(`[ADMIN-APPROVAL] Vendor referral processing failed: ${referralResult.error}`);
+          }
+        } catch (refError) {
+          console.error("[ADMIN-APPROVAL] Error processing vendor referral:", refError);
+        }
+      }
+      if (!referralProcessed) {
+        try {
+          const vendorPhone = updatedIdentity?.phone || identity?.phone || "";
+          const normalizedPhone = vendorPhone.replace(/\D/g, "").slice(-10);
+          const referralRecords = await query(
+            `SELECT vr.* FROM vendor_referrals vr
+             WHERE vr.referred_vendor_id = $1
+             AND vr.status = 'approved'
+             AND NOT EXISTS (
+               SELECT 1 FROM loyalty_transactions lt
+               WHERE lt.customer_id = vr.referrer_vendor_id
+               AND lt.reference_type = 'vendor_referral'
+               AND lt.reference_id = vr.id
+             )
+             ORDER BY vr.approved_at DESC
+             LIMIT 1`,
+            [vendorId]
+          );
+          if (referralRecords.rows.length > 0) {
+            const referralRecord = referralRecords.rows[0];
+            console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points, processing now...`);
+            const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+            const pointsResult = await loyaltyPointsService2.awardPoints({
+              vendorId: referralRecord.referrer_vendor_id,
+              actionName: "vendor_refer_friend",
+              referenceType: "vendor_referral",
+              referenceId: referralRecord.id,
+              description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referralRecord.referral_code}`
+            });
+            console.log(`[ADMIN-APPROVAL] \u2705 Awarded ${pointsResult.points} points (\u20B9${pointsResult.walletCredited} to wallet) to referrer vendor ${referralRecord.referrer_vendor_id}`);
+            referralProcessed = true;
+          }
+        } catch (refError) {
+          console.error("[ADMIN-APPROVAL] Error processing referral from record:", refError);
+        }
+      }
+      if (!referralProcessed) {
+        try {
+          const vendorPhone = identity?.phone?.replace(/\D/g, "").slice(-10) || "";
+          const existingReferrals = await query(
+            `SELECT vr.*,
+             EXISTS (
+               SELECT 1 FROM loyalty_transactions lt
+               WHERE lt.customer_id = vr.referrer_vendor_id
+               AND lt.reference_type = 'vendor_referral'
+               AND lt.reference_id = vr.id
+             ) as has_points
+             FROM vendor_referrals vr
+             WHERE (
+               vr.referred_vendor_id = $1 
+               OR (vr.referred_vendor_id IS NULL AND vr.referred_phone = $2 AND vr.status = 'pending')
+               OR (vr.referred_phone = $2 AND vr.referred_vendor_id IS NULL)
+             )
+             AND vr.status IN ('applied', 'approved', 'pending')
+             ORDER BY 
+               CASE WHEN vr.referred_vendor_id = $1 THEN 1 ELSE 2 END,
+               vr.created_at DESC
+             LIMIT 1`,
+            [vendorId, vendorPhone]
+          );
+          if (existingReferrals.rows.length > 0) {
+            const referral = existingReferrals.rows[0];
+            const hasPoints = referral.has_points === true;
+            console.log(`[ADMIN-APPROVAL] Found existing referral record ${referral.id} for vendor ${vendorId}, processing...`);
+            console.log(`[ADMIN-APPROVAL] Referral status: ${referral.status}, Referrer: ${referral.referrer_vendor_id}, Referred Vendor ID: ${referral.referred_vendor_id}, Has Points: ${hasPoints}`);
+            if (!hasPoints) {
+              const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+              const pointsResult = await loyaltyPointsService2.awardPoints({
+                vendorId: referral.referrer_vendor_id,
+                actionName: "vendor_refer_friend",
+                referenceType: "vendor_referral",
+                referenceId: referral.id,
+                description: `Vendor referral: Admin approved vendor ${vendorId} (code: ${referral.referral_code})`
+              });
+              console.log(`[ADMIN-APPROVAL] \u2705 Awarded ${pointsResult.points} points (\u20B9${pointsResult.walletCredited} to wallet) to referrer ${referral.referrer_vendor_id}`);
+            } else {
+              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}, skipping award but will update referral record`);
+            }
+            const updateResult = await query(
+              `UPDATE vendor_referrals
+               SET referred_vendor_id = $1,
+                   status = 'approved',
+                   approved_at = COALESCE(approved_at, NOW()),
+                   applied_at = COALESCE(applied_at, NOW()),
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [vendorId, referral.id]
+            );
+            console.log(`[ADMIN-APPROVAL] \u2705 Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
+            console.log(`[ADMIN-APPROVAL] Update result: ${JSON.stringify(updateResult)}`);
+            referralProcessed = true;
+          }
+        } catch (refError2) {
+          console.error("[ADMIN-APPROVAL] Error processing existing referral:", refError2);
+          console.error("[ADMIN-APPROVAL] Error stack:", refError2.stack);
+        }
+      }
+      if (!referralProcessed) {
+        try {
+          const vendorPhone = identity?.phone?.replace(/\D/g, "").slice(-10) || "";
+          const existingReferrals = await query(
+            `SELECT vr.*,
+             EXISTS (
+               SELECT 1 FROM loyalty_transactions lt
+               WHERE lt.customer_id = vr.referrer_vendor_id
+               AND lt.reference_type = 'vendor_referral'
+               AND lt.reference_id = vr.id
+             ) as has_points
+             FROM vendor_referrals vr
+             WHERE (
+               vr.referred_vendor_id = $1
+               OR (vr.referred_vendor_id IS NULL AND vr.referred_phone = $2)
+             )
+             AND vr.status IN ('applied', 'pending', 'approved')
+             ORDER BY 
+               CASE WHEN vr.referred_vendor_id = $1 THEN 1 ELSE 2 END,
+               vr.created_at DESC 
+             LIMIT 1`,
+            [vendorId, vendorPhone]
+          );
+          if (existingReferrals.rows.length > 0) {
+            const referral = existingReferrals.rows[0];
+            const hasPoints = referral.has_points === true;
+            console.log(`[ADMIN-APPROVAL] Found existing referral record: ${referral.id}, processing...`);
+            console.log(`[ADMIN-APPROVAL] Has points: ${hasPoints}, Current vendor_id: ${referral.referred_vendor_id}`);
+            if (!hasPoints) {
+              const { loyaltyRulesInitService: loyaltyRulesInitService2 } = await Promise.resolve().then(() => (init_loyalty_rules_init_service(), loyalty_rules_init_service_exports));
+              await loyaltyRulesInitService2.initializeVendorReferralRules();
+              const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+              const pointsResult = await loyaltyPointsService2.awardPoints({
+                vendorId: referral.referrer_vendor_id,
+                actionName: "vendor_refer_friend",
+                referenceType: "vendor_referral",
+                referenceId: referral.id,
+                description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referral.referral_code}`
+              });
+              console.log(`[ADMIN-APPROVAL] \u2705 Awarded ${pointsResult.points} points (\u20B9${pointsResult.walletCredited} to wallet) to referrer vendor ${referral.referrer_vendor_id}`);
+            } else {
+              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}`);
+            }
+            await query(
+              `UPDATE vendor_referrals
+               SET referred_vendor_id = $1,
+                   status = 'approved',
+                   approved_at = COALESCE(approved_at, NOW()),
+                   applied_at = COALESCE(applied_at, NOW()),
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [vendorId, referral.id]
+            );
+            console.log(`[ADMIN-APPROVAL] \u2705 Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
+            referralProcessed = true;
+          }
+        } catch (refError) {
+          console.error("[ADMIN-APPROVAL] Error processing existing referral:", refError);
+          console.error("[ADMIN-APPROVAL] Error stack:", refError.stack);
+        }
       }
       await insert("notifications", {
         recipient_id: vendorId,
@@ -130310,6 +131134,47 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       );
     }
     const { phone, otp } = validationResult.data;
+    let referralCode = body?.referralCode || body?.pendingReferralCode || void 0;
+    if (!referralCode && context.event?.body) {
+      try {
+        const rawBody = typeof context.event.body === "string" ? JSON.parse(context.event.body) : context.event.body;
+        referralCode = rawBody?.referralCode || rawBody?.pendingReferralCode || void 0;
+      } catch (e) {
+      }
+    }
+    if (!referralCode) {
+      try {
+        const parsedBody = this.parseBody(context.event);
+        referralCode = parsedBody?.referralCode || parsedBody?.pendingReferralCode || void 0;
+      } catch (e) {
+      }
+    }
+    console.log(`[AUTH] \u{1F4DD} Referral code extraction check:`);
+    console.log(`[AUTH] \u{1F4DD} Body type: ${typeof body}, Body keys: ${body ? Object.keys(body).join(", ") : "null"}`);
+    console.log(`[AUTH] \u{1F4DD} Event body type: ${typeof context.event?.body}`);
+    console.log(`[AUTH] \u{1F4DD} Extracted referralCode: ${referralCode || "NOT FOUND"}`);
+    if (referralCode) {
+      console.log(`[AUTH] \u2705 Referral code found: ${referralCode}`);
+    } else {
+      console.log(`[AUTH] \u26A0\uFE0F No referral code found in request`);
+      if (body) {
+        console.log(`[AUTH] \u{1F4DD} Full body: ${JSON.stringify(body).substring(0, 500)}`);
+        console.log(`[AUTH] \u{1F4DD} body.referralCode: ${body?.referralCode || "NOT FOUND"}`);
+        console.log(`[AUTH] \u{1F4DD} body.pendingReferralCode: ${body?.pendingReferralCode || "NOT FOUND"}`);
+      }
+      if (context.event?.body) {
+        const bodyStr = typeof context.event.body === "string" ? context.event.body : JSON.stringify(context.event.body);
+        console.log(`[AUTH] \u{1F4DD} Event body (first 500 chars): ${bodyStr.substring(0, 500)}`);
+        try {
+          const parsed = typeof context.event.body === "string" ? JSON.parse(context.event.body) : context.event.body;
+          console.log(`[AUTH] \u{1F4DD} Parsed event body keys: ${Object.keys(parsed).join(", ")}`);
+          console.log(`[AUTH] \u{1F4DD} Parsed event body.referralCode: ${parsed?.referralCode || "NOT FOUND"}`);
+          console.log(`[AUTH] \u{1F4DD} Parsed event body.pendingReferralCode: ${parsed?.pendingReferralCode || "NOT FOUND"}`);
+        } catch (e) {
+          console.log(`[AUTH] \u{1F4DD} Could not parse event body for referral code check`);
+        }
+      }
+    }
     const isUATMode2 = process.env.UAT_MODE === "true";
     try {
       let isValid = false;
@@ -130408,6 +131273,14 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
           }
         } else {
           isNewCustomer2 = true;
+          if (referralCode) {
+            try {
+              const { loyaltyRulesInitService: loyaltyRulesInitService2 } = await Promise.resolve().then(() => (init_loyalty_rules_init_service(), loyalty_rules_init_service_exports));
+              await loyaltyRulesInitService2.ensureReferralSignupRule();
+            } catch (initError) {
+              console.warn("[AUTH] Could not initialize loyalty rules:", initError.message);
+            }
+          }
           let identityId;
           try {
             const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
@@ -130460,6 +131333,39 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
               await Promise.race([linkPromise, linkTimeout]);
             } catch (linkError) {
               console.warn("[AUTH] Could not link customer identity:", linkError.message);
+            }
+          }
+          console.log(`[AUTH] \u{1F50D} Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith("temp_")}`);
+          if (referralCode && userId && !userId.startsWith("temp_")) {
+            try {
+              const { processReferralSignup: processReferralSignup2 } = await Promise.resolve().then(() => (init_referral_service(), referral_service_exports));
+              const normalizedCode = String(referralCode).trim().toUpperCase();
+              console.log(`[AUTH] \u{1F381} Processing referral code: ${normalizedCode} for customer: ${userId}`);
+              console.log(`[AUTH] \u{1F381} Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
+              const startTime = Date.now();
+              const referralResult = await processReferralSignup2({
+                customerId: userId,
+                referralCode: normalizedCode
+              });
+              const duration = Date.now() - startTime;
+              console.log(`[AUTH] \u{1F381} processReferralSignup completed in ${duration}ms`);
+              console.log(`[AUTH] \u{1F381} Result: ${JSON.stringify(referralResult)}`);
+              if (referralResult.success) {
+                console.log(`[AUTH] \u2705 Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
+              } else {
+                console.warn(`[AUTH] \u26A0\uFE0F Referral code processing failed: ${referralResult.error}`);
+                console.warn(`[AUTH] \u26A0\uFE0F Full error details: ${JSON.stringify(referralResult)}`);
+              }
+            } catch (refError) {
+              console.error("[AUTH] \u274C Error processing referral code during signup:", refError);
+              console.error("[AUTH] \u274C Error message:", refError.message);
+              console.error("[AUTH] \u274C Error stack:", refError.stack);
+            }
+          } else {
+            if (referralCode) {
+              console.warn(`[AUTH] \u26A0\uFE0F Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith("temp_")}`);
+            } else {
+              console.log(`[AUTH] \u2139\uFE0F No referral code provided in request`);
             }
           }
           try {
@@ -130569,6 +131475,64 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
             created_at: (/* @__PURE__ */ new Date()).toISOString()
           };
           console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
+          if (referralCode && normalizedPhone) {
+            try {
+              console.log(`[AUTH] Processing vendor referral code: ${referralCode} for phone: ${normalizedPhone}`);
+              const normalizedCode = referralCode.trim().toUpperCase();
+              let referralRecords = await query(
+                `SELECT * FROM vendor_referrals 
+                 WHERE referral_code = $1 AND referred_phone = $2 
+                 ORDER BY created_at DESC LIMIT 1`,
+                [normalizedCode, normalizedPhone]
+              );
+              let referralRecord = referralRecords.rows[0];
+              if (!referralRecord) {
+                const codeRecords = await query(
+                  `SELECT * FROM vendor_referrals 
+                   WHERE referral_code = $1 
+                   ORDER BY created_at DESC LIMIT 1`,
+                  [normalizedCode]
+                );
+                if (codeRecords.rows.length > 0) {
+                  const newReferral = await insert("vendor_referrals", {
+                    referrer_vendor_id: codeRecords.rows[0].referrer_vendor_id,
+                    referred_phone: normalizedPhone,
+                    referral_code: normalizedCode,
+                    status: "pending",
+                    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+                  });
+                  referralRecord = newReferral[0];
+                  console.log(`[AUTH] Created new vendor referral record for phone: ${normalizedPhone}`);
+                }
+              }
+              if (referralRecord) {
+                console.log(`[AUTH] \u2705 Vendor referral record found/created: ${referralRecord.id}`);
+                console.log(`[AUTH] Referrer vendor ID: ${referralRecord.referrer_vendor_id}`);
+                if (vendorIdentity.length > 0) {
+                  const identity = vendorIdentity[0];
+                  const metadata = identity.metadata || {};
+                  metadata.referral_code_id = referralRecord.id;
+                  metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
+                  metadata.referral_code = normalizedCode;
+                  try {
+                    await update("vendor_identity", { id: identity.id }, {
+                      metadata,
+                      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+                    });
+                    console.log(`[AUTH] \u2705 Stored vendor referral metadata in vendor_identity`);
+                  } catch (metaError) {
+                    console.error(`[AUTH] Error storing referral metadata: ${metaError.message}`);
+                  }
+                }
+              } else {
+                console.log(`[AUTH] \u26A0\uFE0F No vendor referral record found for code: ${normalizedCode}`);
+              }
+            } catch (refError) {
+              console.error("[AUTH] \u274C Error processing vendor referral code:", refError.message);
+              console.error("[AUTH] Error stack:", refError.stack);
+            }
+          }
         }
       } else if (role === "admin") {
         try {
@@ -130784,6 +131748,9 @@ async function createApiGatewayEvent(c, bodyParser) {
         )
       ]);
     }
+    if (body?.referralCode || body?.pendingReferralCode) {
+      console.log(`[AUTH] \u2705 Referral code found in parsed body: ${body.referralCode || body.pendingReferralCode}`);
+    }
   } catch (error) {
     console.warn("[AUTH] Error parsing request body, using empty object:", error?.message);
     body = {};
@@ -130808,10 +131775,16 @@ async function createApiGatewayEvent(c, bodyParser) {
     console.warn("[AUTH] Error processing headers:", e);
   }
   const url = new URL(c.req.url);
+  const bodyString = body && Object.keys(body).length > 0 ? JSON.stringify(body) : void 0;
+  if (body?.referralCode || body?.pendingReferralCode) {
+    console.log(`[AUTH] \u2705 Body stringified with referral code: ${bodyString?.substring(0, 200)}`);
+  }
   return {
     rawPath: url.pathname,
     rawQueryString: url.search.substring(1),
     // Remove leading '?'
+    body: bodyString,
+    isBase64Encoded: false,
     requestContext: {
       http: {
         method: c.req.method || "POST",
@@ -130819,9 +131792,7 @@ async function createApiGatewayEvent(c, bodyParser) {
       },
       requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
     },
-    headers,
-    body: body && Object.keys(body).length > 0 ? JSON.stringify(body) : void 0,
-    isBase64Encoded: false
+    headers
   };
 }
 function createLambdaContext() {
@@ -131879,8 +132850,26 @@ function registerVendorOnboardingEndpointsEnhanced(app3) {
       const vendor = vendors[0];
       await update("vendor_identity", { id: identity.id }, {
         onboarding_status: "ACTIVATED",
+        vendor_id: vendor.id,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
+      if (identity.metadata && identity.metadata.referral_code_id) {
+        try {
+          const { processVendorReferralSignup: processVendorReferralSignup2 } = await Promise.resolve().then(() => (init_referral_service(), referral_service_exports));
+          const referralResult = await processVendorReferralSignup2({
+            vendorId: vendor.id,
+            referralCode: identity.metadata.referral_code || "",
+            phone: identity.phone
+          });
+          if (referralResult.success) {
+            console.log(`[VENDOR-ACTIVATION] \u2705 Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
+          } else {
+            console.warn(`[VENDOR-ACTIVATION] Vendor referral processing failed: ${referralResult.error}`);
+          }
+        } catch (refError) {
+          console.error("[VENDOR-ACTIVATION] Error processing vendor referral:", refError);
+        }
+      }
       return c.json({
         success: true,
         message: "Vendor activated successfully",
@@ -133417,69 +134406,52 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         const { rows: existingBookings } = await client2.query(overlapQuery, overlapParams);
         let bufferMinutes = 0;
         const normalizedServiceStyle = serviceType === "at_vendor" || serviceType === "at_center" ? "at_center" : serviceType;
-        if (normalizedServiceStyle === "at_center") {
+        try {
+          let minNoticeMinutes = 30;
           try {
-            let minNoticeMinutes = 30;
-            try {
-              const policiesResult = await client2.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
-              const bufferPolicy = policiesResult.rows?.find((p) => p.policy_type === "buffer_time");
-              if (bufferPolicy?.policy_config) {
-                const cfg = bufferPolicy.policy_config;
-                minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
-              }
-            } catch (_) {
+            const policiesResult = await client2.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
+            const bufferPolicy = policiesResult.rows?.find((p) => p.policy_type === "buffer_time");
+            if (bufferPolicy?.policy_config) {
+              const cfg = bufferPolicy.policy_config;
+              minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
             }
-            const dayOfWeek = new Date(bookingDate).getDay();
-            try {
-              const va2Result = await client2.query(
-                `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
-                 FROM vendor_availability_v2
-                 WHERE vendor_id = $1
-                   AND day_of_week = $2
-                   AND (COALESCE(service_styles, ARRAY[]::text[]) && ARRAY['at_center', 'at_vendor']::text[])
-                   AND (COALESCE(is_available, true) = true)
-                 LIMIT 1`,
-                [vendorId, dayOfWeek]
-              );
-              if (va2Result.rows && va2Result.rows.length > 0) {
-                const row = va2Result.rows[0];
-                const leadByStyle = row.lead_time_by_style != null ? typeof row.lead_time_by_style === "string" ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style : {};
-                bufferMinutes = leadByStyle && typeof leadByStyle === "object" && (leadByStyle["at_center"] != null || leadByStyle["at_vendor"] != null) ? Number(leadByStyle["at_center"] ?? leadByStyle["at_vendor"]) : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
-                console.log(`[BOOKING] at_center: Found buffer from vendor_availability_v2: ${bufferMinutes} minutes`);
-              } else {
-                bufferMinutes = minNoticeMinutes;
-                console.log(`[BOOKING] at_center: No vendor_availability_v2 record, using minNoticeMinutes: ${bufferMinutes} minutes`);
-              }
-            } catch (va2Err) {
-              console.warn("[BOOKING] Error querying vendor_availability_v2 for buffer, using minNoticeMinutes:", va2Err?.message);
-              bufferMinutes = minNoticeMinutes;
+          } catch (_) {
+          }
+          const dayOfWeek = new Date(bookingDate).getDay();
+          try {
+            const va2Result = await client2.query(
+              `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+                 AND day_of_week = $2
+                 AND (COALESCE(is_available, true) = true)
+               LIMIT 1`,
+              [vendorId, dayOfWeek]
+            );
+            if (va2Result.rows && va2Result.rows.length > 0) {
+              const row = va2Result.rows[0];
+              const leadByStyle = row.lead_time_by_style != null ? typeof row.lead_time_by_style === "string" ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style : {};
+              bufferMinutes = leadByStyle && typeof leadByStyle === "object" && leadByStyle[normalizedServiceStyle] != null ? Number(leadByStyle[normalizedServiceStyle]) : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+              console.log(`[BOOKING] ${normalizedServiceStyle}: Found buffer=${bufferMinutes}min (informational only, not used in overlap check)`);
             }
-          } catch (err) {
-            console.warn("[BOOKING] Could not get buffer time, using minNoticeMinutes as fallback:", err);
-            bufferMinutes = 30;
+          } catch (va2Err) {
           }
-          if (bufferMinutes === 0) {
-            console.log("[BOOKING] at_center: Buffer is 0, using default 30 minutes");
-            bufferMinutes = 30;
-          }
+        } catch (err) {
         }
-        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min`);
+        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min (informational only)`);
         console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
         const hasOverlap = existingBookings.some((existing) => {
           const [existingHour, existingMin] = existing.booking_time.split(":").map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
-          let existingDuration = existing.duration_minutes;
-          if (normalizedServiceStyle === "at_center" && bufferMinutes > 0) {
-            const originalDuration = existingDuration;
-            const slotDuration = 30;
-            existingDuration = Math.max(slotDuration, existingDuration - bufferMinutes);
-            console.log(`[BOOKING] at_center overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), originalDuration=${originalDuration}min, adjustedDuration=${existingDuration}min (subtracted ${bufferMinutes}min buffer, min=${slotDuration}min)`);
-          }
+          const existingDuration = existing.duration_minutes;
+          console.log(`[BOOKING] ${normalizedServiceStyle} overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), duration=${existingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
           const existingEndMinutes = existingStartMinutes + existingDuration;
           const newBookingEndMinutes2 = newBookingStartMinutes + bookingDuration;
           const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes2 > existingStartMinutes;
           if (overlaps) {
-            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${newBookingStartMinutes}-${newBookingEndMinutes2}] overlaps with existing [${existingStartMinutes}-${existingEndMinutes}]`);
+            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes2 / 60)}:${String(newBookingEndMinutes2 % 60).padStart(2, "0")} (${newBookingEndMinutes2}min)] overlaps with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes / 60)}:${String(existingEndMinutes % 60).padStart(2, "0")} (${existingEndMinutes}min)]`);
+          } else {
+            console.log(`[BOOKING] NO OVERLAP: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes2 / 60)}:${String(newBookingEndMinutes2 % 60).padStart(2, "0")} (${newBookingEndMinutes2}min)] does NOT overlap with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes / 60)}:${String(existingEndMinutes % 60).padStart(2, "0")} (${existingEndMinutes}min)]`);
           }
           return overlaps;
         });
@@ -133617,6 +134589,12 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           selected_services: selectedServices && selectedServices.length > 0 ? JSON.stringify(selectedServices) : null,
           // ✅ NEW: Store total duration
           total_duration_minutes: totalDurationMinutes || null,
+          // ✅ CRITICAL: Store duration_minutes (service duration only, NO buffer time)
+          // For ALL services: duration_minutes = service duration (exact, no buffer)
+          // Buffer time is informational only (travel/prep/setup) and is NOT stored or used in overlap checks
+          // Buffer time is only used for scheduling spacing, not for blocking adjacent slots
+          duration_minutes: bookingDuration,
+          // ✅ Service duration only, no buffer for ANY service
           // ✅ Store customer phone for easy access
           customer_phone: customerPhone || null
         };
@@ -136368,7 +137346,7 @@ function createLambdaContext4() {
 async function triggerAutoShipment(orderId, orderType) {
   console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
   try {
-    const { select: select27, insert: insert14, update: update18, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const { select: select27, insert: insert14, update: update19, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
     const { logisticsPartnerService: logisticsPartnerService2 } = await Promise.resolve().then(() => (init_logistics_partner_service(), logistics_partner_service_exports));
     let order = null;
     let orderItems = [];
@@ -136397,7 +137375,7 @@ async function triggerAutoShipment(orderId, orderType) {
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update18("pharmacy_orders", { id: orderId }, {
+      await update19("pharmacy_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
@@ -136417,7 +137395,7 @@ async function triggerAutoShipment(orderId, orderType) {
         status: "pending_assignment",
         delivery_otp: deliveryOtp
       });
-      await update18("meal_orders", { id: orderId }, {
+      await update19("meal_orders", { id: orderId }, {
         status: "processing",
         logistics_type: "warmpawz"
       });
@@ -136453,7 +137431,7 @@ async function triggerAutoShipment(orderId, orderType) {
     });
     if (!partner) {
       console.log(`[AUTO-SHIPMENT] No partner available, marking for manual processing: ${orderId}`);
-      await update18("orders", { id: orderId }, {
+      await update19("orders", { id: orderId }, {
         order_status: "processing",
         logistics_notes: "Pending manual shipment creation"
       });
@@ -136465,7 +137443,7 @@ async function triggerAutoShipment(orderId, orderType) {
       logistics_partner_id: partner.id,
       status: "pending_creation"
     });
-    await update18("orders", { id: orderId }, {
+    await update19("orders", { id: orderId }, {
       order_status: "processing"
     });
     console.log(`[AUTO-SHIPMENT] Shipment record created for ${orderId}, partner: ${partner.partner_name}`);
@@ -143811,6 +144789,8 @@ var GetWalletHandler = class extends BaseHandler {
     }
     const wallet = await this.getOrCreateWallet(customerId);
     const transactions = await this.getRecentTransactions(customerId);
+    const loyaltyCredits = transactions.filter((t) => t.isLoyaltyConversion || t.source === "loyalty_points");
+    const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
     return this.success({
       success: true,
       data: {
@@ -143818,13 +144798,18 @@ var GetWalletHandler = class extends BaseHandler {
         balance: parseFloat(wallet.balance),
         currency: wallet.currency || "INR",
         lastUpdated: wallet.updated_at,
-        recentTransactions: transactions
+        recentTransactions: transactions,
+        loyaltyPointsConverted: totalLoyaltyCredits,
+        // Total ₹ converted from loyalty points
+        loyaltyTransactionsCount: loyaltyCredits.length
       },
       customerId: wallet.customer_id,
       balance: parseFloat(wallet.balance),
       currency: wallet.currency || "INR",
       lastUpdated: wallet.updated_at,
-      recentTransactions: transactions
+      recentTransactions: transactions,
+      loyaltyPointsConverted: totalLoyaltyCredits,
+      loyaltyTransactionsCount: loyaltyCredits.length
     });
   }
   async getOrCreateWallet(customerId) {
@@ -143868,11 +144853,11 @@ var GetWalletHandler = class extends BaseHandler {
   async getRecentTransactions(customerId) {
     try {
       const result = await query(
-        `SELECT id, transaction_type, amount, balance_after, description, created_at
+        `SELECT id, transaction_type, amount, balance_after, description, created_at, source, reference_type, reference_id
          FROM wallet_transactions
          WHERE customer_id = $1
          ORDER BY created_at DESC
-         LIMIT 5`,
+         LIMIT 10`,
         [customerId]
       );
       return result.rows.map((row) => ({
@@ -143881,7 +144866,11 @@ var GetWalletHandler = class extends BaseHandler {
         amount: parseFloat(row.amount),
         balanceAfter: parseFloat(row.balance_after),
         description: row.description,
-        timestamp: row.created_at
+        timestamp: row.created_at,
+        source: row.source || null,
+        referenceType: row.reference_type || null,
+        referenceId: row.reference_id || null,
+        isLoyaltyConversion: row.source === "loyalty_points" || row.description?.toLowerCase().includes("loyalty") || row.description?.toLowerCase().includes("points")
       }));
     } catch (error) {
       return [];
@@ -143908,13 +144897,17 @@ var GetWalletByPhoneHandler = class extends BaseHandler {
     }
     const wallet = await this.getOrCreateWallet(customerId);
     const transactions = await this.getRecentTransactions(customerId);
+    const loyaltyCredits = transactions.filter((t) => t.isLoyaltyConversion || t.source === "loyalty_points");
+    const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
     return this.success({
       wallet: {
         customerId: wallet.customer_id,
         balance: parseFloat(wallet.balance),
         currency: wallet.currency || "INR",
         lastUpdated: wallet.updated_at,
-        recentTransactions: transactions
+        recentTransactions: transactions,
+        loyaltyPointsConverted: totalLoyaltyCredits,
+        loyaltyTransactionsCount: loyaltyCredits.length
       }
     });
   }
@@ -143959,23 +144952,59 @@ var GetWalletByPhoneHandler = class extends BaseHandler {
   async getRecentTransactions(customerId) {
     try {
       const result = await query(
-        `SELECT id, transaction_type, amount, balance_after, description, created_at
+        `SELECT id, transaction_type, amount, balance_after, description, created_at, 
+                COALESCE(source, '') as source, 
+                COALESCE(reference_type, '') as reference_type, 
+                COALESCE(reference_id::text, '') as reference_id
          FROM wallet_transactions
          WHERE customer_id = $1
          ORDER BY created_at DESC
-         LIMIT 5`,
+         LIMIT 10`,
         [customerId]
       );
-      return result.rows.map((row) => ({
-        id: row.id,
-        type: row.transaction_type,
-        amount: parseFloat(row.amount),
-        balanceAfter: parseFloat(row.balance_after),
-        description: row.description,
-        timestamp: row.created_at
-      }));
+      return result.rows.map((row) => {
+        const isLoyalty = row.source === "loyalty_points" || row.description?.toLowerCase().includes("loyalty") || row.description?.toLowerCase().includes("points");
+        return {
+          id: row.id,
+          type: row.transaction_type,
+          amount: parseFloat(row.amount),
+          balanceAfter: parseFloat(row.balance_after),
+          description: row.description,
+          timestamp: row.created_at,
+          source: row.source || null,
+          referenceType: row.reference_type || null,
+          referenceId: row.reference_id || null,
+          isLoyaltyConversion: isLoyalty
+        };
+      });
     } catch (error) {
-      return [];
+      try {
+        const result = await query(
+          `SELECT id, transaction_type, amount, balance_after, description, created_at
+           FROM wallet_transactions
+           WHERE customer_id = $1
+           ORDER BY created_at DESC
+           LIMIT 10`,
+          [customerId]
+        );
+        return result.rows.map((row) => {
+          const isLoyalty = row.description?.toLowerCase().includes("loyalty") || row.description?.toLowerCase().includes("points");
+          return {
+            id: row.id,
+            type: row.transaction_type,
+            amount: parseFloat(row.amount),
+            balanceAfter: parseFloat(row.balance_after),
+            description: row.description,
+            timestamp: row.created_at,
+            source: null,
+            referenceType: null,
+            referenceId: null,
+            isLoyaltyConversion: isLoyalty
+          };
+        });
+      } catch (fallbackError) {
+        return [];
+      }
     }
   }
 };
@@ -144652,6 +145681,118 @@ function createLambdaContext13() {
     functionName: "wallet-handler",
     functionVersion: "$LATEST"
   };
+}
+
+// src/endpoints/wallet-diagnostic.ts
+init_rds_connection();
+function registerWalletDiagnosticEndpoints(app3) {
+  app3.get("/wallet/:customerId/diagnostic", async (c) => {
+    try {
+      const customerId = c.req.param("customerId");
+      if (!customerId) {
+        return c.json({ error: "Customer ID is required" }, 400);
+      }
+      const walletResult = await query(
+        `SELECT * FROM customer_wallets WHERE customer_id = $1`,
+        [customerId]
+      );
+      let transactionsResult;
+      try {
+        transactionsResult = await query(
+          `SELECT * FROM wallet_transactions 
+           WHERE customer_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT 20`,
+          [customerId]
+        );
+      } catch (error) {
+        const wallet = walletResult.rows[0];
+        if (wallet?.id) {
+          transactionsResult = await query(
+            `SELECT * FROM wallet_transactions 
+             WHERE wallet_id = $1 
+             ORDER BY created_at DESC 
+             LIMIT 20`,
+            [wallet.id]
+          );
+        } else {
+          transactionsResult = { rows: [] };
+        }
+      }
+      const loyaltyResult = await query(
+        `SELECT * FROM loyalty_transactions 
+         WHERE customer_id = $1 
+         AND reference_type = 'vendor_referral'
+         ORDER BY created_at DESC 
+         LIMIT 20`,
+        [customerId]
+      );
+      const loyaltyPointsResult = await query(
+        `SELECT * FROM customer_loyalty_points WHERE customer_id = $1`,
+        [customerId]
+      );
+      let loyaltyCreditsResult;
+      try {
+        loyaltyCreditsResult = await query(
+          `SELECT 
+            COUNT(*) as count,
+            COALESCE(SUM(amount), 0) as total_amount
+           FROM wallet_transactions 
+           WHERE customer_id = $1 
+           AND (description LIKE '%loyalty%' OR description LIKE '%points%')`,
+          [customerId]
+        );
+      } catch (error) {
+        const wallet = walletResult.rows[0];
+        if (wallet?.id) {
+          loyaltyCreditsResult = await query(
+            `SELECT 
+              COUNT(*) as count,
+              COALESCE(SUM(amount), 0) as total_amount
+             FROM wallet_transactions 
+             WHERE wallet_id = $1 
+             AND (description LIKE '%loyalty%' OR description LIKE '%points%')`,
+            [wallet.id]
+          );
+        } else {
+          loyaltyCreditsResult = { rows: [{ count: "0", total_amount: "0" }] };
+        }
+      }
+      return c.json({
+        success: true,
+        customerId,
+        wallet: {
+          exists: walletResult.rows.length > 0,
+          data: walletResult.rows[0] || null,
+          balance: walletResult.rows[0]?.balance || 0
+        },
+        transactions: {
+          count: transactionsResult.rows.length,
+          data: transactionsResult.rows
+        },
+        loyaltyTransactions: {
+          count: loyaltyResult.rows.length,
+          data: loyaltyResult.rows,
+          totalPoints: loyaltyResult.rows.reduce((sum, t) => sum + (parseInt(t.points) || 0), 0)
+        },
+        loyaltyPoints: {
+          exists: loyaltyPointsResult.rows.length > 0,
+          data: loyaltyPointsResult.rows[0] || null,
+          totalPoints: loyaltyPointsResult.rows[0]?.total_points || 0
+        },
+        loyaltyCredits: {
+          count: parseInt(loyaltyCreditsResult.rows[0]?.count || "0"),
+          totalAmount: parseFloat(loyaltyCreditsResult.rows[0]?.total_amount || "0")
+        }
+      });
+    } catch (error) {
+      console.error("Error in wallet diagnostic:", error);
+      return c.json({
+        error: error.message,
+        stack: error.stack
+      }, 500);
+    }
+  });
 }
 
 // src/endpoints/specialized-services.ts
@@ -152032,12 +153173,14 @@ function registerServiceDiscoveryEndpoints(app3) {
             const slotEnd = currentMinutes + slotDuration;
             const overlapsBooking = existingBookings.some((b) => {
               const bStart = timeToMinutes2(b.booking_time);
-              let bookingDuration = b.duration_minutes;
-              if (normalizedServiceStyle === "at_center" && bufferMinutes > 0) {
-                bookingDuration = Math.max(slotDuration, bookingDuration - bufferMinutes);
-              }
+              const bookingDuration = b.duration_minutes;
+              console.log(`[SLOTS] ${normalizedServiceStyle} overlap: booking=${b.booking_time}, duration=${bookingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
               const bEnd = bStart + bookingDuration;
-              return currentMinutes < bEnd && slotEnd > bStart;
+              const overlaps = currentMinutes < bEnd && slotEnd > bStart;
+              if (overlaps) {
+                console.log(`[SLOTS] OVERLAP DETECTED: slot [${timeStr} (${currentMinutes}min)-${Math.floor(slotEnd / 60)}:${String(slotEnd % 60).padStart(2, "0")} (${slotEnd}min)] overlaps with booking [${b.booking_time} (${bStart}min)-${Math.floor(bEnd / 60)}:${String(bEnd % 60).padStart(2, "0")} (${bEnd}min)]`);
+              }
+              return overlaps;
             });
             let available = true;
             let booked = false;
@@ -153173,8 +154316,8 @@ function registerServiceDiscoveryEndpoints(app3) {
         return c.json({ error: "No valid fields to update. Please provide at least one facility field" }, 400);
       }
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      const { update: update18 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      const updated = await update18("vendors", { id: actualVendorId }, updateData);
+      const { update: update19 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      const updated = await update19("vendors", { id: actualVendorId }, updateData);
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
@@ -153258,8 +154401,8 @@ function registerServiceDiscoveryEndpoints(app3) {
       const existingMetadata = vendor.metadata || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
-      const { update: update18 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      await update18("vendors", { id: actualVendorId }, {
+      const { update: update19 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      await update19("vendors", { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -162166,7 +163309,10 @@ function registerLoyaltyEndpoints(app3) {
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         }).catch(() => null);
       }
-      return c.json({ success: true, message: "Loyalty rules initialized" });
+      const { loyaltyRulesInitService: loyaltyRulesInitService2 } = await Promise.resolve().then(() => (init_loyalty_rules_init_service(), loyalty_rules_init_service_exports));
+      await loyaltyRulesInitService2.initializeReferralRules();
+      await loyaltyRulesInitService2.initializeVendorReferralRules();
+      return c.json({ success: true, message: "Loyalty rules initialized (including vendor referral rules)" });
     } catch (error) {
       console.error("Error initializing loyalty rules:", error);
       return c.json({ success: true, message: "Loyalty rules init skipped" });
@@ -162390,34 +163536,21 @@ function registerLoyaltyEndpoints(app3) {
       if (existing.rows.length > 0) {
         return c.json({ error: "Referral code already used" }, 400);
       }
-      await query(
-        `UPDATE referrals
-         SET referred_id = $1,
-             referred_at = NOW()
-         WHERE id = $2`,
-        [customerId, referral.id]
-      );
-      const rules = await select("loyalty_rules", { is_active: true });
-      if (rules.length > 0) {
-        const referralPoints = 100;
-        await query(
-          `UPDATE customer_loyalty_points
-           SET total_points = total_points + $1,
-               lifetime_points_earned = lifetime_points_earned + $1
-           WHERE customer_id = $2`,
-          [referralPoints, referral.referrer_id]
-        );
-        await query(
-          `UPDATE customer_loyalty_points
-           SET total_points = total_points + $1,
-               lifetime_points_earned = lifetime_points_earned + $1
-           WHERE customer_id = $2`,
-          [referralPoints, customerId]
-        );
+      const { processReferralSignup: processReferralSignup2 } = await Promise.resolve().then(() => (init_referral_service(), referral_service_exports));
+      const referralResult = await processReferralSignup2({
+        customerId,
+        referralCode
+      });
+      if (!referralResult.success) {
+        return c.json({
+          error: referralResult.error || "Failed to process referral code"
+        }, 400);
       }
       return c.json({
         success: true,
-        message: "Referral code applied successfully"
+        message: "Referral code applied successfully",
+        referredPoints: referralResult.referredPoints,
+        referrerPoints: referralResult.referrerPoints
       });
     } catch (error) {
       console.error("Error applying referral code:", error);
@@ -165956,26 +167089,26 @@ function validateBulkPricing(data) {
     errors.push("Maximum 100 updates allowed per bulk operation");
   }
   const serviceIds = /* @__PURE__ */ new Set();
-  data.updates.forEach((update18, index) => {
-    if (!update18.serviceId || !isValidUUID(update18.serviceId)) {
+  data.updates.forEach((update19, index) => {
+    if (!update19.serviceId || !isValidUUID(update19.serviceId)) {
       errors.push(`Update ${index + 1}: Valid serviceId is required`);
     } else {
-      if (serviceIds.has(update18.serviceId)) {
+      if (serviceIds.has(update19.serviceId)) {
         errors.push(`Update ${index + 1}: Duplicate serviceId found`);
       }
-      serviceIds.add(update18.serviceId);
+      serviceIds.add(update19.serviceId);
     }
-    if (update18.price === void 0 || update18.price === null) {
+    if (update19.price === void 0 || update19.price === null) {
       errors.push(`Update ${index + 1}: Price is required`);
-    } else if (update18.price < 0) {
+    } else if (update19.price < 0) {
       errors.push(`Update ${index + 1}: Price cannot be negative`);
-    } else if (update18.price > 1e6) {
+    } else if (update19.price > 1e6) {
       errors.push(`Update ${index + 1}: Price exceeds maximum allowed value`);
     }
-    if (update18.duration !== void 0) {
-      if (update18.duration < 1) {
+    if (update19.duration !== void 0) {
+      if (update19.duration < 1) {
         errors.push(`Update ${index + 1}: Duration must be at least 1 minute`);
-      } else if (update18.duration > 1440) {
+      } else if (update19.duration > 1440) {
         errors.push(`Update ${index + 1}: Duration cannot exceed 1440 minutes`);
       }
     }
@@ -206799,6 +207932,859 @@ Happy pet caring! \u{1F43E}`
       return c.json({ error: error.message }, 500);
     }
   });
+  app3.get("/vendor/:vendorId/referral", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const referrals = await query(
+        `SELECT referral_code, created_at
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid)
+         AND referral_code IS NOT NULL
+         ORDER BY created_at DESC 
+         LIMIT 1`,
+        [vendorId]
+      );
+      let referralCode = "";
+      if (referrals.rows.length > 0 && referrals.rows[0].referral_code) {
+        referralCode = referrals.rows[0].referral_code;
+      } else {
+        const code = `VENDOR${vendorId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        const placeholderPhone = `REFERRER_${vendorId}`;
+        try {
+          await insert("vendor_referrals", {
+            referrer_vendor_id: vendorId,
+            referred_phone: placeholderPhone,
+            referral_code: code,
+            status: "pending",
+            created_at: (/* @__PURE__ */ new Date()).toISOString(),
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          referralCode = code;
+        } catch (insertError) {
+          const existing = await query(
+            `SELECT referral_code FROM vendor_referrals 
+             WHERE referrer_vendor_id = CAST($1 AS uuid)
+             AND referral_code IS NOT NULL
+             LIMIT 1`,
+            [vendorId]
+          );
+          if (existing.rows.length > 0) {
+            referralCode = existing.rows[0].referral_code;
+          } else {
+            referralCode = code;
+            console.warn("[REFERRAL] Failed to insert referral code record, but using generated code:", code);
+          }
+        }
+      }
+      return c.json({
+        success: true,
+        referralCode
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral code:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/referral/stats", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const totalReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid)
+         AND referred_vendor_id IS NOT NULL`,
+        [vendorId]
+      );
+      const approvedReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid)
+         AND status = 'approved'`,
+        [vendorId]
+      );
+      const pendingReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid)
+         AND status = 'applied'`,
+        [vendorId]
+      );
+      const earnings = await query(
+        `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+         FROM loyalty_transactions lt
+         WHERE lt.customer_id = CAST($1 AS uuid)
+         AND lt.reference_type = 'vendor_referral'
+         AND lt.transaction_type = 'earned'`,
+        [vendorId]
+      );
+      const monthlyReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid)
+         AND referred_vendor_id IS NOT NULL
+         AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+        [vendorId]
+      );
+      const monthlyEarnings = await query(
+        `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+         FROM loyalty_transactions lt
+         WHERE lt.customer_id = CAST($1 AS uuid)
+         AND lt.reference_type = 'vendor_referral'
+         AND lt.transaction_type = 'earned'
+         AND lt.created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+        [vendorId]
+      );
+      return c.json({
+        success: true,
+        totalReferrals: parseInt(totalReferrals.rows[0]?.count || "0", 10),
+        approvedReferrals: parseInt(approvedReferrals.rows[0]?.count || "0", 10),
+        pendingReferrals: parseInt(pendingReferrals.rows[0]?.count || "0", 10),
+        totalEarnings: parseInt(earnings.rows[0]?.total_earnings || "0", 10),
+        monthlyReferrals: parseInt(monthlyReferrals.rows[0]?.count || "0", 10),
+        monthlyEarnings: parseInt(monthlyEarnings.rows[0]?.total_earnings || "0", 10)
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral stats:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/referral/list", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const limit = parseInt(c.req.query("limit") || "1000", 10);
+      console.log(`[REFERRALS] Fetching referral list for vendor: ${vendorId}`);
+      const referrals = await query(
+        `SELECT 
+          vr.*,
+          v.business_name as referred_vendor_name,
+          v.phone as referred_vendor_phone,
+          CASE 
+            WHEN vr.status = 'approved' THEN
+              (SELECT COALESCE(SUM(lt.points), 0) 
+               FROM loyalty_transactions lt 
+               WHERE lt.customer_id = CAST($1 AS uuid)
+               AND lt.reference_type = 'vendor_referral' 
+               AND lt.reference_id = vr.id)
+            ELSE 0
+          END as points_earned
+         FROM vendor_referrals vr
+         LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
+         WHERE vr.referrer_vendor_id = CAST($1 AS uuid)
+         ORDER BY vr.created_at DESC
+         LIMIT $2`,
+        [vendorId, limit]
+      );
+      const countResult = await query(
+        `SELECT COUNT(*) as total
+         FROM vendor_referrals vr
+         WHERE vr.referrer_vendor_id = CAST($1 AS uuid)`,
+        [vendorId]
+      );
+      return c.json({
+        success: true,
+        referrals: referrals.rows,
+        count: referrals.rows.length,
+        total: parseInt(countResult.rows[0]?.total || "0", 10)
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral list:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/referral/rewards", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const rewards = await query(
+        `SELECT 
+          lt.*,
+          vr.referral_code,
+          vr.referred_vendor_id,
+          vr.approved_at,
+          vr.status as referral_status,
+          vr.created_at as referral_created_at,
+          v.business_name as referred_vendor_name
+         FROM loyalty_transactions lt
+         INNER JOIN vendor_referrals vr ON lt.reference_id = vr.id
+         LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
+         WHERE lt.customer_id = CAST($1 AS uuid)
+         AND lt.reference_type = 'vendor_referral'
+         AND lt.transaction_type = 'earned'
+         AND vr.referrer_vendor_id = CAST($1 AS uuid)
+         AND vr.status = 'approved'
+         ORDER BY vr.created_at DESC NULLS LAST, COALESCE(vr.approved_at, vr.created_at) DESC NULLS LAST, lt.created_at DESC
+         LIMIT 50`,
+        [vendorId]
+      );
+      return c.json({
+        success: true,
+        rewards: rewards.rows,
+        count: rewards.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching vendor referral rewards:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/referral/:referralId/diagnostic", async (c) => {
+    try {
+      const { vendorId, referralId } = c.req.param();
+      const referralResult = await query(
+        `SELECT vr.*, v.business_name as referred_vendor_name, v.phone as referred_vendor_phone
+         FROM vendor_referrals vr
+         LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
+         WHERE vr.id = CAST($1 AS uuid)
+         AND vr.referrer_vendor_id = CAST($2 AS uuid)`,
+        [referralId, vendorId]
+      );
+      if (referralResult.rows.length === 0) {
+        return c.json({ error: "Referral not found" }, 404);
+      }
+      const referral = referralResult.rows[0];
+      const transactionsResult = await query(
+        `SELECT lt.*
+         FROM loyalty_transactions lt
+         WHERE lt.customer_id = CAST($1 AS uuid)
+         AND lt.reference_type = 'vendor_referral'
+         AND lt.reference_id = CAST($2 AS uuid)
+         ORDER BY lt.created_at DESC`,
+        [vendorId, referralId]
+      );
+      return c.json({
+        success: true,
+        referral,
+        loyaltyTransactions: transactionsResult.rows,
+        transactionCount: transactionsResult.rows.length,
+        totalPoints: transactionsResult.rows.reduce((sum, t) => sum + (parseInt(t.points) || 0), 0),
+        analysis: {
+          hasTransactions: transactionsResult.rows.length > 0,
+          isApproved: referral.status === "approved",
+          hasVendorId: referral.referred_vendor_id !== null,
+          shouldHavePoints: referral.status === "approved" && transactionsResult.rows.length > 0,
+          issue: referral.status !== "approved" && transactionsResult.rows.length > 0 ? "Points awarded for non-approved referral" : referral.status === "approved" && transactionsResult.rows.length === 0 ? "Approved referral missing points" : "No issues detected"
+        }
+      });
+    } catch (error) {
+      console.error("Error in referral diagnostic:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/referral/send", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { phone, message: message2 } = await c.req.json();
+      if (!phone) {
+        return c.json({ error: "phone is required" }, 400);
+      }
+      const referrals = await query(
+        `SELECT * FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid)
+         ORDER BY created_at DESC 
+         LIMIT 1`,
+        [vendorId]
+      );
+      let referralCode;
+      if (referrals.rows.length > 0) {
+        referralCode = referrals.rows[0].referral_code;
+      } else {
+        referralCode = `VENDOR${vendorId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        await insert("vendor_referrals", {
+          referrer_vendor_id: vendorId,
+          referred_phone: "",
+          referral_code: referralCode,
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+      const existing = await query(
+        `SELECT * FROM vendor_referrals 
+         WHERE referrer_vendor_id = CAST($1 AS uuid) AND referred_phone = $2 
+         LIMIT 1`,
+        [vendorId, normalizedPhone]
+      );
+      if (existing.rows.length === 0) {
+        await insert("vendor_referrals", {
+          referrer_vendor_id: vendorId,
+          referred_phone: normalizedPhone,
+          referral_code: referralCode,
+          status: "pending",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      try {
+        const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
+        const customMessage = message2 || `Join Warmpawz as a vendor! Use referral code ${referralCode} during registration to get started.`;
+        await publishToSNS2("vendor-notifications", {
+          type: "sms",
+          phone: `+91${normalizedPhone}`,
+          message: customMessage
+        }, {
+          messageType: "Transactional"
+        });
+        console.log(`\u2705 Vendor referral code sent to ${normalizedPhone}`);
+      } catch (smsError) {
+        console.error("Error sending referral SMS:", smsError);
+      }
+      return c.json({
+        success: true,
+        message: "Referral code sent successfully",
+        referralCode
+      });
+    } catch (error) {
+      console.error("Error sending vendor referral:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/referral/create-rule", async (c) => {
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS loyalty_action_rules (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          action_name TEXT NOT NULL UNIQUE,
+          action_category TEXT NOT NULL CHECK (action_category IN ('loyalty', 'referral_rewards')),
+          user_type TEXT NOT NULL CHECK (user_type IN ('customer', 'vendor', 'both')),
+          points_type TEXT NOT NULL CHECK (points_type IN ('fixed', 'percentage', 'per_amount')),
+          points_value NUMERIC(10, 2) NOT NULL,
+          base_amount NUMERIC(10, 2),
+          min_amount NUMERIC(10, 2),
+          max_points_per_transaction INTEGER,
+          frequency_type TEXT CHECK (frequency_type IN ('one_time', 'recurring', 'unlimited', 'monthly_limit', 'yearly_limit')),
+          frequency_limit INTEGER,
+          frequency_period TEXT CHECK (frequency_period IN ('day', 'week', 'month', 'year')),
+          conditions JSONB DEFAULT '{}'::jsonb,
+          multiplier_conditions JSONB DEFAULT '{}'::jsonb,
+          is_active BOOLEAN DEFAULT true,
+          priority INTEGER DEFAULT 100,
+          description TEXT,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `).catch(() => {
+      });
+      await query(`
+        INSERT INTO loyalty_action_rules (
+          action_name, action_category, user_type, points_type, points_value,
+          base_amount, frequency_type, description, is_active, priority, notes
+        ) VALUES (
+          'vendor_refer_friend', 'referral_rewards', 'vendor', 'fixed', 500,
+          NULL, 'recurring', 'Refer a friend who joins', true, 50, 'Friend must Onboard 1 End User and complete 1 booking'
+        )
+        ON CONFLICT (action_name) DO UPDATE SET
+          points_value = 500,
+          action_category = 'referral_rewards',
+          user_type = 'vendor',
+          points_type = 'fixed',
+          frequency_type = 'recurring',
+          description = 'Refer a friend who joins',
+          is_active = true,
+          priority = 50,
+          updated_at = NOW()
+      `);
+      return c.json({ success: true, message: "vendor_refer_friend rule created/updated with 500 points" });
+    } catch (error) {
+      console.error("Error creating rule:", error);
+      return c.json({ error: error.message, stack: error.stack }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/referral/retroactive-process", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      console.log(`[REFERRALS] Starting retroactive processing for vendor: ${vendorId}`);
+      const referrals = await query(
+        `SELECT vr.*, v.phone as referred_vendor_phone, v.id as referred_vendor_id
+         FROM vendor_referrals vr
+         LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
+         WHERE vr.referrer_vendor_id = CAST($1 AS uuid)
+         AND vr.status = 'approved'
+         AND NOT EXISTS (
+           SELECT 1 FROM loyalty_transactions lt
+           WHERE lt.customer_id = vr.referrer_vendor_id
+           AND lt.reference_type = 'vendor_referral'
+           AND lt.reference_id = vr.id
+         )
+         ORDER BY vr.created_at DESC`,
+        [vendorId]
+      );
+      const results = [];
+      let totalPointsAwarded = 0;
+      let totalWalletCredited = 0;
+      for (const referral of referrals.rows) {
+        try {
+          if (!referral.referrer_vendor_id || !referral.id) {
+            console.log(`[REFERRALS] Skipping referral ${referral.id} - missing referrer vendor ID`);
+            results.push({
+              referralId: referral.id,
+              success: false,
+              error: "Missing referrer vendor ID"
+            });
+            continue;
+          }
+          const existingPoints = await query(
+            `SELECT COUNT(*) as count FROM loyalty_transactions 
+             WHERE customer_id = $1 
+             AND reference_type = 'vendor_referral' 
+             AND reference_id = $2`,
+            [referral.referrer_vendor_id, referral.id]
+          );
+          if (parseInt(existingPoints.rows[0]?.count || "0") > 0) {
+            results.push({
+              referralId: referral.id,
+              success: false,
+              error: "Points already awarded"
+            });
+            continue;
+          }
+          const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+          const pointsResult = await loyaltyPointsService2.awardPoints({
+            vendorId: referral.referrer_vendor_id,
+            actionName: "vendor_refer_friend",
+            referenceType: "vendor_referral",
+            referenceId: referral.id,
+            description: `Vendor referral: Retroactive processing for approved referral ${referral.referral_code || referral.id}`
+          });
+          const result = {
+            success: true,
+            referrerPoints: pointsResult.points,
+            walletCredited: pointsResult.walletCredited
+          };
+          if (result.success) {
+            totalPointsAwarded += result.referrerPoints || 0;
+            totalWalletCredited += (result.referrerPoints || 0) / 100;
+            results.push({
+              referralId: referral.id,
+              success: true,
+              points: result.referrerPoints,
+              walletCredited: (result.referrerPoints || 0) / 100
+            });
+            console.log(`[REFERRALS] \u2705 Processed referral ${referral.id}: ${result.referrerPoints} points`);
+          } else {
+            const errorMsg = result.error || "Unknown error";
+            results.push({
+              referralId: referral.id,
+              success: false,
+              error: errorMsg
+            });
+            console.log(`[REFERRALS] \u274C Failed to process referral ${referral.id}: ${errorMsg}`);
+          }
+        } catch (error) {
+          console.error(`[REFERRALS] Error processing referral ${referral.id}:`, error);
+          results.push({
+            referralId: referral.id,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+      return c.json({
+        success: true,
+        message: `Processed ${results.length} referrals`,
+        processed: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
+        totalPointsAwarded,
+        totalWalletCredited: Math.round(totalWalletCredited * 100) / 100,
+        results
+      });
+    } catch (error) {
+      console.error("Error in retroactive referral processing:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/referral/:referralId/process", async (c) => {
+    try {
+      const { vendorId, referralId } = c.req.param();
+      console.log(`[REFERRALS] Processing specific referral: ${referralId} for vendor: ${vendorId}`);
+      const referralResult = await query(
+        `SELECT * FROM vendor_referrals WHERE id = $1 AND referrer_vendor_id = $2`,
+        [referralId, vendorId]
+      );
+      if (referralResult.rows.length === 0) {
+        return c.json({ error: "Referral not found" }, 404);
+      }
+      const referral = referralResult.rows[0];
+      let vendorIdToLink = referral.referred_vendor_id;
+      if (!vendorIdToLink && referral.referred_phone) {
+        console.log(`[REFERRALS] referred_vendor_id is NULL, trying to find from vendor_identity for phone: ${referral.referred_phone}`);
+        const vendorIdentityResult = await query(
+          `SELECT vendor_id FROM vendor_identity 
+           WHERE phone LIKE $1 OR phone LIKE $2
+           AND vendor_id IS NOT NULL
+           ORDER BY updated_at DESC LIMIT 1`,
+          [`%${referral.referred_phone}%`, `%${referral.referred_phone.slice(-10)}%`]
+        );
+        if (vendorIdentityResult.rows.length > 0 && vendorIdentityResult.rows[0].vendor_id) {
+          vendorIdToLink = vendorIdentityResult.rows[0].vendor_id;
+          console.log(`[REFERRALS] \u2705 Found vendor_id ${vendorIdToLink} from vendor_identity`);
+        } else {
+          console.log(`[REFERRALS] \u26A0\uFE0F No vendor_id found in vendor_identity - vendor may not be approved yet`);
+        }
+      }
+      const existingPoints = await query(
+        `SELECT COUNT(*) as count, COALESCE(SUM(points), 0) as total_points FROM loyalty_transactions 
+         WHERE customer_id = CAST($1 AS uuid)
+         AND reference_type = 'vendor_referral' 
+         AND reference_id = CAST($2 AS uuid)`,
+        [referral.referrer_vendor_id, referral.id]
+      );
+      const pointsCount = parseInt(existingPoints.rows[0]?.count || "0");
+      const totalPoints = parseInt(existingPoints.rows[0]?.total_points || "0");
+      console.log(`[REFERRALS] Checking points for referral ${referral.id}: found ${pointsCount} loyalty transactions, total ${totalPoints} points`);
+      console.log(`[REFERRALS] Referrer vendor ID: ${referral.referrer_vendor_id}, Referral ID: ${referral.id}`);
+      if (pointsCount > 0 && totalPoints > 0) {
+        const latestTx = await query(
+          `SELECT description FROM loyalty_transactions 
+           WHERE customer_id = CAST($1 AS uuid)
+           AND reference_type = 'vendor_referral' 
+           AND reference_id = CAST($2 AS uuid)
+           ORDER BY created_at DESC LIMIT 1`,
+          [referral.referrer_vendor_id, referral.id]
+        );
+        let vendorIdToLink2 = null;
+        if (latestTx.rows.length > 0) {
+          const desc = latestTx.rows[0].description || "";
+          const match2 = desc.match(/vendor\s+([a-f0-9-]{36})/i);
+          if (match2 && match2[1]) {
+            vendorIdToLink2 = match2[1];
+          }
+        }
+        await query(
+          `UPDATE vendor_referrals
+           SET status = 'approved',
+               referred_vendor_id = COALESCE($2, referred_vendor_id),
+               approved_at = COALESCE(approved_at, NOW()),
+               applied_at = COALESCE(applied_at, NOW()),
+               updated_at = NOW()
+           WHERE id = $1`,
+          [referral.id, vendorIdToLink2 || referral.referred_vendor_id]
+        );
+        if (vendorIdToLink2) {
+          console.log(`[REFERRALS] \u2705 Linked referral ${referral.id} to vendor ${vendorIdToLink2} from transaction description`);
+        } else {
+          console.log(`[REFERRALS] \u2705 Updated referral ${referral.id} status to approved (vendor_id not found in description)`);
+        }
+        return c.json({
+          success: true,
+          message: "Points already awarded, status updated to approved",
+          referralId: referral.id,
+          points: totalPoints,
+          walletCredited: totalPoints / 100,
+          vendorIdLinked: vendorIdToLink2 || referral.referred_vendor_id || null
+        });
+      }
+      if (pointsCount > 0 && totalPoints === 0) {
+        console.log(`[REFERRALS] \u26A0\uFE0F Found ${pointsCount} loyalty transactions but total points = 0. This is an error. Will try to award points anyway.`);
+      }
+      console.log(`[REFERRALS] No points found - proceeding to award points...`);
+      let pointsResult;
+      try {
+        const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+        pointsResult = await loyaltyPointsService2.awardPoints({
+          vendorId: referral.referrer_vendor_id,
+          actionName: "vendor_refer_friend",
+          referenceType: "vendor_referral",
+          referenceId: referral.id,
+          description: `Vendor referral: ${referral.referral_code || referral.id}`
+        });
+        console.log(`[REFERRALS] \u2705 Awarded ${pointsResult.points} points`);
+      } catch (pointsError) {
+        console.error(`[REFERRALS] Error awarding points: ${pointsError.message}`);
+        const checkPoints = await query(
+          `SELECT COUNT(*) as count, COALESCE(SUM(points), 0) as total FROM loyalty_transactions 
+           WHERE customer_id = CAST($1 AS uuid)
+           AND reference_type = 'vendor_referral' 
+           AND reference_id = CAST($2 AS uuid)`,
+          [referral.referrer_vendor_id, referral.id]
+        );
+        const actualPoints = parseInt(checkPoints.rows[0]?.total || "0");
+        if (actualPoints > 0) {
+          console.log(`[REFERRALS] Points exist despite error (${actualPoints}), will update status`);
+          pointsResult = { points: actualPoints, walletCredited: actualPoints / 100 };
+        } else {
+          throw pointsError;
+        }
+      }
+      await query(
+        `UPDATE vendor_referrals
+         SET status = 'approved',
+             referred_vendor_id = COALESCE($2, referred_vendor_id),
+             approved_at = COALESCE(approved_at, NOW()),
+             applied_at = COALESCE(applied_at, NOW()),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [referral.id, vendorIdToLink || referral.referred_vendor_id]
+      );
+      if (vendorIdToLink && !referral.referred_vendor_id) {
+        console.log(`[REFERRALS] \u2705 Linked referral ${referral.id} to vendor ${vendorIdToLink} from vendor_identity`);
+      }
+      console.log(`[REFERRALS] \u2705 Updated referral ${referral.id} status to 'approved'`);
+      return c.json({
+        success: true,
+        message: "Referral processed successfully",
+        referralId: referral.id,
+        points: pointsResult.points,
+        walletCredited: pointsResult.walletCredited
+      });
+    } catch (error) {
+      console.error("Error processing referral:", error);
+      return c.json({ error: error.message, stack: error.stack }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/referral/convert-loyalty-to-wallet", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      console.log(`[REFERRALS] Converting loyalty points to wallet for vendor: ${vendorId}`);
+      const loyaltyTxns = await query(
+        `SELECT lt.*, COALESCE(vr.referral_code, '') as referral_code
+         FROM loyalty_transactions lt
+         LEFT JOIN vendor_referrals vr ON lt.reference_id = vr.id
+         WHERE lt.customer_id = $1
+         AND lt.reference_type = 'vendor_referral'
+         ORDER BY lt.created_at ASC`,
+        [vendorId]
+      );
+      if (loyaltyTxns.rows.length === 0) {
+        return c.json({
+          success: true,
+          message: "No loyalty transactions found",
+          converted: 0
+        });
+      }
+      const { query: queryFn, withTransaction: withTransaction2, select: select27, insert: insert14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      let totalConverted = 0;
+      let totalWalletCredited = 0;
+      const results = [];
+      for (const txn of loyaltyTxns.rows) {
+        try {
+          const points = parseInt(txn.points || "0");
+          if (points <= 0) continue;
+          const walletAmount = Math.round(points / 100 * 100) / 100;
+          const existingWalletTxn = await query(
+            `SELECT COUNT(*) as count FROM wallet_transactions 
+             WHERE customer_id = $1 
+             AND (description LIKE $2 OR description LIKE $3)
+             AND transaction_type = 'credit'`,
+            [vendorId, `%${points} points%`, `%${txn.id}%`]
+          );
+          if (parseInt(existingWalletTxn.rows[0]?.count || "0") > 0) {
+            console.log(`[REFERRALS] Skipping ${txn.id} - wallet transaction already exists`);
+            continue;
+          }
+          await withTransaction2(async (txClient) => {
+            let wallets = await select27("customer_wallets", { customer_id: vendorId });
+            if (wallets.length === 0) {
+              await insert14("customer_wallets", {
+                customer_id: vendorId,
+                balance: 0
+              });
+              wallets = await select27("customer_wallets", { customer_id: vendorId });
+            }
+            const wallet = wallets[0];
+            await txClient.query(
+              `UPDATE customer_wallets
+               SET balance = balance + $1,
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [walletAmount, wallet.id]
+            );
+            const balanceAfter = await txClient.query(
+              `SELECT balance FROM customer_wallets WHERE id = $1`,
+              [wallet.id]
+            );
+            const newBalance = parseFloat(balanceAfter.rows[0]?.balance || "0");
+            try {
+              await queryFn(
+                `INSERT INTO wallet_transactions (customer_id, transaction_type, amount, balance_after, description)
+                 VALUES ($1, 'credit', $2, $3, $4)`,
+                [
+                  vendorId,
+                  walletAmount,
+                  newBalance,
+                  `Loyalty points converted: ${points} points = \u20B9${walletAmount.toFixed(2)} (100 points = \u20B91) - Retroactive`
+                ]
+              );
+            } catch (insertError) {
+              console.error(`[REFERRALS] Error inserting wallet transaction: ${insertError.message}`);
+            }
+            totalConverted++;
+            totalWalletCredited += walletAmount;
+            results.push({
+              loyaltyTransactionId: txn.id,
+              points,
+              walletCredited: walletAmount
+            });
+          });
+        } catch (error) {
+          console.error(`[REFERRALS] Error converting transaction ${txn.id}:`, error);
+          results.push({
+            loyaltyTransactionId: txn.id,
+            error: error.message
+          });
+        }
+      }
+      return c.json({
+        success: true,
+        message: `Converted ${totalConverted} loyalty transactions to wallet`,
+        converted: totalConverted,
+        totalWalletCredited: Math.round(totalWalletCredited * 100) / 100,
+        results
+      });
+    } catch (error) {
+      console.error("Error converting loyalty to wallet:", error);
+      return c.json({ error: error.message, stack: error.stack }, 500);
+    }
+  });
+  app3.get("/customer/:phone/referrals", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      let normalizedPhone = phone.replace(/\s+/g, "").replace(/^0+/, "");
+      if (!normalizedPhone.startsWith("+")) {
+        if (normalizedPhone.length === 10) {
+          normalizedPhone = "+91" + normalizedPhone;
+        }
+      }
+      const customerResult = await query(
+        `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
+        [phone, normalizedPhone]
+      );
+      if (customerResult.rows.length === 0) {
+        return c.json({
+          error: "Customer not found",
+          stats: {
+            total_referrals: 0,
+            successful_referrals: 0,
+            pending_referrals: 0,
+            total_rewards: 0,
+            referral_code: phone?.slice(-6).toUpperCase() || "REF123"
+          }
+        }, 404);
+      }
+      const customerId = customerResult.rows[0].id;
+      let referrals = await select("referrals", { referrer_id: customerId });
+      if (referrals.length === 0) {
+        const code = `WARM${customerId.slice(-4).toUpperCase()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        const newReferral = await insert("referrals", {
+          referrer_id: customerId,
+          referral_code: code,
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        referrals = newReferral;
+      }
+      const referralCode = referrals[0].referral_code;
+      const totalReferrals = await query(
+        `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND referred_id IS NOT NULL`,
+        [customerId]
+      );
+      const completedReferrals = await query(
+        `SELECT COUNT(DISTINCT r.referred_id) as count
+         FROM referrals r
+         INNER JOIN bookings b ON r.referred_id = b.customer_id
+         WHERE r.referrer_id = $1 AND r.referred_id IS NOT NULL`,
+        [customerId]
+      );
+      const pendingReferrals = await query(
+        `SELECT COUNT(*) as count 
+         FROM referrals 
+         WHERE referrer_id = $1 AND referred_id IS NOT NULL 
+         AND NOT EXISTS (
+           SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
+         )`,
+        [customerId]
+      );
+      const earnings = await query(
+        `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+         FROM loyalty_transactions lt
+         INNER JOIN referrals r ON lt.reference_id = r.id
+         WHERE lt.customer_id = $1 
+         AND lt.reference_type = 'referral'
+         AND lt.transaction_type = 'earned'
+         AND EXISTS(SELECT 1 FROM bookings WHERE customer_id = r.referred_id)`,
+        [customerId]
+      );
+      return c.json({
+        success: true,
+        stats: {
+          referral_code: referralCode,
+          total_referrals: parseInt(totalReferrals.rows[0]?.count || "0", 10),
+          successful_referrals: parseInt(completedReferrals.rows[0]?.count || "0", 10),
+          pending_referrals: parseInt(pendingReferrals.rows[0]?.count || "0", 10),
+          total_rewards: parseInt(earnings.rows[0]?.total_earnings || "0", 10)
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching referral data by phone:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/customer/:customerId/referral/:referralId/process", async (c) => {
+    try {
+      const { customerId, referralId } = c.req.param();
+      console.log(`[REFERRALS] Processing customer referral: ${referralId} for referrer: ${customerId}`);
+      const referralResult = await query(
+        `SELECT * FROM referrals WHERE id = $1 AND referrer_id = $2`,
+        [referralId, customerId]
+      );
+      if (referralResult.rows.length === 0) {
+        return c.json({ error: "Referral not found" }, 404);
+      }
+      const referral = referralResult.rows[0];
+      if (!referral.referred_id) {
+        return c.json({
+          error: "Referral code has not been used yet",
+          referral
+        }, 400);
+      }
+      const existingPoints = await query(
+        `SELECT COUNT(*) as count, COALESCE(SUM(points), 0) as total_points FROM loyalty_transactions 
+         WHERE customer_id = $1 
+         AND reference_type = 'referral' 
+         AND reference_id = $2`,
+        [customerId, referralId]
+      );
+      const pointsCount = parseInt(existingPoints.rows[0]?.count || "0");
+      const totalPoints = parseInt(existingPoints.rows[0]?.total_points || "0");
+      console.log(`[REFERRALS] Checking points for referral ${referralId}: found ${pointsCount} loyalty transactions, total ${totalPoints} points`);
+      if (pointsCount > 0 && totalPoints > 0) {
+        return c.json({
+          success: true,
+          message: "Points already awarded",
+          referralId: referral.id,
+          points: totalPoints,
+          walletCredited: totalPoints / 100
+        });
+      }
+      let referrerPoints = 0;
+      try {
+        const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
+        const referrerResult = await loyaltyPointsService2.awardPoints({
+          customerId,
+          actionName: "refer_friend",
+          referenceType: "referral",
+          referenceId: referral.id,
+          description: "Referral reward for friend signup"
+        });
+        referrerPoints = referrerResult.points;
+        console.log(`[REFERRALS] \u2705 Awarded ${referrerPoints} points to referrer ${customerId}`);
+      } catch (pointsError) {
+        console.error(`[REFERRALS] \u274C Error awarding referral points: ${pointsError.message}`);
+        return c.json({
+          error: `Failed to award points: ${pointsError.message}`,
+          referralId: referral.id
+        }, 500);
+      }
+      return c.json({
+        success: true,
+        message: "Referral processed successfully",
+        referralId: referral.id,
+        points: referrerPoints,
+        walletCredited: referrerPoints / 100
+      });
+    } catch (error) {
+      console.error("Error processing customer referral:", error);
+      return c.json({ error: error.message, stack: error.stack }, 500);
+    }
+  });
 }
 
 // src/endpoints/rewards.ts
@@ -206860,6 +208846,43 @@ function registerRewardsEndpoints(app3) {
       const pointsToNextTier = nextTier?.min_points ? Math.max(0, parseInt(nextTier.min_points, 10) - currentPoints) : 0;
       const tierName = tier?.name || "Bronze";
       const nextTierName = nextTier?.name || null;
+      let referralPointsEarned = 0;
+      let pendingReferralPoints = 0;
+      try {
+        const earnedResult = await query(
+          `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+           FROM loyalty_transactions lt
+           WHERE lt.customer_id = $1 
+           AND lt.reference_type = 'referral'
+           AND lt.transaction_type = 'earned'`,
+          [customerId]
+        );
+        referralPointsEarned = parseInt(earnedResult.rows[0]?.total_earnings || "0", 10);
+        const ruleResult = await query(
+          `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
+        );
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || "0", 10) : 500;
+        const pendingResult = await query(
+          `SELECT COUNT(*) as count 
+           FROM referrals 
+           WHERE referrer_id = $1 
+           AND referred_id IS NOT NULL 
+           AND NOT EXISTS (
+             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM loyalty_transactions 
+             WHERE customer_id = $1 
+             AND reference_type = 'referral' 
+             AND reference_id = referrals.id
+           )`,
+          [customerId]
+        );
+        const pendingCount = parseInt(pendingResult.rows[0]?.count || "0", 10);
+        pendingReferralPoints = pendingCount * pointsPerReferral;
+      } catch (refError) {
+        console.log("Error calculating referral points:", refError);
+      }
       return c.json({
         success: true,
         points: currentPoints,
@@ -206872,7 +208895,10 @@ function registerRewardsEndpoints(app3) {
         nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
         pointsToNextTier,
         lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || "0", 10),
-        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || "0", 10)
+        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || "0", 10),
+        referralPointsEarned,
+        pendingReferralPoints,
+        totalPotentialPoints: currentPoints + pendingReferralPoints
       });
     } catch (error) {
       console.error("Error fetching points:", error);
@@ -206889,8 +208915,112 @@ function registerRewardsEndpoints(app3) {
         pointsToNextTier: 0,
         lifetimePointsEarned: 0,
         lifetimePointsRedeemed: 0,
+        referralPointsEarned: 0,
+        pendingReferralPoints: 0,
+        totalPotentialPoints: 0,
         message: "Loyalty program initializing"
       });
+    }
+  });
+  app3.get("/customer/:phone/rewards/points", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      let normalizedPhone = phone.replace(/\s+/g, "").replace(/^0+/, "");
+      if (!normalizedPhone.startsWith("+")) {
+        if (normalizedPhone.length === 10) {
+          normalizedPhone = "+91" + normalizedPhone;
+        }
+      }
+      const customerResult = await query(
+        `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
+        [phone, normalizedPhone]
+      );
+      if (customerResult.rows.length === 0) {
+        return c.json({
+          error: "Customer not found",
+          points: 0,
+          totalPoints: 0,
+          referralPointsEarned: 0,
+          pendingReferralPoints: 0
+        }, 404);
+      }
+      const customerId = customerResult.rows[0].id;
+      let profile = [];
+      try {
+        profile = await select("customer_loyalty_points", { customer_id: customerId });
+        if (profile.length === 0) {
+          try {
+            const newProfile = await insert("customer_loyalty_points", {
+              customer_id: customerId,
+              total_points: 0,
+              lifetime_points_earned: 0,
+              lifetime_points_redeemed: 0
+            });
+            profile = newProfile;
+          } catch (insertError) {
+            console.log("Could not create loyalty profile:", insertError);
+          }
+        }
+      } catch (selectError) {
+        console.log("Loyalty points table not available:", selectError);
+      }
+      const currentPoints = parseInt(profile[0]?.total_points || "0", 10);
+      let referralPointsEarned = 0;
+      let pendingReferralPoints = 0;
+      try {
+        const earnedResult = await query(
+          `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+           FROM loyalty_transactions lt
+           WHERE lt.customer_id = $1 
+           AND lt.reference_type = 'referral'
+           AND lt.transaction_type = 'earned'`,
+          [customerId]
+        );
+        referralPointsEarned = parseInt(earnedResult.rows[0]?.total_earnings || "0", 10);
+        const ruleResult = await query(
+          `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
+        );
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || "0", 10) : 500;
+        const pendingResult = await query(
+          `SELECT COUNT(*) as count 
+           FROM referrals 
+           WHERE referrer_id = $1 
+           AND referred_id IS NOT NULL 
+           AND NOT EXISTS (
+             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM loyalty_transactions 
+             WHERE customer_id = $1 
+             AND reference_type = 'referral' 
+             AND reference_id = referrals.id
+           )`,
+          [customerId]
+        );
+        const pendingCount = parseInt(pendingResult.rows[0]?.count || "0", 10);
+        pendingReferralPoints = pendingCount * pointsPerReferral;
+      } catch (refError) {
+        console.log("Error calculating referral points:", refError);
+      }
+      return c.json({
+        success: true,
+        points: currentPoints,
+        totalPoints: currentPoints,
+        lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || "0", 10),
+        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || "0", 10),
+        referralPointsEarned,
+        pendingReferralPoints,
+        totalPotentialPoints: currentPoints + pendingReferralPoints
+      });
+    } catch (error) {
+      console.error("Error fetching points by phone:", error);
+      return c.json({
+        error: error.message,
+        points: 0,
+        totalPoints: 0,
+        referralPointsEarned: 0,
+        pendingReferralPoints: 0
+      }, 500);
     }
   });
   app3.get("/customer/:customerId/rewards/history", async (c) => {
@@ -211617,53 +213747,94 @@ var GetTaxFlexibleRulesHandler = class extends BaseHandler {
       `);
       const flexRows = Array.isArray(flexResult) ? flexResult : flexResult?.rows ?? [];
       if (flexRows.length > 0) {
-        const rules = flexRows.map((r) => ({
-          id: r.id,
-          name: r.name ?? r.rule_name,
-          description: r.description ?? null,
-          taxType: r.tax_type ?? "gst",
-          rate: parseFloat(r.rate) ?? 18,
-          calculationMethod: "percentage",
-          priority: Number(r.priority) ?? 100,
-          isActive: r.is_active !== false,
-          conditions: typeof r.conditions === "object" ? r.conditions : r.conditions ? JSON.parse(r.conditions || "{}") : {},
-          exemptions: {},
-          createdAt: r.created_at,
-          updatedAt: r.updated_at
-        }));
+        const rules = flexRows.map((r) => {
+          let serviceTypes;
+          let vendorRoles;
+          try {
+            if (r.conditions_metadata) {
+              const metadata = JSON.parse(r.conditions_metadata);
+              serviceTypes = metadata.serviceTypes;
+              vendorRoles = metadata.vendorRoles;
+            }
+          } catch (e) {
+          }
+          if (!serviceTypes && r.service_style) {
+            serviceTypes = [r.service_style];
+          }
+          if (!vendorRoles && r.role_id) {
+            vendorRoles = [r.role_id];
+          }
+          const conditions = typeof r.conditions === "object" ? r.conditions : r.conditions ? JSON.parse(r.conditions || "{}") : {};
+          if (serviceTypes) conditions.serviceTypes = serviceTypes;
+          if (vendorRoles) conditions.vendorRoles = vendorRoles;
+          return {
+            id: r.id,
+            name: r.name ?? r.rule_name,
+            description: r.description ?? null,
+            taxType: r.tax_type ?? "gst",
+            rate: parseFloat(r.rate) ?? 18,
+            calculationMethod: "percentage",
+            priority: Number(r.priority) ?? 100,
+            isActive: r.is_active !== false,
+            conditions,
+            exemptions: {},
+            createdAt: r.created_at,
+            updatedAt: r.updated_at
+          };
+        });
         return this.success({ success: true, rules });
       }
       try {
         const gstResult = await query(`
-          SELECT * FROM gst_rules
+          SELECT *, 
+                 COALESCE(conditions_metadata, '{}'::text) as conditions_metadata
+          FROM gst_rules
           ORDER BY priority DESC, created_at DESC
         `);
         const gstRows = Array.isArray(gstResult) ? gstResult : gstResult?.rows ?? [];
-        const rules = gstRows.map((r) => ({
-          id: r.id,
-          name: r.rule_name ?? r.name ?? "GST Rule",
-          description: r.description ?? null,
-          taxType: "gst",
-          rate: parseFloat(r.gst_rate) ?? 18,
-          calculationMethod: r.gst_type === "fixed" ? "fixed" : "percentage",
-          priority: Number(r.priority) ?? 100,
-          isActive: r.enabled !== false,
-          tax_category_id: r.tax_category_id ?? null,
-          role_id: r.role_id ?? null,
-          service_style: r.service_style ?? null,
-          conditions: {
-            categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
-            serviceTypes: r.service_style ? [r.service_style] : void 0,
-            vendorRoles: r.role_id ? [r.role_id] : void 0,
-            minAmount: r.min_amount != null ? parseFloat(r.min_amount) : void 0,
-            maxAmount: r.max_amount != null ? parseFloat(r.max_amount) : void 0,
-            states: [r.customer_state, r.vendor_state].filter(Boolean),
-            transactionType: "both"
-          },
-          exemptions: {},
-          createdAt: r.created_at,
-          updatedAt: r.updated_at
-        }));
+        const rules = gstRows.map((r) => {
+          let serviceTypes;
+          let vendorRoles;
+          try {
+            if (r.conditions_metadata) {
+              const metadata = JSON.parse(r.conditions_metadata);
+              serviceTypes = metadata.serviceTypes;
+              vendorRoles = metadata.vendorRoles;
+            }
+          } catch (e) {
+          }
+          if (!serviceTypes && r.service_style) {
+            serviceTypes = [r.service_style];
+          }
+          if (!vendorRoles && r.role_id) {
+            vendorRoles = [r.role_id];
+          }
+          return {
+            id: r.id,
+            name: r.rule_name ?? r.name ?? "GST Rule",
+            description: r.description ?? null,
+            taxType: "gst",
+            rate: parseFloat(r.gst_rate) ?? 18,
+            calculationMethod: r.gst_type === "fixed" ? "fixed" : "percentage",
+            priority: Number(r.priority) ?? 100,
+            isActive: r.enabled !== false,
+            tax_category_id: r.tax_category_id ?? null,
+            role_id: r.role_id ?? null,
+            service_style: r.service_style ?? null,
+            conditions: {
+              categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
+              serviceTypes,
+              vendorRoles,
+              minAmount: r.min_amount != null ? parseFloat(r.min_amount) : void 0,
+              maxAmount: r.max_amount != null ? parseFloat(r.max_amount) : void 0,
+              states: [r.customer_state, r.vendor_state].filter(Boolean),
+              transactionType: "both"
+            },
+            exemptions: {},
+            createdAt: r.created_at,
+            updatedAt: r.updated_at
+          };
+        });
         return this.success({ success: true, rules });
       } catch (_) {
         return this.success({ success: true, rules: [] });
@@ -212411,15 +214582,20 @@ function registerAdminComprehensiveEndpoints(app3) {
   app3.post("/admin/tax/flexible/rules", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const serviceStyle = body.conditions?.serviceTypes?.[0] ?? body.service_style ?? null;
+      const serviceTypes = body.conditions?.serviceTypes || (body.service_style ? [body.service_style] : []);
+      const serviceStyle = Array.isArray(serviceTypes) && serviceTypes.length > 0 ? serviceTypes[0] : null;
+      const serviceStylesJson = Array.isArray(serviceTypes) && serviceTypes.length > 0 ? JSON.stringify(serviceTypes) : null;
+      const vendorRoles = body.conditions?.vendorRoles || (body.role_id ? [body.role_id] : []);
+      const roleId = Array.isArray(vendorRoles) && vendorRoles.length > 0 ? vendorRoles[0] : null;
+      const vendorRolesJson = Array.isArray(vendorRoles) && vendorRoles.length > 0 ? JSON.stringify(vendorRoles) : null;
       const taxCategoryId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId ?? null;
-      const roleId = body.conditions?.vendorRoles?.[0] ?? body.role_id ?? null;
+      const gstRate = body.rate !== void 0 && body.rate !== null ? body.rate : 18;
       const ruleData = {
         rule_name: body.name ?? "Tax Rule",
         description: body.description ?? null,
         enabled: body.isActive !== false,
         priority: body.priority ?? 100,
-        gst_rate: body.rate ?? 18,
+        gst_rate: gstRate,
         gst_type: body.calculationMethod === "fixed" ? "fixed" : "percentage",
         role_id: roleId || null,
         service_style: serviceStyle || null,
@@ -212430,8 +214606,39 @@ function registerAdminComprehensiveEndpoints(app3) {
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
+      if (serviceStylesJson || vendorRolesJson) {
+        const metadata = {
+          serviceTypes: serviceTypes.length > 0 ? serviceTypes : void 0,
+          vendorRoles: vendorRoles.length > 0 ? vendorRoles : void 0
+        };
+        ruleData.conditions_metadata = JSON.stringify(metadata);
+        try {
+          await query(`
+            ALTER TABLE gst_rules 
+            ADD COLUMN IF NOT EXISTS conditions_metadata TEXT
+          `);
+        } catch (e) {
+          console.warn("Could not add conditions_metadata column:", e);
+        }
+      }
       const inserted = await insert("gst_rules", ruleData);
       const r = Array.isArray(inserted) ? inserted[0] : inserted;
+      let parsedServiceTypes;
+      let parsedVendorRoles;
+      try {
+        if (r.conditions_metadata) {
+          const metadata = JSON.parse(r.conditions_metadata);
+          parsedServiceTypes = metadata.serviceTypes;
+          parsedVendorRoles = metadata.vendorRoles;
+        }
+      } catch (e) {
+      }
+      if (!parsedServiceTypes && r.service_style) {
+        parsedServiceTypes = [r.service_style];
+      }
+      if (!parsedVendorRoles && r.role_id) {
+        parsedVendorRoles = [r.role_id];
+      }
       return c.json({
         success: true,
         rule: {
@@ -212446,8 +214653,8 @@ function registerAdminComprehensiveEndpoints(app3) {
           conditions: {
             transactionType: "both",
             categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
-            serviceTypes: r.service_style ? [r.service_style] : void 0,
-            vendorRoles: r.role_id ? [r.role_id] : void 0
+            serviceTypes: parsedServiceTypes,
+            vendorRoles: parsedVendorRoles
           },
           createdAt: r.created_at,
           updatedAt: r.updated_at
@@ -212467,14 +214674,62 @@ function registerAdminComprehensiveEndpoints(app3) {
       if (body.description !== void 0) updateData.description = body.description;
       if (body.isActive !== void 0) updateData.enabled = body.isActive;
       if (body.priority !== void 0) updateData.priority = body.priority;
-      if (body.rate !== void 0) updateData.gst_rate = body.rate;
+      if (body.rate !== void 0 && body.rate !== null) updateData.gst_rate = body.rate;
       if (body.calculationMethod !== void 0) updateData.gst_type = body.calculationMethod === "fixed" ? "fixed" : "percentage";
       const catId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId;
       if (catId !== void 0) updateData.tax_category_id = catId || null;
-      const svcStyle = body.conditions?.serviceTypes?.[0] ?? body.service_style;
-      if (svcStyle !== void 0) updateData.service_style = svcStyle || null;
-      const roleId = body.conditions?.vendorRoles?.[0] ?? body.role_id;
-      if (roleId !== void 0) updateData.role_id = roleId || null;
+      const serviceTypes = body.conditions?.serviceTypes || (body.service_style ? [body.service_style] : []);
+      const svcStyle = Array.isArray(serviceTypes) && serviceTypes.length > 0 ? serviceTypes[0] : null;
+      if (body.conditions?.serviceTypes !== void 0) {
+        updateData.service_style = svcStyle || null;
+        const metadata = {};
+        if (serviceTypes.length > 0) metadata.serviceTypes = serviceTypes;
+        try {
+          const existing = await query(`SELECT conditions_metadata FROM gst_rules WHERE id = $1`, [id]);
+          const existingRow = Array.isArray(existing) ? existing[0] : existing?.rows?.[0];
+          if (existingRow?.conditions_metadata) {
+            const existingMeta = JSON.parse(existingRow.conditions_metadata);
+            if (existingMeta.vendorRoles) metadata.vendorRoles = existingMeta.vendorRoles;
+          }
+        } catch (e) {
+        }
+        updateData.conditions_metadata = JSON.stringify(metadata);
+        try {
+          await query(`
+            ALTER TABLE gst_rules 
+            ADD COLUMN IF NOT EXISTS conditions_metadata TEXT
+          `);
+        } catch (e) {
+        }
+      } else if (body.service_style !== void 0) {
+        updateData.service_style = body.service_style || null;
+      }
+      const vendorRoles = body.conditions?.vendorRoles || (body.role_id ? [body.role_id] : []);
+      const roleId = Array.isArray(vendorRoles) && vendorRoles.length > 0 ? vendorRoles[0] : null;
+      if (body.conditions?.vendorRoles !== void 0) {
+        updateData.role_id = roleId || null;
+        const metadata = {};
+        if (vendorRoles.length > 0) metadata.vendorRoles = vendorRoles;
+        try {
+          const existing = await query(`SELECT conditions_metadata FROM gst_rules WHERE id = $1`, [id]);
+          const existingRow = Array.isArray(existing) ? existing[0] : existing?.rows?.[0];
+          if (existingRow?.conditions_metadata) {
+            const existingMeta = JSON.parse(existingRow.conditions_metadata);
+            if (existingMeta.serviceTypes) metadata.serviceTypes = existingMeta.serviceTypes;
+          }
+        } catch (e) {
+        }
+        updateData.conditions_metadata = JSON.stringify(metadata);
+        try {
+          await query(`
+            ALTER TABLE gst_rules 
+            ADD COLUMN IF NOT EXISTS conditions_metadata TEXT
+          `);
+        } catch (e) {
+        }
+      } else if (body.role_id !== void 0) {
+        updateData.role_id = body.role_id || null;
+      }
       const updated = await update("gst_rules", { id }, updateData);
       const r = Array.isArray(updated) ? updated[0] : updated;
       return c.json({
@@ -212488,12 +214743,30 @@ function registerAdminComprehensiveEndpoints(app3) {
           calculationMethod: r.gst_type === "fixed" ? "fixed" : "percentage",
           priority: Number(r.priority) ?? 100,
           isActive: r.enabled !== false,
-          conditions: {
-            transactionType: "both",
-            categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
-            serviceTypes: r.service_style ? [r.service_style] : void 0,
-            vendorRoles: r.role_id ? [r.role_id] : void 0
-          },
+          conditions: (() => {
+            let serviceTypes2;
+            let vendorRoles2;
+            try {
+              if (r.conditions_metadata) {
+                const metadata = JSON.parse(r.conditions_metadata);
+                serviceTypes2 = metadata.serviceTypes;
+                vendorRoles2 = metadata.vendorRoles;
+              }
+            } catch (e) {
+            }
+            if (!serviceTypes2 && r.service_style) {
+              serviceTypes2 = [r.service_style];
+            }
+            if (!vendorRoles2 && r.role_id) {
+              vendorRoles2 = [r.role_id];
+            }
+            return {
+              transactionType: "both",
+              categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
+              serviceTypes: serviceTypes2,
+              vendorRoles: vendorRoles2
+            };
+          })(),
           createdAt: r.created_at,
           updatedAt: r.updated_at
         }
@@ -234010,6 +236283,7 @@ registerPackageSessionEndpoints(app2);
 registerSearchEndpoints(app2);
 registerRazorpayEndpoints(app2);
 registerWalletEndpoints(app2);
+registerWalletDiagnosticEndpoints(app2);
 registerSpecializedServicesEndpoints(app2);
 registerSpecializedServiceFlows(app2);
 registerAdminGovernanceEndpoints(app2);

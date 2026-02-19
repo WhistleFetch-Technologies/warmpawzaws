@@ -78,6 +78,10 @@ class GetWalletHandler extends BaseHandler {
     // Get recent transactions
     const transactions = await this.getRecentTransactions(customerId);
 
+    // Calculate loyalty points converted to wallet
+    const loyaltyCredits = transactions.filter(t => t.isLoyaltyConversion || t.source === 'loyalty_points');
+    const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
     return this.success({
       success: true,
       data: {
@@ -86,12 +90,16 @@ class GetWalletHandler extends BaseHandler {
         currency: wallet.currency || 'INR',
         lastUpdated: wallet.updated_at,
         recentTransactions: transactions,
+        loyaltyPointsConverted: totalLoyaltyCredits, // Total ₹ converted from loyalty points
+        loyaltyTransactionsCount: loyaltyCredits.length,
       },
       customerId: wallet.customer_id,
       balance: parseFloat(wallet.balance),
       currency: wallet.currency || 'INR',
       lastUpdated: wallet.updated_at,
       recentTransactions: transactions,
+      loyaltyPointsConverted: totalLoyaltyCredits,
+      loyaltyTransactionsCount: loyaltyCredits.length,
     });
   }
 
@@ -146,11 +154,11 @@ class GetWalletHandler extends BaseHandler {
   private async getRecentTransactions(customerId: string): Promise<any[]> {
     try {
       const result = await query(
-        `SELECT id, transaction_type, amount, balance_after, description, created_at
+        `SELECT id, transaction_type, amount, balance_after, description, created_at, source, reference_type, reference_id
          FROM wallet_transactions
          WHERE customer_id = $1
          ORDER BY created_at DESC
-         LIMIT 5`,
+         LIMIT 10`,
         [customerId]
       );
       return result.rows.map(row => ({
@@ -160,6 +168,10 @@ class GetWalletHandler extends BaseHandler {
         balanceAfter: parseFloat(row.balance_after),
         description: row.description,
         timestamp: row.created_at,
+        source: row.source || null,
+        referenceType: row.reference_type || null,
+        referenceId: row.reference_id || null,
+        isLoyaltyConversion: row.source === 'loyalty_points' || row.description?.toLowerCase().includes('loyalty') || row.description?.toLowerCase().includes('points'),
       }));
     } catch (error: any) {
       // Table might not exist
@@ -202,6 +214,10 @@ class GetWalletByPhoneHandler extends BaseHandler {
     // Get recent transactions
     const transactions = await this.getRecentTransactions(customerId);
 
+    // Calculate loyalty points converted to wallet
+    const loyaltyCredits = transactions.filter(t => t.isLoyaltyConversion || t.source === 'loyalty_points');
+    const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
     return this.success({
       wallet: {
         customerId: wallet.customer_id,
@@ -209,6 +225,8 @@ class GetWalletByPhoneHandler extends BaseHandler {
         currency: wallet.currency || 'INR',
         lastUpdated: wallet.updated_at,
         recentTransactions: transactions,
+        loyaltyPointsConverted: totalLoyaltyCredits,
+        loyaltyTransactionsCount: loyaltyCredits.length,
       },
     });
   }
@@ -260,24 +278,66 @@ class GetWalletByPhoneHandler extends BaseHandler {
 
   private async getRecentTransactions(customerId: string): Promise<any[]> {
     try {
+      // Try to get source column if it exists
       const result = await query(
-        `SELECT id, transaction_type, amount, balance_after, description, created_at
+        `SELECT id, transaction_type, amount, balance_after, description, created_at, 
+                COALESCE(source, '') as source, 
+                COALESCE(reference_type, '') as reference_type, 
+                COALESCE(reference_id::text, '') as reference_id
          FROM wallet_transactions
          WHERE customer_id = $1
          ORDER BY created_at DESC
-         LIMIT 5`,
+         LIMIT 10`,
         [customerId]
       );
-      return result.rows.map(row => ({
-        id: row.id,
-        type: row.transaction_type,
-        amount: parseFloat(row.amount),
-        balanceAfter: parseFloat(row.balance_after),
-        description: row.description,
-        timestamp: row.created_at,
-      }));
+      return result.rows.map(row => {
+        const isLoyalty = row.source === 'loyalty_points' || 
+                         row.description?.toLowerCase().includes('loyalty') || 
+                         row.description?.toLowerCase().includes('points');
+        return {
+          id: row.id,
+          type: row.transaction_type,
+          amount: parseFloat(row.amount),
+          balanceAfter: parseFloat(row.balance_after),
+          description: row.description,
+          timestamp: row.created_at,
+          source: row.source || null,
+          referenceType: row.reference_type || null,
+          referenceId: row.reference_id || null,
+          isLoyaltyConversion: isLoyalty,
+        };
+      });
     } catch (error: any) {
-      return [];
+      // Table might not exist or column might not exist - try without source
+      try {
+        const result = await query(
+          `SELECT id, transaction_type, amount, balance_after, description, created_at
+           FROM wallet_transactions
+           WHERE customer_id = $1
+           ORDER BY created_at DESC
+           LIMIT 10`,
+          [customerId]
+        );
+        return result.rows.map(row => {
+          const isLoyalty = row.description?.toLowerCase().includes('loyalty') || 
+                           row.description?.toLowerCase().includes('points');
+          return {
+            id: row.id,
+            type: row.transaction_type,
+            amount: parseFloat(row.amount),
+            balanceAfter: parseFloat(row.balance_after),
+            description: row.description,
+            timestamp: row.created_at,
+            source: null,
+            referenceType: null,
+            referenceId: null,
+            isLoyaltyConversion: isLoyalty,
+          };
+        });
+      } catch (fallbackError: any) {
+        // Table might not exist
+        return [];
+      }
     }
   }
 }

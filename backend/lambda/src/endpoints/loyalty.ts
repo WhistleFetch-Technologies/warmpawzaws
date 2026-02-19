@@ -27,6 +27,7 @@ export function registerLoyaltyEndpoints(app: Hono) {
    */
   app.post("/loyalty/rules/init", async (c) => {
     try {
+      // Initialize old loyalty_rules table
       const existing = await query('SELECT id FROM loyalty_rules LIMIT 1').catch(() => ({ rows: [] }));
       if (!existing.rows || existing.rows.length === 0) {
         await insert('loyalty_rules', {
@@ -39,7 +40,13 @@ export function registerLoyaltyEndpoints(app: Hono) {
           updated_at: new Date().toISOString(),
         }).catch(() => null);
       }
-      return c.json({ success: true, message: 'Loyalty rules initialized' });
+
+      // Initialize loyalty_action_rules (new system)
+      const { loyaltyRulesInitService } = await import('../lib/services/loyalty-rules-init-service');
+      await loyaltyRulesInitService.initializeReferralRules();
+      await loyaltyRulesInitService.initializeVendorReferralRules();
+
+      return c.json({ success: true, message: 'Loyalty rules initialized (including vendor referral rules)' });
     } catch (error: any) {
       console.error('Error initializing loyalty rules:', error);
       return c.json({ success: true, message: 'Loyalty rules init skipped' });
@@ -336,40 +343,24 @@ export function registerLoyaltyEndpoints(app: Hono) {
         return c.json({ error: 'Referral code already used' }, 400);
       }
 
-      // Update referral
-      await query(
-        `UPDATE referrals
-         SET referred_id = $1,
-             referred_at = NOW()
-         WHERE id = $2`,
-        [customerId, referral.id]
-      );
+      // Use referral service to process referral and award points
+      const { processReferralSignup } = await import('../lib/services/referral-service');
+      const referralResult = await processReferralSignup({
+        customerId: customerId,
+        referralCode: referralCode,
+      });
 
-      // Award points to both referrer and referred (if configured)
-      const rules = await select('loyalty_rules', { is_active: true });
-      if (rules.length > 0) {
-        const referralPoints = 100; // Default referral bonus
-        // Award to referrer
-        await query(
-          `UPDATE customer_loyalty_points
-           SET total_points = total_points + $1,
-               lifetime_points_earned = lifetime_points_earned + $1
-           WHERE customer_id = $2`,
-          [referralPoints, referral.referrer_id]
-        );
-        // Award to referred
-        await query(
-          `UPDATE customer_loyalty_points
-           SET total_points = total_points + $1,
-               lifetime_points_earned = lifetime_points_earned + $1
-           WHERE customer_id = $2`,
-          [referralPoints, customerId]
-        );
+      if (!referralResult.success) {
+        return c.json({ 
+          error: referralResult.error || 'Failed to process referral code' 
+        }, 400);
       }
 
       return c.json({
         success: true,
         message: 'Referral code applied successfully',
+        referredPoints: referralResult.referredPoints,
+        referrerPoints: referralResult.referrerPoints,
       });
     } catch (error: any) {
       console.error('Error applying referral code:', error);

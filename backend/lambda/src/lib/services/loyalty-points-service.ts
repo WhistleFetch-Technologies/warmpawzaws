@@ -121,17 +121,31 @@ export class LoyaltyPointsService {
           [finalPoints, userId]
         );
 
-        // Auto-convert to wallet (1 point = 1 rupee)
-        const walletAmount = finalPoints; // 1 point = 1 rupee
+        // Auto-convert to wallet (100 points = 1 rupee)
+        const conversionRate = 100; // 100 points = 1 rupee
+        const walletAmount = Math.round((finalPoints / conversionRate) * 100) / 100; // Round to 2 decimal places
 
         // Get or create wallet
         let wallets = await select('customer_wallets', { customer_id: userId });
         if (wallets.length === 0) {
-          await insert('customer_wallets', {
-            customer_id: userId,
-            balance: 0,
-            currency: 'INR',
-          });
+          // Check if currency column exists
+          try {
+            await insert('customer_wallets', {
+              customer_id: userId,
+              balance: 0,
+              currency: 'INR',
+            });
+          } catch (error: any) {
+            // If currency column doesn't exist, insert without it
+            if (error.message?.includes('currency')) {
+              await insert('customer_wallets', {
+                customer_id: userId,
+                balance: 0,
+              });
+            } else {
+              throw error;
+            }
+          }
           wallets = await select('customer_wallets', { customer_id: userId });
         }
 
@@ -146,16 +160,39 @@ export class LoyaltyPointsService {
           [walletAmount, wallet.id]
         );
 
+        // Get balance after credit
+        const balanceAfter = await client.query(
+          `SELECT balance FROM customer_wallets WHERE id = $1`,
+          [wallet.id]
+        );
+        const newBalance = parseFloat(balanceAfter.rows[0]?.balance || '0');
+
         // Create wallet transaction
-        await insert('wallet_transactions', {
-          wallet_id: wallet.id,
-          customer_id: userId,
-          transaction_type: 'credit',
-          amount: walletAmount,
-          source: 'loyalty_points',
-          description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount}`,
-          reference_id: null,
-        });
+        // Note: wallet_transactions table uses customer_id, not wallet_id
+        // And may not have source column depending on schema version
+        try {
+          await insert('wallet_transactions', {
+            customer_id: userId,
+            transaction_type: 'credit',
+            amount: walletAmount,
+            balance_after: newBalance,
+            description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`,
+            source: 'loyalty_points',
+          });
+        } catch (error: any) {
+          // If source column doesn't exist, insert without it
+          if (error.message?.includes('source') || error.message?.includes('column')) {
+            await insert('wallet_transactions', {
+              customer_id: userId,
+              transaction_type: 'credit',
+              amount: walletAmount,
+              balance_after: newBalance,
+              description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`,
+            });
+          } else {
+            throw error;
+          }
+        }
 
         console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount} to wallet) for action: ${params.actionName}`);
 

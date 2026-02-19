@@ -91,6 +91,50 @@ export function registerRewardsEndpoints(app: Hono) {
       const tierName = (tier as any)?.name || 'Bronze';
       const nextTierName = nextTier?.name || null;
 
+      // Get referral-related points
+      let referralPointsEarned = 0;
+      let pendingReferralPoints = 0;
+      try {
+        // Points already earned from referrals
+        const earnedResult = await query(
+          `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+           FROM loyalty_transactions lt
+           WHERE lt.customer_id = $1 
+           AND lt.reference_type = 'referral'
+           AND lt.transaction_type = 'earned'`,
+          [customerId]
+        );
+        referralPointsEarned = parseInt(earnedResult.rows[0]?.total_earnings || '0', 10);
+
+        // Potential points from pending referrals (where referred customer hasn't made booking yet)
+        // Check loyalty rules for refer_friend action to get points per referral
+        const ruleResult = await query(
+          `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
+        );
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 500;
+        
+        const pendingResult = await query(
+          `SELECT COUNT(*) as count 
+           FROM referrals 
+           WHERE referrer_id = $1 
+           AND referred_id IS NOT NULL 
+           AND NOT EXISTS (
+             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM loyalty_transactions 
+             WHERE customer_id = $1 
+             AND reference_type = 'referral' 
+             AND reference_id = referrals.id
+           )`,
+          [customerId]
+        );
+        const pendingCount = parseInt(pendingResult.rows[0]?.count || '0', 10);
+        pendingReferralPoints = pendingCount * pointsPerReferral;
+      } catch (refError) {
+        console.log('Error calculating referral points:', refError);
+      }
+
       return c.json({
         success: true,
         points: currentPoints,
@@ -104,6 +148,9 @@ export function registerRewardsEndpoints(app: Hono) {
         pointsToNextTier,
         lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || '0', 10),
         lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || '0', 10),
+        referralPointsEarned,
+        pendingReferralPoints,
+        totalPotentialPoints: currentPoints + pendingReferralPoints,
       });
     } catch (error: any) {
       console.error('Error fetching points:', error);
@@ -121,8 +168,134 @@ export function registerRewardsEndpoints(app: Hono) {
         pointsToNextTier: 0,
         lifetimePointsEarned: 0,
         lifetimePointsRedeemed: 0,
+        referralPointsEarned: 0,
+        pendingReferralPoints: 0,
+        totalPotentialPoints: 0,
         message: 'Loyalty program initializing'
       });
+    }
+  });
+
+  /**
+   * GET /customer/:phone/rewards/points
+   * Get customer points balance by phone number
+   */
+  app.get("/customer/:phone/rewards/points", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      
+      // Normalize phone number
+      let normalizedPhone = phone.replace(/\s+/g, '').replace(/^0+/, '');
+      if (!normalizedPhone.startsWith('+')) {
+        if (normalizedPhone.length === 10) {
+          normalizedPhone = '+91' + normalizedPhone;
+        }
+      }
+
+      // Look up customer by phone
+      const customerResult = await query(
+        `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
+        [phone, normalizedPhone]
+      );
+
+      if (customerResult.rows.length === 0) {
+        return c.json({ 
+          error: 'Customer not found',
+          points: 0,
+          totalPoints: 0,
+          referralPointsEarned: 0,
+          pendingReferralPoints: 0,
+        }, 404);
+      }
+
+      const customerId = customerResult.rows[0].id;
+
+      // Get points profile
+      let profile: any[] = [];
+      try {
+        profile = await select('customer_loyalty_points', { customer_id: customerId });
+        
+        if (profile.length === 0) {
+          try {
+            const newProfile = await insert('customer_loyalty_points', {
+              customer_id: customerId,
+              total_points: 0,
+              lifetime_points_earned: 0,
+              lifetime_points_redeemed: 0,
+            });
+            profile = newProfile;
+          } catch (insertError) {
+            console.log('Could not create loyalty profile:', insertError);
+          }
+        }
+      } catch (selectError) {
+        console.log('Loyalty points table not available:', selectError);
+      }
+
+      const currentPoints = parseInt(profile[0]?.total_points || '0', 10);
+
+      // Get referral-related points
+      let referralPointsEarned = 0;
+      let pendingReferralPoints = 0;
+      try {
+        // Points already earned from referrals
+        const earnedResult = await query(
+          `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+           FROM loyalty_transactions lt
+           WHERE lt.customer_id = $1 
+           AND lt.reference_type = 'referral'
+           AND lt.transaction_type = 'earned'`,
+          [customerId]
+        );
+        referralPointsEarned = parseInt(earnedResult.rows[0]?.total_earnings || '0', 10);
+
+        // Potential points from pending referrals
+        const ruleResult = await query(
+          `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
+        );
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 500;
+        
+        const pendingResult = await query(
+          `SELECT COUNT(*) as count 
+           FROM referrals 
+           WHERE referrer_id = $1 
+           AND referred_id IS NOT NULL 
+           AND NOT EXISTS (
+             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM loyalty_transactions 
+             WHERE customer_id = $1 
+             AND reference_type = 'referral' 
+             AND reference_id = referrals.id
+           )`,
+          [customerId]
+        );
+        const pendingCount = parseInt(pendingResult.rows[0]?.count || '0', 10);
+        pendingReferralPoints = pendingCount * pointsPerReferral;
+      } catch (refError) {
+        console.log('Error calculating referral points:', refError);
+      }
+
+      return c.json({
+        success: true,
+        points: currentPoints,
+        totalPoints: currentPoints,
+        lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || '0', 10),
+        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || '0', 10),
+        referralPointsEarned,
+        pendingReferralPoints,
+        totalPotentialPoints: currentPoints + pendingReferralPoints,
+      });
+    } catch (error: any) {
+      console.error('Error fetching points by phone:', error);
+      return c.json({ 
+        error: error.message,
+        points: 0,
+        totalPoints: 0,
+        referralPointsEarned: 0,
+        pendingReferralPoints: 0,
+      }, 500);
     }
   });
 

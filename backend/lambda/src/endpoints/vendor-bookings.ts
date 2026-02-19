@@ -653,9 +653,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         booking.service_id
           ? select('services', { id: booking.service_id }).catch(() => [])
           : Promise.resolve([]),
-        // Service catalog (when booking.service_id is catalog id) for name + specialization_ids
+        // Service catalog (when booking.service_id is catalog id) for name + specialization_ids + service_style
         booking.service_id
-          ? query('SELECT service_name, display_name, description, category_id, duration_minutes, specialization_ids FROM service_catalog WHERE id = $1', [booking.service_id]).then((r: any) => r.rows).catch(() => [])
+          ? query('SELECT service_name, display_name, description, category_id, duration_minutes, specialization_ids, service_style FROM service_catalog WHERE id = $1', [booking.service_id]).then((r: any) => r.rows).catch(() => [])
           : Promise.resolve([]),
         // Pet info - use extracted petIdToUse
         petIdToUse
@@ -751,7 +751,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         serviceName: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : (service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service'),
         serviceCategory: catalogService.length > 0 ? catalogService[0].category_id : (service.length > 0 ? service[0].category : null),
         serviceDescription: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
-        // Service object for structured access (include specializationIds from catalog when available)
+        // Service object for structured access (include specializationIds and service_style from catalog when available)
         service: (catalogService.length > 0 || service.length > 0) ? {
           id: (catalogService[0] || service[0])?.id || booking.service_id,
           name: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
@@ -760,6 +760,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           duration: (catalogService[0] || service[0])?.duration_minutes || booking.duration || 30,
           specializationIds: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
           specialization_ids: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
+          // ✅ FIX: Include service_style for tele consultation detection (handles center-based tele consultations)
+          service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
+          serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
         } : null,
         
         // ✅ Home service: customer/delivery location for GPS tracking (vendor = start, customer = destination)

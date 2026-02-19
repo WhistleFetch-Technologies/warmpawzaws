@@ -9,13 +9,13 @@
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
     "build:bundle": "node esbuild.config.js",
     "build:legacy": "npm run clean && tsc && npm run package",
-    "package": "cd dist && zip -r ../api-handler.zip . && cd ..",
+    "package": "powershell -Command \"Compress-Archive -Path dist\\* -DestinationPath api-handler.zip -Force\"",
     "test": "jest",
     "test:local": "./test-local.sh",
     "test:sentry": "node scripts/test-sentry.js",
     "start:local": "dotenv -e .env.local -- npx serverless offline --config serverless.local.yml",
     "lint": "eslint src --ext .ts",
-    "clean": "rm -rf dist api-handler.zip"
+    "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')) fs.rmSync('dist',{recursive:true,force:true}); if(fs.existsSync('api-handler.zip')) fs.unlinkSync('api-handler.zip')\""
   },
   "dependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.975.0",
