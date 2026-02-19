@@ -473,6 +473,47 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     try {
       const result = await withTransaction(async (client) => {
+        // ✅ FIX: Check for duplicate booking first (same customer/vendor/date/time within last 5 minutes)
+        // This prevents SLOT_CONFLICT errors from retries/double-clicks
+        const duplicateCheckQuery = staffId
+          ? `SELECT id, status, created_at FROM bookings 
+             WHERE customer_id = $1 
+             AND vendor_id = $2 
+             AND booking_date = $3 
+             AND booking_time = $4
+             AND staff_id = $5
+             AND created_at > NOW() - INTERVAL '5 minutes'
+             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             ORDER BY created_at DESC
+             LIMIT 1`
+          : `SELECT id, status, created_at FROM bookings 
+             WHERE customer_id = $1 
+             AND vendor_id = $2 
+             AND booking_date = $3 
+             AND booking_time = $4
+             AND staff_id IS NULL
+             AND created_at > NOW() - INTERVAL '5 minutes'
+             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             ORDER BY created_at DESC
+             LIMIT 1`;
+        
+        const duplicateParams = staffId
+          ? [customerId, vendorId, bookingDate, bookingTime, staffId]
+          : [customerId, vendorId, bookingDate, bookingTime];
+        
+        const duplicateResult = await client.query(duplicateCheckQuery, duplicateParams);
+        
+        if (duplicateResult.rows.length > 0) {
+          const existingBooking = duplicateResult.rows[0];
+          console.log(`[BOOKING] Duplicate booking detected (likely retry/double-click): ${existingBooking.id}, returning existing booking`);
+          // Return the existing booking instead of creating a new one
+          const existingBookingFull = await client.query(
+            `SELECT * FROM bookings WHERE id = $1`,
+            [existingBooking.id]
+          );
+          return existingBookingFull.rows[0];
+        }
+
         // ✅ FIX: Check overlap using ONLY service duration (no buffer blocking)
         // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
         // Get booking duration
@@ -932,11 +973,70 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         console.warn('Failed to create vendor notification for new booking:', notifErr);
       }
 
+      // ✅ FIX: Auto-generate OTP for confirmed bookings (package bookings, etc.) that don't require payment
+      // OTP is needed for at_home and at_vendor/at_center services, NOT for tele
+      let otpCode: string | null = null;
+      const bookingServiceType = booking.service_type || 'at_vendor';
+      const isTeleService = bookingServiceType === 'tele' || 
+                           bookingServiceType === 'online' || 
+                           bookingServiceType === 'video_consultation' ||
+                           bookingServiceType === 'tele_consultation';
+      
+      // Only generate OTP if booking is confirmed/paid and not a tele service
+      if ((booking.status === 'confirmed' || booking.payment_status === 'paid' || booking.payment_status === 'completed') && !isTeleService) {
+        try {
+          // Check if OTP already exists
+          if (!booking.otp_code) {
+            const otp = generateBookingOTP();
+            const expiresAt = new Date();
+            expiresAt.setHours(expiresAt.getHours() + 24);
+            
+            await query(
+              `UPDATE bookings 
+               SET otp_code = $1, 
+                   otp_expires_at = $2, 
+                   updated_at = NOW() 
+               WHERE id = $3`,
+              [otp, expiresAt.toISOString(), booking.id]
+            );
+            
+            otpCode = otp;
+            console.log(`✅ [BOOKING-CREATE] Auto-generated OTP ${otp} for confirmed booking ${booking.id}`);
+            
+            // Send OTP via SMS (async)
+            if (booking.customer_phone || booking.customer_id) {
+              try {
+                const { sendSMS } = await import('../utils/sms-service');
+                const customers = booking.customer_id ? await select('customers', { id: booking.customer_id }) : [];
+                const customerPhone = booking.customer_phone || (customers[0] as any)?.phone;
+                
+                if (customerPhone) {
+                  sendSMS({
+                    to: customerPhone,
+                    message: `Your Warmpawz service verification OTP is ${otp}. Share this with your service provider to start the service. Valid for 24 hours.`,
+                    type: 'otp',
+                  }).catch((err: any) => console.error('SMS send failed:', err));
+                }
+              } catch (e) {
+                console.log('SMS service not available');
+              }
+            }
+          } else {
+            otpCode = booking.otp_code;
+            console.log(`✅ [BOOKING-CREATE] Using existing OTP for booking ${booking.id}`);
+          }
+        } catch (otpError) {
+          console.warn(`⚠️ [BOOKING-CREATE] Failed to auto-generate OTP for booking ${booking.id}:`, otpError);
+          // Don't fail booking creation if OTP generation fails
+        }
+      }
+
       const response = {
         bookingId: booking.id,
         status: booking.status,
         message: 'Booking created successfully',
         isNew: true,
+        ...(otpCode && { otp: otpCode }), // Include OTP in response if generated
       };
 
       // Store idempotency key
@@ -952,6 +1052,42 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       
       // Slot conflict
       if (errorMessage === 'SLOT_CONFLICT' || err?.code === '55P03') {
+        // ✅ FIX: Check if this is a duplicate booking attempt (same customer/vendor/date/time)
+        // If so, return a more helpful error message
+        try {
+          const duplicateCheck = await query(
+            `SELECT id, status, created_at FROM bookings 
+             WHERE customer_id = $1 
+             AND vendor_id = $2 
+             AND booking_date = $3 
+             AND booking_time = $4
+             AND created_at > NOW() - INTERVAL '5 minutes'
+             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             LIMIT 1`,
+            [customerId, vendorId, bookingDate, bookingTime]
+          );
+          
+          if (duplicateCheck.rows.length > 0) {
+            // This is a duplicate booking attempt - return the existing booking
+            const existingBooking = duplicateCheck.rows[0];
+            console.log(`[BOOKING] Duplicate booking detected in error handler: ${existingBooking.id}`);
+            const existingBookingFull = await select('bookings', { id: existingBooking.id });
+            if (existingBookingFull.length > 0) {
+              const booking = existingBookingFull[0];
+              return this.success({
+                bookingId: booking.id,
+                status: booking.status,
+                message: 'Booking already exists (duplicate request detected)',
+                isNew: false,
+                duplicate: true,
+              }, requestId);
+            }
+          }
+        } catch (dupErr) {
+          console.warn('[BOOKING] Error checking for duplicate booking:', dupErr);
+        }
+        
+        // Actual slot conflict - another customer has booked this slot
         return this.error(
           'This time slot is already booked. Please select a different time.',
           409,
@@ -2779,22 +2915,34 @@ export function registerBookingOTPEndpoint(app: Hono) {
         return c.json({ success: false, error: 'Booking ID is required' }, 400);
       }
 
-      // Skip OTP for tele services
-      if (serviceStyle === 'tele') {
-        return c.json({ 
-          success: true, 
-          otp: null, 
-          message: 'OTP not required for tele consultations' 
-        });
-      }
-
-      // Get the booking
+      // Get the booking first to check its service_type
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ success: false, error: 'Booking not found' }, 404);
       }
 
       const booking = bookings[0];
+      
+      // ✅ FIX: Check booking's service_type (not passed serviceStyle) to determine if OTP is needed
+      // OTP is required for: at_home, at_vendor, at_center
+      // OTP is NOT required for: tele, online
+      const bookingServiceType = booking.service_type || booking.service_style || serviceStyle;
+      const isTeleService = bookingServiceType === 'tele' || 
+                            bookingServiceType === 'online' || 
+                            bookingServiceType === 'video_consultation' ||
+                            bookingServiceType === 'tele_consultation';
+      
+      if (isTeleService) {
+        console.log(`[BOOKING-OTP] Skipping OTP generation for tele service: ${bookingServiceType}`);
+        return c.json({ 
+          success: true, 
+          otp: null, 
+          message: 'OTP not required for tele consultations',
+          serviceType: bookingServiceType
+        });
+      }
+      
+      console.log(`[BOOKING-OTP] Generating OTP for booking ${bookingId}, service_type: ${bookingServiceType}`);
 
       // Check if OTP already exists
       if (booking.otp_code) {

@@ -456,14 +456,40 @@ export function ProblemBasedFlowRouter({
               `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}${locationParams}`
             ) as any;
 
-            const providers = response.providers || response.vendors || [];
+            let providers = response.providers || response.vendors || [];
+            
+            // ✅ FIX: Filter out business vendors when style is at_home
+            if (style.style === 'at_home') {
+              providers = providers.filter((p: any) => p.vendorType !== 'business');
+            }
+            
             const isAvailable = providers.length > 0;
             // Phase 2: earliest slot from first provider's nextAvailableSlot/nextAvailability
             let earliestSlot: string | undefined;
             const first = providers[0];
             if (first) {
-              const slot = first.nextAvailableSlot?.formattedDisplay ?? first.nextAvailableSlot ?? first.nextAvailability;
-              if (typeof slot === 'string' && slot) earliestSlot = slot;
+              let slot: string | undefined;
+              // Handle nextAvailableSlot
+              if (typeof first.nextAvailableSlot === 'string') {
+                slot = first.nextAvailableSlot;
+              } else if (first.nextAvailableSlot && typeof first.nextAvailableSlot === 'object') {
+                slot = first.nextAvailableSlot.formattedDisplay || first.nextAvailableSlot.display || 
+                  (first.nextAvailableSlot.date && first.nextAvailableSlot.time 
+                    ? `${first.nextAvailableSlot.date} ${first.nextAvailableSlot.time}` 
+                    : undefined);
+              }
+              // Fallback to nextAvailability
+              if (!slot) {
+                if (typeof first.nextAvailability === 'string') {
+                  slot = first.nextAvailability;
+                } else if (first.nextAvailability && typeof first.nextAvailability === 'object') {
+                  slot = first.nextAvailability.formattedDisplay || first.nextAvailability.display || 
+                    (first.nextAvailability.date && first.nextAvailability.time 
+                      ? `${first.nextAvailability.date} ${first.nextAvailability.time}` 
+                      : undefined);
+                }
+              }
+              if (slot) earliestSlot = slot;
             }
             console.log(`[ServiceStyle] ${style.style}: ${providers.length} providers found, available: ${isAvailable}, earliestSlot: ${earliestSlot || 'n/a'}`);
             return {

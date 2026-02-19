@@ -432,9 +432,17 @@ export function DynamicVendorOnboardingForm({
             // If already objects, keep as-is (support both formats)
           }
           
+          // ✅ FIX: Prioritize unique field name - use id if fieldName is generic like "new_field"
+          // This prevents multiple file fields from sharing the same name
+          let fieldName = f.name || f.fieldName || f.id;
+          if (f.fieldName === 'new_field' || f.fieldName === 'newField' || (!f.fieldName && !f.name)) {
+            // Use id as the field name for generic fieldName values to ensure uniqueness
+            fieldName = f.id || `field_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          }
+          
           return {
             ...f,
-            name: f.name || f.fieldName || f.id,
+            name: fieldName,
             isActive: f.isActive !== false && f.is_active !== false,
             options: normalizedOptions, // Add normalized options
             validation: {
@@ -867,7 +875,7 @@ export function DynamicVendorOnboardingForm({
       if (!section.isActive) return;
       
       section.fields.forEach(field => {
-        console.log(`🔍 [VALIDATION] Field: ${field.name}, isActive: ${field.isActive}, required: ${field.validation?.required || field.isMandatory}`);
+        console.log(`🔍 [VALIDATION] Field: ${field.name}, isActive: ${field.isActive}, required: ${field.validation?.required || (field as any).isMandatory}`);
         if (!field.isActive) return;
 
         let value = formData[field.name];

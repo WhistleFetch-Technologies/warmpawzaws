@@ -604,7 +604,20 @@ export function UniversalServiceProviderList({
       ) as any;
 
       if (response.success) {
-        const providerData = response.providers || response.vendors || [];
+        let providerData = response.providers || response.vendors || [];
+        
+        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
+        // Also filter out staff members from business vendors
+        if (serviceStyle === 'at_home') {
+          providerData = providerData.filter((p: any) => {
+            // Filter out if vendorType is business
+            if (p.vendorType === 'business') return false;
+            // Also filter out staff members from business vendors (check vendorId if it's a business)
+            // Note: This is a safety check - backend should already filter these
+            return true;
+          });
+        }
+        
         // Clean provider names to remove trailing IDs
         const cleanedProviders = providerData.map((p: any) => ({
           ...p,
@@ -666,7 +679,31 @@ export function UniversalServiceProviderList({
             distance: item.distance || null,
             isVerified: item.isVerified,
             isOnline: item.isOnline,
-            nextAvailableSlot: item.nextAvailability ?? item.nextAvailableSlot?.formattedDisplay ?? item.nextAvailableSlot,
+            nextAvailableSlot: (() => {
+              // If nextAvailability is a string, use it
+              if (typeof item.nextAvailability === 'string') {
+                return item.nextAvailability;
+              }
+              // If nextAvailability is an object, extract formattedDisplay or display
+              if (item.nextAvailability && typeof item.nextAvailability === 'object') {
+                return item.nextAvailability.formattedDisplay || item.nextAvailability.display || 
+                  (item.nextAvailability.date && item.nextAvailability.time 
+                    ? `${item.nextAvailability.date} ${item.nextAvailability.time}` 
+                    : undefined);
+              }
+              // If nextAvailableSlot is a string, use it
+              if (typeof item.nextAvailableSlot === 'string') {
+                return item.nextAvailableSlot;
+              }
+              // If nextAvailableSlot is an object, extract formattedDisplay or display
+              if (item.nextAvailableSlot && typeof item.nextAvailableSlot === 'object') {
+                return item.nextAvailableSlot.formattedDisplay || item.nextAvailableSlot.display || 
+                  (item.nextAvailableSlot.date && item.nextAvailableSlot.time 
+                    ? `${item.nextAvailableSlot.date} ${item.nextAvailableSlot.time}` 
+                    : undefined);
+              }
+              return undefined;
+            })(),
             services: [],
             bestForProblem: item.bestForProblem,
             photos: item.photos,

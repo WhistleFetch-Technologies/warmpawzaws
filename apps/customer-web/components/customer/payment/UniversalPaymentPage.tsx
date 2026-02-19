@@ -488,13 +488,71 @@ export function UniversalPaymentPage({
     resolveServiceId();
   }, [serviceId, vendorId, type]);
 
-  const loadRazorpayScript = () => {
+  // ✅ FIX: Pre-load Razorpay script on component mount so it's ready when user clicks payment
+  useEffect(() => {
     if (typeof window !== 'undefined' && !window.Razorpay) {
+      console.log('🔄 [RAZORPAY] Pre-loading Razorpay script on component mount...');
+      loadRazorpayScript().catch((error) => {
+        console.warn('⚠️ [RAZORPAY] Failed to pre-load script (will retry on payment):', error.message);
+        // Don't show error to user - will retry when payment button is clicked
+      });
+    } else if (window.Razorpay) {
+      console.log('✅ [RAZORPAY] Razorpay script already loaded');
+    }
+  }, []); // Only run once on mount
+
+  const loadRazorpayScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined') {
+        reject(new Error('Window is not available'));
+        return;
+      }
+      
+      // If already loaded, resolve immediately
+      if (window.Razorpay) {
+        resolve();
+        return;
+      }
+      
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+      if (existingScript) {
+        // Wait for existing script to load
+        existingScript.addEventListener('load', () => {
+          if (window.Razorpay) {
+            resolve();
+          } else {
+            reject(new Error('Razorpay script loaded but window.Razorpay is not available'));
+          }
+        });
+        existingScript.addEventListener('error', () => {
+          reject(new Error('Failed to load Razorpay script'));
+        });
+        return;
+      }
+      
+      // Create and load new script
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
+      
+      script.onload = () => {
+        // Wait a bit for Razorpay to initialize
+        setTimeout(() => {
+          if (window.Razorpay) {
+            resolve();
+          } else {
+            reject(new Error('Razorpay script loaded but window.Razorpay is not available'));
+          }
+        }, 100);
+      };
+      
+      script.onerror = () => {
+        reject(new Error('Failed to load Razorpay script'));
+      };
+      
       document.body.appendChild(script);
-    }
+    });
   };
 
   const loadAddresses = async () => {
@@ -901,8 +959,8 @@ export function UniversalPaymentPage({
       let requiredUpfrontAmount: number | null = null;
 
       // Step 1: Create booking/order if not already created
-      let currentBookingId = bookingId;
-      let currentOrderId = orderId;
+      let currentBookingId: string | undefined = bookingId;
+      let currentOrderId: string | undefined = orderId;
 
       // Instant tele: no booking until after payment; backend creates via instant-after-payment
       if (type === 'booking' && flowType === 'tele-instant') {
@@ -1586,35 +1644,128 @@ export function UniversalPaymentPage({
       
       // Step 3: Create Razorpay order
       // ✅ FIX: Use longer timeout (45s) for payment operations
-      console.log('🔄 [PAYMENT] Creating Razorpay order...');
+      console.log('🔄 [PAYMENT] Creating Razorpay order...', {
+        bookingId: currentBookingId,
+        amount: bookingCreationDeferred ? (requiredUpfrontAmount ?? finalAmount) : finalAmount,
+        flowType,
+        bookingCreationDeferred
+      });
       const amountToCharge = bookingCreationDeferred
         ? (requiredUpfrontAmount ?? finalAmount)
         : finalAmount;
-      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        // Instant tele: no booking until after payment; use booking_prepaid
-        bookingId: (flowType === 'tele-instant' || bookingCreationDeferred) ? undefined : currentBookingId,
-        orderId: currentOrderId,
-        amount: amountToCharge,
-        customerId,
-        offerId: selectedRazorpayOffer?.id,
-        type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
-        vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
-      }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       
-      console.log('✅ [PAYMENT] Razorpay order created:', orderRes.orderId);
+      let orderRes: any;
+      try {
+        orderRes = await apiClient.post<any>('/razorpay/create-order', {
+          // Instant tele: no booking until after payment; use booking_prepaid
+          bookingId: (flowType === 'tele-instant' || bookingCreationDeferred) ? undefined : currentBookingId,
+          orderId: currentOrderId,
+          amount: amountToCharge,
+          customerId,
+          offerId: selectedRazorpayOffer?.id,
+          type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
+          vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
+        }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+      } catch (orderError: any) {
+        console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
+          error: orderError.message,
+          status: orderError.status,
+          statusCode: orderError.statusCode,
+          response: orderError.response,
+          responseData: orderError.responseData,
+        });
+        // Re-throw with better error message
+        const errorMsg = orderError.responseData?.error || orderError.response?.error || orderError.message || 'Failed to create payment order';
+        throw new Error(`Failed to create payment order: ${errorMsg}`);
+      }
       
-      if (!orderRes.orderId) {
-        throw new Error('Failed to create payment order');
+      console.log('✅ [PAYMENT] Razorpay order response (raw):', JSON.stringify(orderRes, null, 2));
+      console.log('✅ [PAYMENT] Response type:', typeof orderRes);
+      console.log('✅ [PAYMENT] Response keys:', orderRes ? Object.keys(orderRes) : 'null/undefined');
+      
+      // ✅ FIX: Handle ALL possible response structures
+      // Backend returns: { orderId, keyId, amount, currency } directly via this.success()
+      // But could also be wrapped in: { success: true, data: { ... } } or { data: { ... } }
+      // Or error response: { error: "..." } or { success: false, error: "..." }
+      
+      // Check for error response first
+      if (orderRes?.error || (orderRes?.success === false)) {
+        const errorMsg = typeof orderRes.error === 'string' 
+          ? orderRes.error 
+          : orderRes.error?.message || 'Failed to create payment order';
+        console.error('❌ [PAYMENT] Error in response:', errorMsg);
+        throw new Error(errorMsg);
+      }
+      
+      // Extract orderId from all possible locations
+      const razorpayOrderId: string = 
+        orderRes?.orderId ||           // Direct: { orderId: "..." }
+        orderRes?.data?.orderId ||     // Wrapped: { data: { orderId: "..." } }
+        orderRes?.success?.data?.orderId || // Double wrapped: { success: { data: { orderId: "..." } } }
+        orderRes?.razorpay_order_id || // Alternative field name
+        orderRes?.id;                  // Fallback to id
+      
+      const keyId: string | undefined = 
+        orderRes?.keyId || 
+        orderRes?.data?.keyId || 
+        orderRes?.success?.data?.keyId ||
+        process.env.NEXT_PUBLIC_RAZORPAY_KEY;
+      
+      const orderAmount: number | undefined = 
+        orderRes?.amount || 
+        orderRes?.data?.amount || 
+        orderRes?.success?.data?.amount;
+      
+      console.log('🔍 [PAYMENT] Extracted values:', { 
+        razorpayOrderId: razorpayOrderId ? `${razorpayOrderId.substring(0, 20)}...` : 'MISSING',
+        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
+        orderAmount,
+        hasData: !!orderRes?.data,
+        hasSuccess: !!orderRes?.success,
+        responseKeys: orderRes ? Object.keys(orderRes) : []
+      });
+      
+      if (!razorpayOrderId) {
+        console.error('❌ [PAYMENT] No orderId found in response. Full response structure:', {
+          response: orderRes,
+          stringified: JSON.stringify(orderRes, null, 2),
+          type: typeof orderRes,
+          isArray: Array.isArray(orderRes),
+          keys: orderRes ? Object.keys(orderRes) : [],
+          hasOrderId: !!orderRes?.orderId,
+          hasData: !!orderRes?.data,
+          dataKeys: orderRes?.data ? Object.keys(orderRes.data) : [],
+        });
+        throw new Error('Failed to create payment order: No order ID received from server. Please check the response structure.');
+      }
+      
+      if (!keyId) {
+        console.error('❌ [PAYMENT] No keyId in response and NEXT_PUBLIC_RAZORPAY_KEY not set');
+        throw new Error('Payment gateway configuration error: Razorpay key not found');
+      }
+      
+      console.log('✅ [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
+      
+      // ✅ FIX: Wait for Razorpay script to load before opening checkout
+      if (typeof window !== 'undefined' && !window.Razorpay) {
+        console.log('⏳ [PAYMENT] Waiting for Razorpay script to load...');
+        try {
+          await loadRazorpayScript();
+          console.log('✅ [PAYMENT] Razorpay script loaded successfully');
+        } catch (scriptError: any) {
+          console.error('❌ [PAYMENT] Failed to load Razorpay script:', scriptError);
+          throw new Error('Payment gateway script failed to load. Please refresh the page and try again.');
+        }
       }
       
       // Step 4: Open Razorpay checkout
       const options = {
-        key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
         amount: amountToCharge * 100,
         currency: 'INR',
         name: 'Warmpawz',
         description: `${serviceName || productName} - ${vendorName}`,
-        order_id: orderRes.orderId,
+        order_id: razorpayOrderId,
         handler: async (response: any) => {
           try {
             console.log('✅ [RAZORPAY] Payment response received:', {
@@ -1749,11 +1900,25 @@ export function UniversalPaymentPage({
         },
       };
       
-      if (window.Razorpay) {
+      // ✅ FIX: Double-check Razorpay is available before opening
+      if (!window.Razorpay) {
+        console.error('❌ [PAYMENT] Razorpay not available after script load');
+        throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
+      }
+      
+      console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
+        razorpayOrderId,
+        amount: amountToCharge,
+        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing'
+      });
+      
+      try {
         const razorpay = new window.Razorpay(options);
         razorpay.open();
-      } else {
-        throw new Error('Payment gateway not loaded');
+        console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
+      } catch (openError: any) {
+        console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
+        throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
       }
       
     } catch (error: any) {

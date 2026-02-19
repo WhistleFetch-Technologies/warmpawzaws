@@ -145,6 +145,23 @@ export function UniversalServicesByStyle({
             );
           }
           
+          // ✅ FIX: Normalize nextAvailableSlot to always be a string
+          providerData = providerData.map((p: any) => {
+            if (p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
+              p.nextAvailableSlot = p.nextAvailableSlot.formattedDisplay || p.nextAvailableSlot.display || 
+                (p.nextAvailableSlot.date && p.nextAvailableSlot.time 
+                  ? `${p.nextAvailableSlot.date} ${p.nextAvailableSlot.time}` 
+                  : undefined);
+            }
+            if (p.nextAvailability && typeof p.nextAvailability === 'object') {
+              p.nextAvailableSlot = p.nextAvailability.formattedDisplay || p.nextAvailability.display || 
+                (p.nextAvailability.date && p.nextAvailability.time 
+                  ? `${p.nextAvailability.date} ${p.nextAvailability.time}` 
+                  : undefined);
+            }
+            return p;
+          });
+          
           setProviders(providerData);
           console.log(`✅ [${config.roleName}] Loaded ${providerData.length} clinic${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
         } else {
@@ -258,7 +275,31 @@ export function UniversalServicesByStyle({
               distance: provider.distance || null,
               isVerified: provider.isVerified,
               isIndividualProvider: provider.isIndividualProvider || !provider.vendorId,
-              nextAvailableSlot: provider.nextAvailableSlot ?? (typeof provider.nextAvailability === 'string' ? provider.nextAvailability : provider.nextAvailability?.formattedDisplay),
+              nextAvailableSlot: (() => {
+                // If nextAvailableSlot is already a string, use it
+                if (typeof provider.nextAvailableSlot === 'string') {
+                  return provider.nextAvailableSlot;
+                }
+                // If nextAvailableSlot is an object, extract formattedDisplay or display
+                if (provider.nextAvailableSlot && typeof provider.nextAvailableSlot === 'object') {
+                  return provider.nextAvailableSlot.formattedDisplay || provider.nextAvailableSlot.display || 
+                    (provider.nextAvailableSlot.date && provider.nextAvailableSlot.time 
+                      ? `${provider.nextAvailableSlot.date} ${provider.nextAvailableSlot.time}` 
+                      : undefined);
+                }
+                // If nextAvailability is a string, use it
+                if (typeof provider.nextAvailability === 'string') {
+                  return provider.nextAvailability;
+                }
+                // If nextAvailability is an object, extract formattedDisplay or display
+                if (provider.nextAvailability && typeof provider.nextAvailability === 'object') {
+                  return provider.nextAvailability.formattedDisplay || provider.nextAvailability.display || 
+                    (provider.nextAvailability.date && provider.nextAvailability.time 
+                      ? `${provider.nextAvailability.date} ${provider.nextAvailability.time}` 
+                      : undefined);
+                }
+                return undefined;
+              })(),
               specialization: provider.specialization || provider.specialisation,
               services: services
             };

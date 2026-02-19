@@ -135,20 +135,49 @@ export function ProblemGridFlowRouter({
   const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [showInstantOption, setShowInstantOption] = useState(false);
   const [isInstantMode, setIsInstantMode] = useState(false);
-  const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>(['at_home', 'at_center', 'tele']);
+  // ✅ FIX: Initialize allowedServiceStyles - exclude 'tele' for trainers
+  const getInitialStyles = (): ServiceStyle[] => {
+    if (initialProblem) {
+      const roleId = initialProblem.roleId || initialProblem.linkedServiceRoles?.[0] || 'vet';
+      const isTrainer = roleId === 'trainer' || 
+                       roleId === 'pet_trainer' || 
+                       initialProblem.category === 'training' ||
+                       initialProblem.linkedServiceRoles?.includes('trainer') ||
+                       initialProblem.linkedServiceRoles?.includes('pet_trainer');
+      
+      if (isTrainer) {
+        return ['at_home', 'at_center'];
+      }
+    }
+    return ['at_home', 'at_center', 'tele'];
+  };
+  
+  const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>(getInitialStyles());
   
   // Computed - use fetched allowedServiceStyles, fallback to problem's styles, then default
   const availableStyles = allowedServiceStyles.length > 0 
     ? allowedServiceStyles 
-    : (selectedProblem?.allowedServiceStyles || ['at_home', 'at_center', 'tele']);
+    : (() => {
+        const roleId = selectedProblem?.roleId || selectedProblem?.linkedServiceRoles?.[0] || 'vet';
+        const isTrainer = roleId === 'trainer' || 
+                         roleId === 'pet_trainer' || 
+                         selectedProblem?.category === 'training' ||
+                         selectedProblem?.linkedServiceRoles?.includes('trainer') ||
+                         selectedProblem?.linkedServiceRoles?.includes('pet_trainer');
+        
+        if (isTrainer) {
+          return selectedProblem?.allowedServiceStyles?.filter((s: ServiceStyle) => s !== 'tele') || ['at_home', 'at_center'];
+        }
+        return selectedProblem?.allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+      })();
   const hasTeleOption = availableStyles.includes('tele');
 
   // Fetch problem details including allowedServiceStyles when problem changes
   useEffect(() => {
-    if (selectedProblem?.id && selectedProblem?.roleId) {
+    if (selectedProblem?.id) {
       fetchProblemDetails();
     }
-  }, [selectedProblem?.id, selectedProblem?.roleId]);
+  }, [selectedProblem?.id, selectedProblem?.roleId, selectedProblem?.linkedServiceRoles]);
 
   const fetchProblemDetails = async () => {
     if (!selectedProblem) return;
@@ -165,19 +194,47 @@ export function ProblemGridFlowRouter({
           (p: any) => p.id === selectedProblem.id
         );
         
+        let styles: ServiceStyle[] = [];
         if (matchingProblem?.allowedServiceStyles) {
-          setAllowedServiceStyles(matchingProblem.allowedServiceStyles as ServiceStyle[]);
+          styles = matchingProblem.allowedServiceStyles as ServiceStyle[];
         } else if (selectedProblem.allowedServiceStyles) {
           // Use the styles from initialProblem if API doesn't return them
-          setAllowedServiceStyles(selectedProblem.allowedServiceStyles);
+          styles = selectedProblem.allowedServiceStyles;
         }
+        
+        // ✅ FIX: Remove 'tele' option for trainers
+        // Check if roleId is 'trainer' or if the problem is related to training
+        const isTrainer = roleId === 'trainer' || 
+                         roleId === 'pet_trainer' || 
+                         selectedProblem.category === 'training' ||
+                         selectedProblem.linkedServiceRoles?.includes('trainer') ||
+                         selectedProblem.linkedServiceRoles?.includes('pet_trainer');
+        
+        if (isTrainer) {
+          // Remove 'tele' from allowed styles for trainers
+          styles = styles.filter((style: ServiceStyle) => style !== 'tele');
+        }
+        
+        setAllowedServiceStyles(styles.length > 0 ? styles : ['at_home', 'at_center']);
       }
     } catch (error: any) {
       console.error('Error fetching problem details:', error);
       // Fallback to problem's styles or defaults
-      if (selectedProblem.allowedServiceStyles) {
-        setAllowedServiceStyles(selectedProblem.allowedServiceStyles);
+      let styles: ServiceStyle[] = selectedProblem.allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+      
+      // ✅ FIX: Remove 'tele' option for trainers in fallback too
+      const roleId = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'vet';
+      const isTrainer = roleId === 'trainer' || 
+                       roleId === 'pet_trainer' || 
+                       selectedProblem.category === 'training' ||
+                       selectedProblem.linkedServiceRoles?.includes('trainer') ||
+                       selectedProblem.linkedServiceRoles?.includes('pet_trainer');
+      
+      if (isTrainer) {
+        styles = styles.filter((style: ServiceStyle) => style !== 'tele');
       }
+      
+      setAllowedServiceStyles(styles);
     } finally {
       setLoadingProblemDetails(false);
     }
@@ -214,12 +271,34 @@ export function ProblemGridFlowRouter({
       const res = await apiClient.get<any>(`/customer/services/by-problem?${byProblemParams}`);
 
       if (res.success) {
-        setProviders(res.providers || res.services || []);
+        let providersList = res.providers || res.services || [];
+        
+        // ✅ FIX: Filter out services that don't match the requested serviceStyle
+        // For at_home: filter out business vendors (vendorType === 'business')
+        // For tele: filter by service style
+        // For at_center: filter by service style
+        if (selectedServiceStyle === 'at_home') {
+          providersList = providersList.filter((p: any) => {
+            // Filter out business vendors - only allow solo/individual vendors for at_home
+            return p.vendorType !== 'business';
+          });
+        } else if (selectedServiceStyle === 'at_center') {
+          providersList = providersList.filter((p: any) => {
+            const serviceStyle = p.serviceStyle || p.service_style;
+            return serviceStyle === 'at_center' || serviceStyle === 'at_vendor' || serviceStyle === 'at_clinic';
+          });
+        } else if (selectedServiceStyle === 'tele') {
+          providersList = providersList.filter((p: any) => {
+            const serviceStyle = p.serviceStyle || p.service_style;
+            return serviceStyle === 'tele' || serviceStyle === 'online' || serviceStyle === 'video_consultation';
+          });
+        }
+        
+        setProviders(providersList);
         
         // Check if instant booking is available for tele
         if (selectedServiceStyle === 'tele') {
-          const providerList = res.providers || res.services || [];
-          const instantAvailable = providerList.some((p: ServiceProvider) => p.isInstantAvailable);
+          const instantAvailable = providersList.some((p: ServiceProvider) => p.isInstantAvailable);
           setShowInstantOption(instantAvailable);
         }
       }

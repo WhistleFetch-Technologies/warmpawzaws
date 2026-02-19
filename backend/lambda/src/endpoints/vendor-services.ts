@@ -1524,7 +1524,6 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       const newService = await insert('vendor_services', {
-        id: vendorServiceId,
         vendor_id: actualVendorId,
         service_id: catalogService.id,
         service_name: catalogService.service_name || catalogService.display_name,
@@ -1541,12 +1540,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
         metadata: Object.keys(vendorMetadata).length > 0 ? vendorMetadata : undefined,
       });
       
-      console.log(`✅ Created vendor service ${vendorServiceId} for vendor ${actualVendorId}`);
+      const createdServiceId = newService[0]?.id;
+      console.log(`✅ Created vendor service ${createdServiceId} for vendor ${actualVendorId}`);
       
       return c.json({
         success: true,
         message: 'Service added from catalog',
-        vendorServiceId,
+        vendorServiceId: createdServiceId,
         service: newService[0]
       });
     } catch (error: any) {

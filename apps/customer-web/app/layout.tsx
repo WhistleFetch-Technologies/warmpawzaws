@@ -19,10 +19,8 @@ export default function RootLayout({
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&display=swap"
-          // @ts-ignore - media trick for non-blocking CSS
           media="print"
-          // @ts-ignore
-          onLoad="this.media='all'"
+          id="baloo-font-link"
         />
         {/* Preconnect to Google Fonts for Material Symbols (non-blocking) */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -31,25 +29,40 @@ export default function RootLayout({
         <link 
           rel="stylesheet" 
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
-          // @ts-ignore - media trick for non-blocking CSS
           media="print"
-          // @ts-ignore
-          onLoad="this.media='all'"
+          id="material-symbols-link"
         />
-      </head>
-      <body>
-        {/* Runtime config: no hardcoded URLs. Injected at deploy from config/urls.json; local dev: NEXT_PUBLIC_API_BASE_URL */}
+        {/* Script to change media from print to all after fonts load (non-blocking CSS trick) */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
-              }
+              (function() {
+                function setMediaToAll() {
+                  const balooLink = document.getElementById('baloo-font-link');
+                  const materialLink = document.getElementById('material-symbols-link');
+                  if (balooLink) balooLink.media = 'all';
+                  if (materialLink) materialLink.media = 'all';
+                }
+                if (document.readyState === 'loading') {
+                  document.addEventListener('DOMContentLoaded', setMediaToAll);
+                } else {
+                  setMediaToAll();
+                }
+              })();
             `,
           }}
         />
-        {/* Load sync so API client has correct base URL before first request (avoids localhost fallback) */}
-        <script src="/runtime-config.js" />
+      </head>
+      <body>
+        {/* Runtime config: Injected at deployment time - will be replaced by deploy script */}
+        <script
+          id="runtime-config-inline"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true, environment: 'development' };
+            `,
+          }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

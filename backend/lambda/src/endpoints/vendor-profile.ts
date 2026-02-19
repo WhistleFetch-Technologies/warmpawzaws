@@ -44,6 +44,67 @@ function normalizePhoneForLookup(phone: string | undefined): string | undefined 
 }
 
 /**
+ * ✅ FIX: Extract S3 key from pre-signed URL or full S3 URL
+ * Handles various URL formats and returns the S3 key for regenerating pre-signed URLs
+ */
+function extractS3KeyFromUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== 'string') return null;
+  
+  // If it's already just a key (no http/https), return as-is
+  if (!url.startsWith('http')) {
+    return url;
+  }
+  
+  // If it's a pre-signed URL or full S3 URL, extract the key
+  if (url.includes('amazonaws.com')) {
+    try {
+      const urlObj = new URL(url);
+      // Remove leading slash and query params
+      const key = urlObj.pathname.substring(1).split('?')[0];
+      return key || null;
+    } catch (e) {
+      // If URL parsing fails, try regex pattern matching
+      const match = url.match(/vendors\/[^?]+/);
+      if (match) return match[0];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * ✅ FIX: Regenerate pre-signed URL for S3 object
+ * Takes an S3 key or existing URL and returns a fresh pre-signed URL
+ */
+async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
+  if (!s3KeyOrUrl) return null;
+  
+  try {
+    const s3Key = extractS3KeyFromUrl(s3KeyOrUrl);
+    if (!s3Key) return s3KeyOrUrl; // Return original if we can't extract key
+    
+    const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+    const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+    
+    const signedUrl = await getSignedUrl(
+      s3Client,
+      new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+      }),
+      { expiresIn: 604800 } // 7 days
+    );
+    
+    return signedUrl;
+  } catch (error: any) {
+    console.warn(`[PRESIGNED-URL] Could not regenerate URL for ${s3KeyOrUrl}:`, error.message);
+    return s3KeyOrUrl; // Return original URL if regeneration fails
+  }
+}
+
+/**
  * Get all vendor IDs that may have availability stored (vendors.id + vendor_identity.id for same vendor).
  * Use for vendor_availability_v2 queries so slots are found whether stored by vendor_id or vendor_identity_id.
  * Returns string[] for vendor_id::text = ANY($1::text[]) in queries.
@@ -156,6 +217,57 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
   const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identity.id });
   const application = applications.length > 0 ? applications[0] : null;
   const payload = application?.application_payload || {};
+  
+  // ✅ FIX: Extract profile photo from uploaded_documents and save to profile_photo_url
+  let profilePhotoUrl: string | null = null;
+  
+  // First, check uploaded_documents array
+  if (application && application.uploaded_documents) {
+    const uploadedDocuments = Array.isArray(application.uploaded_documents) 
+      ? application.uploaded_documents 
+      : [];
+    
+    // Look for profile photo in uploaded documents
+    const profilePhotoDoc = uploadedDocuments.find((doc: any) => 
+      doc.type === 'profilePhoto' || 
+      doc.type === 'profile_photo' || 
+      doc.name === 'profilePhoto' ||
+      (doc.name && doc.name.toLowerCase().includes('profile') && doc.name.toLowerCase().includes('photo'))
+    );
+    
+    if (profilePhotoDoc && profilePhotoDoc.url) {
+      const photoUrl = profilePhotoDoc.url;
+      if (photoUrl.includes('amazonaws.com')) {
+        try {
+          const urlObj = new URL(photoUrl);
+          profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+        } catch (e) {
+          const match = photoUrl.match(/vendors\/[^?]+/);
+          profilePhotoUrl = match ? match[0] : photoUrl;
+        }
+      } else {
+        profilePhotoUrl = photoUrl;
+      }
+      console.log(`📸 [PROFILE] Extracted profile photo from uploaded_documents: ${profilePhotoUrl}`);
+    }
+  }
+  
+  // Fallback: Check application_payload for profilePhoto field
+  if (!profilePhotoUrl && payload.profilePhoto) {
+    const photoUrl = payload.profilePhoto;
+    if (photoUrl.includes('amazonaws.com')) {
+      try {
+        const urlObj = new URL(photoUrl);
+        profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+      } catch (e) {
+        const match = photoUrl.match(/vendors\/[^?]+/);
+        profilePhotoUrl = match ? match[0] : photoUrl;
+      }
+    } else {
+      profilePhotoUrl = photoUrl;
+    }
+    console.log(`📸 [PROFILE] Extracted profile photo from application_payload: ${profilePhotoUrl}`);
+  }
 
   const newVendorId = identity.vendor_id || identity.id;
   console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
@@ -172,6 +284,7 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     city: payload.city || 'Not specified',
     state: payload.state || 'Not specified',
     pincode: payload.pin || payload.pincode || '',
+    profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
     status: 'active',
     is_active: true,
     created_at: new Date().toISOString(),
@@ -368,6 +481,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       console.log(`✅ [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
 
+      // ✅ FIX: Regenerate pre-signed URL for profile photo if it's stored as S3 key
+      // This handles both legacy pre-signed URLs (which may be expired) and new S3 keys
+      const profilePhotoUrl = await regeneratePresignedUrl(vendor.profile_photo_url);
+
       return c.json({
         success: true,
         vendor: {
@@ -387,7 +504,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
           serviceStyle: vendor.service_style,
           applicationId: applicationData?.id,
           applicationStatus: applicationData?.status,
-          createdAt: vendor.created_at
+          createdAt: vendor.created_at,
+          profilePhotoUrl: profilePhotoUrl, // ✅ Include regenerated photo URL
         }
       });
     } catch (error: any) {
@@ -444,7 +562,15 @@ export function registerVendorProfileEndpoints(app: Hono) {
         ContentType: photo.type || 'image/jpeg',
       }));
       
-      // Generate presigned URL for access (valid for 1 year)
+      // ✅ FIX: Store S3 key instead of pre-signed URL to avoid expiration issues
+      // Pre-signed URLs expire after 7 days, but we can regenerate them on-demand
+      // Store the S3 key (fileName) so we can generate fresh URLs when needed
+      await update('vendors', { id: actualVendorId }, {
+        profile_photo_url: fileName, // Store S3 key, not pre-signed URL
+        updated_at: new Date().toISOString(),
+      });
+      
+      // Generate presigned URL for immediate use (valid for 7 days)
       const signedUrl = await getSignedUrl(
         s3Client,
         new GetObjectCommand({
@@ -453,12 +579,6 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }),
         { expiresIn: 604800 } // 7 days (max for presigned URLs)
       );
-      
-      // Update vendor with new photo URL (use resolved vendor.id, not URL param)
-      await update('vendors', { id: actualVendorId }, {
-        profile_photo_url: signedUrl,
-        updated_at: new Date().toISOString(),
-      });
       
       console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
       
@@ -766,15 +886,83 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
+      // ✅ FIX: Regenerate pre-signed URL for profile photo
+      const profilePhotoUrl = await regeneratePresignedUrl(vendor.profile_photo_url);
+
+      // ✅ FIX: Load specializations from vendor_specializations table (many-to-many relationship)
+      // ✅ CRITICAL: Also check vendors.specializations JSONB column (same schema as query endpoints)
+      // Profile API should return the same data structure that query endpoints use
+      let vendorSpecializations: string[] = [];
+      try {
+        // Primary: Check vendor_specializations table
+        const specResult = await query(
+          'SELECT specialization FROM vendor_specializations WHERE vendor_id = $1',
+          [vendor.id]
+        );
+        vendorSpecializations = (specResult.rows || []).map((r: any) => r.specialization).filter(Boolean);
+        
+        // ✅ FIX: If no results from table, check vendors.specializations JSONB column (same as query endpoints)
+        if (vendorSpecializations.length === 0 && vendor.specializations) {
+          try {
+            // Check if it's a JSONB array
+            if (typeof vendor.specializations === 'string') {
+              const parsed = JSON.parse(vendor.specializations);
+              vendorSpecializations = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+            } else if (Array.isArray(vendor.specializations)) {
+              vendorSpecializations = vendor.specializations.filter(Boolean);
+            } else if (vendor.specializations && typeof vendor.specializations === 'object') {
+              // It's a JSONB object, try to extract array
+              vendorSpecializations = [];
+            }
+          } catch (jsonbErr) {
+            console.warn('[PROFILE-GET] Could not parse vendors.specializations JSONB:', jsonbErr);
+          }
+        }
+      } catch (specError: any) {
+        console.warn('[PROFILE-GET] Could not load specializations from vendor_specializations:', specError.message);
+        // Fallback to vendors.specializations JSONB column
+        if (vendor.specializations) {
+          try {
+            if (typeof vendor.specializations === 'string') {
+              const parsed = JSON.parse(vendor.specializations);
+              vendorSpecializations = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+            } else if (Array.isArray(vendor.specializations)) {
+              vendorSpecializations = vendor.specializations.filter(Boolean);
+            }
+          } catch (jsonbErr) {
+            console.warn('[PROFILE-GET] Could not parse vendors.specializations JSONB:', jsonbErr);
+          }
+        }
+        // Final fallback to vendors.specialization column (old single text field)
+        if (vendorSpecializations.length === 0 && vendor.specialization) {
+          try {
+            const parsed = typeof vendor.specialization === 'string' 
+              ? (vendor.specialization.startsWith('[') ? JSON.parse(vendor.specialization) : vendor.specialization.split(',').map((s: string) => s.trim()))
+              : Array.isArray(vendor.specialization) ? vendor.specialization : [];
+            vendorSpecializations = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+          } catch {
+            vendorSpecializations = [];
+          }
+        }
+      }
+
       return c.json({
         success: true,
         vendor: {
           ...vendor,
+          // ✅ FIX: Explicitly include roleId at top level (required for SpecializationSelector)
+          roleId: vendor.role_id, // ✅ Always include role_id from database
+          role_id: vendor.role_id, // ✅ Also include for backward compatibility
+          // ✅ FIX: Include regenerated photo URL
+          profile_photo_url: profilePhotoUrl,
+          profilePhotoUrl: profilePhotoUrl,
           // ✅ Explicitly include profile fields (even if null) for solo providers
           qualifications: vendor.qualifications || null,
           service_area: vendor.service_area || null,
           description: vendor.description || null,
           experience_years: vendor.experience_years ?? null,
+          // ✅ FIX: Include specializations from vendor_specializations table
+          specializations: vendorSpecializations,
           // Include role info directly in response
           role: role ? {
             id: role.id,

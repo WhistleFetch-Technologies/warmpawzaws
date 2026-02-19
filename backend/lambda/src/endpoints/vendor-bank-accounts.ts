@@ -425,22 +425,27 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/upi", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      const trimmedId = (vendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // ✅ FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
       return c.json({
         success: true,
         upi: {
-          upi_id: vendors[0].upi_id || null,
-          is_verified: vendors[0].upi_verified || false,
+          upi_id: vendor.upi_id || null,
+          is_verified: vendor.upi_verified || false,
         },
       });
     } catch (error: any) {
       console.error('Error fetching UPI details:', error);
-      return c.json({ success: false, upi: null });
+      return c.json({ error: error.message || 'Failed to fetch UPI details' }, 500);
     }
   });
 
@@ -451,13 +456,24 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/upi", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const trimmedId = (vendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
       const { upi_id } = await c.req.json();
 
       if (!upi_id || !upi_id.includes('@')) {
         return c.json({ error: 'Invalid UPI ID format' }, 400);
       }
 
-      await update('vendors', { id: vendorId }, {
+      // ✅ FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      await update('vendors', { id: vendor.id }, {
         upi_id,
         upi_verified: false, // Will need verification
         updated_at: new Date().toISOString(),

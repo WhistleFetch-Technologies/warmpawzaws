@@ -133,9 +133,11 @@ export class ApiClient {
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       const base = this.getBaseUrl();
+      const cfg = getRuntimeConfig();
+      const env = cfg.environment || (isProductionEnvironment() ? 'production' : 'development');
       console.log('🔧 [UAT Mode] API Client Initialized');
       console.log('   Base URL:', base || '(will resolve from runtime-config)');
-      console.log('   Environment:', process.env.NODE_ENV);
+      console.log('   Environment:', env);
     }
   }
 

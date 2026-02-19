@@ -51,7 +51,7 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
   const [sendingReferral, setSendingReferral] = useState(false);
   const [referralPhone, setReferralPhone] = useState('');
   const [showReferralModal, setShowReferralModal] = useState(false);
-  
+
   // Points and rewards state
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [pointsHistory, setPointsHistory] = useState<any[]>([]);
@@ -512,84 +512,84 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
       <Dialog open={showReferralModal} onOpenChange={setShowReferralModal}>
         <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] flex flex-col p-0">
           <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-gray-200">
-            <DialogHeader>
+          <DialogHeader>
               <DialogTitle className="flex items-center gap-3 text-2xl font-bold text-gray-900">
                 <div className="p-2 bg-orange-100 rounded-lg">
-                  <Gift className="w-6 h-6 text-[#FF8C42]" />
+              <Gift className="w-6 h-6 text-[#FF8C42]" />
                 </div>
-                Referral Program
-              </DialogTitle>
+              Referral Program
+            </DialogTitle>
               <DialogDescription className="text-gray-600 mt-2">
-                Refer other vendors and earn rewards when they join and get approved!
-              </DialogDescription>
-            </DialogHeader>
+              Refer other vendors and earn rewards when they join and get approved!
+            </DialogDescription>
+          </DialogHeader>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            {loadingReferral ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-[#FF8C42]" />
-              </div>
-            ) : (
+          {loadingReferral ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-[#FF8C42]" />
+            </div>
+          ) : (
               <div className="space-y-5">
                 {/* Referral Code Section */}
                 <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-5 border-2 border-orange-200 shadow-sm">
                   <Label className="text-base font-semibold text-gray-800 mb-3 block">
-                    Your Referral Code
-                  </Label>
+                      Your Referral Code
+                    </Label>
                   <div className="flex items-center gap-3">
                     <div className="flex-1 bg-white rounded-lg px-4 py-3 border-2 border-orange-300 font-mono text-lg font-bold text-[#FF8C42] tracking-wider shadow-sm">
-                      {loadingReferral ? 'Loading...' : (referralCode || 'No code available')}
-                    </div>
-                    <Button
-                      onClick={handleCopyReferralCode}
-                      variant="outline"
+                        {loadingReferral ? 'Loading...' : (referralCode || 'No code available')}
+                      </div>
+                  <Button
+                    onClick={handleCopyReferralCode}
+                    variant="outline"
                       size="lg"
                       className="border-2 border-orange-300 text-[#FF8C42] hover:bg-orange-50 font-semibold px-5 h-11 flex-shrink-0"
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy
-                    </Button>
-                  </div>
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy
+                  </Button>
+                </div>
                   <p className="text-sm text-gray-700 mt-3 leading-relaxed">
                     Share this code with other vendors. You'll earn <span className="font-bold text-[#FF8C42]">200 points</span> when they join and get approved!
-                  </p>
-                </div>
+                </p>
+              </div>
 
                 {/* Send Referral Section */}
                 <div className="bg-gray-50 rounded-xl p-5 border border-gray-200">
                   <Label className="text-base font-semibold text-gray-800 mb-3 block">
-                    Send Referral Code via SMS
-                  </Label>
+                  Send Referral Code via SMS
+                </Label>
                   <div className="flex gap-3">
-                    <Input
-                      type="tel"
-                      value={referralPhone}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, '').slice(0, 10);
-                        setReferralPhone(value);
-                      }}
-                      placeholder="Enter 10-digit phone number"
+                  <Input
+                    type="tel"
+                    value={referralPhone}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setReferralPhone(value);
+                    }}
+                    placeholder="Enter 10-digit phone number"
                       className="flex-1 h-11 text-base"
-                      maxLength={10}
-                    />
-                    <Button
-                      onClick={handleSendReferral}
-                      disabled={sendingReferral || !referralPhone.trim()}
+                    maxLength={10}
+                  />
+                  <Button
+                    onClick={handleSendReferral}
+                    disabled={sendingReferral || !referralPhone.trim()}
                       size="lg"
                       className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white font-semibold px-5 h-11 flex-shrink-0"
-                    >
-                      {sendingReferral ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4 mr-2" />
-                          Send
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  >
+                    {sendingReferral ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 mr-2" />
+                        Send
+                      </>
+                    )}
+                  </Button>
                 </div>
+              </div>
 
                 {/* Referral List Section */}
                 <div className="bg-white rounded-xl border-2 border-gray-200 shadow-sm overflow-hidden flex flex-col">
@@ -602,9 +602,9 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
                       <span className="ml-auto px-3 py-1 bg-[#FF8C42] text-white text-sm font-bold rounded-full">
                         {referralList.length}
                       </span>
-                    </h4>
-                  </div>
-                  {referralList.length > 0 ? (
+                  </h4>
+                </div>
+                {referralList.length > 0 ? (
                     <div className="flex-1 overflow-x-auto overflow-y-auto min-h-0">
                       <table className="w-full">
                         <thead className="bg-gray-50 sticky top-0 z-10">
@@ -746,38 +746,38 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {pointsHistory.map((reward: any, index: number) => (
                           <div key={reward.id || index} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-gray-900">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">
                                   {reward.referred_vendor_name || reward.referral_code || reward.description || 'Referral Reward'}
-                                </p>
+                              </p>
                                 <p className="text-xs text-gray-500 mt-1">
                                   {reward.created_at ? new Date(reward.created_at).toLocaleDateString('en-IN', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
+                                  year: 'numeric', 
+                                  month: 'short', 
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
                                   }) : 'N/A'}
-                                </p>
-                              </div>
+                              </p>
+                            </div>
                               <div className="text-right">
                                 <p className="text-sm font-bold text-green-600">+{reward.points || 0} pts</p>
                                 <p className="text-xs text-gray-500">₹{((reward.points || 0) / 100).toFixed(2)}</p>
-                              </div>
-                            </div>
                           </div>
-                        ))}
+                        </div>
                       </div>
-                    ) : (
+                    ))}
+                  </div>
+                ) : (
                       <div className="text-center py-6 bg-gray-50 rounded-lg border border-gray-200">
                         <p className="text-sm text-gray-500">No points earned yet</p>
                         <p className="text-xs text-gray-400 mt-1">Earn points when your referrals get approved!</p>
-                      </div>
-                    )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            </div>
+          )}
             </div>
           </div>
         </DialogContent>

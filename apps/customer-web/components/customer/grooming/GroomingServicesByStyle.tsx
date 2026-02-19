@@ -232,6 +232,11 @@ export function GroomingServicesByStyle({
       if (response.success) {
         let byStyleProviders = response.providers || response.vendors || [];
         
+        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
+        if (serviceStyle === 'at_home') {
+          byStyleProviders = byStyleProviders.filter((p: any) => p.vendorType !== 'business');
+        }
+        
         // ✅ FIX: Enhance provider data with specialisation and amenities
         byStyleProviders = byStyleProviders.map((p: any) => ({
           ...p,

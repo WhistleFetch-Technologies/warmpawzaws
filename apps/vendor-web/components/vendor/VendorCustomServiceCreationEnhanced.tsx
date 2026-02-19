@@ -918,7 +918,6 @@ export function VendorCustomServiceCreationEnhanced({
               {/* Package Details */}
               {service.isPackage && service.packageDetails && (
                 <div className="bg-orange-50 rounded-lg p-3 mb-3 text-sm">
-                  <p className="font-semibold text-gray-900 mb-2">Package Details:</p>
                   {service.packageType === 'session' && service.packageDetails.pricingBySize && (
                     <>
                       <div className="text-gray-700">

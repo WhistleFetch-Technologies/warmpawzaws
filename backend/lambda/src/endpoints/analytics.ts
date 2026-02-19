@@ -21,6 +21,7 @@ import { select, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { resolveVendorId } from '../utils/vendor-resolve';
+import { requireAdminAuth } from './admin';
 
 export function registerAnalyticsEndpoints(app: Hono) {
   /**
@@ -340,6 +341,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/overview", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       // Reuse platform overview logic
       const vendorStats = await query(
         `SELECT 
@@ -407,6 +418,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/vendors", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query('period') || '30d';
       // Handle both numeric (30) and string (30d) formats
       const days = period.endsWith('d') 
@@ -483,6 +504,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/customers", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query('period') || '30';
       const days = parseInt(period, 10);
 
@@ -521,6 +552,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/kpis", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
@@ -586,6 +627,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/revenue", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
@@ -627,6 +678,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/categories", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
@@ -671,6 +732,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/peak-times", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
@@ -724,6 +795,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/funnel", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
@@ -775,6 +856,16 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/sales-by-role", async (c) => {
     try {
+      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      const authResult = await requireAdminAuth(c);
+      if (!authResult.authorized) {
+        return c.json({ 
+          success: false,
+          error: authResult.error || 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        }, 401);
+      }
+
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 

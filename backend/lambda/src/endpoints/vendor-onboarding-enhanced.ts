@@ -1300,6 +1300,54 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
 
       const application = apps[0];
       const payload = application.application_payload || {};
+      
+      // ✅ FIX: Extract profile photo from uploaded_documents and save to profile_photo_url
+      let profilePhotoUrl: string | null = null;
+      
+      // First, check uploaded_documents array
+      const uploadedDocuments = application.uploaded_documents || [];
+      if (Array.isArray(uploadedDocuments)) {
+        // Look for profile photo in uploaded documents
+        const profilePhotoDoc = uploadedDocuments.find((doc: any) => 
+          doc.type === 'profilePhoto' || 
+          doc.type === 'profile_photo' || 
+          doc.name === 'profilePhoto' ||
+          (doc.name && doc.name.toLowerCase().includes('profile') && doc.name.toLowerCase().includes('photo'))
+        );
+        
+        if (profilePhotoDoc && profilePhotoDoc.url) {
+          const photoUrl = profilePhotoDoc.url;
+          if (photoUrl.includes('amazonaws.com')) {
+            try {
+              const urlObj = new URL(photoUrl);
+              profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+            } catch (e) {
+              const match = photoUrl.match(/vendors\/[^?]+/);
+              profilePhotoUrl = match ? match[0] : photoUrl;
+            }
+          } else {
+            profilePhotoUrl = photoUrl;
+          }
+          console.log(`📸 [VENDOR-ACTIVATION] Extracted profile photo from uploaded_documents: ${profilePhotoUrl}`);
+        }
+      }
+      
+      // Fallback: Check application_payload for profilePhoto field
+      if (!profilePhotoUrl && payload.profilePhoto) {
+        const photoUrl = payload.profilePhoto;
+        if (photoUrl.includes('amazonaws.com')) {
+          try {
+            const urlObj = new URL(photoUrl);
+            profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+          } catch (e) {
+            const match = photoUrl.match(/vendors\/[^?]+/);
+            profilePhotoUrl = match ? match[0] : photoUrl;
+          }
+        } else {
+          profilePhotoUrl = photoUrl;
+        }
+        console.log(`📸 [VENDOR-ACTIVATION] Extracted profile photo from application_payload: ${profilePhotoUrl}`);
+      }
 
       // Create vendor record from application
       const vendors = await insert('vendors', {
@@ -1317,6 +1365,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         city: payload.city || '',
         state: payload.state || '',
         pincode: payload.pin || payload.pincode || '',
+        profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
       });
 
       const vendor = vendors[0];

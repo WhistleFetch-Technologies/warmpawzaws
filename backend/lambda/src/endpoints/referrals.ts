@@ -480,10 +480,10 @@ export function registerReferralEndpoints(app: Hono) {
           v.phone as referred_vendor_phone,
           CASE 
             WHEN vr.status = 'approved' THEN
-              (SELECT COALESCE(SUM(lt.points), 0) 
-               FROM loyalty_transactions lt 
-               WHERE lt.customer_id = CAST($1 AS uuid)
-               AND lt.reference_type = 'vendor_referral' 
+          (SELECT COALESCE(SUM(lt.points), 0) 
+           FROM loyalty_transactions lt 
+           WHERE lt.customer_id = CAST($1 AS uuid)
+           AND lt.reference_type = 'vendor_referral' 
                AND lt.reference_id = vr.id)
             ELSE 0
           END as points_earned

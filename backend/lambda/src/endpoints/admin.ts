@@ -450,7 +450,7 @@ class ListVendorsHandler extends BaseHandler {
  * Verify admin authentication for protected routes
  * Returns 401 for missing/invalid auth, 403 for non-admin users
  */
-async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?: string; error?: string }> {
+export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?: string; error?: string }> {
   const authHeader = c.req.header('authorization') || c.req.header('Authorization');
   
   // Check for UAT mode - ONLY check UAT_MODE env variable for security

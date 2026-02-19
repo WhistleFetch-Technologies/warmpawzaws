@@ -622,6 +622,8 @@ export function registerKYCVerificationEndpoints(app: Hono) {
       const body = await c.req.json();
       const { vendorId, declarationType, declarationText, accepted } = body;
       
+      console.log(`[KYC] Declaration request received:`, { vendorId, declarationType, hasText: !!declarationText, accepted });
+      
       if (!vendorId || !declarationType) {
         return c.json({
           success: false,
@@ -663,21 +665,315 @@ export function registerKYCVerificationEndpoints(app: Hono) {
         'dataProcessingConsent': 'data_processing_consent',
       };
       
-      // Normalize the declaration type
+      // ✅ FIX: Normalize the declaration type
       let normalizedDeclarationType = declarationType;
-      if (declarationTypeMapping[declarationType]) {
+      
+      // First, check if it's already a valid type
+      if (validTypes.includes(declarationType)) {
+        normalizedDeclarationType = declarationType;
+      }
+      // Second, check the mapping for camelCase field names
+      else if (declarationTypeMapping[declarationType]) {
         normalizedDeclarationType = declarationTypeMapping[declarationType];
+      }
+      // Second-B: If we have declarationText, try to infer early (before expensive DB lookups)
+      else if (declarationText && declarationType.startsWith('field_')) {
+        const lowerText = declarationText.toLowerCase().trim();
+        console.log(`[KYC] Early inference from declarationText (length: ${lowerText.length})...`);
+        
+        if (lowerText.includes('criminal') || lowerText.includes('no criminal') || lowerText.includes('criminal record')) {
+          normalizedDeclarationType = 'no_criminal_record';
+          console.log(`[KYC] ✅ Early inferred: no_criminal_record`);
+        } else if (lowerText.includes('medical advice') || lowerText.includes('non-medical') || lowerText.includes('non medical') || (lowerText.includes('medical') && lowerText.includes('advice'))) {
+          normalizedDeclarationType = 'non_medical_advice';
+          console.log(`[KYC] ✅ Early inferred: non_medical_advice`);
+        } else if (lowerText.includes('clinical') || lowerText.includes('no clinical') || lowerText.includes('clinical claims')) {
+          normalizedDeclarationType = 'no_clinical_claims';
+          console.log(`[KYC] ✅ Early inferred: no_clinical_claims`);
+        } else if (lowerText.includes('breeding')) {
+          normalizedDeclarationType = 'breeding_limits';
+          console.log(`[KYC] ✅ Early inferred: breeding_limits`);
+        } else if (lowerText.includes('third party') || lowerText.includes('third-party') || lowerText.includes('thirdparty')) {
+          normalizedDeclarationType = 'no_third_party_sales';
+          console.log(`[KYC] ✅ Early inferred: no_third_party_sales`);
+        } else if (lowerText.includes('revalidation') || (lowerText.includes('annual') && lowerText.includes('revalidation'))) {
+          normalizedDeclarationType = 'annual_revalidation_consent';
+          console.log(`[KYC] ✅ Early inferred: annual_revalidation_consent`);
+        } else if (lowerText.includes('hygiene') || lowerText.includes('premises')) {
+          normalizedDeclarationType = 'premises_hygiene';
+          console.log(`[KYC] ✅ Early inferred: premises_hygiene`);
+        } else if ((lowerText.includes('vet') || lowerText.includes('veterinary')) && lowerText.includes('tie')) {
+          normalizedDeclarationType = 'vet_tie_up';
+          console.log(`[KYC] ✅ Early inferred: vet_tie_up`);
+        } else if (lowerText.includes('environmental') || (lowerText.includes('compliance') && !lowerText.includes('adoption') && !lowerText.includes('policy'))) {
+          normalizedDeclarationType = 'environmental_compliance';
+          console.log(`[KYC] ✅ Early inferred: environmental_compliance`);
+        } else if (lowerText.includes('experience') && (lowerText.includes('accurate') || lowerText.includes('accuracy') || lowerText.includes('declare'))) {
+          normalizedDeclarationType = 'experience_accuracy';
+          console.log(`[KYC] ✅ Early inferred: experience_accuracy`);
+        } else if (lowerText.includes('adoption')) {
+          normalizedDeclarationType = 'adoption_policy_compliance';
+          console.log(`[KYC] ✅ Early inferred: adoption_policy_compliance`);
+        } else if (lowerText.includes('platform') && (lowerText.includes('terms') || lowerText.includes('service'))) {
+          normalizedDeclarationType = 'platform_terms';
+          console.log(`[KYC] ✅ Early inferred: platform_terms`);
+        } else if (lowerText.includes('privacy') && (lowerText.includes('policy') || lowerText.includes('data'))) {
+          normalizedDeclarationType = 'privacy_policy';
+          console.log(`[KYC] ✅ Early inferred: privacy_policy`);
+        } else if (lowerText.includes('data') && (lowerText.includes('processing') || lowerText.includes('consent'))) {
+          normalizedDeclarationType = 'data_processing_consent';
+          console.log(`[KYC] ✅ Early inferred: data_processing_consent`);
+        }
+      }
+      // Third, if it looks like a field ID (starts with "field_"), try to look it up
+      else if (declarationType.startsWith('field_')) {
+        console.log(`[KYC] Field ID detected: ${declarationType}, attempting to look up field definition...`);
+        
+        // Try to get vendor's role to look up KYC fields
+        let vendorRoleId: string | null = null;
+        let vendorRoleName: string | null = null;
+        try {
+          if (vendorId) {
+            const vendors = await select('vendors', { id: vendorId });
+            if (vendors.length > 0 && vendors[0].role_id) {
+              vendorRoleId = vendors[0].role_id;
+              const roles = await select('roles', { id: vendorRoleId });
+              if (roles.length > 0) {
+                vendorRoleName = roles[0].name;
+              }
+              console.log(`[KYC] Found vendor role: ${vendorRoleId} (${vendorRoleName})`);
+            }
+          }
+        } catch (vendorError: any) {
+          console.warn(`[KYC] Could not get vendor role: ${vendorError.message}`);
+        }
+        
+        // Try to look up from KYC fields library first (more reliable)
+        try {
+          const { getKYCFieldsForRole } = await import('../lib/kyc-form-fields');
+          if (vendorRoleName) {
+            console.log(`[KYC] Looking up KYC fields for role: ${vendorRoleName}`);
+            
+            // Try both solo and business variants
+            let kycFields = getKYCFieldsForRole(vendorRoleName, 'solo');
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(vendorRoleName, 'business');
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(vendorRoleName);
+            }
+            
+            console.log(`[KYC] Found ${kycFields.length} KYC fields for role ${vendorRoleName}`);
+            
+            // Search for field by ID or name
+            const kycField = kycFields.find((f: any) => 
+              f.id === declarationType || 
+              f.fieldName === declarationType ||
+              f.name === declarationType
+            );
+            
+            if (kycField && kycField.declarationType) {
+              normalizedDeclarationType = kycField.declarationType;
+              console.log(`[KYC] ✅ Found declarationType from KYC fields library: ${normalizedDeclarationType}`);
+            }
+          }
+        } catch (kycError: any) {
+          console.warn(`[KYC] Failed to look up KYC fields: ${kycError.message}`);
+        }
+        
+        // If still not found, try database lookup using JSONB path queries
+        if (!validTypes.includes(normalizedDeclarationType)) {
+          try {
+            // Use JSONB path query to find the field more efficiently
+            const fieldLookup = await query(
+              `SELECT of.fields, of.role_id, of.id as form_id
+               FROM onboarding_forms of
+               WHERE EXISTS (
+                 SELECT 1 
+                 FROM jsonb_array_elements(of.fields) AS field
+                 WHERE (field->>'id')::text = $1 
+                    OR (field->>'name')::text = $1
+                    OR (field->>'fieldName')::text = $1
+               )
+               LIMIT 20`,
+              [declarationType]
+            );
+            
+            console.log(`[KYC] Database JSONB lookup found ${fieldLookup.rows?.length || 0} forms`);
+            
+            if (fieldLookup.rows && fieldLookup.rows.length > 0) {
+              for (const row of fieldLookup.rows) {
+                const fields = row.fields;
+                if (Array.isArray(fields)) {
+                  // Search for exact match first
+                  let field = fields.find((f: any) => {
+                    const fId = f.id?.toString() || '';
+                    const fName = f.name?.toString() || '';
+                    const fFieldName = f.fieldName?.toString() || '';
+                    return fId === declarationType || 
+                           fName === declarationType ||
+                           fFieldName === declarationType;
+                  });
+                  
+                  // If not found, try partial match
+                  if (!field) {
+                    field = fields.find((f: any) => {
+                      const fId = f.id?.toString() || '';
+                      const fName = f.name?.toString() || '';
+                      const fFieldName = f.fieldName?.toString() || '';
+                      return fId.includes(declarationType) ||
+                             fName.includes(declarationType) ||
+                             fFieldName.includes(declarationType);
+                    });
+                  }
+                  
+                  if (field) {
+                    console.log(`[KYC] Found field in database:`, { 
+                      id: field.id, 
+                      name: field.name, 
+                      fieldName: field.fieldName,
+                      declarationType: field.declarationType,
+                      type: field.type,
+                      formId: row.form_id,
+                      roleId: row.role_id
+                    });
+                    
+                    // Found the field, try to get declarationType
+                    if (field.declarationType && validTypes.includes(field.declarationType)) {
+                      normalizedDeclarationType = field.declarationType;
+                      console.log(`[KYC] ✅ Found declarationType from field definition: ${normalizedDeclarationType}`);
+                      break;
+                    } else if (field.fieldName && declarationTypeMapping[field.fieldName]) {
+                      normalizedDeclarationType = declarationTypeMapping[field.fieldName];
+                      console.log(`[KYC] ✅ Mapped from fieldName: ${field.fieldName} -> ${normalizedDeclarationType}`);
+                      break;
+                    } else if (field.name && declarationTypeMapping[field.name]) {
+                      normalizedDeclarationType = declarationTypeMapping[field.name];
+                      console.log(`[KYC] ✅ Mapped from name: ${field.name} -> ${normalizedDeclarationType}`);
+                      break;
+                    } else if (field.type === 'declaration') {
+                      // Field is a declaration type but doesn't have declarationType set
+                      // We'll rely on declarationText inference below
+                      console.log(`[KYC] ⚠️ Field is declaration type but missing declarationType, will infer from text`);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (lookupError: any) {
+            console.error(`[KYC] ❌ Failed to look up field definition in database: ${lookupError.message}`, lookupError);
+          }
+        }
+      }
+      // Fourth, if still not found and we have declarationText, try to infer from text (PRIORITY - do this early)
+      if (!validTypes.includes(normalizedDeclarationType) && declarationText) {
+        const lowerText = declarationText.toLowerCase().trim();
+        console.log(`[KYC] Attempting to infer from declarationText (length: ${lowerText.length})...`);
+        
+        // More aggressive pattern matching with priority order
+        if (lowerText.includes('criminal') || lowerText.includes('no criminal') || lowerText.includes('criminal record')) {
+          normalizedDeclarationType = 'no_criminal_record';
+          console.log(`[KYC] ✅ Inferred from declarationText: no_criminal_record`);
+        } else if (lowerText.includes('medical advice') || lowerText.includes('non-medical') || lowerText.includes('non medical') || (lowerText.includes('medical') && lowerText.includes('advice'))) {
+          normalizedDeclarationType = 'non_medical_advice';
+          console.log(`[KYC] ✅ Inferred from declarationText: non_medical_advice`);
+        } else if (lowerText.includes('clinical') || lowerText.includes('no clinical') || lowerText.includes('clinical claims')) {
+          normalizedDeclarationType = 'no_clinical_claims';
+          console.log(`[KYC] ✅ Inferred from declarationText: no_clinical_claims`);
+        } else if (lowerText.includes('breeding')) {
+          normalizedDeclarationType = 'breeding_limits';
+          console.log(`[KYC] ✅ Inferred from declarationText: breeding_limits`);
+        } else if (lowerText.includes('third party') || lowerText.includes('third-party') || lowerText.includes('thirdparty')) {
+          normalizedDeclarationType = 'no_third_party_sales';
+          console.log(`[KYC] ✅ Inferred from declarationText: no_third_party_sales`);
+        } else if (lowerText.includes('revalidation') || (lowerText.includes('annual') && lowerText.includes('revalidation'))) {
+          normalizedDeclarationType = 'annual_revalidation_consent';
+          console.log(`[KYC] ✅ Inferred from declarationText: annual_revalidation_consent`);
+        } else if (lowerText.includes('hygiene') || lowerText.includes('premises')) {
+          normalizedDeclarationType = 'premises_hygiene';
+          console.log(`[KYC] ✅ Inferred from declarationText: premises_hygiene`);
+        } else if ((lowerText.includes('vet') || lowerText.includes('veterinary')) && lowerText.includes('tie')) {
+          normalizedDeclarationType = 'vet_tie_up';
+          console.log(`[KYC] ✅ Inferred from declarationText: vet_tie_up`);
+        } else if (lowerText.includes('environmental') || (lowerText.includes('compliance') && !lowerText.includes('adoption') && !lowerText.includes('policy'))) {
+          normalizedDeclarationType = 'environmental_compliance';
+          console.log(`[KYC] ✅ Inferred from declarationText: environmental_compliance`);
+        } else if (lowerText.includes('experience') && (lowerText.includes('accurate') || lowerText.includes('accuracy') || lowerText.includes('declare'))) {
+          normalizedDeclarationType = 'experience_accuracy';
+          console.log(`[KYC] ✅ Inferred from declarationText: experience_accuracy`);
+        } else if (lowerText.includes('adoption')) {
+          normalizedDeclarationType = 'adoption_policy_compliance';
+          console.log(`[KYC] ✅ Inferred from declarationText: adoption_policy_compliance`);
+        } else if (lowerText.includes('platform') && (lowerText.includes('terms') || lowerText.includes('service'))) {
+          normalizedDeclarationType = 'platform_terms';
+          console.log(`[KYC] ✅ Inferred from declarationText: platform_terms`);
+        } else if (lowerText.includes('privacy') && (lowerText.includes('policy') || lowerText.includes('data'))) {
+          normalizedDeclarationType = 'privacy_policy';
+          console.log(`[KYC] ✅ Inferred from declarationText: privacy_policy`);
+        } else if (lowerText.includes('data') && (lowerText.includes('processing') || lowerText.includes('consent'))) {
+          normalizedDeclarationType = 'data_processing_consent';
+          console.log(`[KYC] ✅ Inferred from declarationText: data_processing_consent`);
+        } else {
+          console.warn(`[KYC] ⚠️ Could not infer declaration type from text. Text preview: ${lowerText.substring(0, 150)}`);
+        }
+      }
+      
+      // Fifth, try to extract declaration type from field name patterns (fallback)
+      if (!validTypes.includes(normalizedDeclarationType)) {
+        const lowerType = declarationType.toLowerCase();
+        if (lowerType.includes('criminal') || lowerType.includes('nocriminal')) {
+          normalizedDeclarationType = 'no_criminal_record';
+        } else if (lowerType.includes('medical') || lowerType.includes('nonmedical')) {
+          normalizedDeclarationType = 'non_medical_advice';
+        } else if (lowerType.includes('clinical') || lowerType.includes('noclinical')) {
+          normalizedDeclarationType = 'no_clinical_claims';
+        } else if (lowerType.includes('breeding')) {
+          normalizedDeclarationType = 'breeding_limits';
+        } else if (lowerType.includes('thirdparty') || lowerType.includes('third_party')) {
+          normalizedDeclarationType = 'no_third_party_sales';
+        } else if (lowerType.includes('revalidation') || lowerType.includes('annual')) {
+          normalizedDeclarationType = 'annual_revalidation_consent';
+        } else if (lowerType.includes('hygiene') || lowerType.includes('premises')) {
+          normalizedDeclarationType = 'premises_hygiene';
+        } else if (lowerType.includes('vet') && lowerType.includes('tie')) {
+          normalizedDeclarationType = 'vet_tie_up';
+        } else if (lowerType.includes('environmental') || lowerType.includes('compliance')) {
+          normalizedDeclarationType = 'environmental_compliance';
+        } else if (lowerType.includes('experience')) {
+          normalizedDeclarationType = 'experience_accuracy';
+        } else if (lowerType.includes('adoption')) {
+          normalizedDeclarationType = 'adoption_policy_compliance';
+        } else if (lowerType.includes('platform') && lowerType.includes('terms')) {
+          normalizedDeclarationType = 'platform_terms';
+        } else if (lowerType.includes('privacy')) {
+          normalizedDeclarationType = 'privacy_policy';
+        } else if (lowerType.includes('data') && lowerType.includes('processing')) {
+          normalizedDeclarationType = 'data_processing_consent';
+        }
       }
       
       console.log(`[KYC] Declaration type received: ${declarationType}, normalized: ${normalizedDeclarationType}`);
+      console.log(`[KYC] Declaration text preview: ${declarationText ? declarationText.substring(0, 100) + '...' : 'N/A'}`);
       
+      // Final validation - if still not valid, return detailed error
       if (!validTypes.includes(normalizedDeclarationType)) {
-        console.error(`[KYC] Invalid declaration type: ${declarationType} (normalized: ${normalizedDeclarationType})`);
+        console.error(`[KYC] ❌ Invalid declaration type: ${declarationType} (normalized: ${normalizedDeclarationType})`);
+        console.error(`[KYC] Valid types are: ${validTypes.join(', ')}`);
+        console.error(`[KYC] Full request body:`, JSON.stringify({ vendorId, declarationType, hasText: !!declarationText, textLength: declarationText?.length, accepted }, null, 2));
+        
+        // Return error with helpful message
         return c.json({
           success: false,
-          error: `Invalid declaration type: ${declarationType}`,
+          error: `Invalid declaration type: ${declarationType}. Could not resolve to a valid declaration type. Please ensure the field has a valid declarationType set, or provide declarationText for automatic inference.`,
+          validTypes: validTypes,
+          receivedType: declarationType,
+          normalizedType: normalizedDeclarationType,
+          hasDeclarationText: !!declarationText,
+          declarationTextPreview: declarationText ? declarationText.substring(0, 200) : null,
         }, 400);
       }
+      
+      console.log(`[KYC] ✅ Using declaration type: ${normalizedDeclarationType}`);
       
       // Use the normalized type for storage
       const finalDeclarationType = normalizedDeclarationType;

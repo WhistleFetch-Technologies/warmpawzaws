@@ -57,6 +57,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
   useEffect(() => {
     loadBankAccount();
     loadWalletData();
+    loadUpiId();
   }, [vendorId]);
 
   const loadWalletData = async () => {
@@ -128,6 +129,25 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       setBankStatus({ exists: false, is_verified: false });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadUpiId = async () => {
+    try {
+      const response = await apiClient.get(`/vendor/${vendorId}/upi`) as any;
+      
+      if (response && response.success && response.upi) {
+        if (response.upi.upi_id) {
+          setUpiId(response.upi.upi_id);
+          setUpiVerified(response.upi.is_verified || false);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error loading UPI ID:', error);
+      // If 404, UPI doesn't exist yet - that's fine
+      if (error.status !== 404) {
+        console.warn('Failed to load UPI ID:', error);
+      }
     }
   };
 

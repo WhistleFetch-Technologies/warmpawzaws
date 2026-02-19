@@ -26,30 +26,10 @@ import { toast } from 'sonner';
 import { PhotoUpload } from '@/components/shared/PhotoUpload';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager';
+import { SpecializationSelector } from './SpecializationSelector';
 
-// Specializations by role type (same as staff creation)
-const SPECIALIZATIONS_BY_ROLE: Record<string, string[]> = {
-  'veterinarian': ['General Practice', 'Surgery', 'Dentistry', 'Dermatology', 'Orthopedics', 'Cardiology', 'Oncology', 'Emergency Care', 'Exotic Animals', 'Internal Medicine', 'Neurology'],
-  'veterinary_clinic': ['General Practice', 'Surgery', 'Dentistry', 'Dermatology', 'Orthopedics', 'Cardiology', 'Oncology', 'Emergency Care', 'Exotic Animals', 'Internal Medicine', 'Neurology'],
-  'pet_clinic': ['General Practice', 'Surgery', 'Dentistry', 'Dermatology', 'Orthopedics', 'Cardiology', 'Oncology', 'Emergency Care', 'Exotic Animals'],
-  'groomer': ['Bath & Brush', 'Full Grooming', 'Hand Stripping', 'Creative Grooming', 'Cat Grooming', 'Puppy Grooming', 'De-matting', 'Show Grooming', 'Breed-Specific Cuts', 'Spa Treatments'],
-  'pet_groomer': ['Bath & Brush', 'Full Grooming', 'Hand Stripping', 'Creative Grooming', 'Cat Grooming', 'Puppy Grooming', 'De-matting', 'Show Grooming', 'Breed-Specific Cuts', 'Spa Treatments'],
-  'trainer': ['Obedience Training', 'Puppy Training', 'Behavior Modification', 'Agility Training', 'Protection Training', 'Therapy Dog Training', 'Trick Training', 'Leash Training', 'Socialization'],
-  'pet_trainer': ['Obedience Training', 'Puppy Training', 'Behavior Modification', 'Agility Training', 'Protection Training', 'Therapy Dog Training', 'Trick Training', 'Leash Training', 'Socialization'],
-  'dog_trainer': ['Obedience Training', 'Puppy Training', 'Behavior Modification', 'Agility Training', 'Protection Training', 'Therapy Dog Training', 'Trick Training', 'Leash Training', 'Socialization'],
-  'walker': ['Dog Walking', 'Group Walks', 'Puppy Walks', 'Senior Dog Care', 'Reactive Dog Handling', 'Adventure Walks', 'Fitness Walks'],
-  'pet_walker': ['Dog Walking', 'Group Walks', 'Puppy Walks', 'Senior Dog Care', 'Reactive Dog Handling', 'Adventure Walks', 'Fitness Walks'],
-  'dog_walker': ['Dog Walking', 'Group Walks', 'Puppy Walks', 'Senior Dog Care', 'Reactive Dog Handling', 'Adventure Walks', 'Fitness Walks'],
-  'sitter': ['Day Care', 'Overnight Sitting', 'In-Home Sitting', 'Pet Boarding', 'Multiple Pet Care', 'Senior Pet Care', 'Puppy Care', 'Medical Care Support'],
-  'pet_sitter': ['Day Care', 'Overnight Sitting', 'In-Home Sitting', 'Pet Boarding', 'Multiple Pet Care', 'Senior Pet Care', 'Puppy Care', 'Medical Care Support'],
-  'behaviorist': ['Anxiety Treatment', 'Aggression Management', 'Fear Rehabilitation', 'Separation Anxiety', 'Compulsive Behaviors', 'Multi-Pet Households', 'Rescue Rehabilitation'],
-  'pet_behaviorist': ['Anxiety Treatment', 'Aggression Management', 'Fear Rehabilitation', 'Separation Anxiety', 'Compulsive Behaviors', 'Multi-Pet Households', 'Rescue Rehabilitation'],
-  'nutritionist': ['Weight Management', 'Dietary Planning', 'Allergy Management', 'Senior Nutrition', 'Puppy Nutrition', 'Raw Diet', 'Prescription Diets'],
-  'pet_nutritionist': ['Weight Management', 'Dietary Planning', 'Allergy Management', 'Senior Nutrition', 'Puppy Nutrition', 'Raw Diet', 'Prescription Diets'],
-  'photographer': ['Pet Portraits', 'Action Shots', 'Studio Photography', 'Outdoor Photography', 'Event Coverage', 'Breed Shows', 'Memorial Photos'],
-  'pet_photographer': ['Pet Portraits', 'Action Shots', 'Studio Photography', 'Outdoor Photography', 'Event Coverage', 'Breed Shows', 'Memorial Photos'],
-  'default': ['General Pet Care', 'Customer Service', 'Pet Handling', 'First Aid', 'Safety Protocols', 'Communication'],
-};
+// ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
+// This ensures specializations are always up-to-date and role-specific based on admin configuration
 
 interface TimeSlot {
   start: string;
@@ -123,8 +103,11 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   
   // Get vendor role for specialization options
-  const vendorRoleId = initialProfile?.roleId || initialProfile?.role_id || 'default';
-  const vendorRoleName = initialProfile?.roleName || initialProfile?.role_name || 'Service Provider';
+  const vendorRoleId = initialProfile?.roleId || initialProfile?.role_id || initialProfile?.role?.id || null; // ✅ Remove 'default' fallback
+  const vendorRoleName = initialProfile?.roleName || initialProfile?.role_name || initialProfile?.role?.display_name || 'Service Provider';
+  
+  // ✅ FIX: Track roleId state to pass to SpecializationSelector (updates when profile loads)
+  const [roleId, setRoleId] = useState<string | null>(vendorRoleId); // ✅ Allow null, no default
   
   const [profile, setProfile] = useState<ProfessionalProfile>({
     id: vendorId,
@@ -147,24 +130,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   });
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Get available specializations based on vendor role
-  const getAvailableSpecializations = () => {
-    const roleKey = vendorRoleId.toLowerCase().replace(/\s+/g, '_');
-    return SPECIALIZATIONS_BY_ROLE[roleKey] || SPECIALIZATIONS_BY_ROLE['default'];
-  };
-
-  // Toggle specialization selection
-  const toggleSpecialization = (spec: string) => {
-    const current = profile.specializations;
-    const updated = current.includes(spec)
-      ? current.filter(s => s !== spec)
-      : [...current, spec];
-    setProfile(prev => ({ ...prev, specializations: updated }));
-    setHasChanges(true);
-    if (updated.length > 0) {
-      setFormErrors(prev => ({ ...prev, specializations: '' }));
-    }
-  };
+  // ✅ REMOVED: getAvailableSpecializations() and toggleSpecialization() 
+  // Now handled by SpecializationSelector component which fetches role-specific specializations from API
 
   useEffect(() => {
     loadProfile();
@@ -179,6 +146,21 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
       }>(`/vendor/${vendorId}/profile`);
       
       if (response.success && response.vendor) {
+        // ✅ FIX: Get roleId from multiple possible locations (priority order)
+        const loadedRoleId = response.vendor.roleId || 
+                            response.vendor.role_id || 
+                            response.vendor.role?.id || 
+                            null; // ✅ No fallback to 'default'
+        
+        if (!loadedRoleId) {
+          console.error('[PROFILE] No roleId found for vendor:', vendorId);
+          toast.error('Vendor role not found. Please contact support.');
+          setLoading(false);
+          return;
+        }
+        
+        setRoleId(loadedRoleId);
+        
         setProfile({
           id: vendorId,
           owner_name: response.vendor.owner_name || response.vendor.ownerName || '',
@@ -308,7 +290,6 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   }
 
   const completionPercentage = calculateCompletion();
-  const availableSpecializations = getAvailableSpecializations();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -512,32 +493,29 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               )}
             </div>
             
-            {/* Specializations - Multi-select chips */}
+            {/* Specializations - Using SpecializationSelector for role-specific specializations from database */}
             <div>
               <Label className="mb-3 block">
                 Specializations * <span className="text-xs text-gray-500">(Select at least one)</span>
               </Label>
-              <div className="flex flex-wrap gap-2">
-                {availableSpecializations.map(spec => (
-                  <button
-                    key={spec}
-                    type="button"
-                    onClick={() => toggleSpecialization(spec)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                      profile.specializations.includes(spec)
-                        ? 'bg-blue-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {profile.specializations.includes(spec) && '✓ '}
-                    {spec}
-                  </button>
-                ))}
-              </div>
-              {profile.specializations.length > 0 && (
-                <p className="text-xs text-blue-600 mt-2">
-                  {profile.specializations.length} specialization{profile.specializations.length > 1 ? 's' : ''} selected
-                </p>
+              {!roleId ? (
+                <div className="p-4 border border-red-200 rounded-lg bg-red-50">
+                  <p className="text-red-600 text-sm">
+                    ⚠️ Vendor role not found. Cannot load specializations. Please contact support.
+                  </p>
+                </div>
+              ) : (
+                <SpecializationSelector
+                  roleId={roleId}
+                  selected={profile.specializations}
+                  onChange={(specIds) => {
+                    setProfile(prev => ({ ...prev, specializations: specIds }));
+                    setHasChanges(true);
+                    if (specIds.length > 0) {
+                      setFormErrors(prev => ({ ...prev, specializations: '' }));
+                    }
+                  }}
+                />
               )}
               {formErrors.specializations && (
                 <p className="text-red-500 text-xs mt-2">{formErrors.specializations}</p>

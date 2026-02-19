@@ -60,10 +60,10 @@ export async function processReferralSignup(
       
       if (caseInsensitiveResult.rows.length === 0) {
         console.log(`[REFERRAL] ❌ Invalid referral code: ${normalizedCode}`);
-        return {
-          success: false,
-          error: 'Invalid referral code',
-        };
+      return {
+        success: false,
+        error: 'Invalid referral code',
+      };
       } else {
         console.log(`[REFERRAL] ⚠️ Found referral code with case-insensitive lookup (should normalize in database)`);
         referrals = caseInsensitiveResult.rows;
@@ -128,19 +128,19 @@ export async function processReferralSignup(
     
     while (referrerPoints === 0 && referrerPointsAttempts < maxRetries) {
       referrerPointsAttempts++;
-      try {
+    try {
         console.log(`[REFERRAL] Attempting to award referrer points (attempt ${referrerPointsAttempts}/${maxRetries})...`);
-        const referrerResult = await loyaltyPointsService.awardPoints({
-          customerId: referral.referrer_id,
-          actionName: 'refer_friend',
-          referenceType: 'referral',
-          referenceId: referral.id,
-          description: 'Referral reward for friend signup',
-        });
-        referrerPoints = referrerResult.points;
+      const referrerResult = await loyaltyPointsService.awardPoints({
+        customerId: referral.referrer_id,
+        actionName: 'refer_friend',
+        referenceType: 'referral',
+        referenceId: referral.id,
+        description: 'Referral reward for friend signup',
+      });
+      referrerPoints = referrerResult.points;
         
         if (referrerPoints > 0) {
-          console.log(`[REFERRAL] ✅ Awarded ${referrerPoints} points to referrer ${referral.referrer_id}`);
+      console.log(`[REFERRAL] ✅ Awarded ${referrerPoints} points to referrer ${referral.referrer_id}`);
           break;
         } else {
           console.warn(`[REFERRAL] ⚠️ Points awarding returned 0 points. Rule might not exist or frequency limit reached.`);
@@ -149,7 +149,7 @@ export async function processReferralSignup(
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
-      } catch (pointsError: any) {
+    } catch (pointsError: any) {
         console.error(`[REFERRAL] ❌ Error awarding points to referrer (attempt ${referrerPointsAttempts}):`, pointsError);
         console.error(`[REFERRAL] Error details:`, {
           message: pointsError.message,
@@ -307,10 +307,10 @@ export async function processVendorReferralSignup(
       
       if (existingPoints.rows[0]?.count > 0) {
         console.log(`[VENDOR-REFERRAL] Referral already processed and points already awarded for vendor ${vendorId}`);
-        return {
-          success: false,
-          error: 'This referral code has already been used',
-        };
+      return {
+        success: false,
+        error: 'This referral code has already been used',
+      };
       } else {
         // Points weren't awarded yet, even though referral is approved - award them now
         console.log(`[VENDOR-REFERRAL] Referral is approved but points not awarded yet. Awarding now...`);

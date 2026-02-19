@@ -40,20 +40,148 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 /**
+ * ✅ FIX: Extract S3 key from pre-signed URL or full S3 URL
+ * Handles various URL formats and returns the S3 key for regenerating pre-signed URLs
+ */
+function extractS3KeyFromUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== 'string') return null;
+  
+    // If it's already just a key (no http/https), return as-is
+    if (!url.startsWith('http')) {
+    return url.trim();
+    }
+    
+  try {
+    // If it's a pre-signed URL or full S3 URL, extract the key
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    
+    // Remove leading slash and extract key (before query params)
+    if (pathname) {
+      // Remove leading slash if present
+      const key = pathname.startsWith('/') ? pathname.substring(1) : pathname;
+      // Remove query string if present in pathname (shouldn't be, but just in case)
+      const cleanKey = key.split('?')[0].trim();
+      if (cleanKey) {
+        return cleanKey;
+      }
+    }
+  } catch (urlError) {
+    // If URL parsing fails, try to extract key manually using regex
+    try {
+      // Pattern 1: Extract from S3 URL format: https://bucket.s3.region.amazonaws.com/key
+      const s3Match = url.match(/amazonaws\.com\/([^?]+)/);
+      if (s3Match && s3Match[1]) {
+        return s3Match[1].trim();
+      }
+      
+      // Pattern 2: Extract vendors/... pattern (most common)
+      const vendorsMatch = url.match(/(vendors\/[^?]+)/);
+      if (vendorsMatch && vendorsMatch[1]) {
+        return vendorsMatch[1].trim();
+      }
+      
+      console.warn(`[EXTRACT-S3-KEY] Could not extract key from URL: ${url?.substring(0, 150)}`);
+    } catch (regexError) {
+      console.error(`[EXTRACT-S3-KEY] Error in regex extraction:`, regexError);
+      return null;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * ✅ FIX: Regenerate pre-signed URL for S3 object
+ * Takes an S3 key or existing URL and returns a fresh pre-signed URL
+ */
+async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
+  if (!s3KeyOrUrl) return null;
+  
+  try {
+    const s3Key = extractS3KeyFromUrl(s3KeyOrUrl);
+    if (!s3Key) {
+      console.warn(`[PRESIGNED-URL] Could not extract S3 key from URL: ${s3KeyOrUrl?.substring(0, 100)}`);
+      // ✅ FIX: Return null instead of expired URL to prevent 403 errors
+      return null;
+    }
+    
+    console.log(`[PRESIGNED-URL] Regenerating URL for S3 key: ${s3Key}`);
+    
+    const { S3Client, GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+    const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+    
+    // ✅ FIX: Verify object exists before generating presigned URL
+    try {
+      const headCommand = new HeadObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+      });
+      await s3Client.send(headCommand);
+      console.log(`[PRESIGNED-URL] Object exists in S3: ${s3Key}`);
+    } catch (headError: any) {
+      if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+        console.error(`[PRESIGNED-URL] Object not found in S3: ${s3Key}`);
+        return null; // Return null if object doesn't exist
+      }
+      console.warn(`[PRESIGNED-URL] Error checking object existence for ${s3Key}:`, headError?.message);
+      // Continue anyway - might be a permission issue, not a missing object
+    }
+    
+    const signedUrl = await getSignedUrl(
+      s3Client,
+      new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+      }),
+      { expiresIn: 604800 } // 7 days
+    );
+    
+    if (!signedUrl || typeof signedUrl !== 'string' || !signedUrl.startsWith('https://')) {
+      console.error(`[PRESIGNED-URL] Invalid presigned URL generated for ${s3Key}`);
+      return null; // ✅ FIX: Return null instead of expired URL to prevent 403 errors
+    }
+    
+    console.log(`[PRESIGNED-URL] Successfully regenerated URL for ${s3Key} (length: ${signedUrl.length})`);
+    return signedUrl;
+  } catch (error: any) {
+    console.error(`[PRESIGNED-URL] Error regenerating URL for ${s3KeyOrUrl?.substring(0, 100)}:`, {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      statusCode: error.$metadata?.httpStatusCode,
+      stack: error.stack?.substring(0, 200)
+    });
+    // ✅ FIX: Don't return expired URL - return null instead to prevent 403 errors
+    // Frontend should handle null photo URLs gracefully
+    return null;
+  }
+}
+
+/**
  * Unified vendor photo URL: profile_photo_url (vendor profile upload) takes precedence,
  * then profile_image, logo_url, then first facility photo from metadata.
+ * ✅ FIX: Regenerates pre-signed URLs on-demand to avoid 403 errors from expired URLs.
  * Use in all discovery endpoints so clinic/solo cards show photos consistently.
  */
-function getVendorPhotoUrl(v: any): string | null {
+async function getVendorPhotoUrl(v: any): Promise<string | null> {
   if (!v) return null;
   const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
-  if (url && String(url).trim()) return url;
+  if (url && String(url).trim()) {
+    // ✅ FIX: Regenerate pre-signed URL if it's an S3 key or expired URL
+    return await regeneratePresignedUrl(url);
+  }
   try {
     const meta = v.metadata;
     const m = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : meta || {};
     const photos = m?.facility_photos || m?.photos;
     const first = Array.isArray(photos) ? photos[0] : null;
-    return first && String(first).trim() ? first : null;
+    if (first && String(first).trim()) {
+      return await regeneratePresignedUrl(first);
+    }
+    return null;
   } catch {
     return null;
   }
@@ -803,8 +931,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
 
+        // ✅ FIX: For at_home, filter out business/clinic vendors in query
         // at_home/tele: prefer solo vendors; also allow roles that are explicitly solo (walker/sitter/etc).
-        const soloOnlyClause = ` AND (
+        // Exclude business and clinic vendor types for at_home
+        const soloOnlyClause = serviceStyle === 'at_home' ? ` AND (
+          (v.vendor_type = 'solo' AND v.vendor_type != 'business' AND v.vendor_type != 'clinic')
+          OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%'
+          OR LOWER(COALESCE(r.name, '')) LIKE '%solo%'
+          OR LOWER(COALESCE(r.name, '')) IN ('walker','pet_walker','dog_walker','pet_sitter','sitter','pet_taxi','pet_transport','pet_relocation','relocation')
+        ) AND v.vendor_type != 'business' AND v.vendor_type != 'clinic'` : ` AND (
           v.vendor_type = 'solo'
           OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%'
           OR LOWER(COALESCE(r.name, '')) LIKE '%solo%'
@@ -1018,7 +1153,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             } catch { /* ignore */ }
           }
 
-          const hasPhoto = !!(getVendorPhotoUrl(vendor) || (photos && photos.length > 0));
+          const photoUrl = await getVendorPhotoUrl(vendor);
+          const hasPhoto = !!(photoUrl || (photos && photos.length > 0));
           if (!nextAvailableSlot || !hasPhoto) continue;
           
           allProviders.push({
@@ -1060,8 +1196,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             isVerified: vendor.is_verified ?? (vendor.status === 'approved'),
             isOnline: vendor.is_online ?? true,
             languages: vendor.languages ? (Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || '[]')) : ['English', 'Hindi'],
-            photoUrl: getVendorPhotoUrl(vendor),
-            vendorProfileImage: getVendorPhotoUrl(vendor),
+            photoUrl: photoUrl,
+            vendorProfileImage: photoUrl,
             specializations,
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
@@ -1101,8 +1237,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           });
         }
 
+        // ✅ FIX: Fallback filter - filter out business/clinic vendors for at_home
+        let filteredProviders = allProviders;
+        if (serviceStyle === 'at_home') {
+          filteredProviders = allProviders.filter((p: any) => {
+            return p.vendorType !== 'business' && p.vendorType !== 'clinic';
+          });
+          console.log(`[Discover Services] After fallback filter for at_home: ${filteredProviders.length} providers (removed ${allProviders.length - filteredProviders.length} business/clinic vendors)`);
+        }
+
         // Rule book: limit by discovery_max_results
-        const limitedProviders = allProviders.slice(0, ruleMaxResults);
+        const limitedProviders = filteredProviders.slice(0, ruleMaxResults);
 
         console.log(`[Discover Services] Found ${limitedProviders.length} solo providers for style=${serviceStyle} (after radius/sort/limit)`);
 
@@ -1192,6 +1337,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND vs.service_style != 'at_home'
             ${categoryFilterClause}
         `;
         paramIndex = params.length + 1;
@@ -1559,8 +1705,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             completedBookings,
             languages,
             isVerified,
-            photoUrl: getVendorPhotoUrl(vendor),
-            vendorProfileImage: getVendorPhotoUrl(vendor),
+            photoUrl: await getVendorPhotoUrl(vendor),
+            vendorProfileImage: await getVendorPhotoUrl(vendor),
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
             priceMin: priceMin > 0 ? priceMin : undefined,
@@ -3113,6 +3259,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         queryParams.push(acceptableStyles);
         servicesQuery += ` AND vs.service_style = ANY($${queryParams.length}::text[])`;
+        // ✅ FIX: For at_center, exclude at_home services in query
+        if (serviceStyle === 'at_center') {
+          servicesQuery += ` AND vs.service_style != 'at_home'`;
+        }
       }
 
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
@@ -3173,15 +3323,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       });
 
-      const services = formattedServices.filter((s: any) => !s.isPackage);
+      let services = formattedServices.filter((s: any) => !s.isPackage);
       const packages = formattedServices.filter((s: any) => s.isPackage);
       const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
+
+      // ✅ FIX: Fallback filter - for at_center, filter out at_home services
+      if (serviceStyle === 'at_center') {
+        services = services.filter((s: any) => {
+          const style = s.serviceStyle || s.service_style;
+          return style !== 'at_home';
+        });
+        console.log(`[Vendor Services] After fallback filter for at_center: ${services.length} services (removed at_home services)`);
+      }
 
       return c.json({
         success: true,
         services,
         packages,
-        count: formattedServices.length,
+        count: services.length + packages.length,
         hasActivePackage: hasActivePackageForVendor,
       });
 
@@ -3312,7 +3471,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           totalReviews: reviews.rows.length,
           operatingHours: vendor.operating_hours ? JSON.parse(vendor.operating_hours) : null,
           description: vendor.description || '',
-          photoUrl: getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorPhotoUrl(vendor),
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
           specializations: vendorSpecializations,
           serviceStyles: vendorServiceStyles,
@@ -3522,7 +3681,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vendorId: vendor.id,
             businessName: vendor.business_name,
             name: vendor.business_name || vendor.owner_name,
-            photoUrl: getVendorPhotoUrl(vendor),
+            photoUrl: await getVendorPhotoUrl(vendor),
             rating: parseFloat(avgRating) || 0,
             reviewCount: parseInt(reviewCount) || 0,
             distanceKm,
@@ -3834,7 +3993,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           id: vendorId,
           vendorId,
           name: row.business_name || row.owner_name,
-          photoUrl: getVendorPhotoUrl(row),
+          photoUrl: await getVendorPhotoUrl(row),
           rating,
           reviewCount,
           distanceKm,
@@ -3848,9 +4007,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       }));
 
+      // ✅ FIX: Fallback filter - filter out business/clinic vendors for at_home
+      let filteredResults = enriched;
+      if (serviceStyle === 'at_home') {
+        filteredResults = enriched.filter((r: any) => {
+          return r.vendorType !== 'business' && r.vendorType !== 'clinic';
+        });
+        console.log(`[Discover By Problem] After fallback filter for at_home: ${filteredResults.length} results (removed ${enriched.length - filteredResults.length} business/clinic vendors)`);
+      }
+
       return c.json({
         success: true,
-        results: enriched,
+        results: filteredResults,
         roleConfig: roleId ? { roleId } : null,
       });
     } catch (error: any) {
@@ -4762,6 +4930,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           WHERE v.status = 'approved' 
             AND v.is_active = true
             AND vs.service_style = ANY($1::text[])
+            AND vs.service_style != 'at_home'
             AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
             AND (r.name IS NULL OR LOWER(r.name) NOT LIKE '%solo%')
@@ -4808,41 +4977,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         // ✅ FIX: Filter by specialization if provided
         if (specialization) {
-          // Check if vendors table has specialization column
-          const hasSpecializationColumn = await query(`
-            SELECT EXISTS (
-              SELECT 1 FROM information_schema.columns 
-              WHERE table_name = 'vendors' AND column_name = 'specialization'
-            )
-          `).then(r => r.rows[0]?.exists).catch(() => false);
-
-          // Check if vendors table has metadata column with specializations
-          const hasMetadataColumn = await query(`
-            SELECT EXISTS (
-              SELECT 1 FROM information_schema.columns 
-              WHERE table_name = 'vendors' AND column_name = 'metadata'
-            )
-          `).then(r => r.rows[0]?.exists).catch(() => false);
-
-          if (hasSpecializationColumn) {
+          // ✅ CRITICAL FIX: Check vendor_specializations table first (primary source)
+          // This is where vendors store specializations selected in their profile
+          // Both vendor and customer use specialization_id (e.g., "dermatology") from specialization_master
             vendorsQuery += ` AND (
-              v.specialization ILIKE $${paramIndex} OR
-              v.specialization = $${paramIndex}
-            )`;
-            params.push(`%${specialization}%`);
-            paramIndex++;
-          } else if (hasMetadataColumn) {
-            // Check metadata JSON for specializations array
-            vendorsQuery += ` AND (
-              v.metadata::text ILIKE $${paramIndex} OR
-              EXISTS (
+            -- Primary: Check vendor_specializations table (where vendors store specializations from profile)
+            v.id IN (
+              SELECT vendor_id 
+              FROM vendor_specializations 
+              WHERE specialization = $${paramIndex} OR specialization ILIKE $${paramIndex + 1}
+            ) OR
+            -- Fallback 1: Check vendors.specializations JSONB column
+            (v.specializations IS NOT NULL AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+              WHERE spec = $${paramIndex} OR spec ILIKE $${paramIndex + 1}
+            )) OR
+            -- Fallback 2: Check vendors.metadata.specializations
+            (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec
-                WHERE spec ILIKE $${paramIndex}
-              )
+              WHERE spec = $${paramIndex} OR spec ILIKE $${paramIndex + 1}
+            )) OR
+            -- Fallback 3: Check old vendors.specialization column (single text field)
+            (v.specialization IS NOT NULL AND (v.specialization = $${paramIndex} OR v.specialization ILIKE $${paramIndex + 1}))
             )`;
-            params.push(`%${specialization}%`);
-            paramIndex++;
-          }
+          params.push(specialization); // Exact match
+          params.push(`%${specialization}%`); // Partial match
+          paramIndex += 2;
         }
 
         vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${Math.min(100, Math.max(1, maxResults))}`;
@@ -4866,6 +5026,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 
                  AND vs.service_style = ANY($2::text[])
+                 AND vs.service_style != 'at_home'
                  AND vs.is_enabled = true
                  AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
                ORDER BY vs.price ASC`,
@@ -4959,7 +5120,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               role: vendor.role_display_name || vendor.role_name,
               roleName,
               vendorType,
-              photoUrl: getVendorPhotoUrl(vendor),
+              photoUrl: await getVendorPhotoUrl(vendor),
               rating: parseFloat(vendor.avg_rating || '0'),
               reviewCount: parseInt(vendor.review_count || '0', 10),
               distance: distanceKm,
@@ -5367,6 +5528,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND v.status = 'approved'
           AND v.is_active = true
           AND s.vendor_id IS NOT NULL
+          ${serviceStyle === 'at_home' ? "AND v.vendor_type != 'business' AND v.vendor_type != 'clinic'" : ''}
       `;
 
       const staffParams: any[] = [];
@@ -5752,8 +5914,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorName: vendor.business_name || vendor.owner_name,
           name: vendor.business_name || vendor.owner_name,
           phone: vendor.phone,
-          photo: getVendorPhotoUrl(vendor),
-          photoUrl: getVendorPhotoUrl(vendor),
+          photo: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorPhotoUrl(vendor),
           role: vendor.role_display_name || vendor.role_name,
           roleName: vendor.role_name || vendor.role_display_name || '',
           experienceYears: null,
@@ -5788,6 +5950,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Filter providers with at least one service
       let filteredProviders = providers.filter(p => p.services.length > 0);
+
+      // ✅ FIX: Filter out business/clinic vendors when serviceStyle is at_home (fallback filter)
+      if (serviceStyle === 'at_home') {
+        filteredProviders = filteredProviders.filter(p => {
+          return p.vendorType !== 'business' && p.vendorType !== 'clinic';
+        });
+        console.log(`[Services By Style] After fallback filter for at_home (removed business/clinic): ${filteredProviders.length} providers remaining`);
+      }
+      
+      // ✅ FIX: For at_center, filter out at_home services (fallback filter)
+      if (serviceStyle === 'at_center') {
+        filteredProviders = filteredProviders.map(p => ({
+          ...p,
+          services: p.services.filter((s: any) => {
+            const style = s.serviceStyle || s.service_style;
+            return style !== 'at_home';
+          })
+        })).filter(p => p.services.length > 0);
+        console.log(`[Services By Style] After fallback filter for at_center (removed at_home services): ${filteredProviders.length} providers remaining`);
+      }
 
       // ✅ Apply minRating filter
       if (minRatingValue !== null && minRatingValue > 0) {
