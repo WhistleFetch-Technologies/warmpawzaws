@@ -16,6 +16,8 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, update, insert, deleteRows, upsert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+// Password verification
+import * as crypto from 'crypto';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -42,6 +44,37 @@ function createApiGatewayEvent(req: any): any {
     rawPath: url.split('?')[0],
     rawQueryString: url.includes('?') ? url.split('?')[1] : '',
     headers,
+    requestContext: {
+      http: {
+        method: req.method,
+        path: url.split('?')[0],
+      },
+    },
+  };
+}
+
+function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
+  // ✅ FIX: In Hono, headers are accessed via req.raw.headers
+  let headers: Record<string, string> = {};
+  try {
+    // Hono uses req.raw.headers for the underlying Headers object
+    if (req.raw && req.raw.headers && typeof req.raw.headers.entries === 'function') {
+      headers = Object.fromEntries(req.raw.headers.entries());
+    } else if (req.headers && typeof req.headers.entries === 'function') {
+      headers = Object.fromEntries(req.headers.entries());
+    }
+  } catch (e) {
+    console.warn('Could not parse headers:', e);
+  }
+  
+  // Get URL from Hono request
+  const url = req.url || req.path || '/';
+  
+  return {
+    rawPath: url.split('?')[0],
+    rawQueryString: url.includes('?') ? url.split('?')[1] : '',
+    headers,
+    body: parsedBody ? JSON.stringify(parsedBody) : null,
     requestContext: {
       http: {
         method: req.method,
@@ -224,6 +257,18 @@ class GetAnalyticsCustomersHandler extends BaseHandler {
 }
 
 // ============================================================================
+// PASSWORD VERIFICATION UTILITIES
+// ============================================================================
+
+const comparePassword = async (password: string, storedHash: string): Promise<boolean> => {
+  if (!storedHash) return false;
+  const [salt, hash] = storedHash.split(':');
+  if (!salt || !hash) return false;
+  const derivedHash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return hash === derivedHash;
+};
+
+// ============================================================================
 // MISSING ENDPOINTS - AUTH
 // ============================================================================
 
@@ -271,15 +316,39 @@ class AdminLoginHandler extends BaseHandler {
         });
       }
 
-      // Check admin credentials
-      const admins = await select('admins', { email });
-      if (admins.length === 0) {
+      // Check admin credentials (case-insensitive email matching)
+      // Use direct query for case-insensitive email lookup
+      const adminResult = await query(
+        'SELECT * FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+        [email]
+      );
+      
+      if (adminResult.rows.length === 0) {
+        console.log(`[ADMIN AUTH] Admin not found for email: ${email}`);
         return this.error('Invalid credentials', 401);
       }
 
-      const admin = admins[0];
-      // TODO: Implement proper password hashing check
-      // For now, in development, allow login
+      const admin = adminResult.rows[0];
+      
+      // Verify password if password_hash exists (production mode)
+      if (admin.password_hash) {
+        const passwordValid = await comparePassword(password, admin.password_hash);
+        if (!passwordValid) {
+          console.log(`[ADMIN AUTH] Invalid password for admin: ${email}`);
+          return this.error('Invalid credentials', 401);
+        }
+        console.log(`[ADMIN AUTH] Password verified for admin: ${email}`);
+      } else {
+        // If no password_hash, check if admin is active
+        if (!admin.is_active) {
+          console.log(`[ADMIN AUTH] Admin account is inactive: ${email}`);
+          return this.error('Invalid credentials', 401);
+        }
+        // In production, if no password_hash exists, we cannot verify the password
+        // Return error as password authentication is required
+        console.log(`[ADMIN AUTH] Admin found without password_hash: ${email}`);
+        return this.error('Invalid credentials', 401);
+      }
 
       // Update last_login_at timestamp to persist login state
       await update('admins', { id: admin.id }, { 
@@ -288,7 +357,7 @@ class AdminLoginHandler extends BaseHandler {
       });
       console.log(`[ADMIN AUTH] Updated last_login_at for admin ${admin.id}`);
 
-      // Generate proper JWT tokens (use Cognito in production, UAT JWT in dev)
+      // Generate proper JWT tokens (use Cognito in production if configured, otherwise JWT fallback)
       let tokens;
       if (isUATMode) {
         const { generateUATJWTToken } = await import('../utils/jwt-generator');
@@ -299,16 +368,44 @@ class AdminLoginHandler extends BaseHandler {
           expiresIn: 3600,
         });
       } else {
-        // Production: Use Cognito
-        const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../utils/cognito-client');
-        const cognitoUser = await getOrCreateCognitoUser(admin.email, undefined, 'admin');
-        const cognitoTokens = await authenticateCognitoUser(admin.email);
-        tokens = {
-          accessToken: cognitoTokens.accessToken,
-          idToken: cognitoTokens.idToken,
-          refreshToken: cognitoTokens.refreshToken,
-          expiresIn: cognitoTokens.expiresIn,
-        };
+        // Production: Use Cognito if configured, otherwise fallback to JWT
+        const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || '';
+        
+        if (!cognitoUserPoolId) {
+          // Cognito not configured - use JWT tokens as fallback
+          console.warn(`[ADMIN AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
+          const { generateUATJWTToken } = await import('../utils/jwt-generator');
+          tokens = await generateUATJWTToken({
+            userId: admin.id,
+            phone: admin.email,
+            role: 'admin',
+            expiresIn: 24 * 60 * 60, // 24 hours for production
+          });
+          console.log('[ADMIN AUTH] Production Mode: Generated JWT tokens (Cognito fallback)');
+        } else {
+          // Cognito is configured - use it
+          try {
+            const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../utils/cognito-client');
+            const cognitoUser = await getOrCreateCognitoUser(admin.email, undefined, 'admin');
+            const cognitoTokens = await authenticateCognitoUser(admin.email);
+            tokens = {
+              accessToken: cognitoTokens.accessToken,
+              idToken: cognitoTokens.idToken,
+              refreshToken: cognitoTokens.refreshToken,
+              expiresIn: cognitoTokens.expiresIn,
+            };
+          } catch (cognitoError: any) {
+            // If Cognito fails, fallback to JWT
+            console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using JWT fallback`);
+            const { generateUATJWTToken } = await import('../utils/jwt-generator');
+            tokens = await generateUATJWTToken({
+              userId: admin.id,
+              phone: admin.email,
+              role: 'admin',
+              expiresIn: 24 * 60 * 60, // 24 hours
+            });
+          }
+        }
       }
 
       return this.success({
@@ -329,6 +426,75 @@ class AdminLoginHandler extends BaseHandler {
       });
     } catch (error: any) {
       return this.error(error.message || 'Login failed', 500);
+    }
+  }
+}
+
+class GetCurrentAdminHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      // Extract admin ID from JWT token
+      const authHeader = context.event.headers?.authorization || context.event.headers?.Authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return this.error('Authentication required', 401);
+      }
+
+      const token = authHeader.replace('Bearer ', '');
+      
+      // Verify JWT token and extract admin ID
+      try {
+        const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');
+        const headers: Record<string, string> = {};
+        headers['authorization'] = authHeader;
+        
+        const result = await extractAndVerifyAuthToken(headers);
+        
+        if (!result.valid || !result.payload) {
+          return this.error('Invalid or expired token', 401);
+        }
+
+        // Get admin ID from token (could be in sub, userId, or adminId claim)
+        const adminId = result.payload.sub || result.payload.userId || result.payload.adminId;
+        
+        if (!adminId) {
+          return this.error('Admin ID not found in token', 401);
+        }
+
+        // Fetch admin from database
+        const adminResult = await query(
+          'SELECT id, email, name, role, is_active, created_at, last_login_at FROM admins WHERE id = $1 LIMIT 1',
+          [adminId]
+        );
+
+        if (adminResult.rows.length === 0) {
+          return this.error('Admin not found', 404);
+        }
+
+        const admin = adminResult.rows[0];
+
+        // For now, return all permissions (we can add RBAC later)
+        // In production, you would fetch permissions from user_roles and role_permissions tables
+        const permissions = ['*']; // All permissions for now
+
+        return this.success({
+          success: true,
+          admin: {
+            id: admin.id,
+            email: admin.email,
+            name: admin.name || admin.email,
+            role: admin.role || 'admin',
+            isActive: admin.is_active !== false,
+            createdAt: admin.created_at,
+            lastLoginAt: admin.last_login_at,
+          },
+          permissions: permissions,
+        });
+      } catch (tokenError: any) {
+        console.error('[ADMIN AUTH] Token verification failed:', tokenError);
+        return this.error('Token verification failed', 401);
+      }
+    } catch (error: any) {
+      return this.error(error.message || 'Failed to get admin info', 500);
     }
   }
 }
@@ -398,7 +564,6 @@ class GetActiveVendorsHandler extends BaseHandler {
           v.state,
           v.pincode,
           v.commission_percentage,
-          v.rating,
           v.experience_years,
           v.operating_hours,
           v.created_at,
@@ -433,7 +598,7 @@ class GetActiveVendorsHandler extends BaseHandler {
           GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE v.status = 'approved' AND v.is_active = true
         ORDER BY v.updated_at DESC
       `);
@@ -461,7 +626,7 @@ class GetActiveVendorsHandler extends BaseHandler {
         pincode: v.pincode,
         location: v.city ? `${v.city}${v.state ? ', ' + v.state : ''}` : null,
         commissionPercentage: parseFloat(v.commission_percentage) || 15,
-        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        rating: parseFloat(v.avg_rating) || 0,
         reviewCount: parseInt(v.review_count) || 0,
         experience: v.experience_years ? `${v.experience_years} years` : null,
         experienceYears: v.experience_years,
@@ -578,7 +743,7 @@ class GetVendorDetailsHandler extends BaseHandler {
           ) FROM vendor_bank_accounts ba WHERE ba.vendor_id = v.id LIMIT 1) as bank_details
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
       `, [vendorId]);
@@ -674,7 +839,7 @@ class GetVendorDetailsHandler extends BaseHandler {
         panNumber: v.pan_number || 'N/A',
         
         // Ratings & Reviews
-        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        rating: parseFloat(v.avg_rating) || 0,
         reviewCount: parseInt(v.review_count) || 0,
         complaints: parseInt(v.complaints) || 0,
         complianceScore: Math.max(0, 100 - (parseInt(v.complaints) || 0) * 5),
@@ -1084,7 +1249,7 @@ class GetVendorDocumentsHandler extends BaseHandler {
           v.registration_number,
           v.phone as v_phone
         FROM vendors v
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
         ORDER BY voa.submitted_at DESC NULLS LAST
@@ -2371,11 +2536,47 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
   // Auth
   app.post('/admin/auth/login', async (c) => {
-    const handler = new AdminLoginHandler();
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await handler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      // ✅ FIX: Parse body from Hono context FIRST, then pass to createApiGatewayEvent
+      const requestBody = await c.req.json().catch(() => ({}));
+      console.log('[ADMIN AUTH] Request body:', JSON.stringify(requestBody));
+      
+      const handler = new AdminLoginHandler();
+      const event = createApiGatewayEventWithBody(c.req, requestBody);
+      const context = createLambdaContext();
+      const result = await handler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Login endpoint error:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500);
+    }
+  });
+
+  app.get('/admin/auth/me', async (c) => {
+    try {
+      const handler = new GetCurrentAdminHandler();
+      const event = createApiGatewayEvent(c.req);
+      const context = createLambdaContext();
+      const result = await handler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Get current admin error:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500);
+    }
+  });
+
+  app.get('/me', async (c) => {
+    // Alias for /admin/auth/me for compatibility
+    try {
+      const handler = new GetCurrentAdminHandler();
+      const event = createApiGatewayEvent(c.req);
+      const context = createLambdaContext();
+      const result = await handler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Get current admin error:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500);
+    }
   });
 
   app.post('/admin/auth/signup', async (c) => {
@@ -2481,7 +2682,6 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           v.state,
           v.pincode,
           v.commission_percentage,
-          v.rating,
           v.experience_years,
           v.operating_hours,
           v.created_at,
@@ -2517,7 +2717,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -2528,7 +2728,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
       `, params);
 
@@ -2557,7 +2757,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         pincode: v.pincode,
         location: v.city ? `${v.city}${v.state ? ', ' + v.state : ''}` : null,
         commissionPercentage: parseFloat(v.commission_percentage) || 15,
-        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        rating: parseFloat(v.avg_rating) || 0,
         reviewCount: parseInt(v.review_count) || 0,
         experience: v.experience_years ? `${v.experience_years} years` : null,
         experienceYears: v.experience_years,
@@ -2598,7 +2798,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       // Apply performance filter (derived from rating)
       if (performance && performance !== 'all') {
         vendors = vendors.filter((v: any) => {
-          const rating = v.rating || 0;
+          const rating = parseFloat(v.avg_rating) || 0;
           if (performance === 'high') return rating >= 4.5;
           if (performance === 'medium') return rating >= 3.5 && rating < 4.5;
           if (performance === 'low') return rating < 3.5;

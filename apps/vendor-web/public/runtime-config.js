@@ -5,6 +5,12 @@
 (function () {
   const defaultUatMode = true;
   
+  // If config is already set (e.g., by layout.tsx for production mode), use it
+  if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+    console.log('🔧 Runtime config loaded (pre-configured):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+    return;
+  }
+  
   // Determine environment
   function isProduction() {
     // Check hostname (production CloudFront domains)
@@ -31,7 +37,6 @@
   }
   
   const apiBaseUrl = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || 
-                     (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) || 
                      getApiGatewayUrl();
 
   const environment = isProduction() ? 'production' : 'development';

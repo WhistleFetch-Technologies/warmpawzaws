@@ -58,14 +58,17 @@ export interface KYCSection {
 // STANDARD KYC SECTIONS
 // ============================================================================
 
+// ✅ FIX: Correct section order as per requirements
+// Order: 1. Business Information, 2. Local Information, 3. Identity Verification, 
+// 4. Documents, 5. Professional, 6. Permissions, 7. Declaration
 export const KYC_SECTIONS: KYCSection[] = [
-  { id: 'basic', name: 'Basic Information', order: 1 },
-  { id: 'identity_verification', name: 'Identity Verification', order: 2 },
-  { id: 'professional', name: 'Professional Details', order: 3 },
-  { id: 'business_registration', name: 'Business Registration', order: 4 },
-  { id: 'documents', name: 'Documents', order: 5 },
-  { id: 'declarations', name: 'Declarations & Consent', order: 6 },
-  { id: 'location', name: 'Location & Service Area', order: 7 },
+  { id: 'business_information', name: 'Business Information', order: 1 },
+  { id: 'location_information', name: 'Local Information', order: 2 },
+  { id: 'identity_verification', name: 'Identity Verification', order: 3 },
+  { id: 'documents', name: 'Documents', order: 4 },
+  { id: 'professional', name: 'Professional', order: 5 },
+  { id: 'permissions', name: 'Permissions', order: 6 }, // ✅ NEW: Permissions section
+  { id: 'declarations', name: 'Declaration', order: 7 },
   { id: 'banking', name: 'Banking Details', order: 8 },
 ];
 
@@ -73,7 +76,20 @@ export const KYC_SECTIONS: KYCSection[] = [
 // UNIVERSAL KYC FIELDS (Applied to all roles)
 // ============================================================================
 
+// ✅ FIX: Reordered fields - Profile Photo first, then Aadhaar, then PAN
 export const UNIVERSAL_KYC_FIELDS: KYCFormField[] = [
+  // Profile Photo - FIRST in identity_verification
+  {
+    id: 'profilePhoto',
+    fieldName: 'profilePhoto',
+    label: 'Profile Photo (Passport Size)',
+    type: 'file',
+    section: 'identity_verification',
+    required: true,
+    isMandatory: true,
+    helpText: 'Upload a recent passport-size photograph',
+    displayOrder: 1, // ✅ FIRST in identity verification
+  },
   // Aadhaar with OTP verification
   {
     id: 'aadhaarNumber',
@@ -91,7 +107,7 @@ export const UNIVERSAL_KYC_FIELDS: KYCFormField[] = [
       pattern: '^[0-9]{12}$',
       message: 'Please enter a valid 12-digit Aadhaar number'
     },
-    displayOrder: 1,
+    displayOrder: 2, // ✅ After profile photo
   },
   {
     id: 'aadhaarDoc',
@@ -102,7 +118,7 @@ export const UNIVERSAL_KYC_FIELDS: KYCFormField[] = [
     required: true,
     isMandatory: true,
     helpText: 'Upload scanned copy or photo of Aadhaar card (both sides)',
-    displayOrder: 2,
+    displayOrder: 3, // ✅ After aadhaar number
   },
   // PAN with verification
   {
@@ -121,7 +137,7 @@ export const UNIVERSAL_KYC_FIELDS: KYCFormField[] = [
       pattern: '^[A-Z]{5}[0-9]{4}[A-Z]{1}$',
       message: 'Please enter a valid PAN number (e.g., ABCDE1234F)'
     },
-    displayOrder: 3,
+    displayOrder: 4, // ✅ After aadhaar
   },
   {
     id: 'panCard',
@@ -132,19 +148,7 @@ export const UNIVERSAL_KYC_FIELDS: KYCFormField[] = [
     required: true,
     isMandatory: true,
     helpText: 'Upload scanned copy or photo of PAN card',
-    displayOrder: 4,
-  },
-  // Profile Photo
-  {
-    id: 'profilePhoto',
-    fieldName: 'profilePhoto',
-    label: 'Profile Photo (Passport Size)',
-    type: 'file',
-    section: 'identity_verification',
-    required: true,
-    isMandatory: true,
-    helpText: 'Upload a recent passport-size photograph',
-    displayOrder: 5,
+    displayOrder: 5, // ✅ After pan number
   },
 ];
 
@@ -196,12 +200,12 @@ export const DOORSTEP_SERVICE_FIELDS: KYCFormField[] = [
     fieldName: 'policeVerificationDoc',
     label: 'Police Verification Certificate',
     type: 'file',
-    section: 'documents',
+    section: 'permissions', // ✅ FIX: Changed from 'documents' to 'permissions'
     required: true,
     isMandatory: true,
     softBlock: true,
     helpText: 'Upload police verification certificate. Your profile will have limited visibility until verified.',
-    displayOrder: 10,
+    displayOrder: 1, // ✅ First in permissions section
   },
   {
     id: 'noCriminalRecordDeclaration',
@@ -280,12 +284,12 @@ export const BUSINESS_REGISTRATION_FIELDS: KYCFormField[] = [
     fieldName: 'municipalPermission',
     label: 'Municipal/Local Permission',
     type: 'file',
-    section: 'business_registration',
+    section: 'permissions', // ✅ FIX: Changed from 'business_registration' to 'permissions'
     required: false,
     isMandatory: false,
     softBlock: true,
     helpText: 'Upload municipal or local body permission (if applicable)',
-    displayOrder: 5,
+    displayOrder: 2, // ✅ Second in permissions section (after police verification)
   },
 ];
 

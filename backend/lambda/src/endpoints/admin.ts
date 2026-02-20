@@ -334,6 +334,7 @@ class ListVendorsHandler extends BaseHandler {
       const whereClause = whereConditions.join(' AND ');
 
       // Main query with all filters
+      // ✅ FIX: Join vendor_identity by phone instead of vendor_id (vendor_id column may not exist in production)
       const vendorsResult = await query(`
         SELECT 
           v.id,
@@ -350,7 +351,6 @@ class ListVendorsHandler extends BaseHandler {
           v.state,
           v.address,
           v.experience_years,
-          v.rating,
           v.created_at,
           v.approved_at,
           -- Role information
@@ -371,18 +371,19 @@ class ListVendorsHandler extends BaseHandler {
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
         ORDER BY v.created_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
       `, [...params, limit, offset]);
 
       // Get total count for pagination
+      // ✅ FIX: Join vendor_identity by phone instead of vendor_id
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
       `, params);
 
@@ -415,7 +416,7 @@ class ListVendorsHandler extends BaseHandler {
         experience: v.experience_years ? `${v.experience_years} years` : null,
         experienceYears: v.experience_years,
         // Rating
-        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        rating: parseFloat(v.avg_rating) || 0,
         reviewCount: parseInt(v.review_count) || 0,
         // Services
         activeServicesCount: parseInt(v.active_services_count) || 0,
@@ -628,10 +629,11 @@ export function registerAdminEndpoints(app: Hono) {
     }
     try {
       let applicationId: string | null = null;
+      // ✅ FIX: Use phone-based join to avoid vendor_id column dependency
       const byVendor = await query(
         `SELECT voa.id FROM vendor_onboarding_applications voa
          JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
-         WHERE vi.vendor_id = $1 OR vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
+         WHERE vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
          ORDER BY voa.created_at DESC LIMIT 1`,
         [vendorId]
       );

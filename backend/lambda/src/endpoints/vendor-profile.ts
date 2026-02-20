@@ -136,9 +136,10 @@ export async function getVendorIdentityId(vendorIdOrResolved: string): Promise<s
   const vendor = await resolveVendorById(vendorIdOrResolved);
   if (!vendor || !vendor.id) return null;
   try {
+    // ✅ FIX: Query by phone only (vendor_id column may not exist in production)
     const res = await query(
-      `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2 LIMIT 1`,
-      [String(vendor.id), vendor.phone || '']
+      `SELECT id FROM vendor_identity WHERE phone = $1 LIMIT 1`,
+      [vendor.phone || '']
     );
     const row = res.rows?.[0];
     return row?.id ? String(row.id) : null;
@@ -158,19 +159,10 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
   console.log(`[PROFILE] Vendor ${trimmedId} not in vendors table, checking vendor_identity...`);
   let identities = await select('vendor_identity', { id: trimmedId });
   if (identities.length === 0) {
-    // Fallback: vendor_identity.vendor_id in case frontend has vendors.id
-    const byVendorId = await query(
-      `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
-      [trimmedId]
-    ).catch(() => ({ rows: [] }));
-    if (byVendorId.rows?.length > 0) {
-      const identity = byVendorId.rows[0];
-      const linked = await select('vendors', { id: identity.vendor_id });
-      if (linked.length > 0) return linked[0];
-    }
+    // ✅ FIX: Query by id only (vendor_id column may not exist in production)
     // Fallback: text comparison in case of type/format mismatch (e.g. UUID vs text)
     const byText = await query(
-      `SELECT * FROM vendor_identity WHERE id::text = $1 OR vendor_id::text = $1 LIMIT 1`,
+      `SELECT * FROM vendor_identity WHERE id::text = $1 LIMIT 1`,
       [trimmedId]
     ).catch(() => ({ rows: [] }));
     if (byText.rows?.length > 0) identities = byText.rows;
@@ -269,8 +261,26 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     console.log(`📸 [PROFILE] Extracted profile photo from application_payload: ${profilePhotoUrl}`);
   }
 
+  // ✅ FIX: Extract service_radius from payload (for prod compatibility)
+  let serviceRadius: number | null = null;
+  const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
+  for (const field of radiusFields) {
+    if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+      const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+      if (!isNaN(radiusValue) && radiusValue > 0) {
+        serviceRadius = radiusValue;
+        break;
+      }
+    }
+  }
+
   const newVendorId = identity.vendor_id || identity.id;
   console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
+  console.log(`[PROFILE] Extracted values - pincode: ${(() => {
+    const { extractPincodeFromPayload } = require('../utils/extract-profile-photo');
+    return extractPincodeFromPayload(payload);
+  })()}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
+  
   const newVendor = await insert('vendors', {
     id: newVendorId,
     phone: identity.phone,
@@ -283,8 +293,13 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     address: payload.address || 'Not specified',
     city: payload.city || 'Not specified',
     state: payload.state || 'Not specified',
-    pincode: payload.pin || payload.pincode || '',
+    pincode: (() => {
+      // ✅ FIX: Use enhanced pincode extraction
+      const { extractPincodeFromPayload } = require('../utils/extract-profile-photo');
+      return extractPincodeFromPayload(payload);
+    })(),
     profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
+    service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
     status: 'active',
     is_active: true,
     created_at: new Date().toISOString(),
@@ -1406,6 +1421,24 @@ export function registerVendorProfileEndpoints(app: Hono) {
               const application = applications.length > 0 ? applications[0] : null;
               const payload = application?.application_payload || {};
               
+              // ✅ FIX: Extract profile photo, pincode, and service_radius from application (PROD FIX)
+              const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
+              const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
+              const pincodeValue = extractPincodeFromPayload(payload);
+              
+              // ✅ FIX: Extract service_radius from payload
+              let serviceRadius: number | null = null;
+              const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
+              for (const field of radiusFields) {
+                if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+                  const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+                  if (!isNaN(radiusValue) && radiusValue > 0) {
+                    serviceRadius = radiusValue;
+                    break;
+                  }
+                }
+              }
+              
               // Create vendors record
               console.log(`[SETTINGS] Auto-creating vendor record for approved vendor ${vendorId}`);
               const newVendor = await insert('vendors', {
@@ -1420,14 +1453,16 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+                pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction (PROD FIX)
+                profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
+                service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               });
               vendors = newVendor;
-              console.log(`[SETTINGS] Created vendor record for ${vendorId}`);
+              console.log(`[SETTINGS] Created vendor record for ${vendorId} with pincode: ${pincodeValue}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
             }
           } else {
             return c.json({ error: 'Vendor not approved or activated' }, 403);
@@ -1506,6 +1541,24 @@ export function registerVendorProfileEndpoints(app: Hono) {
               const application = applications.length > 0 ? applications[0] : null;
               const payload = application?.application_payload || {};
               
+              // ✅ FIX: Extract profile photo, pincode, and service_radius from application (PROD FIX)
+              const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
+              const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
+              const pincodeValue = extractPincodeFromPayload(payload);
+              
+              // ✅ FIX: Extract service_radius from payload
+              let serviceRadius: number | null = null;
+              const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
+              for (const field of radiusFields) {
+                if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+                  const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+                  if (!isNaN(radiusValue) && radiusValue > 0) {
+                    serviceRadius = radiusValue;
+                    break;
+                  }
+                }
+              }
+              
               // Create vendors record
               console.log(`[SETTINGS-UPDATE] Auto-creating vendor record for approved vendor ${vendorId}`);
               const newVendor = await insert('vendors', {
@@ -1520,14 +1573,16 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+                pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction (PROD FIX)
+                profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
+                service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               });
               vendors = newVendor;
-              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId}`);
+              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId} with pincode: ${pincodeValue}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
             }
           } else {
             return c.json({ error: 'Vendor not approved or activated' }, 403);

@@ -101,6 +101,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [hasAvailability, setHasAvailability] = useState(false); // ✅ Track if availability is configured
   
   // Get vendor role for specialization options
   const vendorRoleId = initialProfile?.roleId || initialProfile?.role_id || initialProfile?.role?.id || null; // ✅ Remove 'default' fallback
@@ -135,6 +136,34 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
 
   useEffect(() => {
     loadProfile();
+  }, [vendorId]);
+
+  // ✅ FIX: Check if availability is configured
+  useEffect(() => {
+    const checkAvailability = async () => {
+      try {
+        const response = await apiClient.get(`/vendor/${vendorId}/availability`).catch(() => null);
+        if (response && response.availability && response.availability.slots) {
+          const slots = response.availability.slots || [];
+          // Check if there's at least one enabled slot
+          const hasEnabledSlots = slots.some((slot: any) => 
+            (slot.is_enabled ?? slot.isEnabled ?? true) && 
+            slot.service_styles && 
+            slot.service_styles.length > 0
+          );
+          setHasAvailability(hasEnabledSlots);
+        } else {
+          setHasAvailability(false);
+        }
+      } catch (err) {
+        console.warn('Could not check availability:', err);
+        setHasAvailability(false);
+      }
+    };
+    
+    if (vendorId) {
+      checkAvailability();
+    }
   }, [vendorId]);
 
   const loadProfile = async () => {
@@ -260,23 +289,84 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     }
   };
 
-  // Calculate profile completion percentage
+  // ✅ FIX: Calculate profile completion percentage - updated to check ALL actual fields in the form
   const calculateCompletion = () => {
     let filled = 0;
-    let total = 10;
+    // ✅ Updated to match ALL fields that can be filled in the Professional Profile form
+    // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations, 
+    //                     experience_years, address, city, state, pincode, service_area, description
+    // Total: 13 fields - when all are filled, should be 100%
+    let total = 13;
     
-    if (profile.photo_url) filled++;
-    if (profile.owner_name) filled++;
-    if (profile.email) filled++;
-    if (profile.qualifications) filled++;
-    if (profile.specializations.length > 0) filled++;
-    if (profile.experience_years && profile.experience_years > 0) filled++;
-    if (profile.description) filled++;
-    if (profile.address) filled++;
-    if (profile.service_area) filled++;
-    if (profile.operating_hours) filled++;
+    // ✅ FIX: Check each field with proper validation
+    // 1. Profile Photo
+    if (profile.photo_url && profile.photo_url.trim() && profile.photo_url !== 'null') filled++;
     
-    return Math.round((filled / total) * 100);
+    // 2. Owner Name
+    if (profile.owner_name && profile.owner_name.trim()) filled++;
+    
+    // 3. Phone
+    if (profile.phone && profile.phone.trim()) filled++;
+    
+    // 4. Email
+    if (profile.email && profile.email.trim()) filled++;
+    
+    // 5. Qualifications
+    if (profile.qualifications && profile.qualifications.trim()) filled++;
+    
+    // 6. Specializations (must have at least 1)
+    if (profile.specializations && Array.isArray(profile.specializations) && profile.specializations.length > 0) filled++;
+    
+    // 7. Experience Years (can be 0, so check if defined)
+    if (profile.experience_years !== null && profile.experience_years !== undefined) filled++;
+    
+    // 8. Address
+    if (profile.address && profile.address.trim()) filled++;
+    
+    // 9. City
+    if (profile.city && profile.city.trim()) filled++;
+    
+    // 10. State
+    if (profile.state && profile.state.trim()) filled++;
+    
+    // 11. Pincode (must be valid 6-digit, not placeholder)
+    const pincode = profile.pincode && profile.pincode.trim();
+    if (pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode)) filled++;
+    
+    // 12. Service Area (optional but counts if filled)
+    if (profile.service_area && profile.service_area.trim()) filled++;
+    
+    // 13. Description (optional but counts if filled)
+    if (profile.description && profile.description.trim()) filled++;
+    
+    // ✅ FIX: Calculate percentage - ensure it reaches 100% when all fields are filled
+    const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
+    
+    // ✅ DEBUG: Log completion details for troubleshooting
+    console.log(`[ProfileCompletion] ========== COMPLETION CALCULATION ==========`);
+    console.log(`[ProfileCompletion] Filled: ${filled}/${total}, Percentage: ${percentage}%`);
+    console.log(`[ProfileCompletion] Field Details:`);
+    console.log(`  photo_url: ${!!profile.photo_url && profile.photo_url.trim() && profile.photo_url !== 'null' ? '✅' : '❌'} (value: ${profile.photo_url ? 'present' : 'missing'})`);
+    console.log(`  owner_name: ${!!profile.owner_name && profile.owner_name.trim() ? '✅' : '❌'} (value: '${profile.owner_name || ''}')`);
+    console.log(`  phone: ${!!profile.phone && profile.phone.trim() ? '✅' : '❌'} (value: '${profile.phone || ''}')`);
+    console.log(`  email: ${!!profile.email && profile.email.trim() ? '✅' : '❌'} (value: '${profile.email || ''}')`);
+    console.log(`  qualifications: ${!!profile.qualifications && profile.qualifications.trim() ? '✅' : '❌'} (value: '${(profile.qualifications || '').substring(0, 30)}...')`);
+    console.log(`  specializations: ${profile.specializations && Array.isArray(profile.specializations) && profile.specializations.length > 0 ? '✅' : '❌'} (count: ${profile.specializations?.length || 0})`);
+    console.log(`  experience_years: ${profile.experience_years !== null && profile.experience_years !== undefined ? '✅' : '❌'} (value: ${profile.experience_years})`);
+    console.log(`  address: ${!!profile.address && profile.address.trim() ? '✅' : '❌'} (value: '${(profile.address || '').substring(0, 30)}...')`);
+    console.log(`  city: ${!!profile.city && profile.city.trim() ? '✅' : '❌'} (value: '${profile.city || ''}')`);
+    console.log(`  state: ${!!profile.state && profile.state.trim() ? '✅' : '❌'} (value: '${profile.state || ''}')`);
+    console.log(`  pincode: ${pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode) ? '✅' : '❌'} (value: '${profile.pincode || ''}')`);
+    console.log(`  service_area: ${!!profile.service_area && profile.service_area.trim() ? '✅' : '❌'} (value: '${profile.service_area || ''}')`);
+    console.log(`  description: ${!!profile.description && profile.description.trim() ? '✅' : '❌'} (value: '${(profile.description || '').substring(0, 30)}...')`);
+    console.log(`[ProfileCompletion] ===========================================`);
+    
+    // ✅ FIX: If all 13 fields are filled, ensure it returns exactly 100%
+    if (filled === total) {
+      return 100;
+    }
+    
+    return Math.min(percentage, 100); // Ensure it never exceeds 100%
   };
 
   if (loading) {
@@ -515,6 +605,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                       setFormErrors(prev => ({ ...prev, specializations: '' }));
                     }
                   }}
+                  isSoloProvider={true} // ✅ FIX: ProfessionalProfileManager is for solo providers
                 />
               )}
               {formErrors.specializations && (

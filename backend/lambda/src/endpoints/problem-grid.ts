@@ -641,20 +641,20 @@ export function registerProblemGridEndpoints(app: Hono) {
       // ✅ FIX: Only expand roleIds if they were explicitly provided via query param
       // Don't expand roleIds from mappings (we're not using them as filters)
       if (roleIds.length > 0) {
-        // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
-        const problemRoleToVendorRoleNames: Record<string, string[]> = {
-          trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-          behaviourist: ['behaviourist', 'behaviorist_solo', 'behaviorist_center'],
-          behaviorist: ['behaviorist_solo', 'behaviorist_center'],
-        };
-        let expandedRoleIds = [...roleIds];
-        for (const rid of roleIds) {
-          if (problemRoleToVendorRoleNames[rid]) {
-            expandedRoleIds = expandedRoleIds.concat(problemRoleToVendorRoleNames[rid]);
-          }
+      // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
+      const problemRoleToVendorRoleNames: Record<string, string[]> = {
+        trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
+        behaviourist: ['behaviourist', 'behaviorist_solo', 'behaviorist_center'],
+        behaviorist: ['behaviorist_solo', 'behaviorist_center'],
+      };
+      let expandedRoleIds = [...roleIds];
+      for (const rid of roleIds) {
+        if (problemRoleToVendorRoleNames[rid]) {
+          expandedRoleIds = expandedRoleIds.concat(problemRoleToVendorRoleNames[rid]);
         }
-        roleIds = [...new Set(expandedRoleIds)];
-        console.log(`[BY-PROBLEM] After expansion - roleIds: ${roleIds.join(', ')}`);
+      }
+      roleIds = [...new Set(expandedRoleIds)];
+      console.log(`[BY-PROBLEM] After expansion - roleIds: ${roleIds.join(', ')}`);
       } else {
         console.log(`[BY-PROBLEM] No roleIds to expand (role filter not applied)`);
       }
@@ -789,9 +789,9 @@ export function registerProblemGridEndpoints(app: Hono) {
              AND jsonb_typeof(v.metadata->'specializations') = 'array'
              AND jsonb_array_length(v.metadata->'specializations') > 0
              AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
-               WHERE spec = ANY($${paramIndex + 2}::text[])
-             )) OR
+              SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+              WHERE spec = ANY($${paramIndex + 2}::text[])
+            )) OR
             -- Fallback: Check service name (partial match)
             vs.service_name ILIKE ANY($${paramIndex + 1}::text[])
           )`;
@@ -1340,17 +1340,17 @@ export function registerProblemGridEndpoints(app: Hono) {
           (v.specializations IS NOT NULL 
            AND jsonb_typeof(v.specializations) = 'array'
            AND EXISTS (
-             SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-             WHERE spec = ANY($${paramIndex}::text[])
-           )) OR
+            SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+            WHERE spec = ANY($${paramIndex}::text[])
+          )) OR
           -- ✅ FALLBACK: Check vendors.metadata.specializations
           (v.metadata IS NOT NULL 
            AND v.metadata->'specializations' IS NOT NULL
            AND jsonb_typeof(v.metadata->'specializations') = 'array'
            AND EXISTS (
-             SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
-             WHERE spec = ANY($${paramIndex}::text[])
-           ))
+            SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+            WHERE spec = ANY($${paramIndex}::text[])
+          ))
         )`;
         params.push(subCategoryIds);
         paramIndex++;

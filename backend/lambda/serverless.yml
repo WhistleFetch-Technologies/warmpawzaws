@@ -150,14 +150,21 @@ provider:
       - ${ssm:/warmpawz/${self:provider.stage}/vpc/subnetId2}
   
   # API Gateway Configuration
-  # Using existing API Gateway (z0b3obweb6) that frontend is pointing to
+  # Using existing API Gateway based on stage:
+  # - dev: z0b3obweb6
+  # - prod: mss9sa4y01
   # Note: CORS is handled by Lambda handler to ensure proper OPTIONS handling
   # The Lambda handler handles OPTIONS requests and returns 200 OK for preflight
   # CORS configuration removed from here because:
   # 1. Serverless Framework cannot configure CORS on externally configured HTTP APIs
   # 2. CORS is fully handled in the Lambda handler code (see handler/index.ts)
   httpApi:
-    id: z0b3obweb6  # Use existing API Gateway that frontend is pointing to
+    id: ${self:custom.apiGatewayId.${self:provider.stage}, 'z0b3obweb6'}  # Use stage-specific API Gateway
+
+custom:
+  apiGatewayId:
+    dev: z0b3obweb6
+    prod: mss9sa4y01
 
 functions:
   api:

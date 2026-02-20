@@ -58,8 +58,31 @@ export default function RootLayout({
         <script
           id="runtime-config-inline"
           dangerouslySetInnerHTML={{
+            __html: `window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true, environment: 'development' };`,
+          }}
+        />
+        {/* Error handler for chunk load errors */}
+        <script
+          dangerouslySetInnerHTML={{
             __html: `
-              window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true, environment: 'development' };
+              (function() {
+                var hasReloaded = sessionStorage.getItem('chunkErrorReloaded');
+                function handleChunkError(e) {
+                  var msg = e.message || '';
+                  if ((msg.includes('ChunkLoadError') || msg.includes('Loading chunk') || msg.includes('Failed to fetch dynamically imported module')) && !hasReloaded) {
+                    sessionStorage.setItem('chunkErrorReloaded', 'true');
+                    window.location.reload();
+                  }
+                }
+                window.addEventListener('error', handleChunkError);
+                window.addEventListener('unhandledrejection', function(e) {
+                  var msg = e.reason?.message || String(e.reason || '');
+                  if ((msg.includes('ChunkLoadError') || msg.includes('Loading chunk')) && !hasReloaded) {
+                    sessionStorage.setItem('chunkErrorReloaded', 'true');
+                    window.location.reload();
+                  }
+                });
+              })();
             `,
           }}
         />

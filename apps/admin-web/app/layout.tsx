@@ -19,6 +19,10 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
+  const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+  const prodApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  
   return (
     <html lang="en" suppressHydrationWarning>
       <body
@@ -31,11 +35,32 @@ export default function RootLayout({
           fontFamily: 'var(--font-sans, Inter, system-ui, sans-serif)',
         }}
       >
+        {/* Production config must be set first, before any other scripts */}
+        {isProd && prodApiUrl && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                (function() {
+                  // Set production config immediately and lock it
+                  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+                    apiBaseUrl: "${prodApiUrl}",
+                    environment: "production",
+                    uatMode: false
+                  };
+                  // Prevent runtime-config.js from overriding
+                  window.__WARMPAWZ_PROD_MODE__ = true;
+                  console.log('🔧 Production config set:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+                })();
+              `,
+            }}
+          />
+        )}
         {/* Runtime config: Inline fallback + external script for deploy-time override */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               // Inline fallback config (ensures API URL is always available)
+              // Only set if not already configured (production mode sets it above)
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
               }
@@ -45,7 +70,15 @@ export default function RootLayout({
                   script.src = '/runtime-config.js?v=' + Date.now();
                   script.async = false;
                   script.defer = false;
-                  script.onload = function() { console.log('🔧 runtime-config.js loaded'); };
+                  script.onload = function() { 
+                    console.log('🔧 runtime-config.js loaded');
+                    // Ensure production mode is preserved after runtime-config loads
+                    if (window.__WARMPAWZ_PROD_MODE__ && window.__WARMPAWZ_RUNTIME_CONFIG__) {
+                      window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
+                      window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
+                      console.log('🔧 Production mode preserved:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+                    }
+                  };
                   script.onerror = function() {
                     console.warn('⚠️ runtime-config.js failed; set NEXT_PUBLIC_API_BASE_URL for local dev');
                   };
@@ -53,9 +86,10 @@ export default function RootLayout({
                 } catch (e) { console.error('Error loading runtime-config.js', e); }
               })();
               // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
+              // Only run if NOT in production mode
               (function() {
                 var config = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
-                var isUatMode = config.uatMode === true;
+                var isUatMode = config.uatMode === true && !window.__WARMPAWZ_PROD_MODE__;
                 if (isUatMode && typeof localStorage !== 'undefined') {
                   var token = localStorage.getItem('adminAuthToken');
                   if (!token) {

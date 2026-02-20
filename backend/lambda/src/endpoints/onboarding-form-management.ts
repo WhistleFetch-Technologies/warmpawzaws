@@ -186,21 +186,24 @@ function getSectionsFromFieldsWithKYC(fields: any[], kycSections?: any[]) {
     });
   }
   
-  // Add default/legacy sections for backward compatibility
+  // ✅ FIX: Correct section order as per requirements
+  // Order: 1. Business Information, 2. Local Information, 3. Identity Verification, 
+  // 4. Documents, 5. Professional, 6. Permissions, 7. Declaration
   const defaultSections: Record<string, any> = {
-    'basic': { title: 'Basic Information', order: 1 },
-    'identity_verification': { title: 'Identity Verification', order: 2 },
-    'professional': { title: 'Professional Details', order: 3 },
-    'business_registration': { title: 'Business Registration', order: 4 },
-    'documents': { title: 'Documents', order: 5 },
-    'declarations': { title: 'Declarations & Consent', order: 6 },
-    'location': { title: 'Location & Service Area', order: 7 },
-    'banking': { title: 'Banking Details', order: 8 },
-    // Legacy sections
     'business_information': { title: 'Business Information', order: 1 },
-    'location_information': { title: 'Location', order: 7 },
+    'location_information': { title: 'Local Information', order: 2 },
+    'identity_verification': { title: 'Identity Verification', order: 3 },
+    'documents': { title: 'Documents', order: 4 },
+    'professional': { title: 'Professional', order: 5 },
+    'permissions': { title: 'Permissions', order: 6 }, // ✅ NEW: Permissions section
+    'declarations': { title: 'Declaration', order: 7 },
+    // Legacy/backward compatibility mappings
+    'basic': { title: 'Business Information', order: 1 },
+    'location': { title: 'Local Information', order: 2 },
+    'business_registration': { title: 'Professional', order: 5 }, // Map to professional
+    'document_verification': { title: 'Documents', order: 4 },
+    'banking': { title: 'Banking Details', order: 8 },
     'banking_information': { title: 'Banking Details', order: 8 },
-    'document_verification': { title: 'Documents', order: 5 },
     'additional_information': { title: 'Additional Info', order: 9 },
   };
   

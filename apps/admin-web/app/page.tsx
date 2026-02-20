@@ -17,14 +17,39 @@ const UAT_CREDENTIALS = {
 // Helper function to check UAT mode from runtime config
 function isUatMode(): boolean {
   if (typeof window === 'undefined') {
+    // Server-side: check if production mode is explicitly set
+    if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'production') {
+      return false;
+    }
     return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
   }
-  // Check runtime config first (for deployed static builds)
-  const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
-  if (runtimeConfig?.uatMode === true) {
-    return true;
+  
+  // Client-side: Check production mode flag first
+  if ((window as any).__WARMPAWZ_PROD_MODE__ === true) {
+    return false;
   }
-  // Fallback to build-time env vars
+  
+  // Check runtime config (for deployed static builds)
+  const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
+  if (runtimeConfig) {
+    // If uatMode is explicitly set to false, respect it
+    if (runtimeConfig.uatMode === false) {
+      return false;
+    }
+    // If uatMode is explicitly set to true, use it
+    if (runtimeConfig.uatMode === true) {
+      return true;
+    }
+    // If environment is production, disable UAT mode
+    if (runtimeConfig.environment === 'production') {
+      return false;
+    }
+  }
+  
+  // Fallback to build-time env vars (only if not in production)
+  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'production') {
+    return false;
+  }
   return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
 }
 
@@ -62,6 +87,28 @@ export default function AdminHomePage() {
     }
   }, []);
 
+  // Re-check UAT mode when runtime config becomes available (after runtime-config.js loads)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Wait a bit for runtime-config.js to load
+      const checkConfig = () => {
+        const config = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
+        if (config) {
+          const newUatMode = isUatMode();
+          setUatMode(newUatMode);
+        }
+      };
+      
+      // Check immediately
+      checkConfig();
+      
+      // Also check after a short delay to catch runtime-config.js loading
+      const timeout = setTimeout(checkConfig, 100);
+      
+      return () => clearTimeout(timeout);
+    }
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -90,14 +137,53 @@ export default function AdminHomePage() {
         }
       }
 
-      // Production: Call real API (placeholder)
-      // const response = await apiClient.post('/admin/auth/login', { email, password });
-      // if (response.success) { ... }
+      // Production: Call real API endpoint
+      const { apiClient } = require('@/lib/api-client');
       
-      // For now, production login not implemented
-      setError('Production login not yet implemented. Use UAT mode for testing.');
+      const response = await apiClient.post('/admin/auth/login', { email, password }) as {
+        success: boolean;
+        token: {
+          access_token: string;
+          id_token: string;
+          refresh_token: string;
+          expires_in: number;
+          token_type: string;
+        };
+        admin: {
+          id: string;
+          email: string;
+          name: string;
+          role: string;
+        };
+      };
+      
+      if (response.success && response.token) {
+        // Store tokens
+        localStorage.setItem('adminAuthToken', response.token.access_token);
+        localStorage.setItem('adminIdToken', response.token.id_token);
+        localStorage.setItem('adminRefreshToken', response.token.refresh_token);
+        localStorage.setItem('adminEmail', response.admin.email);
+        localStorage.setItem('adminId', response.admin.id);
+        localStorage.setItem('adminName', response.admin.name || response.admin.email);
+        
+        // Set sessionStorage flag
+        sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+        
+        console.log('✅ [Production] Admin login successful');
+        setIsAuthenticated(true);
+      } else {
+        setError('Login failed. Invalid response from server.');
+      }
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please try again.');
+      console.error('❌ [Login Error]', err);
+      // Handle specific error messages
+      if (err.message?.includes('401') || err.message?.includes('Invalid credentials')) {
+        setError('Invalid email or password. Please check your credentials and try again.');
+      } else if (err.message?.includes('Network') || err.message?.includes('fetch')) {
+        setError('Network error. Please check your connection and try again.');
+      } else {
+        setError(err.message || 'Login failed. Please try again.');
+      }
     } finally {
       setLoginLoading(false);
     }

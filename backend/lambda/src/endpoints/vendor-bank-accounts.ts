@@ -107,6 +107,24 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
               const application = applications.length > 0 ? applications[0] : null;
               const payload = application?.application_payload || {};
               
+              // ✅ FIX: Extract profile photo and pincode from application
+              const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
+              const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
+              const pincodeValue = extractPincodeFromPayload(payload);
+              
+              // ✅ FIX: Extract service_radius from payload
+              let serviceRadius: number | null = null;
+              const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
+              for (const field of radiusFields) {
+                if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+                  const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+                  if (!isNaN(radiusValue) && radiusValue > 0) {
+                    serviceRadius = radiusValue;
+                    break;
+                  }
+                }
+              }
+              
               // Create vendors record
               console.log(`[BankAccount] Auto-creating vendor record for approved vendor ${vendorId}`);
               const newVendor = await insert('vendors', {
@@ -120,7 +138,9 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+                pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction
+                profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
+                service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),

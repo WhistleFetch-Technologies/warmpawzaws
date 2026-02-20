@@ -15,9 +15,27 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
+  const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+  const prodApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  
   return (
     <html lang="en">
       <body className={inter.className}>
+        {/* Inject production config if running in prod mode */}
+        {isProd && prodApiUrl && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+                  apiBaseUrl: "${prodApiUrl}",
+                  environment: "production",
+                  uatMode: false
+                };
+              `,
+            }}
+          />
+        )}
         {/* Runtime config injected at deploy-time (static hosting safe). */}
         <script src="/runtime-config.js" />
         <Providers>{children}</Providers>

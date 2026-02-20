@@ -5,6 +5,29 @@
 (function () {
   const defaultUatMode = true;
   
+  // If config is already set (e.g., by layout.tsx for production mode), preserve it
+  if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+    // If production mode flag is set, ensure uatMode is false
+    if (window.__WARMPAWZ_PROD_MODE__) {
+      window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
+      window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
+    }
+    console.log('🔧 Runtime config loaded (pre-configured):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+    return;
+  }
+  
+  // If production mode flag is set, don't override with UAT mode
+  if (window.__WARMPAWZ_PROD_MODE__) {
+    window.__WARMPAWZ_RUNTIME_CONFIG__ = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+    window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
+    window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
+    if (!window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+      window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+    }
+    console.log('🔧 Runtime config set (production mode):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+    return;
+  }
+  
   // Determine environment
   function isProduction() {
     // Check hostname (production CloudFront domains)
@@ -32,7 +55,6 @@
   
   // Injected at build/deploy as __API_BASE_URL__ or set NEXT_PUBLIC_API_BASE_URL in env
   const apiBaseUrl = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || 
-                     (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) || 
                      getApiGatewayUrl();
 
   const environment = isProduction() ? 'production' : 'development';

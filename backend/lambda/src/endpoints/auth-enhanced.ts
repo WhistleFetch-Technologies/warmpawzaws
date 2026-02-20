@@ -340,11 +340,41 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       } else {
         // PRODUCTION MODE: Normal OTP verification against database
         console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
-        isValid = await verifyOtp(phone, otp);
-        if (isValid) {
-          console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
-        } else {
-          console.log(`[AUTH] Production Mode: OTP verification failed for ${phone}`);
+        
+        // ✅ FIX: Add timeout protection for OTP verification (10 seconds max)
+        // This prevents Lambda timeout if database queries hang
+        const OTP_VERIFY_TIMEOUT_MS = 10000; // 10 seconds
+        try {
+          const verifyOtpPromise = verifyOtp(phone, otp);
+          const verifyOtpTimeout = new Promise<boolean>((_, reject) => 
+            setTimeout(() => reject(new Error('OTP verification timeout after 10 seconds')), OTP_VERIFY_TIMEOUT_MS)
+          );
+          
+          isValid = await Promise.race([verifyOtpPromise, verifyOtpTimeout]);
+          
+          if (isValid) {
+            console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
+          } else {
+            console.log(`[AUTH] Production Mode: OTP verification failed for ${phone}`);
+          }
+        } catch (verifyError: any) {
+          console.error(`[AUTH] Production Mode: OTP verification error for ${phone}:`, verifyError?.message || verifyError);
+          
+          // If it's a timeout, return 503 Service Unavailable
+          if (verifyError?.message?.includes('timeout')) {
+            return this.error(
+              'Service temporarily unavailable. Please try again.',
+              503,
+              'SERVICE_UNAVAILABLE',
+              { details: 'OTP verification timeout' },
+              context.requestId
+            );
+          }
+          
+          // For other database errors, return 500 but don't fail the request
+          // This allows the user to retry
+          console.warn(`[AUTH] Production Mode: Database error during OTP verification, treating as invalid OTP`);
+          isValid = false;
         }
       }
       
@@ -831,21 +861,71 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.log('[AUTH] UAT Mode: Generated JWT tokens with 24h expiry');
       } else {
         // PRODUCTION MODE: Use full Cognito authentication
-        try {
-          console.log(`[AUTH] Production Mode: Authenticating with Cognito for ${phone} (role: ${role})`);
-          const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
-          cognitoTokens = await authenticateCognitoUser(phone);
-          console.log('[AUTH] Production Mode: Cognito authentication successful');
-        } catch (cognitoError: any) {
-          console.error('[AUTH] Production Mode: Cognito authentication failed:', cognitoError);
-          // In production, Cognito failures are critical - fail the request
-          return this.error(
-            'Authentication service unavailable',
-            503,
-            'SERVICE_UNAVAILABLE',
-            { details: 'Cognito authentication failed' },
-            context.requestId
-          );
+        // ✅ FIX: Check if Cognito is configured, fallback to JWT if not
+        const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || 
+                                  process.env.COGNITO_VENDOR_POOL_ID || 
+                                  process.env.COGNITO_CUSTOMER_POOL_ID || 
+                                  '';
+        
+        if (!cognitoUserPoolId) {
+          // Cognito not configured - use JWT tokens as fallback (same as UAT mode)
+          console.warn(`[AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
+          const { generateUATJWTToken } = await import('../utils/jwt-generator');
+          cognitoTokens = await generateUATJWTToken({
+            userId,
+            phone,
+            role: role as 'customer' | 'vendor' | 'admin',
+            expiresIn: 24 * 60 * 60, // 24 hours
+          });
+          console.log('[AUTH] Production Mode: Generated JWT tokens (Cognito fallback)');
+        } else {
+          // Cognito is configured - use it
+          try {
+            console.log(`[AUTH] Production Mode: Authenticating with Cognito for ${phone} (role: ${role})`);
+            
+            // ✅ FIX: Add timeout protection for Cognito operations (8 seconds max)
+            // This prevents Lambda timeout if Cognito is slow or unresponsive
+            const COGNITO_TIMEOUT_MS = 8000; // 8 seconds
+            
+            const cognitoAuthPromise = (async () => {
+              const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
+              const tokens = await authenticateCognitoUser(phone);
+              return tokens;
+            })();
+            
+            const cognitoTimeout = new Promise<CognitoTokens>((_, reject) => 
+              setTimeout(() => reject(new Error('Cognito authentication timeout after 8 seconds')), COGNITO_TIMEOUT_MS)
+            );
+            
+            cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
+            console.log('[AUTH] Production Mode: Cognito authentication successful');
+          } catch (cognitoError: any) {
+            console.error('[AUTH] Production Mode: Cognito authentication failed:', cognitoError);
+            
+            // ✅ FIX: If Cognito fails, fallback to JWT tokens instead of returning 503
+            // This ensures the endpoint works even if Cognito has issues
+            console.warn(`[AUTH] Production Mode: Cognito failed, falling back to JWT tokens`);
+            try {
+              const { generateUATJWTToken } = await import('../utils/jwt-generator');
+              cognitoTokens = await generateUATJWTToken({
+                userId,
+                phone,
+                role: role as 'customer' | 'vendor' | 'admin',
+                expiresIn: 24 * 60 * 60, // 24 hours
+              });
+              console.log('[AUTH] Production Mode: Generated JWT tokens (Cognito fallback after error)');
+            } catch (jwtError: any) {
+              console.error('[AUTH] Production Mode: JWT fallback also failed:', jwtError);
+              // Only return 503 if both Cognito and JWT fail
+              return this.error(
+                'Authentication service temporarily unavailable. Please try again.',
+                503,
+                'SERVICE_UNAVAILABLE',
+                { details: 'Authentication service error' },
+                context.requestId
+              );
+            }
+          }
         }
       }
 

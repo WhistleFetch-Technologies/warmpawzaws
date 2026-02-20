@@ -20,6 +20,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { resolveVendorById } from './vendor-profile';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({
@@ -55,35 +56,46 @@ class GetVendorProductsHandler extends BaseHandler {
         });
       }
 
-      // Verify vendor exists
-      try {
-        const vendors = await select('vendors', { id: vendorId });
-        if (vendors.length === 0) {
-          return this.error('Vendor not found', 404);
-        }
-      } catch (error: any) {
-        // If UUID validation fails, return empty result
-        if (error.message?.includes('invalid input syntax for type uuid')) {
-          return this.success({
-            products: [],
-            total: 0,
-            count: 0,
-          });
-        }
-        throw error;
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
+        return this.error('Vendor not found', 404);
+      }
+      const resolvedVendorId = vendor.id;
+      if (resolvedVendorId !== vendorId) {
+        console.log(`[VendorProducts] Resolved vendorId ${vendorId} to ${resolvedVendorId}`);
       }
 
-      // Build query
+      // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
+      // Use explicit column selection to avoid issues with p.* and missing columns
       let productQuery = `
-        SELECT p.*, 
-               ec.name as category_name,
-               ec.id as category_id
+        SELECT 
+          p.id,
+          p.vendor_id,
+          p.category_id,
+          p.name,
+          p.description,
+          p.sku,
+          p.price,
+          COALESCE(p.stock, 0) as stock,
+          p.is_active,
+          p.created_at,
+          p.updated_at,
+          p.images,
+          p.tags,
+          p.metadata,
+          p.hsn_code,
+          p.gst_rate,
+          p.category,
+          ec.name as category_name,
+          ec.id as category_id
         FROM products p
         LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
         WHERE p.vendor_id = $1
       `;
 
-      const params: any[] = [vendorId];
+      const params: any[] = [resolvedVendorId];
       let paramIndex = 2;
 
       if (search) {
@@ -118,7 +130,7 @@ class GetVendorProductsHandler extends BaseHandler {
           FROM products p
           WHERE p.vendor_id = $1
         `;
-        const countParams: any[] = [vendorId];
+        const countParams: any[] = [resolvedVendorId];
         let countParamIndex = 2;
 
         if (search) {
@@ -187,20 +199,25 @@ class CreateVendorProductHandler extends BaseHandler {
 
       this.validateRequired(body, ['name', 'price']);
 
-      // Verify vendor exists
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
         return this.error('Vendor not found', 404);
       }
+      const resolvedVendorId = vendor.id;
+
+      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
+      const stockValue = parseInt(body.stock || body.stock_quantity || '0', 10);
 
       // Prepare product data - only use columns that exist in DB
       const productData: any = {
-        vendor_id: vendorId,
+        vendor_id: resolvedVendorId,
         name: body.name,
         description: body.description || null,
         category_id: body.category_id || null,
         price: parseFloat(body.price),
-        stock_quantity: parseInt(body.stock || body.stock_quantity || '0', 10),
+        stock: stockValue, // ✅ FIX: Use stock column (migration 013 renamed stock_quantity to stock)
         sku: body.sku || null,
         is_active: body.is_active !== false,
       };
@@ -242,14 +259,40 @@ class GetVendorProductHandler extends BaseHandler {
         return this.error('Vendor ID and Product ID are required', 400);
       }
 
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
+        return this.error('Vendor not found', 404);
+      }
+      const resolvedVendorId = vendor.id;
+
+      // ✅ FIX: Use explicit column selection to avoid stock_quantity column error
       const products = await query(
-        `SELECT p.*, 
+        `SELECT 
+                p.id,
+                p.vendor_id,
+                p.category_id,
+                p.name,
+                p.description,
+                p.sku,
+                p.price,
+                COALESCE(p.stock, 0) as stock,
+                p.is_active,
+                p.created_at,
+                p.updated_at,
+                p.images,
+                p.tags,
+                p.metadata,
+                p.hsn_code,
+                p.gst_rate,
+                p.category,
                 ec.name as category_name,
                 ec.id as category_id
          FROM products p
          LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
          WHERE p.id = $1 AND p.vendor_id = $2`,
-        [productId, vendorId]
+        [productId, resolvedVendorId]
       );
 
       if (products.rows.length === 0) {
@@ -281,8 +324,16 @@ class UpdateVendorProductHandler extends BaseHandler {
         return this.error('Vendor ID and Product ID are required', 400);
       }
 
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
+        return this.error('Vendor not found', 404);
+      }
+      const resolvedVendorId = vendor.id;
+
       // Verify product belongs to vendor
-      const existingProducts = await select('products', { id: productId, vendor_id: vendorId });
+      const existingProducts = await select('products', { id: productId, vendor_id: resolvedVendorId });
       if (existingProducts.length === 0) {
         return this.error('Product not found or access denied', 404);
       }
@@ -295,13 +346,12 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.category_id !== undefined) updateData.category_id = body.category_id;
       if (body.category !== undefined) updateData.category = body.category;
       if (body.price !== undefined) updateData.price = parseFloat(body.price);
+      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
       if (body.stock !== undefined) {
         updateData.stock = parseInt(body.stock, 10);
-        updateData.stock_quantity = parseInt(body.stock, 10);
       }
       if (body.stock_quantity !== undefined) {
-        updateData.stock = parseInt(body.stock_quantity, 10);
-        updateData.stock_quantity = parseInt(body.stock_quantity, 10);
+        updateData.stock = parseInt(body.stock_quantity, 10); // ✅ FIX: Map stock_quantity to stock
       }
       if (body.sku !== undefined) updateData.sku = body.sku;
       if (body.hsn_code !== undefined) updateData.hsn_code = body.hsn_code;
@@ -329,7 +379,7 @@ class UpdateVendorProductHandler extends BaseHandler {
       updateData.updated_at = new Date().toISOString();
 
       // Update product
-      const updated = await update('products', { id: productId, vendor_id: vendorId }, updateData);
+      const updated = await update('products', { id: productId, vendor_id: resolvedVendorId }, updateData);
 
       if (updated.length === 0) {
         return this.error('Failed to update product', 500);
@@ -360,8 +410,16 @@ class DeleteVendorProductHandler extends BaseHandler {
         return this.error('Vendor ID and Product ID are required', 400);
       }
 
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
+        return this.error('Vendor not found', 404);
+      }
+      const resolvedVendorId = vendor.id;
+
       // Verify product belongs to vendor
-      const existingProducts = await select('products', { id: productId, vendor_id: vendorId });
+      const existingProducts = await select('products', { id: productId, vendor_id: resolvedVendorId });
       if (existingProducts.length === 0) {
         return this.error('Product not found or access denied', 404);
       }
@@ -406,16 +464,26 @@ export function registerVendorProductsEndpoints(app: Hono) {
 
   app.get('/vendor/:vendorId/products', async (c) => {
     try {
-      const vendorId = c.req.param('vendorId');
+      const paramVendorId = c.req.param('vendorId');
       
       // Handle test IDs or invalid UUIDs gracefully
-      if (!vendorId || vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (!paramVendorId || paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           products: [],
           total: 0,
           count: 0,
         }, 200);
       }
+
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(paramVendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${paramVendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      const vendorId = vendor.id;
+      console.log(`[VendorProducts] Resolved vendorId ${paramVendorId} to ${vendorId}`);
 
       // Get query parameters
       const search = c.req.query('search') || '';
@@ -424,10 +492,31 @@ export function registerVendorProductsEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
-      // Build query with proper error handling
+      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
+      // No need to check - migration 013 renamed stock_quantity to stock
+
+      // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
+      // Use explicit column selection to avoid issues with p.* and missing columns
       let productQuery = `
-        SELECT p.*, 
-               ec.name as category_name
+        SELECT 
+          p.id,
+          p.vendor_id,
+          p.category_id,
+          p.name,
+          p.description,
+          p.sku,
+          p.price,
+          COALESCE(p.stock, 0) as stock,
+          p.is_active,
+          p.created_at,
+          p.updated_at,
+          p.images,
+          p.tags,
+          p.metadata,
+          p.hsn_code,
+          p.gst_rate,
+          p.category,
+          ec.name as category_name
         FROM products p
         LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
         WHERE p.vendor_id = $1
@@ -465,7 +554,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
 
         // Get total count
         let countQuery = `SELECT COUNT(*) as total FROM products p WHERE p.vendor_id = $1`;
-        const countParams: any[] = [vendorId];
+        const countParams: any[] = [vendorId]; // Use resolved vendorId from above
         const countResult = await query(countQuery, countParams);
         total = parseInt(countResult.rows?.[0]?.total || '0', 10);
       } catch (dbError: any) {
@@ -560,11 +649,11 @@ export function registerVendorProductsEndpoints(app: Hono) {
   // GET /vendor/:vendorId/products/low-stock - Get products with low stock
   app.get('/vendor/:vendorId/products/low-stock', async (c) => {
     try {
-      const vendorId = c.req.param('vendorId');
+      const paramVendorId = c.req.param('vendorId');
       const threshold = parseInt(c.req.query('threshold') || '10', 10);
 
       // Handle test vendor IDs
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (!paramVendorId || paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           products: [],
@@ -573,19 +662,29 @@ export function registerVendorProductsEndpoints(app: Hono) {
         });
       }
 
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(paramVendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${paramVendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      const vendorId = vendor.id;
+
+      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
       const result = await query(`
         SELECT 
           p.id,
           p.name,
           p.sku,
-          p.stock_quantity,
+          COALESCE(p.stock, 0) as stock,
           p.price,
           p.is_active
         FROM products p
         WHERE p.vendor_id = $1 
-          AND p.stock_quantity <= $2
+          AND COALESCE(p.stock, 0) <= $2
           AND p.is_active = true
-        ORDER BY p.stock_quantity ASC
+        ORDER BY COALESCE(p.stock, 0) ASC
       `, [vendorId, threshold]);
 
       const products = result.rows || [];
@@ -614,7 +713,17 @@ export function registerVendorProductsEndpoints(app: Hono) {
   // PHASE 1.3 FIX: Product Image Upload Endpoint
   app.post('/vendor/:vendorId/products/images', async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      
+      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(paramVendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${paramVendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      const vendorId = vendor.id;
+      
       const formData = await c.req.formData();
       const imageFile = formData.get('image') as File;
 

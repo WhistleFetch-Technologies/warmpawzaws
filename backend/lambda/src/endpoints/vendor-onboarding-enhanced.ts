@@ -820,6 +820,22 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
           let sanitizedPayload = application_payload;
           let sanitizedDocuments = uploaded_documents || app.uploaded_documents || [];
           
+          // ✅ DEBUG: Log uploaded_documents before processing
+          console.log(`📸 [SUBMIT] Processing uploaded_documents for application ${applicationId}:`);
+          console.log(`📸 [SUBMIT] uploaded_documents type: ${typeof uploaded_documents}, isArray: ${Array.isArray(uploaded_documents)}`);
+          console.log(`📸 [SUBMIT] uploaded_documents count: ${Array.isArray(uploaded_documents) ? uploaded_documents.length : 'N/A'}`);
+          if (Array.isArray(uploaded_documents) && uploaded_documents.length > 0) {
+            console.log(`📸 [SUBMIT] Document types: ${uploaded_documents.map((d: any) => `${d.type || d.name || 'unknown'}`).join(', ')}`);
+            const profilePhotoDoc = uploaded_documents.find((d: any) => 
+              d.type === 'profilePhoto' || d.type === 'profile_photo' || d.name === 'profilePhoto'
+            );
+            if (profilePhotoDoc) {
+              console.log(`📸 [SUBMIT] ✅ Profile photo found in uploaded_documents: type=${profilePhotoDoc.type}, url=${profilePhotoDoc.url}`);
+            } else {
+              console.log(`📸 [SUBMIT] ⚠️ Profile photo NOT found in uploaded_documents`);
+            }
+          }
+          
           // Ensure uploaded_documents is an array
           if (!Array.isArray(sanitizedDocuments)) {
             console.warn('⚠️ [SUBMIT] uploaded_documents is not an array, converting:', sanitizedDocuments);
@@ -867,6 +883,40 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
       } else {
         // ✅ FIX: Validate and sanitize JSONB data before saving
         let sanitizedDocuments = uploaded_documents || [];
+        
+        // ✅ DEBUG: Log pincode in application_payload for new application - AGGRESSIVE LOGGING
+        console.log(`📍 [SUBMIT] ========== PINCODE DEBUG START (NEW APPLICATION) ==========`);
+        console.log(`📍 [SUBMIT] Checking pincode in application_payload for NEW application:`);
+        console.log(`📍 [SUBMIT] application_payload.pin: '${application_payload?.pin || 'undefined'}'`);
+        console.log(`📍 [SUBMIT] application_payload.pincode: '${application_payload?.pincode || 'undefined'}'`);
+        console.log(`📍 [SUBMIT] application_payload.pinCode: '${application_payload?.pinCode || 'undefined'}'`);
+        console.log(`📍 [SUBMIT] application_payload keys: ${Object.keys(application_payload || {}).join(', ')}`);
+        console.log(`📍 [SUBMIT] Full application_payload (first 2000 chars):`, JSON.stringify(application_payload).substring(0, 2000));
+        if (application_payload) {
+          // Check for any field that might contain pincode
+          Object.keys(application_payload).forEach(key => {
+            if (key.toLowerCase().includes('pin') || key.toLowerCase().includes('code')) {
+              console.log(`📍 [SUBMIT] ✅ Found potential pincode field: ${key} = '${application_payload[key]}'`);
+            }
+          });
+        }
+        console.log(`📍 [SUBMIT] ========== PINCODE DEBUG END (NEW APPLICATION) ==========`);
+        
+        // ✅ DEBUG: Log uploaded_documents for new application
+        console.log(`📸 [SUBMIT] Creating new application with uploaded_documents:`);
+        console.log(`📸 [SUBMIT] uploaded_documents type: ${typeof uploaded_documents}, isArray: ${Array.isArray(uploaded_documents)}`);
+        console.log(`📸 [SUBMIT] uploaded_documents count: ${Array.isArray(uploaded_documents) ? uploaded_documents.length : 'N/A'}`);
+        if (Array.isArray(uploaded_documents) && uploaded_documents.length > 0) {
+          console.log(`📸 [SUBMIT] Document types: ${uploaded_documents.map((d: any) => `${d.type || d.name || 'unknown'}`).join(', ')}`);
+          const profilePhotoDoc = uploaded_documents.find((d: any) => 
+            d.type === 'profilePhoto' || d.type === 'profile_photo' || d.name === 'profilePhoto'
+          );
+          if (profilePhotoDoc) {
+            console.log(`📸 [SUBMIT] ✅ Profile photo found: type=${profilePhotoDoc.type}, url=${profilePhotoDoc.url}`);
+          } else {
+            console.log(`📸 [SUBMIT] ⚠️ Profile photo NOT found in uploaded_documents`);
+          }
+        }
         
         // Ensure uploaded_documents is an array
         if (!Array.isArray(sanitizedDocuments)) {
@@ -1269,17 +1319,90 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
       const existingVendors = await select('vendors', { phone });
       if (existingVendors.length > 0) {
         const vendor = existingVendors[0];
-        // Update identity to ACTIVATED and vendor to active
+        
+        // ✅ FIX: Extract profile photo from application and update vendor if missing
+        let profilePhotoUrl: string | null = vendor.profile_photo_url;
+        
+        if (!profilePhotoUrl && application) {
+          const uploadedDocuments = application.uploaded_documents || [];
+          console.log(`📸 [VENDOR-ACTIVATION] Existing vendor found, checking for profile photo (current: ${profilePhotoUrl})`);
+          console.log(`📸 [VENDOR-ACTIVATION] Uploaded documents count: ${uploadedDocuments.length}`);
+          
+          if (Array.isArray(uploadedDocuments) && uploadedDocuments.length > 0) {
+            console.log(`📸 [VENDOR-ACTIVATION] Uploaded documents types: ${uploadedDocuments.map((d: any) => d.type || d.name || 'unknown').join(', ')}`);
+            
+            const profilePhotoDoc = uploadedDocuments.find((doc: any) => 
+              doc.type === 'profilePhoto' || 
+              doc.type === 'profile_photo' || 
+              doc.name === 'profilePhoto' ||
+              (doc.name && doc.name.toLowerCase().includes('profile') && doc.name.toLowerCase().includes('photo'))
+            );
+            
+            if (profilePhotoDoc && profilePhotoDoc.url) {
+              const photoUrl = profilePhotoDoc.url;
+              console.log(`📸 [VENDOR-ACTIVATION] Found profile photo for existing vendor: type=${profilePhotoDoc.type}, url=${photoUrl}`);
+              if (photoUrl.includes('amazonaws.com')) {
+                try {
+                  const urlObj = new URL(photoUrl);
+                  profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+                } catch (e) {
+                  const match = photoUrl.match(/vendors\/[^?]+/);
+                  profilePhotoUrl = match ? match[0] : photoUrl;
+                }
+              } else {
+                profilePhotoUrl = photoUrl;
+              }
+              console.log(`📸 [VENDOR-ACTIVATION] ✅ Extracted profile photo for existing vendor: ${profilePhotoUrl}`);
+            }
+          }
+          
+          // Fallback: Check application_payload
+          if (!profilePhotoUrl && payload.profilePhoto) {
+            const photoUrl = payload.profilePhoto;
+            if (photoUrl.includes('amazonaws.com')) {
+              try {
+                const urlObj = new URL(photoUrl);
+                profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+              } catch (e) {
+                const match = photoUrl.match(/vendors\/[^?]+/);
+                profilePhotoUrl = match ? match[0] : photoUrl;
+              }
+            } else {
+              profilePhotoUrl = photoUrl;
+            }
+            console.log(`📸 [VENDOR-ACTIVATION] Extracted profile photo from application_payload for existing vendor: ${profilePhotoUrl}`);
+          }
+        }
+        
+        // Update identity to ACTIVATED and vendor to active (including profile photo if found)
         await update('vendor_identity', { id: identity.id }, {
           onboarding_status: 'ACTIVATED',
           updated_at: new Date().toISOString(),
         });
-        await update('vendors', { id: vendor.id }, {
+        
+        const vendorUpdateData: any = {
           status: 'approved',
           is_active: true,
           onboarding_status: 'ACTIVATED',
           updated_at: new Date().toISOString(),
-        });
+        };
+        
+        // ✅ FIX: Update profile_photo_url if we found it and vendor doesn't have one
+        if (profilePhotoUrl && !vendor.profile_photo_url) {
+          vendorUpdateData.profile_photo_url = profilePhotoUrl;
+          console.log(`📸 [VENDOR-ACTIVATION] ✅ Updating existing vendor with profile photo: ${profilePhotoUrl}`);
+        }
+        
+        // ✅ FIX: Update service_radius if we found it and vendor doesn't have one
+        if (serviceRadius && !vendor.service_radius) {
+          vendorUpdateData.service_radius = serviceRadius;
+          console.log(`📍 [VENDOR-ACTIVATION] ✅ Updating existing vendor with service_radius: ${serviceRadius} km`);
+        } else if (!serviceRadius) {
+          console.log(`📍 [VENDOR-ACTIVATION] ⚠️ No valid service_radius found in payload for existing vendor`);
+        }
+        
+        await update('vendors', { id: vendor.id }, vendorUpdateData);
+        
         return c.json({
           success: true,
           message: 'Vendor activated successfully',
@@ -1306,7 +1429,10 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
       
       // First, check uploaded_documents array
       const uploadedDocuments = application.uploaded_documents || [];
-      if (Array.isArray(uploadedDocuments)) {
+      console.log(`📸 [VENDOR-ACTIVATION] Checking uploaded_documents (count: ${uploadedDocuments.length})`);
+      if (Array.isArray(uploadedDocuments) && uploadedDocuments.length > 0) {
+        console.log(`📸 [VENDOR-ACTIVATION] Uploaded documents types: ${uploadedDocuments.map((d: any) => d.type || d.name || 'unknown').join(', ')}`);
+        
         // Look for profile photo in uploaded documents
         const profilePhotoDoc = uploadedDocuments.find((doc: any) => 
           doc.type === 'profilePhoto' || 
@@ -1317,6 +1443,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         
         if (profilePhotoDoc && profilePhotoDoc.url) {
           const photoUrl = profilePhotoDoc.url;
+          console.log(`📸 [VENDOR-ACTIVATION] Found profile photo document: type=${profilePhotoDoc.type}, name=${profilePhotoDoc.name}, url=${photoUrl}`);
           if (photoUrl.includes('amazonaws.com')) {
             try {
               const urlObj = new URL(photoUrl);
@@ -1328,8 +1455,12 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
           } else {
             profilePhotoUrl = photoUrl;
           }
-          console.log(`📸 [VENDOR-ACTIVATION] Extracted profile photo from uploaded_documents: ${profilePhotoUrl}`);
+          console.log(`📸 [VENDOR-ACTIVATION] ✅ Extracted profile photo from uploaded_documents: ${profilePhotoUrl}`);
+        } else {
+          console.warn(`⚠️ [VENDOR-ACTIVATION] Profile photo document not found in uploaded_documents`);
         }
+      } else {
+        console.warn(`⚠️ [VENDOR-ACTIVATION] No uploaded_documents found or empty array`);
       }
       
       // Fallback: Check application_payload for profilePhoto field
@@ -1349,7 +1480,48 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         console.log(`📸 [VENDOR-ACTIVATION] Extracted profile photo from application_payload: ${profilePhotoUrl}`);
       }
 
+      // ✅ DEBUG: Log pincode extraction - check all possible field names
+      console.log(`📍 [VENDOR-ACTIVATION] Extracting pincode from payload:`);
+      console.log(`📍 [VENDOR-ACTIVATION] payload.pin: ${payload.pin || 'undefined'}`);
+      console.log(`📍 [VENDOR-ACTIVATION] payload.pincode: ${payload.pincode || 'undefined'}`);
+      console.log(`📍 [VENDOR-ACTIVATION] payload.pinCode: ${payload.pinCode || 'undefined'}`);
+      console.log(`📍 [VENDOR-ACTIVATION] Full payload keys: ${Object.keys(payload).join(', ')}`);
+      
+      // ✅ DEBUG: Log service_radius extraction - AGGRESSIVE LOGGING
+      console.log(`📍 [VENDOR-ACTIVATION] ========== SERVICE_RADIUS DEBUG START ==========`);
+      console.log(`📍 [VENDOR-ACTIVATION] Checking for service_radius in payload:`);
+      const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km', 'serviceArea', 'service_area'];
+      radiusFields.forEach(field => {
+        if (payload[field] !== undefined) {
+          console.log(`📍 [VENDOR-ACTIVATION] Found field '${field}': ${payload[field]} (type: ${typeof payload[field]})`);
+        }
+      });
+      console.log(`📍 [VENDOR-ACTIVATION] Full payload (first 3000 chars):`, JSON.stringify(payload).substring(0, 3000));
+      console.log(`📍 [VENDOR-ACTIVATION] ========== SERVICE_RADIUS DEBUG END ==========`);
+      
+      // ✅ FIX: Use utility function to extract pincode
+      const { extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
+      const pincodeValue = extractPincodeFromPayload(payload);
+      
+      // ✅ FIX: Extract service_radius from payload (check multiple field names)
+      let serviceRadius: number | null = null;
+      console.log(`📍 [VENDOR-ACTIVATION] Extracting service_radius from payload:`);
+      for (const field of radiusFields) {
+        if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+          const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+          if (!isNaN(radiusValue) && radiusValue > 0) {
+            serviceRadius = radiusValue;
+            console.log(`📍 [VENDOR-ACTIVATION] ✅ Found service_radius in field '${field}': ${serviceRadius} km`);
+            break;
+          }
+        }
+      }
+      if (!serviceRadius) {
+        console.log(`📍 [VENDOR-ACTIVATION] ⚠️ No valid service_radius found in payload`);
+      }
+
       // Create vendor record from application
+      console.log(`📍 [VENDOR-ACTIVATION] Creating vendor with pincode: '${pincodeValue || '(empty)'}', service_radius: ${serviceRadius || 'null'}`);
       const vendors = await insert('vendors', {
         phone: identity.phone,
         email: payload.email || identity.email || '',
@@ -1364,9 +1536,20 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         address: payload.address || '',
         city: payload.city || '',
         state: payload.state || '',
-        pincode: payload.pin || payload.pincode || '',
+        pincode: pincodeValue || '', // ✅ FIX: Use extracted pincode value (empty string if not found)
         profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
+        service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding
       });
+      
+      const createdVendor = vendors[0];
+      console.log(`📍 [VENDOR-ACTIVATION] ✅ Vendor created with ID: ${createdVendor.id}`);
+      console.log(`📍 [VENDOR-ACTIVATION] ✅ Vendor pincode saved: '${createdVendor.pincode || '(empty)'}'`);
+      
+      // ✅ VERIFY: Double-check the saved pincode
+      const verifyVendor = await select('vendors', { id: createdVendor.id });
+      if (verifyVendor.length > 0) {
+        console.log(`📍 [VENDOR-ACTIVATION] ✅ VERIFIED: Vendor pincode in DB: '${verifyVendor[0].pincode || '(empty)'}'`);
+      }
 
       const vendor = vendors[0];
 
@@ -1407,6 +1590,299 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     } catch (error: any) {
       console.error('Error activating vendor:', error);
       return c.json({ success: false, error: error.message || 'Failed to activate vendor' }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/onboarding/fix-profile-photo
+   * Retroactively extract and save profile photo from application for existing vendors
+   */
+  app.post('/vendor/onboarding/fix-profile-photo', async (c: Context) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, phone } = body;
+
+      if (!vendorId && !phone) {
+        return c.json({ success: false, error: 'Vendor ID or phone is required' }, 400);
+      }
+
+      // Get vendor
+      const vendors = vendorId 
+        ? await select('vendors', { id: vendorId })
+        : await select('vendors', { phone });
+      
+      if (vendors.length === 0) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Skip if vendor already has profile photo
+      if (vendor.profile_photo_url) {
+        return c.json({
+          success: true,
+          message: 'Vendor already has profile photo',
+          vendor_id: vendor.id,
+          profile_photo_url: vendor.profile_photo_url,
+        });
+      }
+
+      // Get vendor identity
+      const identities = await select('vendor_identity', { 
+        vendor_id: vendor.id 
+      });
+      
+      if (identities.length === 0) {
+        // Try by phone
+        const identitiesByPhone = await select('vendor_identity', { phone: vendor.phone });
+        if (identitiesByPhone.length === 0) {
+          return c.json({ success: false, error: 'Vendor identity not found' }, 404);
+        }
+        identities.push(...identitiesByPhone);
+      }
+
+      const identity = identities[0];
+
+      // Get application
+      if (!identity.application_id) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+
+      const apps = await select('vendor_onboarding_applications', { id: identity.application_id });
+      if (apps.length === 0) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+
+      const application = apps[0];
+      const payload = application.application_payload || {};
+      
+      // Extract profile photo
+      let profilePhotoUrl: string | null = null;
+      const uploadedDocuments = application.uploaded_documents || [];
+      
+      console.log(`📸 [FIX-PROFILE-PHOTO] Checking uploaded_documents (count: ${uploadedDocuments.length})`);
+      
+      if (Array.isArray(uploadedDocuments) && uploadedDocuments.length > 0) {
+        console.log(`📸 [FIX-PROFILE-PHOTO] Document types: ${uploadedDocuments.map((d: any) => d.type || d.name || 'unknown').join(', ')}`);
+        
+        const profilePhotoDoc = uploadedDocuments.find((doc: any) => 
+          doc.type === 'profilePhoto' || 
+          doc.type === 'profile_photo' || 
+          doc.name === 'profilePhoto' ||
+          (doc.name && doc.name.toLowerCase().includes('profile') && doc.name.toLowerCase().includes('photo'))
+        );
+        
+        if (profilePhotoDoc && profilePhotoDoc.url) {
+          const photoUrl = profilePhotoDoc.url;
+          console.log(`📸 [FIX-PROFILE-PHOTO] Found profile photo: type=${profilePhotoDoc.type}, url=${photoUrl}`);
+          
+          if (photoUrl.includes('amazonaws.com')) {
+            try {
+              const urlObj = new URL(photoUrl);
+              profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+            } catch (e) {
+              const match = photoUrl.match(/vendors\/[^?]+/) || photoUrl.match(/[a-f0-9-]+\/[^?]+/);
+              profilePhotoUrl = match ? match[0] : photoUrl;
+            }
+          } else {
+            profilePhotoUrl = photoUrl;
+          }
+          console.log(`📸 [FIX-PROFILE-PHOTO] ✅ Extracted: ${profilePhotoUrl}`);
+        }
+      }
+      
+      // Fallback: Check application_payload
+      if (!profilePhotoUrl && payload.profilePhoto) {
+        const photoUrl = payload.profilePhoto;
+        if (photoUrl.includes('amazonaws.com')) {
+          try {
+            const urlObj = new URL(photoUrl);
+            profilePhotoUrl = urlObj.pathname.substring(1).split('?')[0];
+          } catch (e) {
+            const match = photoUrl.match(/vendors\/[^?]+/) || photoUrl.match(/[a-f0-9-]+\/[^?]+/);
+            profilePhotoUrl = match ? match[0] : photoUrl;
+          }
+        } else {
+          profilePhotoUrl = photoUrl;
+        }
+        console.log(`📸 [FIX-PROFILE-PHOTO] Extracted from payload: ${profilePhotoUrl}`);
+      }
+
+      if (!profilePhotoUrl) {
+        return c.json({ 
+          success: false, 
+          error: 'Profile photo not found in application documents' 
+        }, 404);
+      }
+
+      // Update vendor
+      await update('vendors', { id: vendor.id }, {
+        profile_photo_url: profilePhotoUrl,
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Profile photo updated successfully',
+        vendor_id: vendor.id,
+        profile_photo_url: profilePhotoUrl,
+      });
+    } catch (error: any) {
+      console.error('Error fixing profile photo:', error);
+      return c.json({ success: false, error: error.message || 'Failed to fix profile photo' }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/onboarding/fix-pincode
+   * Retroactively extract and save pincode from application for existing vendors
+   */
+  app.post('/vendor/onboarding/fix-pincode', async (c: Context) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, phone } = body;
+
+      if (!vendorId && !phone) {
+        return c.json({ success: false, error: 'Vendor ID or phone is required' }, 400);
+      }
+
+      // Get vendor
+      const vendors = vendorId 
+        ? await select('vendors', { id: vendorId })
+        : await select('vendors', { phone });
+      
+      if (vendors.length === 0) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // ✅ FIX: Check if vendor has a valid (non-placeholder) pincode
+      const placeholderValues = ['000000', '0000000', '00000000', '123456', '000000', ''];
+      const currentPincode = vendor.pincode ? vendor.pincode.trim() : '';
+      const hasValidPincode = currentPincode && 
+                              !placeholderValues.includes(currentPincode) && 
+                              /^\d{6}$/.test(currentPincode);
+      
+      if (hasValidPincode) {
+        return c.json({
+          success: true,
+          message: 'Vendor already has valid pincode',
+          vendor_id: vendor.id,
+          pincode: vendor.pincode,
+        });
+      }
+      
+      // If vendor has placeholder pincode, continue to fix it
+      if (currentPincode) {
+        console.log(`📍 [FIX-PINCODE] Vendor has placeholder pincode '${currentPincode}', attempting to fix...`);
+      }
+
+      // Get vendor identity
+      const identities = await select('vendor_identity', { 
+        vendor_id: vendor.id 
+      });
+      
+      if (identities.length === 0) {
+        // Try by phone
+        const identitiesByPhone = await select('vendor_identity', { phone: vendor.phone });
+        if (identitiesByPhone.length === 0) {
+          return c.json({ success: false, error: 'Vendor identity not found' }, 404);
+        }
+        identities.push(...identitiesByPhone);
+      }
+
+      const identity = identities[0];
+
+      // Get application
+      if (!identity.application_id) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+
+      const apps = await select('vendor_onboarding_applications', { id: identity.application_id });
+      if (apps.length === 0) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+
+      const application = apps[0];
+      const payload = application.application_payload || {};
+      
+      // ✅ FIX: Use utility function to extract pincode
+      const { extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
+      const pincodeValue = extractPincodeFromPayload(payload);
+      
+      console.log(`📍 [FIX-PINCODE] Checking pincode in application_payload:`);
+      console.log(`📍 [FIX-PINCODE] payload keys: ${Object.keys(payload).join(', ')}`);
+      console.log(`📍 [FIX-PINCODE] Extracted pincode: '${pincodeValue || '(empty)'}'`);
+
+      if (!pincodeValue) {
+        return c.json({ 
+          success: false, 
+          error: 'Pincode not found in application data' 
+        }, 404);
+      }
+
+      // Update vendor
+      await update('vendors', { id: vendor.id }, {
+        pincode: pincodeValue,
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Pincode updated successfully',
+        vendor_id: vendor.id,
+        pincode: pincodeValue,
+      });
+    } catch (error: any) {
+      console.error('Error fixing pincode:', error);
+      return c.json({ success: false, error: error.message || 'Failed to fix pincode' }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/onboarding/test-pincode
+   * Test endpoint to directly set pincode for testing purposes
+   */
+  app.post('/vendor/onboarding/test-pincode', async (c: Context) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, pincode } = body;
+
+      if (!vendorId || !pincode) {
+        return c.json({ success: false, error: 'Vendor ID and pincode are required' }, 400);
+      }
+
+      // Validate pincode format
+      if (!/^\d{6}$/.test(pincode)) {
+        return c.json({ success: false, error: 'Pincode must be 6 digits' }, 400);
+      }
+
+      // Get vendor
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+
+      // Update vendor
+      await update('vendors', { id: vendorId }, {
+        pincode: pincode,
+        updated_at: new Date().toISOString(),
+      });
+
+      // Verify it was saved
+      const updatedVendors = await select('vendors', { id: vendorId });
+      const savedPincode = updatedVendors[0]?.pincode;
+
+      return c.json({
+        success: true,
+        message: 'Pincode updated successfully',
+        vendor_id: vendorId,
+        pincode: savedPincode,
+      });
+    } catch (error: any) {
+      console.error('Error testing pincode:', error);
+      return c.json({ success: false, error: error.message || 'Failed to test pincode' }, 500);
     }
   });
 }

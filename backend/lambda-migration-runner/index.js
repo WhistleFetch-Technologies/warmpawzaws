@@ -41,9 +41,46 @@ exports.handler = async (event) => {
     const result = await client.query('SELECT version()');
     console.log('✅ Connected to database:', result.rows[0].version.substring(0, 50));
     
-    // Check if this is for instant tele queue migration
-    const migrationType = event.migrationType || event.type || 'instant-tele-queue';
+    // Support running migration files from event or S3
+    const migrationType = event.migrationType || event.type;
+    const migrationFile = event.migrationFile || event.file;
+    const migrationSQL = event.migrationSQL || event.sql;
     
+    // If migration SQL is provided directly in event, use it
+    if (migrationSQL) {
+      console.log('🔄 Running migration from event SQL...');
+      
+      try {
+        await client.query('BEGIN');
+        await client.query(migrationSQL);
+        await client.query('COMMIT');
+        console.log('✅ Migration completed successfully!');
+        
+        // Verify column was added
+        const verifyResult = await client.query(`
+          SELECT column_name, data_type 
+          FROM information_schema.columns 
+          WHERE table_name = 'vendors' AND column_name = 'specializations'
+        `);
+        
+        client.release();
+        await pool.end();
+        
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            message: 'Migration completed successfully',
+            verification: verifyResult.rows,
+            database: credentials.dbname
+          }, null, 2)
+        };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    }
+    
+    // Legacy: Check if this is for instant tele queue migration
     if (migrationType === 'instant-tele-queue') {
       console.log('🔄 Running Instant Tele Queue migration...');
       

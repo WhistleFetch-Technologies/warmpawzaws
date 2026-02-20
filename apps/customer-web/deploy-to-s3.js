@@ -149,14 +149,16 @@ async function deploy() {
   
   for (const htmlFile of htmlFiles) {
     let htmlContent = fs.readFileSync(htmlFile, 'utf8');
-    // Replace the placeholder or add inline config before closing body tag
-    if (htmlContent.includes('id="runtime-config-inline"')) {
+    // Replace the placeholder - handle both single-line and multi-line script tags with any whitespace
+    if (htmlContent.includes('runtime-config-inline')) {
+      // Match script tag with id="runtime-config-inline" (with any quotes) and any content inside (including newlines and whitespace)
+      // Use non-greedy match and handle both single and double quotes
       htmlContent = htmlContent.replace(
-        /<script\s+id="runtime-config-inline"[^>]*>[\s\S]*?<\/script>/,
+        /<script\s+id=["']runtime-config-inline["'][^>]*>[\s\S]*?<\/script>/gi,
         `<script id="runtime-config-inline">${inlineConfig}</script>`
       );
     } else {
-      // Add before closing body tag
+      // Add before closing body tag if not found
       htmlContent = htmlContent.replace(
         '</body>',
         `<script id="runtime-config-inline">${inlineConfig}</script></body>`

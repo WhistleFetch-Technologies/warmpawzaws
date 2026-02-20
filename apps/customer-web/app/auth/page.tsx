@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
@@ -10,8 +10,20 @@ const UAT_OTP = '123456'; // Static OTP for UAT testing
 
 function AuthPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirectAfterLogin = searchParams?.get('redirect');
+  // For static export compatibility, use window.location.search directly instead of useSearchParams
+  // This avoids hydration issues and works even if JavaScript loads slowly
+  const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
+  
+  useEffect(() => {
+    // Get redirect from URL after mount (client-side only)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const redirect = params.get('redirect');
+      if (redirect) {
+        setRedirectAfterLogin(redirect);
+      }
+    }
+  }, []);
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91'); // Default to India
   const [otp, setOtp] = useState('');
@@ -705,16 +717,7 @@ function AuthPageContent() {
 }
 
 export default function AuthPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[#FF8C42]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <div className="text-white text-lg">Loading...</div>
-        </div>
-      </div>
-    }>
-      <AuthPageContent />
-    </Suspense>
-  );
+  // No longer need Suspense since we removed useSearchParams
+  // This should allow the page to render immediately without waiting for client-side hydration
+  return <AuthPageContent />;
 }

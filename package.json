@@ -87,7 +87,10 @@
     "build:frontend:vendor": "cd apps/vendor-web && npm ci && npm run build",
     "build:frontend:customer": "cd apps/customer-web && npm ci && npm run build",
     "package:lambda": "cd backend/lambda && npm run package",
+    "prod:vendor": "cd apps/vendor-web && npm run dev:prod",
+    "prod:admin": "cd apps/admin-web && npm run dev:prod",
     "preview": "vite preview --host --port 3000",
-    "serve": "vite preview --host --port 3000"
+    "serve": "vite preview --host --port 3000",
+    "test:vendor-profile-fixes": "ts-node scripts/test-vendor-profile-fixes.ts"
   }
 }
