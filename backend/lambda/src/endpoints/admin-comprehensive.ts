@@ -732,15 +732,7 @@ class GetVendorDetailsHandler extends BaseHandler {
           FROM (SELECT * FROM bookings WHERE vendor_id = v.id ORDER BY created_at DESC LIMIT 10) b
           LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
           LEFT JOIN services s ON s.id = b.service_id
-          LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders,
-          -- Bank details
-          (SELECT json_build_object(
-            'bankName', ba.bank_name,
-            'accountNumber', ba.account_number,
-            'ifscCode', ba.ifsc_code,
-            'accountHolderName', ba.account_holder_name,
-            'isVerified', ba.is_verified
-          ) FROM vendor_bank_accounts ba WHERE ba.vendor_id = v.id LIMIT 1) as bank_details
+          LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.phone = v.phone
@@ -753,6 +745,81 @@ class GetVendorDetailsHandler extends BaseHandler {
       }
 
       const v = vendorResult.rows[0];
+      
+      // Get bank details (check which table exists)
+      let bankDetails: any = null;
+      try {
+        const schemaCheck = await query(`
+          SELECT 
+            EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+            EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+        `);
+        
+        const schema = schemaCheck.rows[0] || {};
+        
+        if (schema.has_accounts_table) {
+          // Try vendor_bank_accounts first (newer table)
+          try {
+            const bankResult = await query(`
+              SELECT 
+                bank_name,
+                account_number,
+                ifsc_code,
+                account_holder_name,
+                is_verified
+              FROM vendor_bank_accounts 
+              WHERE vendor_id = $1 
+              ORDER BY is_primary DESC, created_at DESC 
+              LIMIT 1
+            `, [vendorId]);
+            
+            if (bankResult.rows && bankResult.rows.length > 0) {
+              const ba = bankResult.rows[0];
+              bankDetails = {
+                bankName: ba.bank_name,
+                accountNumber: ba.account_number,
+                ifscCode: ba.ifsc_code,
+                accountHolderName: ba.account_holder_name,
+                isVerified: ba.is_verified
+              };
+            }
+          } catch (e) {
+            console.warn('Error querying vendor_bank_accounts:', e);
+          }
+        }
+        
+        // Fallback to vendor_bank_details if no results from vendor_bank_accounts
+        if (!bankDetails && schema.has_details_table) {
+          try {
+            const bankResult = await query(`
+              SELECT 
+                bank_name,
+                account_number,
+                ifsc_code,
+                account_holder_name,
+                is_verified
+              FROM vendor_bank_details 
+              WHERE vendor_id = $1 
+              LIMIT 1
+            `, [vendorId]);
+            
+            if (bankResult.rows && bankResult.rows.length > 0) {
+              const bd = bankResult.rows[0];
+              bankDetails = {
+                bankName: bd.bank_name,
+                accountNumber: bd.account_number,
+                ifscCode: bd.ifsc_code,
+                accountHolderName: bd.account_holder_name,
+                isVerified: bd.is_verified
+              };
+            }
+          } catch (e) {
+            console.warn('Error querying vendor_bank_details:', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Error checking bank details schema:', e);
+      }
       
       // Get activity history
       let activityHistory: any[] = [];
@@ -893,8 +960,8 @@ class GetVendorDetailsHandler extends BaseHandler {
         
         // Payment Info
         paymentMethod: 'Bank Transfer',
-        bankAccount: v.bank_details?.accountNumber ? `****${v.bank_details.accountNumber.slice(-4)}` : 'N/A',
-        bankDetails: v.bank_details || null,
+        bankAccount: bankDetails?.accountNumber ? `****${bankDetails.accountNumber.slice(-4)}` : 'N/A',
+        bankDetails: bankDetails || null,
         frequency: 'Weekly',
         taxId: v.gst_number || v.pan_number || 'N/A',
         

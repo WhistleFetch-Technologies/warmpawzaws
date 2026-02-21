@@ -47,10 +47,15 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         });
       }
 
+      // ✅ PROD FIX: Only use is_primary in ORDER BY if table is vendor_bank_accounts (vendor_bank_details doesn't have this column)
+      const orderByClause = schema.table_exists 
+        ? 'ORDER BY is_primary DESC, created_at DESC' 
+        : 'ORDER BY created_at DESC';
+      
       const accounts = await query(
         `SELECT * FROM ${tableName} 
          WHERE vendor_id = $1 
-         ORDER BY is_primary DESC, created_at DESC`,
+         ${orderByClause}`,
         [resolvedVendorId]
       );
 
@@ -163,7 +168,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_bank_accounts' AND column_name = 'branch_name') as has_branch_name,
           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_bank_accounts' AND column_name = 'bank_name') as has_bank_name,
           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_bank_accounts' AND column_name = 'account_type') as has_account_type,
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_bank_details_table
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_bank_details_table,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_bank_details' AND column_name = 'bank_name') as vendor_bank_details_has_bank_name
       `);
       
       const schema = schemaCheck.rows[0] || {};
@@ -173,6 +179,11 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       
       if (!tableName) {
         return c.json({ error: 'Bank accounts feature is not available' }, 500);
+      }
+
+      // ✅ PROD FIX: vendor_bank_details requires bank_name (NOT NULL constraint)
+      if (tableName === 'vendor_bank_details' && (!bankName || bankName.trim() === '')) {
+        return c.json({ error: 'Bank name is required' }, 400);
       }
 
       // Check if account already exists (use actualVendorId)
@@ -192,7 +203,10 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       } else {
         updateData.is_verified = false;
       }
-      if (schema.has_bank_name && bankName) {
+      // ✅ PROD FIX: Always set bank_name for vendor_bank_details (required NOT NULL), conditionally for vendor_bank_accounts
+      if (tableName === 'vendor_bank_details') {
+        updateData.bank_name = bankName || 'Unknown Bank'; // Required for vendor_bank_details
+      } else if (schema.has_bank_name && bankName) {
         updateData.bank_name = bankName;
       }
       if (schema.has_branch_name && branchName) {
@@ -230,11 +244,20 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         account_holder_name: accountHolderName,
         account_number: accountNumber.replace(/\s/g, ''),
         ifsc_code: ifscCode.toUpperCase(),
-        is_primary: isPrimary,
-        verification_status: 'pending',
       };
+      
+      // ✅ PROD FIX: Only set is_primary if table is vendor_bank_accounts (vendor_bank_details doesn't have this column)
+      if (schema.table_exists) {
+        insertData.is_primary = isPrimary;
+        insertData.verification_status = 'pending';
+      } else {
+        insertData.is_verified = false;
+      }
 
-      if (schema.has_bank_name && bankName) {
+      // ✅ PROD FIX: Always set bank_name for vendor_bank_details (required NOT NULL), conditionally for vendor_bank_accounts
+      if (tableName === 'vendor_bank_details') {
+        insertData.bank_name = bankName || 'Unknown Bank'; // Required for vendor_bank_details
+      } else if (schema.has_bank_name && bankName) {
         insertData.bank_name = bankName;
       }
       if (schema.has_branch_name && branchName) {

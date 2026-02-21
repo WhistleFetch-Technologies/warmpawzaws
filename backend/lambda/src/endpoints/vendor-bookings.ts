@@ -24,6 +24,30 @@ import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../lib/rule-engine';
 
+// Helper function to format detailed address with all fields
+function formatDetailedAddress(addr: any): string {
+  const parts: string[] = [];
+  
+  if (addr.apartment_name) parts.push(addr.apartment_name);
+  if (addr.flat_no && addr.house_no) {
+    parts.push(`Flat ${addr.flat_no}, House ${addr.house_no}`);
+  } else if (addr.flat_no) {
+    parts.push(`Flat ${addr.flat_no}`);
+  } else if (addr.house_no) {
+    parts.push(`House ${addr.house_no}`);
+  }
+  if (addr.floor) parts.push(`Floor ${addr.floor}`);
+  if (addr.street_name) parts.push(addr.street_name);
+  if (addr.address_line1) parts.push(addr.address_line1);
+  if (addr.address_line2) parts.push(addr.address_line2);
+  if (addr.landmark) parts.push(`Near ${addr.landmark}`);
+  if (addr.city) parts.push(addr.city);
+  if (addr.state) parts.push(addr.state);
+  if (addr.pincode) parts.push(addr.pincode);
+  
+  return parts.filter(Boolean).join(', ');
+}
+
 export function registerVendorBookingsEndpoints(app: Hono) {
   /**
    * GET /vendor/bookings/:vendorId
@@ -300,6 +324,32 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const updated = await update('bookings', { id: bookingId }, { status: 'confirmed' });
 
+      // ✅ AUTO-GENERATE OTP for in-person services when booking is confirmed
+      let otpCode: string | null = null;
+      try {
+        const serviceType = booking.service_type || '';
+        const isTele = ['tele', 'online', 'video_consultation', 'tele_consultation'].includes(serviceType);
+        
+        if (!isTele && !booking.otp_code) {
+          otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+          const otpExpiry = new Date();
+          otpExpiry.setHours(otpExpiry.getHours() + 24);
+          
+          await query(
+            `UPDATE bookings SET otp_code = $1, otp_expires_at = $2, updated_at = NOW() WHERE id = $3`,
+            [otpCode, otpExpiry.toISOString(), bookingId]
+          );
+          console.log(`[CONFIRM-BOOKING] OTP ${otpCode} generated for booking ${bookingId} (service_type: ${serviceType})`);
+        } else if (isTele) {
+          console.log(`[CONFIRM-BOOKING] Tele service - no OTP needed for booking ${bookingId}`);
+        } else {
+          otpCode = booking.otp_code;
+          console.log(`[CONFIRM-BOOKING] OTP already exists for booking ${bookingId}: ${otpCode}`);
+        }
+      } catch (otpErr: any) {
+        console.warn(`[CONFIRM-BOOKING] Failed to generate OTP:`, otpErr?.message);
+      }
+
       // Log status change
       await logBookingStatusChange(
         bookingId,
@@ -331,6 +381,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         success: true,
         booking: updated[0],
         message: 'Booking confirmed successfully',
+        ...(otpCode && { otp: otpCode }),
       });
     } catch (error: any) {
       console.error('Error confirming booking:', error);
@@ -480,101 +531,8 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     }
   });
 
-  /**
-   * POST /vendor/bookings/:bookingId/complete
-   * Mark booking as completed
-   */
-  app.post("/vendor/bookings/:bookingId/complete", async (c) => {
-    try {
-      const { bookingId } = c.req.param();
-      const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
-      const { notes } = await c.req.json();
-
-      const bookings = await select('bookings', { id: bookingId });
-      if (bookings.length === 0) {
-        return c.json({ error: 'Booking not found' }, 404);
-      }
-
-      const booking = bookings[0];
-      const oldStatus = booking.status;
-      // ✅ FIX: Allow completion from 'confirmed', 'in_progress', or 'arrived' status
-      // Business logic: confirmed → in_progress/vendor_on_way → arrived → completed
-      const allowedStatusesForCompletion = ['confirmed', 'in_progress', 'arrived', 'vendor_on_way', 'on_way'];
-      if (!allowedStatusesForCompletion.includes(oldStatus)) {
-        return c.json({ error: `Booking cannot be completed. Current status: ${oldStatus}. Allowed statuses: ${allowedStatusesForCompletion.join(', ')}` }, 400);
-      }
-
-      const updated = await update('bookings',
-        { id: bookingId },
-        {
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          notes: notes || booking.notes,
-        }
-      );
-
-      // Log status change
-      await logBookingStatusChange(
-        bookingId,
-        oldStatus,
-        'completed',
-        vendorId || booking.vendor_id,
-        'vendor',
-        'Vendor marked booking as completed'
-      );
-
-      // Insert vendor_earnings so earnings API and UI show completed booking
-      const vid = booking.vendor_id || vendorId;
-      if (vid) {
-        const existing = await query(
-          'SELECT id FROM vendor_earnings WHERE booking_id = $1 LIMIT 1',
-          [bookingId]
-        ).catch(() => ({ rows: [] }));
-        if (!existing.rows?.length) {
-          const totalAmount = parseFloat(booking.total_amount || '0') || 0;
-          const commissionRatePct = 15; // 15%
-          const commissionAmount = Math.round(totalAmount * (commissionRatePct / 100) * 100) / 100;
-          const amount = Math.round((totalAmount - commissionAmount) * 100) / 100;
-          await insert('vendor_earnings', {
-            vendor_id: vid,
-            booking_id: bookingId,
-            amount,
-            commission_amount: commissionAmount,
-            total_amount: totalAmount,
-            commission_rate: commissionRatePct,
-            status: 'pending',
-            realized_at: new Date().toISOString(),
-          }).catch((err) => console.warn('vendor_earnings insert:', err?.message));
-        }
-      }
-
-      // Publish notification event
-      try {
-        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
-        await publishBookingStatusUpdated({
-          bookingId,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id || vendorId,
-          oldStatus,
-          newStatus: 'completed',
-          reason: 'Service completed',
-          eventTimestamp: new Date().toISOString(),
-          eventId: randomUUID(),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking status updated event:', error);
-      }
-
-      return c.json({
-        success: true,
-        booking: updated[0],
-        message: 'Booking completed successfully',
-      });
-    } catch (error: any) {
-      console.error('Error completing booking:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
+  // NOTE: /vendor/bookings/:bookingId/complete is handled by vendor-booking-actions.ts
+  // That handler properly verifies OTP for in-person services and creates vendor_earnings
 
   /**
    * GET /vendor/bookings/:bookingId/details
@@ -644,7 +602,121 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         : Promise.resolve(null);
 
       // Fetch related data in parallel (service can be from services or service_catalog)
-      const [customer, service, catalogService, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
+              // ✅ Fetch customer address details - try address_id first, then customer's default address
+        let customerAddressDetails: any = null;
+        if ((booking as any).address_id) {
+          try {
+            const addressResult = await query(
+              `SELECT id, address_line1, address_line2, city, state, pincode, landmark, 
+                      flat_no, house_no, floor, street_name, apartment_name,
+                      latitude, longitude, coordinates, customer_id, is_default
+               FROM customer_addresses 
+               WHERE id = $1`,
+              [(booking as any).address_id]
+            );
+            if (addressResult.rows && addressResult.rows.length > 0) {
+              customerAddressDetails = addressResult.rows[0];
+              console.log(`[VENDOR-BOOKINGS] Found address by address_id ${(booking as any).address_id}:`, {
+                apartment_name: customerAddressDetails.apartment_name,
+                flat_no: customerAddressDetails.flat_no,
+                house_no: customerAddressDetails.house_no,
+                floor: customerAddressDetails.floor,
+                street_name: customerAddressDetails.street_name,
+              });
+            } else {
+              console.warn(`[VENDOR-BOOKINGS] No address found with address_id ${(booking as any).address_id}`);
+            }
+          } catch (addrError) {
+            console.warn('Could not fetch customer address details by address_id:', addrError);
+          }
+        }
+        
+        // ✅ FALLBACK: If no address_id or address not found, try customer's default address
+        if (!customerAddressDetails && booking.customer_id) {
+          try {
+            const defaultAddressResult = await query(
+              `SELECT id, address_line1, address_line2, city, state, pincode, landmark, 
+                      flat_no, house_no, floor, street_name, apartment_name,
+                      latitude, longitude, coordinates, customer_id, is_default
+               FROM customer_addresses 
+               WHERE customer_id = $1 
+               ORDER BY is_default DESC NULLS LAST, created_at DESC 
+               LIMIT 1`,
+              [booking.customer_id]
+            );
+            if (defaultAddressResult.rows && defaultAddressResult.rows.length > 0) {
+              customerAddressDetails = defaultAddressResult.rows[0];
+              console.log(`[VENDOR-BOOKINGS] Using customer's default address for booking ${bookingId}:`, {
+                address_id: customerAddressDetails.id,
+                apartment_name: customerAddressDetails.apartment_name,
+                flat_no: customerAddressDetails.flat_no,
+                house_no: customerAddressDetails.house_no,
+                floor: customerAddressDetails.floor,
+                street_name: customerAddressDetails.street_name,
+              });
+            } else {
+              // Final fallback: Get any address for this customer
+              const anyAddrResult = await query(
+                `SELECT id, address_line1, address_line2, city, state, pincode, landmark, 
+                        flat_no, house_no, floor, street_name, apartment_name,
+                        latitude, longitude, coordinates, customer_id, is_default
+                 FROM customer_addresses 
+                 WHERE customer_id = $1 
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [booking.customer_id]
+              );
+              if (anyAddrResult.rows && anyAddrResult.rows.length > 0) {
+                customerAddressDetails = anyAddrResult.rows[0];
+                console.log(`[VENDOR-BOOKINGS] Using any customer address for booking ${bookingId}:`, {
+                  address_id: customerAddressDetails.id,
+                  apartment_name: customerAddressDetails.apartment_name,
+                  flat_no: customerAddressDetails.flat_no,
+                  house_no: customerAddressDetails.house_no,
+                  floor: customerAddressDetails.floor,
+                  street_name: customerAddressDetails.street_name,
+                });
+              }
+            }
+          } catch (fallbackAddrError) {
+            console.warn('Could not fetch customer default address:', fallbackAddrError);
+          }
+        }
+        
+        // ✅ CRITICAL FIX: If address was found but lacks detailed fields (flat_no, house_no, floor),
+        // augment with customer's DEFAULT address which may have these fields
+        if (customerAddressDetails && !customerAddressDetails.flat_no && !customerAddressDetails.house_no && !customerAddressDetails.floor && !customerAddressDetails.apartment_name && booking.customer_id) {
+          try {
+            const defaultAddrWithDetails = await query(
+              `SELECT flat_no, house_no, floor, street_name, apartment_name
+               FROM customer_addresses 
+               WHERE customer_id = $1 
+                 AND (flat_no IS NOT NULL OR house_no IS NOT NULL OR floor IS NOT NULL OR apartment_name IS NOT NULL)
+               ORDER BY is_default DESC NULLS LAST, created_at DESC 
+               LIMIT 1`,
+              [booking.customer_id]
+            );
+            if (defaultAddrWithDetails.rows && defaultAddrWithDetails.rows.length > 0) {
+              const detailedAddr = defaultAddrWithDetails.rows[0];
+              customerAddressDetails.flat_no = detailedAddr.flat_no || customerAddressDetails.flat_no;
+              customerAddressDetails.house_no = detailedAddr.house_no || customerAddressDetails.house_no;
+              customerAddressDetails.floor = detailedAddr.floor || customerAddressDetails.floor;
+              customerAddressDetails.street_name = detailedAddr.street_name || customerAddressDetails.street_name;
+              customerAddressDetails.apartment_name = detailedAddr.apartment_name || customerAddressDetails.apartment_name;
+              console.log(`[VENDOR-BOOKINGS] Augmented address with detailed fields from customer's other address:`, {
+                flat_no: customerAddressDetails.flat_no,
+                house_no: customerAddressDetails.house_no,
+                floor: customerAddressDetails.floor,
+                street_name: customerAddressDetails.street_name,
+                apartment_name: customerAddressDetails.apartment_name,
+              });
+            }
+          } catch (augmentError) {
+            console.warn('Could not augment address with detailed fields:', augmentError);
+          }
+        }
+
+const [customer, service, catalogService, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
         // Customer info
         booking.customer_id
           ? select('customers', { id: booking.customer_id }).catch(() => [])
@@ -720,6 +792,24 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         customerPhone: customer.length > 0 ? customer[0].phone : null,
         customerEmail: customer.length > 0 ? customer[0].email : null,
         customerAddress: customer.length > 0 ? customer[0].address : null,
+        // ✅ Detailed address fields for GPS navigation
+        customerAddressDetails: customerAddressDetails ? {
+          addressLine1: customerAddressDetails.address_line1,
+          addressLine2: customerAddressDetails.address_line2,
+          city: customerAddressDetails.city,
+          state: customerAddressDetails.state,
+          pincode: customerAddressDetails.pincode,
+          landmark: customerAddressDetails.landmark,
+          flatNo: customerAddressDetails.flat_no,
+          houseNo: customerAddressDetails.house_no,
+          floor: customerAddressDetails.floor,
+          streetName: customerAddressDetails.street_name,
+          apartmentName: customerAddressDetails.apartment_name,
+          latitude: customerAddressDetails.latitude,
+          longitude: customerAddressDetails.longitude,
+          // Format full address with detailed fields
+          formattedAddress: formatDetailedAddress(customerAddressDetails)
+        } : null,
         
         // Pet details - use pet from DB, or fallback to notes (diagnostics: patientName/patientAge)
         petName: pet.length > 0 ? pet[0].name : (booking.pet_name || (notesParsed?.patientName ?? null) || 'Unknown Pet'),
@@ -771,7 +861,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         delivery_longitude: (booking as any).delivery_longitude != null ? String((booking as any).delivery_longitude) : null,
         latitude: (booking as any).latitude != null ? String((booking as any).latitude) : null,
         longitude: (booking as any).longitude != null ? String((booking as any).longitude) : null,
-        location: (booking as any).delivery_address || (customer.length > 0 ? customer[0].address : null) || 'Home Visit',
+        location: customerAddressDetails 
+          ? formatDetailedAddress(customerAddressDetails)
+          : ((booking as any).delivery_address || (customer.length > 0 ? customer[0].address : null) || 'Home Visit'),
 
         // Vendor details
         vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,

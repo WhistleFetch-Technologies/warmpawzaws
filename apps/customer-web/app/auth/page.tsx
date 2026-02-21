@@ -197,28 +197,53 @@ function AuthPageContent() {
         referralCode: referralCode || undefined 
       });
       
-      if (response.success || response.verified) {
+        // Handle nested response structure: { success: true, data: { success: true, data: {...} } }
+      const responseData = response.data?.data || response.data || response;
+      const isVerified = response.success || response.verified || responseData?.success || responseData?.verified;
+      
+      console.log('🔍 [Auth] OTP Verify Response:', {
+        success: response.success,
+        verified: response.verified,
+        hasData: !!response.data,
+        hasNestedData: !!response.data?.data,
+        responseData: responseData,
+        isVerified
+      });
+      
+      if (isVerified) {
+        console.log('✅ [Auth] OTP verified successfully - proceeding with token storage and navigation');
         const shortPhone = phone.replace(/\D/g, '').slice(-10);
         localStorage.setItem('customerPhone', shortPhone);
         localStorage.setItem('customer_phone', shortPhone);
         localStorage.setItem('phone', shortPhone);
         localStorage.setItem('customerCountryCode', countryCode);
         
+        // Extract token from nested structure: response.data.data.token or response.token
+        const tokenData = responseData?.token || response.token || response;
+        const accessToken = tokenData?.access_token || tokenData?.accessToken || response.accessToken;
+        const refreshToken = tokenData?.refresh_token || tokenData?.refreshToken || response.refreshToken;
+        const idToken = tokenData?.id_token || tokenData?.idToken || response.idToken;
+        const expiresIn = tokenData?.expires_in || tokenData?.expiresIn || response.expiresIn || 86400;
+        
         // Store Cognito tokens (AWS Serverless compatible)
-        if (response.idToken && response.accessToken) {
+        if (idToken && accessToken) {
           const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
           storeCognitoTokens({
-            accessToken: response.accessToken,
-            idToken: response.idToken,
-            refreshToken: response.refreshToken || '',
-            expiresIn: response.expiresIn || 3600,
+            accessToken: accessToken,
+            idToken: idToken,
+            refreshToken: refreshToken || '',
+            expiresIn: expiresIn,
           });
-          if (response.userId) {
-            storeUserInfo({ userId: response.userId, phone, username: response.username });
+          const userData = responseData?.user || response.user;
+          if (userData?.id) {
+            storeUserInfo({ userId: userData.id, phone, username: userData.phone || phone });
           }
-        } else if (response.accessToken) {
-          // Fallback to legacy token
-          localStorage.setItem('authToken', response.accessToken);
+        } else if (accessToken) {
+          // Fallback to legacy token storage
+          localStorage.setItem('authToken', accessToken);
+          if (refreshToken) {
+            localStorage.setItem('refreshToken', refreshToken);
+          }
         }
         
         // Set sessionStorage flags to track that user is logged in
@@ -312,8 +337,12 @@ function AuthPageContent() {
           }
         }
         
-        router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
+        // ✅ FIX: Always navigate after successful verification (same as UAT mode)
+        const redirectPath = redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+        console.log('🚀 [Auth] Navigating to:', redirectPath);
+        router.push(redirectPath);
       } else {
+        console.error('❌ [Auth] OTP verification failed - response:', response);
         setError('Invalid OTP. Please try again.');
       }
     } catch (err: any) {

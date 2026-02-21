@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
+    "dev:prod": "node scripts/dev-prod.js",
     "build": "next build",
     "build:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true}); require('fs').rmSync('dist',{recursive:true,force:true})\" && next build",
     "start": "next start -p 3001",

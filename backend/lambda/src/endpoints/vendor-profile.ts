@@ -1126,13 +1126,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/bank-account", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: 'Invalid vendor ID' }, 400);
+      const trimmedId = (vendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
       }
 
-      // Resolve identity id to vendors.id so we find rows stored by vendor-bank-accounts
-      const vendor = await resolveVendorById(vendorId);
+      // ✅ PROD FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
+      const vendor = await resolveVendorById(trimmedId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
@@ -1336,15 +1336,28 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }, 400);
       }
 
-      const verifyPayload = {
+      const verifyPayload: any = {
         is_verified: true,
         verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
+      // ✅ PROD FIX: Ensure bank_name is set for vendor_bank_details (required NOT NULL constraint)
       if (sourceTable === 'vendor_bank_accounts' && bank.id) {
         await update('vendor_bank_accounts', { id: bank.id, vendor_id: resolvedVendorId }, verifyPayload);
       } else {
+        // For vendor_bank_details, ensure bank_name is preserved or extracted from IFSC/result
+        // If bank_name exists in the record, preserve it; otherwise try to get it from validation result or set default
+        if (bank.bank_name && bank.bank_name.trim()) {
+          verifyPayload.bank_name = bank.bank_name.trim();
+        } else if (result.bank_details?.bank) {
+          // Use bank name from Razorpay validation result if available
+          verifyPayload.bank_name = result.bank_details.bank;
+        } else {
+          // Extract bank name from IFSC code (first 4 characters typically indicate bank)
+          // Or set a default to satisfy NOT NULL constraint
+          verifyPayload.bank_name = ifscCode.substring(0, 4) || 'Unknown Bank';
+        }
         await update('vendor_bank_details', { vendor_id: resolvedVendorId }, verifyPayload);
       }
 
@@ -1391,100 +1404,64 @@ export function registerVendorProfileEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/settings
    * Get vendor general settings (service radius, emergency contact, etc.)
+   * ✅ PROD FIX: Use resolveVendorById for consistent vendor resolution
    */
   app.get("/vendor/:vendorId/settings", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: 'Invalid vendor ID' }, 400);
+      const trimmedId = (vendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
       }
 
-      // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
-      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
-      let vendors = await select('vendors', { id: vendorId });
-      
-      if (vendors.length === 0) {
-        console.log(`[SETTINGS] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select('vendor_identity', { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (there might be an existing vendor with different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[SETTINGS] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              // Get application data for vendor details
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              // ✅ FIX: Extract profile photo, pincode, and service_radius from application (PROD FIX)
-              const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
-              const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
-              const pincodeValue = extractPincodeFromPayload(payload);
-              
-              // ✅ FIX: Extract service_radius from payload
-              let serviceRadius: number | null = null;
-              const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
-              for (const field of radiusFields) {
-                if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
-                  const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
-                  if (!isNaN(radiusValue) && radiusValue > 0) {
-                    serviceRadius = radiusValue;
-                    break;
-                  }
-                }
-              }
-              
-              // Create vendors record
-              console.log(`[SETTINGS] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction (PROD FIX)
-                profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
-                service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              vendors = newVendor;
-              console.log(`[SETTINGS] Created vendor record for ${vendorId} with pincode: ${pincodeValue}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor not found' }, 404);
-        }
-      }
-
-      if (vendors.length === 0) {
+      // ✅ PROD FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-
-      const vendor = vendors[0];
       
-      // Extract settings from vendor record or separate settings table
+      // ✅ PROD FIX: Query settings columns directly from database to ensure we get actual values
+      // Check which columns exist first
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') as has_service_radius,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') as has_emergency_contact,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') as has_max_dogs,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') as has_walk_durations,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') as has_other_config
+      `);
+      
+      const schema = schemaCheck.rows[0] || {};
+      
+      // Build SELECT query with only existing columns
+      const selectFields: string[] = ['id'];
+      if (schema.has_service_radius) selectFields.push('service_radius');
+      if (schema.has_emergency_contact) selectFields.push('emergency_contact');
+      if (schema.has_max_dogs) selectFields.push('max_dogs_per_walk');
+      if (schema.has_walk_durations) selectFields.push('walk_durations');
+      if (schema.has_other_config) selectFields.push('other_config');
+      
+      // Query vendor with settings columns
+      const vendorQuery = await query(
+        `SELECT ${selectFields.join(', ')} FROM vendors WHERE id = $1 LIMIT 1`,
+        [vendor.id]
+      );
+      
+      const vendorWithSettings = vendorQuery.rows[0] || vendor;
+      
+      // Extract settings from vendor record
       const settings = {
-        service_radius: vendor.service_radius || null,
-        emergency_contact: vendor.emergency_contact || null,
-        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
-        walk_durations: vendor.walk_durations || [],
-        other_config: vendor.other_config || {},
+        service_radius: (schema.has_service_radius && vendorWithSettings.service_radius !== undefined) ? vendorWithSettings.service_radius : null,
+        emergency_contact: (schema.has_emergency_contact && vendorWithSettings.emergency_contact !== undefined) 
+          ? (typeof vendorWithSettings.emergency_contact === 'string' ? JSON.parse(vendorWithSettings.emergency_contact) : vendorWithSettings.emergency_contact)
+          : null,
+        max_dogs_per_walk: (schema.has_max_dogs && vendorWithSettings.max_dogs_per_walk !== undefined) ? vendorWithSettings.max_dogs_per_walk : null,
+        walk_durations: (schema.has_walk_durations && vendorWithSettings.walk_durations !== undefined && vendorWithSettings.walk_durations !== null) 
+          ? (Array.isArray(vendorWithSettings.walk_durations) ? vendorWithSettings.walk_durations : [])
+          : [],
+        other_config: (schema.has_other_config && vendorWithSettings.other_config !== undefined) 
+          ? (typeof vendorWithSettings.other_config === 'string' ? JSON.parse(vendorWithSettings.other_config) : (vendorWithSettings.other_config || {}))
+          : {},
       };
 
       return c.json({ success: true, settings });
@@ -1501,12 +1478,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
   const settingsHandler = async (c: any) => {
     try {
       const { vendorId } = c.req.param();
+      const trimmedId = (vendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+      
       const body = await c.req.json();
       const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
-
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: 'Invalid vendor ID' }, 400);
-      }
 
       // Validate emergency contact if provided
       if (emergency_contact) {
@@ -1520,79 +1498,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
-      // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
-      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
-      let vendors = await select('vendors', { id: vendorId });
-      
-      if (vendors.length === 0) {
-        console.log(`[SETTINGS-UPDATE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select('vendor_identity', { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (there might be an existing vendor with different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[SETTINGS-UPDATE] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              // Get application data for vendor details
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              // ✅ FIX: Extract profile photo, pincode, and service_radius from application (PROD FIX)
-              const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
-              const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
-              const pincodeValue = extractPincodeFromPayload(payload);
-              
-              // ✅ FIX: Extract service_radius from payload
-              let serviceRadius: number | null = null;
-              const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
-              for (const field of radiusFields) {
-                if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
-                  const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
-                  if (!isNaN(radiusValue) && radiusValue > 0) {
-                    serviceRadius = radiusValue;
-                    break;
-                  }
-                }
-              }
-              
-              // Create vendors record
-              console.log(`[SETTINGS-UPDATE] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction (PROD FIX)
-                profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
-                service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              vendors = newVendor;
-              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId} with pincode: ${pincodeValue}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor not found' }, 404);
-        }
-      }
-
-      if (vendors.length === 0) {
+      // ✅ PROD FIX: Use resolveVendorById to handle vendor_identity IDs and auto-create vendors row
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
@@ -1614,50 +1522,82 @@ export function registerVendorProfileEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIdx = 1;
 
+      // ✅ PROD FIX: Allow setting null values explicitly (check !== undefined, not truthy)
       if (service_radius !== undefined && schema.has_service_radius) {
-        setClauses.push(`service_radius = $${paramIdx}`);
-        params.push(service_radius);
-        paramIdx++;
+        if (service_radius === null || service_radius === '') {
+          setClauses.push(`service_radius = NULL`);
+        } else {
+          setClauses.push(`service_radius = $${paramIdx}`);
+          params.push(service_radius);
+          paramIdx++;
+        }
       }
       
       if (emergency_contact !== undefined && schema.has_emergency_contact) {
-        setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
-        params.push(JSON.stringify(emergency_contact));
-        paramIdx++;
+        if (emergency_contact === null) {
+          setClauses.push(`emergency_contact = NULL`);
+        } else {
+          setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
+          params.push(JSON.stringify(emergency_contact));
+          paramIdx++;
+        }
       }
       
       if (max_dogs_per_walk !== undefined && schema.has_max_dogs) {
-        setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
-        params.push(max_dogs_per_walk);
-        paramIdx++;
+        if (max_dogs_per_walk === null || max_dogs_per_walk === '') {
+          setClauses.push(`max_dogs_per_walk = NULL`);
+        } else {
+          setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
+          params.push(max_dogs_per_walk);
+          paramIdx++;
+        }
       }
       
       // Handle walk_durations - convert array to TEXT[] format
       if (walk_durations !== undefined && schema.has_walk_durations) {
-        if (Array.isArray(walk_durations) && walk_durations.length > 0) {
+        if (walk_durations === null || (Array.isArray(walk_durations) && walk_durations.length === 0)) {
+          // Empty array or null - set to NULL
+          setClauses.push(`walk_durations = NULL`);
+        } else if (Array.isArray(walk_durations)) {
           setClauses.push(`walk_durations = $${paramIdx}::text[]`);
           params.push(walk_durations);
           paramIdx++;
-        } else {
-          // Empty array or null - set to NULL without using a parameter
-          setClauses.push(`walk_durations = NULL`);
         }
       }
       
       if (other_config !== undefined && schema.has_other_config) {
-        setClauses.push(`other_config = $${paramIdx}::jsonb`);
-        params.push(JSON.stringify(other_config || {}));
-        paramIdx++;
+        if (other_config === null) {
+          setClauses.push(`other_config = NULL`);
+        } else {
+          setClauses.push(`other_config = $${paramIdx}::jsonb`);
+          params.push(JSON.stringify(other_config || {}));
+          paramIdx++;
+        }
       }
 
-      // Use the actual vendor ID (might be different if found by phone)
-      const actualVendorId = vendors[0].id;
+      // Use the resolved vendor ID
+      const actualVendorId = vendor.id;
       params.push(actualVendorId);
       
-      await query(
-        `UPDATE vendors SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`,
+      // ✅ PROD FIX: Only update if we have at least one field to update (besides updated_at)
+      if (setClauses.length <= 1) {
+        // Only updated_at, no actual settings to update
+        return c.json({ success: true, message: 'No settings to update' });
+      }
+      
+      // ✅ PROD FIX: Execute update and verify it succeeded
+      const updateResult = await query(
+        `UPDATE vendors SET ${setClauses.join(', ')} WHERE id = $${paramIdx} RETURNING id`,
         params
       );
+      
+      if (!updateResult.rows || updateResult.rows.length === 0) {
+        console.error(`[SETTINGS-UPDATE] Failed to update vendor ${actualVendorId} - no rows affected`);
+        return c.json({ error: 'Failed to update settings. Vendor may not exist.' }, 500);
+      }
+      
+      console.log(`[SETTINGS-UPDATE] Successfully updated settings for vendor ${actualVendorId}`);
+      console.log(`[SETTINGS-UPDATE] Updated fields: ${setClauses.filter(c => !c.includes('updated_at')).join(', ')}`);
 
       return c.json({ success: true, message: 'Settings updated successfully' });
     } catch (error: any) {

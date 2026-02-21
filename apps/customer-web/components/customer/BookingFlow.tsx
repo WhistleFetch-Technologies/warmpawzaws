@@ -939,9 +939,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       </div>
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 pb-32">
+      <main className="max-w-4xl mx-auto px-4 pb-32 overflow-x-hidden">
         {step === 'details' && (
-          <div className="bg-white rounded-2xl p-0 shadow-sm">
+          <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-xl font-bold mb-4">Service Details</h2>
             <div className="space-y-4">
               <div className="flex items-center gap-4">
@@ -972,13 +972,13 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'datetime' && (
-          <div className="bg-white rounded-2xl p-0 shadow-sm">
+          <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-xl font-bold mb-4">Select Date & Time</h2>
             
             {/* Date Selection */}
-            <div className="mb-0">
-              <h3 className="font-medium text-gray-700 mb-0">Select Date</h3>
-              <div className="flex gap-3 overflow-x-auto pb-0">
+            <div className="mb-6">
+              <h3 className="font-medium text-gray-700 mb-3">Select Date</h3>
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
                 {getNextDays().map((day) => (
                   <button
                     key={day.date}
@@ -986,7 +986,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                       setSelectedDate(day.date);
                       setSelectedTime('');
                     }}
-                    className={`flex-shrink-0 px-4 py-0 rounded-xl text-center min-w-[80px] ${
+                    className={`flex-shrink-0 px-4 py-3 rounded-xl text-center min-w-[80px] ${
                       selectedDate === day.date
                         ? 'bg-orange-500 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1000,9 +1000,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
             {/* Time Selection */}
             {selectedDate && (
-              <div>
-                <h3 className="font-medium text-gray-700 mb-0">Select Time</h3>
-                <div className="grid grid-cols-4 gap-3">
+              <div className="mt-6">
+                <h3 className="font-medium text-gray-700 mb-3">Select Time</h3>
+                <div className="grid grid-cols-4 gap-3 overflow-hidden">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (
                       <button
@@ -1222,11 +1222,11 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                             <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
+                        <p className="text-sm text-gray-600 mt-1 break-words overflow-hidden">
                           {addr.addressLine1 || addr.address}
                           {addr.addressLine2 && `, ${addr.addressLine2}`}
                         </p>
-                        <p className="text-sm text-gray-500">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
+                        <p className="text-sm text-gray-500 break-words overflow-hidden">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
                         {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
                       </div>
                       {selectedAddress === addr.id && (
@@ -1271,7 +1271,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
         {step === 'payment' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl p-0 shadow-sm">
+            <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
               <h2 className="text-xl font-bold mb-4">Review Booking</h2>
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -1298,11 +1298,11 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                 placeholder="Add notes for the provider (optional)"
                 rows={2}
-                className="w-full mt-4 px-4 py-0 border rounded-xl focus:ring-2 focus:ring-orange-500"
+                className="w-full mt-4 px-4 py-3 border rounded-xl focus:ring-2 focus:ring-orange-500 resize-none overflow-hidden"
               />
             </div>
 
-            <div className="bg-white rounded-2xl p-1 shadow-sm">
+            <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
               <h2 className="text-xl font-bold mb-4">Payment</h2>
               <div className="space-y-3">
                 {/* ✅ SUBSCRIPTION COVERAGE BADGE */}
@@ -1711,6 +1711,11 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     isDefault: true,
     latitude: 0,
     longitude: 0,
+    flatNo: '',
+    houseNo: '',
+    floor: '',
+    streetName: '',
+    apartmentName: '',
   });
 
   const detectCurrentLocation = () => {
@@ -1799,6 +1804,11 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
       const updatedAddresses = [...existingAddresses, {
         ...formData,
         address: formData.addressLine1 + (formData.addressLine2 ? ', ' + formData.addressLine2 : ''),
+        flatNo: formData.flatNo || undefined,
+        houseNo: formData.houseNo || undefined,
+        floor: formData.floor || undefined,
+        streetName: formData.streetName || undefined,
+        apartmentName: formData.apartmentName || undefined,
       }];
       
       await apiClient.post('/customer/addresses', {
@@ -1896,6 +1906,62 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
               onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
               placeholder="Area, Locality (Optional)"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Optional: Flat, House, Floor, Street, Apartment */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Flat / Unit no.</label>
+              <input
+                type="text"
+                value={formData.flatNo}
+                onChange={(e) => setFormData({ ...formData, flatNo: e.target.value })}
+                placeholder="e.g. 401"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">House / Building no.</label>
+              <input
+                type="text"
+                value={formData.houseNo}
+                onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
+                placeholder="e.g. 12"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Floor</label>
+              <input
+                type="text"
+                value={formData.floor}
+                onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+                placeholder="e.g. 4th"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Street name</label>
+              <input
+                type="text"
+                value={formData.streetName}
+                onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
+                placeholder="Street name"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Apartment / Building / Society name</label>
+            <input
+              type="text"
+              value={formData.apartmentName}
+              onChange={(e) => setFormData({ ...formData, apartmentName: e.target.value })}
+              placeholder="e.g. Green Valley Apartments"
+              className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
             />
           </div>
 

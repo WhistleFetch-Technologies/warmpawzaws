@@ -97,15 +97,20 @@ export async function verifyCognitoToken(
     }
 
     // Check if this is a UAT token (issued by warmpawz-uat)
+    // ✅ FIX: Always check for UAT tokens first, even in production
+    // This allows properly signed JWT tokens from login endpoint (when Cognito not configured)
     try {
       const { verifyUATJWTToken } = await import('./jwt-generator');
       const uatResult = await verifyUATJWTToken(token);
       if (uatResult.valid && uatResult.payload) {
-        console.log('[JWT] UAT token verified successfully');
+        console.log('[JWT] UAT token verified successfully (issuer: warmpawz-uat)');
         return uatResult.payload as CognitoTokenPayload;
+      } else {
+        console.log(`[JWT] UAT token verification failed: ${uatResult.error || 'unknown error'}`);
       }
-    } catch (uatError) {
-      // Not a UAT token, continue with Cognito verification
+    } catch (uatError: any) {
+      // Not a UAT token or verification failed, continue with Cognito verification
+      console.log(`[JWT] UAT token check error (continuing to Cognito): ${uatError.message || 'unknown'}`);
     }
 
     // Use environment variables if not provided

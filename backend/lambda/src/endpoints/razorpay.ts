@@ -515,6 +515,35 @@ class VerifyPaymentHandler extends BaseHandler {
 
         console.log('[PAYMENT-VERIFY] ✅ Payment verified and booking confirmed:', bookingId);
 
+        // ✅ AUTO-GENERATE OTP for in-person services when booking transitions to confirmed
+        try {
+          const { rows: bookingDetails } = await client.query(
+            `SELECT service_type, otp_code FROM bookings WHERE id = $1`,
+            [bookingId]
+          );
+          const bkDetail = bookingDetails[0];
+          const serviceType = bkDetail?.service_type || '';
+          const isTele = ['tele', 'online', 'video_consultation', 'tele_consultation'].includes(serviceType);
+
+          if (!isTele && !bkDetail?.otp_code) {
+            const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+            const otpExpiry = new Date();
+            otpExpiry.setHours(otpExpiry.getHours() + 24);
+
+            await client.query(
+              `UPDATE bookings SET otp_code = $1, otp_expires_at = $2, updated_at = NOW() WHERE id = $3`,
+              [otpCode, otpExpiry.toISOString(), bookingId]
+            );
+            console.log(`[PAYMENT-VERIFY] OTP ${otpCode} generated for booking ${bookingId} (service_type: ${serviceType})`);
+          } else if (isTele) {
+            console.log(`[PAYMENT-VERIFY] Tele service - no OTP needed for booking ${bookingId}`);
+          } else {
+            console.log(`[PAYMENT-VERIFY] OTP already exists for booking ${bookingId}: ${bkDetail?.otp_code}`);
+          }
+        } catch (otpErr: any) {
+          console.warn(`[PAYMENT-VERIFY] Failed to generate OTP for booking ${bookingId}:`, otpErr?.message);
+        }
+
         const pharmacyOrderId = payment.pharmacy_order_id;
 
         if (pharmacyOrderId) {

@@ -49,7 +49,7 @@ interface Booking {
   bookingTime: string;
   duration: number;
   price: number;
-  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
   completionOTP?: string;
   isPackage: boolean;
   packageDetails?: {
@@ -658,14 +658,21 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 </div>
               )}
 
-              {/* ✅ OTP Display for confirmed/paid bookings (includes otpCode, completionOTP, startOTP) */}
-              {(booking.otpCode || booking.completionOTP || booking.startOTP) && booking.paymentStatus === 'paid' && !booking.otpVerified && (
+              {/* ✅ OTP Display for confirmed bookings (includes otpCode, completionOTP, startOTP) */}
+              {/* Show OTP for confirmed bookings with OTP, regardless of payment status (handles COD) */}
+              {(booking.otpCode || booking.completionOTP || booking.startOTP) && 
+               (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') && 
+               !booking.otpVerified && (
                 <div className="mt-3 pt-3 border-t border-gray-200">
                   <div className="flex items-center justify-between bg-orange-50 rounded-lg p-3">
                     <div className="flex items-center gap-2">
                       <Key className="w-4 h-4 text-orange-600" />
                       <span className="text-sm font-medium text-orange-800">
-                        {booking.serviceStyle === 'at_home' ? 'Booking OTP' : 'Check-in OTP'}
+                        {booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home'
+                          ? 'Service OTP' 
+                          : booking.serviceStyle === 'at_center' || booking.serviceType === 'at_center'
+                          ? 'Check-in OTP'
+                          : 'Booking OTP'}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -695,9 +702,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                     </div>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 text-center">
-                    {booking.serviceStyle === 'at_home' 
+                    {booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home'
                       ? 'Share this OTP with the vendor when they arrive'
-                      : 'Share this OTP with the vendor at check-in'}
+                      : booking.serviceStyle === 'at_center' || booking.serviceType === 'at_center'
+                      ? 'Share this OTP with the vendor at check-in'
+                      : 'Share this OTP with the vendor to complete the service'}
                   </p>
                 </div>
               )}

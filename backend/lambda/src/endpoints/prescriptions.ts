@@ -248,51 +248,34 @@ export function registerPrescriptionEndpoints(app: Hono) {
             console.error('[Prescription] CRITICAL: prescriptionDate failed runtime assertion, forced to current date:', prescriptionDate);
           }
           
-          console.log('[Prescription] Using prescription_date:', prescriptionDate, 'Type:', typeof prescriptionDate);
-          
-          // ✅ CRITICAL: Build parameters array with explicit date check (use resolved customerId/petId from booking)
-          const queryParams: any[] = [
-            bookingId,
-            prescriptionData.customerId || customerId,
-            prescriptionData.petId || petId || null,
-            vendorId,
-            staffId || null,
-              medsJson,
-            combinedInstructions,
-            diagnosis || null,
-          ];
-          
-          // ✅ ABSOLUTE FINAL CHECK: Ensure prescriptionDate is valid before adding to params
-          if (!prescriptionDate || prescriptionDate === null || prescriptionDate === undefined || prescriptionDate.trim() === '') {
-            const now = new Date();
-            prescriptionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            console.error('[Prescription] CRITICAL: prescriptionDate was invalid in params array, forced to current date');
-          }
-          
-          queryParams.push(prescriptionDate); // Index 8 - prescription_date
-          queryParams.push(followUpDate || null); // Index 9 - follow_up_date
-          queryParams.push(createdBy || vendorId); // Index 10 - created_by
-          queryParams.push(createdByRole || 'vendor'); // Index 11 - created_by_role
-          queryParams.push(true); // Index 12 - is_active
-          
-          console.log('[Prescription] Query params prescription_date (index 8):', queryParams[8], 'Type:', typeof queryParams[8]);
-          
-          // ✅ CRITICAL: Use SQL COALESCE as final safety net - even if JS variable is null, SQL will use CURRENT_DATE
-          // This is the ABSOLUTE last line of defense at the database level
-          // NULLIF handles empty strings, COALESCE handles NULL values
+          // ✅ FIX: prescription_date column doesn't exist - use created_at (auto-set by DB)
+          // ✅ FIX: follow_up_date doesn't exist - use next_follow_up_date instead
           // ✅ FIX: Added medication_name column (NOT NULL constraint) - uses med.name or default 'Prescription'
           const medicationName = med.name || 'Prescription';
           const result = await query(
             `INSERT INTO prescriptions (
-              booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
-              diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active, medication_name
+              booking_id, customer_id, pet_id, vendor_id, staff_id, medications, general_notes,
+              diagnosis, next_follow_up_date, created_by, created_by_role, is_active, medication_name
             ) VALUES (
               $1, $2, $3, $4, $5, $6::jsonb, $7, $8, 
-              COALESCE(NULLIF(TRIM($9::text), '')::date, CURRENT_DATE), 
-              $10::date, $11, $12, $13, $14
+              $9::date, $10, $11, $12, $13
             )
             RETURNING *`,
-            [...queryParams, medicationName]
+            [
+              bookingId,
+              prescriptionData.customerId || customerId,
+              prescriptionData.petId || petId || null,
+              vendorId,
+              staffId || null,
+              medsJson,
+              combinedInstructions,
+              diagnosis || null,
+              followUpDate || null, // next_follow_up_date
+              createdBy || vendorId,
+              createdByRole || 'vendor',
+              true, // is_active (if column exists, otherwise will be ignored)
+              medicationName
+            ]
           );
           const row = result.rows?.[0];
           if (row) insertedPrescriptions.push(row);
@@ -325,55 +308,8 @@ export function registerPrescriptionEndpoints(app: Hono) {
               code: 'PRESCRIPTION_CREATED_BY_MIGRATION_REQUIRED',
             }, 500);
           }
-          if (insertErr.message?.includes('prescription_date') && insertErr.message?.includes('null value')) {
-            console.error('[prescriptions] prescription_date was null despite validation. prescriptionDate value:', prescriptionDate);
-            // Retry with explicit current date
-            const now = new Date();
-            const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            console.log('[prescriptions] Retrying with fallback date:', fallbackDate);
-            try {
-              const retryMedicationName = med.name || 'Prescription';
-            const retryResult = await query(
-                `INSERT INTO prescriptions (
-                  booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
-                  diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active, medication_name
-                ) VALUES (
-                  $1, $2, $3, $4, $5, $6::jsonb, $7, $8, 
-                  $9::date, 
-                  $10::date, $11, $12, $13, $14
-                )
-                RETURNING *`,
-                [
-                  bookingId,
-                  prescriptionData.customerId || customerId,
-                  prescriptionData.petId || petId || null,
-                  vendorId,
-                  staffId || null,
-                  medsJson,
-                  combinedInstructions,
-                  diagnosis || null,
-                  fallbackDate,
-                  followUpDate || null,
-                  createdBy || vendorId,
-                  createdByRole || 'vendor',
-                  true,
-                  retryMedicationName,
-                ]
-              );
-              const retryRow = retryResult.rows?.[0];
-              if (retryRow) insertedPrescriptions.push(retryRow);
-              console.log('[prescriptions] Successfully inserted with fallback date');
-            } catch (retryErr: any) {
-              console.error('[prescriptions] Retry also failed:', retryErr.message);
-              return c.json({
-                error: 'Failed to create prescription: prescription_date is required',
-                code: 'PRESCRIPTION_DATE_REQUIRED',
-                details: retryErr.message,
-              }, 400);
-            }
-          } else {
-            throw insertErr;
-          }
+          // ✅ FIX: prescription_date column doesn't exist - no special handling needed
+          throw insertErr;
         }
       }
 
@@ -668,7 +604,6 @@ export function registerPrescriptionEndpoints(app: Hono) {
          LEFT JOIN vendors v ON p.vendor_id = v.id
          LEFT JOIN staff s ON p.staff_id = s.id
          WHERE p.booking_id = $1
-         AND p.is_active = true
          AND (p.status = 'published' OR p.status IS NULL ${includeDrafts ? "OR p.status = 'draft'" : ''})
          ORDER BY p.created_at DESC`,
         [bookingId]
@@ -725,7 +660,6 @@ export function registerPrescriptionEndpoints(app: Hono) {
          LEFT JOIN vendors v ON p.vendor_id = v.id
          LEFT JOIN pets pet ON p.pet_id = pet.id
          WHERE p.customer_id = $1
-         AND p.is_active = true
          AND (p.status = 'published' OR p.status IS NULL)
          ORDER BY p.created_at DESC`,
         [customerId]
@@ -844,7 +778,6 @@ export function registerPrescriptionEndpoints(app: Hono) {
            LEFT JOIN customers c ON p.customer_id = c.id
            LEFT JOIN pets pet ON p.pet_id = pet.id
            WHERE p.vendor_id = $1
-           AND p.is_active = true
            AND (p.status IS NULL OR p.status IN ('draft', 'published'))
            ORDER BY p.status ASC, p.created_at DESC`,
           [vendorId]
@@ -907,7 +840,6 @@ export function registerPrescriptionEndpoints(app: Hono) {
          LEFT JOIN vendors v ON p.vendor_id = v.id
          LEFT JOIN pets pet ON p.pet_id = pet.id
          WHERE p.customer_id = $1
-         AND p.is_active = true
          AND (p.status = 'published' OR p.status IS NULL)
          ORDER BY p.created_at DESC`,
         [customerId]

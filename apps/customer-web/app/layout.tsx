@@ -54,11 +54,14 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* Runtime config: Injected at deployment time - will be replaced by deploy script */}
+        {/* Runtime config: Placeholder - MUST be replaced at deploy time by deploy script.
+            The deploy script (deploy-to-s3.js or manual AWS CLI deploy) replaces the content
+            of this script tag with the correct apiBaseUrl, uatMode, and environment values.
+            DO NOT hardcode dev/prod values here - they get baked into the static HTML at build time. */}
         <script
           id="runtime-config-inline"
           dangerouslySetInnerHTML={{
-            __html: `window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true, environment: 'development' };`,
+            __html: `window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: false, environment: '' };`,
           }}
         />
         {/* Error handler for chunk load errors */}

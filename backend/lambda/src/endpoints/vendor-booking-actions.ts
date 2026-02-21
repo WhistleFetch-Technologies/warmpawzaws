@@ -15,7 +15,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, query } from '../database/rds-connection';
+import { select, update, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
@@ -106,6 +106,10 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       console.log(`📋 [COMPLETE-BOOKING] Vendor ${vendorId} completing booking ${bookingId} with OTP: ${otp}`);
 
+      // ✅ CRITICAL FIX: Resolve vendorId (may be vendor_identity.id) to canonical vendors.id
+      const resolvedVendorId = await resolveVendorId(vendorId);
+      console.log(`📋 [COMPLETE-BOOKING] Resolved vendorId ${vendorId} to ${resolvedVendorId}`);
+
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
@@ -114,8 +118,65 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // Verify vendor owns this booking
-      if (booking.vendor_id !== vendorId) {
+      // ✅ FIX: Resolve booking's vendor_id as well (may also be vendor_identity.id)
+      const resolvedBookingVendorId = await resolveVendorId(booking.vendor_id);
+      console.log(`📋 [COMPLETE-BOOKING] Resolved booking vendor_id ${booking.vendor_id} to ${resolvedBookingVendorId}`);
+
+      // ✅ FIX: Verify vendor owns this booking - check both resolved vendor IDs
+      // Also check by phone number for solo providers (same vendor with different IDs)
+      let vendorAuthorized = false;
+
+      // Direct match (after resolution)
+      if (resolvedBookingVendorId === resolvedVendorId || 
+          booking.vendor_id === resolvedVendorId || 
+          resolvedBookingVendorId === vendorId ||
+          booking.vendor_id === vendorId) {
+        vendorAuthorized = true;
+        console.log(`✅ [COMPLETE-BOOKING] Authorized: Direct vendor ID match`);
+      } else {
+        // Check if both vendor IDs resolve to the same vendor by phone number (solo provider case)
+        try {
+          const bookingVendor = await select('vendors', { id: resolvedBookingVendorId });
+          const requestingVendor = await select('vendors', { id: resolvedVendorId });
+          
+          if (bookingVendor.length > 0 && requestingVendor.length > 0) {
+            const bookingVendorPhone = bookingVendor[0].phone;
+            const requestingVendorPhone = requestingVendor[0].phone;
+            
+            // Same phone = same solo provider
+            if (bookingVendorPhone && requestingVendorPhone && bookingVendorPhone === requestingVendorPhone) {
+              console.log(`✅ [COMPLETE-BOOKING] Authorized: Same vendor by phone (${bookingVendorPhone})`);
+              vendorAuthorized = true;
+            }
+          }
+          
+          // Also check vendor_identity for solo providers
+          if (!vendorAuthorized) {
+            const bookingVendorIdentity = await query(
+              `SELECT id, phone FROM vendor_identity WHERE id::text = $1 OR id = $1 LIMIT 1`,
+              [booking.vendor_id]
+            ).catch(() => ({ rows: [] }));
+            
+            const requestingVendorIdentity = await query(
+              `SELECT id, phone FROM vendor_identity WHERE id::text = $1 OR id = $1 LIMIT 1`,
+              [vendorId]
+            ).catch(() => ({ rows: [] }));
+            
+            const bookingIdentity = (bookingVendorIdentity as any).rows?.[0];
+            const requestingIdentity = (requestingVendorIdentity as any).rows?.[0];
+            
+            if (bookingIdentity && requestingIdentity && bookingIdentity.phone === requestingIdentity.phone) {
+              console.log(`✅ [COMPLETE-BOOKING] Authorized: Same vendor by vendor_identity phone (${bookingIdentity.phone})`);
+              vendorAuthorized = true;
+            }
+          }
+        } catch (authError: any) {
+          console.error(`⚠️ [COMPLETE-BOOKING] Error checking vendor authorization:`, authError);
+        }
+      }
+
+      if (!vendorAuthorized) {
+        console.error(`❌ [COMPLETE-BOOKING] Unauthorized: Booking vendor_id=${booking.vendor_id} (resolved=${resolvedBookingVendorId}), Requesting vendorId=${vendorId} (resolved=${resolvedVendorId})`);
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
 
@@ -140,61 +201,45 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
         console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
         
-        // ✅ Create vendor_earnings for tele consultation too
-        if (booking.payment_status === 'paid') {
-          try {
-            const { insert, query } = await import('../database/rds-connection');
-            const { getVendorTierCommission } = await import('../endpoints/razorpay');
-            const commissionRate = await getVendorTierCommission(booking.vendor_id);
+        // ✅ Create vendor_earnings for tele consultation (regardless of payment status — handles COD/pending)
+        try {
+          const commissionRate = 15; // 15% default
+          const totalAmount = parseFloat(booking.total_amount || '0');
+          const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
+          const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+          
+          const existingEarnings = await query(
+            `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
+            [bookingId]
+          ).catch(() => ({ rows: [] }));
+          
+          const existingRows = (existingEarnings as any).rows || [];
+          
+          if (existingRows.length === 0 && vendorAmount > 0) {
+            await insert('vendor_earnings', {
+              vendor_id: booking.vendor_id,
+              booking_id: bookingId,
+              amount: vendorAmount,
+              commission_amount: commissionAmount,
+              total_amount: totalAmount,
+              commission_rate: commissionRate,
+              status: 'pending',
+              realized_at: new Date().toISOString(),
+            });
+            console.log(`✅ [EARNINGS] Created vendor_earnings for tele booking ${bookingId}: vendor gets ₹${vendorAmount}`);
             
-            const totalAmount = parseFloat(booking.total_amount || '0');
-            const commissionAmount = (totalAmount * commissionRate) / 100;
-            const vendorAmount = totalAmount - commissionAmount;
-            
-            const existingEarnings = await query(
-              `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
-              [bookingId]
-            );
-            
-            const existingRows = Array.isArray(existingEarnings) 
-              ? existingEarnings 
-              : (existingEarnings as any).rows || [];
-            
-            if (existingRows.length === 0) {
-              await insert('vendor_earnings', {
-                vendor_id: booking.vendor_id,
-                booking_id: bookingId,
-                amount: vendorAmount,
-                commission_amount: commissionAmount,
-                total_amount: totalAmount,
-                commission_rate: commissionRate,
-                status: 'pending',
-                realized_at: new Date().toISOString(),
-              });
-              
-              await query(
-                `UPDATE vendors 
-                 SET pending_payout = COALESCE(pending_payout, 0) + $1,
-                     total_earnings = COALESCE(total_earnings, 0) + $1,
-                     updated_at = NOW()
-                 WHERE id = $2`,
-                [vendorAmount, booking.vendor_id]
-              );
-              
-              const { sendToSettlementQueue } = await import('../utils/sqs-client');
-              await sendToSettlementQueue({
-                bookingId,
-                vendorId: booking.vendor_id,
-                amount: totalAmount,
-                vendorAmount: vendorAmount,
-                commission: commissionAmount,
-                trigger: 'booking_completed',
-                completedAt: new Date().toISOString(),
-              });
-            }
-          } catch (error: any) {
-            console.error('❌ [EARNINGS] Failed to create earnings for tele consultation:', error);
+            // Update vendor totals (non-critical)
+            await query(
+              `UPDATE vendors 
+               SET pending_payout = COALESCE(pending_payout, 0) + $1,
+                   total_earnings = COALESCE(total_earnings, 0) + $1,
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [vendorAmount, booking.vendor_id]
+            ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
           }
+        } catch (error: any) {
+          console.error('❌ [EARNINGS] Failed to create earnings for tele consultation:', error);
         }
         
         return c.json({ success: true, booking: updated[0], message: 'Tele consultation completed successfully!' });
@@ -251,73 +296,49 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
 
-      // ✅ CRITICAL FIX: Create vendor_earnings record immediately when booking is completed
-      if (booking.payment_status === 'paid') {
-        try {
-          const { insert, query } = await import('../database/rds-connection');
-          
-          // Get vendor tier commission rate
-          const { getVendorTierCommission } = await import('../endpoints/razorpay');
-          const commissionRate = await getVendorTierCommission(booking.vendor_id);
-          
-          const totalAmount = parseFloat(booking.total_amount || '0');
-          const commissionAmount = (totalAmount * commissionRate) / 100;
-          const vendorAmount = totalAmount - commissionAmount;
-          
-          // Check if vendor_earnings record already exists for this booking
-          const existingEarnings = await query(
-            `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
-            [bookingId]
-          );
-          
-          const existingRows = Array.isArray(existingEarnings) 
-            ? existingEarnings 
-            : (existingEarnings as any).rows || [];
-          
-          if (existingRows.length === 0) {
-            // Create vendor_earnings record
-            await insert('vendor_earnings', {
-              vendor_id: booking.vendor_id,
-              booking_id: bookingId,
-              amount: vendorAmount,
-              commission_amount: commissionAmount,
-              total_amount: totalAmount,
-              commission_rate: commissionRate,
-              status: 'pending',
-              realized_at: new Date().toISOString(),
-            });
-            
-            console.log(`✅ [EARNINGS] Created vendor_earnings record for booking ${bookingId}: ₹${vendorAmount} (commission: ₹${commissionAmount})`);
-            
-            // Update vendor's total earnings and pending payout
-            await query(
-              `UPDATE vendors 
-               SET pending_payout = COALESCE(pending_payout, 0) + $1,
-                   total_earnings = COALESCE(total_earnings, 0) + $1,
-                   updated_at = NOW()
-               WHERE id = $2`,
-              [vendorAmount, booking.vendor_id]
-            );
-          }
-          
-          // Trigger automatic settlement
-          const { sendToSettlementQueue } = await import('../utils/sqs-client');
-          await sendToSettlementQueue({
-            bookingId,
-            vendorId: booking.vendor_id,
-            amount: totalAmount,
-            vendorAmount: vendorAmount,
-            commission: commissionAmount,
-            trigger: 'booking_completed',
-            completedAt: new Date().toISOString(),
+      // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
+      try {
+        const commissionRate = 15; // 15% default
+        const totalAmount = parseFloat(booking.total_amount || '0');
+        const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
+        const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+        
+        // Check if vendor_earnings record already exists for this booking
+        const existingEarnings = await query(
+          `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
+          [bookingId]
+        ).catch(() => ({ rows: [] }));
+        
+        const existingRows = (existingEarnings as any).rows || [];
+        
+        if (existingRows.length === 0 && vendorAmount > 0) {
+          // Create vendor_earnings record
+          await insert('vendor_earnings', {
+            vendor_id: booking.vendor_id,
+            booking_id: bookingId,
+            amount: vendorAmount,
+            commission_amount: commissionAmount,
+            total_amount: totalAmount,
+            commission_rate: commissionRate,
+            status: 'pending',
+            realized_at: new Date().toISOString(),
           });
-          console.log(`✅ [SETTLEMENT] Settlement queued for booking ${bookingId} after completion`);
-        } catch (error: any) {
-          console.error('❌ [SETTLEMENT] Failed to create earnings or queue settlement after booking completion:', error);
-          // Don't fail booking completion if earnings/settlement creation fails
+          
+          console.log(`✅ [EARNINGS] Created vendor_earnings for booking ${bookingId}: vendor gets ₹${vendorAmount} (commission: ₹${commissionAmount})`);
+          
+          // Update vendor's total earnings and pending payout (non-critical)
+          await query(
+            `UPDATE vendors 
+             SET pending_payout = COALESCE(pending_payout, 0) + $1,
+                 total_earnings = COALESCE(total_earnings, 0) + $1,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [vendorAmount, booking.vendor_id]
+          ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
         }
-      } else {
-        console.warn(`⚠️ [SETTLEMENT] Booking ${bookingId} completed but payment status is not 'paid' (${booking.payment_status}), settlement will be handled by payment verification or daily cron`);
+      } catch (error: any) {
+        console.error('❌ [EARNINGS] Failed to create earnings after booking completion:', error);
+        // Don't fail booking completion if earnings creation fails
       }
 
       return c.json({
@@ -466,6 +487,65 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           }
         }
 
+        // ✅ PRIORITY 3.5: Look up customer's addresses by customer_id (fallback for all bookings)
+        if (!destinationLocation && booking.customer_id) {
+          try {
+            const custAddresses = await query(
+              `SELECT id, latitude, longitude, coordinates, address_line1, city, state, pincode, is_default
+               FROM customer_addresses 
+               WHERE customer_id = $1 
+               ORDER BY is_default DESC NULLS LAST, created_at DESC 
+               LIMIT 5`,
+              [booking.customer_id]
+            );
+            const addrRows = (custAddresses as any).rows || [];
+            console.log(`[START-TRAVEL] Found ${addrRows.length} customer addresses for customer ${booking.customer_id}`);
+            
+            for (const addr of addrRows) {
+              let lat: number | null = null;
+              let lng: number | null = null;
+              
+              // Check direct lat/lng columns
+              if (addr.latitude != null && addr.longitude != null) {
+                lat = parseFloat(String(addr.latitude));
+                lng = parseFloat(String(addr.longitude));
+              }
+              
+              // Check coordinates JSONB
+              if (lat == null && addr.coordinates) {
+                try {
+                  const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                  lat = coords?.lat ?? coords?.latitude ?? null;
+                  lng = coords?.lng ?? coords?.longitude ?? null;
+                  if (lat != null) lat = parseFloat(String(lat));
+                  if (lng != null) lng = parseFloat(String(lng));
+                } catch { /* ignore */ }
+              }
+              
+              if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                destinationLocation = { latitude: lat, longitude: lng };
+                destinationSource = `customer_addresses (customer_id lookup, addr ${addr.id})`;
+                console.log(`[START-TRAVEL] Using customer address ${addr.id} as destination: ${lat}, ${lng}`);
+                
+                // Also update the booking with the coordinates and address_id for future lookups
+                try {
+                  await update('bookings', { id: bookingId }, {
+                    latitude: lat,
+                    longitude: lng,
+                    address_id: addr.id,
+                  });
+                  console.log(`[START-TRAVEL] Updated booking ${bookingId} with coordinates from customer address`);
+                } catch (updateErr: any) {
+                  console.warn(`[START-TRAVEL] Could not update booking with coordinates:`, updateErr?.message);
+                }
+                break;
+              }
+            }
+          } catch (custAddrErr: any) {
+            console.warn(`[START-TRAVEL] Error looking up customer addresses:`, custAddrErr?.message);
+          }
+        }
+
         // ✅ PRIORITY 4: Parse booking.address as JSON object or string
         if (!destinationLocation) {
           const rawAddress = booking.address || (booking as any).destination_address ||
@@ -541,6 +621,177 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           delivery_longitude: booking.delivery_longitude,
         });
 
+        // ✅ Build full destination address text from customer_addresses for display
+        let destinationAddressText: string | null = booking.address || null;
+        let destinationAddressDetails: any = null;
+        try {
+          const addrId = booking.address_id;
+          const custId = booking.customer_id;
+          let addrRow: any = null;
+          
+          // ✅ CRITICAL FIX: Use explicit SELECT query to ensure all columns are returned
+          if (addrId) {
+            const addrResult = await query(
+              `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                      flat_no, house_no, floor, street_name, apartment_name,
+                      latitude, longitude, coordinates, customer_id, is_default
+               FROM customer_addresses 
+               WHERE id = $1`,
+              [addrId]
+            );
+            if ((addrResult as any).rows?.length > 0) {
+              addrRow = (addrResult as any).rows[0];
+              console.log(`[START-TRAVEL] Found address by address_id ${addrId}:`, {
+                apartment_name: addrRow.apartment_name,
+                flat_no: addrRow.flat_no,
+                house_no: addrRow.house_no,
+                floor: addrRow.floor,
+                street_name: addrRow.street_name,
+              });
+            } else {
+              console.warn(`[START-TRAVEL] No address found with address_id ${addrId}`);
+            }
+          }
+          if (!addrRow && custId) {
+            // Try default address first
+            const custAddrResult = await query(
+              `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                      flat_no, house_no, floor, street_name, apartment_name,
+                      latitude, longitude, coordinates, customer_id, is_default
+               FROM customer_addresses 
+               WHERE customer_id = $1 
+               ORDER BY is_default DESC NULLS LAST, created_at DESC 
+               LIMIT 1`,
+              [custId]
+            );
+            if ((custAddrResult as any).rows?.length > 0) {
+              addrRow = (custAddrResult as any).rows[0];
+              console.log(`[START-TRAVEL] Found customer default address for customer_id ${custId}:`, {
+                address_id: addrRow.id,
+                apartment_name: addrRow.apartment_name,
+                flat_no: addrRow.flat_no,
+                house_no: addrRow.house_no,
+                floor: addrRow.floor,
+                street_name: addrRow.street_name,
+              });
+            } else {
+              // Fallback: Get any address for this customer
+              const allAddrResult = await query(
+                `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                        flat_no, house_no, floor, street_name, apartment_name,
+                        latitude, longitude, coordinates, customer_id, is_default
+                 FROM customer_addresses 
+                 WHERE customer_id = $1 
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [custId]
+              );
+              if ((allAddrResult as any).rows?.length > 0) {
+                addrRow = (allAddrResult as any).rows[0];
+                console.log(`[START-TRAVEL] Found any customer address for customer_id ${custId}:`, {
+                  address_id: addrRow.id,
+                  apartment_name: addrRow.apartment_name,
+                  flat_no: addrRow.flat_no,
+                  house_no: addrRow.house_no,
+                  floor: addrRow.floor,
+                  street_name: addrRow.street_name,
+                });
+              } else {
+                console.warn(`[START-TRAVEL] No address found for customer_id ${custId}`);
+              }
+            }
+          }
+          
+          // ✅ DEBUG: Log what we found
+          if (addrRow) {
+            console.log(`[START-TRAVEL] Address row data:`, JSON.stringify({
+              id: addrRow.id,
+              apartment_name: addrRow.apartment_name,
+              flat_no: addrRow.flat_no,
+              house_no: addrRow.house_no,
+              floor: addrRow.floor,
+              street_name: addrRow.street_name,
+              address_line1: addrRow.address_line1,
+              address_line2: addrRow.address_line2,
+            }, null, 2));
+          } else {
+            console.error(`[START-TRAVEL] ❌ No address row found! booking.address_id=${booking.address_id}, booking.customer_id=${booking.customer_id}`);
+          }
+          
+          // ✅ CRITICAL FIX: If address was found but lacks detailed fields, augment from customer's other addresses
+          if (addrRow && !addrRow.flat_no && !addrRow.house_no && !addrRow.floor && !addrRow.apartment_name && booking.customer_id) {
+            try {
+              const detailedAddrResult = await query(
+                `SELECT flat_no, house_no, floor, street_name, apartment_name
+                 FROM customer_addresses 
+                 WHERE customer_id = $1 
+                   AND (flat_no IS NOT NULL OR house_no IS NOT NULL OR floor IS NOT NULL OR apartment_name IS NOT NULL)
+                 ORDER BY is_default DESC NULLS LAST, created_at DESC 
+                 LIMIT 1`,
+                [booking.customer_id]
+              );
+              if ((detailedAddrResult as any).rows?.length > 0) {
+                const detAddr = (detailedAddrResult as any).rows[0];
+                addrRow.flat_no = detAddr.flat_no || addrRow.flat_no;
+                addrRow.house_no = detAddr.house_no || addrRow.house_no;
+                addrRow.floor = detAddr.floor || addrRow.floor;
+                addrRow.street_name = detAddr.street_name || addrRow.street_name;
+                addrRow.apartment_name = detAddr.apartment_name || addrRow.apartment_name;
+                console.log(`[START-TRAVEL] Augmented address with detailed fields from customer's other address:`, {
+                  flat_no: addrRow.flat_no, house_no: addrRow.house_no, floor: addrRow.floor,
+                  street_name: addrRow.street_name, apartment_name: addrRow.apartment_name,
+                });
+              }
+            } catch (augErr) {
+              console.warn('[START-TRAVEL] Could not augment address:', augErr);
+            }
+          }
+          
+          if (addrRow) {
+            const parts: string[] = [];
+            if (addrRow.apartment_name) parts.push(addrRow.apartment_name);
+            if (addrRow.flat_no && addrRow.house_no) parts.push(`Flat ${addrRow.flat_no}, House ${addrRow.house_no}`);
+            else if (addrRow.flat_no) parts.push(`Flat ${addrRow.flat_no}`);
+            else if (addrRow.house_no) parts.push(`House ${addrRow.house_no}`);
+            if (addrRow.floor) parts.push(`Floor ${addrRow.floor}`);
+            if (addrRow.street_name) parts.push(addrRow.street_name);
+            if (addrRow.address_line1) parts.push(addrRow.address_line1);
+            if (addrRow.address_line2) parts.push(addrRow.address_line2);
+            if (addrRow.landmark) parts.push(`Near ${addrRow.landmark}`);
+            if (addrRow.city) parts.push(addrRow.city);
+            if (addrRow.state) parts.push(addrRow.state);
+            if (addrRow.pincode) parts.push(addrRow.pincode);
+            
+            if (parts.length > 0) destinationAddressText = parts.filter(Boolean).join(', ');
+            destinationAddressDetails = {
+              apartmentName: addrRow.apartment_name || null,
+              flatNo: addrRow.flat_no || null,
+              houseNo: addrRow.house_no || null,
+              floor: addrRow.floor || null,
+              streetName: addrRow.street_name || null,
+              addressLine1: addrRow.address_line1 || null,
+              addressLine2: addrRow.address_line2 || null,
+              landmark: addrRow.landmark || null,
+              city: addrRow.city || null,
+              state: addrRow.state || null,
+              pincode: addrRow.pincode || null,
+              formattedAddress: destinationAddressText,
+            };
+            
+            // Also update the booking's address field if it was truncated
+            if (destinationAddressText && destinationAddressText !== booking.address) {
+              try {
+                await update('bookings', { id: bookingId }, { address: destinationAddressText });
+                console.log(`[START-TRAVEL] Updated booking address with full detailed address`);
+              } catch (updateAddrErr: any) {
+                console.warn('[START-TRAVEL] Could not update booking address:', updateAddrErr?.message);
+              }
+            }
+          }
+        } catch (addrTextErr: any) {
+          console.warn('[START-TRAVEL] Could not build destination address text:', addrTextErr?.message);
+        }
+
         // ✅ CRITICAL FIX: Use booking.vendor_id for tracking session (not resolvedVendorId)
         // The resolvedVendorId is for authorization only. The booking.vendor_id is the source of truth.
         const session = await startTracking(
@@ -595,6 +846,8 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           session,
           message: 'Travel started! Customer has been notified.',
           trackingEnabled: true,
+          destinationAddress: destinationAddressText,
+          destinationAddressDetails,
         });
 
       } catch (trackingError: any) {
@@ -881,43 +1134,100 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         try {
           console.log(`🚀 [GPS-AUTO-INIT] Auto-initiating GPS tracking for booking ${bookingId}`);
           
-          // Check if tracking session already exists
+          // Check if tracking session already exists (any status)
           const existingSessions = await select('gps_tracking_sessions', {
             booking_id: bookingId,
-            status: 'active',
           });
 
           if (existingSessions.length === 0) {
-            // Create tracking session
-            const { insert } = await import('../database/rds-connection');
-            const newSessions = await insert('gps_tracking_sessions', {
-              booking_id: bookingId,
-              vendor_id: vendorId,
-              status: 'active',
-              started_at: new Date(),
-              last_update: new Date(),
-              auto_initiated: true, // Mark as auto-initiated
-            });
-
-            console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
-
-            // Send notification to customer
-            try {
-              const { publishNotification } = await import('../utils/sns-client');
-              await publishNotification({
-                userId: booking.customer_id,
-                userType: 'customer',
-                type: 'booking_tracking_started',
-                title: 'Service Provider is on the way!',
-                message: `Your ${booking.service_name || 'service'} provider has started and GPS tracking is now active.`,
-                data: {
-                  bookingId,
-                  trackingSessionId: newSessions[0].id,
-                },
+            // Get destination coordinates from booking
+            let destinationLat: number | null = null;
+            let destinationLng: number | null = null;
+            
+            // Priority 1: Use booking.latitude/longitude
+            if (booking.latitude != null && booking.longitude != null) {
+              destinationLat = parseFloat(String(booking.latitude));
+              destinationLng = parseFloat(String(booking.longitude));
+            } 
+            // Priority 2: Use booking.delivery_latitude/longitude
+            else if ((booking as any).delivery_latitude != null && (booking as any).delivery_longitude != null) {
+              destinationLat = parseFloat(String((booking as any).delivery_latitude));
+              destinationLng = parseFloat(String((booking as any).delivery_longitude));
+            }
+            // Priority 3: Get from address_id if booking doesn't have coordinates
+            else if ((booking as any).address_id) {
+              try {
+                const addresses = await select('customer_addresses', { id: (booking as any).address_id });
+                if (addresses.length > 0) {
+                  const addr = addresses[0] as any;
+                  
+                  // Extract coordinates from address
+                  if (addr.coordinates) {
+                    try {
+                      const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                      destinationLat = coords?.lat ?? coords?.latitude ?? null;
+                      destinationLng = coords?.lng ?? coords?.longitude ?? null;
+                    } catch {
+                      // Ignore parse errors
+                    }
+                  }
+                  
+                  // Also check if address has separate latitude/longitude columns
+                  if (!destinationLat && addr.latitude) {
+                    destinationLat = parseFloat(String(addr.latitude));
+                  }
+                  if (!destinationLng && addr.longitude) {
+                    destinationLng = parseFloat(String(addr.longitude));
+                  }
+                  
+                  if (destinationLat && destinationLng) {
+                    console.log(`[GPS-AUTO-INIT] Extracted coordinates from address_id ${(booking as any).address_id}: ${destinationLat}, ${destinationLng}`);
+                  }
+                }
+              } catch (addrErr) {
+                console.warn('[GPS-AUTO-INIT] Could not fetch address by address_id:', addrErr);
+              }
+            }
+            
+            // Only create session if we have destination coordinates
+            if (destinationLat != null && destinationLng != null) {
+              // Create tracking session with proper status and columns
+              const { insert } = await import('../database/rds-connection');
+              const newSessions = await insert('gps_tracking_sessions', {
+                booking_id: bookingId,
+                vendor_id: vendorId,
+                customer_id: booking.customer_id,
+                status: 'in_transit', // Use 'in_transit' not 'active'
+                destination_latitude: destinationLat,
+                destination_longitude: destinationLng,
+                is_active: true,
+                started_at: new Date(),
+                last_update_at: new Date(), // Use 'last_update_at' not 'last_update'
+                created_at: new Date(),
               });
-            } catch (notifError) {
-              console.error('Failed to send tracking notification:', notifError);
-              // Non-critical, continue
+
+              console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
+
+              // Send notification to customer
+              try {
+                const { publishNotification } = await import('../utils/sns-client');
+                await publishNotification({
+                  userId: booking.customer_id,
+                  userType: 'customer',
+                  type: 'booking_tracking_started',
+                  title: 'Service Provider is on the way!',
+                  message: `Your ${booking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+                  data: {
+                    bookingId,
+                    trackingSessionId: newSessions[0].id,
+                  },
+                });
+              } catch (notifError) {
+                console.error('Failed to send tracking notification:', notifError);
+                // Non-critical, continue
+              }
+            } else {
+              console.warn(`⚠️ [GPS-AUTO-INIT] Cannot create tracking session: booking ${bookingId} has no destination coordinates`);
             }
           }
         } catch (gpsError) {

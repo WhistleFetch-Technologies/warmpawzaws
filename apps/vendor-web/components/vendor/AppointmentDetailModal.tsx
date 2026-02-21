@@ -246,9 +246,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         // Service info
         serviceName: rawBooking.serviceName || 'Service',
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
-        // ✅ FIX: Build location from delivery/customer address or vendor (for GPS: home = customer address)
-        location: rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 
+        // ✅ FIX: Build location from detailed address → API location → customer/vendor address fallback
+        location: rawBooking.customerAddressDetails?.formattedAddress || rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 
           (rawBooking.serviceStyle === 'at_home' || rawBooking.serviceType === 'at_home' ? 'Home Visit' : 'At Clinic'),
+        // ✅ Detailed address fields for GPS tracking display
+        customerAddressDetails: rawBooking.customerAddressDetails || null,
         status: rawBooking.status || 'pending',
         // Timestamps
         createdAt: rawBooking.createdAt,
@@ -759,6 +761,15 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               }
             }
             
+            // ✅ Update booking location with full address from start-travel response
+            if (trackingResponse?.destinationAddressDetails && booking) {
+              setBooking({
+                ...booking,
+                location: trackingResponse.destinationAddress || booking.location,
+                customerAddressDetails: trackingResponse.destinationAddressDetails,
+              });
+            }
+            
             // Start watching position (use ref in callback so session ID is available immediately)
             const id = navigator.geolocation.watchPosition(
               (pos) => {
@@ -1155,6 +1166,14 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   }, [showTrackingModal, currentLocation, destinationLocation, correctedDestination]);
   
+  // ✅ Refresh booking details when tracking modal opens to ensure address details are loaded
+  useEffect(() => {
+    if (showTrackingModal && bookingId) {
+      // Refresh booking to get latest address details (in case they weren't loaded initially)
+      loadAppointmentDetails().catch(console.error);
+    }
+  }, [showTrackingModal, bookingId]);
+  
   // ✅ Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -1431,9 +1450,33 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   
                   <div className="flex items-center gap-3">
                     <MapPin className="w-5 h-5 text-gray-400" />
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm text-gray-500">Location</p>
-                      <p className="font-medium text-gray-900">{booking.location}</p>
+                      <p className="font-medium text-gray-900 break-words">{booking.location}</p>
+                      {/* Display detailed address fields if available */}
+                      {(booking as any).customerAddressDetails && (
+                        <div className="mt-2 text-xs text-gray-600 space-y-0.5">
+                          {(booking as any).customerAddressDetails.apartmentName && (
+                            <p>🏢 {(booking as any).customerAddressDetails.apartmentName}</p>
+                          )}
+                          {((booking as any).customerAddressDetails.flatNo || (booking as any).customerAddressDetails.houseNo) && (
+                            <p>
+                              {(booking as any).customerAddressDetails.flatNo && `Flat ${(booking as any).customerAddressDetails.flatNo}`}
+                              {(booking as any).customerAddressDetails.flatNo && (booking as any).customerAddressDetails.houseNo && ', '}
+                              {(booking as any).customerAddressDetails.houseNo && `House ${(booking as any).customerAddressDetails.houseNo}`}
+                            </p>
+                          )}
+                          {(booking as any).customerAddressDetails.floor && (
+                            <p>📍 Floor {(booking as any).customerAddressDetails.floor}</p>
+                          )}
+                          {(booking as any).customerAddressDetails.streetName && (
+                            <p>🛣️ {(booking as any).customerAddressDetails.streetName}</p>
+                          )}
+                          {(booking as any).customerAddressDetails.landmark && (
+                            <p>📍 Near {(booking as any).customerAddressDetails.landmark}</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2223,11 +2266,42 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
               </div>
               
-              {/* Destination */}
+              {/* Destination - Full detailed address for GPS navigation */}
               {booking && (
                 <div className="bg-blue-50 rounded-xl p-3">
                   <span className="text-xs font-medium text-blue-600">Destination</span>
-                  <p className="text-sm font-medium text-gray-900 mt-1">{booking.location || booking.customerName}</p>
+                  {(booking as any).customerAddressDetails ? (
+                    <div className="mt-1 space-y-1">
+                      {(booking as any).customerAddressDetails.apartmentName && (
+                        <p className="text-sm font-semibold text-gray-900">{(booking as any).customerAddressDetails.apartmentName}</p>
+                      )}
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-700">
+                        {(booking as any).customerAddressDetails.flatNo && (
+                          <span>Flat {(booking as any).customerAddressDetails.flatNo}</span>
+                        )}
+                        {(booking as any).customerAddressDetails.houseNo && (
+                          <span>House {(booking as any).customerAddressDetails.houseNo}</span>
+                        )}
+                        {(booking as any).customerAddressDetails.floor && (
+                          <span>Floor {(booking as any).customerAddressDetails.floor}</span>
+                        )}
+                      </div>
+                      {(booking as any).customerAddressDetails.streetName && (
+                        <p className="text-xs text-gray-700">{(booking as any).customerAddressDetails.streetName}</p>
+                      )}
+                      <p className="text-xs text-gray-600">
+                        {[(booking as any).customerAddressDetails.addressLine1, (booking as any).customerAddressDetails.addressLine2].filter(Boolean).join(', ')}
+                      </p>
+                      {(booking as any).customerAddressDetails.landmark && (
+                        <p className="text-xs text-gray-500">Near {(booking as any).customerAddressDetails.landmark}</p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        {[(booking as any).customerAddressDetails.city, (booking as any).customerAddressDetails.state, (booking as any).customerAddressDetails.pincode].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium text-gray-900 mt-1 break-words">{booking.location || booking.customerName}</p>
+                  )}
                 </div>
               )}
               

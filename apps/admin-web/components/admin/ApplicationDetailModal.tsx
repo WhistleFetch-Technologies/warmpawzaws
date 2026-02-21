@@ -156,7 +156,7 @@ export function ApplicationDetailModal({
     const docs: VendorDocument[] = [];
     const uploadedDocs = application.uploadedDocuments || application.uploaded_documents;
     const customFields = application.customFields || application.formData || {};
-    
+
     if (uploadedDocs) {
       try {
         const parsed = typeof uploadedDocs === 'string' ? JSON.parse(uploadedDocs) : uploadedDocs;
@@ -211,14 +211,14 @@ export function ApplicationDetailModal({
       alert('Document URL not available');
       return;
     }
-    
+
     try {
       // If the URL is already a presigned URL (from the backend), use it directly
       if (doc.url.includes('X-Amz-Signature') || doc.url.includes('amazonaws.com')) {
         window.open(doc.url, '_blank');
         return;
       }
-      
+
       // Otherwise, get a fresh presigned URL
       const response = await apiClient.get<any>(`/storage/refresh-url?url=${encodeURIComponent(doc.url)}`);
       const viewUrl = response.signedUrl || doc.url;
@@ -235,10 +235,10 @@ export function ApplicationDetailModal({
       alert('Document URL not available');
       return;
     }
-    
+
     try {
       let downloadUrl = doc.url;
-      
+
       // Get fresh presigned URL if needed
       if (!doc.url.includes('X-Amz-Signature')) {
         try {
@@ -248,18 +248,18 @@ export function ApplicationDetailModal({
           // Use original URL if refresh fails
         }
       }
-      
+
       // Fetch and download the file
       const response = await fetch(downloadUrl);
       const blob = await response.blob();
-      
+
       // Determine file extension
       const contentType = response.headers.get('content-type') || '';
       let ext = 'pdf';
       if (contentType.includes('image/jpeg')) ext = 'jpg';
       else if (contentType.includes('image/png')) ext = 'png';
       else if (contentType.includes('application/pdf')) ext = 'pdf';
-      
+
       // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -428,31 +428,28 @@ export function ApplicationDetailModal({
         <div className="px-0 border-b border-gray-200 flex gap-4">
           <button
             onClick={() => setActiveTab('details')}
-            className={`px-4 py-0 text-sm border-b-2 transition-colors ${
-              activeTab === 'details'
+            className={`px-4 py-0 text-sm border-b-2 transition-colors ${activeTab === 'details'
                 ? 'border-[#FF8C42] text-[#FF8C42]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+              }`}
           >
             Vendor Details
           </button>
           <button
             onClick={() => setActiveTab('documents')}
-            className={`px-4 py-0 text-sm border-b-2 transition-colors ${
-              activeTab === 'documents'
+            className={`px-4 py-0 text-sm border-b-2 transition-colors ${activeTab === 'documents'
                 ? 'border-[#FF8C42] text-[#FF8C42]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+              }`}
           >
             Documents & Certificates
           </button>
           <button
             onClick={() => setActiveTab('vendor_specific')}
-            className={`px-4 py-0 text-sm border-b-2 transition-colors ${
-              activeTab === 'vendor_specific'
+            className={`px-4 py-0 text-sm border-b-2 transition-colors ${activeTab === 'vendor_specific'
                 ? 'border-[#FF8C42] text-[#FF8C42]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+              }`}
           >
             Vendor-specific details
           </button>
@@ -500,7 +497,14 @@ export function ApplicationDetailModal({
                   <InfoRow label="Vendor Type" value={vendorType === 'solo' ? 'Solo Provider' : 'Business'} />
                   <InfoRow label="GST Number" value={customFields.gstNumber || application.gstNumber || application.gst_number || 'Not provided'} />
                   <InfoRow label="PAN Number" value={customFields.panNumber || application.panNumber || application.pan_number || 'Not provided'} />
-                  <InfoRow label="License Number" value={customFields.licenseNumber || application.licenseNumber || application.registration_number || 'Not provided'} />
+                  <InfoRow label="License Number" value={
+                    customFields.licenseNumber ||
+                    customFields.vciRegistrationNumber ||
+                    customFields.stateCouncilRegistration ||
+                    application.licenseNumber ||
+                    application.registration_number ||
+                    'Not provided'
+                  } />
                   {application.submittedAt && <InfoRow label="Submitted At" value={new Date(application.submittedAt).toLocaleDateString()} />}
                 </div>
               </div>
@@ -516,7 +520,7 @@ export function ApplicationDetailModal({
                   {documentsLoading ? 'Loading...' : 'Refresh'}
                 </Button>
               </div>
-              
+
               {documentsLoading ? (
                 <div className="text-center py-8">
                   <RefreshCw className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
@@ -531,17 +535,16 @@ export function ApplicationDetailModal({
               ) : (
                 <div className="grid grid-cols-1 gap-3">
                   {documents.map((doc, idx) => {
-                    const isImage = doc.type.toLowerCase().includes('photo') || 
-                                   doc.type.toLowerCase().includes('image') ||
-                                   doc.type.toLowerCase().includes('aadhaar');
+                    const isImage = doc.type.toLowerCase().includes('photo') ||
+                      doc.type.toLowerCase().includes('image') ||
+                      doc.type.toLowerCase().includes('aadhaar');
                     const displayName = doc.name || getDocumentLabel(doc.type);
-                    
+
                     return (
                       <div key={doc.id || idx} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between hover:border-[#FF8C42]/30 hover:shadow-sm transition-all">
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                            isImage ? 'bg-blue-50' : 'bg-orange-50'
-                          }`}>
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${isImage ? 'bg-blue-50' : 'bg-orange-50'
+                            }`}>
                             {isImage ? (
                               <ImageIcon className="w-6 h-6 text-blue-500" />
                             ) : (
@@ -627,7 +630,7 @@ export function ApplicationDetailModal({
               Request Info
             </Button>
           </div>
-          
+
           <div className="flex gap-3">
             <Button
               variant="outline"

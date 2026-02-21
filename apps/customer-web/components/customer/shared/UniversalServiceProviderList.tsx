@@ -606,17 +606,8 @@ export function UniversalServiceProviderList({
       if (response.success) {
         let providerData = response.providers || response.vendors || [];
         
-        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
-        // Also filter out staff members from business vendors
-        if (serviceStyle === 'at_home') {
-          providerData = providerData.filter((p: any) => {
-            // Filter out if vendorType is business
-            if (p.vendorType === 'business') return false;
-            // Also filter out staff members from business vendors (check vendorId if it's a business)
-            // Note: This is a safety check - backend should already filter these
-            return true;
-          });
-        }
+        // ✅ FIX: Backend now correctly returns business/clinic vendors with at_home services
+        // No need to filter them out - clinics can offer at_home services (e.g., vaccinations at home)
         
         // Clean provider names to remove trailing IDs
         const cleanedProviders = providerData.map((p: any) => ({

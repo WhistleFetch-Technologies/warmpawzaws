@@ -115,10 +115,33 @@ export function getApiBaseUrl(): string {
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
 export function isUatMode(): boolean {
-  if (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true) {
+  // 1. Check runtime config first (highest priority - set at deploy time)
+  if (typeof window !== 'undefined') {
+    const cfg = getRuntimeConfig();
+    if (cfg.uatMode !== undefined) {
+      return cfg.uatMode === true;
+    }
+    // If runtime config has production environment, disable UAT mode
+    if (cfg.environment === 'production') {
+      return false;
+    }
+  }
+  
+  // 2. Check NEXT_PUBLIC_ENVIRONMENT - if production, disable UAT
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT === 'production') {
+    return false;
+  }
+  
+  // 3. Check explicit UAT mode flag
+  if (process.env.NEXT_PUBLIC_UAT_MODE === 'false') {
+    return false;
+  }
+  if (process.env.NEXT_PUBLIC_UAT_MODE === 'true') {
     return true;
   }
-  return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+  
+  // 4. Fallback: Only enable UAT in development (when not explicitly set to production)
+  return process.env.NODE_ENV === 'development';
 }
 
 const UAT_MODE = isUatMode();

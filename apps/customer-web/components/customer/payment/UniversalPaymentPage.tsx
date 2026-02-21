@@ -1119,6 +1119,7 @@ export function UniversalPaymentPage({
         let addressPincode: string | undefined;
         let addressLat: number | undefined;
         let addressLng: number | undefined;
+        let addressIdForBooking: string | undefined = undefined;
         if (serviceStyle === 'at_home' && (selectedAddress || address)) {
           const addr = selectedAddress || address;
           if (typeof addr === 'string') {
@@ -1134,6 +1135,18 @@ export function UniversalPaymentPage({
             if (typeof addr.latitude === 'number' && typeof addr.longitude === 'number') {
               addressLat = addr.latitude;
               addressLng = addr.longitude;
+            }
+            // ✅ FIX: Also extract coordinates from JSON coordinates field
+            if (!addressLat && !addressLng && addr.coordinates) {
+              try {
+                const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                if (coords?.lat) addressLat = Number(coords.lat);
+                if (coords?.lng) addressLng = Number(coords.lng);
+              } catch { /* ignore */ }
+            }
+            // ✅ CRITICAL FIX: Pass the address ID so the backend can look up detailed fields (flat, house, floor, building)
+            if (addr.id && addr.id !== 'profile') {
+              addressIdForBooking = addr.id;
             }
           }
         }
@@ -1266,6 +1279,9 @@ export function UniversalPaymentPage({
         if (addressPincode !== undefined) bookingPayload.pincode = addressPincode;
         if (addressLat !== undefined) bookingPayload.latitude = addressLat;
         if (addressLng !== undefined) bookingPayload.longitude = addressLng;
+        // ✅ CRITICAL FIX: Pass addressId so backend can store address_id in booking
+        // This allows vendor-side to look up detailed address fields (flat, house, floor, building)
+        if (addressIdForBooking) bookingPayload.addressId = addressIdForBooking;
         
         console.log('📋 Creating booking with validated payload:', {
           ...bookingPayload,

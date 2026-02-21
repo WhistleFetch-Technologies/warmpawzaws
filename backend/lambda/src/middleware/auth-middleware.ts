@@ -159,7 +159,8 @@ async function extractAuth(c: Context): Promise<{
     const result = await extractAndVerifyAuthToken(headers);
     
     if (!result.valid || !result.payload) {
-      return { valid: false, error: 'Invalid or expired token' };
+      console.warn(`[AuthMiddleware] Token verification failed: ${result.error || 'unknown error'}`);
+      return { valid: false, error: result.error || 'Invalid or expired token' };
     }
 
     const payload = result.payload;
@@ -167,17 +168,22 @@ async function extractAuth(c: Context): Promise<{
     const groups = payload['cognito:groups'] as string[] | undefined;
     const userType = payload['custom:user_type'] as string | undefined;
     const userRole = groups?.[0] || userType;
+    
+    // ✅ FIX: Detect if this is a UAT token (issued by warmpawz-uat)
+    const isUATToken = payload.iss === 'warmpawz-uat' || payload.issuer === 'warmpawz-uat';
 
+    console.log(`[AuthMiddleware] Token verified successfully - userId: ${userId}, role: ${userRole}, isUAT: ${isUATToken}`);
+    
     return {
       valid: true,
       userId,
       userRole,
       groups,
-      isUAT: false,
+      isUAT: isUATToken,
     };
-  } catch (error) {
-    console.error('[AuthMiddleware] Token verification failed:', error);
-    return { valid: false, error: 'Token verification failed' };
+  } catch (error: any) {
+    console.error('[AuthMiddleware] Token verification failed:', error.message || error);
+    return { valid: false, error: `Token verification failed: ${error.message || 'unknown error'}` };
   }
 }
 

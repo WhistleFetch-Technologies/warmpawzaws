@@ -415,12 +415,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         
         // If no role_id, try to get from vendor_roles table
         if (!roleId) {
-          const vendorRoles = await query(
-            `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
-            [vendorId]
-          );
-          if (vendorRoles.rows.length > 0) {
-            roleId = vendorRoles.rows[0].role_id;
+          try {
+            const vendorRoles = await query(
+              `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
+              [vendorId]
+            );
+            if (vendorRoles.rows.length > 0) {
+              roleId = vendorRoles.rows[0].role_id;
+            }
+          } catch (error: any) {
+            // ✅ FIX: vendor_roles table may not exist - gracefully skip
+            console.warn('[BOOKING] vendor_roles table not found or query failed, skipping role lookup:', error.message);
           }
         }
         
@@ -530,7 +535,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
-             AND staff_id = $4
+             AND staff_id = $3
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
              FOR UPDATE`
           : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
@@ -557,21 +562,29 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         
         // Get buffer time for informational purposes (logging, scheduling spacing, etc.)
         // But do NOT use it in overlap calculations
+        // ✅ CRITICAL FIX: Use SAVEPOINTs for optional queries inside transaction
+        // In PostgreSQL, a failed query inside a transaction aborts the ENTIRE transaction
+        // even if JavaScript catches the error. SAVEPOINTs allow recovery from errors.
         try {
           let minNoticeMinutes = 30;
           try {
-            const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
+            await client.query('SAVEPOINT sp_scheduling_policies');
+            const policiesResult = await client.query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`);
+            await client.query('RELEASE SAVEPOINT sp_scheduling_policies');
             const bufferPolicy = policiesResult.rows?.find((p: any) => p.policy_type === 'buffer_time');
             if (bufferPolicy?.policy_config) {
               const cfg = bufferPolicy.policy_config as any;
               minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
             }
-          } catch (_) { /* ignore */ }
+          } catch (_) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_scheduling_policies').catch(() => {});
+          }
           
           const dayOfWeek = new Date(bookingDate).getDay();
           try {
+            await client.query('SAVEPOINT sp_vendor_availability');
             const va2Result = await client.query(
-              `SELECT lead_time_by_style, buffer_time, buffer_time_minutes
+              `SELECT lead_time_by_style, buffer_time
                FROM vendor_availability_v2
                WHERE vendor_id = $1
                  AND day_of_week = $2
@@ -579,6 +592,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                LIMIT 1`,
               [vendorId, dayOfWeek]
             );
+            await client.query('RELEASE SAVEPOINT sp_vendor_availability');
             
             if (va2Result.rows && va2Result.rows.length > 0) {
               const row = va2Result.rows[0];
@@ -587,10 +601,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 : {};
               bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && leadByStyle[normalizedServiceStyle] != null)
                 ? Number(leadByStyle[normalizedServiceStyle])
-                : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+                : Number(row.buffer_time) || minNoticeMinutes;
               console.log(`[BOOKING] ${normalizedServiceStyle}: Found buffer=${bufferMinutes}min (informational only, not used in overlap check)`);
             }
           } catch (va2Err: any) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_vendor_availability').catch(() => {});
             // Ignore - buffer is informational only
           }
         } catch (err) {
@@ -696,27 +711,46 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (packagePurchaseId) {
           try {
-            const packageResult = await query(
-              `SELECT id, remaining_sessions, unlimited_usage, total_sessions
-               FROM package_purchases
-               WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
-                 AND status = 'active'
-                 AND (expires_at IS NULL OR expires_at > NOW())
-                 AND (remaining_sessions > 0 OR unlimited_usage = true)`,
-              [packagePurchaseId, customerId, vendorId]
+            // ✅ FIX: Check if package_purchases table exists before querying
+            const tableCheck = await query(
+              `SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'package_purchases'
+              ) as exists`
             );
-            if (packageResult.rows?.length > 0) {
-              const pkg = packageResult.rows[0];
-              const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
-              packagePurchaseIdToUse = pkg.id;
-              packageSessionNumberToUse = sessionsUsed + 1;
-              pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
-              isPackageBooking = true;
-              finalAmount = 0;
-              console.log(`[BOOKING] ✅ Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount ₹0.`);
+            
+            if (!tableCheck.rows[0]?.exists) {
+              console.warn('[BOOKING] package_purchases table not found, skipping package booking');
+            } else {
+              const packageResult = await query(
+                `SELECT id, remaining_sessions, unlimited_usage, total_sessions
+                 FROM package_purchases
+                 WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
+                   AND status = 'active'
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                   AND (remaining_sessions > 0 OR unlimited_usage = true)`,
+                [packagePurchaseId, customerId, vendorId]
+              );
+              if (packageResult.rows?.length > 0) {
+                const pkg = packageResult.rows[0];
+                const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
+                packagePurchaseIdToUse = pkg.id;
+                packageSessionNumberToUse = sessionsUsed + 1;
+                pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
+                isPackageBooking = true;
+                finalAmount = 0;
+                console.log(`[BOOKING] ✅ Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount ₹0.`);
+              }
             }
-          } catch (pkgErr) {
-            console.warn('[BOOKING] Package check failed:', pkgErr);
+          } catch (error: any) {
+            // ✅ FIX: Handle table missing errors gracefully
+            const errorMessage = error?.message || String(error);
+            if (errorMessage.includes('does not exist') || errorMessage.includes('relation') || errorMessage.includes('package_purchases')) {
+              console.warn('[BOOKING] package_purchases table not found or query failed, skipping package booking:', errorMessage);
+            } else {
+              console.warn('[BOOKING] Error checking package purchase, skipping package booking:', errorMessage);
+            }
           }
         }
 
@@ -772,6 +806,153 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
         const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
         
+        // ✅ CRITICAL FIX: Extract coordinates from address_id or address field for GPS tracking
+        let bookingLatitude: number | null = null;
+        let bookingLongitude: number | null = null;
+        let addressIdToStore: string | null = null;
+        
+        // Priority 1: Check if address_id is provided in request
+        const addressIdFromRequest = body.addressId || body.address_id;
+        if (addressIdFromRequest) {
+          try {
+            const addresses = await select('customer_addresses', { id: addressIdFromRequest });
+            if (addresses.length > 0) {
+              const addr = addresses[0] as any;
+              addressIdToStore = addressIdFromRequest;
+              
+              // Extract coordinates from address
+              if (addr.coordinates) {
+                try {
+                  const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                  bookingLatitude = coords?.lat ?? coords?.latitude ?? null;
+                  bookingLongitude = coords?.lng ?? coords?.longitude ?? null;
+                } catch {
+                  // Ignore parse errors
+                }
+              }
+              
+              // Also check if address has separate latitude/longitude columns
+              if (!bookingLatitude && addr.latitude) {
+                bookingLatitude = parseFloat(String(addr.latitude));
+              }
+              if (!bookingLongitude && addr.longitude) {
+                bookingLongitude = parseFloat(String(addr.longitude));
+              }
+              
+              console.log(`[BOOKING] Extracted coordinates from address_id ${addressIdFromRequest}: ${bookingLatitude}, ${bookingLongitude}`);
+            }
+          } catch (addrErr) {
+            console.warn('[BOOKING] Could not fetch address by address_id:', addrErr);
+          }
+        }
+        
+        // Priority 2: Extract coordinates from address field if it's a JSON object
+        if (!bookingLatitude && address) {
+          try {
+            const addressObj = typeof address === 'string' ? JSON.parse(address) : address;
+            if (addressObj && typeof addressObj === 'object') {
+              bookingLatitude = addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude ?? null;
+              bookingLongitude = addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude ?? null;
+              
+              if (bookingLatitude) bookingLatitude = parseFloat(String(bookingLatitude));
+              if (bookingLongitude) bookingLongitude = parseFloat(String(bookingLongitude));
+              
+              if (bookingLatitude && bookingLongitude) {
+                console.log(`[BOOKING] Extracted coordinates from address field: ${bookingLatitude}, ${bookingLongitude}`);
+              }
+            }
+          } catch {
+            // Address is not JSON, ignore
+          }
+        }
+
+        // ✅ Priority 3: If still no coordinates, look up customer's saved addresses by customer_id
+        if (!bookingLatitude && customerId) {
+          try {
+            const custAddresses = await client.query(
+              `SELECT id, latitude, longitude, coordinates, is_default
+               FROM customer_addresses 
+               WHERE customer_id = $1 
+               ORDER BY is_default DESC NULLS LAST, created_at DESC 
+               LIMIT 5`,
+              [customerId]
+            );
+            if (custAddresses.rows.length > 0) {
+              console.log(`[BOOKING] Found ${custAddresses.rows.length} saved addresses for customer ${customerId}`);
+              for (const addr of custAddresses.rows) {
+                let lat: number | null = null;
+                let lng: number | null = null;
+                
+                // Check direct lat/lng columns
+                if (addr.latitude != null && addr.longitude != null) {
+                  lat = parseFloat(String(addr.latitude));
+                  lng = parseFloat(String(addr.longitude));
+                }
+                
+                // Check coordinates JSONB
+                if (lat == null && addr.coordinates) {
+                  try {
+                    const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                    lat = coords?.lat ?? coords?.latitude ?? null;
+                    lng = coords?.lng ?? coords?.longitude ?? null;
+                    if (lat != null) lat = parseFloat(String(lat));
+                    if (lng != null) lng = parseFloat(String(lng));
+                  } catch { /* ignore */ }
+                }
+                
+                if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                  bookingLatitude = lat;
+                  bookingLongitude = lng;
+                  if (!addressIdToStore) {
+                    addressIdToStore = addr.id;
+                  }
+                  console.log(`[BOOKING] Using customer address ${addr.id} coordinates: ${lat}, ${lng}`);
+                  break;
+                }
+              }
+            }
+          } catch (custAddrErr: any) {
+            console.warn(`[BOOKING] Could not look up customer addresses:`, custAddrErr?.message);
+          }
+        }
+
+        // ✅ CRITICAL FIX: Build comprehensive address text from customer_addresses if available
+        let fullAddressText = address;
+        if (addressIdToStore) {
+          try {
+            const addrRows = await select('customer_addresses', { id: addressIdToStore });
+            if (addrRows.length > 0) {
+              const addrRec = addrRows[0] as any;
+              const addrParts: string[] = [];
+              if (addrRec.apartment_name) addrParts.push(addrRec.apartment_name);
+              if (addrRec.flat_no && addrRec.house_no) {
+                addrParts.push(`Flat ${addrRec.flat_no}, House ${addrRec.house_no}`);
+              } else if (addrRec.flat_no) {
+                addrParts.push(`Flat ${addrRec.flat_no}`);
+              } else if (addrRec.house_no) {
+                addrParts.push(`House ${addrRec.house_no}`);
+              }
+              if (addrRec.floor) addrParts.push(`Floor ${addrRec.floor}`);
+              if (addrRec.street_name) addrParts.push(addrRec.street_name);
+              if (addrRec.address_line1) addrParts.push(addrRec.address_line1);
+              if (addrRec.address_line2) addrParts.push(addrRec.address_line2);
+              if (addrRec.landmark) addrParts.push(`Near ${addrRec.landmark}`);
+              if (addrRec.city) addrParts.push(addrRec.city);
+              if (addrRec.state) addrParts.push(addrRec.state);
+              if (addrRec.pincode) addrParts.push(addrRec.pincode);
+              
+              if (addrParts.length > 0) {
+                fullAddressText = addrParts.filter(Boolean).join(', ');
+                console.log(`[BOOKING] Built full address from customer_addresses: ${fullAddressText}`);
+              }
+            }
+          } catch (addrBuildErr) {
+            console.warn('[BOOKING] Could not build full address from customer_addresses:', addrBuildErr);
+          }
+        }
+
+        // ✅ CRITICAL FIX: Only include columns that are guaranteed to exist in the bookings table
+        // Core columns from the base schema (always present)
         const bookingData: Record<string, any> = {
           customer_id: customerId,
           vendor_id: vendorId,
@@ -779,30 +960,40 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           booking_date: bookingDate,
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
-          address: address,
+          address: fullAddressText,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
           status: isPackageBooking ? 'confirmed' : 'pending',
-          payment_status: paymentStatus, // ✅ completed for package, paid for subscription
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
-          subscription_id: subscriptionId, // ✅ Track subscription used
-          subscription_booking: isSubscriptionBooking, // ✅ Flag for subscription booking
-          // ✅ NEW: Store pet_id properly in its own column
+          // Coordinates from base schema
+          latitude: bookingLatitude,
+          longitude: bookingLongitude,
+        };
+        
+        // ✅ FIX: Optional columns that may or may not exist in prod DB
+        // These are added to a separate list and attempted; if INSERT fails due to
+        // missing column, we retry without them
+        const optionalColumns: Record<string, any> = {
+          payment_status: paymentStatus,
+          subscription_id: subscriptionId,
+          subscription_booking: isSubscriptionBooking,
           pet_id: petId || null,
-          // ✅ NEW: Store selected services as JSONB
           selected_services: selectedServices && selectedServices.length > 0 
             ? JSON.stringify(selectedServices) 
             : null,
-          // ✅ NEW: Store total duration
           total_duration_minutes: totalDurationMinutes || null,
-          // ✅ CRITICAL: Store duration_minutes (service duration only, NO buffer time)
-          // For ALL services: duration_minutes = service duration (exact, no buffer)
-          // Buffer time is informational only (travel/prep/setup) and is NOT stored or used in overlap checks
-          // Buffer time is only used for scheduling spacing, not for blocking adjacent slots
-          duration_minutes: bookingDuration, // ✅ Service duration only, no buffer for ANY service
-          // ✅ Store customer phone for easy access
+          duration_minutes: bookingDuration,
           customer_phone: customerPhone || null,
+          // address_id, delivery_latitude, delivery_longitude may not exist in prod
+          address_id: addressIdToStore,
+          delivery_latitude: bookingLatitude,
+          delivery_longitude: bookingLongitude,
         };
+        
+        // Add optional columns to bookingData
+        for (const [key, value] of Object.entries(optionalColumns)) {
+          bookingData[key] = value;
+        }
 
         // ✅ Phase 2.3: Add roomId if provided (for boarding/resort bookings)
         if (roomId) {
@@ -859,37 +1050,89 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
-        // Insert booking
-        const columns = Object.keys(bookingData);
-        const values = Object.values(bookingData);
-        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+        // ✅ CRITICAL FIX: Insert booking with automatic column fallback
+        // If INSERT fails due to missing columns, retry without them
+        let insertedBooking: any = null;
+        let insertAttempt = 0;
+        let currentBookingData = { ...bookingData };
+        
+        while (insertAttempt < 5) {
+          insertAttempt++;
+          try {
+            await client.query('SAVEPOINT sp_booking_insert');
+            const columns = Object.keys(currentBookingData).filter(k => currentBookingData[k] !== undefined);
+            const values = columns.map(k => currentBookingData[k]);
+            const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
 
-        const insertResult = await client.query(
-          `INSERT INTO bookings (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
-          values
-        );
-
-        const insertedBooking = insertResult.rows[0];
+            console.log(`[BOOKING] INSERT attempt ${insertAttempt}, columns: ${columns.join(', ')}`);
+            
+            const insertResult = await client.query(
+              `INSERT INTO bookings (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+              values
+            );
+            await client.query('RELEASE SAVEPOINT sp_booking_insert');
+            insertedBooking = insertResult.rows[0];
+            break; // Success!
+          } catch (insertError: any) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_booking_insert').catch(() => {});
+            const errMsg = insertError?.message || '';
+            
+            // Check if error is about a missing column
+            const colMatch = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/);
+            if (colMatch && colMatch[1]) {
+              const missingCol = colMatch[1];
+              console.warn(`[BOOKING] Column "${missingCol}" does not exist in bookings table, removing and retrying (attempt ${insertAttempt})`);
+              delete currentBookingData[missingCol];
+              continue; // Retry without this column
+            }
+            
+            // Not a missing column error, re-throw
+            throw insertError;
+          }
+        }
+        
+        if (!insertedBooking) {
+          throw new Error('Failed to insert booking after removing missing columns');
+        }
 
         // ✅ Package booking: deduct session and log usage inside same transaction
         if (packagePurchaseIdToUse && pkgForDeduction && insertedBooking?.id) {
-          if (!pkgForDeduction.unlimited_usage) {
-            await client.query(
-              `UPDATE package_purchases SET remaining_sessions = remaining_sessions - 1, updated_at = NOW() WHERE id = $1`,
-              [packagePurchaseIdToUse]
-            );
+          // ✅ FIX: package_purchases table may not exist - gracefully skip package update
+          // ✅ CRITICAL: Use SAVEPOINT to prevent transaction abort if table doesn't exist
+          try {
+            await client.query('SAVEPOINT sp_package_purchases');
+            if (!pkgForDeduction.unlimited_usage) {
+              await client.query(
+                `UPDATE package_purchases SET remaining_sessions = remaining_sessions - 1, updated_at = NOW() WHERE id = $1`,
+                [packagePurchaseIdToUse]
+              );
+            }
+            await client.query('RELEASE SAVEPOINT sp_package_purchases');
+          } catch (error: any) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_package_purchases').catch(() => {});
+            console.warn('[BOOKING] package_purchases table not found or update failed, skipping package deduction:', error.message);
           }
-          await client.query(
-            `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
-             VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
-            [
-              packagePurchaseIdToUse,
-              insertedBooking.id,
-              packageSessionNumberToUse,
-              pkgForDeduction.remaining_sessions,
-              pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
-            ]
-          );
+          
+          // ✅ FIX: package_usage_log table may not exist - gracefully skip logging
+          // ✅ CRITICAL: Use SAVEPOINT to prevent transaction abort if table doesn't exist
+          try {
+            await client.query('SAVEPOINT sp_package_usage_log');
+            await client.query(
+              `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
+               VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
+              [
+                packagePurchaseIdToUse,
+                insertedBooking.id,
+                packageSessionNumberToUse,
+                pkgForDeduction.remaining_sessions,
+                pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
+              ]
+            );
+            await client.query('RELEASE SAVEPOINT sp_package_usage_log');
+          } catch (error: any) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_package_usage_log').catch(() => {});
+            console.warn('[BOOKING] package_usage_log table not found or insert failed, skipping usage log:', error.message);
+          }
         }
 
         return insertedBooking;
@@ -1511,10 +1754,10 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
           p.id,
           p.booking_id,
           p.medications,
-          p.instructions,
+          p.general_notes as instructions,
           p.diagnosis,
-          p.prescription_date,
-          p.follow_up_date,
+          p.created_at as prescription_date,
+          p.next_follow_up_date as follow_up_date,
           p.created_at,
           p.created_by,
           p.created_by_role,
@@ -1757,42 +2000,99 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       try {
         console.log(`🚀 [GPS-AUTO-INIT] Auto-initiating GPS tracking for booking ${bookingId}`);
         
-        // Check if tracking session already exists
+        // Check if tracking session already exists (any status)
         const existingSessions = await select('gps_tracking_sessions', {
           booking_id: bookingId,
-          status: 'active',
         });
 
         if (existingSessions.length === 0) {
-          // Create tracking session
-          const newSessions = await insert('gps_tracking_sessions', {
-            booking_id: bookingId,
-            vendor_id: currentBooking.vendor_id,
-            status: 'active',
-            started_at: new Date(),
-            last_update: new Date(),
-            auto_initiated: true, // Mark as auto-initiated
-          });
-
-          console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
-
-          // Send notification to customer
-          try {
-            const { publishNotification } = await import('../utils/sns-client');
-            await publishNotification({
-              userId: currentBooking.customer_id,
-              userType: 'customer',
-              type: 'booking_tracking_started',
-              title: 'Service Provider is on the way!',
-              message: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
-              data: {
-                bookingId,
-                trackingSessionId: newSessions[0].id,
-              },
+          // Get destination coordinates from booking
+          let destinationLat: number | null = null;
+          let destinationLng: number | null = null;
+          
+          // Priority 1: Use booking.latitude/longitude
+          if (currentBooking.latitude != null && currentBooking.longitude != null) {
+            destinationLat = parseFloat(String(currentBooking.latitude));
+            destinationLng = parseFloat(String(currentBooking.longitude));
+          } 
+          // Priority 2: Use booking.delivery_latitude/longitude
+          else if (currentBooking.delivery_latitude != null && currentBooking.delivery_longitude != null) {
+            destinationLat = parseFloat(String(currentBooking.delivery_latitude));
+            destinationLng = parseFloat(String(currentBooking.delivery_longitude));
+          }
+          // Priority 3: Get from address_id if booking doesn't have coordinates
+          else if (currentBooking.address_id) {
+            try {
+              const addresses = await select('customer_addresses', { id: currentBooking.address_id });
+              if (addresses.length > 0) {
+                const addr = addresses[0] as any;
+                
+                // Extract coordinates from address
+                if (addr.coordinates) {
+                  try {
+                    const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                    destinationLat = coords?.lat ?? coords?.latitude ?? null;
+                    destinationLng = coords?.lng ?? coords?.longitude ?? null;
+                  } catch {
+                    // Ignore parse errors
+                  }
+                }
+                
+                // Also check if address has separate latitude/longitude columns
+                if (!destinationLat && addr.latitude) {
+                  destinationLat = parseFloat(String(addr.latitude));
+                }
+                if (!destinationLng && addr.longitude) {
+                  destinationLng = parseFloat(String(addr.longitude));
+                }
+                
+                if (destinationLat && destinationLng) {
+                  console.log(`[GPS-AUTO-INIT] Extracted coordinates from address_id ${currentBooking.address_id}: ${destinationLat}, ${destinationLng}`);
+                }
+              }
+            } catch (addrErr) {
+              console.warn('[GPS-AUTO-INIT] Could not fetch address by address_id:', addrErr);
+            }
+          }
+          
+          // Only create session if we have destination coordinates
+          if (destinationLat != null && destinationLng != null) {
+            // Create tracking session with proper status and columns
+            const newSessions = await insert('gps_tracking_sessions', {
+              booking_id: bookingId,
+              vendor_id: currentBooking.vendor_id,
+              customer_id: currentBooking.customer_id,
+              status: 'in_transit', // Use 'in_transit' not 'active'
+              destination_latitude: destinationLat,
+              destination_longitude: destinationLng,
+              is_active: true,
+              started_at: new Date(),
+              last_update_at: new Date(), // Use 'last_update_at' not 'last_update'
+              created_at: new Date(),
             });
-          } catch (notifError) {
-            console.error('Failed to send tracking notification:', notifError);
-            // Non-critical, continue
+
+            console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
+
+            // Send notification to customer
+            try {
+              const { publishNotification } = await import('../utils/sns-client');
+              await publishNotification({
+                userId: currentBooking.customer_id,
+                userType: 'customer',
+                type: 'booking_tracking_started',
+                title: 'Service Provider is on the way!',
+                message: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+                data: {
+                  bookingId,
+                  trackingSessionId: newSessions[0].id,
+                },
+              });
+            } catch (notifError) {
+              console.error('Failed to send tracking notification:', notifError);
+              // Non-critical, continue
+            }
+          } else {
+            console.warn(`⚠️ [GPS-AUTO-INIT] Cannot create tracking session: booking ${bookingId} has no destination coordinates`);
           }
         } else {
           console.log(`ℹ️  [GPS-AUTO-INIT] Tracking session already exists for booking ${bookingId}`);
@@ -1882,16 +2182,21 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       // Get refund rules from database
-      const rulesResult = await query(
-        `SELECT * FROM booking_cancellation_rules
-         WHERE (vendor_id = $1 OR vendor_id IS NULL)
-           AND (service_id = $2 OR service_id IS NULL)
-         ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-         LIMIT 1`,
-        [booking.vendor_id || null, booking.service_id || null]
-      );
-
-      const rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
+      let rule = null;
+      try {
+        const rulesResult = await query(
+          `SELECT * FROM booking_cancellation_rules
+           WHERE (vendor_id = $1 OR vendor_id IS NULL)
+             AND (service_id = $2 OR service_id IS NULL)
+           ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+           LIMIT 1`,
+          [booking.vendor_id || null, booking.service_id || null]
+        );
+        rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
+      } catch (error: any) {
+        // ✅ FIX: booking_cancellation_rules table may not exist - gracefully skip
+        console.warn('[BOOKING] booking_cancellation_rules table not found or query failed, using default refund rules:', error.message);
+      }
       const fullRefundHours = rule?.full_refund_before_hours || 48;
       const partialRefundHours = rule?.partial_refund_before_hours || 24;
       const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
@@ -2723,17 +3028,23 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       }
 
       // Get cancellation policy
-      const policyQuery = `
-        SELECT * FROM booking_policies
-        WHERE vendor_id = $1
-          AND service_type = $2
-          AND policy_type = 'cancellation'
-          AND is_active = true
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      const policyResult = await query(policyQuery, [booking.vendor_id, booking.service_type || 'general']);
-      const policy = (policyResult as any).rows[0];
+      let policy = null;
+      try {
+        const policyQuery = `
+          SELECT * FROM booking_policies
+          WHERE vendor_id = $1
+            AND service_type = $2
+            AND policy_type = 'cancellation'
+            AND is_active = true
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        const policyResult = await query(policyQuery, [booking.vendor_id, booking.service_type || 'general']);
+        policy = (policyResult as any).rows[0];
+      } catch (error: any) {
+        // ✅ FIX: booking_policies table may not exist - gracefully skip
+        console.warn('[BOOKING] booking_policies table not found or query failed, using default refund policy:', error.message);
+      }
 
       // Calculate time until booking
       const bookingDate = new Date(booking.booking_date || booking.scheduled_at || booking.created_at);

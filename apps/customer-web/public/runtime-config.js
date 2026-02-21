@@ -5,6 +5,12 @@
 (function () {
   const defaultUatMode = true;
   
+  // If config is already set (e.g., by layout.tsx for production mode), use it
+  if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+    console.log('🔧 Runtime config loaded (pre-configured):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+    return;
+  }
+  
   // Determine environment
   function isProduction() {
     // Check hostname (production CloudFront domains)
@@ -51,10 +57,11 @@
   }
 
   const environment = isProduction() ? 'production' : 'development';
+  const uatMode = window.__WARMPAWZ_PROD_MODE__ ? false : defaultUatMode; // Respect prod mode flag
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: apiBaseUrl,
-    uatMode: defaultUatMode,
+    uatMode: uatMode,
     environment: environment
   };
 
