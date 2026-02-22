@@ -21,6 +21,17 @@ import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
+/** Clean service description: strip wrapping quotes, trim whitespace */
+function cleanDescription(desc: string | null | undefined): string | undefined {
+  if (!desc || typeof desc !== 'string') return undefined;
+  let cleaned = desc.trim();
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  cleaned = cleaned.replace(/\\"/g, '"');
+  return cleaned || undefined;
+}
+
 export function registerProblemGridEndpoints(app: Hono) {
   /**
    * GET /vendor/problem-grid/all
@@ -704,14 +715,13 @@ export function registerProblemGridEndpoints(app: Hono) {
         SELECT
           vs.id as service_id,
           vs.service_name as name,
-          vs.service_name as description,
+          COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), vs.service_name) as description,
           vs.price,
           vs.duration_minutes as duration,
           vs.service_style,
           vs.vendor_id,
           v.business_name as vendor_name,
           v.profile_photo_url,
-          v.profile_image,
           ${logoColumn} as logo_url,
           v.metadata as vendor_metadata,
           v.vendor_type,
@@ -733,16 +743,14 @@ export function registerProblemGridEndpoints(app: Hono) {
         WHERE ${statusFilter}
           AND v.is_active = true
           AND vs.is_enabled = true
-          AND (vs.publish_status IN ('published', 'auto_published') OR vs.publish_status IS NULL)
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
 
-      // ✅ FIX: For at_home, filter out business/clinic vendors in query
-      if (serviceStyle === 'at_home') {
-        servicesQuery += ` AND v.vendor_type != 'business' AND v.vendor_type != 'clinic'`;
-      }
+      // ✅ FIX: Business/clinic vendors CAN offer at_home services (e.g., vaccinations at home)
+      // Do NOT filter them out - the backend already returns only vendors with matching service styles
       
       // ✅ FIX: For at_center, exclude at_home services in query
       if (serviceStyle === 'at_center') {
@@ -843,9 +851,9 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
+        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
-                 v.profile_photo_url, v.profile_image, v.metadata, v.latitude, v.longitude${logoGroupBy},
+                 v.profile_photo_url, v.metadata, v.latitude, v.longitude${logoGroupBy},
                  v.vendor_type, r.name
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
@@ -902,7 +910,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             SELECT DISTINCT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status,
                    vs.price, vs.duration_minutes, vs.created_at,
                    v.id as vendor_id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
-                   v.profile_photo_url, v.profile_image, v.city, v.state, v.latitude, v.longitude, v.metadata,
+                   v.profile_photo_url, v.city, v.state, v.latitude, v.longitude, v.metadata,
                    v.role_id, r.name as role_name
             FROM vendors v
             -- ✅ Start from vendors table (same as profile API) - where specializations array is stored
@@ -911,15 +919,13 @@ export function registerProblemGridEndpoints(app: Hono) {
             WHERE ${statusFilter}
               AND v.is_active = true
               AND vs.is_enabled = true
-              AND (vs.publish_status IN ('published', 'auto_published') OR vs.publish_status IS NULL)
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
           `;
           
           const fallbackParams: any[] = [];
           let fallbackParamIndex = 1;
           
-          if (serviceStyle === 'at_home') {
-            fallbackQuery += ` AND v.vendor_type != 'business' AND v.vendor_type != 'clinic'`;
-          }
+          // ✅ FIX: Business/clinic vendors CAN offer at_home services - do not exclude them
           
           if (acceptableStyles && acceptableStyles.length > 0) {
             fallbackQuery += ` AND vs.service_style = ANY($${fallbackParamIndex}::text[])`;
@@ -976,7 +982,6 @@ export function registerProblemGridEndpoints(app: Hono) {
                 business_name: row.business_name,
                 vendor_name: row.business_name,
                 profile_photo_url: row.profile_photo_url,
-                profile_image: row.profile_image,
                 logo_url: null,
                 metadata: row.metadata || {},
                 vendor_metadata: row.metadata || {},
@@ -1026,7 +1031,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           LEFT JOIN vendor_services vs ON vs.vendor_id = v.id
           LEFT JOIN vendor_services vs_match ON vs_match.vendor_id = v.id 
             AND vs_match.is_enabled = true 
-            AND (vs_match.publish_status IN ('published', 'auto_published') OR vs_match.publish_status IS NULL)
+            AND (vs_match.publish_status IN ('published', 'auto_published', 'draft') OR vs_match.publish_status IS NULL)
             AND (${serviceStyle ? `vs_match.service_style = '${serviceStyle}'` : 'true'})
             AND (
               v.id IN (
@@ -1060,7 +1065,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               has_spec_in_jsonb: vendor.has_spec_in_jsonb,
               would_match_status: isDevOrUatEnvironment ? (vendor.status === 'approved' || vendor.status === 'pending') : vendor.status === 'approved',
               would_match_active: vendor.is_active === true,
-              would_match_vendor_type: serviceStyle === 'at_home' ? (vendor.vendor_type !== 'business' && vendor.vendor_type !== 'clinic') : true,
+              would_match_vendor_type: true, // Business/clinic vendors can offer at_home services
               would_match_service: vendor.service_count > 0 && 
                                    (vendor.service_enabled && vendor.service_enabled.includes(true)) &&
                                    (vendor.service_publish_status && (vendor.service_publish_status.includes('published') || vendor.service_publish_status.includes('auto_published') || vendor.service_publish_status.includes(null))),
@@ -1143,7 +1148,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         const serviceData: any = {
           serviceId: service.service_id,
           name: service.name,
-          description: service.description,
+          description: cleanDescription(service.description),
           price: parseFloat(service.price || '0'),
           duration: parseInt(service.duration || '0'),
           serviceStyle: service.service_style,
@@ -1155,8 +1160,8 @@ export function registerProblemGridEndpoints(app: Hono) {
           relevanceScore: 1.0,
           id: `${service.vendor_id}_${service.service_id}`,
           type: 'vendor',
-          photo: service.profile_photo_url || service.profile_image || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
-          photoUrl: service.profile_photo_url || service.profile_image || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
+          photo: service.profile_photo_url || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
+          photoUrl: service.profile_photo_url || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
           rating: parseFloat(service.vendor_rating || '0'),
           reviewCount: parseInt(service.vendor_reviews || '0'),
           specializations: specMap[service.vendor_id] || [],
@@ -1184,15 +1189,8 @@ export function registerProblemGridEndpoints(app: Hono) {
       });
 
       // ✅ FIX: Post-query filter to ensure serviceStyle matches (safety filter)
-      // For at_home: filter out business vendors (vendorType === 'business')
-      // For other styles: filter by service style
-      if (serviceStyle === 'at_home') {
-        services = services.filter((service: any) => {
-          // Filter out business vendors - only allow solo/individual vendors for at_home
-          return service.vendorType !== 'business';
-        });
-        console.log(`[BY-PROBLEM] After post-query filter for ${serviceStyle} (removed business vendors): ${services.length} services remaining`);
-      } else if (serviceStyle && acceptableStyles && acceptableStyles.length > 0) {
+      // Business/clinic vendors CAN offer at_home services - do not exclude them
+      if (serviceStyle && acceptableStyles && acceptableStyles.length > 0) {
         services = services.filter((service: any) => {
           const serviceStyleValue = service.serviceStyle || service.service_style;
           return acceptableStyles.includes(serviceStyleValue);
@@ -1362,7 +1360,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           SELECT DISTINCT vs.vendor_id
           FROM vendor_services vs
           WHERE vs.is_enabled = true
-            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)
             ${feeMin ? `AND vs.price >= $${paramIndex}` : ''}
             ${feeMax ? `AND vs.price <= $${paramIndex + (feeMin ? 1 : 0)}` : ''}
         )`;
@@ -1526,7 +1524,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           const servicesResult = await query(
             `SELECT id, service_id, service_name, price, duration_minutes, service_style, category, sub_category
              FROM vendor_services
-             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
+             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published','draft') OR publish_status IS NULL)
              ORDER BY price ASC
              LIMIT 10`,
             [vendor.id]

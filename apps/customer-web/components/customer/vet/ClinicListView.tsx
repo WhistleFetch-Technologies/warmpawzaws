@@ -23,7 +23,8 @@ interface Clinic {
   services: string[];
   price_range: string;
   is_open?: boolean;
-  photo?: string; // ✅ Added photo support
+  photo?: string;
+  nextAvailableSlot?: string; // ✅ Next available slot display string
 }
 
 export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
@@ -95,6 +96,29 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           clinicsOnly.forEach((service: any) => {
             const vendorId = service.vendorId || service.id;
             if (!vendorMap.has(vendorId)) {
+              // ✅ Extract next available slot from API response
+              const nextSlot = (() => {
+                if (service.nextAvailability && typeof service.nextAvailability === 'string') return service.nextAvailability;
+                if (service.nextAvailableSlot && typeof service.nextAvailableSlot === 'object' && service.nextAvailableSlot.formattedDisplay) return service.nextAvailableSlot.formattedDisplay;
+                if (service.nextAvailableSlot && typeof service.nextAvailableSlot === 'string') return service.nextAvailableSlot;
+                if (service.nextAvailable && typeof service.nextAvailable === 'object') return service.nextAvailable.display || service.nextAvailable.formattedDisplay;
+                if (service.nextAvailable && typeof service.nextAvailable === 'string') return service.nextAvailable;
+                return undefined;
+              })();
+              
+              // ✅ Extract actual operating hours from API response
+              const actualTiming = (() => {
+                if (service.operatingHours && typeof service.operatingHours === 'object') {
+                  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                  const today = days[new Date().getDay()];
+                  const todayHours = service.operatingHours[today];
+                  if (todayHours && todayHours.isOpen) {
+                    return `${todayHours.open} - ${todayHours.close}`;
+                  }
+                }
+                return service.businessHours || service.timing || undefined;
+              })();
+              
               vendorMap.set(vendorId, {
                 id: vendorId,
                 name: service.vendorName || service.businessName || service.business_name || service.name || 'Unnamed Clinic',
@@ -102,11 +126,12 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                 rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.5'),
                 review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
                 distance: service.distance ? `${Number(service.distance).toFixed(1)} km` : null,
-                timing: service.businessHours || service.timing || '9 AM - 8 PM',
+                timing: actualTiming || '9 AM - 8 PM',
                 services: service.services?.map((s: any) => typeof s === 'string' ? s : s.name) || [service.serviceName || 'General Consultation'].filter(Boolean),
-                price_range: service.priceRange || service.price_range || (service.price ? `₹${service.price}` : '₹399 - ₹2999'),
-                is_open: service.is_open !== undefined ? service.is_open : true,
-                photo: service.vendorPhoto || service.photo || service.businessPhoto, // ✅ Added photo support
+                price_range: service.priceRange || service.price_range || (service.price ? `₹${service.price}` : (service.priceMin ? `₹${service.priceMin}` : '₹399 - ₹2999')),
+                is_open: service.is_open !== undefined ? service.is_open : (service.isAvailableToday !== undefined ? service.isAvailableToday : true),
+                photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage || service.businessPhoto,
+                nextAvailableSlot: nextSlot,
               });
             } else {
               // Add service to existing clinic
@@ -301,12 +326,22 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                       <span className="truncate">{clinic.address}</span>
                     </div>
                     
-                    <div className="flex items-center justify-between mt-3">
+                    {/* ✅ Next Available Slot */}
+                    {clinic.nextAvailableSlot && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <Clock className="w-3.5 h-3.5 text-green-500" />
+                        <span className="text-sm font-medium text-green-600">Next: {clinic.nextAvailableSlot}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between mt-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-sm text-gray-500">{clinic.timing}</span>
-                        </div>
+                        {!clinic.nextAvailableSlot && (
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-sm text-gray-500">{clinic.timing}</span>
+                          </div>
+                        )}
                         {clinic.is_open !== undefined && (
                           <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
                             clinic.is_open ? 'bg-[#EDFFEE] text-[#00C30C]' : 'bg-red-50 text-red-600'

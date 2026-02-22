@@ -1210,24 +1210,24 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                       selectedAddress === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                    <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">
+                          <span className="text-lg flex-shrink-0">
                             {addr.label?.toLowerCase() === 'home' ? '🏠' : 
                              addr.label?.toLowerCase() === 'work' ? '🏢' : '📍'}
                           </span>
-                          <p className="font-medium text-gray-900">{addr.label || 'Address'}</p>
+                          <p className="font-medium text-gray-900 truncate">{addr.label || 'Address'}</p>
                           {addr.isDefault && (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full flex-shrink-0">Default</span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1 break-words overflow-hidden">
+                        <p className="text-sm text-gray-600 mt-1 line-clamp-2 break-words">
                           {addr.addressLine1 || addr.address}
                           {addr.addressLine2 && `, ${addr.addressLine2}`}
                         </p>
-                        <p className="text-sm text-gray-500 break-words overflow-hidden">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
-                        {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                        <p className="text-sm text-gray-500 line-clamp-1 break-words">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
+                        {addr.landmark && <p className="text-xs text-gray-400 truncate">Near: {addr.landmark}</p>}
                       </div>
                       {selectedAddress === addr.id && (
                         <span className="text-orange-500 text-xl ml-2">✓</span>

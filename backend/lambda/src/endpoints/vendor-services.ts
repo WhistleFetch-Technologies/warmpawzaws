@@ -1155,84 +1155,88 @@ export function registerVendorServicesEndpoints(app: Hono) {
       let updated: any[];
       
       if (isUUID) {
-        // ✅ CRITICAL FIX: Check if UUID is a service_catalog.id FIRST
-        // This prevents UUID collisions where catalog.id matches another vendor's vendor_services.id
-        console.log(`[VendorServices PUT] UUID detected: ${serviceId}. Checking if it's a catalog ID first...`);
-        const catalogCheckByUuid = await query(
-          `SELECT id, service_id, service_name, service_style 
-           FROM service_catalog 
+        // ✅ CRITICAL FIX: Check if UUID is a vendor_services.id FIRST (most specific)
+        // This ensures we update the exact service requested, not multiple services with the same service_id
+        // Only if it's NOT a vendor_services.id, then check if it's a catalog ID
+        console.log(`[VendorServices PUT] UUID detected: ${serviceId}. Checking if it's a vendor_services.id first...`);
+        const serviceCheck = await query(
+          `SELECT id, vendor_id, service_id, service_name, service_style, is_enabled, publish_status
+           FROM vendor_services 
            WHERE id = $1::uuid`,
           [serviceId]
         );
         
-        if (catalogCheckByUuid.rows.length > 0) {
-          // ✅ UUID is a catalog ID - look up vendor's service by service_id (foreign key)
-          const catalogService = catalogCheckByUuid.rows[0];
-          console.log(`[VendorServices PUT] UUID is a catalog ID. Looking up vendor service by service_id=${catalogService.id} for vendor ${vendorId}`);
+        if (serviceCheck.rows.length > 0) {
+          // ✅ UUID is a vendor_services.id - update directly (most specific, updates only one service)
+          const service = serviceCheck.rows[0];
+          console.log(`[VendorServices PUT] Found service: id=${service.id}, vendor_id=${service.vendor_id}, requested_vendor_id=${vendorId}`);
           
-          const vendorServiceByCatalogId = await query(
-            `SELECT id, vendor_id, service_id, service_name, service_style 
-             FROM vendor_services 
-             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
-            [catalogService.id, vendorId]
-          );
-          
-          if (vendorServiceByCatalogId.rows.length > 0) {
-            // Found vendor's service - use the actual vendor_services.id
-            const actualServiceId = vendorServiceByCatalogId.rows[0].id;
-            console.log(`[VendorServices PUT] Found vendor service by catalog ID, using vendor_services.id=${actualServiceId}`);
-            updated = await update('vendor_services',
-              { id: actualServiceId, vendor_id: vendorId },
-              updateData
-            );
-            console.log(`[VendorServices PUT] Update by catalog ID result: ${updated.length} row(s) updated`);
-          } else {
-            // Catalog service exists but vendor hasn't added it yet
-            console.log(`[VendorServices PUT] Catalog service exists but vendor ${vendorId} hasn't added it yet`);
+          // Check if vendor_id matches
+          if (service.vendor_id !== vendorId) {
+            console.log(`[VendorServices PUT] Vendor mismatch: service belongs to ${service.vendor_id}, requested ${vendorId}`);
             return c.json({ 
-              error: 'Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog',
+              error: 'Service not found for this vendor or you do not have permission to update it',
               serviceId: serviceId,
-              catalogServiceId: catalogService.id,
-              catalogServiceName: catalogService.service_name,
-              hint: 'Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first'
-            }, 404);
+              actualVendorId: service.vendor_id,
+              requestedVendorId: vendorId,
+              hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
+            }, 403);
           }
+          
+          // Service exists and vendor matches - proceed with update (updates ONLY this one service)
+          console.log(`[VendorServices PUT] Service found and vendor matches. Updating by id (single service)...`);
+          updated = await update('vendor_services',
+            { id: serviceId, vendor_id: vendorId },
+            updateData
+          );
+          console.log(`[VendorServices PUT] Update result: ${updated.length} row(s) updated`);
         } else {
-          // ✅ UUID is NOT a catalog ID - check if it's a vendor_services.id
-          console.log(`[VendorServices PUT] UUID is not a catalog ID. Checking if it's a vendor_services.id...`);
-          const serviceCheck = await query(
-            `SELECT id, vendor_id, service_id, service_name, service_style, is_enabled, publish_status
-             FROM vendor_services 
+          // ✅ UUID is NOT a vendor_services.id - check if it's a service_catalog.id
+          console.log(`[VendorServices PUT] UUID is not a vendor_services.id. Checking if it's a catalog ID...`);
+          const catalogCheckByUuid = await query(
+            `SELECT id, service_id, service_name, service_style 
+             FROM service_catalog 
              WHERE id = $1::uuid`,
             [serviceId]
           );
           
-          if (serviceCheck.rows.length > 0) {
-            const service = serviceCheck.rows[0];
-            console.log(`[VendorServices PUT] Found service: id=${service.id}, vendor_id=${service.vendor_id}, requested_vendor_id=${vendorId}`);
+          if (catalogCheckByUuid.rows.length > 0) {
+            // ✅ UUID is a catalog ID - look up vendor's service by service_id (foreign key)
+            // ⚠️ WARNING: If vendor has multiple services with same service_id, this will only update the FIRST one
+            const catalogService = catalogCheckByUuid.rows[0];
+            console.log(`[VendorServices PUT] UUID is a catalog ID. Looking up vendor service by service_id=${catalogService.id} for vendor ${vendorId}`);
             
-            // Check if vendor_id matches
-            if (service.vendor_id !== vendorId) {
-              console.log(`[VendorServices PUT] Vendor mismatch: service belongs to ${service.vendor_id}, requested ${vendorId}`);
-              return c.json({ 
-                error: 'Service not found for this vendor or you do not have permission to update it',
-                serviceId: serviceId,
-                actualVendorId: service.vendor_id,
-                requestedVendorId: vendorId,
-                hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
-              }, 403);
-            }
-            
-            // Service exists and vendor matches - proceed with update
-            console.log(`[VendorServices PUT] Service found and vendor matches. Updating...`);
-            updated = await update('vendor_services',
-              { id: serviceId, vendor_id: vendorId },
-              updateData
+            const vendorServiceByCatalogId = await query(
+              `SELECT id, vendor_id, service_id, service_name, service_style 
+               FROM vendor_services 
+               WHERE service_id = $1::uuid AND vendor_id = $2::uuid
+               LIMIT 1`,
+              [catalogService.id, vendorId]
             );
-            console.log(`[VendorServices PUT] Update result: ${updated.length} row(s) updated`);
+            
+            if (vendorServiceByCatalogId.rows.length > 0) {
+              // Found vendor's service - use the actual vendor_services.id (only first match to prevent bulk updates)
+              const actualServiceId = vendorServiceByCatalogId.rows[0].id;
+              console.log(`[VendorServices PUT] Found vendor service by catalog ID, using vendor_services.id=${actualServiceId} (first match only)`);
+              updated = await update('vendor_services',
+                { id: actualServiceId, vendor_id: vendorId },
+                updateData
+              );
+              console.log(`[VendorServices PUT] Update by catalog ID result: ${updated.length} row(s) updated`);
+            } else {
+              // Catalog service exists but vendor hasn't added it yet
+              console.log(`[VendorServices PUT] Catalog service exists but vendor ${vendorId} hasn't added it yet`);
+              return c.json({ 
+                error: 'Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog',
+                serviceId: serviceId,
+                catalogServiceId: catalogService.id,
+                catalogServiceName: catalogService.service_name,
+                hint: 'Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first'
+              }, 404);
+            }
           } else {
-            // UUID doesn't exist in catalog or vendor_services
-            console.log(`[VendorServices PUT] UUID ${serviceId} not found in catalog or vendor_services`);
+            // UUID doesn't exist in vendor_services or catalog
+            console.log(`[VendorServices PUT] UUID ${serviceId} not found in vendor_services or catalog`);
             updated = [];
           }
         }
@@ -1242,6 +1246,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         
         // Strategy 1: Look up from service_catalog by service_id (TEXT column)
         // ✅ FIX: service_catalog.service_id is TEXT, so cast parameter to TEXT to avoid type mismatch
+        // ⚠️ CRITICAL: Check if multiple services exist with same service_id to prevent bulk updates
         const catalogResult = await query(
           'SELECT id FROM service_catalog WHERE service_id = $1::text',
           [serviceId]
@@ -1249,10 +1254,33 @@ export function registerVendorServicesEndpoints(app: Hono) {
         
         if (catalogResult.rows.length > 0) {
           const catalogUUID = catalogResult.rows[0].id;
-          updated = await update('vendor_services',
-            { service_id: catalogUUID, vendor_id: vendorId },
-            updateData
+          // ✅ FIX: Check count first - if multiple services with same service_id, require specific id
+          const vendorServiceCount = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
+             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+            [catalogUUID, vendorId]
           );
+          const count = parseInt(vendorServiceCount.rows[0]?.count || '0', 10);
+          
+          if (count === 0) {
+            updated = [];
+          } else if (count === 1) {
+            // Only one service with this service_id - safe to update
+            updated = await update('vendor_services',
+              { service_id: catalogUUID, vendor_id: vendorId },
+              updateData
+            );
+          } else {
+            // Multiple services with same service_id - cannot safely update without specific id
+            console.log(`[VendorServices PUT] ERROR: Found ${count} services with service_id=${catalogUUID} for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({ 
+              error: `Multiple services found with the same catalog service. Please use the specific vendor_services.id to update.`,
+              serviceId: serviceId,
+              catalogServiceId: catalogUUID,
+              matchingServicesCount: count,
+              hint: 'Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT request'
+            }, 400);
+          }
         } else {
           updated = [];
         }
@@ -1269,17 +1297,43 @@ export function registerVendorServicesEndpoints(app: Hono) {
           
           console.log(`[VendorServices PUT] Trying normalized search: "${normalizedSearch}"`);
           
-          const vsResult = await query(
-            `UPDATE vendor_services 
-             SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = NOW()
+          // ✅ FIX: Check count first to prevent bulk updates
+          const countCheck = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
              WHERE vendor_id = $1 AND (
                LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
                OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
-             )
-             RETURNING *`,
-            [vendorId, normalizedSearch, ...Object.values(updateData)]
+             )`,
+            [vendorId, normalizedSearch]
           );
-          updated = vsResult.rows;
+          const matchCount = parseInt(countCheck.rows[0]?.count || '0', 10);
+          
+          if (matchCount === 0) {
+            updated = [];
+          } else if (matchCount === 1) {
+            // Only one match - safe to update
+            const vsResult = await query(
+              `UPDATE vendor_services 
+               SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = NOW()
+               WHERE vendor_id = $1 AND (
+                 LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
+                 OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
+               )
+               RETURNING *`,
+              [vendorId, normalizedSearch, ...Object.values(updateData)]
+            );
+            updated = vsResult.rows;
+          } else {
+            // Multiple matches - cannot safely update without specific id
+            console.log(`[VendorServices PUT] ERROR: Found ${matchCount} services matching "${normalizedSearch}" for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({ 
+              error: `Multiple services found matching "${serviceId}". Please use the specific vendor_services.id to update.`,
+              serviceId: serviceId,
+              normalizedSearch: normalizedSearch,
+              matchingServicesCount: matchCount,
+              hint: 'Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT request'
+            }, 400);
+          }
         }
         
         // Strategy 3: Try exact original serviceId match
@@ -1484,12 +1538,16 @@ export function registerVendorServicesEndpoints(app: Hono) {
       const finalServiceStyle = serviceStyle || catalogService.service_style || 'at_home';
       
       // Check if vendor already has this service (use actualVendorId)
+      // ✅ FIX: Only match by service_id (catalog UUID foreign key), NOT by service_name
+      // Matching by service_name caused bugs: different catalog entries with the same name
+      // (e.g. "Home Visit Consultation" from 3 different catalog entries) would all match
+      // the same vendor_services row, creating duplicate IDs in the frontend
       const existingServices = await query(
         `SELECT * FROM vendor_services 
          WHERE vendor_id = $1 
-         AND (service_id = $2 OR service_name = $3)
-         AND service_style = $4`,
-        [actualVendorId, catalogService.id, catalogService.service_name, finalServiceStyle]
+         AND service_id = $2
+         AND service_style = $3`,
+        [actualVendorId, catalogService.id, finalServiceStyle]
       );
       
       if (existingServices.rows.length > 0) {
@@ -2082,16 +2140,49 @@ export function registerVendorServicesEndpoints(app: Hono) {
       let updated: any[];
       
       if (isUUID) {
+        // ✅ FIX: Check if UUID is a vendor_services.id FIRST (most specific)
+        // This ensures we update the exact service requested, not multiple services with the same service_id
         updated = await update('vendor_services',
           { id: serviceId, vendor_id: vendorId },
           updateData
         );
         
         if (updated.length === 0) {
-          updated = await update('vendor_services',
-            { service_id: serviceId, vendor_id: vendorId },
-            updateData
+          // ✅ UUID is NOT a vendor_services.id - check if it's a catalog ID
+          // ⚠️ WARNING: If vendor has multiple services with same service_id, we need to update only ONE
+          const catalogCheck = await query(
+            `SELECT id FROM service_catalog WHERE id = $1::uuid`,
+            [serviceId]
           );
+          
+          if (catalogCheck.rows.length > 0) {
+            const catalogUUID = catalogCheck.rows[0].id;
+            // Check count first - if multiple services with same service_id, require specific id
+            const vendorServiceCount = await query(
+              `SELECT COUNT(*) as count FROM vendor_services 
+               WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+              [catalogUUID, vendorId]
+            );
+            const count = parseInt(vendorServiceCount.rows[0]?.count || '0', 10);
+            
+            if (count === 1) {
+              // Only one service with this service_id - safe to update
+              updated = await update('vendor_services',
+                { service_id: catalogUUID, vendor_id: vendorId },
+                updateData
+              );
+            } else if (count > 1) {
+              // Multiple services with same service_id - cannot safely update without specific id
+              console.log(`[VendorServices POST] ERROR: Found ${count} services with service_id=${catalogUUID} for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+              return c.json({ 
+                error: `Multiple services found with the same catalog service. Please use the specific vendor_services.id to update.`,
+                serviceId: serviceId,
+                catalogServiceId: catalogUUID,
+                matchingServicesCount: count,
+                hint: 'Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request'
+              }, 400);
+            }
+          }
         }
       } else {
         // ✅ FIX: Text identifier - try multiple matching strategies
@@ -2099,6 +2190,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         
         // Strategy 1: Look up from service_catalog by service_id (TEXT column)
         // ✅ FIX: service_catalog.service_id is TEXT, so cast parameter to TEXT to avoid type mismatch
+        // ⚠️ CRITICAL: Check if multiple services exist with same service_id to prevent bulk updates
         const catalogResult = await query(
           'SELECT id FROM service_catalog WHERE service_id = $1::text',
           [serviceId]
@@ -2106,10 +2198,33 @@ export function registerVendorServicesEndpoints(app: Hono) {
         
         if (catalogResult.rows.length > 0) {
           const catalogUUID = catalogResult.rows[0].id;
-          updated = await update('vendor_services',
-            { service_id: catalogUUID, vendor_id: vendorId },
-            updateData
+          // ✅ FIX: Check count first - if multiple services with same service_id, require specific id
+          const vendorServiceCount = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
+             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+            [catalogUUID, vendorId]
           );
+          const count = parseInt(vendorServiceCount.rows[0]?.count || '0', 10);
+          
+          if (count === 0) {
+            updated = [];
+          } else if (count === 1) {
+            // Only one service with this service_id - safe to update
+            updated = await update('vendor_services',
+              { service_id: catalogUUID, vendor_id: vendorId },
+              updateData
+            );
+          } else {
+            // Multiple services with same service_id - cannot safely update without specific id
+            console.log(`[VendorServices POST] ERROR: Found ${count} services with service_id=${catalogUUID} for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({ 
+              error: `Multiple services found with the same catalog service. Please use the specific vendor_services.id to update.`,
+              serviceId: serviceId,
+              catalogServiceId: catalogUUID,
+              matchingServicesCount: count,
+              hint: 'Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request'
+            }, 400);
+          }
         } else {
           updated = [];
         }
@@ -2126,33 +2241,85 @@ export function registerVendorServicesEndpoints(app: Hono) {
           
           console.log(`[VendorServices] Trying normalized search: "${normalizedSearch}"`);
           
-          const vsResult = await query(
-            `UPDATE vendor_services 
-             SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = NOW()
+          // ✅ FIX: Check count first to prevent bulk updates
+          const countCheckPost = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
              WHERE vendor_id = $1 AND (
                LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
                OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
-             )
-             RETURNING *`,
-            [vendorId, normalizedSearch, ...Object.values(updateData)]
+             )`,
+            [vendorId, normalizedSearch]
           );
-          updated = vsResult.rows;
+          const matchCountPost = parseInt(countCheckPost.rows[0]?.count || '0', 10);
+          
+          if (matchCountPost === 0) {
+            updated = [];
+          } else if (matchCountPost === 1) {
+            // Only one match - safe to update
+            const vsResult = await query(
+              `UPDATE vendor_services 
+               SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = NOW()
+               WHERE vendor_id = $1 AND (
+                 LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
+                 OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
+               )
+               RETURNING *`,
+              [vendorId, normalizedSearch, ...Object.values(updateData)]
+            );
+            updated = vsResult.rows;
+          } else {
+            // Multiple matches - cannot safely update without specific id
+            console.log(`[VendorServices POST] ERROR: Found ${matchCountPost} services matching "${normalizedSearch}" for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({ 
+              error: `Multiple services found matching "${serviceId}". Please use the specific vendor_services.id to update.`,
+              serviceId: serviceId,
+              normalizedSearch: normalizedSearch,
+              matchingServicesCount: matchCountPost,
+              hint: 'Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request'
+            }, 400);
+          }
         }
         
         // Strategy 3: Try exact original serviceId match
         if (!updated || updated.length === 0) {
-          const vsResult = await query(
-            `UPDATE vendor_services 
-             SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = NOW()
+          // ✅ FIX: Check count first to prevent bulk updates
+          const countCheck3Post = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
              WHERE vendor_id = $1 AND (
                service_name ILIKE $2 
                OR service_name ILIKE '%' || $2 || '%'
                OR LOWER(REPLACE(REPLACE(service_name, '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE($2, '_', ''), '-', ''))
-             )
-             RETURNING *`,
-            [vendorId, serviceId, ...Object.values(updateData)]
+             )`,
+            [vendorId, serviceId]
           );
-          updated = vsResult.rows;
+          const matchCount3Post = parseInt(countCheck3Post.rows[0]?.count || '0', 10);
+          
+          if (matchCount3Post === 0) {
+            updated = [];
+          } else if (matchCount3Post === 1) {
+            // Only one match - safe to update
+            const vsResult = await query(
+              `UPDATE vendor_services 
+               SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = NOW()
+               WHERE vendor_id = $1 AND (
+                 service_name ILIKE $2 
+                 OR service_name ILIKE '%' || $2 || '%'
+                 OR LOWER(REPLACE(REPLACE(service_name, '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE($2, '_', ''), '-', ''))
+               )
+               RETURNING *`,
+              [vendorId, serviceId, ...Object.values(updateData)]
+            );
+            updated = vsResult.rows;
+          } else {
+            // Multiple matches - cannot safely update without specific id
+            console.log(`[VendorServices POST] ERROR: Found ${matchCount3Post} services matching "${serviceId}" for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({ 
+              error: `Multiple services found matching "${serviceId}". Please use the specific vendor_services.id to update.`,
+              serviceId: serviceId,
+              matchingServicesCount: matchCount3Post,
+              hint: 'Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request'
+            }, 400);
+          }
         }
       }
 

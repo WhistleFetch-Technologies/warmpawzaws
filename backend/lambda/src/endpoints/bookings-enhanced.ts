@@ -612,37 +612,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           // Ignore - buffer is informational only
         }
 
-        // ✅ FIX: Check overlap using ONLY service duration (buffer doesn't block for ANY service)
-        // Buffer time is informational only and does NOT affect overlap calculations
-        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min (informational only)`);
+        // ✅ ATOMIC SLOT OVERLAP CHECK
+        // Each slot is atomic (30 min). A booking blocks ONLY the slot it starts at.
+        // Booking at 09:00 blocks ONLY 09:00. New booking at 09:30 is allowed.
+        // This applies to ALL service types (tele, at_center, at_home) and ALL roles.
+        // Buffer time is informational only and does NOT block adjacent slots.
+        const SLOT_SIZE = 30; // Atomic slot size in minutes
+        
+        console.log(`[BOOKING] Checking overlap (ATOMIC): newBooking=${bookingTime} (${newBookingStartMinutes}min), slotSize=${SLOT_SIZE}min, serviceType=${serviceType}`);
         console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
         
         const hasOverlap = existingBookings.some((existing: any) => {
           const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
           
-          // ✅ CRITICAL FIX: Use EXACT duration for ALL services (no buffer subtraction)
-          // Buffer time is informational only and does NOT block adjacent slots
-          // This ensures atomic slot behavior: booking at 2:00 PM (30min) ends at 2:30 PM
-          // New booking at 2:30 PM should be allowed (no overlap: 870 < 870 = false)
-          const existingDuration = existing.duration_minutes;  // ✅ Use exact duration, no buffer subtraction for ANY service
+          // ✅ ATOMIC: Use SLOT_SIZE (30 min) for BOTH existing and new booking
+          // NOT the stored duration_minutes, which may be longer than one slot
+          const existingEndMinutes = existingStartMinutes + SLOT_SIZE;
+          const newBookingEndMinutes = newBookingStartMinutes + SLOT_SIZE;
           
-          console.log(`[BOOKING] ${normalizedServiceStyle} overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), duration=${existingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
-          
-          const existingEndMinutes = existingStartMinutes + existingDuration;  // ✅ Use exact duration for ALL services
-          const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;
-          
-          // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
-          // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
-          // Example: Booking 2:00 PM (30min) ends at 2:30 PM (870 min)
-          //          New booking 2:30 PM starts at 2:30 PM (870 min)
-          //          Overlap: 870 < 870 && 900 > 840 = false && true = false ✅ (NO overlap)
+          // ATOMIC OVERLAP: (newStart < existingEnd) AND (newEnd > existingStart)
+          // Example: Existing 09:00 (end=09:30), New 09:30 (end=10:00)
+          //   570 < 570 && 600 > 540 = false && true = false → NO overlap ✅
           const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
           
           if (overlaps) {
-            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes/60)}:${String(newBookingEndMinutes%60).padStart(2,'0')} (${newBookingEndMinutes}min)] overlaps with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes/60)}:${String(existingEndMinutes%60).padStart(2,'0')} (${existingEndMinutes}min)]`);
-          } else {
-            console.log(`[BOOKING] NO OVERLAP: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes/60)}:${String(newBookingEndMinutes%60).padStart(2,'0')} (${newBookingEndMinutes}min)] does NOT overlap with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes/60)}:${String(existingEndMinutes%60).padStart(2,'0')} (${existingEndMinutes}min)]`);
+            console.log(`[BOOKING] OVERLAP (atomic): newBooking ${bookingTime} blocked by existing ${existing.booking_time}`);
           }
           
           return overlaps;

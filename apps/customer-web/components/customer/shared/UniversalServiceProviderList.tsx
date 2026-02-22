@@ -609,7 +609,7 @@ export function UniversalServiceProviderList({
         // ✅ FIX: Backend now correctly returns business/clinic vendors with at_home services
         // No need to filter them out - clinics can offer at_home services (e.g., vaccinations at home)
         
-        // Clean provider names to remove trailing IDs
+        // Clean provider names to remove trailing IDs and map nextAvailable to nextAvailableSlot
         const cleanedProviders = providerData.map((p: any) => ({
           ...p,
           name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
@@ -617,6 +617,18 @@ export function UniversalServiceProviderList({
           businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
           providerId: p.providerId || p.vendorId || p.id,
           vendorId: p.vendorId || p.id,
+          // ✅ FIX: Map nextAvailable object to nextAvailableSlot string for display
+          nextAvailableSlot: (() => {
+            if (typeof p.nextAvailableSlot === 'string') return p.nextAvailableSlot;
+            if (p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
+              return p.nextAvailableSlot.formattedDisplay || p.nextAvailableSlot.display || undefined;
+            }
+            if (typeof p.nextAvailability === 'string') return p.nextAvailability;
+            if (p.nextAvailable && typeof p.nextAvailable === 'object') {
+              return p.nextAvailable.display || p.nextAvailable.formattedDisplay || undefined;
+            }
+            return undefined;
+          })(),
         }));
         
         // ✅ FIX: If primary endpoint returns 0 providers, also try fallback

@@ -40,6 +40,24 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 /**
+ * ✅ FIX: Check if current environment is production.
+ * Dev/UAT Lambda (`warmpawz-api-dev-api`) uses NODE_ENV=dev & UAT_MODE=true.
+ * Prod Lambda (`warmpawz-prod-api-handler`) uses NODE_ENV=production.
+ * Used to conditionally skip availability filtering in dev/UAT, where vendors
+ * may not have `vendor_availability_v2` records configured for testing.
+ */
+function isProductionEnvironment(): boolean {
+  const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME || '';
+  const nodeEnv = process.env.NODE_ENV || '';
+  const stage = process.env.STAGE || '';
+  return (
+    (functionName.includes('prod') && !functionName.includes('dev') && !functionName.includes('uat')) ||
+    nodeEnv === 'production' ||
+    stage === 'prod'
+  );
+}
+
+/**
  * ✅ FIX: Extract S3 key from pre-signed URL or full S3 URL
  * Handles various URL formats and returns the S3 key for regenerating pre-signed URLs
  */
@@ -433,6 +451,191 @@ async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<st
   return null;
 }
 
+/** 
+ * Get next available slot for a vendor from vendor_availability_v2.
+ * Returns null if no availability set.
+ * Display format:
+ * - Today: "Today 2:00 PM"
+ * - Tomorrow: "Tomorrow 2:00 PM"
+ * - This week (2-6 days): "Wed 2:00 PM"
+ * - Next week+: "Feb 28, 2:00 PM"
+ */
+async function getNextAvailableSlot(
+  vendorId: string,
+  phone: string,
+  serviceStyleFilter?: string[]
+): Promise<{ date: string; time: string; display: string } | null> {
+  try {
+    const now = new Date();
+    const currentDayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const SLOT_DURATION = 30; // minutes - atomic slot size
+    
+    // Build query to get availability WINDOWS (start + end time) for slot generation
+    let va2Query = `
+      SELECT day_of_week,
+             COALESCE(time_window_start, start_time) as start_time,
+             COALESCE(time_window_end, end_time) as end_time
+      FROM vendor_availability_v2
+      WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+        AND (is_available IS NULL OR is_available = true)
+    `;
+    const params: any[] = [vendorId, phone || ''];
+    
+    if (serviceStyleFilter && serviceStyleFilter.length > 0) {
+      va2Query += ` AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))`;
+      params.push(serviceStyleFilter);
+    }
+    
+    va2Query += ` ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`;
+    
+    const va2 = await query(va2Query, params);
+    if (!va2.rows || va2.rows.length === 0) return null;
+    
+    // ✅ ENHANCED: Check up to 14 days ahead, generating 30-min slots and checking bookings
+    // This ensures the "next available slot" is truly available (not already booked)
+    
+    // Helper: convert HH:MM to minutes
+    const toMin = (t: any): number => {
+      const s = (t || '09:00').toString();
+      const clean = s.includes('T') ? s.split('T')[1].substring(0, 5) : s.substring(0, 5);
+      const [h, m] = clean.split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    
+    // Resolve vendor ID for bookings query (bookings use vendors.id, not vendor_identity.id)
+    let bookingsVendorId = vendorId;
+    try {
+      const viCheck = await query(
+        `SELECT vendor_id FROM vendor_identity WHERE id = $1 LIMIT 1`,
+        [vendorId]
+      );
+      if (viCheck.rows && viCheck.rows.length > 0 && viCheck.rows[0].vendor_id) {
+        bookingsVendorId = viCheck.rows[0].vendor_id;
+      }
+    } catch (_) { /* use original vendorId */ }
+    
+    for (let dayOffset = 0; dayOffset <= 13; dayOffset++) {
+      const checkDate = new Date(now);
+      checkDate.setDate(checkDate.getDate() + dayOffset);
+      const checkDayOfWeek = checkDate.getDay();
+      const dateStr = checkDate.toISOString().split('T')[0];
+      
+      // Find availability windows for this day of week
+      const dayWindows = va2.rows.filter((r: any) => Number(r.day_of_week) === checkDayOfWeek);
+      if (dayWindows.length === 0) continue;
+      
+      // ✅ CRITICAL: Get booked slot times for this date (atomic: only start times matter)
+      let bookedTimes: Set<string> = new Set();
+      try {
+        const bookResult = await query(
+          `SELECT booking_time FROM bookings
+           WHERE vendor_id = $1 AND booking_date = $2
+             AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
+          [bookingsVendorId, dateStr]
+        );
+        for (const b of (bookResult.rows || [])) {
+          const t = b.booking_time;
+          let timeStr: string;
+          if (typeof t === 'string') {
+            timeStr = t.includes('T') ? t.split('T')[1].substring(0, 5) : t.substring(0, 5);
+          } else {
+            timeStr = String(t).substring(0, 5);
+          }
+          bookedTimes.add(timeStr);
+        }
+      } catch (_) { /* no bookings = all slots free */ }
+      
+      // Generate 30-min slots from availability windows and find first non-booked
+      for (const window of dayWindows) {
+        const winStart = toMin(window.start_time);
+        const winEnd = toMin(window.end_time);
+        
+        let currentMinutes = winStart;
+        while (currentMinutes + SLOT_DURATION <= winEnd) {
+          const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
+          
+          // Skip if past (for today)
+          if (dayOffset === 0 && timeStr <= currentHHMM) {
+            currentMinutes += SLOT_DURATION;
+            continue;
+          }
+          
+          // ✅ CRITICAL: Skip if this slot is already booked (atomic check)
+          if (bookedTimes.has(timeStr)) {
+            currentMinutes += SLOT_DURATION;
+            continue;
+          }
+          
+          // Found a truly available slot!
+          const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+          
+          let display: string;
+          if (dayOffset === 0) {
+            display = `Today ${formatted}`;
+          } else if (dayOffset === 1) {
+            display = `Tomorrow ${formatted}`;
+          } else if (dayOffset <= 6) {
+            display = `${checkDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`;
+          } else {
+            display = `${checkDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatted}`;
+          }
+          
+          return {
+            date: dateStr,
+            time: timeStr,
+            display,
+          };
+        }
+      }
+    }
+    
+    return null; // No available slot found in next 14 days
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Clean service description: strip wrapping quotes, trim whitespace */
+function cleanDescription(desc: string | null | undefined): string | undefined {
+  if (!desc || typeof desc !== 'string') return undefined;
+  let cleaned = desc.trim();
+  // Strip wrapping double-quotes from catalog descriptions
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  // Unescape internal escaped quotes
+  cleaned = cleaned.replace(/\\"/g, '"');
+  // Unescape newlines (service_catalog stores \n as \\n)
+  cleaned = cleaned.replace(/\\n/g, '\n');
+  return cleaned || undefined;
+}
+
+/** Deduplicate services array by service name + style (safety measure) */
+function deduplicateServices(services: any[]): any[] {
+  const seen = new Map<string, any>();
+  for (const service of services) {
+    // Use service_name + service_style as key (not ID, because database may have duplicate rows with different IDs)
+    const serviceName = service.name || service.service_name || service.serviceName || '';
+    const serviceStyle = service.serviceStyle || service.service_style || '';
+    const key = `${serviceName}_${serviceStyle}`.toLowerCase().trim();
+    
+    if (key && !seen.has(key)) {
+      seen.set(key, service);
+    } else if (key && seen.has(key)) {
+      // Duplicate found - log warning but keep first occurrence
+      console.warn(`[Deduplication] Duplicate service detected: ${key} (ID: ${service.id || service.serviceId || 'unknown'}). Keeping first occurrence.`);
+    } else if (!key) {
+      // No key available - use ID as fallback
+      const fallbackKey = service.id || service.serviceId || `unknown_${Math.random()}`;
+      if (!seen.has(fallbackKey)) {
+        seen.set(fallbackKey, service);
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discovery/meta
@@ -749,7 +952,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.service_id,
             vs.service_name,
             vs.service_name as display_name,
-            vs.custom_description as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
             vs.category as category_name,
             vs.service_style,
             vs.price as base_price,
@@ -1086,49 +1289,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             continue;
           }
           console.log('[discover-services] tele: vendor %s passed roleConfigAllowsStyle check', vendor.id);
-          // ✅ ENRICHED: Get next available slot for solo vendor
-          let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
-          try {
-            const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-            const nextSlotsResult = await query(
-              `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
-               FROM vendor_availability_v2 va
-               WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                 AND (va.is_available IS NULL OR va.is_available = true)
-                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[])
-               ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
-               LIMIT 1`,
-              [vendor.id, vendor.phone || '', acceptableServiceStyles]
-            );
-            
-            if (nextSlotsResult.rows.length > 0) {
-              const slot = nextSlotsResult.rows[0];
-              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-              const dayOfWeek = slot.day_of_week;
-              const timeStr = slot.time_window_start?.substring(0, 5) || '09:00';
-              const formattedTime = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
-                hour: 'numeric', minute: '2-digit', hour12: true
-              });
-              
-              // Calculate next occurrence of this day
-              const todayDayOfWeek = today.getDay();
-              let daysUntil = dayOfWeek - todayDayOfWeek;
-              if (daysUntil < 0) daysUntil += 7;
-              if (daysUntil === 0) daysUntil = 0; // Today
-              
-              const nextDate = new Date(today);
-              nextDate.setDate(today.getDate() + daysUntil);
-              
-              nextAvailableSlot = {
-                date: nextDate.toISOString().split('T')[0],
-                time: timeStr,
-                formattedDisplay: daysUntil === 0 ? `Today ${formattedTime}` : 
-                                  daysUntil === 1 ? `Tomorrow ${formattedTime}` :
-                                  `${dayNames[dayOfWeek]} ${formattedTime}`
-              };
-            }
-          } catch (slotError) { /* Continue without */ }
+          // ✅ ENRICHED: Get next available slot for solo vendor (using centralized function with service style filter)
+          const nextAvailableResult = await getNextAvailableSlot(vendor.id, vendor.phone || '', acceptableServiceStyles);
+          const nextAvailableSlot = nextAvailableResult ? {
+            date: nextAvailableResult.date,
+            time: nextAvailableResult.time,
+            formattedDisplay: nextAvailableResult.display,
+          } : null;
 
           // ✅ ENRICHED: Get completed bookings
           let completedBookings = 0;
@@ -1253,15 +1420,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
           const photoUrl = await getVendorPhotoUrl(vendor);
           const hasPhoto = !!(photoUrl || (photos && photos.length > 0));
-          // ✅ FIX: For tele and at_home services, photo and availability are optional
-          // Vendors should appear if they have published services, even without photo/availability
-          if (serviceStyle === 'tele' || serviceStyle === 'at_home') {
-            // Tele and at_home services don't require photo or availability slot - just need the service
-            console.log('[discover-services] %s: vendor %s - hasPhoto=%s, hasSlot=%s', serviceStyle, vendor.id, hasPhoto, !!nextAvailableSlot);
-          } else {
-            // For at_center, require both photo and availability
-            if (!nextAvailableSlot || !hasPhoto) {
-              console.log('[discover-services] at_center: vendor %s filtered - missing photo or availability', vendor.id);
+          // ✅ FIX: Require availability for ALL service styles (PROD only)
+          // In dev/UAT, vendors may not have vendor_availability_v2 records
+          if (isProductionEnvironment() && !nextAvailableSlot) {
+            console.log('[discover-services] %s: vendor %s filtered - no availability set (PROD)', serviceStyle, vendor.id);
+            continue;
+          }
+          if (serviceStyle !== 'tele' && serviceStyle !== 'at_home') {
+            // For at_center, also require photo
+            if (!hasPhoto) {
+              console.log('[discover-services] at_center: vendor %s filtered - missing photo', vendor.id);
               continue;
             }
           }
@@ -1445,7 +1613,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND LOWER(r.name) NOT LIKE '%solo%'
             AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
-            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)
             AND vs.service_style != 'at_home'
             ${categoryFilterClause}
         `;
@@ -1585,7 +1753,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.id,
               vs.service_id,
               vs.service_name as name,
-              vs.custom_description as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
               vs.custom_price as price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration_minutes,
               vs.service_style,
@@ -1604,7 +1772,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             servicesParams.push(acceptableStyles);
           }
           
-          servicesQuery += ` AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`;
+          servicesQuery += ` AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)`;
           servicesQuery += ` ORDER BY vs.publish_status DESC, vs.service_name LIMIT 10`;
           
           const services = await query(servicesQuery, servicesParams);
@@ -1687,52 +1855,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             (vendor.role_display_name || '').toLowerCase().includes('solo') ||
             (vendor.role_name || '').includes('_solo');
 
-          // ✅ ENRICHED: Get next available slot (advanced schedule only - vendor_availability_v2)
-          let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
-          try {
-            const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-            const dayOfWeek = today.getDay();
-
-            const acceptableStyles = serviceStyle ? acceptableStylesForService(serviceStyle) : [];
-            const va2Result = await query(
-                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-                 FROM vendor_availability_v2
-                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND (is_available IS NULL OR is_available = true)
-                   ${acceptableStyles.length > 0 ? `AND ((COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]) OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))` : ''}
-                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
-                 LIMIT 7`,
-                acceptableStyles.length > 0 ? [vendor.id, vendor.phone || '', acceptableStyles] : [vendor.id, vendor.phone || '']
-              ).catch(() => ({ rows: [] }));
-
-              if (va2Result.rows.length > 0) {
-                const slot = va2Result.rows[0];
-                const targetDay = slot.day_of_week;
-                let daysToAdd = targetDay - dayOfWeek;
-                if (daysToAdd < 0) daysToAdd += 7;
-                const targetDate = new Date(today);
-                targetDate.setDate(targetDate.getDate() + daysToAdd);
-                const timeStr = (slot.start_time || '09:00').toString().substring(0, 5);
-                const formattedTime = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true
-                });
-                const targetStr = targetDate.toISOString().split('T')[0];
-                const isToday = targetStr === todayStr;
-                const isTomorrow = targetStr === new Date(today.getTime() + 86400000).toISOString().split('T')[0];
-                nextAvailableSlot = {
-                  date: targetStr,
-                  time: timeStr,
-                  formattedDisplay: isToday ? `Today ${formattedTime}` : 
-                                    isTomorrow ? `Tomorrow ${formattedTime}` :
-                                    `${targetDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${formattedTime}`
-                };
-              }
-          } catch (slotError) {
-            // Silently continue if slots not available
-          }
+          // ✅ ENRICHED: Get next available slot (using centralized function with service style filter)
+          const acceptableStylesLocal = serviceStyle ? acceptableStylesForService(serviceStyle) : [];
+          const nextAvailableResult2 = await getNextAvailableSlot(vendor.id, vendor.phone || '', acceptableStylesLocal.length > 0 ? acceptableStylesLocal : undefined);
+          const nextAvailableSlot = nextAvailableResult2 ? {
+            date: nextAvailableResult2.date,
+            time: nextAvailableResult2.time,
+            formattedDisplay: nextAvailableResult2.display,
+          } : null;
 
           // ✅ ENRICHED: Get specializations from vendor_specializations, vendor profile, or services
           let specializations: string[] = [];
@@ -1899,16 +2029,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         );
         const hasAnyServices = v.featuredOfferings && v.featuredOfferings.length > 0;
         
-        // For at_center: be more lenient - only require businessName and at least one service
-        // Photo and complete service info are optional (vendors may be newly onboarded)
+        // For at_center: require businessName, at least one service, AND availability set
+        // Vendors without availability should not appear in discovery results
         if (serviceStyle === 'at_center') {
           const hasBusinessName = !!(v.businessName && v.businessName.trim());
           const hasServices = hasAnyServices || (v.totalOfferings && v.totalOfferings > 0);
-          // Only require business name and services - photo and complete service info are optional
-          return hasBusinessName && hasServices;
+          // ✅ FIX: Require availability only in PROD; dev/UAT may not have availability data
+          if (isProductionEnvironment() && !hasNextAvailability) {
+            console.log('[discover-services] at_center: vendor %s (%s) filtered - no availability set (PROD)', v.id || v.vendorId, v.businessName);
+          }
+          return hasBusinessName && hasServices && (isProductionEnvironment() ? hasNextAvailability : true);
         }
-        // For at_home/tele: require all fields
-        return hasPhoto && hasNextAvailability && hasProfileInfo && hasCompleteServices;
+        // For at_home/tele: require all fields (availability only in PROD)
+        return hasPhoto && (isProductionEnvironment() ? hasNextAvailability : true) && hasProfileInfo && hasCompleteServices;
       });
       if (serviceStyle === 'at_center') {
         // ✅ FIX: For at_center, check if vendor has at_center services in featuredOfferings OR totalOfferings > 0
@@ -3165,37 +3298,28 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
 
-            // 3) Overlap check with existing bookings (slot start + slotDuration vs booking start + duration)
-            // ✅ STRICT BUSINESS RULE: Each slot is atomic and independent
-            // ✅ CRITICAL: Buffer time is informational only for ALL services (tele, at_center, at_home)
-            // Buffer time (travel/prep/setup) is used for scheduling spacing but MUST NOT block adjacent slots
-            // Only service duration blocks slots - buffer is informational only, not used in overlap calculations
-            // ✅ CRITICAL: Use slotDuration (actual slot size) not totalDuration (requested service duration) for overlap check
-            // ✅ ATOMIC SLOT RULE: Booking 09:00 (30min) should ONLY block 09:00, NOT 09:30
-            // Mathematical proof:
-            //   Booking 09:00: bStart=540, bEnd=540+30=570 (09:30)
-            //   Slot 09:30: currentMinutes=570, slotEnd=570+30=600 (10:00)
+            // 3) Overlap check with existing bookings
+            // ✅ ATOMIC SLOT RULE: Each slot is independent. A booking blocks ONLY the slot it starts at.
+            // Booking at 09:00 blocks ONLY 09:00. Slot 09:30 remains available regardless of service duration.
+            // This applies to ALL service types: tele, at_center, at_home, for ALL roles.
+            // Buffer time is informational only and does NOT block adjacent slots.
+            //
+            // ATOMIC OVERLAP FORMULA (uses slotDuration for BOTH sides):
+            //   Booking 09:00: bStart=540, bEnd=540+30=570
+            //   Slot 09:30: currentMinutes=570, slotEnd=570+30=600
             //   Overlap: 570 < 570 && 600 > 540 = false && true = false ✅ (NO overlap)
-            const slotEnd = currentMinutes + slotDuration;  // ✅ Use slotDuration, NO buffer in blocking
+            const slotEnd = currentMinutes + slotDuration;
             const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
               const bStart = timeToMinutes(b.booking_time);
               
-              // ✅ CRITICAL FIX: Buffer time is informational only for ALL services
-              // Buffer time (travel/prep/setup) is used for scheduling spacing but does NOT block adjacent slots
-              // ALL services (tele, at_center, at_home) use EXACT service duration for overlap checks
-              // This ensures atomic slot behavior: booking at 2:00 PM (30min) ends at 2:30 PM
-              // Slot at 2:30 PM should be available (no overlap: 870 < 870 = false)
-              const bookingDuration = b.duration_minutes;  // ✅ Use exact duration, no buffer subtraction for ANY service
+              // ✅ ATOMIC: Use slotDuration (30 min) for booking end, NOT stored duration_minutes
+              // This ensures each booking blocks exactly ONE slot, regardless of service duration
+              const bEnd = bStart + slotDuration;  // ✅ ATOMIC: one slot = one booking
               
-              console.log(`[SLOTS] ${normalizedServiceStyle} overlap: booking=${b.booking_time}, duration=${bookingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
-              
-              const bEnd = bStart + bookingDuration;  // ✅ Use exact duration for ALL services
-              // ✅ ATOMIC OVERLAP FORMULA: (slotStart < bookingEnd) AND (slotEnd > bookingStart)
-              // This ensures adjacent slots (slotStart = bookingEnd) do NOT overlap
-              const overlaps = currentMinutes < bEnd && slotEnd > bStart;  // ✅ Strict < ensures atomic behavior
+              const overlaps = currentMinutes < bEnd && slotEnd > bStart;
               
               if (overlaps) {
-                console.log(`[SLOTS] OVERLAP DETECTED: slot [${timeStr} (${currentMinutes}min)-${Math.floor(slotEnd/60)}:${String(slotEnd%60).padStart(2,'0')} (${slotEnd}min)] overlaps with booking [${b.booking_time} (${bStart}min)-${Math.floor(bEnd/60)}:${String(bEnd%60).padStart(2,'0')} (${bEnd}min)]`);
+                console.log(`[SLOTS] OVERLAP (atomic): slot ${timeStr} blocked by booking at ${b.booking_time}`);
               }
               
               return overlaps;
@@ -4978,7 +5102,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vs.service_style,
           vs.price,
           COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-          vs.custom_description as description,
+          COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
           vs.is_enabled,
           vs.publish_status,
           vs.category as category_name,
@@ -5012,7 +5136,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           id: s.id,
           serviceId: s.service_id,
           serviceName: s.service_name || s.base_service_name,
-          description: s.description || s.base_description || '',
+          description: cleanDescription(s.description) || cleanDescription(s.base_description) || '',
           price: parseFloat(s.price || 0),
           duration: s.duration || 30,
           serviceStyle: s.service_style,
@@ -5210,7 +5334,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 vs.service_name,
                 vs.price,
                 COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-                vs.custom_description as description,
+                COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
                 vs.category as category_name
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 
@@ -5230,36 +5354,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
             // Next available slot from vendor_availability_v2 (at_center)
-            let nextAvailable: { date: string; time: string; display: string } | null = null;
-            try {
-              const today = new Date();
-              const dayOfWeek = today.getDay();
-              const va2 = await query(
-                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-                 FROM vendor_availability_v2
-                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND (is_available IS NULL OR is_available = true)
-                   AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
-                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
-                [vendor.vendor_id, (vendor as any).phone || '', acceptableStyles]
-              );
-              if (va2.rows?.length > 0) {
-                const s = va2.rows[0];
-                let daysToAdd = s.day_of_week - dayOfWeek;
-                if (daysToAdd < 0) daysToAdd += 7;
-                const targetDate = new Date(today);
-                targetDate.setDate(targetDate.getDate() + daysToAdd);
-                const timeStr = (s.start_time || '09:00').toString().substring(0, 5);
-                const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                const isToday = daysToAdd === 0;
-                const isTomorrow = daysToAdd === 1;
-                nextAvailable = {
-                  date: targetDate.toISOString().split('T')[0],
-                  time: timeStr,
-                  display: isToday ? `Today ${formatted}` : isTomorrow ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
-                };
-              }
-            } catch (_) { /* non-fatal */ }
+            const nextAvailable = await getNextAvailableSlot(vendor.vendor_id, (vendor as any).phone || '', acceptableStyles);
 
             // Specializations from vendor_specializations
             let specializations: string[] = [];
@@ -5325,20 +5420,28 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
               bestForProblem: problemTitle || undefined,
               hasPackages: hasPackages || undefined,
-              services: servicesResult.rows.map((s: any) => ({
+              services: deduplicateServices(servicesResult.rows.map((s: any) => ({
                 id: s.id,
                 serviceId: s.service_id,
                 name: s.service_name,
                 price: parseFloat(s.price || 0),
                 duration: s.duration || 30,
-                description: s.description,
+                description: cleanDescription(s.description),
                 category: s.category_name,
-              })),
+              }))),
             };
           })
         )).filter(Boolean);
 
-        let filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
+        // ✅ FIX: Filter out vendors without services; availability check only in PROD
+        let filteredVendors = vendorsWithServices.filter(v => {
+          if (v.services.length === 0) return false;
+          if (isProductionEnvironment() && !v.nextAvailable) {
+            console.log(`[by-style] at_center: vendor ${v.vendorId} filtered - no availability set (PROD)`);
+            return false;
+          }
+          return true;
+        });
 
         // ✅ Apply minRating filter
         if (minRatingValue !== null && minRatingValue > 0) {
@@ -5626,7 +5729,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              vs.custom_description as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
               vs.category
              FROM vendor_services vs
              WHERE vs.vendor_id = $1 
@@ -5651,6 +5754,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
         const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
+        // ✅ FIX: Check availability for individual providers (filtered by service style)
+        const indVendorId = ind.vendor_id || ind.id;
+        const indNextAvailable = await getNextAvailableSlot(indVendorId, ind.phone || '', acceptableStyles);
+
+        // ✅ FIX: Skip individual providers without availability set (PROD only)
+        // Dev/UAT may not have vendor_availability_v2 records
+        if (isProductionEnvironment() && !indNextAvailable) {
+          console.log(`[by-style] at_home/tele: individual ${ind.id} filtered - no availability set (PROD)`);
+          continue;
+        }
+
         providers.push({
           providerId: ind.id,
           providerType: 'individual',
@@ -5674,16 +5788,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorType: ind.vendor_id ? 'business' : 'solo',
           roleName: ind.role,
           specializations: [],
-          nextAvailable: null,
-          services: servicesResult.rows.map(s => ({
+          nextAvailable: indNextAvailable,
+          services: deduplicateServices(servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category,
-          })),
+          }))),
         });
       }
 
@@ -5811,7 +5925,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              vs.custom_description as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
               vs.category
              FROM vendor_services vs
              WHERE vs.vendor_id = $1 
@@ -5845,6 +5959,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
         const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
+        // ✅ FIX: Check availability for staff providers (filtered by service style)
+        const staffNextAvailable = staff.vendor_id 
+          ? await getNextAvailableSlot(staff.vendor_id, staff.phone || '', acceptableStyles)
+          : null;
+
+        // ✅ FIX: Skip staff providers whose vendor has no availability set (PROD only)
+        // Dev/UAT may not have vendor_availability_v2 records
+        if (isProductionEnvironment() && !staffNextAvailable) {
+          console.log(`[by-style] at_home/tele: staff ${staff.id} (vendor ${staff.vendor_id}) filtered - no availability set (PROD)`);
+          continue;
+        }
+
         providers.push({
           providerId: staff.id,
           providerType: 'staff',
@@ -5872,22 +5998,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorType: staff.vendor_id ? 'business' : 'solo',
           roleName: staff.vendor_role_display || staff.role || '',
           specializations: [],
-          nextAvailable: null,
-          services: servicesResult.rows.map(s => ({
+          nextAvailable: staffNextAvailable,
+          services: deduplicateServices(servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category,
-          })),
+          }))),
         });
       }
 
       // ========== 3. SOLO PROVIDERS FROM VENDOR_IDENTITY (not yet in vendors table) ==========
       // ✅ FIX: Query vendor_identity for solo providers who haven't been converted to vendors yet
       const acceptableStylesFallback = acceptableStylesForService(serviceStyle);
+      // ✅ FIX: Check if profile_photo_url column exists (missing in dev/UAT database)
+      const hasViProfilePhoto = await columnExists('vendor_identity', 'profile_photo_url');
+      const viPhotoCol = hasViProfilePhoto ? 'vi.profile_photo_url' : 'NULL';
       let vendorIdentityQuery = `
         SELECT DISTINCT
           vi.id as vendor_id,
@@ -5898,7 +6027,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vi.metadata->>'city' as city,
           (vi.metadata->>'latitude')::numeric as latitude,
           (vi.metadata->>'longitude')::numeric as longitude,
-          vi.profile_photo_url as profile_photo_url,
+          ${viPhotoCol} as profile_photo_url,
           NULL as profile_image,
           NULL as logo_url,
           ARRAY[]::text[] as specializations,
@@ -5959,7 +6088,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            vs.custom_description as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id::text = $1 
@@ -5973,6 +6102,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (servicesResult.rows.length === 0) continue;
         if (serviceStyle && !roleConfigAllowsStyle((vi as any).role_config, serviceStyle)) continue;
         
+        // ✅ FIX: Check availability for vendor_identity providers (filtered by service style)
+        const viNextAvailable = await getNextAvailableSlot(vi.vendor_id, vi.phone || '', acceptableStyles);
+
+        // ✅ FIX: Skip vendor_identity providers without availability set (PROD only)
+        // Dev/UAT may not have vendor_availability_v2 records
+        if (isProductionEnvironment() && !viNextAvailable) {
+          console.log(`[by-style] vendor_identity ${vi.vendor_id} filtered - no availability set (PROD)`);
+          continue;
+        }
+
         let distance = null;
         if (customerLat && customerLng && vi.latitude && vi.longitude) {
           distance = calculateDistance(customerLat, customerLng, parseFloat(vi.latitude), parseFloat(vi.longitude));
@@ -6008,20 +6147,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           isIndividualProvider: true,
           vendorType: 'solo',
           serviceStyles: serviceStyle ? [normalizeServiceStyle(serviceStyle) || serviceStyle] : acceptableStylesFallback,
-          nextAvailable: null,
+          nextAvailable: viNextAvailable,
           price: minPrice,
           consultationFee: minPrice,
           specializations: [],
           amenities: [],
-          services: servicesResult.rows.map(s => ({
+          services: deduplicateServices(servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category,
-          })),
+          }))),
         });
       }
       
@@ -6203,7 +6342,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            vs.custom_description as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id = $1 
@@ -6242,6 +6381,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           console.log(`[Services By Style] ⚠️ Vendor ${vendor.vendor_id} has NO services - will be filtered out`);
         }
 
+        // ✅ FIX: Check availability for fallback vendors (filtered by service style)
+        const vendorFallbackNextAvailable = await getNextAvailableSlot(vendor.vendor_id, vendor.phone || '', acceptableStyles);
+
+        // ✅ FIX: Skip fallback vendors without availability set (PROD only)
+        // Dev/UAT may not have vendor_availability_v2 records
+        if (isProductionEnvironment() && !vendorFallbackNextAvailable) {
+          console.log(`[by-style] fallback: vendor ${vendor.vendor_id} filtered - no availability set (PROD)`);
+          continue;
+        }
+
         providers.push({
           providerId: vendor.vendor_id,
           providerType: 'vendor',
@@ -6266,20 +6415,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           isIndividualProvider: true,
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
           serviceStyles: serviceStyle ? ((normalizeServiceStyle(serviceStyle) || serviceStyle) ? [normalizeServiceStyle(serviceStyle) || serviceStyle] : []) : acceptableStylesFallback,
-          nextAvailable: null,
+          nextAvailable: vendorFallbackNextAvailable,
           price: minPrice,
           consultationFee: minPrice,
           specializations,
           amenities,
-          services: servicesResult.rows.map(s => ({
+          services: deduplicateServices(servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category,
-          })),
+          }))),
         });
       }
 

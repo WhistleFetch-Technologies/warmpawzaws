@@ -118706,6 +118706,1052 @@ var init_extract_profile_photo = __esm({
   }
 });
 
+// src/lib/kyc-form-fields.ts
+var kyc_form_fields_exports = {};
+__export(kyc_form_fields_exports, {
+  ADDRESS_PROOF_FIELD: () => ADDRESS_PROOF_FIELD,
+  BEHAVIORIST_FIELDS: () => BEHAVIORIST_FIELDS,
+  BOARDING_FIELDS: () => BOARDING_FIELDS,
+  BREEDER_FIELDS: () => BREEDER_FIELDS,
+  BUSINESS_REGISTRATION_FIELDS: () => BUSINESS_REGISTRATION_FIELDS,
+  DOORSTEP_SERVICE_FIELDS: () => DOORSTEP_SERVICE_FIELDS,
+  GROOMING_BUSINESS_FIELDS: () => GROOMING_BUSINESS_FIELDS,
+  HEALTHCARE_VET_FIELDS: () => HEALTHCARE_VET_FIELDS,
+  KYC_SECTIONS: () => KYC_SECTIONS,
+  NGO_SHELTER_FIELDS: () => NGO_SHELTER_FIELDS,
+  NUTRITIONIST_FIELDS: () => NUTRITIONIST_FIELDS,
+  OWNER_AADHAAR_FIELDS: () => OWNER_AADHAAR_FIELDS,
+  PHARMACY_FIELDS: () => PHARMACY_FIELDS,
+  ROLE_KYC_CONFIGS: () => ROLE_KYC_CONFIGS,
+  SUNSET_SERVICES_FIELDS: () => SUNSET_SERVICES_FIELDS,
+  TRAINER_FIELDS: () => TRAINER_FIELDS,
+  UNIVERSAL_KYC_FIELDS: () => UNIVERSAL_KYC_FIELDS,
+  getKYCFieldsForRole: () => getKYCFieldsForRole,
+  getRoleKYCConfig: () => getRoleKYCConfig,
+  getSupportedKYCRoles: () => getSupportedKYCRoles,
+  isHardBlockField: () => isHardBlockField,
+  isSoftBlockField: () => isSoftBlockField
+});
+function getRoleKYCConfig(roleName, vendorType) {
+  const roleKey = vendorType ? `${roleName}_${vendorType}` : roleName;
+  if (ROLE_KYC_CONFIGS[roleKey]) {
+    return ROLE_KYC_CONFIGS[roleKey];
+  }
+  if (ROLE_KYC_CONFIGS[roleName]) {
+    return ROLE_KYC_CONFIGS[roleName];
+  }
+  const aliases = {
+    "groomer": "pet_groomer",
+    "walker": "pet_walker",
+    "trainer": "pet_trainer",
+    "vet": "veterinarian",
+    "vet_clinic": "veterinary_clinic",
+    "pharmacy": "pet_pharmacy",
+    "boarding": "pet_boarding",
+    "shelter": "pet_shelter",
+    "breeder": "pet_breeder"
+  };
+  const aliasedRole = aliases[roleName];
+  if (aliasedRole) {
+    const aliasKey = vendorType ? `${aliasedRole}_${vendorType}` : aliasedRole;
+    return ROLE_KYC_CONFIGS[aliasKey] || ROLE_KYC_CONFIGS[aliasedRole] || null;
+  }
+  return null;
+}
+function getKYCFieldsForRole(roleName, vendorType) {
+  const config = getRoleKYCConfig(roleName, vendorType);
+  if (!config) return [];
+  return config.fields.sort((a, b) => {
+    const sectionA = config.sections.find((s) => s.id === a.section);
+    const sectionB = config.sections.find((s) => s.id === b.section);
+    const sectionOrderA = sectionA?.order || 99;
+    const sectionOrderB = sectionB?.order || 99;
+    if (sectionOrderA !== sectionOrderB) {
+      return sectionOrderA - sectionOrderB;
+    }
+    return a.displayOrder - b.displayOrder;
+  });
+}
+function isHardBlockField(roleName, fieldId, vendorType) {
+  const config = getRoleKYCConfig(roleName, vendorType);
+  return config?.hardBlockFields.includes(fieldId) || false;
+}
+function isSoftBlockField(roleName, fieldId, vendorType) {
+  const config = getRoleKYCConfig(roleName, vendorType);
+  return config?.softBlockFields.includes(fieldId) || false;
+}
+function getSupportedKYCRoles() {
+  return Object.keys(ROLE_KYC_CONFIGS);
+}
+var KYC_SECTIONS, UNIVERSAL_KYC_FIELDS, OWNER_AADHAAR_FIELDS, DOORSTEP_SERVICE_FIELDS, BUSINESS_REGISTRATION_FIELDS, HEALTHCARE_VET_FIELDS, PHARMACY_FIELDS, BREEDER_FIELDS, BOARDING_FIELDS, NGO_SHELTER_FIELDS, NUTRITIONIST_FIELDS, TRAINER_FIELDS, BEHAVIORIST_FIELDS, SUNSET_SERVICES_FIELDS, GROOMING_BUSINESS_FIELDS, ADDRESS_PROOF_FIELD, ROLE_KYC_CONFIGS;
+var init_kyc_form_fields = __esm({
+  "src/lib/kyc-form-fields.ts"() {
+    "use strict";
+    KYC_SECTIONS = [
+      { id: "business_information", name: "Business Information", order: 1 },
+      { id: "location_information", name: "Local Information", order: 2 },
+      { id: "identity_verification", name: "Identity Verification", order: 3 },
+      { id: "documents", name: "Documents", order: 4 },
+      { id: "professional", name: "Professional", order: 5 },
+      { id: "permissions", name: "Permissions", order: 6 },
+      // ✅ NEW: Permissions section
+      { id: "declarations", name: "Declaration", order: 7 },
+      { id: "banking", name: "Banking Details", order: 8 }
+    ];
+    UNIVERSAL_KYC_FIELDS = [
+      // Profile Photo - FIRST in identity_verification
+      {
+        id: "profilePhoto",
+        fieldName: "profilePhoto",
+        label: "Profile Photo (Passport Size)",
+        type: "file",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload a recent passport-size photograph",
+        displayOrder: 1
+        // ✅ FIRST in identity verification
+      },
+      // Aadhaar with OTP verification
+      {
+        id: "aadhaarNumber",
+        fieldName: "aadhaarNumber",
+        label: "Aadhaar Number",
+        type: "aadhaar-otp",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        requiresVerification: true,
+        verificationEndpoint: "/kyc/aadhaar/generate-otp",
+        placeholder: "Enter 12-digit Aadhaar number",
+        helpText: "Your Aadhaar will be verified via OTP sent to registered mobile",
+        validation: {
+          pattern: "^[0-9]{12}$",
+          message: "Please enter a valid 12-digit Aadhaar number"
+        },
+        displayOrder: 2
+        // ✅ After profile photo
+      },
+      {
+        id: "aadhaarDoc",
+        fieldName: "aadhaarDoc",
+        label: "Aadhaar Card (Front & Back)",
+        type: "file",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload scanned copy or photo of Aadhaar card (both sides)",
+        displayOrder: 3
+        // ✅ After aadhaar number
+      },
+      // PAN with verification
+      {
+        id: "panNumber",
+        fieldName: "panNumber",
+        label: "PAN Number",
+        type: "pan-verify",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        requiresVerification: true,
+        verificationEndpoint: "/kyc/pan/verify",
+        placeholder: "Enter PAN (e.g., ABCDE1234F)",
+        helpText: "PAN will be verified automatically",
+        validation: {
+          pattern: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
+          message: "Please enter a valid PAN number (e.g., ABCDE1234F)"
+        },
+        displayOrder: 4
+        // ✅ After aadhaar
+      },
+      {
+        id: "panCard",
+        fieldName: "panCard",
+        label: "PAN Card",
+        type: "file",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload scanned copy or photo of PAN card",
+        displayOrder: 5
+        // ✅ After pan number
+      }
+    ];
+    OWNER_AADHAAR_FIELDS = [
+      {
+        id: "ownerAadhaarNumber",
+        fieldName: "ownerAadhaarNumber",
+        label: "Owner's Aadhaar Number",
+        type: "aadhaar-otp",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        requiresVerification: true,
+        verificationEndpoint: "/kyc/aadhaar/generate-otp",
+        placeholder: "Enter 12-digit Aadhaar number",
+        helpText: "Owner's Aadhaar will be verified via OTP",
+        validation: {
+          pattern: "^[0-9]{12}$",
+          message: "Please enter a valid 12-digit Aadhaar number"
+        },
+        conditional: { field: "vendorType", value: "business" },
+        displayOrder: 1
+      },
+      {
+        id: "ownerAadhaarDoc",
+        fieldName: "ownerAadhaarDoc",
+        label: "Owner's Aadhaar Card",
+        type: "file",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload owner's Aadhaar card (both sides)",
+        conditional: { field: "vendorType", value: "business" },
+        displayOrder: 2
+      }
+    ];
+    DOORSTEP_SERVICE_FIELDS = [
+      {
+        id: "policeVerificationDoc",
+        fieldName: "policeVerificationDoc",
+        label: "Police Verification Certificate",
+        type: "file",
+        section: "permissions",
+        // ✅ FIX: Changed from 'documents' to 'permissions'
+        required: true,
+        isMandatory: true,
+        softBlock: true,
+        helpText: "Upload police verification certificate. Your profile will have limited visibility until verified.",
+        displayOrder: 1
+        // ✅ First in permissions section
+      },
+      {
+        id: "noCriminalRecordDeclaration",
+        fieldName: "noCriminalRecordDeclaration",
+        label: "No Criminal Record Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I hereby declare that I have no criminal record and have not been convicted of any offense. I understand that providing false information may result in immediate termination of my account.",
+        declarationType: "no_criminal_record",
+        displayOrder: 20
+      }
+    ];
+    BUSINESS_REGISTRATION_FIELDS = [
+      {
+        id: "shopActLicenseNumber",
+        fieldName: "shopActLicenseNumber",
+        label: "Shop & Establishment License Number",
+        type: "text",
+        section: "business_registration",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter license number",
+        helpText: "Registration number from Shop & Establishment Act",
+        displayOrder: 1
+      },
+      {
+        id: "shopActLicenseDoc",
+        fieldName: "shopActLicenseDoc",
+        label: "Shop & Establishment License",
+        type: "file",
+        section: "business_registration",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload Shop & Establishment certificate",
+        displayOrder: 2
+      },
+      {
+        id: "gstNumber",
+        fieldName: "gstNumber",
+        label: "GST Number",
+        type: "gst-verify",
+        section: "business_registration",
+        required: false,
+        // Conditional based on turnover
+        isMandatory: false,
+        requiresVerification: true,
+        verificationEndpoint: "/kyc/gst/verify",
+        placeholder: "Enter GSTIN (if applicable)",
+        helpText: "Required if annual turnover exceeds threshold or already registered",
+        validation: {
+          pattern: "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$",
+          message: "Please enter a valid GSTIN"
+        },
+        displayOrder: 3
+      },
+      {
+        id: "gstCertificate",
+        fieldName: "gstCertificate",
+        label: "GST Certificate",
+        type: "file",
+        section: "business_registration",
+        required: false,
+        isMandatory: false,
+        helpText: "Upload GST registration certificate (if applicable)",
+        conditional: { field: "gstNumber", value: "notEmpty" },
+        displayOrder: 4
+      },
+      {
+        id: "municipalPermission",
+        fieldName: "municipalPermission",
+        label: "Municipal/Local Permission",
+        type: "file",
+        section: "permissions",
+        // ✅ FIX: Changed from 'business_registration' to 'permissions'
+        required: false,
+        isMandatory: false,
+        softBlock: true,
+        helpText: "Upload municipal or local body permission (if applicable)",
+        displayOrder: 2
+        // ✅ Second in permissions section (after police verification)
+      }
+    ];
+    HEALTHCARE_VET_FIELDS = [
+      {
+        id: "vciRegistrationNumber",
+        fieldName: "vciRegistrationNumber",
+        label: "VCI Registration Number",
+        type: "text",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter VCI registration number",
+        helpText: "Veterinary Council of India registration number",
+        displayOrder: 1
+      },
+      {
+        id: "vciRegistrationDoc",
+        fieldName: "vciRegistrationDoc",
+        label: "VCI Registration Certificate",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload VCI registration certificate",
+        displayOrder: 2
+      },
+      {
+        id: "stateCouncilRegistration",
+        fieldName: "stateCouncilRegistration",
+        label: "State Veterinary Council Registration",
+        type: "text",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter state council registration number",
+        helpText: "State Veterinary Council registration number",
+        displayOrder: 3
+      },
+      {
+        id: "stateCouncilDoc",
+        fieldName: "stateCouncilDoc",
+        label: "State Council Registration Certificate",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload State Veterinary Council certificate",
+        displayOrder: 4
+      },
+      {
+        id: "degreeDoc",
+        fieldName: "degreeDoc",
+        label: "Veterinary Degree Certificate (BVSc/MVSc)",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload veterinary degree certificate",
+        displayOrder: 5
+      },
+      {
+        id: "indemnityInsuranceDoc",
+        fieldName: "indemnityInsuranceDoc",
+        label: "Professional Indemnity Insurance (Recommended)",
+        type: "file",
+        section: "professional",
+        required: false,
+        isMandatory: false,
+        softBlock: true,
+        helpText: "Upload professional indemnity insurance certificate",
+        displayOrder: 6
+      }
+    ];
+    PHARMACY_FIELDS = [
+      {
+        id: "pharmacyLicenseNumber",
+        fieldName: "pharmacyLicenseNumber",
+        label: "Pharmacy License Number",
+        type: "text",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter pharmacy license number",
+        displayOrder: 1
+      },
+      {
+        id: "pharmacyLicenseDoc",
+        fieldName: "pharmacyLicenseDoc",
+        label: "Pharmacy License Document",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload valid pharmacy license",
+        displayOrder: 2
+      },
+      {
+        id: "drugLicenseNumber",
+        fieldName: "drugLicenseNumber",
+        label: "Drug License Number",
+        type: "text",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter drug license number",
+        displayOrder: 3
+      },
+      {
+        id: "drugLicenseDoc",
+        fieldName: "drugLicenseDoc",
+        label: "Drug License Certificate",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload valid drug license from State Drug Controller",
+        displayOrder: 4
+      }
+    ];
+    BREEDER_FIELDS = [
+      {
+        id: "awbiRegistration",
+        fieldName: "awbiRegistration",
+        label: "AWBI / State Animal Welfare Registration Number",
+        type: "text",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter AWBI or State Animal Welfare registration",
+        helpText: "Animal Welfare Board of India or State registration",
+        displayOrder: 1
+      },
+      {
+        id: "awbiRegistrationDoc",
+        fieldName: "awbiRegistrationDoc",
+        label: "AWBI / State Animal Welfare Certificate",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload AWBI or State Animal Welfare certificate",
+        displayOrder: 2
+      },
+      {
+        id: "localBodyPermission",
+        fieldName: "localBodyPermission",
+        label: "Local Body / Panchayat Permission",
+        type: "file",
+        section: "professional",
+        required: false,
+        isMandatory: false,
+        softBlock: true,
+        helpText: "Upload local body or panchayat permission (if applicable)",
+        displayOrder: 3
+      },
+      {
+        id: "breedingLimitsDeclaration",
+        fieldName: "breedingLimitsDeclaration",
+        label: "Ethical Breeding Limits Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I agree to follow ethical breeding limits as per platform guidelines and AWBI recommendations. I will ensure proper care, health checkups, and vaccinations for all breeding animals and their offspring.",
+        declarationType: "breeding_limits",
+        displayOrder: 20
+      },
+      {
+        id: "noThirdPartySalesDeclaration",
+        fieldName: "noThirdPartySalesDeclaration",
+        label: "No Third-Party Sales Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I declare that I will not engage in third-party reselling or brokering of pets. All pets offered will be bred by me in my registered facility.",
+        declarationType: "no_third_party_sales",
+        displayOrder: 21
+      },
+      {
+        id: "annualRevalidationConsent",
+        fieldName: "annualRevalidationConsent",
+        label: "Annual Revalidation Consent",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I consent to annual revalidation of my registration and understand that my account may be suspended if I fail to complete the revalidation process.",
+        declarationType: "annual_revalidation_consent",
+        displayOrder: 22
+      }
+    ];
+    BOARDING_FIELDS = [
+      {
+        id: "vetTieUpName",
+        fieldName: "vetTieUpName",
+        label: "Associated Veterinarian Name",
+        type: "text",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter name of associated veterinarian",
+        helpText: "Name of veterinarian for emergency pet care",
+        displayOrder: 10
+      },
+      {
+        id: "vetTieUpContact",
+        fieldName: "vetTieUpContact",
+        label: "Associated Veterinarian Contact",
+        type: "tel",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter veterinarian phone number",
+        validation: {
+          pattern: "^[0-9]{10}$",
+          message: "Please enter a valid 10-digit phone number"
+        },
+        displayOrder: 11
+      },
+      {
+        id: "vetTieUpDeclaration",
+        fieldName: "vetTieUpDeclaration",
+        label: "Veterinary Tie-up Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I confirm that we have a tie-up with a licensed veterinarian for emergency pet care and that veterinary assistance is available within 30 minutes of our facility.",
+        declarationType: "vet_tie_up",
+        displayOrder: 23
+      }
+    ];
+    NGO_SHELTER_FIELDS = [
+      {
+        id: "authorizedSignatoryAadhaar",
+        fieldName: "authorizedSignatoryAadhaar",
+        label: "Authorized Signatory's Aadhaar Number",
+        type: "aadhaar-otp",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        requiresVerification: true,
+        verificationEndpoint: "/kyc/aadhaar/generate-otp",
+        placeholder: "Enter 12-digit Aadhaar number",
+        helpText: "Authorized signatory's Aadhaar will be verified via OTP",
+        validation: {
+          pattern: "^[0-9]{12}$",
+          message: "Please enter a valid 12-digit Aadhaar number"
+        },
+        displayOrder: 1
+      },
+      {
+        id: "authorizedSignatoryAadhaarDoc",
+        fieldName: "authorizedSignatoryAadhaarDoc",
+        label: "Authorized Signatory's Aadhaar Card",
+        type: "file",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload authorized signatory's Aadhaar card",
+        displayOrder: 2
+      },
+      {
+        id: "ngoPanNumber",
+        fieldName: "ngoPanNumber",
+        label: "NGO PAN Number",
+        type: "pan-verify",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        requiresVerification: true,
+        verificationEndpoint: "/kyc/pan/verify",
+        placeholder: "Enter NGO PAN (e.g., ABCDE1234F)",
+        helpText: "Organization PAN will be verified automatically",
+        validation: {
+          pattern: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
+          message: "Please enter a valid PAN number"
+        },
+        displayOrder: 3
+      },
+      {
+        id: "ngoPanDoc",
+        fieldName: "ngoPanDoc",
+        label: "NGO PAN Card",
+        type: "file",
+        section: "identity_verification",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload organization PAN card",
+        displayOrder: 4
+      },
+      {
+        id: "ngoRegistrationType",
+        fieldName: "ngoRegistrationType",
+        label: "Registration Type",
+        type: "select",
+        section: "business_registration",
+        required: true,
+        isMandatory: true,
+        options: ["Trust", "Society", "Section 8 Company"],
+        displayOrder: 1
+      },
+      {
+        id: "ngoRegistrationNumber",
+        fieldName: "ngoRegistrationNumber",
+        label: "NGO Registration Number",
+        type: "text",
+        section: "business_registration",
+        required: true,
+        isMandatory: true,
+        placeholder: "Enter Trust/Society/Section 8 registration number",
+        displayOrder: 2
+      },
+      {
+        id: "ngoRegistrationDoc",
+        fieldName: "ngoRegistrationDoc",
+        label: "NGO Registration Certificate",
+        type: "file",
+        section: "business_registration",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload Trust Deed / Society Registration / Section 8 Certificate",
+        displayOrder: 3
+      },
+      {
+        id: "awbiRegistrationNGO",
+        fieldName: "awbiRegistrationNGO",
+        label: "AWBI Registration (if applicable)",
+        type: "text",
+        section: "professional",
+        required: false,
+        isMandatory: false,
+        softBlock: true,
+        placeholder: "Enter AWBI registration number",
+        displayOrder: 1
+      },
+      {
+        id: "awbiRegistrationDocNGO",
+        fieldName: "awbiRegistrationDocNGO",
+        label: "AWBI Registration Certificate",
+        type: "file",
+        section: "professional",
+        required: false,
+        isMandatory: false,
+        softBlock: true,
+        helpText: "Upload AWBI registration certificate (recommended)",
+        displayOrder: 2
+      },
+      {
+        id: "adoptionPolicyDoc",
+        fieldName: "adoptionPolicyDoc",
+        label: "Adoption Policy Document",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload your adoption policy document detailing screening process, fees, and follow-up procedures",
+        displayOrder: 3
+      }
+    ];
+    NUTRITIONIST_FIELDS = [
+      {
+        id: "nonMedicalAdviceDeclaration",
+        fieldName: "nonMedicalAdviceDeclaration",
+        label: "Non-Medical Advice Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I declare that I provide non-medical nutritional advice only. I will not make clinical claims, diagnose conditions, or prescribe medication. For medical nutrition therapy, I will refer clients to a licensed veterinarian.",
+        declarationType: "non_medical_advice",
+        displayOrder: 24
+      }
+    ];
+    TRAINER_FIELDS = [
+      {
+        id: "experienceDeclaration",
+        fieldName: "experienceDeclaration",
+        label: "Experience Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I declare that my stated years of experience and training qualifications are accurate. I can provide references and proof of experience if requested by the platform.",
+        declarationType: "experience_accuracy",
+        displayOrder: 25
+      }
+    ];
+    BEHAVIORIST_FIELDS = [
+      {
+        id: "noClinicalClaimsDeclaration",
+        fieldName: "noClinicalClaimsDeclaration",
+        label: "No Clinical Claims Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I declare that I will not make clinical claims, provide medical diagnosis, or prescribe medication. For cases requiring medical intervention, I will refer clients to a licensed veterinarian.",
+        declarationType: "no_clinical_claims",
+        displayOrder: 26
+      }
+    ];
+    SUNSET_SERVICES_FIELDS = [
+      {
+        id: "environmentalComplianceSOP",
+        fieldName: "environmentalComplianceSOP",
+        label: "Environmental Compliance SOP Document",
+        type: "file",
+        section: "professional",
+        required: true,
+        isMandatory: true,
+        helpText: "Upload Standard Operating Procedure for environmental compliance in cremation/burial services",
+        displayOrder: 10
+      },
+      {
+        id: "environmentalComplianceDeclaration",
+        fieldName: "environmentalComplianceDeclaration",
+        label: "Environmental Compliance Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I declare compliance with all environmental regulations for pet cremation/burial services. I will follow proper waste disposal procedures and maintain all required environmental clearances.",
+        declarationType: "environmental_compliance",
+        displayOrder: 27
+      }
+    ];
+    GROOMING_BUSINESS_FIELDS = [
+      {
+        id: "premisesHygieneDeclaration",
+        fieldName: "premisesHygieneDeclaration",
+        label: "Premises Hygiene Declaration",
+        type: "declaration",
+        section: "declarations",
+        required: true,
+        isMandatory: true,
+        declarationText: "I declare that our premises meet hygiene and sanitation standards for pet grooming. We follow proper sterilization procedures for all equipment and maintain a clean environment.",
+        declarationType: "premises_hygiene",
+        displayOrder: 28
+      }
+    ];
+    ADDRESS_PROOF_FIELD = {
+      id: "addressProof",
+      fieldName: "addressProof",
+      label: "Address Proof (Utility Bill/Rent Agreement)",
+      type: "file",
+      section: "documents",
+      required: false,
+      isMandatory: false,
+      softBlock: true,
+      helpText: "Upload utility bill or rent agreement as address proof",
+      displayOrder: 15
+    };
+    ROLE_KYC_CONFIGS = {
+      // ============================================================================
+      // DOG WALKER / PET WALKER
+      // ============================================================================
+      "pet_walker": {
+        roleName: "pet_walker",
+        displayName: "Dog Walker",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...DOORSTEP_SERVICE_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto"],
+        softBlockFields: ["policeVerificationDoc", "addressProof"]
+      },
+      // ============================================================================
+      // PET GROOMER (Solo)
+      // ============================================================================
+      "pet_groomer_solo": {
+        roleName: "pet_groomer",
+        displayName: "Pet Groomer (Solo)",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...DOORSTEP_SERVICE_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto"],
+        softBlockFields: ["policeVerificationDoc", "addressProof"]
+      },
+      // ============================================================================
+      // PET GROOMING BUSINESS
+      // ============================================================================
+      "pet_groomer_business": {
+        roleName: "pet_groomer",
+        displayName: "Pet Grooming Business",
+        vendorTypes: ["business"],
+        fields: [
+          ...OWNER_AADHAAR_FIELDS,
+          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
+          ...BUSINESS_REGISTRATION_FIELDS,
+          ...GROOMING_BUSINESS_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "business_registration", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "shopActLicenseNumber"],
+        softBlockFields: ["municipalPermission", "addressProof"]
+      },
+      // ============================================================================
+      // VETERINARIAN (Solo)
+      // ============================================================================
+      "veterinarian": {
+        roleName: "veterinarian",
+        displayName: "Veterinarian",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...HEALTHCARE_VET_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "documents", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "vciRegistrationNumber", "stateCouncilRegistration", "degreeDoc"],
+        softBlockFields: ["indemnityInsuranceDoc", "addressProof"]
+      },
+      // ============================================================================
+      // VETERINARY CLINIC
+      // ============================================================================
+      "veterinary_clinic": {
+        roleName: "veterinary_clinic",
+        displayName: "Veterinary Clinic",
+        vendorTypes: ["business"],
+        fields: [
+          ...OWNER_AADHAAR_FIELDS,
+          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
+          ...HEALTHCARE_VET_FIELDS,
+          ...BUSINESS_REGISTRATION_FIELDS,
+          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
+        ],
+        sections: KYC_SECTIONS,
+        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "vciRegistrationNumber", "stateCouncilRegistration", "degreeDoc", "shopActLicenseNumber", "addressProof"],
+        softBlockFields: ["municipalPermission", "indemnityInsuranceDoc"]
+      },
+      // ============================================================================
+      // PET PHARMACY
+      // ============================================================================
+      "pet_pharmacy": {
+        roleName: "pet_pharmacy",
+        displayName: "Pet Pharmacy",
+        vendorTypes: ["business"],
+        fields: [
+          ...OWNER_AADHAAR_FIELDS,
+          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
+          ...PHARMACY_FIELDS,
+          ...BUSINESS_REGISTRATION_FIELDS.map((f) => f.id === "gstNumber" ? { ...f, required: true, isMandatory: true } : f),
+          { ...BUSINESS_REGISTRATION_FIELDS.find((f) => f.id === "municipalPermission"), required: true, isMandatory: true },
+          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
+        ],
+        sections: KYC_SECTIONS,
+        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "pharmacyLicenseNumber", "drugLicenseNumber", "shopActLicenseNumber", "gstNumber", "municipalPermission", "addressProof"],
+        softBlockFields: []
+      },
+      // ============================================================================
+      // PET BREEDER (Ethical)
+      // ============================================================================
+      "pet_breeder": {
+        roleName: "pet_breeder",
+        displayName: "Ethical Breeder",
+        vendorTypes: ["solo", "business"],
+        fields: [
+          ...OWNER_AADHAAR_FIELDS,
+          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
+          ...BREEDER_FIELDS,
+          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true },
+          {
+            ...DOORSTEP_SERVICE_FIELDS.find((f) => f.id === "policeVerificationDoc"),
+            required: false,
+            isMandatory: false,
+            softBlock: true,
+            helpText: "Police verification is strongly recommended for breeders"
+          }
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "awbiRegistration", "addressProof", "breedingLimitsDeclaration", "noThirdPartySalesDeclaration", "annualRevalidationConsent"],
+        softBlockFields: ["policeVerificationDoc", "localBodyPermission"],
+        requiresManualReview: true,
+        requiresAnnualRevalidation: true
+      },
+      // ============================================================================
+      // PET BOARDING / KENNEL
+      // ============================================================================
+      "pet_boarding": {
+        roleName: "pet_boarding",
+        displayName: "Pet Boarding (Kennel/Cattery)",
+        vendorTypes: ["business"],
+        fields: [
+          ...OWNER_AADHAAR_FIELDS,
+          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
+          ...BUSINESS_REGISTRATION_FIELDS,
+          ...BOARDING_FIELDS,
+          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "business_registration", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "shopActLicenseNumber", "addressProof", "vetTieUpName", "vetTieUpContact", "vetTieUpDeclaration"],
+        softBlockFields: ["municipalPermission", "gstNumber"]
+      },
+      // ============================================================================
+      // PET NUTRITIONIST (Non-Medical)
+      // ============================================================================
+      "nutritionist": {
+        roleName: "nutritionist",
+        displayName: "Pet Nutritionist (Non-Medical)",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...NUTRITIONIST_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "nonMedicalAdviceDeclaration"],
+        softBlockFields: ["addressProof"]
+      },
+      // ============================================================================
+      // PET TRAINER (Solo)
+      // ============================================================================
+      "pet_trainer": {
+        roleName: "pet_trainer",
+        displayName: "Pet Trainer",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...TRAINER_FIELDS,
+          {
+            ...DOORSTEP_SERVICE_FIELDS.find((f) => f.id === "policeVerificationDoc"),
+            required: false,
+            isMandatory: false,
+            softBlock: true
+          },
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "experienceDeclaration"],
+        softBlockFields: ["policeVerificationDoc", "addressProof"]
+      },
+      // ============================================================================
+      // PET BEHAVIORIST (Non-Medical)
+      // ============================================================================
+      "pet_behaviorist": {
+        roleName: "pet_behaviorist",
+        displayName: "Pet Behaviourist (Non-Medical)",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...BEHAVIORIST_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "noClinicalClaimsDeclaration"],
+        softBlockFields: ["addressProof"]
+      },
+      // ============================================================================
+      // PET ADOPTION NGO / SHELTER
+      // ============================================================================
+      "pet_shelter": {
+        roleName: "pet_shelter",
+        displayName: "Pet Adoption NGO / Shelter",
+        vendorTypes: ["business"],
+        fields: [
+          ...NGO_SHELTER_FIELDS,
+          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "business_registration", "documents", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["authorizedSignatoryAadhaar", "ngoPanNumber", "ngoRegistrationType", "ngoRegistrationNumber", "ngoRegistrationDoc", "adoptionPolicyDoc", "addressProof"],
+        softBlockFields: ["awbiRegistrationNGO"]
+      },
+      // ============================================================================
+      // PET FUNERAL / SUNSET SERVICES
+      // ============================================================================
+      "pet_sunset_services": {
+        roleName: "pet_sunset_services",
+        displayName: "Pet Funeral Service",
+        vendorTypes: ["business"],
+        fields: [
+          ...OWNER_AADHAAR_FIELDS,
+          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
+          ...BUSINESS_REGISTRATION_FIELDS,
+          ...SUNSET_SERVICES_FIELDS,
+          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "business_registration", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "shopActLicenseNumber", "addressProof", "environmentalComplianceSOP", "environmentalComplianceDeclaration"],
+        softBlockFields: ["municipalPermission", "gstNumber"]
+      },
+      // ============================================================================
+      // PET SITTER
+      // ============================================================================
+      "pet_sitter": {
+        roleName: "pet_sitter",
+        displayName: "Pet Sitter",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          ...DOORSTEP_SERVICE_FIELDS,
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto"],
+        softBlockFields: ["policeVerificationDoc", "addressProof"]
+      },
+      // ============================================================================
+      // PET TAXI / TRANSPORT
+      // ============================================================================
+      "pet_taxi": {
+        roleName: "pet_taxi",
+        displayName: "Pet Taxi",
+        vendorTypes: ["solo"],
+        fields: [
+          ...UNIVERSAL_KYC_FIELDS,
+          {
+            id: "drivingLicense",
+            fieldName: "drivingLicense",
+            label: "Driving License",
+            type: "file",
+            section: "documents",
+            required: true,
+            isMandatory: true,
+            helpText: "Upload valid driving license",
+            displayOrder: 10
+          },
+          {
+            id: "vehicleRegistration",
+            fieldName: "vehicleRegistration",
+            label: "Vehicle Registration Certificate",
+            type: "file",
+            section: "documents",
+            required: true,
+            isMandatory: true,
+            helpText: "Upload vehicle RC",
+            displayOrder: 11
+          },
+          ADDRESS_PROOF_FIELD
+        ],
+        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "location", "banking"].includes(s.id)),
+        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "drivingLicense", "vehicleRegistration"],
+        softBlockFields: ["addressProof"]
+      }
+    };
+  }
+});
+
 // src/utils/audit-log.ts
 var audit_log_exports = {};
 __export(audit_log_exports, {
@@ -120646,1052 +121692,6 @@ var init_base_handler = __esm({
         } catch {
           return false;
         }
-      }
-    };
-  }
-});
-
-// src/lib/kyc-form-fields.ts
-var kyc_form_fields_exports = {};
-__export(kyc_form_fields_exports, {
-  ADDRESS_PROOF_FIELD: () => ADDRESS_PROOF_FIELD,
-  BEHAVIORIST_FIELDS: () => BEHAVIORIST_FIELDS,
-  BOARDING_FIELDS: () => BOARDING_FIELDS,
-  BREEDER_FIELDS: () => BREEDER_FIELDS,
-  BUSINESS_REGISTRATION_FIELDS: () => BUSINESS_REGISTRATION_FIELDS,
-  DOORSTEP_SERVICE_FIELDS: () => DOORSTEP_SERVICE_FIELDS,
-  GROOMING_BUSINESS_FIELDS: () => GROOMING_BUSINESS_FIELDS,
-  HEALTHCARE_VET_FIELDS: () => HEALTHCARE_VET_FIELDS,
-  KYC_SECTIONS: () => KYC_SECTIONS,
-  NGO_SHELTER_FIELDS: () => NGO_SHELTER_FIELDS,
-  NUTRITIONIST_FIELDS: () => NUTRITIONIST_FIELDS,
-  OWNER_AADHAAR_FIELDS: () => OWNER_AADHAAR_FIELDS,
-  PHARMACY_FIELDS: () => PHARMACY_FIELDS,
-  ROLE_KYC_CONFIGS: () => ROLE_KYC_CONFIGS,
-  SUNSET_SERVICES_FIELDS: () => SUNSET_SERVICES_FIELDS,
-  TRAINER_FIELDS: () => TRAINER_FIELDS,
-  UNIVERSAL_KYC_FIELDS: () => UNIVERSAL_KYC_FIELDS,
-  getKYCFieldsForRole: () => getKYCFieldsForRole,
-  getRoleKYCConfig: () => getRoleKYCConfig,
-  getSupportedKYCRoles: () => getSupportedKYCRoles,
-  isHardBlockField: () => isHardBlockField,
-  isSoftBlockField: () => isSoftBlockField
-});
-function getRoleKYCConfig(roleName, vendorType) {
-  const roleKey = vendorType ? `${roleName}_${vendorType}` : roleName;
-  if (ROLE_KYC_CONFIGS[roleKey]) {
-    return ROLE_KYC_CONFIGS[roleKey];
-  }
-  if (ROLE_KYC_CONFIGS[roleName]) {
-    return ROLE_KYC_CONFIGS[roleName];
-  }
-  const aliases = {
-    "groomer": "pet_groomer",
-    "walker": "pet_walker",
-    "trainer": "pet_trainer",
-    "vet": "veterinarian",
-    "vet_clinic": "veterinary_clinic",
-    "pharmacy": "pet_pharmacy",
-    "boarding": "pet_boarding",
-    "shelter": "pet_shelter",
-    "breeder": "pet_breeder"
-  };
-  const aliasedRole = aliases[roleName];
-  if (aliasedRole) {
-    const aliasKey = vendorType ? `${aliasedRole}_${vendorType}` : aliasedRole;
-    return ROLE_KYC_CONFIGS[aliasKey] || ROLE_KYC_CONFIGS[aliasedRole] || null;
-  }
-  return null;
-}
-function getKYCFieldsForRole(roleName, vendorType) {
-  const config = getRoleKYCConfig(roleName, vendorType);
-  if (!config) return [];
-  return config.fields.sort((a, b) => {
-    const sectionA = config.sections.find((s) => s.id === a.section);
-    const sectionB = config.sections.find((s) => s.id === b.section);
-    const sectionOrderA = sectionA?.order || 99;
-    const sectionOrderB = sectionB?.order || 99;
-    if (sectionOrderA !== sectionOrderB) {
-      return sectionOrderA - sectionOrderB;
-    }
-    return a.displayOrder - b.displayOrder;
-  });
-}
-function isHardBlockField(roleName, fieldId, vendorType) {
-  const config = getRoleKYCConfig(roleName, vendorType);
-  return config?.hardBlockFields.includes(fieldId) || false;
-}
-function isSoftBlockField(roleName, fieldId, vendorType) {
-  const config = getRoleKYCConfig(roleName, vendorType);
-  return config?.softBlockFields.includes(fieldId) || false;
-}
-function getSupportedKYCRoles() {
-  return Object.keys(ROLE_KYC_CONFIGS);
-}
-var KYC_SECTIONS, UNIVERSAL_KYC_FIELDS, OWNER_AADHAAR_FIELDS, DOORSTEP_SERVICE_FIELDS, BUSINESS_REGISTRATION_FIELDS, HEALTHCARE_VET_FIELDS, PHARMACY_FIELDS, BREEDER_FIELDS, BOARDING_FIELDS, NGO_SHELTER_FIELDS, NUTRITIONIST_FIELDS, TRAINER_FIELDS, BEHAVIORIST_FIELDS, SUNSET_SERVICES_FIELDS, GROOMING_BUSINESS_FIELDS, ADDRESS_PROOF_FIELD, ROLE_KYC_CONFIGS;
-var init_kyc_form_fields = __esm({
-  "src/lib/kyc-form-fields.ts"() {
-    "use strict";
-    KYC_SECTIONS = [
-      { id: "business_information", name: "Business Information", order: 1 },
-      { id: "location_information", name: "Local Information", order: 2 },
-      { id: "identity_verification", name: "Identity Verification", order: 3 },
-      { id: "documents", name: "Documents", order: 4 },
-      { id: "professional", name: "Professional", order: 5 },
-      { id: "permissions", name: "Permissions", order: 6 },
-      // ✅ NEW: Permissions section
-      { id: "declarations", name: "Declaration", order: 7 },
-      { id: "banking", name: "Banking Details", order: 8 }
-    ];
-    UNIVERSAL_KYC_FIELDS = [
-      // Profile Photo - FIRST in identity_verification
-      {
-        id: "profilePhoto",
-        fieldName: "profilePhoto",
-        label: "Profile Photo (Passport Size)",
-        type: "file",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload a recent passport-size photograph",
-        displayOrder: 1
-        // ✅ FIRST in identity verification
-      },
-      // Aadhaar with OTP verification
-      {
-        id: "aadhaarNumber",
-        fieldName: "aadhaarNumber",
-        label: "Aadhaar Number",
-        type: "aadhaar-otp",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        requiresVerification: true,
-        verificationEndpoint: "/kyc/aadhaar/generate-otp",
-        placeholder: "Enter 12-digit Aadhaar number",
-        helpText: "Your Aadhaar will be verified via OTP sent to registered mobile",
-        validation: {
-          pattern: "^[0-9]{12}$",
-          message: "Please enter a valid 12-digit Aadhaar number"
-        },
-        displayOrder: 2
-        // ✅ After profile photo
-      },
-      {
-        id: "aadhaarDoc",
-        fieldName: "aadhaarDoc",
-        label: "Aadhaar Card (Front & Back)",
-        type: "file",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload scanned copy or photo of Aadhaar card (both sides)",
-        displayOrder: 3
-        // ✅ After aadhaar number
-      },
-      // PAN with verification
-      {
-        id: "panNumber",
-        fieldName: "panNumber",
-        label: "PAN Number",
-        type: "pan-verify",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        requiresVerification: true,
-        verificationEndpoint: "/kyc/pan/verify",
-        placeholder: "Enter PAN (e.g., ABCDE1234F)",
-        helpText: "PAN will be verified automatically",
-        validation: {
-          pattern: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
-          message: "Please enter a valid PAN number (e.g., ABCDE1234F)"
-        },
-        displayOrder: 4
-        // ✅ After aadhaar
-      },
-      {
-        id: "panCard",
-        fieldName: "panCard",
-        label: "PAN Card",
-        type: "file",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload scanned copy or photo of PAN card",
-        displayOrder: 5
-        // ✅ After pan number
-      }
-    ];
-    OWNER_AADHAAR_FIELDS = [
-      {
-        id: "ownerAadhaarNumber",
-        fieldName: "ownerAadhaarNumber",
-        label: "Owner's Aadhaar Number",
-        type: "aadhaar-otp",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        requiresVerification: true,
-        verificationEndpoint: "/kyc/aadhaar/generate-otp",
-        placeholder: "Enter 12-digit Aadhaar number",
-        helpText: "Owner's Aadhaar will be verified via OTP",
-        validation: {
-          pattern: "^[0-9]{12}$",
-          message: "Please enter a valid 12-digit Aadhaar number"
-        },
-        conditional: { field: "vendorType", value: "business" },
-        displayOrder: 1
-      },
-      {
-        id: "ownerAadhaarDoc",
-        fieldName: "ownerAadhaarDoc",
-        label: "Owner's Aadhaar Card",
-        type: "file",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload owner's Aadhaar card (both sides)",
-        conditional: { field: "vendorType", value: "business" },
-        displayOrder: 2
-      }
-    ];
-    DOORSTEP_SERVICE_FIELDS = [
-      {
-        id: "policeVerificationDoc",
-        fieldName: "policeVerificationDoc",
-        label: "Police Verification Certificate",
-        type: "file",
-        section: "permissions",
-        // ✅ FIX: Changed from 'documents' to 'permissions'
-        required: true,
-        isMandatory: true,
-        softBlock: true,
-        helpText: "Upload police verification certificate. Your profile will have limited visibility until verified.",
-        displayOrder: 1
-        // ✅ First in permissions section
-      },
-      {
-        id: "noCriminalRecordDeclaration",
-        fieldName: "noCriminalRecordDeclaration",
-        label: "No Criminal Record Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I hereby declare that I have no criminal record and have not been convicted of any offense. I understand that providing false information may result in immediate termination of my account.",
-        declarationType: "no_criminal_record",
-        displayOrder: 20
-      }
-    ];
-    BUSINESS_REGISTRATION_FIELDS = [
-      {
-        id: "shopActLicenseNumber",
-        fieldName: "shopActLicenseNumber",
-        label: "Shop & Establishment License Number",
-        type: "text",
-        section: "business_registration",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter license number",
-        helpText: "Registration number from Shop & Establishment Act",
-        displayOrder: 1
-      },
-      {
-        id: "shopActLicenseDoc",
-        fieldName: "shopActLicenseDoc",
-        label: "Shop & Establishment License",
-        type: "file",
-        section: "business_registration",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload Shop & Establishment certificate",
-        displayOrder: 2
-      },
-      {
-        id: "gstNumber",
-        fieldName: "gstNumber",
-        label: "GST Number",
-        type: "gst-verify",
-        section: "business_registration",
-        required: false,
-        // Conditional based on turnover
-        isMandatory: false,
-        requiresVerification: true,
-        verificationEndpoint: "/kyc/gst/verify",
-        placeholder: "Enter GSTIN (if applicable)",
-        helpText: "Required if annual turnover exceeds threshold or already registered",
-        validation: {
-          pattern: "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$",
-          message: "Please enter a valid GSTIN"
-        },
-        displayOrder: 3
-      },
-      {
-        id: "gstCertificate",
-        fieldName: "gstCertificate",
-        label: "GST Certificate",
-        type: "file",
-        section: "business_registration",
-        required: false,
-        isMandatory: false,
-        helpText: "Upload GST registration certificate (if applicable)",
-        conditional: { field: "gstNumber", value: "notEmpty" },
-        displayOrder: 4
-      },
-      {
-        id: "municipalPermission",
-        fieldName: "municipalPermission",
-        label: "Municipal/Local Permission",
-        type: "file",
-        section: "permissions",
-        // ✅ FIX: Changed from 'business_registration' to 'permissions'
-        required: false,
-        isMandatory: false,
-        softBlock: true,
-        helpText: "Upload municipal or local body permission (if applicable)",
-        displayOrder: 2
-        // ✅ Second in permissions section (after police verification)
-      }
-    ];
-    HEALTHCARE_VET_FIELDS = [
-      {
-        id: "vciRegistrationNumber",
-        fieldName: "vciRegistrationNumber",
-        label: "VCI Registration Number",
-        type: "text",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter VCI registration number",
-        helpText: "Veterinary Council of India registration number",
-        displayOrder: 1
-      },
-      {
-        id: "vciRegistrationDoc",
-        fieldName: "vciRegistrationDoc",
-        label: "VCI Registration Certificate",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload VCI registration certificate",
-        displayOrder: 2
-      },
-      {
-        id: "stateCouncilRegistration",
-        fieldName: "stateCouncilRegistration",
-        label: "State Veterinary Council Registration",
-        type: "text",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter state council registration number",
-        helpText: "State Veterinary Council registration number",
-        displayOrder: 3
-      },
-      {
-        id: "stateCouncilDoc",
-        fieldName: "stateCouncilDoc",
-        label: "State Council Registration Certificate",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload State Veterinary Council certificate",
-        displayOrder: 4
-      },
-      {
-        id: "degreeDoc",
-        fieldName: "degreeDoc",
-        label: "Veterinary Degree Certificate (BVSc/MVSc)",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload veterinary degree certificate",
-        displayOrder: 5
-      },
-      {
-        id: "indemnityInsuranceDoc",
-        fieldName: "indemnityInsuranceDoc",
-        label: "Professional Indemnity Insurance (Recommended)",
-        type: "file",
-        section: "professional",
-        required: false,
-        isMandatory: false,
-        softBlock: true,
-        helpText: "Upload professional indemnity insurance certificate",
-        displayOrder: 6
-      }
-    ];
-    PHARMACY_FIELDS = [
-      {
-        id: "pharmacyLicenseNumber",
-        fieldName: "pharmacyLicenseNumber",
-        label: "Pharmacy License Number",
-        type: "text",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter pharmacy license number",
-        displayOrder: 1
-      },
-      {
-        id: "pharmacyLicenseDoc",
-        fieldName: "pharmacyLicenseDoc",
-        label: "Pharmacy License Document",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload valid pharmacy license",
-        displayOrder: 2
-      },
-      {
-        id: "drugLicenseNumber",
-        fieldName: "drugLicenseNumber",
-        label: "Drug License Number",
-        type: "text",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter drug license number",
-        displayOrder: 3
-      },
-      {
-        id: "drugLicenseDoc",
-        fieldName: "drugLicenseDoc",
-        label: "Drug License Certificate",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload valid drug license from State Drug Controller",
-        displayOrder: 4
-      }
-    ];
-    BREEDER_FIELDS = [
-      {
-        id: "awbiRegistration",
-        fieldName: "awbiRegistration",
-        label: "AWBI / State Animal Welfare Registration Number",
-        type: "text",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter AWBI or State Animal Welfare registration",
-        helpText: "Animal Welfare Board of India or State registration",
-        displayOrder: 1
-      },
-      {
-        id: "awbiRegistrationDoc",
-        fieldName: "awbiRegistrationDoc",
-        label: "AWBI / State Animal Welfare Certificate",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload AWBI or State Animal Welfare certificate",
-        displayOrder: 2
-      },
-      {
-        id: "localBodyPermission",
-        fieldName: "localBodyPermission",
-        label: "Local Body / Panchayat Permission",
-        type: "file",
-        section: "professional",
-        required: false,
-        isMandatory: false,
-        softBlock: true,
-        helpText: "Upload local body or panchayat permission (if applicable)",
-        displayOrder: 3
-      },
-      {
-        id: "breedingLimitsDeclaration",
-        fieldName: "breedingLimitsDeclaration",
-        label: "Ethical Breeding Limits Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I agree to follow ethical breeding limits as per platform guidelines and AWBI recommendations. I will ensure proper care, health checkups, and vaccinations for all breeding animals and their offspring.",
-        declarationType: "breeding_limits",
-        displayOrder: 20
-      },
-      {
-        id: "noThirdPartySalesDeclaration",
-        fieldName: "noThirdPartySalesDeclaration",
-        label: "No Third-Party Sales Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I declare that I will not engage in third-party reselling or brokering of pets. All pets offered will be bred by me in my registered facility.",
-        declarationType: "no_third_party_sales",
-        displayOrder: 21
-      },
-      {
-        id: "annualRevalidationConsent",
-        fieldName: "annualRevalidationConsent",
-        label: "Annual Revalidation Consent",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I consent to annual revalidation of my registration and understand that my account may be suspended if I fail to complete the revalidation process.",
-        declarationType: "annual_revalidation_consent",
-        displayOrder: 22
-      }
-    ];
-    BOARDING_FIELDS = [
-      {
-        id: "vetTieUpName",
-        fieldName: "vetTieUpName",
-        label: "Associated Veterinarian Name",
-        type: "text",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter name of associated veterinarian",
-        helpText: "Name of veterinarian for emergency pet care",
-        displayOrder: 10
-      },
-      {
-        id: "vetTieUpContact",
-        fieldName: "vetTieUpContact",
-        label: "Associated Veterinarian Contact",
-        type: "tel",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter veterinarian phone number",
-        validation: {
-          pattern: "^[0-9]{10}$",
-          message: "Please enter a valid 10-digit phone number"
-        },
-        displayOrder: 11
-      },
-      {
-        id: "vetTieUpDeclaration",
-        fieldName: "vetTieUpDeclaration",
-        label: "Veterinary Tie-up Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I confirm that we have a tie-up with a licensed veterinarian for emergency pet care and that veterinary assistance is available within 30 minutes of our facility.",
-        declarationType: "vet_tie_up",
-        displayOrder: 23
-      }
-    ];
-    NGO_SHELTER_FIELDS = [
-      {
-        id: "authorizedSignatoryAadhaar",
-        fieldName: "authorizedSignatoryAadhaar",
-        label: "Authorized Signatory's Aadhaar Number",
-        type: "aadhaar-otp",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        requiresVerification: true,
-        verificationEndpoint: "/kyc/aadhaar/generate-otp",
-        placeholder: "Enter 12-digit Aadhaar number",
-        helpText: "Authorized signatory's Aadhaar will be verified via OTP",
-        validation: {
-          pattern: "^[0-9]{12}$",
-          message: "Please enter a valid 12-digit Aadhaar number"
-        },
-        displayOrder: 1
-      },
-      {
-        id: "authorizedSignatoryAadhaarDoc",
-        fieldName: "authorizedSignatoryAadhaarDoc",
-        label: "Authorized Signatory's Aadhaar Card",
-        type: "file",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload authorized signatory's Aadhaar card",
-        displayOrder: 2
-      },
-      {
-        id: "ngoPanNumber",
-        fieldName: "ngoPanNumber",
-        label: "NGO PAN Number",
-        type: "pan-verify",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        requiresVerification: true,
-        verificationEndpoint: "/kyc/pan/verify",
-        placeholder: "Enter NGO PAN (e.g., ABCDE1234F)",
-        helpText: "Organization PAN will be verified automatically",
-        validation: {
-          pattern: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
-          message: "Please enter a valid PAN number"
-        },
-        displayOrder: 3
-      },
-      {
-        id: "ngoPanDoc",
-        fieldName: "ngoPanDoc",
-        label: "NGO PAN Card",
-        type: "file",
-        section: "identity_verification",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload organization PAN card",
-        displayOrder: 4
-      },
-      {
-        id: "ngoRegistrationType",
-        fieldName: "ngoRegistrationType",
-        label: "Registration Type",
-        type: "select",
-        section: "business_registration",
-        required: true,
-        isMandatory: true,
-        options: ["Trust", "Society", "Section 8 Company"],
-        displayOrder: 1
-      },
-      {
-        id: "ngoRegistrationNumber",
-        fieldName: "ngoRegistrationNumber",
-        label: "NGO Registration Number",
-        type: "text",
-        section: "business_registration",
-        required: true,
-        isMandatory: true,
-        placeholder: "Enter Trust/Society/Section 8 registration number",
-        displayOrder: 2
-      },
-      {
-        id: "ngoRegistrationDoc",
-        fieldName: "ngoRegistrationDoc",
-        label: "NGO Registration Certificate",
-        type: "file",
-        section: "business_registration",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload Trust Deed / Society Registration / Section 8 Certificate",
-        displayOrder: 3
-      },
-      {
-        id: "awbiRegistrationNGO",
-        fieldName: "awbiRegistrationNGO",
-        label: "AWBI Registration (if applicable)",
-        type: "text",
-        section: "professional",
-        required: false,
-        isMandatory: false,
-        softBlock: true,
-        placeholder: "Enter AWBI registration number",
-        displayOrder: 1
-      },
-      {
-        id: "awbiRegistrationDocNGO",
-        fieldName: "awbiRegistrationDocNGO",
-        label: "AWBI Registration Certificate",
-        type: "file",
-        section: "professional",
-        required: false,
-        isMandatory: false,
-        softBlock: true,
-        helpText: "Upload AWBI registration certificate (recommended)",
-        displayOrder: 2
-      },
-      {
-        id: "adoptionPolicyDoc",
-        fieldName: "adoptionPolicyDoc",
-        label: "Adoption Policy Document",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload your adoption policy document detailing screening process, fees, and follow-up procedures",
-        displayOrder: 3
-      }
-    ];
-    NUTRITIONIST_FIELDS = [
-      {
-        id: "nonMedicalAdviceDeclaration",
-        fieldName: "nonMedicalAdviceDeclaration",
-        label: "Non-Medical Advice Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I declare that I provide non-medical nutritional advice only. I will not make clinical claims, diagnose conditions, or prescribe medication. For medical nutrition therapy, I will refer clients to a licensed veterinarian.",
-        declarationType: "non_medical_advice",
-        displayOrder: 24
-      }
-    ];
-    TRAINER_FIELDS = [
-      {
-        id: "experienceDeclaration",
-        fieldName: "experienceDeclaration",
-        label: "Experience Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I declare that my stated years of experience and training qualifications are accurate. I can provide references and proof of experience if requested by the platform.",
-        declarationType: "experience_accuracy",
-        displayOrder: 25
-      }
-    ];
-    BEHAVIORIST_FIELDS = [
-      {
-        id: "noClinicalClaimsDeclaration",
-        fieldName: "noClinicalClaimsDeclaration",
-        label: "No Clinical Claims Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I declare that I will not make clinical claims, provide medical diagnosis, or prescribe medication. For cases requiring medical intervention, I will refer clients to a licensed veterinarian.",
-        declarationType: "no_clinical_claims",
-        displayOrder: 26
-      }
-    ];
-    SUNSET_SERVICES_FIELDS = [
-      {
-        id: "environmentalComplianceSOP",
-        fieldName: "environmentalComplianceSOP",
-        label: "Environmental Compliance SOP Document",
-        type: "file",
-        section: "professional",
-        required: true,
-        isMandatory: true,
-        helpText: "Upload Standard Operating Procedure for environmental compliance in cremation/burial services",
-        displayOrder: 10
-      },
-      {
-        id: "environmentalComplianceDeclaration",
-        fieldName: "environmentalComplianceDeclaration",
-        label: "Environmental Compliance Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I declare compliance with all environmental regulations for pet cremation/burial services. I will follow proper waste disposal procedures and maintain all required environmental clearances.",
-        declarationType: "environmental_compliance",
-        displayOrder: 27
-      }
-    ];
-    GROOMING_BUSINESS_FIELDS = [
-      {
-        id: "premisesHygieneDeclaration",
-        fieldName: "premisesHygieneDeclaration",
-        label: "Premises Hygiene Declaration",
-        type: "declaration",
-        section: "declarations",
-        required: true,
-        isMandatory: true,
-        declarationText: "I declare that our premises meet hygiene and sanitation standards for pet grooming. We follow proper sterilization procedures for all equipment and maintain a clean environment.",
-        declarationType: "premises_hygiene",
-        displayOrder: 28
-      }
-    ];
-    ADDRESS_PROOF_FIELD = {
-      id: "addressProof",
-      fieldName: "addressProof",
-      label: "Address Proof (Utility Bill/Rent Agreement)",
-      type: "file",
-      section: "documents",
-      required: false,
-      isMandatory: false,
-      softBlock: true,
-      helpText: "Upload utility bill or rent agreement as address proof",
-      displayOrder: 15
-    };
-    ROLE_KYC_CONFIGS = {
-      // ============================================================================
-      // DOG WALKER / PET WALKER
-      // ============================================================================
-      "pet_walker": {
-        roleName: "pet_walker",
-        displayName: "Dog Walker",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...DOORSTEP_SERVICE_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto"],
-        softBlockFields: ["policeVerificationDoc", "addressProof"]
-      },
-      // ============================================================================
-      // PET GROOMER (Solo)
-      // ============================================================================
-      "pet_groomer_solo": {
-        roleName: "pet_groomer",
-        displayName: "Pet Groomer (Solo)",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...DOORSTEP_SERVICE_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto"],
-        softBlockFields: ["policeVerificationDoc", "addressProof"]
-      },
-      // ============================================================================
-      // PET GROOMING BUSINESS
-      // ============================================================================
-      "pet_groomer_business": {
-        roleName: "pet_groomer",
-        displayName: "Pet Grooming Business",
-        vendorTypes: ["business"],
-        fields: [
-          ...OWNER_AADHAAR_FIELDS,
-          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
-          ...BUSINESS_REGISTRATION_FIELDS,
-          ...GROOMING_BUSINESS_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "business_registration", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "shopActLicenseNumber"],
-        softBlockFields: ["municipalPermission", "addressProof"]
-      },
-      // ============================================================================
-      // VETERINARIAN (Solo)
-      // ============================================================================
-      "veterinarian": {
-        roleName: "veterinarian",
-        displayName: "Veterinarian",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...HEALTHCARE_VET_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "documents", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "vciRegistrationNumber", "stateCouncilRegistration", "degreeDoc"],
-        softBlockFields: ["indemnityInsuranceDoc", "addressProof"]
-      },
-      // ============================================================================
-      // VETERINARY CLINIC
-      // ============================================================================
-      "veterinary_clinic": {
-        roleName: "veterinary_clinic",
-        displayName: "Veterinary Clinic",
-        vendorTypes: ["business"],
-        fields: [
-          ...OWNER_AADHAAR_FIELDS,
-          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
-          ...HEALTHCARE_VET_FIELDS,
-          ...BUSINESS_REGISTRATION_FIELDS,
-          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
-        ],
-        sections: KYC_SECTIONS,
-        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "vciRegistrationNumber", "stateCouncilRegistration", "degreeDoc", "shopActLicenseNumber", "addressProof"],
-        softBlockFields: ["municipalPermission", "indemnityInsuranceDoc"]
-      },
-      // ============================================================================
-      // PET PHARMACY
-      // ============================================================================
-      "pet_pharmacy": {
-        roleName: "pet_pharmacy",
-        displayName: "Pet Pharmacy",
-        vendorTypes: ["business"],
-        fields: [
-          ...OWNER_AADHAAR_FIELDS,
-          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
-          ...PHARMACY_FIELDS,
-          ...BUSINESS_REGISTRATION_FIELDS.map((f) => f.id === "gstNumber" ? { ...f, required: true, isMandatory: true } : f),
-          { ...BUSINESS_REGISTRATION_FIELDS.find((f) => f.id === "municipalPermission"), required: true, isMandatory: true },
-          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
-        ],
-        sections: KYC_SECTIONS,
-        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "pharmacyLicenseNumber", "drugLicenseNumber", "shopActLicenseNumber", "gstNumber", "municipalPermission", "addressProof"],
-        softBlockFields: []
-      },
-      // ============================================================================
-      // PET BREEDER (Ethical)
-      // ============================================================================
-      "pet_breeder": {
-        roleName: "pet_breeder",
-        displayName: "Ethical Breeder",
-        vendorTypes: ["solo", "business"],
-        fields: [
-          ...OWNER_AADHAAR_FIELDS,
-          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
-          ...BREEDER_FIELDS,
-          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true },
-          {
-            ...DOORSTEP_SERVICE_FIELDS.find((f) => f.id === "policeVerificationDoc"),
-            required: false,
-            isMandatory: false,
-            softBlock: true,
-            helpText: "Police verification is strongly recommended for breeders"
-          }
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "awbiRegistration", "addressProof", "breedingLimitsDeclaration", "noThirdPartySalesDeclaration", "annualRevalidationConsent"],
-        softBlockFields: ["policeVerificationDoc", "localBodyPermission"],
-        requiresManualReview: true,
-        requiresAnnualRevalidation: true
-      },
-      // ============================================================================
-      // PET BOARDING / KENNEL
-      // ============================================================================
-      "pet_boarding": {
-        roleName: "pet_boarding",
-        displayName: "Pet Boarding (Kennel/Cattery)",
-        vendorTypes: ["business"],
-        fields: [
-          ...OWNER_AADHAAR_FIELDS,
-          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
-          ...BUSINESS_REGISTRATION_FIELDS,
-          ...BOARDING_FIELDS,
-          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "business_registration", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "shopActLicenseNumber", "addressProof", "vetTieUpName", "vetTieUpContact", "vetTieUpDeclaration"],
-        softBlockFields: ["municipalPermission", "gstNumber"]
-      },
-      // ============================================================================
-      // PET NUTRITIONIST (Non-Medical)
-      // ============================================================================
-      "nutritionist": {
-        roleName: "nutritionist",
-        displayName: "Pet Nutritionist (Non-Medical)",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...NUTRITIONIST_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "nonMedicalAdviceDeclaration"],
-        softBlockFields: ["addressProof"]
-      },
-      // ============================================================================
-      // PET TRAINER (Solo)
-      // ============================================================================
-      "pet_trainer": {
-        roleName: "pet_trainer",
-        displayName: "Pet Trainer",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...TRAINER_FIELDS,
-          {
-            ...DOORSTEP_SERVICE_FIELDS.find((f) => f.id === "policeVerificationDoc"),
-            required: false,
-            isMandatory: false,
-            softBlock: true
-          },
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "experienceDeclaration"],
-        softBlockFields: ["policeVerificationDoc", "addressProof"]
-      },
-      // ============================================================================
-      // PET BEHAVIORIST (Non-Medical)
-      // ============================================================================
-      "pet_behaviorist": {
-        roleName: "pet_behaviorist",
-        displayName: "Pet Behaviourist (Non-Medical)",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...BEHAVIORIST_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "noClinicalClaimsDeclaration"],
-        softBlockFields: ["addressProof"]
-      },
-      // ============================================================================
-      // PET ADOPTION NGO / SHELTER
-      // ============================================================================
-      "pet_shelter": {
-        roleName: "pet_shelter",
-        displayName: "Pet Adoption NGO / Shelter",
-        vendorTypes: ["business"],
-        fields: [
-          ...NGO_SHELTER_FIELDS,
-          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "business_registration", "documents", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["authorizedSignatoryAadhaar", "ngoPanNumber", "ngoRegistrationType", "ngoRegistrationNumber", "ngoRegistrationDoc", "adoptionPolicyDoc", "addressProof"],
-        softBlockFields: ["awbiRegistrationNGO"]
-      },
-      // ============================================================================
-      // PET FUNERAL / SUNSET SERVICES
-      // ============================================================================
-      "pet_sunset_services": {
-        roleName: "pet_sunset_services",
-        displayName: "Pet Funeral Service",
-        vendorTypes: ["business"],
-        fields: [
-          ...OWNER_AADHAAR_FIELDS,
-          ...UNIVERSAL_KYC_FIELDS.filter((f) => f.id === "panNumber" || f.id === "panCard"),
-          ...BUSINESS_REGISTRATION_FIELDS,
-          ...SUNSET_SERVICES_FIELDS,
-          { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true }
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "professional", "business_registration", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["ownerAadhaarNumber", "panNumber", "shopActLicenseNumber", "addressProof", "environmentalComplianceSOP", "environmentalComplianceDeclaration"],
-        softBlockFields: ["municipalPermission", "gstNumber"]
-      },
-      // ============================================================================
-      // PET SITTER
-      // ============================================================================
-      "pet_sitter": {
-        roleName: "pet_sitter",
-        displayName: "Pet Sitter",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          ...DOORSTEP_SERVICE_FIELDS,
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "declarations", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto"],
-        softBlockFields: ["policeVerificationDoc", "addressProof"]
-      },
-      // ============================================================================
-      // PET TAXI / TRANSPORT
-      // ============================================================================
-      "pet_taxi": {
-        roleName: "pet_taxi",
-        displayName: "Pet Taxi",
-        vendorTypes: ["solo"],
-        fields: [
-          ...UNIVERSAL_KYC_FIELDS,
-          {
-            id: "drivingLicense",
-            fieldName: "drivingLicense",
-            label: "Driving License",
-            type: "file",
-            section: "documents",
-            required: true,
-            isMandatory: true,
-            helpText: "Upload valid driving license",
-            displayOrder: 10
-          },
-          {
-            id: "vehicleRegistration",
-            fieldName: "vehicleRegistration",
-            label: "Vehicle Registration Certificate",
-            type: "file",
-            section: "documents",
-            required: true,
-            isMandatory: true,
-            helpText: "Upload vehicle RC",
-            displayOrder: 11
-          },
-          ADDRESS_PROOF_FIELD
-        ],
-        sections: KYC_SECTIONS.filter((s) => ["basic", "identity_verification", "documents", "location", "banking"].includes(s.id)),
-        hardBlockFields: ["aadhaarNumber", "panNumber", "profilePhoto", "drivingLicense", "vehicleRegistration"],
-        softBlockFields: ["addressProof"]
       }
     };
   }
@@ -134026,6 +134026,55 @@ function registerVendorOnboardingFixes(app3) {
           console.error(`\u274C [FORM SCHEMA] Failed to create default form:`, insertError);
         }
       }
+      try {
+        const {
+          getKYCFieldsForRole: getKYCFieldsForRole2,
+          ROLE_KYC_CONFIGS: ROLE_KYC_CONFIGS2,
+          KYC_SECTIONS: KYC_SECTIONS2
+        } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+        let kycFields = getKYCFieldsForRole2(roleName, vendorType);
+        if (kycFields.length === 0) {
+          kycFields = getKYCFieldsForRole2(roleName);
+        }
+        if (kycFields.length > 0) {
+          console.log(`[FORM SCHEMA] Adding ${kycFields.length} KYC fields for role ${roleName} (vendorType: ${vendorType})`);
+          const kycFormFields = kycFields.map((f) => ({
+            id: f.id,
+            fieldName: f.fieldName,
+            name: f.fieldName,
+            // Frontend expects 'name'
+            label: f.label,
+            type: f.type,
+            // Includes 'aadhaar-otp', 'pan-verify', 'gst-verify', 'declaration'
+            section: f.section,
+            isMandatory: f.isMandatory,
+            required: f.isMandatory,
+            requiresVerification: f.requiresVerification || false,
+            verificationEndpoint: f.verificationEndpoint || null,
+            placeholder: f.placeholder || "",
+            helpText: f.helpText || "",
+            options: f.options || [],
+            validation: f.validation || {},
+            displayOrder: f.displayOrder || 0,
+            order: f.displayOrder || 0,
+            isActive: true,
+            softBlock: f.softBlock || false,
+            declarationText: f.declarationText || null,
+            declarationType: f.declarationType || f.id
+          }));
+          const kycFieldIds = new Set(kycFormFields.map((f) => f.id));
+          const dbFields = [...fields];
+          const nonKycFields = fields.filter((f) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName) && !kycFieldIds.has(f.name));
+          const mergedKycFields = kycFormFields.map((kf) => {
+            const stored = dbFields.find((f) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
+            return stored ? { ...kf, ...stored } : kf;
+          });
+          fields = [...nonKycFields, ...mergedKycFields];
+          console.log(`[FORM SCHEMA] Total fields after KYC merge: ${fields.length}`);
+        }
+      } catch (kycError) {
+        console.error("[FORM SCHEMA] Error loading KYC fields:", kycError?.message || kycError);
+      }
       const activeFields = fields.filter((f) => f.isActive !== false);
       if (activeFields.length === 0) {
         console.error(`\u274C [FORM SCHEMA] No active fields found, returning default fields`);
@@ -134041,7 +134090,15 @@ function registerVendorOnboardingFixes(app3) {
           }
         });
       }
-      const sections = getSectionsFromFields(activeFields);
+      let sections;
+      try {
+        const { ROLE_KYC_CONFIGS: ROLE_KYC_CONFIGS2, KYC_SECTIONS: KYC_SECTIONS2 } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+        const roleConfig = ROLE_KYC_CONFIGS2[roleName] || ROLE_KYC_CONFIGS2[`${roleName}_solo`] || ROLE_KYC_CONFIGS2[`${roleName}_business`];
+        const roleSections = roleConfig?.sections || KYC_SECTIONS2;
+        sections = getSectionsFromFieldsWithKYC(activeFields, roleSections);
+      } catch {
+        sections = getSectionsFromFields(activeFields);
+      }
       console.log(`\u2705 [FORM SCHEMA] Returning ${activeFields.length} fields in ${sections.length} sections`);
       return c.json({
         success: true,
@@ -134209,6 +134266,64 @@ function getSectionsFromFields(fields) {
     const fieldWithActive = { ...field, isActive: field.isActive !== false };
     sections[secKey].fields.push(fieldWithActive);
   }
+  return Object.values(sections).sort((a, b) => a.order - b.order);
+}
+function getSectionsFromFieldsWithKYC(fields, kycSections) {
+  const sections = {};
+  const sectionMeta = {};
+  if (kycSections && kycSections.length > 0) {
+    kycSections.forEach((s) => {
+      sectionMeta[s.id] = {
+        title: s.name,
+        order: s.order,
+        description: s.description
+      };
+    });
+  }
+  const defaultSections = {
+    "business_information": { title: "Business Information", order: 1 },
+    "location_information": { title: "Local Information", order: 2 },
+    "identity_verification": { title: "Identity Verification", order: 3 },
+    "documents": { title: "Documents", order: 4 },
+    "professional": { title: "Professional", order: 5 },
+    "permissions": { title: "Permissions", order: 6 },
+    "declarations": { title: "Declaration", order: 7 },
+    "business_registration": { title: "Professional", order: 5 },
+    "banking_information": { title: "Banking Details", order: 8 },
+    "additional_information": { title: "Additional Info", order: 9 }
+  };
+  Object.assign(sectionMeta, defaultSections);
+  if (kycSections && kycSections.length > 0) {
+    kycSections.forEach((s) => {
+      sectionMeta[s.id] = {
+        title: s.name,
+        order: s.order,
+        description: s.description
+      };
+    });
+  }
+  for (const field of fields) {
+    const secKey = field.section || "additional_information";
+    if (!sections[secKey]) {
+      sections[secKey] = {
+        id: secKey,
+        name: secKey,
+        title: sectionMeta[secKey]?.title || formatTitle(secKey),
+        order: sectionMeta[secKey]?.order || 99,
+        description: sectionMeta[secKey]?.description || "",
+        fields: [],
+        isActive: true
+      };
+    }
+    sections[secKey].fields.push(field);
+  }
+  Object.values(sections).forEach((section) => {
+    section.fields.sort((a, b) => {
+      const orderA = a.displayOrder || a.order || 0;
+      const orderB = b.displayOrder || b.order || 0;
+      return orderA - orderB;
+    });
+  });
   return Object.values(sections).sort((a, b) => a.order - b.order);
 }
 function formatTitle(str) {
@@ -135351,20 +135466,17 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           }
         } catch (err) {
         }
-        console.log(`[BOOKING] Checking overlap: newBooking=${bookingTime} (${newBookingStartMinutes}min), duration=${bookingDuration}min, serviceType=${serviceType}, normalized=${normalizedServiceStyle}, buffer=${bufferMinutes}min (informational only)`);
+        const SLOT_SIZE = 30;
+        console.log(`[BOOKING] Checking overlap (ATOMIC): newBooking=${bookingTime} (${newBookingStartMinutes}min), slotSize=${SLOT_SIZE}min, serviceType=${serviceType}`);
         console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
         const hasOverlap = existingBookings.some((existing) => {
           const [existingHour, existingMin] = existing.booking_time.split(":").map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
-          const existingDuration = existing.duration_minutes;
-          console.log(`[BOOKING] ${normalizedServiceStyle} overlap check: existing=${existing.booking_time} (${existingStartMinutes}min), duration=${existingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
-          const existingEndMinutes = existingStartMinutes + existingDuration;
-          const newBookingEndMinutes2 = newBookingStartMinutes + bookingDuration;
+          const existingEndMinutes = existingStartMinutes + SLOT_SIZE;
+          const newBookingEndMinutes2 = newBookingStartMinutes + SLOT_SIZE;
           const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes2 > existingStartMinutes;
           if (overlaps) {
-            console.log(`[BOOKING] OVERLAP DETECTED: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes2 / 60)}:${String(newBookingEndMinutes2 % 60).padStart(2, "0")} (${newBookingEndMinutes2}min)] overlaps with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes / 60)}:${String(existingEndMinutes % 60).padStart(2, "0")} (${existingEndMinutes}min)]`);
-          } else {
-            console.log(`[BOOKING] NO OVERLAP: newBooking [${bookingTime} (${newBookingStartMinutes}min)-${Math.floor(newBookingEndMinutes2 / 60)}:${String(newBookingEndMinutes2 % 60).padStart(2, "0")} (${newBookingEndMinutes2}min)] does NOT overlap with existing [${existing.booking_time} (${existingStartMinutes}min)-${Math.floor(existingEndMinutes / 60)}:${String(existingEndMinutes % 60).padStart(2, "0")} (${existingEndMinutes}min)]`);
+            console.log(`[BOOKING] OVERLAP (atomic): newBooking ${bookingTime} blocked by existing ${existing.booking_time}`);
           }
           return overlaps;
         });
@@ -142492,7 +142604,7 @@ function getSectionsFromFields2(fields) {
 function formatTitle2(str) {
   return str.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
-function getSectionsFromFieldsWithKYC(fields, kycSections) {
+function getSectionsFromFieldsWithKYC2(fields, kycSections) {
   const sections = {};
   const sectionMeta = {};
   if (kycSections && kycSections.length > 0) {
@@ -143004,7 +143116,7 @@ function registerOnboardingFormManagementEndpoints(app3) {
         }
         const roleConfig = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
         const roleSections = roleConfig?.sections || KYC_SECTIONS2;
-        const sections2 = getSectionsFromFieldsWithKYC(fields, roleSections);
+        const sections2 = getSectionsFromFieldsWithKYC2(fields, roleSections);
         return c.json({
           success: true,
           roleId: actualRoleName,
@@ -152255,6 +152367,12 @@ function calculateDistance2(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+function isProductionEnvironment() {
+  const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME || "";
+  const nodeEnv = "development";
+  const stage = process.env.STAGE || "";
+  return functionName.includes("prod") && !functionName.includes("dev") && !functionName.includes("uat") || nodeEnv === "production" || stage === "prod";
+}
 function extractS3KeyFromUrl2(url) {
   if (!url || typeof url !== "string") return null;
   if (!url.startsWith("http")) {
@@ -152616,6 +152734,139 @@ async function resolveCustomerIdFromPhoneForDiscovery(phone) {
   }
   return null;
 }
+async function getNextAvailableSlot(vendorId, phone, serviceStyleFilter) {
+  try {
+    const now = /* @__PURE__ */ new Date();
+    const currentDayOfWeek = now.getDay();
+    const currentHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const SLOT_DURATION = 30;
+    let va2Query = `
+      SELECT day_of_week,
+             COALESCE(time_window_start, start_time) as start_time,
+             COALESCE(time_window_end, end_time) as end_time
+      FROM vendor_availability_v2
+      WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+        AND (is_available IS NULL OR is_available = true)
+    `;
+    const params = [vendorId, phone || ""];
+    if (serviceStyleFilter && serviceStyleFilter.length > 0) {
+      va2Query += ` AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))`;
+      params.push(serviceStyleFilter);
+    }
+    va2Query += ` ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`;
+    const va2 = await query(va2Query, params);
+    if (!va2.rows || va2.rows.length === 0) return null;
+    const toMin = (t) => {
+      const s = (t || "09:00").toString();
+      const clean = s.includes("T") ? s.split("T")[1].substring(0, 5) : s.substring(0, 5);
+      const [h, m] = clean.split(":").map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    let bookingsVendorId = vendorId;
+    try {
+      const viCheck = await query(
+        `SELECT vendor_id FROM vendor_identity WHERE id = $1 LIMIT 1`,
+        [vendorId]
+      );
+      if (viCheck.rows && viCheck.rows.length > 0 && viCheck.rows[0].vendor_id) {
+        bookingsVendorId = viCheck.rows[0].vendor_id;
+      }
+    } catch (_) {
+    }
+    for (let dayOffset = 0; dayOffset <= 13; dayOffset++) {
+      const checkDate = new Date(now);
+      checkDate.setDate(checkDate.getDate() + dayOffset);
+      const checkDayOfWeek = checkDate.getDay();
+      const dateStr = checkDate.toISOString().split("T")[0];
+      const dayWindows = va2.rows.filter((r) => Number(r.day_of_week) === checkDayOfWeek);
+      if (dayWindows.length === 0) continue;
+      let bookedTimes = /* @__PURE__ */ new Set();
+      try {
+        const bookResult = await query(
+          `SELECT booking_time FROM bookings
+           WHERE vendor_id = $1 AND booking_date = $2
+             AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
+          [bookingsVendorId, dateStr]
+        );
+        for (const b of bookResult.rows || []) {
+          const t = b.booking_time;
+          let timeStr;
+          if (typeof t === "string") {
+            timeStr = t.includes("T") ? t.split("T")[1].substring(0, 5) : t.substring(0, 5);
+          } else {
+            timeStr = String(t).substring(0, 5);
+          }
+          bookedTimes.add(timeStr);
+        }
+      } catch (_) {
+      }
+      for (const window2 of dayWindows) {
+        const winStart = toMin(window2.start_time);
+        const winEnd = toMin(window2.end_time);
+        let currentMinutes = winStart;
+        while (currentMinutes + SLOT_DURATION <= winEnd) {
+          const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
+          if (dayOffset === 0 && timeStr <= currentHHMM) {
+            currentMinutes += SLOT_DURATION;
+            continue;
+          }
+          if (bookedTimes.has(timeStr)) {
+            currentMinutes += SLOT_DURATION;
+            continue;
+          }
+          const formatted = (/* @__PURE__ */ new Date(`2000-01-01T${timeStr}`)).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          let display;
+          if (dayOffset === 0) {
+            display = `Today ${formatted}`;
+          } else if (dayOffset === 1) {
+            display = `Tomorrow ${formatted}`;
+          } else if (dayOffset <= 6) {
+            display = `${checkDate.toLocaleDateString("en-US", { weekday: "short" })} ${formatted}`;
+          } else {
+            display = `${checkDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${formatted}`;
+          }
+          return {
+            date: dateStr,
+            time: timeStr,
+            display
+          };
+        }
+      }
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+function cleanDescription(desc) {
+  if (!desc || typeof desc !== "string") return void 0;
+  let cleaned = desc.trim();
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  cleaned = cleaned.replace(/\\"/g, '"');
+  cleaned = cleaned.replace(/\\n/g, "\n");
+  return cleaned || void 0;
+}
+function deduplicateServices(services) {
+  const seen = /* @__PURE__ */ new Map();
+  for (const service of services) {
+    const serviceName = service.name || service.service_name || service.serviceName || "";
+    const serviceStyle = service.serviceStyle || service.service_style || "";
+    const key = `${serviceName}_${serviceStyle}`.toLowerCase().trim();
+    if (key && !seen.has(key)) {
+      seen.set(key, service);
+    } else if (key && seen.has(key)) {
+      console.warn(`[Deduplication] Duplicate service detected: ${key} (ID: ${service.id || service.serviceId || "unknown"}). Keeping first occurrence.`);
+    } else if (!key) {
+      const fallbackKey = service.id || service.serviceId || `unknown_${Math.random()}`;
+      if (!seen.has(fallbackKey)) {
+        seen.set(fallbackKey, service);
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
 function registerServiceDiscoveryEndpoints(app3) {
   app3.get("/customer/discovery/meta", async (c) => {
     try {
@@ -152877,7 +153128,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.service_id,
             vs.service_name,
             vs.service_name as display_name,
-            vs.custom_description as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
             vs.category as category_name,
             vs.service_style,
             vs.price as base_price,
@@ -153142,44 +153393,12 @@ function registerServiceDiscoveryEndpoints(app3) {
             continue;
           }
           console.log("[discover-services] tele: vendor %s passed roleConfigAllowsStyle check", vendor.id);
-          let nextAvailableSlot = null;
-          try {
-            const today = /* @__PURE__ */ new Date();
-            const todayStr = today.toISOString().split("T")[0];
-            const nextSlotsResult = await query(
-              `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
-               FROM vendor_availability_v2 va
-               WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                 AND (va.is_available IS NULL OR va.is_available = true)
-                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[])
-               ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
-               LIMIT 1`,
-              [vendor.id, vendor.phone || "", acceptableServiceStyles]
-            );
-            if (nextSlotsResult.rows.length > 0) {
-              const slot = nextSlotsResult.rows[0];
-              const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-              const dayOfWeek = slot.day_of_week;
-              const timeStr = slot.time_window_start?.substring(0, 5) || "09:00";
-              const formattedTime = (/* @__PURE__ */ new Date(`2000-01-01T${timeStr}`)).toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true
-              });
-              const todayDayOfWeek = today.getDay();
-              let daysUntil = dayOfWeek - todayDayOfWeek;
-              if (daysUntil < 0) daysUntil += 7;
-              if (daysUntil === 0) daysUntil = 0;
-              const nextDate = new Date(today);
-              nextDate.setDate(today.getDate() + daysUntil);
-              nextAvailableSlot = {
-                date: nextDate.toISOString().split("T")[0],
-                time: timeStr,
-                formattedDisplay: daysUntil === 0 ? `Today ${formattedTime}` : daysUntil === 1 ? `Tomorrow ${formattedTime}` : `${dayNames[dayOfWeek]} ${formattedTime}`
-              };
-            }
-          } catch (slotError) {
-          }
+          const nextAvailableResult = await getNextAvailableSlot(vendor.id, vendor.phone || "", acceptableServiceStyles);
+          const nextAvailableSlot = nextAvailableResult ? {
+            date: nextAvailableResult.date,
+            time: nextAvailableResult.time,
+            formattedDisplay: nextAvailableResult.display
+          } : null;
           let completedBookings = 0;
           try {
             const bookingsResult = await query(
@@ -153285,11 +153504,13 @@ function registerServiceDiscoveryEndpoints(app3) {
           }
           const photoUrl = await getVendorPhotoUrl(vendor);
           const hasPhoto = !!(photoUrl || photos && photos.length > 0);
-          if (serviceStyle === "tele" || serviceStyle === "at_home") {
-            console.log("[discover-services] %s: vendor %s - hasPhoto=%s, hasSlot=%s", serviceStyle, vendor.id, hasPhoto, !!nextAvailableSlot);
-          } else {
-            if (!nextAvailableSlot || !hasPhoto) {
-              console.log("[discover-services] at_center: vendor %s filtered - missing photo or availability", vendor.id);
+          if (isProductionEnvironment() && !nextAvailableSlot) {
+            console.log("[discover-services] %s: vendor %s filtered - no availability set (PROD)", serviceStyle, vendor.id);
+            continue;
+          }
+          if (serviceStyle !== "tele" && serviceStyle !== "at_home") {
+            if (!hasPhoto) {
+              console.log("[discover-services] at_center: vendor %s filtered - missing photo", vendor.id);
               continue;
             }
           }
@@ -153459,7 +153680,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             AND LOWER(r.name) NOT LIKE '%solo%'
             AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
-            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)
             AND vs.service_style != 'at_home'
             ${categoryFilterClause2}
         `;
@@ -153581,7 +153802,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.id,
               vs.service_id,
               vs.service_name as name,
-              vs.custom_description as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
               vs.custom_price as price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration_minutes,
               vs.service_style,
@@ -153597,7 +153818,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             servicesQuery += ` AND vs.service_style = ANY($2::text[])`;
             servicesParams.push(acceptableStyles2);
           }
-          servicesQuery += ` AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`;
+          servicesQuery += ` AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)`;
           servicesQuery += ` ORDER BY vs.publish_status DESC, vs.service_name LIMIT 10`;
           const services = await query(servicesQuery, servicesParams);
           const reviews = await query(
@@ -153661,46 +153882,13 @@ function registerServiceDiscoveryEndpoints(app3) {
             console.debug("Could not fetch vendor promotions:", promoError);
           }
           const isSoloProvider = (vendor.role_name || "").toLowerCase().includes("solo") || (vendor.role_display_name || "").toLowerCase().includes("solo") || (vendor.role_name || "").includes("_solo");
-          let nextAvailableSlot = null;
-          try {
-            const today = /* @__PURE__ */ new Date();
-            const todayStr = today.toISOString().split("T")[0];
-            const dayOfWeek = today.getDay();
-            const acceptableStyles2 = serviceStyle ? acceptableStylesForService(serviceStyle) : [];
-            const va2Result = await query(
-              `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-                 FROM vendor_availability_v2
-                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND (is_available IS NULL OR is_available = true)
-                   ${acceptableStyles2.length > 0 ? `AND ((COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]) OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))` : ""}
-                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
-                 LIMIT 7`,
-              acceptableStyles2.length > 0 ? [vendor.id, vendor.phone || "", acceptableStyles2] : [vendor.id, vendor.phone || ""]
-            ).catch(() => ({ rows: [] }));
-            if (va2Result.rows.length > 0) {
-              const slot = va2Result.rows[0];
-              const targetDay = slot.day_of_week;
-              let daysToAdd = targetDay - dayOfWeek;
-              if (daysToAdd < 0) daysToAdd += 7;
-              const targetDate = new Date(today);
-              targetDate.setDate(targetDate.getDate() + daysToAdd);
-              const timeStr = (slot.start_time || "09:00").toString().substring(0, 5);
-              const formattedTime = (/* @__PURE__ */ new Date(`2000-01-01T${timeStr}`)).toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true
-              });
-              const targetStr = targetDate.toISOString().split("T")[0];
-              const isToday = targetStr === todayStr;
-              const isTomorrow = targetStr === new Date(today.getTime() + 864e5).toISOString().split("T")[0];
-              nextAvailableSlot = {
-                date: targetStr,
-                time: timeStr,
-                formattedDisplay: isToday ? `Today ${formattedTime}` : isTomorrow ? `Tomorrow ${formattedTime}` : `${targetDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${formattedTime}`
-              };
-            }
-          } catch (slotError) {
-          }
+          const acceptableStylesLocal = serviceStyle ? acceptableStylesForService(serviceStyle) : [];
+          const nextAvailableResult2 = await getNextAvailableSlot(vendor.id, vendor.phone || "", acceptableStylesLocal.length > 0 ? acceptableStylesLocal : void 0);
+          const nextAvailableSlot = nextAvailableResult2 ? {
+            date: nextAvailableResult2.date,
+            time: nextAvailableResult2.time,
+            formattedDisplay: nextAvailableResult2.display
+          } : null;
           let specializations = [];
           try {
             const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]).catch(() => ({ rows: [] }));
@@ -153848,9 +154036,12 @@ function registerServiceDiscoveryEndpoints(app3) {
         if (serviceStyle === "at_center") {
           const hasBusinessName = !!(v.businessName && v.businessName.trim());
           const hasServices = hasAnyServices || v.totalOfferings && v.totalOfferings > 0;
-          return hasBusinessName && hasServices;
+          if (isProductionEnvironment() && !hasNextAvailability) {
+            console.log("[discover-services] at_center: vendor %s (%s) filtered - no availability set (PROD)", v.id || v.vendorId, v.businessName);
+          }
+          return hasBusinessName && hasServices && (isProductionEnvironment() ? hasNextAvailability : true);
         }
-        return hasPhoto && hasNextAvailability && hasProfileInfo && hasCompleteServices;
+        return hasPhoto && (isProductionEnvironment() ? hasNextAvailability : true) && hasProfileInfo && hasCompleteServices;
       });
       if (serviceStyle === "at_center") {
         filteredVendors = filteredVendors.filter((v) => {
@@ -154900,12 +155091,10 @@ function registerServiceDiscoveryEndpoints(app3) {
             const slotEnd = currentMinutes + slotDuration;
             const overlapsBooking = existingBookings.some((b) => {
               const bStart = timeToMinutes2(b.booking_time);
-              const bookingDuration = b.duration_minutes;
-              console.log(`[SLOTS] ${normalizedServiceStyle} overlap: booking=${b.booking_time}, duration=${bookingDuration}min (exact, buffer=${bufferMinutes}min is informational only)`);
-              const bEnd = bStart + bookingDuration;
+              const bEnd = bStart + slotDuration;
               const overlaps = currentMinutes < bEnd && slotEnd > bStart;
               if (overlaps) {
-                console.log(`[SLOTS] OVERLAP DETECTED: slot [${timeStr} (${currentMinutes}min)-${Math.floor(slotEnd / 60)}:${String(slotEnd % 60).padStart(2, "0")} (${slotEnd}min)] overlaps with booking [${b.booking_time} (${bStart}min)-${Math.floor(bEnd / 60)}:${String(bEnd % 60).padStart(2, "0")} (${bEnd}min)]`);
+                console.log(`[SLOTS] OVERLAP (atomic): slot ${timeStr} blocked by booking at ${b.booking_time}`);
               }
               return overlaps;
             });
@@ -156366,7 +156555,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           vs.service_style,
           vs.price,
           COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-          vs.custom_description as description,
+          COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
           vs.is_enabled,
           vs.publish_status,
           vs.category as category_name,
@@ -156395,7 +156584,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           id: s.id,
           serviceId: s.service_id,
           serviceName: s.service_name || s.base_service_name,
-          description: s.description || s.base_description || "",
+          description: cleanDescription(s.description) || cleanDescription(s.base_description) || "",
           price: parseFloat(s.price || 0),
           duration: s.duration || 30,
           serviceStyle: s.service_style,
@@ -156562,7 +156751,7 @@ function registerServiceDiscoveryEndpoints(app3) {
                 vs.service_name,
                 vs.price,
                 COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-                vs.custom_description as description,
+                COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
                 vs.category as category_name
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 
@@ -156579,37 +156768,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             }
             const distanceKm = distance != null ? parseFloat(distance.toFixed(2)) : null;
             const distanceText = distanceKm != null ? distanceKm < 1 ? `${Math.round(distanceKm * 1e3)}m away` : `${distanceKm.toFixed(1)} km away` : null;
-            let nextAvailable = null;
-            try {
-              const today = /* @__PURE__ */ new Date();
-              const dayOfWeek = today.getDay();
-              const va2 = await query(
-                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-                 FROM vendor_availability_v2
-                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND (is_available IS NULL OR is_available = true)
-                   AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
-                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
-                [vendor.vendor_id, vendor.phone || "", acceptableStyles2]
-              );
-              if (va2.rows?.length > 0) {
-                const s = va2.rows[0];
-                let daysToAdd = s.day_of_week - dayOfWeek;
-                if (daysToAdd < 0) daysToAdd += 7;
-                const targetDate = new Date(today);
-                targetDate.setDate(targetDate.getDate() + daysToAdd);
-                const timeStr = (s.start_time || "09:00").toString().substring(0, 5);
-                const formatted = (/* @__PURE__ */ new Date(`2000-01-01T${timeStr}`)).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-                const isToday = daysToAdd === 0;
-                const isTomorrow = daysToAdd === 1;
-                nextAvailable = {
-                  date: targetDate.toISOString().split("T")[0],
-                  time: timeStr,
-                  display: isToday ? `Today ${formatted}` : isTomorrow ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString("en-US", { weekday: "short" })} ${formatted}`
-                };
-              }
-            } catch (_) {
-            }
+            const nextAvailable = await getNextAvailableSlot(vendor.vendor_id, vendor.phone || "", acceptableStyles2);
             let specializations = [];
             try {
               const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.vendor_id]);
@@ -156673,19 +156832,26 @@ function registerServiceDiscoveryEndpoints(app3) {
               priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : void 0,
               bestForProblem: problemTitle || void 0,
               hasPackages: hasPackages || void 0,
-              services: servicesResult.rows.map((s) => ({
+              services: deduplicateServices(servicesResult.rows.map((s) => ({
                 id: s.id,
                 serviceId: s.service_id,
                 name: s.service_name,
                 price: parseFloat(s.price || 0),
                 duration: s.duration || 30,
-                description: s.description,
+                description: cleanDescription(s.description),
                 category: s.category_name
-              }))
+              })))
             };
           })
         )).filter(Boolean);
-        let filteredVendors = vendorsWithServices.filter((v) => v.services.length > 0);
+        let filteredVendors = vendorsWithServices.filter((v) => {
+          if (v.services.length === 0) return false;
+          if (isProductionEnvironment() && !v.nextAvailable) {
+            console.log(`[by-style] at_center: vendor ${v.vendorId} filtered - no availability set (PROD)`);
+            return false;
+          }
+          return true;
+        });
         if (minRatingValue !== null && minRatingValue > 0) {
           filteredVendors = filteredVendors.filter((v) => parseFloat(v.rating) >= minRatingValue);
         }
@@ -156918,7 +157084,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              vs.custom_description as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
               vs.category
              FROM vendor_services vs
              WHERE vs.vendor_id = $1 
@@ -156938,6 +157104,12 @@ function registerServiceDiscoveryEndpoints(app3) {
         }
         const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
         const distanceText = distanceKm != null ? distanceKm < 1 ? `${Math.round(distanceKm * 1e3)}m away` : `${distanceKm.toFixed(1)} km away` : null;
+        const indVendorId = ind.vendor_id || ind.id;
+        const indNextAvailable = await getNextAvailableSlot(indVendorId, ind.phone || "", acceptableStyles2);
+        if (isProductionEnvironment() && !indNextAvailable) {
+          console.log(`[by-style] at_home/tele: individual ${ind.id} filtered - no availability set (PROD)`);
+          continue;
+        }
         providers.push({
           providerId: ind.id,
           providerType: "individual",
@@ -156961,16 +157133,16 @@ function registerServiceDiscoveryEndpoints(app3) {
           vendorType: ind.vendor_id ? "business" : "solo",
           roleName: ind.role,
           specializations: [],
-          nextAvailable: null,
-          services: servicesResult.rows.map((s) => ({
+          nextAvailable: indNextAvailable,
+          services: deduplicateServices(servicesResult.rows.map((s) => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category
-          }))
+          })))
         });
       }
       let staffQuery = `
@@ -157077,7 +157249,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              vs.custom_description as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
               vs.category
              FROM vendor_services vs
              WHERE vs.vendor_id = $1 
@@ -157105,6 +157277,11 @@ function registerServiceDiscoveryEndpoints(app3) {
         }
         const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
         const distanceText = distanceKm != null ? distanceKm < 1 ? `${Math.round(distanceKm * 1e3)}m away` : `${distanceKm.toFixed(1)} km away` : null;
+        const staffNextAvailable = staff.vendor_id ? await getNextAvailableSlot(staff.vendor_id, staff.phone || "", acceptableStyles2) : null;
+        if (isProductionEnvironment() && !staffNextAvailable) {
+          console.log(`[by-style] at_home/tele: staff ${staff.id} (vendor ${staff.vendor_id}) filtered - no availability set (PROD)`);
+          continue;
+        }
         providers.push({
           providerId: staff.id,
           providerType: "staff",
@@ -157132,19 +157309,21 @@ function registerServiceDiscoveryEndpoints(app3) {
           vendorType: staff.vendor_id ? "business" : "solo",
           roleName: staff.vendor_role_display || staff.role || "",
           specializations: [],
-          nextAvailable: null,
-          services: servicesResult.rows.map((s) => ({
+          nextAvailable: staffNextAvailable,
+          services: deduplicateServices(servicesResult.rows.map((s) => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category
-          }))
+          })))
         });
       }
       const acceptableStylesFallback = acceptableStylesForService(serviceStyle);
+      const hasViProfilePhoto = await columnExists("vendor_identity", "profile_photo_url");
+      const viPhotoCol = hasViProfilePhoto ? "vi.profile_photo_url" : "NULL";
       let vendorIdentityQuery = `
         SELECT DISTINCT
           vi.id as vendor_id,
@@ -157155,7 +157334,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           vi.metadata->>'city' as city,
           (vi.metadata->>'latitude')::numeric as latitude,
           (vi.metadata->>'longitude')::numeric as longitude,
-          vi.profile_photo_url as profile_photo_url,
+          ${viPhotoCol} as profile_photo_url,
           NULL as profile_image,
           NULL as logo_url,
           ARRAY[]::text[] as specializations,
@@ -157209,7 +157388,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            vs.custom_description as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id::text = $1 
@@ -157221,6 +157400,11 @@ function registerServiceDiscoveryEndpoints(app3) {
         ).catch(() => ({ rows: [] }));
         if (servicesResult.rows.length === 0) continue;
         if (serviceStyle && !roleConfigAllowsStyle(vi.role_config, serviceStyle)) continue;
+        const viNextAvailable = await getNextAvailableSlot(vi.vendor_id, vi.phone || "", acceptableStyles2);
+        if (isProductionEnvironment() && !viNextAvailable) {
+          console.log(`[by-style] vendor_identity ${vi.vendor_id} filtered - no availability set (PROD)`);
+          continue;
+        }
         let distance = null;
         if (customerLat && customerLng && vi.latitude && vi.longitude) {
           distance = calculateDistance2(customerLat, customerLng, parseFloat(vi.latitude), parseFloat(vi.longitude));
@@ -157252,20 +157436,20 @@ function registerServiceDiscoveryEndpoints(app3) {
           isIndividualProvider: true,
           vendorType: "solo",
           serviceStyles: serviceStyle ? [normalizeServiceStyle2(serviceStyle) || serviceStyle] : acceptableStylesFallback,
-          nextAvailable: null,
+          nextAvailable: viNextAvailable,
           price: minPrice,
           consultationFee: minPrice,
           specializations: [],
           amenities: [],
-          services: servicesResult.rows.map((s) => ({
+          services: deduplicateServices(servicesResult.rows.map((s) => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category
-          }))
+          })))
         });
       }
       const vendorIdsWithStaff = new Set(providers.map((p) => p.vendorId).filter(Boolean));
@@ -157412,7 +157596,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            vs.custom_description as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id = $1 
@@ -157443,6 +157627,11 @@ function registerServiceDiscoveryEndpoints(app3) {
         if (servicesResult.rows.length === 0) {
           console.log(`[Services By Style] \u26A0\uFE0F Vendor ${vendor.vendor_id} has NO services - will be filtered out`);
         }
+        const vendorFallbackNextAvailable = await getNextAvailableSlot(vendor.vendor_id, vendor.phone || "", acceptableStyles2);
+        if (isProductionEnvironment() && !vendorFallbackNextAvailable) {
+          console.log(`[by-style] fallback: vendor ${vendor.vendor_id} filtered - no availability set (PROD)`);
+          continue;
+        }
         providers.push({
           providerId: vendor.vendor_id,
           providerType: "vendor",
@@ -157467,20 +157656,20 @@ function registerServiceDiscoveryEndpoints(app3) {
           isIndividualProvider: true,
           vendorType: vendor.vendor_type === "solo" ? "solo" : "business",
           serviceStyles: serviceStyle ? normalizeServiceStyle2(serviceStyle) || serviceStyle ? [normalizeServiceStyle2(serviceStyle) || serviceStyle] : [] : acceptableStylesFallback,
-          nextAvailable: null,
+          nextAvailable: vendorFallbackNextAvailable,
           price: minPrice,
           consultationFee: minPrice,
           specializations,
           amenities,
-          services: servicesResult.rows.map((s) => ({
+          services: deduplicateServices(servicesResult.rows.map((s) => ({
             id: s.id,
             serviceId: s.service_id,
             name: s.service_name,
             price: parseFloat(s.price || 0),
             duration: s.duration || 30,
-            description: s.description,
+            description: cleanDescription(s.description),
             category: s.category
-          }))
+          })))
         });
       }
       let filteredProviders = providers.filter((p) => p.services.length > 0);
@@ -167739,71 +167928,72 @@ function registerVendorServicesEndpoints(app3) {
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
       let updated;
       if (isUUID) {
-        console.log(`[VendorServices PUT] UUID detected: ${serviceId}. Checking if it's a catalog ID first...`);
-        const catalogCheckByUuid = await query(
-          `SELECT id, service_id, service_name, service_style 
-           FROM service_catalog 
+        console.log(`[VendorServices PUT] UUID detected: ${serviceId}. Checking if it's a vendor_services.id first...`);
+        const serviceCheck = await query(
+          `SELECT id, vendor_id, service_id, service_name, service_style, is_enabled, publish_status
+           FROM vendor_services 
            WHERE id = $1::uuid`,
           [serviceId]
         );
-        if (catalogCheckByUuid.rows.length > 0) {
-          const catalogService = catalogCheckByUuid.rows[0];
-          console.log(`[VendorServices PUT] UUID is a catalog ID. Looking up vendor service by service_id=${catalogService.id} for vendor ${vendorId}`);
-          const vendorServiceByCatalogId = await query(
-            `SELECT id, vendor_id, service_id, service_name, service_style 
-             FROM vendor_services 
-             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
-            [catalogService.id, vendorId]
-          );
-          if (vendorServiceByCatalogId.rows.length > 0) {
-            const actualServiceId = vendorServiceByCatalogId.rows[0].id;
-            console.log(`[VendorServices PUT] Found vendor service by catalog ID, using vendor_services.id=${actualServiceId}`);
-            updated = await update(
-              "vendor_services",
-              { id: actualServiceId, vendor_id: vendorId },
-              updateData
-            );
-            console.log(`[VendorServices PUT] Update by catalog ID result: ${updated.length} row(s) updated`);
-          } else {
-            console.log(`[VendorServices PUT] Catalog service exists but vendor ${vendorId} hasn't added it yet`);
+        if (serviceCheck.rows.length > 0) {
+          const service = serviceCheck.rows[0];
+          console.log(`[VendorServices PUT] Found service: id=${service.id}, vendor_id=${service.vendor_id}, requested_vendor_id=${vendorId}`);
+          if (service.vendor_id !== vendorId) {
+            console.log(`[VendorServices PUT] Vendor mismatch: service belongs to ${service.vendor_id}, requested ${vendorId}`);
             return c.json({
-              error: "Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog",
+              error: "Service not found for this vendor or you do not have permission to update it",
               serviceId,
-              catalogServiceId: catalogService.id,
-              catalogServiceName: catalogService.service_name,
-              hint: "Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first"
-            }, 404);
+              actualVendorId: service.vendor_id,
+              requestedVendorId: vendorId,
+              hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
+            }, 403);
           }
+          console.log(`[VendorServices PUT] Service found and vendor matches. Updating by id (single service)...`);
+          updated = await update(
+            "vendor_services",
+            { id: serviceId, vendor_id: vendorId },
+            updateData
+          );
+          console.log(`[VendorServices PUT] Update result: ${updated.length} row(s) updated`);
         } else {
-          console.log(`[VendorServices PUT] UUID is not a catalog ID. Checking if it's a vendor_services.id...`);
-          const serviceCheck = await query(
-            `SELECT id, vendor_id, service_id, service_name, service_style, is_enabled, publish_status
-             FROM vendor_services 
+          console.log(`[VendorServices PUT] UUID is not a vendor_services.id. Checking if it's a catalog ID...`);
+          const catalogCheckByUuid = await query(
+            `SELECT id, service_id, service_name, service_style 
+             FROM service_catalog 
              WHERE id = $1::uuid`,
             [serviceId]
           );
-          if (serviceCheck.rows.length > 0) {
-            const service = serviceCheck.rows[0];
-            console.log(`[VendorServices PUT] Found service: id=${service.id}, vendor_id=${service.vendor_id}, requested_vendor_id=${vendorId}`);
-            if (service.vendor_id !== vendorId) {
-              console.log(`[VendorServices PUT] Vendor mismatch: service belongs to ${service.vendor_id}, requested ${vendorId}`);
-              return c.json({
-                error: "Service not found for this vendor or you do not have permission to update it",
-                serviceId,
-                actualVendorId: service.vendor_id,
-                requestedVendorId: vendorId,
-                hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
-              }, 403);
-            }
-            console.log(`[VendorServices PUT] Service found and vendor matches. Updating...`);
-            updated = await update(
-              "vendor_services",
-              { id: serviceId, vendor_id: vendorId },
-              updateData
+          if (catalogCheckByUuid.rows.length > 0) {
+            const catalogService = catalogCheckByUuid.rows[0];
+            console.log(`[VendorServices PUT] UUID is a catalog ID. Looking up vendor service by service_id=${catalogService.id} for vendor ${vendorId}`);
+            const vendorServiceByCatalogId = await query(
+              `SELECT id, vendor_id, service_id, service_name, service_style 
+               FROM vendor_services 
+               WHERE service_id = $1::uuid AND vendor_id = $2::uuid
+               LIMIT 1`,
+              [catalogService.id, vendorId]
             );
-            console.log(`[VendorServices PUT] Update result: ${updated.length} row(s) updated`);
+            if (vendorServiceByCatalogId.rows.length > 0) {
+              const actualServiceId = vendorServiceByCatalogId.rows[0].id;
+              console.log(`[VendorServices PUT] Found vendor service by catalog ID, using vendor_services.id=${actualServiceId} (first match only)`);
+              updated = await update(
+                "vendor_services",
+                { id: actualServiceId, vendor_id: vendorId },
+                updateData
+              );
+              console.log(`[VendorServices PUT] Update by catalog ID result: ${updated.length} row(s) updated`);
+            } else {
+              console.log(`[VendorServices PUT] Catalog service exists but vendor ${vendorId} hasn't added it yet`);
+              return c.json({
+                error: "Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog",
+                serviceId,
+                catalogServiceId: catalogService.id,
+                catalogServiceName: catalogService.service_name,
+                hint: "Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first"
+              }, 404);
+            }
           } else {
-            console.log(`[VendorServices PUT] UUID ${serviceId} not found in catalog or vendor_services`);
+            console.log(`[VendorServices PUT] UUID ${serviceId} not found in vendor_services or catalog`);
             updated = [];
           }
         }
@@ -167815,28 +168005,69 @@ function registerVendorServicesEndpoints(app3) {
         );
         if (catalogResult.rows.length > 0) {
           const catalogUUID = catalogResult.rows[0].id;
-          updated = await update(
-            "vendor_services",
-            { service_id: catalogUUID, vendor_id: vendorId },
-            updateData
+          const vendorServiceCount = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
+             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+            [catalogUUID, vendorId]
           );
+          const count = parseInt(vendorServiceCount.rows[0]?.count || "0", 10);
+          if (count === 0) {
+            updated = [];
+          } else if (count === 1) {
+            updated = await update(
+              "vendor_services",
+              { service_id: catalogUUID, vendor_id: vendorId },
+              updateData
+            );
+          } else {
+            console.log(`[VendorServices PUT] ERROR: Found ${count} services with service_id=${catalogUUID} for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({
+              error: `Multiple services found with the same catalog service. Please use the specific vendor_services.id to update.`,
+              serviceId,
+              catalogServiceId: catalogUUID,
+              matchingServicesCount: count,
+              hint: "Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT request"
+            }, 400);
+          }
         } else {
           updated = [];
         }
         if (!updated || updated.length === 0) {
           const normalizedSearch = serviceId.replace(/^vet_|^pet_/, "").replace(/_/g, " ").replace(/-/g, " ").trim();
           console.log(`[VendorServices PUT] Trying normalized search: "${normalizedSearch}"`);
-          const vsResult = await query(
-            `UPDATE vendor_services 
-             SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(", ")}, updated_at = NOW()
+          const countCheck = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
              WHERE vendor_id = $1 AND (
                LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
                OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
-             )
-             RETURNING *`,
-            [vendorId, normalizedSearch, ...Object.values(updateData)]
+             )`,
+            [vendorId, normalizedSearch]
           );
-          updated = vsResult.rows;
+          const matchCount = parseInt(countCheck.rows[0]?.count || "0", 10);
+          if (matchCount === 0) {
+            updated = [];
+          } else if (matchCount === 1) {
+            const vsResult = await query(
+              `UPDATE vendor_services 
+               SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(", ")}, updated_at = NOW()
+               WHERE vendor_id = $1 AND (
+                 LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
+                 OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
+               )
+               RETURNING *`,
+              [vendorId, normalizedSearch, ...Object.values(updateData)]
+            );
+            updated = vsResult.rows;
+          } else {
+            console.log(`[VendorServices PUT] ERROR: Found ${matchCount} services matching "${normalizedSearch}" for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({
+              error: `Multiple services found matching "${serviceId}". Please use the specific vendor_services.id to update.`,
+              serviceId,
+              normalizedSearch,
+              matchingServicesCount: matchCount,
+              hint: "Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT request"
+            }, 400);
+          }
         }
         if (!updated || updated.length === 0) {
           const vsResult = await query(
@@ -167995,9 +168226,9 @@ function registerVendorServicesEndpoints(app3) {
       const existingServices = await query(
         `SELECT * FROM vendor_services 
          WHERE vendor_id = $1 
-         AND (service_id = $2 OR service_name = $3)
-         AND service_style = $4`,
-        [actualVendorId, catalogService.id, catalogService.service_name, finalServiceStyle]
+         AND service_id = $2
+         AND service_style = $3`,
+        [actualVendorId, catalogService.id, finalServiceStyle]
       );
       if (existingServices.rows.length > 0) {
         const existingService = existingServices.rows[0];
@@ -168469,11 +168700,35 @@ function registerVendorServicesEndpoints(app3) {
           updateData
         );
         if (updated.length === 0) {
-          updated = await update(
-            "vendor_services",
-            { service_id: serviceId, vendor_id: vendorId },
-            updateData
+          const catalogCheck = await query(
+            `SELECT id FROM service_catalog WHERE id = $1::uuid`,
+            [serviceId]
           );
+          if (catalogCheck.rows.length > 0) {
+            const catalogUUID = catalogCheck.rows[0].id;
+            const vendorServiceCount = await query(
+              `SELECT COUNT(*) as count FROM vendor_services 
+               WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+              [catalogUUID, vendorId]
+            );
+            const count = parseInt(vendorServiceCount.rows[0]?.count || "0", 10);
+            if (count === 1) {
+              updated = await update(
+                "vendor_services",
+                { service_id: catalogUUID, vendor_id: vendorId },
+                updateData
+              );
+            } else if (count > 1) {
+              console.log(`[VendorServices POST] ERROR: Found ${count} services with service_id=${catalogUUID} for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+              return c.json({
+                error: `Multiple services found with the same catalog service. Please use the specific vendor_services.id to update.`,
+                serviceId,
+                catalogServiceId: catalogUUID,
+                matchingServicesCount: count,
+                hint: "Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request"
+              }, 400);
+            }
+          }
         }
       } else {
         console.log(`[VendorServices] Looking up text service ID: ${serviceId} for vendor ${vendorId}`);
@@ -168483,42 +168738,105 @@ function registerVendorServicesEndpoints(app3) {
         );
         if (catalogResult.rows.length > 0) {
           const catalogUUID = catalogResult.rows[0].id;
-          updated = await update(
-            "vendor_services",
-            { service_id: catalogUUID, vendor_id: vendorId },
-            updateData
+          const vendorServiceCount = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
+             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+            [catalogUUID, vendorId]
           );
+          const count = parseInt(vendorServiceCount.rows[0]?.count || "0", 10);
+          if (count === 0) {
+            updated = [];
+          } else if (count === 1) {
+            updated = await update(
+              "vendor_services",
+              { service_id: catalogUUID, vendor_id: vendorId },
+              updateData
+            );
+          } else {
+            console.log(`[VendorServices POST] ERROR: Found ${count} services with service_id=${catalogUUID} for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({
+              error: `Multiple services found with the same catalog service. Please use the specific vendor_services.id to update.`,
+              serviceId,
+              catalogServiceId: catalogUUID,
+              matchingServicesCount: count,
+              hint: "Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request"
+            }, 400);
+          }
         } else {
           updated = [];
         }
         if (!updated || updated.length === 0) {
           const normalizedSearch = serviceId.replace(/^vet_|^pet_/, "").replace(/_/g, " ").replace(/-/g, " ").trim();
           console.log(`[VendorServices] Trying normalized search: "${normalizedSearch}"`);
-          const vsResult = await query(
-            `UPDATE vendor_services 
-             SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(", ")}, updated_at = NOW()
+          const countCheckPost = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
              WHERE vendor_id = $1 AND (
                LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
                OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
-             )
-             RETURNING *`,
-            [vendorId, normalizedSearch, ...Object.values(updateData)]
+             )`,
+            [vendorId, normalizedSearch]
           );
-          updated = vsResult.rows;
+          const matchCountPost = parseInt(countCheckPost.rows[0]?.count || "0", 10);
+          if (matchCountPost === 0) {
+            updated = [];
+          } else if (matchCountPost === 1) {
+            const vsResult = await query(
+              `UPDATE vendor_services 
+               SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(", ")}, updated_at = NOW()
+               WHERE vendor_id = $1 AND (
+                 LOWER(service_name) ILIKE '%' || LOWER($2) || '%'
+                 OR LOWER(REPLACE(REPLACE(service_name, '-', ' '), '_', ' ')) ILIKE '%' || LOWER($2) || '%'
+               )
+               RETURNING *`,
+              [vendorId, normalizedSearch, ...Object.values(updateData)]
+            );
+            updated = vsResult.rows;
+          } else {
+            console.log(`[VendorServices POST] ERROR: Found ${matchCountPost} services matching "${normalizedSearch}" for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({
+              error: `Multiple services found matching "${serviceId}". Please use the specific vendor_services.id to update.`,
+              serviceId,
+              normalizedSearch,
+              matchingServicesCount: matchCountPost,
+              hint: "Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request"
+            }, 400);
+          }
         }
         if (!updated || updated.length === 0) {
-          const vsResult = await query(
-            `UPDATE vendor_services 
-             SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(", ")}, updated_at = NOW()
+          const countCheck3Post = await query(
+            `SELECT COUNT(*) as count FROM vendor_services 
              WHERE vendor_id = $1 AND (
                service_name ILIKE $2 
                OR service_name ILIKE '%' || $2 || '%'
                OR LOWER(REPLACE(REPLACE(service_name, '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE($2, '_', ''), '-', ''))
-             )
-             RETURNING *`,
-            [vendorId, serviceId, ...Object.values(updateData)]
+             )`,
+            [vendorId, serviceId]
           );
-          updated = vsResult.rows;
+          const matchCount3Post = parseInt(countCheck3Post.rows[0]?.count || "0", 10);
+          if (matchCount3Post === 0) {
+            updated = [];
+          } else if (matchCount3Post === 1) {
+            const vsResult = await query(
+              `UPDATE vendor_services 
+               SET ${Object.keys(updateData).map((k, i) => `${k} = $${i + 3}`).join(", ")}, updated_at = NOW()
+               WHERE vendor_id = $1 AND (
+                 service_name ILIKE $2 
+                 OR service_name ILIKE '%' || $2 || '%'
+                 OR LOWER(REPLACE(REPLACE(service_name, '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE($2, '_', ''), '-', ''))
+               )
+               RETURNING *`,
+              [vendorId, serviceId, ...Object.values(updateData)]
+            );
+            updated = vsResult.rows;
+          } else {
+            console.log(`[VendorServices POST] ERROR: Found ${matchCount3Post} services matching "${serviceId}" for vendor ${vendorId}. Cannot update without specific vendor_services.id`);
+            return c.json({
+              error: `Multiple services found matching "${serviceId}". Please use the specific vendor_services.id to update.`,
+              serviceId,
+              matchingServicesCount: matchCount3Post,
+              hint: "Use GET /vendor/:vendorId/services to find the specific service ID, then use that ID in the PUT/POST request"
+            }, 400);
+          }
         }
       }
       if (!updated || updated.length === 0) {
@@ -217633,6 +217951,15 @@ function registerAdminComprehensiveEndpoints(app3) {
 
 // src/endpoints/problem-grid.ts
 init_rds_connection();
+function cleanDescription2(desc) {
+  if (!desc || typeof desc !== "string") return void 0;
+  let cleaned = desc.trim();
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  cleaned = cleaned.replace(/\\"/g, '"');
+  return cleaned || void 0;
+}
 function registerProblemGridEndpoints(app3) {
   app3.get("/vendor/problem-grid/all", async (c) => {
     try {
@@ -218165,14 +218492,13 @@ function registerProblemGridEndpoints(app3) {
         SELECT
           vs.id as service_id,
           vs.service_name as name,
-          vs.service_name as description,
+          COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), vs.service_name) as description,
           vs.price,
           vs.duration_minutes as duration,
           vs.service_style,
           vs.vendor_id,
           v.business_name as vendor_name,
           v.profile_photo_url,
-          v.profile_image,
           ${logoColumn} as logo_url,
           v.metadata as vendor_metadata,
           v.vendor_type,
@@ -218194,13 +218520,10 @@ function registerProblemGridEndpoints(app3) {
         WHERE ${statusFilter}
           AND v.is_active = true
           AND vs.is_enabled = true
-          AND (vs.publish_status IN ('published', 'auto_published') OR vs.publish_status IS NULL)
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
       `;
       const params = [];
       let paramIndex = 1;
-      if (serviceStyle === "at_home") {
-        servicesQuery += ` AND v.vendor_type != 'business' AND v.vendor_type != 'clinic'`;
-      }
       if (serviceStyle === "at_center") {
         servicesQuery += ` AND vs.service_style != 'at_home'`;
       }
@@ -218283,9 +218606,9 @@ function registerProblemGridEndpoints(app3) {
         }
       }
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
+        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
-                 v.profile_photo_url, v.profile_image, v.metadata, v.latitude, v.longitude${logoGroupBy},
+                 v.profile_photo_url, v.metadata, v.latitude, v.longitude${logoGroupBy},
                  v.vendor_type, r.name
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
@@ -218334,7 +218657,7 @@ function registerProblemGridEndpoints(app3) {
             SELECT DISTINCT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status,
                    vs.price, vs.duration_minutes, vs.created_at,
                    v.id as vendor_id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
-                   v.profile_photo_url, v.profile_image, v.city, v.state, v.latitude, v.longitude, v.metadata,
+                   v.profile_photo_url, v.city, v.state, v.latitude, v.longitude, v.metadata,
                    v.role_id, r.name as role_name
             FROM vendors v
             -- \u2705 Start from vendors table (same as profile API) - where specializations array is stored
@@ -218343,13 +218666,10 @@ function registerProblemGridEndpoints(app3) {
             WHERE ${statusFilter}
               AND v.is_active = true
               AND vs.is_enabled = true
-              AND (vs.publish_status IN ('published', 'auto_published') OR vs.publish_status IS NULL)
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
           `;
           const fallbackParams = [];
           let fallbackParamIndex = 1;
-          if (serviceStyle === "at_home") {
-            fallbackQuery += ` AND v.vendor_type != 'business' AND v.vendor_type != 'clinic'`;
-          }
           if (acceptableStyles2 && acceptableStyles2.length > 0) {
             fallbackQuery += ` AND vs.service_style = ANY($${fallbackParamIndex}::text[])`;
             fallbackParams.push(acceptableStyles2);
@@ -218400,7 +218720,6 @@ function registerProblemGridEndpoints(app3) {
                 business_name: row.business_name,
                 vendor_name: row.business_name,
                 profile_photo_url: row.profile_photo_url,
-                profile_image: row.profile_image,
                 logo_url: null,
                 metadata: row.metadata || {},
                 vendor_metadata: row.metadata || {},
@@ -218448,7 +218767,7 @@ function registerProblemGridEndpoints(app3) {
           LEFT JOIN vendor_services vs ON vs.vendor_id = v.id
           LEFT JOIN vendor_services vs_match ON vs_match.vendor_id = v.id 
             AND vs_match.is_enabled = true 
-            AND (vs_match.publish_status IN ('published', 'auto_published') OR vs_match.publish_status IS NULL)
+            AND (vs_match.publish_status IN ('published', 'auto_published', 'draft') OR vs_match.publish_status IS NULL)
             AND (${serviceStyle ? `vs_match.service_style = '${serviceStyle}'` : "true"})
             AND (
               v.id IN (
@@ -218482,7 +218801,8 @@ function registerProblemGridEndpoints(app3) {
               has_spec_in_jsonb: vendor.has_spec_in_jsonb,
               would_match_status: isDevOrUatEnvironment ? vendor.status === "approved" || vendor.status === "pending" : vendor.status === "approved",
               would_match_active: vendor.is_active === true,
-              would_match_vendor_type: serviceStyle === "at_home" ? vendor.vendor_type !== "business" && vendor.vendor_type !== "clinic" : true,
+              would_match_vendor_type: true,
+              // Business/clinic vendors can offer at_home services
               would_match_service: vendor.service_count > 0 && (vendor.service_enabled && vendor.service_enabled.includes(true)) && (vendor.service_publish_status && (vendor.service_publish_status.includes("published") || vendor.service_publish_status.includes("auto_published") || vendor.service_publish_status.includes(null))),
               would_match_service_style: serviceStyle ? vendor.service_styles && vendor.service_styles.includes(serviceStyle) : true,
               would_match_specialization: vendor.has_spec_in_table || vendor.has_spec_in_jsonb,
@@ -218560,7 +218880,7 @@ function registerProblemGridEndpoints(app3) {
         const serviceData = {
           serviceId: service.service_id,
           name: service.name,
-          description: service.description,
+          description: cleanDescription2(service.description),
           price: parseFloat(service.price || "0"),
           duration: parseInt(service.duration || "0"),
           serviceStyle: service.service_style,
@@ -218572,8 +218892,8 @@ function registerProblemGridEndpoints(app3) {
           relevanceScore: 1,
           id: `${service.vendor_id}_${service.service_id}`,
           type: "vendor",
-          photo: service.profile_photo_url || service.profile_image || service.logo_url || service.vendor_metadata && (service.vendor_metadata.logo_url || Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0] || null) || null,
-          photoUrl: service.profile_photo_url || service.profile_image || service.logo_url || service.vendor_metadata && (service.vendor_metadata.logo_url || Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0] || null) || null,
+          photo: service.profile_photo_url || service.logo_url || service.vendor_metadata && (service.vendor_metadata.logo_url || Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0] || null) || null,
+          photoUrl: service.profile_photo_url || service.logo_url || service.vendor_metadata && (service.vendor_metadata.logo_url || Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0] || null) || null,
           rating: parseFloat(service.vendor_rating || "0"),
           reviewCount: parseInt(service.vendor_reviews || "0"),
           specializations: specMap[service.vendor_id] || [],
@@ -218596,12 +218916,7 @@ function registerProblemGridEndpoints(app3) {
         }
         return serviceData;
       });
-      if (serviceStyle === "at_home") {
-        services = services.filter((service) => {
-          return service.vendorType !== "business";
-        });
-        console.log(`[BY-PROBLEM] After post-query filter for ${serviceStyle} (removed business vendors): ${services.length} services remaining`);
-      } else if (serviceStyle && acceptableStyles2 && acceptableStyles2.length > 0) {
+      if (serviceStyle && acceptableStyles2 && acceptableStyles2.length > 0) {
         services = services.filter((service) => {
           const serviceStyleValue = service.serviceStyle || service.service_style;
           return acceptableStyles2.includes(serviceStyleValue);
@@ -218726,7 +219041,7 @@ function registerProblemGridEndpoints(app3) {
           SELECT DISTINCT vs.vendor_id
           FROM vendor_services vs
           WHERE vs.is_enabled = true
-            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)
             ${feeMin ? `AND vs.price >= $${paramIndex}` : ""}
             ${feeMax ? `AND vs.price <= $${paramIndex + (feeMin ? 1 : 0)}` : ""}
         )`;
@@ -218873,7 +219188,7 @@ function registerProblemGridEndpoints(app3) {
           const servicesResult = await query(
             `SELECT id, service_id, service_name, price, duration_minutes, service_style, category, sub_category
              FROM vendor_services
-             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
+             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published','draft') OR publish_status IS NULL)
              ORDER BY price ASC
              LIMIT 10`,
             [vendor.id]
