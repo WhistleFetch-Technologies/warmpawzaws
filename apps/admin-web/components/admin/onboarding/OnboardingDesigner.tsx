@@ -279,11 +279,21 @@ export function OnboardingDesigner() {
     }
 
     try {
-      // Delete field via API
-      const response = await apiClient.delete<any>(`/admin/onboarding-fields/${selectedRole}/${fieldId}`);
+      let response: any;
+      try {
+        response = await apiClient.delete<any>(`/admin/onboarding-fields/${selectedRole}/${fieldId}`);
+      } catch (deleteErr: any) {
+        // If DELETE returns 404 or "Endpoint not found" (e.g. API Gateway doesn't expose DELETE), try POST remove-field fallback
+        const msg = String(deleteErr?.message || '');
+        const is404 = deleteErr?.response?.status === 404 || deleteErr?.status === 404 || msg.includes('404') || msg.includes('Endpoint not found');
+        if (is404) {
+          response = await apiClient.post<any>(`/admin/onboarding-fields/${selectedRole}/remove-field`, { fieldId });
+        } else {
+          throw deleteErr;
+        }
+      }
 
-      if (response.success) {
-        // Reload form for this role
+      if (response?.success) {
         await loadFormForRole(selectedRole);
       } else {
         alert('Failed to delete field. Please try again.');

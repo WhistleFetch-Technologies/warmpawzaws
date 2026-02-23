@@ -16,6 +16,7 @@
 
 import { Context, Next } from 'hono';
 import { extractAndVerifyAuthToken } from '../utils/jwt-verification';
+import { select } from '../database/rds-connection';
 
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
@@ -79,6 +80,7 @@ async function extractAuth(c: Context): Promise<{
   userRole?: string;
   groups?: string[];
   isUAT?: boolean;
+  email?: string;
   error?: string;
 }> {
   const authHeader = c.req.header('authorization') || c.req.header('Authorization');
@@ -137,6 +139,7 @@ async function extractAuth(c: Context): Promise<{
     const groups = payload['cognito:groups'] as string[] | undefined;
     const userType = payload['custom:user_type'] as string | undefined;
     const userRole = groups?.[0] || userType;
+    const email = (payload.email || payload['cognito:username']) as string | undefined;
 
     return {
       valid: true,
@@ -144,6 +147,7 @@ async function extractAuth(c: Context): Promise<{
       userRole,
       groups,
       isUAT: false,
+      email: typeof email === 'string' ? email : undefined,
     };
   } catch (error) {
     console.error('[AuthMiddleware] Token verification failed:', error);
@@ -248,9 +252,24 @@ export function requireAdmin() {
     }
 
     // Standard admin check for real tokens
-    const isAdmin = auth.groups?.includes('admin') || 
-                    auth.groups?.includes('super-admin') || 
-                    auth.userRole === 'admin';
+    let isAdmin = auth.groups?.includes('admin') ||
+                  auth.groups?.includes('super-admin') ||
+                  auth.userRole === 'admin';
+
+    // Production fallback: if JWT is valid but token has no admin group, allow if user exists in admins table (e.g. Cognito not configured with admin group)
+    if (!isAdmin && auth.email) {
+      try {
+        const admins = await select('admins', { email: auth.email });
+        if (admins.length > 0 && (admins[0] as { is_active?: boolean }).is_active !== false) {
+          console.log(`[AuthMiddleware] Admin access granted via admins table for ${auth.email}`);
+          isAdmin = true;
+          auth.userRole = 'admin';
+          auth.groups = auth.groups || ['admin'];
+        }
+      } catch (e) {
+        // Table may not exist or DB error; do not expose
+      }
+    }
 
     if (!isAdmin) {
       console.warn(`[AuthMiddleware] Admin access denied for user ${auth.userId}, role: ${auth.userRole}`);

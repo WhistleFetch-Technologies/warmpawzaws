@@ -6,6 +6,9 @@
 #   --yes, -y      Skip confirmation prompt when using --prod.
 #   Default: deploy to dev. Do NOT use SKIP_BUILD env (ignored).
 #
+# Verify prod API URL before deploying: aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text
+# Prod must point at warmpawz-prod-api (mss9sa4y01); dev at warmpawz-dev-api (z0b3obweb6).
+#
 # This script only: builds, uploads to S3, and creates a CloudFront invalidation.
 # It does NOT modify CloudFront distribution config (aliases/SSL). Protected URLs
 # (dev.admin.warmpawz.com, admin.warmpawz.com) require aliases/SSL to be set via
@@ -39,7 +42,8 @@ if [ "$PROD" = true ]; then
   S3_BUCKET="warmpawz-prod-admin-frontend-ap-south-1"
   CLOUDFRONT_DIST_ID="E2NHO6UUI5UIHW"
   CLOUDFRONT_URL="https://dbr09zyoq9akb.cloudfront.net"
-  API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
+  # Resolve prod API from AWS first so prod never points at dev
+  API_BASE_URL=""
   if [ "$SKIP_CONFIRM" = false ]; then
     echo "⚠️  WARNING: This will deploy to PRODUCTION!"
     read -p "Type 'yes' to proceed: " confirm
@@ -67,13 +71,19 @@ NC='\033[0m' # No Color
 
 # Resolve API_BASE_URL BEFORE build so we can bake correct env into the build
 if [ "$PROD" = true ]; then
-  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
-    if command -v aws &>/dev/null; then
-      API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
-    fi
-    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-      API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
-    fi
+  if command -v aws &>/dev/null; then
+    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+  fi
+  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+    API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
+    echo -e "${YELLOW}⚠️  Could not resolve prod API from AWS; using fallback. Verify with: aws apigatewayv2 get-apis --region ap-south-1 --query \"Items[?Name=='warmpawz-prod-api'].ApiEndpoint\" --output text${NC}"
+  fi
+  # Safety: never deploy prod build pointing at dev API
+  if echo "$API_BASE_URL" | grep -qE 'z0b3obweb6|rrg9107m3d'; then
+    echo -e "${YELLOW}❌ ERROR: Prod API URL resolved to a DEV endpoint. Aborting.${NC}"
+    echo -e "   Resolved: $API_BASE_URL"
+    echo -e "   Expected: warmpawz-prod-api (mss9sa4y01...). Check AWS API Gateway."
+    exit 1
   fi
   echo -e "${GREEN}✅ PROD API Gateway: $API_BASE_URL${NC}"
 else
@@ -156,6 +166,22 @@ EOF
 fi
 
 echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}"
+
+# Safety: when deploying to prod, verify dist has prod API URL (not dev)
+if [ "$PROD" = true ]; then
+  RUNTIME_CONFIG="apps/${APP_NAME}/dist/runtime-config.js"
+  if [ -f "$RUNTIME_CONFIG" ]; then
+    if grep -qE 'z0b3obweb6|rrg9107m3d' "$RUNTIME_CONFIG"; then
+      echo -e "${YELLOW}❌ ERROR: dist/runtime-config.js contains DEV API URL. Prod must not point at dev. Aborting.${NC}"
+      exit 1
+    fi
+    if ! grep -q "mss9sa4y01" "$RUNTIME_CONFIG"; then
+      echo -e "${YELLOW}❌ ERROR: dist/runtime-config.js does not contain prod API (mss9sa4y01). Aborting.${NC}"
+      exit 1
+    fi
+    echo -e "${GREEN}✅ Verified runtime-config.js points at prod API${NC}"
+  fi
+fi
 
 # Step 2: Deploy to S3
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"

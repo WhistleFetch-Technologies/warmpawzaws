@@ -1,0 +1,37 @@
+---
+description: UAT/Prod parity, vendor fetch, and complex fix documentation
+alwaysApply: true
+---
+
+# UAT, Production, and Complex Fixes
+
+## Vendor fetch – do not modify
+
+- **Vendor fetch** (how vendors are discovered, availability checks, etc.) differs by design: **UAT** uses relaxed rules; **production** is strict.
+- **Do not change** the vendor fetch system. Any change that could affect vendor discovery or availability logic must be avoided unless explicitly requested and scoped.
+
+## Lambda and environments
+
+- Lambda changes must **work for both UAT and production**. The only exception is the vendor fetch logic above.
+- **Dev and UAT** backend Lambdas must stay **in sync** and behave the same, except for the vendor fetch differences (handled elsewhere, not in application code you edit for features).
+
+## Deployment
+
+- **Before deployment:** Coordinate with the agent to gather **complete information about AWS resources** for both Dev and Prod (API base URLs, Lambda function names, API Gateway stages, etc.).
+
+## Complex problem fixes
+
+- **After** solving a complex problem, add a detailed `.md` file under **`docs/complexProblemFix/`** (or the project’s equivalent). Include:
+  - Problem description  
+  - Schema changes (if any)  
+  - Lambda updates  
+  - Backend code changes  
+  - Frontend changes  
+  - End-to-end implementation flow and final solution  
+
+- **When something is not working:** Ask the agent to **review the files in `docs/complexProblemFix/` first** to get context and avoid repeating past mistakes.
+- The documentation should be detailed enough for automated/agent modes to understand and apply it without extra context.
+
+## Index
+
+See **`docs/complexProblemFix/README.md`** for the list of documented fixes and the full project rules.

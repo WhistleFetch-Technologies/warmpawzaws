@@ -122,7 +122,24 @@ async function getRoleByName(roleId: string): Promise<any | null> {
     roles = partialResult.rows || [];
     console.log(`[getRoleByName] Partial match: ${roles.length} results`);
   }
-  
+
+  // Vet-clinic variants: try "vet clinic" (space) and "veterinary" when roleId is vet_clinic/veterinary_clinic
+  const normalizedForVet = roleId.toLowerCase().trim();
+  if (roles.length === 0 && (normalizedForVet === 'vet_clinic' || normalizedForVet === 'veterinary_clinic')) {
+    const vetVariants = ['veterinary_clinic', 'veterinarian', 'vet clinic', 'vet_clinic'];
+    for (const v of vetVariants) {
+      const r = await query(
+        'SELECT * FROM roles WHERE (LOWER(name) = LOWER($1) OR LOWER(REPLACE(name, \' \', \'_\')) = LOWER($2)) AND is_active = true LIMIT 1',
+        [v, v.replace(/\s/g, '_')]
+      );
+      if ((r as any).rows?.length) {
+        roles = (r as any).rows;
+        console.log(`[getRoleByName] Found role via vet variant "${v}": ${roles[0].name}`);
+        break;
+      }
+    }
+  }
+
   // If still no match, log all available active roles for debugging
   if (roles.length === 0) {
     const activeRoles = await select('roles', { is_active: true }, { limit: 100 });
@@ -1039,84 +1056,114 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
   });
 
   /**
+   * Shared logic: remove an onboarding field (DB or KYC). Used by DELETE and POST remove-field.
+   */
+  async function removeOnboardingField(roleId: string, fieldId: string): Promise<{ success: true; message: string } | { error: string; status: 404 | 500 }> {
+    const role = await getRoleByName(roleId);
+    if (!role) {
+      return { error: 'Role not found', status: 404 };
+    }
+    const actualRoleName = role.name;
+
+    await query(`
+      ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS deleted_kyc_field_ids JSONB DEFAULT '[]'
+    `).catch(() => {});
+
+    let forms = await select('onboarding_forms', { role_id: actualRoleName });
+    let fields: any[] = [];
+    let deletedKycIds: string[] = [];
+
+    if (forms.length > 0) {
+      fields = typeof forms[0].fields === 'string'
+        ? JSON.parse(forms[0].fields)
+        : forms[0].fields || [];
+      const raw = forms[0].deleted_kyc_field_ids;
+      deletedKycIds = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : []);
+    }
+
+    const filteredFields = fields.filter((f: any) => f.id !== fieldId && f.fieldName !== fieldId && f.name !== fieldId);
+    const foundInDb = fields.length !== filteredFields.length;
+
+    if (foundInDb) {
+      filteredFields.forEach((f: any, idx: number) => {
+        f.displayOrder = idx;
+        f.updatedAt = new Date().toISOString();
+      });
+      await update('onboarding_forms', { role_id: actualRoleName }, {
+        fields: JSON.stringify(filteredFields),
+        updated_at: new Date().toISOString(),
+      });
+      await incrementFormVersion(actualRoleName);
+      return { success: true, message: 'Field deleted successfully' };
+    }
+
+    const { getKYCFieldsForRole } = await import('../lib/kyc-form-fields');
+    const kycFields = getKYCFieldsForRole(actualRoleName, 'solo') || getKYCFieldsForRole(actualRoleName, 'business') || getKYCFieldsForRole(actualRoleName);
+    const isKycField = Array.isArray(kycFields) && kycFields.some((f: any) => f.id === fieldId || f.fieldName === fieldId);
+    if (!isKycField) {
+      return { error: 'Field not found', status: 404 };
+    }
+    if (deletedKycIds.includes(fieldId)) {
+      return { success: true, message: 'Field already removed' };
+    }
+
+    deletedKycIds = [...deletedKycIds, fieldId];
+    const updatePayload: any = {
+      deleted_kyc_field_ids: JSON.stringify(deletedKycIds),
+      updated_at: new Date().toISOString(),
+    };
+    if (forms.length === 0) {
+      await query(`
+        INSERT INTO onboarding_forms (role_id, fields, deleted_kyc_field_ids, updated_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (role_id) DO UPDATE SET deleted_kyc_field_ids = EXCLUDED.deleted_kyc_field_ids, updated_at = EXCLUDED.updated_at
+      `, [actualRoleName, JSON.stringify([]), JSON.stringify(deletedKycIds), updatePayload.updated_at]);
+    } else {
+      await update('onboarding_forms', { role_id: actualRoleName }, updatePayload);
+    }
+    await incrementFormVersion(actualRoleName);
+    return { success: true, message: 'Field deleted successfully' };
+  }
+
+  /**
    * DELETE /admin/onboarding-fields/:roleId/:fieldId
-   * Delete an onboarding field. Supports both DB-stored fields and KYC-only fields
-   * (KYC fields are merged in GET but not stored; "deleting" them persists in deleted_kyc_field_ids).
+   * Delete an onboarding field. Supports both DB-stored fields and KYC-only fields.
    */
   app.delete('/admin/onboarding-fields/:roleId/:fieldId', async (c) => {
     try {
       const { roleId, fieldId } = c.req.param();
-
-      const role = await getRoleByName(roleId);
-      if (!role) {
-        return c.json({ error: 'Role not found', requestedRole: roleId }, 404);
+      const result = await removeOnboardingField(roleId, fieldId);
+      if ('error' in result) {
+        return c.json({ error: result.error }, result.status);
       }
-      const actualRoleName = role.name;
-
-      // Ensure deleted_kyc_field_ids column exists
-      await query(`
-        ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS deleted_kyc_field_ids JSONB DEFAULT '[]'
-      `).catch(() => {});
-
-      let forms = await select('onboarding_forms', { role_id: actualRoleName });
-      let fields: any[] = [];
-      let deletedKycIds: string[] = [];
-
-      if (forms.length > 0) {
-        fields = typeof forms[0].fields === 'string'
-          ? JSON.parse(forms[0].fields)
-          : forms[0].fields || [];
-        const raw = forms[0].deleted_kyc_field_ids;
-        deletedKycIds = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : []);
-      }
-
-      const filteredFields = fields.filter((f: any) => f.id !== fieldId && f.fieldName !== fieldId && f.name !== fieldId);
-      const foundInDb = fields.length !== filteredFields.length;
-
-      if (foundInDb) {
-        // Reorder remaining fields and save
-        filteredFields.forEach((f: any, idx: number) => {
-          f.displayOrder = idx;
-          f.updatedAt = new Date().toISOString();
-        });
-        await update('onboarding_forms', { role_id: actualRoleName }, {
-          fields: JSON.stringify(filteredFields),
-          updated_at: new Date().toISOString(),
-        });
-        await incrementFormVersion(actualRoleName);
-        return c.json({ success: true, message: 'Field deleted successfully' });
-      }
-
-      // Field not in DB: check if it's a KYC field (merged in GET only)
-      const { getKYCFieldsForRole } = await import('../lib/kyc-form-fields');
-      const kycFields = getKYCFieldsForRole(actualRoleName, 'solo') || getKYCFieldsForRole(actualRoleName, 'business') || getKYCFieldsForRole(actualRoleName);
-      const isKycField = Array.isArray(kycFields) && kycFields.some((f: any) => f.id === fieldId || f.fieldName === fieldId);
-      if (!isKycField) {
-        return c.json({ error: 'Field not found' }, 404);
-      }
-      if (deletedKycIds.includes(fieldId)) {
-        return c.json({ success: true, message: 'Field already removed' });
-      }
-
-      deletedKycIds = [...deletedKycIds, fieldId];
-      const updatePayload: any = {
-        deleted_kyc_field_ids: JSON.stringify(deletedKycIds),
-        updated_at: new Date().toISOString(),
-      };
-      if (forms.length === 0) {
-        await query(`
-          INSERT INTO onboarding_forms (role_id, fields, deleted_kyc_field_ids, updated_at)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (role_id) DO UPDATE SET deleted_kyc_field_ids = EXCLUDED.deleted_kyc_field_ids, updated_at = EXCLUDED.updated_at
-        `, [actualRoleName, JSON.stringify([]), JSON.stringify(deletedKycIds), updatePayload.updated_at]);
-      } else {
-        await update('onboarding_forms', { role_id: actualRoleName }, updatePayload);
-      }
-      await incrementFormVersion(actualRoleName);
-      return c.json({ success: true, message: 'Field deleted successfully' });
+      return c.json(result);
     } catch (error: any) {
       console.error('Error deleting onboarding field:', error);
       return c.json({ error: error.message || 'Failed to delete field' }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/onboarding-fields/:roleId/remove-field
+   * Fallback to remove a field when DELETE is not available (e.g. API Gateway without DELETE method).
+   * Body: { fieldId: string }
+   */
+  app.post('/admin/onboarding-fields/:roleId/remove-field', async (c) => {
+    try {
+      const { roleId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
+      const fieldId = body?.fieldId || body?.field_id;
+      if (!fieldId || typeof fieldId !== 'string') {
+        return c.json({ error: 'fieldId is required in body' }, 400);
+      }
+      const result = await removeOnboardingField(roleId, fieldId.trim());
+      if ('error' in result) {
+        return c.json({ error: result.error }, result.status);
+      }
+      return c.json(result);
+    } catch (error: any) {
+      console.error('Error removing onboarding field:', error);
+      return c.json({ error: error.message || 'Failed to remove field' }, 500);
     }
   });
 
