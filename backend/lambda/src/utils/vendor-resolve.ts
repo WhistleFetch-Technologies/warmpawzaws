@@ -8,6 +8,7 @@
  * Idempotent: safe to call on every request; creates at most once per identity.
  */
 import { select, insert } from '../database/rds-connection';
+import { extractProfilePhotoFromApplication, extractPincodeFromPayload } from './extract-profile-photo';
 
 export async function resolveVendorId(paramVendorId: string): Promise<string> {
   const trimmed = (paramVendorId || '').trim();
@@ -33,6 +34,23 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
     const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identity.id });
     const application = applications.length > 0 ? applications[0] : null;
     const payload = (application as any)?.application_payload || {};
+    
+    // ✅ FIX: Extract profile photo and pincode from application
+    const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
+    const pincodeValue = extractPincodeFromPayload(payload);
+    
+    // ✅ FIX: Extract service_radius from payload
+    let serviceRadius: number | null = null;
+    const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
+    for (const field of radiusFields) {
+      if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+        const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+        if (!isNaN(radiusValue) && radiusValue > 0) {
+          serviceRadius = radiusValue;
+          break;
+        }
+      }
+    }
 
     const newVendor = await insert('vendors', {
       id: identity.id,
@@ -46,7 +64,9 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
       address: payload.address || 'Not specified',
       city: payload.city || 'Not specified',
       state: payload.state || 'Not specified',
-      pincode: payload.pin || payload.pincode || '',
+      pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction
+      profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
+      service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding
       status: 'active',
       is_active: true,
       created_at: new Date().toISOString(),

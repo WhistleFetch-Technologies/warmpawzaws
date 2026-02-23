@@ -143,7 +143,7 @@ export function FlexibleTaxRulesManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.taxType || formData.rate === undefined) {
+    if (!formData.name || !formData.taxType || formData.rate === undefined || formData.rate === null) {
       alert('Please fill in all required fields');
       return;
     }
@@ -487,8 +487,13 @@ export function FlexibleTaxRulesManager() {
                       id="rate"
                       type="number"
                       step="0.01"
-                      value={formData.rate || ''}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
+                      min="0"
+                      value={formData.rate !== undefined ? formData.rate : ''}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const val = e.target.value;
+                        const numVal = val === '' ? undefined : parseFloat(val);
+                        setFormData({ ...formData, rate: numVal !== undefined && !isNaN(numVal) ? numVal : undefined });
+                      }}
                       placeholder={formData.calculationMethod === 'percentage' ? '18' : '100'}
                       className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       required
@@ -594,18 +599,19 @@ export function FlexibleTaxRulesManager() {
                   </label>
                   <select
                     id="serviceStyle"
-                    value={formData.conditions?.serviceTypes?.[0] || (formData as any).service_style || ''}
+                    multiple
+                    value={formData.conditions?.serviceTypes || []}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                      const v = e.target.value || undefined;
+                      const selected = Array.from(e.target.selectedOptions, option => option.value).filter(v => v !== '');
                       setFormData({
                         ...formData,
                         conditions: {
                           ...formData.conditions,
-                          serviceTypes: v ? [v] : undefined,
+                          serviceTypes: selected.length > 0 ? selected : undefined,
                         },
                       });
                     }}
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 min-h-[100px]"
                   >
                     {SERVICE_STYLE_OPTIONS.map((o) => (
                       <option key={o.value || 'any'} value={o.value}>
@@ -613,6 +619,7 @@ export function FlexibleTaxRulesManager() {
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple options</p>
                 </div>
 
                 <div>
@@ -621,26 +628,27 @@ export function FlexibleTaxRulesManager() {
                   </label>
                   <select
                     id="roleId"
-                    value={formData.conditions?.vendorRoles?.[0] || (formData as any).role_id || ''}
+                    multiple
+                    value={formData.conditions?.vendorRoles || []}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                      const v = e.target.value || undefined;
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
                       setFormData({
                         ...formData,
                         conditions: {
                           ...formData.conditions,
-                          vendorRoles: v ? [v] : undefined,
+                          vendorRoles: selected.length > 0 ? selected : undefined,
                         },
                       });
                     }}
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 min-h-[100px]"
                   >
-                    <option value="">— Any —</option>
                     {roles.map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.name}
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple options</p>
                 </div>
               </div>
 

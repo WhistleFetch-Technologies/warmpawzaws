@@ -123,6 +123,16 @@ EOF
 
 echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}"
 
+# Step 1.6: Replace inline runtime-config in all HTML files (critical for static exports!)
+echo -e "${BLUE}🔧 Replacing inline runtime-config in HTML files...${NC}"
+INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: false, environment: 'production' };"
+find "apps/${APP_NAME}/dist" -name "*.html" -type f | while read -r htmlfile; do
+  if grep -q 'runtime-config-inline' "$htmlfile"; then
+    sed -i "s|window.__WARMPAWZ_RUNTIME_CONFIG__ = {[^}]*};|${INLINE_CONFIG}|g" "$htmlfile"
+  fi
+done
+echo -e "${GREEN}✅ Inline runtime-config replaced in HTML files (production values)${NC}"
+
 # Step 2: Deploy to S3
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map"

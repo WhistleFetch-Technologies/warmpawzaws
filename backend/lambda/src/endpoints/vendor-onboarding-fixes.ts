@@ -277,6 +277,65 @@ export function registerVendorOnboardingFixes(app: Hono) {
         }
       }
 
+      // ✅ NEW: Import and merge KYC fields for the role (same as admin endpoint)
+      try {
+        const { 
+          getKYCFieldsForRole, 
+          ROLE_KYC_CONFIGS, 
+          KYC_SECTIONS 
+        } = await import('../lib/kyc-form-fields');
+        
+        // Get KYC fields for this role and vendor type
+        let kycFields = getKYCFieldsForRole(roleName, vendorType as 'solo' | 'business');
+        if (kycFields.length === 0) {
+          // Try without vendor type
+          kycFields = getKYCFieldsForRole(roleName);
+        }
+        
+        if (kycFields.length > 0) {
+          console.log(`[FORM SCHEMA] Adding ${kycFields.length} KYC fields for role ${roleName} (vendorType: ${vendorType})`);
+          
+          // Convert KYC fields to form field format
+          const kycFormFields = kycFields.map((f: any) => ({
+            id: f.id,
+            fieldName: f.fieldName,
+            name: f.fieldName, // Frontend expects 'name'
+            label: f.label,
+            type: f.type, // Includes 'aadhaar-otp', 'pan-verify', 'gst-verify', 'declaration'
+            section: f.section,
+            isMandatory: f.isMandatory,
+            required: f.isMandatory,
+            requiresVerification: f.requiresVerification || false,
+            verificationEndpoint: f.verificationEndpoint || null,
+            placeholder: f.placeholder || '',
+            helpText: f.helpText || '',
+            options: f.options || [],
+            validation: f.validation || {},
+            displayOrder: f.displayOrder || 0,
+            order: f.displayOrder || 0,
+            isActive: true,
+            softBlock: f.softBlock || false,
+            declarationText: f.declarationText || null,
+            declarationType: f.declarationType || f.id,
+          }));
+          
+          // Merge KYC fields with stored fields: DB overrides apply on top of KYC defaults
+          const kycFieldIds = new Set(kycFormFields.map((f: any) => f.id));
+          const dbFields = [...fields]; // copy from onboarding_forms
+          const nonKycFields = fields.filter((f: any) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName) && !kycFieldIds.has(f.name));
+          const mergedKycFields = kycFormFields.map((kf: any) => {
+            const stored = dbFields.find((f: any) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
+            return stored ? { ...kf, ...stored } : kf;
+          });
+          fields = [...nonKycFields, ...mergedKycFields];
+          
+          console.log(`[FORM SCHEMA] Total fields after KYC merge: ${fields.length}`);
+        }
+      } catch (kycError: any) {
+        console.error('[FORM SCHEMA] Error loading KYC fields:', kycError?.message || kycError);
+        // Continue with fields from database only
+      }
+
       // Filter active fields only
       const activeFields = fields.filter((f: any) => f.isActive !== false);
 
@@ -295,8 +354,21 @@ export function registerVendorOnboardingFixes(app: Hono) {
         });
       }
 
-      // Group fields by section
-      const sections = getSectionsFromFields(activeFields);
+      // ✅ NEW: Use KYC-aware section grouping if KYC fields were loaded
+      let sections: any[];
+      try {
+        const { ROLE_KYC_CONFIGS, KYC_SECTIONS } = await import('../lib/kyc-form-fields');
+        const roleConfig = ROLE_KYC_CONFIGS[roleName] || 
+                          ROLE_KYC_CONFIGS[`${roleName}_solo`] || 
+                          ROLE_KYC_CONFIGS[`${roleName}_business`];
+        const roleSections = roleConfig?.sections || KYC_SECTIONS;
+        
+        // Use KYC-aware section grouping
+        sections = getSectionsFromFieldsWithKYC(activeFields, roleSections);
+      } catch {
+        // Fallback to basic section grouping
+        sections = getSectionsFromFields(activeFields);
+      }
 
       console.log(`✅ [FORM SCHEMA] Returning ${activeFields.length} fields in ${sections.length} sections`);
 
@@ -494,6 +566,78 @@ function getSectionsFromFields(fields: any[]) {
     const fieldWithActive = { ...field, isActive: field.isActive !== false };
     sections[secKey].fields.push(fieldWithActive);
   }
+
+  return Object.values(sections).sort((a: any, b: any) => a.order - b.order);
+}
+
+// ✅ NEW: KYC-aware section grouping (similar to admin endpoint)
+function getSectionsFromFieldsWithKYC(fields: any[], kycSections?: any[]) {
+  const sections: Record<string, any> = {};
+  
+  // Build section metadata from KYC sections
+  const sectionMeta: Record<string, any> = {};
+  
+  if (kycSections && kycSections.length > 0) {
+    kycSections.forEach((s: any) => {
+      sectionMeta[s.id] = { 
+        title: s.name, 
+        order: s.order,
+        description: s.description 
+      };
+    });
+  }
+  
+  // Default sections for backward compatibility
+  const defaultSections: Record<string, any> = {
+    'business_information': { title: 'Business Information', order: 1 },
+    'location_information': { title: 'Local Information', order: 2 },
+    'identity_verification': { title: 'Identity Verification', order: 3 },
+    'documents': { title: 'Documents', order: 4 },
+    'professional': { title: 'Professional', order: 5 },
+    'permissions': { title: 'Permissions', order: 6 },
+    'declarations': { title: 'Declaration', order: 7 },
+    'business_registration': { title: 'Professional', order: 5 },
+    'banking_information': { title: 'Banking Details', order: 8 },
+    'additional_information': { title: 'Additional Info', order: 9 },
+  };
+  
+  // Merge: KYC sections take precedence
+  Object.assign(sectionMeta, defaultSections);
+  if (kycSections && kycSections.length > 0) {
+    kycSections.forEach((s: any) => {
+      sectionMeta[s.id] = { 
+        title: s.name, 
+        order: s.order,
+        description: s.description 
+      };
+    });
+  }
+
+  // Group fields by section
+  for (const field of fields) {
+    const secKey = field.section || 'additional_information';
+    if (!sections[secKey]) {
+      sections[secKey] = {
+        id: secKey,
+        name: secKey,
+        title: sectionMeta[secKey]?.title || formatTitle(secKey),
+        order: sectionMeta[secKey]?.order || 99,
+        description: sectionMeta[secKey]?.description || '',
+        fields: [],
+        isActive: true,
+      };
+    }
+    sections[secKey].fields.push(field);
+  }
+
+  // Sort fields within each section by displayOrder
+  Object.values(sections).forEach((section: any) => {
+    section.fields.sort((a: any, b: any) => {
+      const orderA = a.displayOrder || a.order || 0;
+      const orderB = b.displayOrder || b.order || 0;
+      return orderA - orderB;
+    });
+  });
 
   return Object.values(sections).sort((a: any, b: any) => a.order - b.order);
 }

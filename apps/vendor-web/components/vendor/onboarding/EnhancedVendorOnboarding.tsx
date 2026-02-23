@@ -152,6 +152,18 @@ export function EnhancedVendorOnboarding({
       const invalidFieldPatterns = ['new_field', 'newfield', 'new-field'];
       const invalidValuePatterns = ['xxxxxxxx', 'placeholder'];
       
+      // ✅ DEBUG: Log raw submissionData - AGGRESSIVE LOGGING
+      console.log(`📍 [EnhancedOnboarding] ========== PINCODE DEBUG START ==========`);
+      console.log(`📍 [EnhancedOnboarding] Raw submissionData.formData keys: ${Object.keys(submissionData.formData || {}).join(', ')}`);
+      console.log(`📍 [EnhancedOnboarding] Full submissionData.formData:`, JSON.stringify(submissionData.formData, null, 2));
+      if (submissionData.formData) {
+        Object.keys(submissionData.formData).forEach(key => {
+          if (key.toLowerCase().includes('pin') || key.toLowerCase().includes('code')) {
+            console.log(`📍 [EnhancedOnboarding] ✅ Found pincode-related field: ${key} = '${submissionData.formData[key]}' (type: ${typeof submissionData.formData[key]})`);
+          }
+        });
+      }
+      
       const sanitizedFormData: Record<string, any> = {};
       for (const [key, value] of Object.entries(submissionData.formData || {})) {
         // Skip fields with placeholder names
@@ -167,11 +179,31 @@ export function EnhancedVendorOnboarding({
         if (typeof value === 'string' && invalidValuePatterns.some(pattern => value.toLowerCase().includes(pattern))) {
           continue;
         }
-        // Skip empty/null values
+        // ✅ FIX: Normalize pincode field name - accept both 'pin' and 'pincode', but use 'pin' consistently
+        if (key === 'pincode' || key === 'pinCode' || key === 'postalCode' || key === 'postal_code') {
+          sanitizedFormData['pin'] = value; // Normalize to 'pin' for backend
+          console.log(`📍 [EnhancedOnboarding] Normalized pincode field: ${key} -> pin, value: '${value}'`);
+          continue;
+        }
+        // ✅ FIX: Don't skip pin/pincode even if empty - let backend handle it
+        // Skip empty/null values (except for pin/pincode which might be intentionally empty)
         if (value === null || value === undefined || value === '') {
+          // Allow empty string for pin/pincode (backend will handle validation)
+          if (key === 'pin' || key === 'pincode' || key === 'pinCode') {
+            sanitizedFormData['pin'] = value || ''; // Always use 'pin' as the key
+            console.log(`📍 [EnhancedOnboarding] Including pin field (may be empty): ${key} -> pin = '${value}'`);
+          }
           continue;
         }
         sanitizedFormData[key] = value;
+      }
+      
+      // ✅ DEBUG: Log sanitized formData before sending
+      console.log(`📍 [EnhancedOnboarding] Sanitized formData keys: ${Object.keys(sanitizedFormData).join(', ')}`);
+      if (sanitizedFormData.pin !== undefined) {
+        console.log(`📍 [EnhancedOnboarding] ✅ Final pin value in sanitizedFormData: '${sanitizedFormData.pin}'`);
+      } else {
+        console.warn(`📍 [EnhancedOnboarding] ⚠️ WARNING: pin field NOT found in sanitizedFormData!`);
       }
       
       // ✅ FIX: Sanitize documents to only include valid entries with URLs
@@ -182,13 +214,26 @@ export function EnhancedVendorOnboarding({
           }
           return doc?.url && doc.url.trim() !== '';
         })
-        .map(([key, doc]: [string, any]) => ({
-          type: key,
-          name: doc?.name || key,
-          url: doc?.url || '',
-          size: doc?.size,
-          mime_type: doc?.type,
-        }));
+        .map(([key, doc]: [string, any]) => {
+          // ✅ FIX: Ensure profilePhoto is correctly typed
+          const docType = key === 'profilePhoto' || key === 'profile_photo' ? 'profilePhoto' : key;
+          console.log(`📸 [EnhancedOnboarding] Document mapping: ${key} -> type: ${docType}, url: ${doc?.url ? 'present' : 'missing'}`);
+          return {
+            type: docType,
+            name: doc?.name || key,
+            url: doc?.url || '',
+            size: doc?.size,
+            mime_type: doc?.type,
+          };
+        });
+      
+      // ✅ FIX: Log profilePhoto document specifically
+      const profilePhotoDoc = validDocuments.find(doc => doc.type === 'profilePhoto' || doc.type === 'profile_photo');
+      if (profilePhotoDoc) {
+        console.log(`📸 [EnhancedOnboarding] ✅ Profile photo document found: type=${profilePhotoDoc.type}, url=${profilePhotoDoc.url}`);
+      } else {
+        console.warn(`⚠️ [EnhancedOnboarding] Profile photo document NOT found in uploaded_documents`);
+      }
       
       const payload = {
         phone: vendorPhone,

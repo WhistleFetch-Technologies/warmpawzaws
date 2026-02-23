@@ -432,9 +432,17 @@ export function DynamicVendorOnboardingForm({
             // If already objects, keep as-is (support both formats)
           }
           
+          // ✅ FIX: Prioritize unique field name - use id if fieldName is generic like "new_field"
+          // This prevents multiple file fields from sharing the same name
+          let fieldName = f.name || f.fieldName || f.id;
+          if (f.fieldName === 'new_field' || f.fieldName === 'newField' || (!f.fieldName && !f.name)) {
+            // Use id as the field name for generic fieldName values to ensure uniqueness
+            fieldName = f.id || `field_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          }
+          
           return {
             ...f,
-            name: f.name || f.fieldName || f.id,
+            name: fieldName,
             isActive: f.isActive !== false && f.is_active !== false,
             options: normalizedOptions, // Add normalized options
             validation: {
@@ -867,7 +875,7 @@ export function DynamicVendorOnboardingForm({
       if (!section.isActive) return;
       
       section.fields.forEach(field => {
-        console.log(`🔍 [VALIDATION] Field: ${field.name}, isActive: ${field.isActive}, required: ${field.validation?.required || field.isMandatory}`);
+        console.log(`🔍 [VALIDATION] Field: ${field.name}, isActive: ${field.isActive}, required: ${field.validation?.required || (field as any).isMandatory}`);
         if (!field.isActive) return;
 
         let value = formData[field.name];
@@ -932,14 +940,29 @@ export function DynamicVendorOnboardingForm({
           }
         }
 
-        // Email validation
-        if (field.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          newErrors[field.name] = 'Invalid email address';
+        // Email validation - stricter to reject invalid extensions
+        if (field.type === 'email' && value) {
+          // ✅ FIX: Stricter email validation - must have valid TLD (at least 2 chars after dot)
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+          if (!emailRegex.test(value)) {
+            newErrors[field.name] = 'Only valid emails are accepted';
+          }
         }
 
-        // Phone validation (basic)
-        if (field.type === 'tel' && value && !/^\d{10}$/.test(value.replace(/\D/g, ''))) {
-          newErrors[field.name] = 'Invalid phone number';
+        // Phone validation - enforce exactly 10 digits
+        if (field.type === 'tel' && value) {
+          const phoneDigits = value.replace(/\D/g, '');
+          if (phoneDigits.length !== 10) {
+            newErrors[field.name] = 'Phone number must be exactly 10 digits';
+          }
+        }
+
+        // Pincode validation - enforce exactly 6 digits
+        if ((field.name === 'pin' || field.name === 'pincode' || field.name === 'pinCode') && value) {
+          const pincodeDigits = value.replace(/\D/g, '');
+          if (pincodeDigits.length !== 6) {
+            newErrors[field.name] = 'Pincode must be exactly 6 digits';
+          }
         }
       });
     });
@@ -1128,6 +1151,23 @@ export function DynamicVendorOnboardingForm({
         vendorId: vendorId, // ✅ NEW: Include vendorId for edit mode
         isEditMode: isEditMode, // ✅ NEW: Flag for edit vs create
       };
+
+      // ✅ DEBUG: Log pincode specifically
+      console.log('📍 [DYNAMIC FORM] Form submission - checking pincode:');
+      console.log('📍 [DYNAMIC FORM] formData keys:', Object.keys(formData).join(', '));
+      if (formData.pincode !== undefined) {
+        console.log(`📍 [DYNAMIC FORM] ✅ formData.pincode = '${formData.pincode}'`);
+      }
+      if (formData.pin !== undefined) {
+        console.log(`📍 [DYNAMIC FORM] ✅ formData.pin = '${formData.pin}'`);
+      }
+      console.log('📍 [DYNAMIC FORM] submissionData.formData keys:', Object.keys(submissionData.formData).join(', '));
+      if (submissionData.formData.pincode !== undefined) {
+        console.log(`📍 [DYNAMIC FORM] ✅ submissionData.formData.pincode = '${submissionData.formData.pincode}'`);
+      }
+      if (submissionData.formData.pin !== undefined) {
+        console.log(`📍 [DYNAMIC FORM] ✅ submissionData.formData.pin = '${submissionData.formData.pin}'`);
+      }
 
       console.log('[DYNAMIC FORM] Submitting:', submissionData);
       await onSubmit(submissionData);
@@ -1490,13 +1530,35 @@ export function DynamicVendorOnboardingForm({
         );
 
       default: // text, number, email, tel
+        // ✅ FIX: Add maxLength based on field type
+        let maxLength: number | undefined = undefined;
+        if (field.type === 'tel') {
+          maxLength = 10; // Exactly 10 digits for phone
+        } else if (field.name === 'pin' || field.name === 'pincode' || field.name === 'pinCode') {
+          maxLength = 6; // Exactly 6 digits for pincode
+        } else if (field.validation?.maxLength) {
+          maxLength = field.validation.maxLength;
+        }
+        
         return (
           <Input
             type={field.type}
             value={value}
-            onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            onChange={(e) => {
+              let newValue = e.target.value;
+              // ✅ FIX: Enforce maxLength for phone and pincode
+              if (field.type === 'tel') {
+                // Only allow digits, max 10
+                newValue = newValue.replace(/\D/g, '').slice(0, 10);
+              } else if (field.name === 'pin' || field.name === 'pincode' || field.name === 'pinCode') {
+                // Only allow digits, max 6
+                newValue = newValue.replace(/\D/g, '').slice(0, 6);
+              }
+              handleFieldChange(field.name, newValue);
+            }}
             placeholder={field.placeholder}
             className={commonClasses}
+            maxLength={maxLength}
           />
         );
     }
@@ -1608,12 +1670,23 @@ console.log("------------------------------------->",formData);
 
         {/* Single Unified Onboarding Form */}
         <div className="space-y-5 pb-32">
-          {/* Collect all fields from all sections into a single unified form */}
+          {/* ✅ FIX: Collect all fields from all sections, respecting section order first, then field order */}
           {form.sections
             .filter(s => s.isActive !== false)
-            .flatMap(section => section.fields)
+            .sort((a, b) => (a.order || 0) - (b.order || 0)) // ✅ Sort sections by order first
+            .flatMap(section => 
+              section.fields
             .filter(f => f.isActive !== false)
-            .sort((a, b) => a.order - b.order)
+                .sort((a, b) => (a.displayOrder || a.order || 0) - (b.displayOrder || b.order || 0)) // ✅ Sort fields within section
+                .map(field => ({ ...field, sectionOrder: section.order || 0 })) // Preserve section order
+            )
+            .sort((a, b) => {
+              // ✅ Sort by section order first, then field order
+              if (a.sectionOrder !== b.sectionOrder) {
+                return a.sectionOrder - b.sectionOrder;
+              }
+              return (a.displayOrder || a.order || 0) - (b.displayOrder || b.order || 0);
+            })
             .map((field) => (
               <div key={field.id}>
                 {field.type !== 'checkbox' && (

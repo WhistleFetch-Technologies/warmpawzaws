@@ -595,10 +595,62 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
                       src={photo} 
                       alt={`Photo ${idx + 1}`} 
                       className="w-full h-full object-cover"
-                      crossOrigin="anonymous"
                       loading="lazy"
-                      onError={(e) => {
+                      onError={async (e) => {
                         const target = e.target as HTMLImageElement;
+                        const originalSrc = photo;
+                        
+                        console.error(`[CENTER-PHOTOS] Image failed to load for photo ${idx + 1}:`, {
+                          src: originalSrc?.substring(0, 100),
+                          error: e,
+                          naturalWidth: target.naturalWidth,
+                          naturalHeight: target.naturalHeight,
+                          complete: target.complete
+                        });
+                        
+                        // Check if this is a retry (to avoid infinite loops)
+                        const retryCount = parseInt(target.getAttribute('data-retry-count') || '0');
+                        if (retryCount >= 2) {
+                          console.warn(`[CENTER-PHOTOS] Max retries reached for photo ${idx + 1}, showing error`);
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent && !parent.querySelector('.photo-error-message')) {
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'photo-error-message w-full h-full flex items-center justify-center text-xs text-gray-400';
+                            errorDiv.textContent = 'Failed to load';
+                            parent.appendChild(errorDiv);
+                          }
+                          return;
+                        }
+                        
+                        // Try to refresh the presigned URL by reloading facility data
+                        try {
+                          console.log(`[CENTER-PHOTOS] Attempting to refresh presigned URL for photo ${idx + 1} (retry ${retryCount + 1})`);
+                          const facilityData = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
+                          
+                          if (facilityData && facilityData.success && facilityData.facility && facilityData.facility.photos) {
+                            const refreshedPhotos = facilityData.facility.photos;
+                            if (refreshedPhotos[idx] && refreshedPhotos[idx] !== originalSrc) {
+                              console.log(`[CENTER-PHOTOS] Got fresh URL for photo ${idx + 1}, retrying...`);
+                              // Update the photo in state
+                              setProfile(prev => {
+                                const updatedPhotos = [...prev.photos];
+                                updatedPhotos[idx] = refreshedPhotos[idx];
+                                return { ...prev, photos: updatedPhotos };
+                              });
+                              // Retry with new URL
+                              target.setAttribute('data-retry-count', String(retryCount + 1));
+                              target.src = refreshedPhotos[idx];
+                              return;
+                            } else if (refreshedPhotos[idx] === originalSrc) {
+                              console.warn(`[CENTER-PHOTOS] Refreshed URL is same as original for photo ${idx + 1}`);
+                            }
+                          }
+                        } catch (refreshError) {
+                          console.error(`[CENTER-PHOTOS] Failed to refresh presigned URL for photo ${idx + 1}:`, refreshError);
+                        }
+                        
+                        // If refresh failed or no new URL, show error message
                         target.style.display = 'none';
                         const parent = target.parentElement;
                         if (parent && !parent.querySelector('.photo-error-message')) {

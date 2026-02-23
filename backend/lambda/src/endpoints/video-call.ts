@@ -213,6 +213,68 @@ class CreateMeetingHandler extends BaseHandler {
       region: process.env.AWS_REGION || 'ap-south-1',
     });
 
+    // ✅ IDEMPOTENT: Check if an active/waiting session already exists for this booking.
+    // If yes, return the existing meeting data instead of creating a new one.
+    // This prevents the bug where vendor creates meeting A, then customer creates meeting B,
+    // and they end up in different rooms.
+    const existingSessions = await select('video_call_sessions', { booking_id: bookingId });
+    const activeSession = existingSessions.find((s: any) => s.status === 'active' || s.status === 'waiting');
+
+    if (activeSession) {
+      vidlog('create-meeting', 'reuse-existing', {
+        bookingId,
+        existingMeetingId: activeSession.meeting_id,
+        requestedBy: 'create-meeting',
+      }, cid);
+
+      // Verify the Chime meeting still exists
+      let meetingInfo;
+      try {
+        meetingInfo = (
+          await withChimeRetry(
+            () => chimeClient.send(new GetMeetingCommand({ MeetingId: activeSession.meeting_id })),
+            { correlationId: cid }
+          )
+        ).Meeting;
+      } catch (getMeetingErr: any) {
+        // Meeting expired in Chime — fall through to create a new one
+        vidlog('create-meeting', 'existing-meeting-expired', {
+          bookingId,
+          meetingId: activeSession.meeting_id,
+          error: getMeetingErr?.message,
+        }, cid);
+        meetingInfo = null;
+      }
+
+      if (meetingInfo && meetingInfo.MediaPlacement) {
+        // Return the existing meeting data with existing attendee tokens
+        vidlog('create-meeting', 'success-reused', { bookingId, meetingId: activeSession.meeting_id }, cid);
+        return this.success({
+          success: true,
+          meetingId: activeSession.meeting_id,
+          meeting: {
+            MeetingId: meetingInfo.MeetingId,
+            MediaRegion: meetingInfo.MediaRegion,
+            MediaPlacement: meetingInfo.MediaPlacement,
+          },
+          attendees: {
+            customer: {
+              AttendeeId: activeSession.customer_attendee_id,
+              JoinToken: activeSession.customer_join_token,
+              ExternalUserId: customerId,
+            },
+            vendor: {
+              AttendeeId: activeSession.vendor_attendee_id,
+              JoinToken: activeSession.vendor_join_token,
+              ExternalUserId: vendorId,
+            },
+          },
+        });
+      }
+      // If meeting expired, fall through to create new one below
+    }
+
+    // No active session or existing meeting expired — create a new Chime meeting
     const meetingResponse = await withChimeRetry(
       () =>
         chimeClient.send(
@@ -255,21 +317,42 @@ class CreateMeetingHandler extends BaseHandler {
       ),
     ]);
 
-    // ✅ SQL: Store meeting info in video_call_sessions (including join tokens so join returns them)
-    await insert('video_call_sessions', {
-      booking_id: bookingId,
-      meeting_id: meetingId,
-      customer_id: customerId,
-      vendor_id: vendorId,
-      customer_attendee_id: customerAttendee.Attendee?.AttendeeId,
-      customer_join_token: customerAttendee.Attendee?.JoinToken,
-      vendor_attendee_id: vendorAttendee.Attendee?.AttendeeId,
-      vendor_join_token: vendorAttendee.Attendee?.JoinToken,
-      status: 'active',
-      started_at: new Date(),
-    });
+    // Store meeting info in video_call_sessions
+    const existingRow = existingSessions[0]; // Could be completed/ended
+    if (existingRow) {
+      // Update existing session (handles UNIQUE(booking_id) constraint)
+      await update('video_call_sessions', { booking_id: bookingId }, {
+        meeting_id: meetingId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        customer_attendee_id: customerAttendee.Attendee?.AttendeeId,
+        customer_join_token: customerAttendee.Attendee?.JoinToken,
+        vendor_attendee_id: vendorAttendee.Attendee?.AttendeeId,
+        vendor_join_token: vendorAttendee.Attendee?.JoinToken,
+        status: 'active',
+        started_at: new Date(),
+        ended_at: null,
+        updated_at: new Date(),
+      });
+      console.log(`[VIDEO CALL] Updated existing session for booking ${bookingId}`);
+    } else {
+      // Insert new session
+      await insert('video_call_sessions', {
+        booking_id: bookingId,
+        meeting_id: meetingId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        customer_attendee_id: customerAttendee.Attendee?.AttendeeId,
+        customer_join_token: customerAttendee.Attendee?.JoinToken,
+        vendor_attendee_id: vendorAttendee.Attendee?.AttendeeId,
+        vendor_join_token: vendorAttendee.Attendee?.JoinToken,
+        status: 'active',
+        started_at: new Date(),
+      });
+      console.log(`[VIDEO CALL] Created new session for booking ${bookingId}`);
+    }
 
-    // ✅ SQL: Update booking with video call meeting ID
+    // Update booking with video call meeting ID
     await update('bookings', { id: bookingId }, {
       video_call_meeting_id: meetingId,
       video_call_started_at: new Date().toISOString(),
@@ -282,7 +365,6 @@ class CreateMeetingHandler extends BaseHandler {
       meeting: {
         MeetingId: meetingResponse.Meeting.MeetingId,
         MediaRegion: meetingResponse.Meeting.MediaRegion,
-        // MediaPlacement is REQUIRED for Chime SDK to work properly
         MediaPlacement: meetingResponse.Meeting.MediaPlacement,
       },
       attendees: {
@@ -438,22 +520,22 @@ class JoinMeetingHandler extends BaseHandler {
         sessionRow.vendor_join_token = newAttendee.JoinToken;
       }
 
-      // ✅ RACE FIX: Re-check for existing session right before insert. If the other participant
-      // created one concurrently, join that meeting instead of creating a duplicate.
+      // ✅ RACE + UNIQUE FIX: Re-check for ANY existing session (including completed/ended).
+      // The UNIQUE(booking_id) constraint means we must UPDATE existing rows, not INSERT duplicates.
       const recheck = await select('video_call_sessions', { booking_id: bookingId });
-      const existingSession = recheck.find((s: any) => s.status === 'active' || s.status === 'waiting');
-      if (existingSession) {
+      const raceActiveSession = recheck.find((s: any) => s.status === 'active' || s.status === 'waiting');
+      if (raceActiveSession) {
         vidlog('join', 'race-avoided-use-existing', {
           bookingId,
           participantType: userType,
-          existingMeetingId: existingSession.meeting_id,
+          existingMeetingId: raceActiveSession.meeting_id,
         }, cid);
         // Create our attendee in the existing meeting (other participant created it)
         const raceAttendeeResp = await withChimeRetry(
           () =>
             chimeClient.send(
               new CreateAttendeeCommand({
-                MeetingId: existingSession.meeting_id,
+                MeetingId: raceActiveSession.meeting_id,
                 ExternalUserId: `${userType}-${userId}`,
               })
             ),
@@ -472,10 +554,10 @@ class JoinMeetingHandler extends BaseHandler {
           updateData.vendor_attendee_id = raceAttendee.AttendeeId;
           updateData.vendor_join_token = raceAttendee.JoinToken;
         }
-        await update('video_call_sessions', { id: existingSession.id }, updateData);
+        await update('video_call_sessions', { id: raceActiveSession.id }, updateData);
         const meetingInfo = (
           await withChimeRetry(
-            () => chimeClient.send(new GetMeetingCommand({ MeetingId: existingSession.meeting_id })),
+            () => chimeClient.send(new GetMeetingCommand({ MeetingId: raceActiveSession.meeting_id })),
             { correlationId: cid }
           )
         ).Meeting;
@@ -484,19 +566,52 @@ class JoinMeetingHandler extends BaseHandler {
         }
         return this.success({
           success: true,
-          meetingId: existingSession.meeting_id,
+          meetingId: raceActiveSession.meeting_id,
           meeting: {
             MeetingId: meetingInfo.MeetingId,
             MediaPlacement: meetingInfo.MediaPlacement,
             MediaRegion: meetingInfo.MediaRegion,
           },
           attendee: raceAttendee,
-          session: { id: existingSession.id, status: existingSession.status },
+          session: { id: raceActiveSession.id, status: raceActiveSession.status },
         });
       }
 
-      const inserted = await insert('video_call_sessions', sessionRow);
-      session = inserted[0];
+      // Check for ANY existing session (completed/ended/cancelled) - UNIQUE(booking_id) means we must update, not insert
+      const anyExistingSession = recheck[0];
+      if (anyExistingSession) {
+        vidlog('join', 'reuse-completed-session', {
+          bookingId,
+          participantType: userType,
+          oldStatus: anyExistingSession.status,
+          newMeetingId: newMeetingId,
+        }, cid);
+        // Update the completed/ended session with new meeting data
+        const updateData: Record<string, any> = {
+          meeting_id: newMeetingId,
+          customer_id: customerId,
+          vendor_id: vendorId,
+          status: 'waiting',
+          started_at: new Date(),
+          ended_at: null,
+          customer_attendee_id: null,
+          customer_join_token: null,
+          vendor_attendee_id: null,
+          vendor_join_token: null,
+        };
+        if (userType === 'customer') {
+          updateData.customer_attendee_id = newAttendee.AttendeeId;
+          updateData.customer_join_token = newAttendee.JoinToken;
+        } else {
+          updateData.vendor_attendee_id = newAttendee.AttendeeId;
+          updateData.vendor_join_token = newAttendee.JoinToken;
+        }
+        await update('video_call_sessions', { id: anyExistingSession.id }, updateData);
+        session = { ...anyExistingSession, ...updateData, id: anyExistingSession.id };
+      } else {
+        const inserted = await insert('video_call_sessions', sessionRow);
+        session = inserted[0];
+      }
 
       await update('bookings', { id: bookingId }, {
         video_call_meeting_id: newMeetingId,

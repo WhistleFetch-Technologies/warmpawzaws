@@ -60,6 +60,42 @@ BEGIN
     END IF;
 END $$;
 
+-- Add is_active column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'prescriptions'
+          AND column_name = 'is_active'
+    ) THEN
+        ALTER TABLE prescriptions
+        ADD COLUMN is_active BOOLEAN DEFAULT true;
+        COMMENT ON COLUMN prescriptions.is_active IS 'Whether the prescription is active (for soft deletes)';
+        RAISE NOTICE 'Added is_active column to prescriptions';
+    ELSE
+        RAISE NOTICE 'is_active column already exists in prescriptions table';
+    END IF;
+END $$;
+
+-- Add medication_name column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'prescriptions'
+          AND column_name = 'medication_name'
+    ) THEN
+        ALTER TABLE prescriptions
+        ADD COLUMN medication_name TEXT;
+        COMMENT ON COLUMN prescriptions.medication_name IS 'Name of the primary medication (for backward compatibility)';
+        RAISE NOTICE 'Added medication_name column to prescriptions';
+    ELSE
+        RAISE NOTICE 'medication_name column already exists in prescriptions table';
+    END IF;
+END $$;
+
 -- Backfill created_by from vendor_id where possible (if both exist and created_by is null)
 DO $$
 BEGIN

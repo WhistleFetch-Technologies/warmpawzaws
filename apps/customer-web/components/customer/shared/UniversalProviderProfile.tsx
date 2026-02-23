@@ -658,14 +658,29 @@ export function UniversalProviderProfile({
           <Card className="p-4 mb-4 bg-orange-50 border-orange-200">
             <h3 className="font-medium text-sm mb-2">Selected Services</h3>
             {selectedServicesList.map(service => (
-              <div key={service.id} className="flex justify-between text-sm items-center gap-2">
-                <span className="flex items-center gap-2">
-                  {service.name}
-                  {(service as any).isPackage && (
-                    <span className="px-1.5 py-0.5 text-xs font-semibold rounded bg-purple-100 text-purple-700">Package</span>
-                  )}
-                </span>
-                <span className="font-medium">{formatPriceWithSymbol(service.price)}</span>
+              <div key={service.id} className="mb-3 last:mb-0">
+                <div className="flex justify-between text-sm items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="flex items-center gap-2 font-medium">
+                      {service.name}
+                      {(service as any).isPackage && (
+                        <span className="px-1.5 py-0.5 text-xs font-semibold rounded bg-purple-100 text-purple-700">Package</span>
+                      )}
+                    </span>
+                    {service.description && (
+                      <p className="text-xs text-gray-600 mt-1 whitespace-pre-line line-clamp-4">{service.description}</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                      {service.duration > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {service.duration} mins
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="font-medium whitespace-nowrap">{formatPriceWithSymbol(service.price)}</span>
+                </div>
               </div>
             ))}
             <div className="flex justify-between mt-2 pt-2 border-t border-orange-200 font-bold">
@@ -793,18 +808,18 @@ export function UniversalProviderProfile({
                   <button
                     key={addr.id}
                     onClick={() => setSelectedAddress(addr)}
-                    className={`w-full p-3 rounded-xl text-left transition-all ${
+                    className={`w-full p-3 rounded-xl text-left transition-all overflow-hidden max-w-full ${
                       selectedAddress?.id === addr.id 
                         ? 'bg-orange-500 text-white' 
                         : 'bg-white border border-gray-200 hover:border-orange-300'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{addr.label}</p>
-                        <p className="text-sm opacity-80 truncate">{addr.address}</p>
+                    <div className="flex items-center justify-between gap-2 min-w-0 max-w-full">
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <p className="font-medium truncate">{addr.label}</p>
+                        <p className="text-sm opacity-80 line-clamp-2 break-words overflow-hidden">{addr.address}</p>
                       </div>
-                      {selectedAddress?.id === addr.id && <Check className="w-5 h-5" />}
+                      {selectedAddress?.id === addr.id && <Check className="w-5 h-5 flex-shrink-0" />}
                     </div>
                   </button>
                 ))
@@ -879,7 +894,7 @@ export function UniversalProviderProfile({
                               )}
                             </div>
                             {service.description && (
-                              <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                              <p className="text-sm text-gray-500 mt-1 whitespace-pre-line line-clamp-3">{service.description}</p>
                             )}
                             <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
                               <span className="flex items-center gap-1">

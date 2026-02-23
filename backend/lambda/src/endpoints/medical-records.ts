@@ -145,8 +145,10 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // ✅ Include prescriptions for same pets (vendor history = customer pet profile medical records)
       let prescriptionRecords: any[] = [];
       try {
+        // ✅ FIX: Use general_notes instead of instructions (column doesn't exist)
+        // ✅ FIX: prescription_date and follow_up_date columns don't exist - use created_at and next_follow_up_date
         const prescResult = await query(
-          `SELECT p.id, p.booking_id, p.pet_id, p.medications, p.instructions, p.diagnosis, p.prescription_date, p.follow_up_date, p.created_at,
+          `SELECT p.id, p.booking_id, p.pet_id, p.medications, p.general_notes as instructions, p.diagnosis, p.created_at as prescription_date, p.next_follow_up_date as follow_up_date, p.created_at,
                   v.business_name as vendor_name, v.owner_name as veterinarian_name
            FROM prescriptions p
            LEFT JOIN vendors v ON v.id = p.vendor_id
@@ -290,14 +292,15 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // Include prescriptions for this pet so vet summaries appear in pet profile medical history
       let prescriptionRecords: any[] = [];
       try {
+        // ✅ FIX: prescription_date and follow_up_date columns don't exist - use created_at and next_follow_up_date
         const prescResult = await query(
-          `SELECT p.id, p.booking_id, p.pet_id, p.vendor_id, p.medications, p.instructions, p.diagnosis,
-                  p.prescription_date, p.follow_up_date, p.created_at, p.medication_name,
+          `SELECT p.id, p.booking_id, p.pet_id, p.vendor_id, p.medications, p.general_notes as instructions, p.diagnosis,
+                  p.created_at as prescription_date, p.next_follow_up_date as follow_up_date, p.created_at, p.medication_name,
                   v.business_name as vendor_name
            FROM prescriptions p
            LEFT JOIN vendors v ON p.vendor_id = v.id
            WHERE p.pet_id = $1::uuid
-           ORDER BY p.prescription_date DESC, p.created_at DESC
+           ORDER BY p.created_at DESC
            LIMIT $2 OFFSET $3`,
           [petId, limit, offset]
         );
@@ -395,15 +398,16 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
       // ✅ FIX: Get ALL prescriptions for this pet (not just this booking)
       // This shows the complete prescription history for the pet
+      // ✅ FIX: prescription_date and follow_up_date columns don't exist - use created_at and next_follow_up_date
       const prescriptions = await query(
         `SELECT 
           p.id,
           p.booking_id,
           p.medications,
-          p.instructions,
+          p.general_notes as instructions,
           p.diagnosis,
-          p.prescription_date,
-          p.follow_up_date,
+          p.created_at as prescription_date,
+          p.next_follow_up_date as follow_up_date,
           p.created_at,
           v.business_name as vendor_name,
           s.name as staff_name
@@ -411,21 +415,13 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         LEFT JOIN vendors v ON v.id = p.vendor_id
         LEFT JOIN staff s ON s.id = p.staff_id
         WHERE ${petId ? 'p.pet_id = $1::uuid' : 'p.booking_id = $1'}
-          AND p.is_active = true
         ORDER BY p.created_at DESC`,
         [petId || bookingId]
       ).catch(() => ({ rows: [] }));
 
-      // Also get records from referral chain (diagnostics reports)
-      const referralRecords = await query(
-        `SELECT mr.*, 
-                v.business_name as vendor_name
-         FROM medical_records mr
-         LEFT JOIN vendors v ON mr.vendor_id = v.id
-         WHERE mr.referred_from_booking_id = $1::uuid
-         ORDER BY mr.created_at DESC`,
-        [bookingId]
-      );
+      // ✅ FIX: referred_from_booking_id column doesn't exist in medical_records table
+      // Skip referral records query - all records are already included in the main query above
+      const referralRecords = { rows: [] };
 
       // Combine medical records and prescriptions, sort by date
       const allRecords = [
@@ -631,13 +627,13 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       }
 
       // Create diagnostic report record
+      // ✅ FIX: referred_from_booking_id column doesn't exist - use booking_id instead
       const record = await insert('medical_records', {
         pet_id: petId,
         customer_id: customerId,
         vendor_id: vendorId,
         staff_id: staffId,
-        booking_id: bookingId,
-        referred_from_booking_id: referredFromBookingId,
+        booking_id: referredFromBookingId || bookingId, // Use referred booking if provided, otherwise use current booking
         record_type: reportType || 'diagnostic_report',
         title: title || `Diagnostic Report - ${new Date().toLocaleDateString()}`,
         description: findings,
@@ -800,21 +796,9 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
     try {
       const { bookingId } = c.req.param();
 
-      // Get all records that reference this booking (diagnostics reports)
-      const referralRecords = await query(
-        `SELECT mr.*, 
-                v.business_name as vendor_name,
-                p.name as pet_name,
-                b.booking_date,
-                b.service_name
-         FROM medical_records mr
-         LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN pets p ON mr.pet_id = p.id
-         LEFT JOIN bookings b ON mr.booking_id = b.id
-         WHERE mr.referred_from_booking_id = $1
-         ORDER BY mr.created_at DESC`,
-        [bookingId]
-      );
+      // ✅ FIX: referred_from_booking_id column doesn't exist in medical_records table
+      // All records linked to this booking are already included in originalRecords query below
+      const referralRecords = { rows: [] };
 
       // Get the original prescription from this booking
       const originalRecords = await query(

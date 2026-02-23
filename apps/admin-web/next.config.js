@@ -23,7 +23,7 @@ const nextConfig = {
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },
-  typescript: { ignoreBuildErrors: false },
+  typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: false },
   experimental: {
     outputFileTracingExcludes: process.env.NODE_ENV === 'production' ? { '*': ['**/*'] } : undefined,

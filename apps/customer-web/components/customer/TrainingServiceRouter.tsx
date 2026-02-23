@@ -151,9 +151,15 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       if (trainerServices.length === 0) {
         try {
           const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}`);
-          const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
-          if (Array.isArray(altData)) trainerServices = altData;
-          else if (altData?.services) trainerServices = altData.services;
+          let altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
+          
+          // ✅ FIX: Filter out business vendors when style is at_home
+          if (Array.isArray(altData)) {
+            altData = altData.filter((p: any) => p.vendorType !== 'business');
+            trainerServices = altData;
+          } else if (altData?.services) {
+            trainerServices = altData.services;
+          }
         } catch (err) {
           console.warn('⚠️ [TrainingServiceRouter] services/by-style failed:', err);
         }

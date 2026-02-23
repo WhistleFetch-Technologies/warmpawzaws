@@ -335,6 +335,7 @@ class ListVendorsHandler extends BaseHandler {
       const whereClause = whereConditions.join(' AND ');
 
       // Main query with all filters
+      // ✅ FIX: Join vendor_identity by phone instead of vendor_id (vendor_id column may not exist in production)
       const vendorsResult = await query(`
         SELECT 
           v.id,
@@ -351,7 +352,6 @@ class ListVendorsHandler extends BaseHandler {
           v.state,
           v.address,
           v.experience_years,
-          v.rating,
           v.created_at,
           v.approved_at,
           -- Role information
@@ -379,6 +379,7 @@ class ListVendorsHandler extends BaseHandler {
       `, [...params, limit, offset]);
 
       // Get total count for pagination
+      // ✅ FIX: Join vendor_identity by phone instead of vendor_id
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
@@ -416,7 +417,7 @@ class ListVendorsHandler extends BaseHandler {
         experience: v.experience_years ? `${v.experience_years} years` : null,
         experienceYears: v.experience_years,
         // Rating
-        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        rating: parseFloat(v.avg_rating) || 0,
         reviewCount: parseInt(v.review_count) || 0,
         // Services
         activeServicesCount: parseInt(v.active_services_count) || 0,
@@ -622,10 +623,11 @@ export function registerAdminEndpoints(app: Hono) {
     }
     try {
       let applicationId: string | null = null;
+      // ✅ FIX: Use phone-based join to avoid vendor_id column dependency
       const byVendor = await query(
         `SELECT voa.id FROM vendor_onboarding_applications voa
          JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
-         WHERE vi.vendor_id = $1 OR vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
+         WHERE vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
          ORDER BY voa.created_at DESC LIMIT 1`,
         [vendorId]
       );
@@ -859,23 +861,264 @@ export function registerAdminEndpoints(app: Hono) {
       );
       
       // ✅ FIX: Update vendor_identity status to APPROVED and ensure vendor_id is set
+      let updatedIdentity = null;
       try {
-        await query(
+        const updateResult = await query(
           `UPDATE vendor_identity 
            SET onboarding_status = 'APPROVED', 
                vendor_id = COALESCE(vendor_id, $1),
                updated_at = NOW() 
-           WHERE (application_id = $2 OR id = $2 OR phone = $3) AND (vendor_id IS NULL OR vendor_id = $1)`,
+           WHERE (application_id = $2 OR id = $2 OR phone = $3) AND (vendor_id IS NULL OR vendor_id = $1)
+           RETURNING *`,
           [vendorId, applicationId, identity?.phone || '']
         );
+        if (updateResult.rows.length > 0) {
+          updatedIdentity = updateResult.rows[0];
+        }
       } catch (updateErr) {
         console.error('Failed to update vendor_identity with vendor_id:', updateErr);
         // Fallback: update status only
-        await query(
+        const fallbackResult = await query(
           `UPDATE vendor_identity SET onboarding_status = 'APPROVED', updated_at = NOW() 
-           WHERE application_id = $1 OR id = $1 OR phone = $2`,
+           WHERE application_id = $1 OR id = $1 OR phone = $2
+           RETURNING *`,
           [applicationId, identity?.phone || '']
         );
+        if (fallbackResult.rows.length > 0) {
+          updatedIdentity = fallbackResult.rows[0];
+        }
+      }
+
+      // Process vendor referral - check both metadata AND existing referral records
+      let referralProcessed = false;
+      
+      // Method 1: Check metadata (from signup)
+      if (updatedIdentity && updatedIdentity.metadata && updatedIdentity.metadata.referral_code_id) {
+        try {
+          const { processVendorReferralSignup } = await import('../lib/services/referral-service');
+          const referralResult = await processVendorReferralSignup({
+            vendorId: vendorId,
+            referralCode: updatedIdentity.metadata.referral_code || '',
+            phone: updatedIdentity.phone || identity?.phone || '',
+          });
+          
+          if (referralResult.success) {
+            console.log(`[ADMIN-APPROVAL] ✅ Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
+            referralProcessed = true;
+          } else {
+            console.warn(`[ADMIN-APPROVAL] Vendor referral processing failed: ${referralResult.error}`);
+          }
+        } catch (refError: any) {
+          console.error('[ADMIN-APPROVAL] Error processing vendor referral:', refError);
+        }
+      }
+      
+      // Method 2: Check for existing referral records for this vendor (fallback)
+      // This handles cases where metadata is missing but referral record exists
+      if (!referralProcessed) {
+        try {
+          const vendorPhone = updatedIdentity?.phone || identity?.phone || '';
+          const normalizedPhone = vendorPhone.replace(/\D/g, '').slice(-10);
+          
+          // Find referral records for this vendor that are approved but don't have points
+          const referralRecords = await query(
+            `SELECT vr.* FROM vendor_referrals vr
+             WHERE vr.referred_vendor_id = $1
+             AND vr.status = 'approved'
+             AND NOT EXISTS (
+               SELECT 1 FROM loyalty_transactions lt
+               WHERE lt.customer_id = vr.referrer_vendor_id
+               AND lt.reference_type = 'vendor_referral'
+               AND lt.reference_id = vr.id
+             )
+             ORDER BY vr.approved_at DESC
+             LIMIT 1`,
+            [vendorId]
+          );
+          
+          if (referralRecords.rows.length > 0) {
+            const referralRecord = referralRecords.rows[0];
+            console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points, processing now...`);
+            
+            // Award points directly to referrer
+            const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+            const pointsResult = await loyaltyPointsService.awardPoints({
+              vendorId: referralRecord.referrer_vendor_id,
+              actionName: 'vendor_refer_friend',
+              referenceType: 'vendor_referral',
+              referenceId: referralRecord.id,
+              description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referralRecord.referral_code}`,
+            });
+            
+            console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referralRecord.referrer_vendor_id}`);
+            referralProcessed = true;
+          }
+        } catch (refError: any) {
+          console.error('[ADMIN-APPROVAL] Error processing referral from record:', refError);
+        }
+      }
+      
+      // Method 3: Check for existing referral records by phone (additional fallback)
+      // This handles cases where referral was applied/approved but metadata wasn't saved or points weren't awarded
+      // IMPORTANT: Only match by phone if referred_vendor_id is NULL (pending referral that hasn't been linked to a vendor yet)
+      // ALSO: Check for referrals that have points but wrong vendor_id (data inconsistency fix)
+      if (!referralProcessed) {
+        try {
+          const vendorPhone = identity?.phone?.replace(/\D/g, '').slice(-10) || '';
+          
+          // Find referral records for this vendor that:
+          // 1. Don't have points awarded yet, OR
+          // 2. Have points but wrong/null vendor_id (data inconsistency)
+          // Priority: Match by referred_vendor_id first, then by phone ONLY if referred_vendor_id is NULL
+          const existingReferrals = await query(
+            `SELECT vr.*,
+             EXISTS (
+               SELECT 1 FROM loyalty_transactions lt
+               WHERE lt.customer_id = vr.referrer_vendor_id
+               AND lt.reference_type = 'vendor_referral'
+               AND lt.reference_id = vr.id
+             ) as has_points
+             FROM vendor_referrals vr
+             WHERE (
+               vr.referred_vendor_id = $1 
+               OR (vr.referred_vendor_id IS NULL AND vr.referred_phone = $2 AND vr.status = 'pending')
+               OR (vr.referred_phone = $2 AND vr.referred_vendor_id IS NULL)
+             )
+             AND vr.status IN ('applied', 'approved', 'pending')
+             ORDER BY 
+               CASE WHEN vr.referred_vendor_id = $1 THEN 1 ELSE 2 END,
+               vr.created_at DESC
+             LIMIT 1`,
+            [vendorId, vendorPhone]
+          );
+          
+          if (existingReferrals.rows.length > 0) {
+            const referral = existingReferrals.rows[0];
+            const hasPoints = referral.has_points === true;
+            
+            console.log(`[ADMIN-APPROVAL] Found existing referral record ${referral.id} for vendor ${vendorId}, processing...`);
+            console.log(`[ADMIN-APPROVAL] Referral status: ${referral.status}, Referrer: ${referral.referrer_vendor_id}, Referred Vendor ID: ${referral.referred_vendor_id}, Has Points: ${hasPoints}`);
+            
+            // Only award points if they don't exist yet
+            if (!hasPoints) {
+              const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+              const pointsResult = await loyaltyPointsService.awardPoints({
+                vendorId: referral.referrer_vendor_id,
+                actionName: 'vendor_refer_friend',
+                referenceType: 'vendor_referral',
+                referenceId: referral.id,
+                description: `Vendor referral: Admin approved vendor ${vendorId} (code: ${referral.referral_code})`,
+              });
+              
+              console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer ${referral.referrer_vendor_id}`);
+            } else {
+              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}, skipping award but will update referral record`);
+            }
+            
+            // CRITICAL: Always update referral record with the correct vendor ID and status
+            // This fixes data inconsistencies where points exist but vendor_id is wrong/null
+            // IMPORTANT: Update even if referral already has a different vendor_id (data fix)
+            const updateResult = await query(
+              `UPDATE vendor_referrals
+               SET referred_vendor_id = $1,
+                   status = 'approved',
+                   approved_at = COALESCE(approved_at, NOW()),
+                   applied_at = COALESCE(applied_at, NOW()),
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [vendorId, referral.id]
+            );
+            
+            console.log(`[ADMIN-APPROVAL] ✅ Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
+            console.log(`[ADMIN-APPROVAL] Update result: ${JSON.stringify(updateResult)}`);
+            
+            referralProcessed = true;
+          }
+        } catch (refError2: any) {
+          console.error('[ADMIN-APPROVAL] Error processing existing referral:', refError2);
+          console.error('[ADMIN-APPROVAL] Error stack:', refError2.stack);
+        }
+      }
+      
+      // Method 4: Check for existing referral records for this vendor (fallback)
+      // This handles cases where referral was created but metadata wasn't stored
+      // CRITICAL: Also handles referrals with points but wrong/null vendor_id
+      if (!referralProcessed) {
+        try {
+          const vendorPhone = identity?.phone?.replace(/\D/g, '').slice(-10) || '';
+          
+          // Find referrals by vendor_id OR by phone (if vendor_id is null)
+          // Include referrals that have points but wrong vendor_id (data fix)
+          const existingReferrals = await query(
+            `SELECT vr.*,
+             EXISTS (
+               SELECT 1 FROM loyalty_transactions lt
+               WHERE lt.customer_id = vr.referrer_vendor_id
+               AND lt.reference_type = 'vendor_referral'
+               AND lt.reference_id = vr.id
+             ) as has_points
+             FROM vendor_referrals vr
+             WHERE (
+               vr.referred_vendor_id = $1
+               OR (vr.referred_vendor_id IS NULL AND vr.referred_phone = $2)
+             )
+             AND vr.status IN ('applied', 'pending', 'approved')
+             ORDER BY 
+               CASE WHEN vr.referred_vendor_id = $1 THEN 1 ELSE 2 END,
+               vr.created_at DESC 
+             LIMIT 1`,
+            [vendorId, vendorPhone]
+          );
+          
+          if (existingReferrals.rows.length > 0) {
+            const referral = existingReferrals.rows[0];
+            const hasPoints = referral.has_points === true;
+            
+            console.log(`[ADMIN-APPROVAL] Found existing referral record: ${referral.id}, processing...`);
+            console.log(`[ADMIN-APPROVAL] Has points: ${hasPoints}, Current vendor_id: ${referral.referred_vendor_id}`);
+            
+            // Award points if they don't exist
+            if (!hasPoints) {
+              // Points not awarded yet - award them now
+              // Ensure vendor_refer_friend rule exists
+              const { loyaltyRulesInitService } = await import('../lib/services/loyalty-rules-init-service');
+              await loyaltyRulesInitService.initializeVendorReferralRules();
+              
+              const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+              const pointsResult = await loyaltyPointsService.awardPoints({
+                vendorId: referral.referrer_vendor_id,
+                actionName: 'vendor_refer_friend',
+                referenceType: 'vendor_referral',
+                referenceId: referral.id,
+                description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referral.referral_code}`,
+              });
+              
+              console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referral.referrer_vendor_id}`);
+            } else {
+              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}`);
+            }
+            
+            // CRITICAL: Always update referral with correct vendor_id and status
+            // This fixes cases where points exist but vendor_id is wrong/null
+            await query(
+              `UPDATE vendor_referrals
+               SET referred_vendor_id = $1,
+                   status = 'approved',
+                   approved_at = COALESCE(approved_at, NOW()),
+                   applied_at = COALESCE(applied_at, NOW()),
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [vendorId, referral.id]
+            );
+            
+            console.log(`[ADMIN-APPROVAL] ✅ Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
+            referralProcessed = true;
+          }
+        } catch (refError: any) {
+          console.error('[ADMIN-APPROVAL] Error processing existing referral:', refError);
+          console.error('[ADMIN-APPROVAL] Error stack:', refError.stack);
+          // Don't fail approval if referral processing fails
+        }
       }
       
       // ✅ CRITICAL FIX: Process vendor referral and award points

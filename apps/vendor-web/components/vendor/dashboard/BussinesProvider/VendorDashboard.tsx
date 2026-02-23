@@ -158,6 +158,8 @@ export function VendorDashboard({
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  // ✅ NEW: Add state for formatted availability text
+  const [availabilityText, setAvailabilityText] = useState<string>('Mon-Fri 9AM-6PM');
   const [chatConversationsOpen, setChatConversationsOpen] = useState(false);
   const [selectedChatConversation, setSelectedChatConversation] = useState<{
     bookingId: string;
@@ -443,6 +445,9 @@ export function VendorDashboard({
         console.error('⚠️ Error checking profile/bank status:', error);
       });
 
+      // ✅ NEW: Load availability schedule in background
+      loadAvailabilitySchedule();
+
     } catch (error) {
       console.error('❌ Error fetching dashboard data:', error);
       setLoading(false);
@@ -520,6 +525,107 @@ export function VendorDashboard({
     if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''}`;
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''}`;
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  };
+
+  // ✅ NEW: Helper function to format availability schedule into readable text
+  const formatAvailabilitySchedule = (schedule: Record<number, any[]>): string => {
+    if (!schedule || Object.keys(schedule).length === 0) {
+      return 'Mon-Fri 9AM-6PM'; // Default fallback
+    }
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    
+    // Group days by their time windows
+    const timeWindowMap = new Map<string, number[]>();
+    
+    for (let day = 0; day < 7; day++) {
+      const slots = schedule[day] || [];
+      if (slots.length === 0) continue;
+      
+      // Get enabled slots only
+      const enabledSlots = slots.filter((slot: any) => slot.is_enabled !== false);
+      if (enabledSlots.length === 0) continue;
+      
+      // Find the earliest start and latest end time for the day
+      let earliestStart = '23:59';
+      let latestEnd = '00:00';
+      
+      enabledSlots.forEach((slot: any) => {
+        const start = slot.time_window_start || slot.start_time || '09:00';
+        const end = slot.time_window_end || slot.end_time || '18:00';
+        
+        if (start < earliestStart) earliestStart = start;
+        if (end > latestEnd) latestEnd = end;
+      });
+      
+      const timeKey = `${earliestStart}-${latestEnd}`;
+      if (!timeWindowMap.has(timeKey)) {
+        timeWindowMap.set(timeKey, []);
+      }
+      timeWindowMap.get(timeKey)!.push(day);
+    }
+    
+    if (timeWindowMap.size === 0) {
+      return 'Mon-Fri 9AM-6PM'; // Default fallback
+    }
+    
+    // Format time (convert 24h to 12h format)
+    const formatTime = (timeStr: string): string => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
+      return `${displayHours}${minutes > 0 ? `:${minutes.toString().padStart(2, '0')}` : ''}${period}`;
+    };
+    
+    const groups: string[] = [];
+    timeWindowMap.forEach((days, timeKey) => {
+      const [start, end] = timeKey.split('-');
+      const startFormatted = formatTime(start);
+      const endFormatted = formatTime(end);
+      
+      // Sort days
+      days.sort((a, b) => a - b);
+      
+      // Group consecutive days
+      if (days.length === 1) {
+        groups.push(`${dayNames[days[0]]} ${startFormatted}-${endFormatted}`);
+      } else if (days.length === 7) {
+        groups.push(`Daily ${startFormatted}-${endFormatted}`);
+      } else {
+        // Check if days are consecutive
+        let isConsecutive = true;
+        for (let i = 1; i < days.length; i++) {
+          if (days[i] !== days[i - 1] + 1) {
+            isConsecutive = false;
+            break;
+          }
+        }
+        
+        if (isConsecutive) {
+          groups.push(`${dayNames[days[0]]}-${dayNames[days[days.length - 1]]} ${startFormatted}-${endFormatted}`);
+        } else {
+          // Non-consecutive days - show as comma-separated
+          const dayLabels = days.map(d => dayNames[d]).join(', ');
+          groups.push(`${dayLabels} ${startFormatted}-${endFormatted}`);
+        }
+      }
+    });
+    
+    return groups.join(', ') || 'Mon-Fri 9AM-6PM';
+  };
+
+  // ✅ NEW: Function to load availability schedule
+  const loadAvailabilitySchedule = async () => {
+    try {
+      const scheduleData = await apiClient.get(`/vendor/${vendorId}/schedule`) as any;
+      if (scheduleData && scheduleData.success && scheduleData.schedule) {
+        const formatted = formatAvailabilitySchedule(scheduleData.schedule);
+        setAvailabilityText(formatted);
+      }
+    } catch (error) {
+      console.error('Error loading availability schedule:', error);
+      // Keep default text on error
+    }
   };
 
   // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
@@ -626,7 +732,7 @@ export function VendorDashboard({
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-orange-600" />
                 <span className="text-gray-700">
-                  Service Availability: <span className="font-semibold text-orange-600">Mon-Fri 9AM-6PM</span>
+                  Service Availability: <span className="font-semibold text-orange-600">{availabilityText}</span>
                 </span>
               </div>
             </div>
@@ -695,7 +801,8 @@ export function VendorDashboard({
 
             {/* ✅ STANDARD: Advanced Availability - For all service-oriented vendors with booking capability */}
             {/* This is the ONLY availability management - no basic schedule management anymore */}
-            {onNavigateToAdvancedAvailability && CapabilityHelper.hasBooking(capabilities) && (
+            {/* COMMENTED OUT: Availability option removed - available in profile */}
+            {/* {onNavigateToAdvancedAvailability && CapabilityHelper.hasBooking(capabilities) && (
               <button
                 onClick={onNavigateToAdvancedAvailability}
                 className="flex-1 min-w-[140px] bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
@@ -703,7 +810,7 @@ export function VendorDashboard({
                 <Calendar className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Availability</span>
               </button>
-            )}
+            )} */}
 
             {/* ✅ Fallback: Professional Profile - Only show if vendor is solo and no onNavigateToProfile */}
             {!onNavigateToProfile && profileType === 'professional' && (
@@ -885,7 +992,8 @@ export function VendorDashboard({
                 </CapabilityGate>
 
                 {/* Service Pricing */}
-                <CapabilityGate capability="service_pricing">
+                {/* COMMENTED OUT: Pricing removed from additional features */}
+                {/* <CapabilityGate capability="service_pricing">
                   {onNavigateToPricing && (
                     <button
                       onClick={onNavigateToPricing}
@@ -896,7 +1004,7 @@ export function VendorDashboard({
                       <span className="text-xs font-medium text-gray-900">Pricing</span>
                     </button>
                   )}
-                </CapabilityGate>
+                </CapabilityGate> */}
 
                 {/* Progress Tracking */}
                 {onNavigateToProgressTracking && capabilities.progress_tracking && (
@@ -1170,11 +1278,12 @@ export function VendorDashboard({
             )}
 
             {/* Earnings Stat - Always show */}
-            <div key="stat-earnings" className="text-center p-3 bg-green-50 rounded-lg">
+            {/* COMMENTED OUT: Earnings removed */}
+            {/* <div key="stat-earnings" className="text-center p-3 bg-green-50 rounded-lg">
               <TrendingUp className="w-5 h-5 text-green-600 mx-auto mb-1" />
               <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
               <div className="text-xs text-gray-500">Earnings</div>
-            </div>
+            </div> */}
           </div>
         </div>
 
@@ -1442,7 +1551,8 @@ export function VendorDashboard({
             </p>
           </div>
         )}
-        {(capabilities.catalog || capabilities.booking || capabilities.services || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && !isPharmacy && (
+        {/* COMMENTED OUT: Service Management section below "Your Services" removed - keeping only the Service Management option above */}
+        {/* {(capabilities.catalog || capabilities.booking || capabilities.services || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && !isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">
               {capabilities.catalog && !capabilities.booking ? 'Your Products' : 'Your Services'}
@@ -1470,7 +1580,7 @@ export function VendorDashboard({
               ))}
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Watchlisted Patients */}
         {capabilities.medical_records && watchlist.length > 0 && (
@@ -1646,7 +1756,7 @@ export function VendorDashboard({
             bookingId={selectedAppointment.bookingId}
             vendorData={vendorData}
             roleId={vendorData?.roleId || vendorData?.role_id}
-            roleName={roleName}
+            roleName={roleName || undefined}
             capabilities={capabilities}
             onClose={() => {
               setAppointmentDetailModalOpen(false);

@@ -57,6 +57,8 @@ interface SpecializationSelectorProps {
   onChange: (specs: string[]) => void;
   /** When this changes (e.g. modal opens), refetch to get latest from Catalog > Categories */
   refreshTrigger?: unknown;
+  /** Whether this is for a solo provider (true) or center/business (false) */
+  isSoloProvider?: boolean;
 }
 
 export function SpecializationSelector({ 
@@ -64,6 +66,7 @@ export function SpecializationSelector({
   selected = [], // ✅ FIX: Default to empty array
   onChange,
   refreshTrigger,
+  isSoloProvider = false, // ✅ Default to false (center) for backward compatibility
 }: SpecializationSelectorProps) {
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,7 +239,7 @@ export function SpecializationSelector({
             <Check className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-xs font-medium text-green-900 mb-1">
-                Your center will appear in searches for:
+                {isSoloProvider ? 'You will appear in searches for:' : 'Your center will appear in searches for:'}
               </p>
               <div className="flex flex-wrap gap-1">
                 {specializations

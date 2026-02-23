@@ -26,30 +26,10 @@ import { toast } from 'sonner';
 import { PhotoUpload } from '@/components/shared/PhotoUpload';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager';
+import { SpecializationSelector } from './SpecializationSelector';
 
-// Specializations by role type (same as staff creation)
-const SPECIALIZATIONS_BY_ROLE: Record<string, string[]> = {
-  'veterinarian': ['General Practice', 'Surgery', 'Dentistry', 'Dermatology', 'Orthopedics', 'Cardiology', 'Oncology', 'Emergency Care', 'Exotic Animals', 'Internal Medicine', 'Neurology'],
-  'veterinary_clinic': ['General Practice', 'Surgery', 'Dentistry', 'Dermatology', 'Orthopedics', 'Cardiology', 'Oncology', 'Emergency Care', 'Exotic Animals', 'Internal Medicine', 'Neurology'],
-  'pet_clinic': ['General Practice', 'Surgery', 'Dentistry', 'Dermatology', 'Orthopedics', 'Cardiology', 'Oncology', 'Emergency Care', 'Exotic Animals'],
-  'groomer': ['Bath & Brush', 'Full Grooming', 'Hand Stripping', 'Creative Grooming', 'Cat Grooming', 'Puppy Grooming', 'De-matting', 'Show Grooming', 'Breed-Specific Cuts', 'Spa Treatments'],
-  'pet_groomer': ['Bath & Brush', 'Full Grooming', 'Hand Stripping', 'Creative Grooming', 'Cat Grooming', 'Puppy Grooming', 'De-matting', 'Show Grooming', 'Breed-Specific Cuts', 'Spa Treatments'],
-  'trainer': ['Obedience Training', 'Puppy Training', 'Behavior Modification', 'Agility Training', 'Protection Training', 'Therapy Dog Training', 'Trick Training', 'Leash Training', 'Socialization'],
-  'pet_trainer': ['Obedience Training', 'Puppy Training', 'Behavior Modification', 'Agility Training', 'Protection Training', 'Therapy Dog Training', 'Trick Training', 'Leash Training', 'Socialization'],
-  'dog_trainer': ['Obedience Training', 'Puppy Training', 'Behavior Modification', 'Agility Training', 'Protection Training', 'Therapy Dog Training', 'Trick Training', 'Leash Training', 'Socialization'],
-  'walker': ['Dog Walking', 'Group Walks', 'Puppy Walks', 'Senior Dog Care', 'Reactive Dog Handling', 'Adventure Walks', 'Fitness Walks'],
-  'pet_walker': ['Dog Walking', 'Group Walks', 'Puppy Walks', 'Senior Dog Care', 'Reactive Dog Handling', 'Adventure Walks', 'Fitness Walks'],
-  'dog_walker': ['Dog Walking', 'Group Walks', 'Puppy Walks', 'Senior Dog Care', 'Reactive Dog Handling', 'Adventure Walks', 'Fitness Walks'],
-  'sitter': ['Day Care', 'Overnight Sitting', 'In-Home Sitting', 'Pet Boarding', 'Multiple Pet Care', 'Senior Pet Care', 'Puppy Care', 'Medical Care Support'],
-  'pet_sitter': ['Day Care', 'Overnight Sitting', 'In-Home Sitting', 'Pet Boarding', 'Multiple Pet Care', 'Senior Pet Care', 'Puppy Care', 'Medical Care Support'],
-  'behaviorist': ['Anxiety Treatment', 'Aggression Management', 'Fear Rehabilitation', 'Separation Anxiety', 'Compulsive Behaviors', 'Multi-Pet Households', 'Rescue Rehabilitation'],
-  'pet_behaviorist': ['Anxiety Treatment', 'Aggression Management', 'Fear Rehabilitation', 'Separation Anxiety', 'Compulsive Behaviors', 'Multi-Pet Households', 'Rescue Rehabilitation'],
-  'nutritionist': ['Weight Management', 'Dietary Planning', 'Allergy Management', 'Senior Nutrition', 'Puppy Nutrition', 'Raw Diet', 'Prescription Diets'],
-  'pet_nutritionist': ['Weight Management', 'Dietary Planning', 'Allergy Management', 'Senior Nutrition', 'Puppy Nutrition', 'Raw Diet', 'Prescription Diets'],
-  'photographer': ['Pet Portraits', 'Action Shots', 'Studio Photography', 'Outdoor Photography', 'Event Coverage', 'Breed Shows', 'Memorial Photos'],
-  'pet_photographer': ['Pet Portraits', 'Action Shots', 'Studio Photography', 'Outdoor Photography', 'Event Coverage', 'Breed Shows', 'Memorial Photos'],
-  'default': ['General Pet Care', 'Customer Service', 'Pet Handling', 'First Aid', 'Safety Protocols', 'Communication'],
-};
+// ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
+// This ensures specializations are always up-to-date and role-specific based on admin configuration
 
 interface TimeSlot {
   start: string;
@@ -121,10 +101,14 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [hasAvailability, setHasAvailability] = useState(false); // ✅ Track if availability is configured
   
   // Get vendor role for specialization options
-  const vendorRoleId = initialProfile?.roleId || initialProfile?.role_id || 'default';
-  const vendorRoleName = initialProfile?.roleName || initialProfile?.role_name || 'Service Provider';
+  const vendorRoleId = initialProfile?.roleId || initialProfile?.role_id || initialProfile?.role?.id || null; // ✅ Remove 'default' fallback
+  const vendorRoleName = initialProfile?.roleName || initialProfile?.role_name || initialProfile?.role?.display_name || 'Service Provider';
+  
+  // ✅ FIX: Track roleId state to pass to SpecializationSelector (updates when profile loads)
+  const [roleId, setRoleId] = useState<string | null>(vendorRoleId); // ✅ Allow null, no default
   
   const [profile, setProfile] = useState<ProfessionalProfile>({
     id: vendorId,
@@ -147,27 +131,39 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   });
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Get available specializations based on vendor role
-  const getAvailableSpecializations = () => {
-    const roleKey = vendorRoleId.toLowerCase().replace(/\s+/g, '_');
-    return SPECIALIZATIONS_BY_ROLE[roleKey] || SPECIALIZATIONS_BY_ROLE['default'];
-  };
-
-  // Toggle specialization selection
-  const toggleSpecialization = (spec: string) => {
-    const current = profile.specializations;
-    const updated = current.includes(spec)
-      ? current.filter(s => s !== spec)
-      : [...current, spec];
-    setProfile(prev => ({ ...prev, specializations: updated }));
-    setHasChanges(true);
-    if (updated.length > 0) {
-      setFormErrors(prev => ({ ...prev, specializations: '' }));
-    }
-  };
+  // ✅ REMOVED: getAvailableSpecializations() and toggleSpecialization() 
+  // Now handled by SpecializationSelector component which fetches role-specific specializations from API
 
   useEffect(() => {
     loadProfile();
+  }, [vendorId]);
+
+  // ✅ FIX: Check if availability is configured
+  useEffect(() => {
+    const checkAvailability = async () => {
+      try {
+        const response = await apiClient.get(`/vendor/${vendorId}/availability`).catch(() => null);
+        if (response && response.availability && response.availability.slots) {
+          const slots = response.availability.slots || [];
+          // Check if there's at least one enabled slot
+          const hasEnabledSlots = slots.some((slot: any) => 
+            (slot.is_enabled ?? slot.isEnabled ?? true) && 
+            slot.service_styles && 
+            slot.service_styles.length > 0
+          );
+          setHasAvailability(hasEnabledSlots);
+        } else {
+          setHasAvailability(false);
+        }
+      } catch (err) {
+        console.warn('Could not check availability:', err);
+        setHasAvailability(false);
+      }
+    };
+    
+    if (vendorId) {
+      checkAvailability();
+    }
   }, [vendorId]);
 
   const loadProfile = async () => {
@@ -179,6 +175,21 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
       }>(`/vendor/${vendorId}/profile`);
       
       if (response.success && response.vendor) {
+        // ✅ FIX: Get roleId from multiple possible locations (priority order)
+        const loadedRoleId = response.vendor.roleId || 
+                            response.vendor.role_id || 
+                            response.vendor.role?.id || 
+                            null; // ✅ No fallback to 'default'
+        
+        if (!loadedRoleId) {
+          console.error('[PROFILE] No roleId found for vendor:', vendorId);
+          toast.error('Vendor role not found. Please contact support.');
+          setLoading(false);
+          return;
+        }
+        
+        setRoleId(loadedRoleId);
+        
         setProfile({
           id: vendorId,
           owner_name: response.vendor.owner_name || response.vendor.ownerName || '',
@@ -278,23 +289,84 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     }
   };
 
-  // Calculate profile completion percentage
+  // ✅ FIX: Calculate profile completion percentage - updated to check ALL actual fields in the form
   const calculateCompletion = () => {
     let filled = 0;
-    let total = 10;
+    // ✅ Updated to match ALL fields that can be filled in the Professional Profile form
+    // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations, 
+    //                     experience_years, address, city, state, pincode, service_area, description
+    // Total: 13 fields - when all are filled, should be 100%
+    let total = 13;
     
-    if (profile.photo_url) filled++;
-    if (profile.owner_name) filled++;
-    if (profile.email) filled++;
-    if (profile.qualifications) filled++;
-    if (profile.specializations.length > 0) filled++;
-    if (profile.experience_years && profile.experience_years > 0) filled++;
-    if (profile.description) filled++;
-    if (profile.address) filled++;
-    if (profile.service_area) filled++;
-    if (profile.operating_hours) filled++;
+    // ✅ FIX: Check each field with proper validation
+    // 1. Profile Photo
+    if (profile.photo_url && profile.photo_url.trim() && profile.photo_url !== 'null') filled++;
     
-    return Math.round((filled / total) * 100);
+    // 2. Owner Name
+    if (profile.owner_name && profile.owner_name.trim()) filled++;
+    
+    // 3. Phone
+    if (profile.phone && profile.phone.trim()) filled++;
+    
+    // 4. Email
+    if (profile.email && profile.email.trim()) filled++;
+    
+    // 5. Qualifications
+    if (profile.qualifications && profile.qualifications.trim()) filled++;
+    
+    // 6. Specializations (must have at least 1)
+    if (profile.specializations && Array.isArray(profile.specializations) && profile.specializations.length > 0) filled++;
+    
+    // 7. Experience Years (can be 0, so check if defined)
+    if (profile.experience_years !== null && profile.experience_years !== undefined) filled++;
+    
+    // 8. Address
+    if (profile.address && profile.address.trim()) filled++;
+    
+    // 9. City
+    if (profile.city && profile.city.trim()) filled++;
+    
+    // 10. State
+    if (profile.state && profile.state.trim()) filled++;
+    
+    // 11. Pincode (must be valid 6-digit, not placeholder)
+    const pincode = profile.pincode && profile.pincode.trim();
+    if (pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode)) filled++;
+    
+    // 12. Service Area (optional but counts if filled)
+    if (profile.service_area && profile.service_area.trim()) filled++;
+    
+    // 13. Description (optional but counts if filled)
+    if (profile.description && profile.description.trim()) filled++;
+    
+    // ✅ FIX: Calculate percentage - ensure it reaches 100% when all fields are filled
+    const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
+    
+    // ✅ DEBUG: Log completion details for troubleshooting
+    console.log(`[ProfileCompletion] ========== COMPLETION CALCULATION ==========`);
+    console.log(`[ProfileCompletion] Filled: ${filled}/${total}, Percentage: ${percentage}%`);
+    console.log(`[ProfileCompletion] Field Details:`);
+    console.log(`  photo_url: ${!!profile.photo_url && profile.photo_url.trim() && profile.photo_url !== 'null' ? '✅' : '❌'} (value: ${profile.photo_url ? 'present' : 'missing'})`);
+    console.log(`  owner_name: ${!!profile.owner_name && profile.owner_name.trim() ? '✅' : '❌'} (value: '${profile.owner_name || ''}')`);
+    console.log(`  phone: ${!!profile.phone && profile.phone.trim() ? '✅' : '❌'} (value: '${profile.phone || ''}')`);
+    console.log(`  email: ${!!profile.email && profile.email.trim() ? '✅' : '❌'} (value: '${profile.email || ''}')`);
+    console.log(`  qualifications: ${!!profile.qualifications && profile.qualifications.trim() ? '✅' : '❌'} (value: '${(profile.qualifications || '').substring(0, 30)}...')`);
+    console.log(`  specializations: ${profile.specializations && Array.isArray(profile.specializations) && profile.specializations.length > 0 ? '✅' : '❌'} (count: ${profile.specializations?.length || 0})`);
+    console.log(`  experience_years: ${profile.experience_years !== null && profile.experience_years !== undefined ? '✅' : '❌'} (value: ${profile.experience_years})`);
+    console.log(`  address: ${!!profile.address && profile.address.trim() ? '✅' : '❌'} (value: '${(profile.address || '').substring(0, 30)}...')`);
+    console.log(`  city: ${!!profile.city && profile.city.trim() ? '✅' : '❌'} (value: '${profile.city || ''}')`);
+    console.log(`  state: ${!!profile.state && profile.state.trim() ? '✅' : '❌'} (value: '${profile.state || ''}')`);
+    console.log(`  pincode: ${pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode) ? '✅' : '❌'} (value: '${profile.pincode || ''}')`);
+    console.log(`  service_area: ${!!profile.service_area && profile.service_area.trim() ? '✅' : '❌'} (value: '${profile.service_area || ''}')`);
+    console.log(`  description: ${!!profile.description && profile.description.trim() ? '✅' : '❌'} (value: '${(profile.description || '').substring(0, 30)}...')`);
+    console.log(`[ProfileCompletion] ===========================================`);
+    
+    // ✅ FIX: If all 13 fields are filled, ensure it returns exactly 100%
+    if (filled === total) {
+      return 100;
+    }
+    
+    return Math.min(percentage, 100); // Ensure it never exceeds 100%
   };
 
   if (loading) {
@@ -308,7 +380,6 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   }
 
   const completionPercentage = calculateCompletion();
-  const availableSpecializations = getAvailableSpecializations();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -512,32 +583,30 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               )}
             </div>
             
-            {/* Specializations - Multi-select chips */}
+            {/* Specializations - Using SpecializationSelector for role-specific specializations from database */}
             <div>
               <Label className="mb-3 block">
                 Specializations * <span className="text-xs text-gray-500">(Select at least one)</span>
               </Label>
-              <div className="flex flex-wrap gap-2">
-                {availableSpecializations.map(spec => (
-                  <button
-                    key={spec}
-                    type="button"
-                    onClick={() => toggleSpecialization(spec)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                      profile.specializations.includes(spec)
-                        ? 'bg-blue-500 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {profile.specializations.includes(spec) && '✓ '}
-                    {spec}
-                  </button>
-                ))}
-              </div>
-              {profile.specializations.length > 0 && (
-                <p className="text-xs text-blue-600 mt-2">
-                  {profile.specializations.length} specialization{profile.specializations.length > 1 ? 's' : ''} selected
-                </p>
+              {!roleId ? (
+                <div className="p-4 border border-red-200 rounded-lg bg-red-50">
+                  <p className="text-red-600 text-sm">
+                    ⚠️ Vendor role not found. Cannot load specializations. Please contact support.
+                  </p>
+                </div>
+              ) : (
+                <SpecializationSelector
+                  roleId={roleId}
+                  selected={profile.specializations}
+                  onChange={(specIds) => {
+                    setProfile(prev => ({ ...prev, specializations: specIds }));
+                    setHasChanges(true);
+                    if (specIds.length > 0) {
+                      setFormErrors(prev => ({ ...prev, specializations: '' }));
+                    }
+                  }}
+                  isSoloProvider={true} // ✅ FIX: ProfessionalProfileManager is for solo providers
+                />
               )}
               {formErrors.specializations && (
                 <p className="text-red-500 text-xs mt-2">{formErrors.specializations}</p>

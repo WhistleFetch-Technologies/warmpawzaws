@@ -215,9 +215,13 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         petType: rawBooking.petType || rawBooking.pet?.species,
         petAge: rawBooking.petAge || rawBooking.pet?.age,
         petPhoto: rawBooking.petPhoto || rawBooking.pet?.photo_url,
-        // OTP fields
-        completionOTP: rawBooking.completionOTP || rawBooking.otp_code,
-        otpVerified: rawBooking.otpVerified || rawBooking.otp_verified,
+        // OTP fields - map all OTP sources
+        otpCode: rawBooking.otp_code || rawBooking.otpCode || rawBooking.completionOTP,
+        completionOTP: rawBooking.completionOTP || rawBooking.otp_code || rawBooking.otpCode,
+        startOTP: rawBooking.start_otp || rawBooking.startOTP,
+        otpVerified: rawBooking.otp_verified || rawBooking.otpVerified,
+        requiresOTP: rawBooking.requires_otp || rawBooking.requiresOTP,
+        requiresStartOTP: rawBooking.requires_start_otp || rawBooking.requiresStartOTP,
         // Multi-service: pass through for list display and total
         // ✅ FIX: For diagnostics, if no selectedServices but we have tests, create them
         // Also ensure selectedServices is always populated for diagnostics with tests
@@ -469,7 +473,69 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               </div>
             )}
 
-            {/* Completion OTP Section - Show for bookings ready to complete */}
+            {/* Main Booking OTP Section - Show for confirmed bookings with OTP (at_home, at_center) */}
+            {booking.otpCode && 
+             (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') && 
+             !booking.otpVerified && 
+             (booking.serviceStyle === 'at_home' || booking.serviceStyle === 'at_center' || booking.serviceType === 'at_home' || booking.serviceType === 'at_center') && (
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-6 mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                      <span className="text-xl">🔐</span>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-orange-900">
+                        {booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home'
+                          ? 'Service OTP'
+                          : 'Check-in OTP'}
+                      </h3>
+                      <p className="text-xs text-orange-700">
+                        {booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home'
+                          ? 'Share with vendor when they arrive'
+                          : 'Share with vendor at check-in'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-xl p-4 mb-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-4xl font-bold text-orange-600 tracking-[0.5em] font-mono">
+                      {booking.otpCode}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    copyTextToClipboard(booking.otpCode);
+                    setCopiedOtp(true);
+                    setTimeout(() => setCopiedOtp(false), 2000);
+                    toast.success('OTP copied to clipboard');
+                  }}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  {copiedOtp ? (
+                    <>
+                      <Check className="w-5 h-5" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-5 h-5" />
+                      Copy OTP
+                    </>
+                  )}
+                </button>
+
+                <p className="text-xs text-center text-orange-700 mt-3">
+                  ⚠️ Keep this OTP safe. The vendor will enter this to complete your service.
+                </p>
+              </div>
+            )}
+
+            {/* Completion OTP Section - Show for bookings ready to complete (walker services with end OTP) */}
             {booking.requiresOTP && booking.completionOTP && 
              booking.status !== 'completed' && booking.status !== 'cancelled' && 
              (!booking.requiresStartOTP || booking.status === 'in_progress' || booking.status === 'active') && (

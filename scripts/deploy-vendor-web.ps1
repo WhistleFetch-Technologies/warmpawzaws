@@ -18,7 +18,7 @@ $CLOUDFRONT_URL = $null
 
 foreach ($dist in $distributions.DistributionList.Items) {
     foreach ($origin in $dist.Origins.Items) {
-        if ($origin.DomainName -eq "${S3_BUCKET}.s3.${REGION}.amazonaws.com") {
+        if ($origin.DomainName -eq "$S3_BUCKET.s3.$REGION.amazonaws.com") {
             $CLOUDFRONT_DIST_ID = $dist.Id
             $CLOUDFRONT_URL = $dist.DomainName
             break
@@ -28,7 +28,7 @@ foreach ($dist in $distributions.DistributionList.Items) {
 }
 
 if (-not $CLOUDFRONT_DIST_ID) {
-    Write-Host "❌ Error: Could not find CloudFront distribution for ${S3_BUCKET}" -ForegroundColor Red
+    Write-Host "❌ Error: Could not find CloudFront distribution for $S3_BUCKET" -ForegroundColor Red
     exit 1
 }
 
@@ -56,7 +56,7 @@ if (Test-Path ".next") {
     Write-Host "✅ Cleaned Next.js cache" -ForegroundColor Green
 }
 
-Write-Host "📦 Building ${APP_NAME}..." -ForegroundColor Blue
+Write-Host "📦 Building $APP_NAME..." -ForegroundColor Blue
 npm run build
 
 if (-not (Test-Path "dist")) {
@@ -142,22 +142,22 @@ Set-Content -Path $runtimeConfigPath -Value $runtimeConfigContent -Encoding UTF8
 Write-Host "✅ runtime-config.js injected" -ForegroundColor Green
 
 # Step 2: Deploy to S3
-Write-Host "📤 Uploading to S3 bucket: ${S3_BUCKET}..." -ForegroundColor Blue
+Write-Host "📤 Uploading to S3 bucket: $S3_BUCKET..." -ForegroundColor Blue
 $distPath = Join-Path $APP_DIR "dist"
 
 # First, remove all files from S3 to ensure clean state
 Write-Host "🧹 Cleaning S3 bucket..." -ForegroundColor Blue
-aws s3 rm "s3://${S3_BUCKET}/" --recursive --region $REGION | Out-Null
+aws s3 rm "s3://$S3_BUCKET/" --recursive --region $REGION | Out-Null
 
 # Upload all files (excluding source maps for production)
 Write-Host "📤 Uploading new build..." -ForegroundColor Blue
-aws s3 sync "${distPath}/" "s3://${S3_BUCKET}/" --exclude "*.map" --region $REGION --cache-control "public, max-age=0, must-revalidate"
+aws s3 sync "$distPath/" "s3://$S3_BUCKET/" --exclude "*.map" --region $REGION --cache-control "public, max-age=0, must-revalidate"
 
-if ($LASTEXITCODE -eq 0) {
+if ($?) {
     Write-Host "✅ S3 upload completed successfully" -ForegroundColor Green
     
     # Verify chunk files were uploaded
-    $chunkCount = (aws s3 ls "s3://${S3_BUCKET}/_next/static/chunks/" --recursive --region $REGION 2>$null | Measure-Object -Line).Lines
+    $chunkCount = (aws s3 ls "s3://$S3_BUCKET/_next/static/chunks/" --recursive --region $REGION 2>$null | Measure-Object -Line).Lines
     Write-Host "   📊 Uploaded $chunkCount chunk files" -ForegroundColor Cyan
 } else {
     Write-Host "❌ Error: S3 upload failed!" -ForegroundColor Red
@@ -169,15 +169,14 @@ Write-Host "🔄 Invalidating CloudFront cache..." -ForegroundColor Blue
 
 # Invalidate all paths including chunks - use wildcard to catch everything
 $invalidation = aws cloudfront create-invalidation `
-    --distribution-id "${CLOUDFRONT_DIST_ID}" `
+    --distribution-id "$CLOUDFRONT_DIST_ID" `
     --paths "/*" `
     --region $REGION `
     --output json | ConvertFrom-Json
 
-if ($LASTEXITCODE -eq 0) {
+if ($?) {
     $INVALIDATION_ID = $invalidation.Invalidation.Id
-    Write-Host "✅ CloudFront invalidation created: ${INVALIDATION_ID}" -ForegroundColor Green
-    Write-Host "   Invalidated paths: $($pathsToInvalidate.Count)" -ForegroundColor Cyan
+    Write-Host "✅ CloudFront invalidation created: $INVALIDATION_ID" -ForegroundColor Green
     Write-Host "⏳ Full propagation may take 5-15 minutes" -ForegroundColor Yellow
     Write-Host "💡 Tip: Hard refresh (Ctrl+Shift+R) after propagation completes" -ForegroundColor Yellow
 } else {
@@ -191,11 +190,11 @@ Write-Host "║   ✅ DIRECT AWS DEPLOYMENT COMPLETED                          �
 Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 Write-Host "📦 Deployment Summary:" -ForegroundColor Cyan
-Write-Host "   ✅ ${APP_NAME}: Built successfully" -ForegroundColor Green
-Write-Host "   ✅ S3 Upload: Synced to ${S3_BUCKET}" -ForegroundColor Green
-Write-Host "   ✅ CloudFront: Cache invalidation created (${CLOUDFRONT_DIST_ID})" -ForegroundColor Green
+Write-Host "   ✅ $APP_NAME: Built successfully" -ForegroundColor Green
+Write-Host "   ✅ S3 Upload: Synced to $S3_BUCKET" -ForegroundColor Green
+Write-Host "   ✅ CloudFront: Cache invalidation created ($CLOUDFRONT_DIST_ID)" -ForegroundColor Green
 Write-Host ""
 Write-Host "🌐 Access URLs:" -ForegroundColor Cyan
-Write-Host "   - Vendor Web: ${CLOUDFRONT_URL}" -ForegroundColor White
-Write-Host "   - Direct S3: s3://${S3_BUCKET}" -ForegroundColor White
+Write-Host "   - Vendor Web: $CLOUDFRONT_URL" -ForegroundColor White
+Write-Host "   - Direct S3: s3://$S3_BUCKET" -ForegroundColor White
 Write-Host ""

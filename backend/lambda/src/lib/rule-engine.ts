@@ -90,6 +90,20 @@ export async function getDiscoveryRules(
   const type = (serviceType && serviceType.trim()) || '';
 
   try {
+    // ✅ FIX: Check if discovery_rules table exists before querying
+    const tableCheck = await query(
+      `SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'discovery_rules'
+      ) as exists`
+    );
+    
+    if (!tableCheck.rows[0]?.exists) {
+      console.warn('[rule-engine] discovery_rules table not found, using platform defaults');
+      return result;
+    }
+    
     const res = await query(
       `SELECT rule_key, rule_value FROM discovery_rules
        WHERE is_active = true
@@ -109,8 +123,14 @@ export async function getDiscoveryRules(
       const val = extractRuleValue(row.rule_value);
       if (val !== undefined) (result as any)[key] = val;
     }
-  } catch (e) {
-    console.warn('[rule-engine] getDiscoveryRules failed, using platform defaults:', e);
+  } catch (e: any) {
+    // ✅ FIX: Handle both table missing errors and other query errors gracefully
+    const errorMessage = e?.message || String(e);
+    if (errorMessage.includes('does not exist') || errorMessage.includes('relation') || errorMessage.includes('discovery_rules')) {
+      console.warn('[rule-engine] discovery_rules table not found or query failed, using platform defaults');
+    } else {
+      console.warn('[rule-engine] getDiscoveryRules failed, using platform defaults:', errorMessage);
+    }
   }
 
   return result;

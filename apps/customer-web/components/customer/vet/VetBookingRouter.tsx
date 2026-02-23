@@ -543,6 +543,37 @@ export function VetBookingRouter({
     if (selectedServiceType === 'at_home') refreshAddresses();
   }, [selectedServiceType]);
 
+  // ✅ FIX: Auto-advance to UniversalPaymentPage for at_home services (like tele consultation)
+  // Skip the intermediate review page and go directly to full payment UI
+  useEffect(() => {
+    if (step === 'payment' && selectedServiceType === 'at_home' && !showPaymentPage) {
+      // Ensure we have selectedVendorService before showing payment
+      const serviceOption = getSelectedServiceOption();
+      if (!selectedVendorService && serviceOption) {
+        // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
+        const actualVendorService = vendorServices.find(s => {
+          const optionServiceId = (serviceOption as any).serviceId || serviceOption.id;
+          return (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === serviceOption.id;
+        });
+        
+        const optionServiceId = (serviceOption as any).serviceId || serviceOption.id;
+        setSelectedVendorService({
+          id: actualVendorService?.id, // Numeric vendor_services.id (for reference)
+          serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ UUID from services table
+          service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ Explicit UUID field
+          name: serviceOption.name,
+          price: serviceOption.price,
+          duration: serviceOption.duration,
+          serviceStyle: selectedServiceType,
+        });
+      }
+      // Auto-advance to UniversalPaymentPage for at_home services
+      if (selectedVendorService && selectedPet && selectedDate && selectedTime) {
+        setShowPaymentPage(true);
+      }
+    }
+  }, [step, selectedServiceType, showPaymentPage, selectedVendorService, selectedPet, selectedDate, selectedTime, vendorServices]);
+
   // Check for active packages when customer and vendor are known
   const checkForActivePackages = async () => {
     if (!customerId || !doctorId) return;
@@ -1245,8 +1276,8 @@ export function VetBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary - Using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
+        {/* Payment Summary - Using UniversalPaymentPage (only for at_center services, at_home goes directly to UniversalPaymentPage) */}
+        {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
           <div className="space-y-4 pb-24">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             
@@ -1351,8 +1382,8 @@ export function VetBookingRouter({
           </div>
         )}
 
-        {/* Fixed Continue Button for Payment Summary - Above Footer */}
-        {step === 'payment' && !showPaymentPage && (
+        {/* Fixed Continue Button for Payment Summary - Above Footer (only for at_center, not at_home) */}
+        {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
           <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30 shadow-lg">
             <div className="max-w-[430px] mx-auto">
               <Button 
@@ -1448,6 +1479,7 @@ export function VetBookingRouter({
                 selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
                 customerPhone={phone}
                 customerId={customerId || undefined}
+                flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
                 onBack={() => setShowPaymentPage(false)}
                 onSuccess={(bookingId) => {
                   setBookingId(bookingId);

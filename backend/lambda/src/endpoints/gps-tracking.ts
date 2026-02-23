@@ -152,6 +152,62 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         }
       }
 
+      // ✅ PRIORITY 3.5: Look up customer's addresses by customer_id (fallback for all bookings)
+      if (!destinationLocation && booking.customer_id) {
+        try {
+          const custAddresses = await query(
+            `SELECT id, latitude, longitude, coordinates, address_line1, city, state, pincode, is_default
+             FROM customer_addresses 
+             WHERE customer_id = $1 
+             ORDER BY is_default DESC NULLS LAST, created_at DESC 
+             LIMIT 5`,
+            [booking.customer_id]
+          );
+          const addrRows = (custAddresses as any).rows || [];
+          console.log(`[GPS Tracking] Found ${addrRows.length} customer addresses for customer ${booking.customer_id}`);
+          
+          for (const addr of addrRows) {
+            let lat: number | null = null;
+            let lng: number | null = null;
+            
+            if (addr.latitude != null && addr.longitude != null) {
+              lat = parseFloat(String(addr.latitude));
+              lng = parseFloat(String(addr.longitude));
+            }
+            
+            if (lat == null && addr.coordinates) {
+              try {
+                const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                lat = coords?.lat ?? coords?.latitude ?? null;
+                lng = coords?.lng ?? coords?.longitude ?? null;
+                if (lat != null) lat = parseFloat(String(lat));
+                if (lng != null) lng = parseFloat(String(lng));
+              } catch { /* ignore */ }
+            }
+            
+            if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+              destinationLocation = { latitude: lat, longitude: lng };
+              destinationSource = `customer_addresses (customer_id lookup, addr ${addr.id})`;
+              console.log(`[GPS Tracking] Using customer address ${addr.id} as destination: ${lat}, ${lng}`);
+              
+              try {
+                await update('bookings', { id: bookingId }, {
+                  latitude: lat,
+                  longitude: lng,
+                  address_id: addr.id,
+                });
+                console.log(`[GPS Tracking] Updated booking ${bookingId} with coordinates from customer address`);
+              } catch (updateErr: any) {
+                console.warn(`[GPS Tracking] Could not update booking with coordinates:`, updateErr?.message);
+              }
+              break;
+            }
+          }
+        } catch (custAddrErr: any) {
+          console.warn(`[GPS Tracking] Error looking up customer addresses:`, custAddrErr?.message);
+        }
+      }
+
       // ✅ CRITICAL: Log destination source and coordinates for debugging
       if (destinationLocation) {
         console.log(`[GPS Tracking] Final destination for booking ${bookingId}:`, {
@@ -705,6 +761,119 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         console.log(`[TRACKING] Destination was not corrected, using original ETA/distance from database`);
       }
 
+      // ✅ Build full destination address text from customer_addresses for display
+      let destinationAddressText: string | null = booking?.address || null;
+      let destinationAddressDetails: any = null;
+      if (booking) {
+        try {
+          const addrId = booking.address_id;
+          const custId = booking.customer_id;
+          let addrRow: any = null;
+          
+          // ✅ CRITICAL FIX: Use explicit SELECT query to ensure all columns are returned
+          if (addrId) {
+            const addrResult = await query(
+              `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                      flat_no, house_no, floor, street_name, apartment_name,
+                      latitude, longitude, coordinates, customer_id, is_default
+               FROM customer_addresses 
+               WHERE id = $1`,
+              [addrId]
+            );
+            if ((addrResult as any).rows?.length > 0) {
+              addrRow = (addrResult as any).rows[0];
+              console.log(`[TRACKING] Found address by address_id ${addrId}:`, {
+                apartment_name: addrRow.apartment_name,
+                flat_no: addrRow.flat_no,
+                house_no: addrRow.house_no,
+                floor: addrRow.floor,
+                street_name: addrRow.street_name,
+              });
+            }
+          }
+          if (!addrRow && custId) {
+            const custAddrResult = await query(
+              `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                      flat_no, house_no, floor, street_name, apartment_name,
+                      latitude, longitude, coordinates, customer_id, is_default
+               FROM customer_addresses 
+               WHERE customer_id = $1 
+               ORDER BY is_default DESC NULLS LAST, created_at DESC 
+               LIMIT 1`,
+              [custId]
+            );
+            if ((custAddrResult as any).rows?.length > 0) {
+              addrRow = (custAddrResult as any).rows[0];
+              console.log(`[TRACKING] Found customer default address for customer_id ${custId}:`, {
+                address_id: addrRow.id,
+                apartment_name: addrRow.apartment_name,
+                flat_no: addrRow.flat_no,
+                house_no: addrRow.house_no,
+                floor: addrRow.floor,
+                street_name: addrRow.street_name,
+              });
+            } else {
+              // Fallback: Get any address for this customer
+              const anyAddrResult = await query(
+                `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                        flat_no, house_no, floor, street_name, apartment_name,
+                        latitude, longitude, coordinates, customer_id, is_default
+                 FROM customer_addresses 
+                 WHERE customer_id = $1 
+                 ORDER BY created_at DESC 
+                 LIMIT 1`,
+                [custId]
+              );
+              if ((anyAddrResult as any).rows?.length > 0) {
+                addrRow = (anyAddrResult as any).rows[0];
+                console.log(`[TRACKING] Found any customer address for customer_id ${custId}:`, {
+                  address_id: addrRow.id,
+                  apartment_name: addrRow.apartment_name,
+                  flat_no: addrRow.flat_no,
+                  house_no: addrRow.house_no,
+                  floor: addrRow.floor,
+                  street_name: addrRow.street_name,
+                });
+              }
+            }
+          }
+          
+          if (addrRow) {
+            const parts: string[] = [];
+            if (addrRow.apartment_name) parts.push(addrRow.apartment_name);
+            if (addrRow.flat_no && addrRow.house_no) parts.push(`Flat ${addrRow.flat_no}, House ${addrRow.house_no}`);
+            else if (addrRow.flat_no) parts.push(`Flat ${addrRow.flat_no}`);
+            else if (addrRow.house_no) parts.push(`House ${addrRow.house_no}`);
+            if (addrRow.floor) parts.push(`Floor ${addrRow.floor}`);
+            if (addrRow.street_name) parts.push(addrRow.street_name);
+            if (addrRow.address_line1) parts.push(addrRow.address_line1);
+            if (addrRow.address_line2) parts.push(addrRow.address_line2);
+            if (addrRow.landmark) parts.push(`Near ${addrRow.landmark}`);
+            if (addrRow.city) parts.push(addrRow.city);
+            if (addrRow.state) parts.push(addrRow.state);
+            if (addrRow.pincode) parts.push(addrRow.pincode);
+            
+            if (parts.length > 0) destinationAddressText = parts.filter(Boolean).join(', ');
+            destinationAddressDetails = {
+              apartmentName: addrRow.apartment_name || null,
+              flatNo: addrRow.flat_no || null,
+              houseNo: addrRow.house_no || null,
+              floor: addrRow.floor || null,
+              streetName: addrRow.street_name || null,
+              addressLine1: addrRow.address_line1 || null,
+              addressLine2: addrRow.address_line2 || null,
+              landmark: addrRow.landmark || null,
+              city: addrRow.city || null,
+              state: addrRow.state || null,
+              pincode: addrRow.pincode || null,
+              formattedAddress: destinationAddressText,
+            };
+          }
+        } catch (addrTextErr: any) {
+          console.warn('[TRACKING] Could not build destination address text:', addrTextErr?.message);
+        }
+      }
+
       return c.json({
         success: true,
       tracking: {
@@ -715,6 +884,8 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           eta: finalEta, // ✅ Also set eta for frontend compatibility
           distance: finalDistance, // ✅ Also set distance for frontend compatibility
           providerName,
+          destinationAddress: destinationAddressText, // ✅ Full address text for display
+          destinationAddressDetails, // ✅ Structured address details
         },
       });
 

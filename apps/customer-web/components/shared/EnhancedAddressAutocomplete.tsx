@@ -50,8 +50,15 @@ export function EnhancedAddressAutocomplete({
   // Fetch Google Maps API key from backend (AWS Secrets Manager)
   useEffect(() => {
     const fetchApiKey = async () => {
+      // Set timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('Google Maps API key fetch timeout - disabling autocomplete');
+        setIsLoading(false);
+      }, 10000); // 10 second timeout
+
       try {
         const response = await apiClient.get<{ apiKey: string }>('/config/google-maps-key');
+        clearTimeout(timeoutId);
         if (response?.apiKey) {
           setApiKey(response.apiKey);
         } else {
@@ -59,6 +66,7 @@ export function EnhancedAddressAutocomplete({
           setIsLoading(false);
         }
       } catch (error) {
+        clearTimeout(timeoutId);
         console.warn('Failed to fetch Google Maps API key:', error);
         setIsLoading(false);
       }
@@ -81,10 +89,17 @@ export function EnhancedAddressAutocomplete({
 
     // Check if script is already being loaded
     if (document.querySelector(`script[src*="maps.googleapis.com"]`)) {
-      // Wait for script to load
+      // Wait for script to load (with timeout)
+      let attempts = 0;
+      const maxAttempts = 100; // 10 seconds max (100 * 100ms)
       const checkInterval = setInterval(() => {
+        attempts++;
         if (win.google && win.google.maps && win.google.maps.places) {
           setIsLoaded(true);
+          setIsLoading(false);
+          clearInterval(checkInterval);
+        } else if (attempts >= maxAttempts) {
+          console.warn('Google Maps script loading timeout');
           setIsLoading(false);
           clearInterval(checkInterval);
         }
@@ -97,11 +112,20 @@ export function EnhancedAddressAutocomplete({
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
     script.async = true;
     script.defer = true;
+    
+    // Set timeout for script loading
+    const scriptTimeout = setTimeout(() => {
+      console.warn('Google Maps script loading timeout');
+      setIsLoading(false);
+    }, 15000); // 15 second timeout for script load
+    
     script.onload = () => {
+      clearTimeout(scriptTimeout);
       setIsLoaded(true);
       setIsLoading(false);
     };
     script.onerror = () => {
+      clearTimeout(scriptTimeout);
       console.error('Failed to load Google Maps script');
       setIsLoading(false);
     };

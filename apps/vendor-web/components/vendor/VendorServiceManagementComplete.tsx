@@ -181,33 +181,47 @@ export function VendorServiceManagementComplete({
           allowedStyles = [...new Set([...allowedStyles, ...requiredStyles])];
         }
         
-        // ✅ NEW: Extract service counts per style
+        // ✅ NEW: Extract service counts per style - ONLY COUNT ENABLED SERVICES
         const counts: Record<ServiceStyle, number> = {
           at_home: 0,
           at_center: 0,
           tele: 0
         };
         
-        // ✅ FIX B3: Use servicesByStyle (grouped) for counts; backend returns services = array, servicesByStyle = grouped
+        // ✅ FIX: Use servicesByStyle (grouped) for counts; backend returns services = array, servicesByStyle = grouped
+        // ✅ CRITICAL FIX: Only count enabled services (isEnabled === true)
         const grouped = data.servicesByStyle || data.services;
         if (grouped && typeof grouped === 'object' && !Array.isArray(grouped)) {
-          if (grouped.at_home) {
-            counts.at_home = grouped.at_home.count ?? grouped.at_home.services?.length ?? 0;
+          if (grouped.at_home && Array.isArray(grouped.at_home.services)) {
+            // Count only enabled services
+            counts.at_home = grouped.at_home.services.filter((svc: any) => 
+              svc.isEnabled === true || svc.is_enabled === true
+            ).length;
           }
-          if (grouped.at_center) {
-            counts.at_center = grouped.at_center.count ?? grouped.at_center.services?.length ?? 0;
+          if (grouped.at_center && Array.isArray(grouped.at_center.services)) {
+            // Count only enabled services
+            counts.at_center = grouped.at_center.services.filter((svc: any) => 
+              svc.isEnabled === true || svc.is_enabled === true
+            ).length;
           }
-          if (grouped.tele) {
-            counts.tele = grouped.tele.count ?? grouped.tele.services?.length ?? 0;
+          if (grouped.tele && Array.isArray(grouped.tele.services)) {
+            // Count only enabled services
+            counts.tele = grouped.tele.services.filter((svc: any) => 
+              svc.isEnabled === true || svc.is_enabled === true
+            ).length;
           }
         }
         
-        // ✅ FIX B3: Only use allServices as fallback if grouped counts are all 0
+        // ✅ FIX: Only use allServices as fallback if grouped counts are all 0
         // This prevents double-counting when both sources have data
+        // ✅ CRITICAL FIX: Only count enabled services in fallback too
         if ((counts.at_home === 0 && counts.at_center === 0 && counts.tele === 0) && 
             data.allServices && Array.isArray(data.allServices)) {
-          // Fallback: count from allServices only if grouped counts are empty
+          // Fallback: count from allServices only if grouped counts are empty, but only enabled services
           data.allServices.forEach((svc: any) => {
+            const isEnabled = svc.isEnabled === true || svc.is_enabled === true;
+            if (!isEnabled) return; // Skip disabled services
+            
             const style = svc.serviceStyle || svc.service_style;
             if (style === 'at_home') counts.at_home++;
             else if (style === 'at_center') counts.at_center++;

@@ -1575,22 +1575,43 @@ class ActivateVendorHandler extends BaseHandler {
 
       const application = apps[0];
 
+      // ✅ FIX: Extract profile photo, pincode, and service_radius from application (PROD FIX)
+      const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
+      const payload = application.application_payload || {};
+      const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
+      const pincodeValue = extractPincodeFromPayload(payload);
+      
+      // ✅ FIX: Extract service_radius from payload
+      let serviceRadius: number | null = null;
+      const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
+      for (const field of radiusFields) {
+        if (payload[field] !== undefined && payload[field] !== null && payload[field] !== '') {
+          const radiusValue = typeof payload[field] === 'string' ? parseFloat(payload[field]) : Number(payload[field]);
+          if (!isNaN(radiusValue) && radiusValue > 0) {
+            serviceRadius = radiusValue;
+            break;
+          }
+        }
+      }
+      
       // Create vendor record from application
       const vendorData = {
         phone: identity.phone,
-        email: application.application_payload.email || identity.email || '',
-        business_name: application.application_payload.businessName || '',
-        owner_name: application.application_payload.ownerName || '',
+        email: payload.email || identity.email || '',
+        business_name: payload.businessName || '',
+        owner_name: payload.ownerName || '',
         role_id: application.role_id,
         vendor_type: application.vendor_type,
         vendor_identity_id: identity.id,
         onboarding_status: 'ACTIVATED',
         status: 'active',
-        address: application.application_payload.address || '',
-        city: application.application_payload.city || '',
-        state: application.application_payload.state || '',
-        pincode: application.application_payload.pincode || '',
-        ...application.application_payload, // Include all other fields
+        address: payload.address || '',
+        city: payload.city || '',
+        state: payload.state || '',
+        pincode: pincodeValue, // ✅ FIX: Use enhanced pincode extraction (PROD FIX)
+        profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
+        service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
+        ...payload, // Include all other fields
       };
 
       const vendors = await insert('vendors', vendorData);

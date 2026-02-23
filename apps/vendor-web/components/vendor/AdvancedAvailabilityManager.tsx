@@ -280,6 +280,15 @@ export function AdvancedAvailabilityManager({
           console.log('[AVAILABILITY] Filtered out tele for groomer role. Final styles:', styles);
         }
         
+        // ✅ CRITICAL: Filter out 'tele' for trainer_solo (trainer solo only provides at_home services, no tele)
+        const isTrainerSolo = roleNameLower === 'trainer_solo' || 
+                             roleNameLower === 'training_solo' ||
+                             (roleNameLower.includes('trainer') && (isSoloVendor(vendorData) || isSoloProvider));
+        if (isTrainerSolo) {
+          styles = styles.filter(s => s !== 'tele');
+          console.log('[AVAILABILITY] Filtered out tele for trainer solo role. Final styles:', styles);
+        }
+        
         // Ensure we have at least one style
         if (styles.length === 0) {
           styles = ['at_home'];

@@ -21,6 +21,17 @@ import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
+/** Clean service description: strip wrapping quotes, trim whitespace */
+function cleanDescription(desc: string | null | undefined): string | undefined {
+  if (!desc || typeof desc !== 'string') return undefined;
+  let cleaned = desc.trim();
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  cleaned = cleaned.replace(/\\"/g, '"');
+  return cleaned || undefined;
+}
+
 export function registerProblemGridEndpoints(app: Hono) {
   /**
    * GET /vendor/problem-grid/all
@@ -557,6 +568,9 @@ export function registerProblemGridEndpoints(app: Hono) {
       let subCategoryIds: string[];
       let roleIds: string[];
 
+      // ✅ CRITICAL FIX: Always include the original problemId in search, not just mapped subCategoryIds
+      // Vendors store specializations as "dermatology" (from specialization_master), not "sub_dermatology"
+      // So we need to search for BOTH the original problemId AND any mapped subCategoryIds
       if (mappingsResult.rows.length === 0) {
         // Fallback: problemId may be specialization_id from specialization_master - use for vendor_specializations match
         // Also try to infer role from problemId (e.g., potty_training -> trainer)
@@ -582,9 +596,24 @@ export function registerProblemGridEndpoints(app: Hono) {
           console.log(`[BY-PROBLEM] No mappings found, using fallback - subCategoryIds: ${subCategoryIds.join(', ')}, roleIds: []`);
         }
       } else {
-        subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
-        roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
-        console.log(`[BY-PROBLEM] Mappings found - subCategoryIds: ${subCategoryIds.join(', ')}, roleIds: ${roleIds.join(', ')}`);
+        // ✅ CRITICAL: Include original problemId along with mapped subCategoryIds
+        const mappedSubCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
+        subCategoryIds = [...new Set([problemId, ...mappedSubCategoryIds])];
+        // ✅ FIX: Don't use roleIds from mappings - they're just hints, not filters
+        // Only use roleIds if explicitly provided via roleId query param
+        // This allows vendors with any role to appear if they have the specialization
+        roleIds = []; // Clear roleIds from mappings - don't filter by role unless explicitly requested
+        console.log(`[BY-PROBLEM] Mappings found - original problemId: ${problemId}, mappedSubCategoryIds: ${JSON.stringify(mappedSubCategoryIds)}, final subCategoryIds: ${JSON.stringify(subCategoryIds)}, roleIds from mappings (ignored): ${JSON.stringify(mappingsResult.rows.map((r: any) => r.role_id))}`);
+      }
+      
+      // ✅ FIX: Only apply role filter if explicitly requested via roleId query param
+      // Don't filter by role if roleIds come from problem_grid_mappings (those are just hints)
+      const roleIdQueryParam = c.req.query('roleId');
+      if (roleIdQueryParam) {
+        roleIds = [roleIdQueryParam];
+        console.log(`[BY-PROBLEM] 🔍 Role filter applied from query param: ${roleIdQueryParam}`);
+      } else {
+        console.log(`[BY-PROBLEM] 🔍 No role filter applied (roleIds from mappings ignored)`);
       }
 
       // Check if requested serviceStyle is allowed for this problem (only when we have mappings)
@@ -620,6 +649,9 @@ export function registerProblemGridEndpoints(app: Hono) {
         }
       }
 
+      // ✅ FIX: Only expand roleIds if they were explicitly provided via query param
+      // Don't expand roleIds from mappings (we're not using them as filters)
+      if (roleIds.length > 0) {
       // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
       const problemRoleToVendorRoleNames: Record<string, string[]> = {
         trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
@@ -634,6 +666,9 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
       roleIds = [...new Set(expandedRoleIds)];
       console.log(`[BY-PROBLEM] After expansion - roleIds: ${roleIds.join(', ')}`);
+      } else {
+        console.log(`[BY-PROBLEM] No roleIds to expand (role filter not applied)`);
+      }
 
       // Normalize legacy service styles: at_vendor → at_center, online → tele
       const styleToDbValues: Record<string, string[]> = {
@@ -655,18 +690,38 @@ export function registerProblemGridEndpoints(app: Hono) {
       // Get vendors with matching specializations or roles
       // Enforce publish_status: published or auto_published (exclude draft/unpublished)
       // Use rev for reviews (is_published works when is_approved column is missing); join roles for role name filter
+      // ✅ DEV/UAT FIX: Include pending vendors in dev/UAT environment for testing
+      // More permissive check - allow pending in all non-production environments
+      const isProduction = process.env.ENVIRONMENT === 'prod' || 
+                          process.env.ENVIRONMENT === 'production' ||
+                          process.env.NODE_ENV === 'production' ||
+                          process.env.STAGE === 'prod' ||
+                          process.env.STAGE === 'production';
+      const isDevOrUatEnvironment = !isProduction; // Allow pending in all non-prod environments
+      const statusFilter = isDevOrUatEnvironment 
+        ? `(v.status = 'approved' OR v.status = 'pending')`
+        : `v.status = 'approved'`;
+      
+      console.log(`[BY-PROBLEM] 🔧 Environment check - isProduction: ${isProduction}, isDevOrUat: ${isDevOrUatEnvironment}`);
+      console.log(`[BY-PROBLEM] 🔧 ENV vars - ENVIRONMENT: ${process.env.ENVIRONMENT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, STAGE: ${process.env.STAGE || 'not set'}`);
+      if (isDevOrUatEnvironment) {
+        console.log(`[BY-PROBLEM] 🔧 DEV/UAT MODE: Including pending vendors in search results`);
+      }
+      
+      // ✅ CRITICAL FIX: Start from vendors table (same schema as profile API)
+      // Profile API shows: specializations: ["dermatology"] in vendors.specializations
+      // First find vendors with matching specialization, then join to their services
       let servicesQuery = `
         SELECT
           vs.id as service_id,
           vs.service_name as name,
-          vs.service_name as description,
+          COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), vs.service_name) as description,
           vs.price,
           vs.duration_minutes as duration,
           vs.service_style,
           vs.vendor_id,
           v.business_name as vendor_name,
           v.profile_photo_url,
-          v.profile_image,
           ${logoColumn} as logo_url,
           v.metadata as vendor_metadata,
           v.vendor_type,
@@ -678,18 +733,29 @@ export function registerProblemGridEndpoints(app: Hono) {
           v.latitude,
           v.longitude,
           vs.created_at
-        FROM vendor_services vs
-        INNER JOIN vendors v ON vs.vendor_id = v.id
+        FROM vendors v
+        -- ✅ PRIMARY SCHEMA: Start from vendors table (same as profile API)
+        -- This is where specializations array is stored: v.specializations = ["dermatology", ...]
+        -- Profile API fetches from this same table: GET /vendor/:vendorId/profile returns v.specializations
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
         LEFT JOIN roles r ON v.role_id = r.id
         LEFT JOIN reviews rev ON rev.vendor_id = v.id AND (rev.is_published = true OR rev.is_published IS NULL)
-        WHERE v.status = 'approved' 
+        WHERE ${statusFilter}
           AND v.is_active = true
           AND vs.is_enabled = true
-          AND (vs.publish_status IN ('published', 'auto_published') OR vs.publish_status IS NULL)
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
+
+      // ✅ FIX: Business/clinic vendors CAN offer at_home services (e.g., vaccinations at home)
+      // Do NOT filter them out - the backend already returns only vendors with matching service styles
+      
+      // ✅ FIX: For at_center, exclude at_home services in query
+      if (serviceStyle === 'at_center') {
+        servicesQuery += ` AND vs.service_style != 'at_home'`;
+      }
 
       // Filter by service_style if provided (include legacy aliases: at_vendor, online)
       if (acceptableStyles && acceptableStyles.length > 0) {
@@ -706,26 +772,71 @@ export function registerProblemGridEndpoints(app: Hono) {
         // If no roleIds, require subcategory match
         if (roleIds.length > 0) {
           // Has role filter: subcategory is optional (OR)
+          // ✅ CRITICAL FIX: Prioritize vendors.specializations JSONB column (same schema as profile API)
+          // Profile API shows: specializations: ["dermatology"] - this is in vendors.specializations
           servicesQuery += ` AND (
             r.name = ANY($${paramIndex}::text[]) OR
-            vs.service_name ILIKE ANY($${paramIndex + 1}::text[]) OR
+            -- ✅ PRIMARY: Check vendors.specializations JSONB column (same schema as profile API)
+            -- This is where the profile API gets specializations from: GET /vendor/:vendorId/profile returns v.specializations
+            (v.specializations IS NOT NULL 
+             AND jsonb_typeof(v.specializations) = 'array'
+             AND jsonb_array_length(v.specializations) > 0
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+               WHERE spec = ANY($${paramIndex + 2}::text[])
+             )) OR
+            -- ✅ SECONDARY: Check vendor_specializations table (where vendors store specializations from profile)
             vs.vendor_id IN (
               SELECT vendor_id 
               FROM vendor_specializations 
               WHERE specialization = ANY($${paramIndex + 2}::text[])
-            )
+            ) OR
+            -- ✅ FALLBACK: Check vendors.metadata.specializations
+            (v.metadata IS NOT NULL 
+             AND v.metadata->'specializations' IS NOT NULL
+             AND jsonb_typeof(v.metadata->'specializations') = 'array'
+             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+              WHERE spec = ANY($${paramIndex + 2}::text[])
+            )) OR
+            -- Fallback: Check service name (partial match)
+            vs.service_name ILIKE ANY($${paramIndex + 1}::text[])
           )`;
           params.push(roleIds, searchTerms, subCategoryIds);
           paramIndex += 3;
         } else {
           // No role filter: require subcategory match
+          // ✅ CRITICAL FIX: Prioritize vendor_specializations table AND vendors.specializations JSONB column
+          // The profile API shows: specializations: ["dermatology"] - this is in vendors.specializations
+          // We need to check if the problemId (specialization ID) exists in this array
           servicesQuery += ` AND (
-            vs.service_name ILIKE ANY($${paramIndex}::text[]) OR
+            -- ✅ PRIMARY: Check vendor_specializations table (where profile API loads from first)
             vs.vendor_id IN (
               SELECT vendor_id 
               FROM vendor_specializations 
               WHERE specialization = ANY($${paramIndex + 1}::text[])
-            )
+            ) OR
+            -- ✅ SECONDARY: Check vendors.specializations JSONB column (same schema as profile API)
+            -- This is where the profile API gets specializations from
+            (v.specializations IS NOT NULL 
+             AND jsonb_typeof(v.specializations) = 'array'
+             AND jsonb_array_length(v.specializations) > 0
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+               WHERE spec = ANY($${paramIndex + 1}::text[])
+             )) OR
+            -- ✅ FALLBACK: Check vendors.metadata.specializations
+            (v.metadata IS NOT NULL 
+             AND v.metadata->'specializations' IS NOT NULL
+             AND jsonb_typeof(v.metadata->'specializations') = 'array'
+             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+               WHERE spec = ANY($${paramIndex + 1}::text[])
+             )) OR
+            -- Fallback: Check service name (partial match)
+            vs.service_name ILIKE ANY($${paramIndex}::text[])
           )`;
           params.push(searchTerms, subCategoryIds);
           paramIndex += 2;
@@ -740,20 +851,281 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
+        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
-                 v.profile_photo_url, v.profile_image, v.metadata, v.latitude, v.longitude${logoGroupBy},
+                 v.profile_photo_url, v.metadata, v.latitude, v.longitude${logoGroupBy},
                  v.vendor_type, r.name
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
 
+      // ✅ SIMPLE TEST: First check if we can find vendors with the specialization
+      console.log(`[BY-PROBLEM] 🔍 Testing simple vendor lookup with specialization: ${JSON.stringify(subCategoryIds)}`);
+      try {
+        const simpleVendorTest = await query(`
+          SELECT v.id, v.business_name, v.status, v.is_active, v.specializations, v.vendor_type
+          FROM vendors v
+          WHERE v.specializations IS NOT NULL
+            AND jsonb_typeof(v.specializations) = 'array'
+            AND jsonb_array_length(v.specializations) > 0
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+              WHERE spec = ANY($1::text[])
+            )
+            AND (v.status = 'approved' OR v.status = 'pending')
+            AND v.is_active = true
+          LIMIT 5
+        `, [subCategoryIds]);
+        console.log(`[BY-PROBLEM] 🔍 SIMPLE TEST: Found ${simpleVendorTest.rows.length} vendors with matching specialization:`, 
+          simpleVendorTest.rows.map((r: any) => ({
+            id: r.id,
+            name: r.business_name,
+            status: r.status,
+            specializations: r.specializations,
+            vendor_type: r.vendor_type
+          }))
+        );
+      } catch (simpleErr: any) {
+        console.error(`[BY-PROBLEM] Simple test error:`, simpleErr.message);
+      }
+      
       console.log(`[BY-PROBLEM] Executing query with params:`, JSON.stringify(params));
-      console.log(`[BY-PROBLEM] Query: ${servicesQuery.substring(0, 500)}...`);
+      console.log(`[BY-PROBLEM] Full Query: ${servicesQuery}`);
+      console.log(`[BY-PROBLEM] subCategoryIds: ${JSON.stringify(subCategoryIds)}, roleIds: ${JSON.stringify(roleIds)}`);
+      console.log(`[BY-PROBLEM] serviceStyle: ${serviceStyle}, acceptableStyles: ${JSON.stringify(acceptableStyles)}`);
+      console.log(`[BY-PROBLEM] statusFilter: ${statusFilter}`);
+      console.log(`[BY-PROBLEM] isDevOrUatEnvironment: ${isDevOrUatEnvironment}, ENVIRONMENT: ${process.env.ENVIRONMENT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, STAGE: ${process.env.STAGE || 'not set'}`);
       
       const servicesResult = await query(servicesQuery, params);
       
       console.log(`[BY-PROBLEM] Query returned ${servicesResult.rows.length} services`);
+      
+      // ✅ FIX: If no results, try a fallback query to find vendors that should match but weren't returned
+      // This handles cases where the main query might have a logic issue
+      if (servicesResult.rows.length === 0 && subCategoryIds.length > 0) {
+        try {
+          console.log(`[BY-PROBLEM] 🔍 No results from main query, trying fallback query for matching vendors...`);
+          // Build fallback query - start from vendors table (same schema as profile API)
+          let fallbackQuery = `
+            SELECT DISTINCT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status,
+                   vs.price, vs.duration_minutes, vs.created_at,
+                   v.id as vendor_id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
+                   v.profile_photo_url, v.city, v.state, v.latitude, v.longitude, v.metadata,
+                   v.role_id, r.name as role_name
+            FROM vendors v
+            -- ✅ Start from vendors table (same as profile API) - where specializations array is stored
+            INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE ${statusFilter}
+              AND v.is_active = true
+              AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          `;
+          
+          const fallbackParams: any[] = [];
+          let fallbackParamIndex = 1;
+          
+          // ✅ FIX: Business/clinic vendors CAN offer at_home services - do not exclude them
+          
+          if (acceptableStyles && acceptableStyles.length > 0) {
+            fallbackQuery += ` AND vs.service_style = ANY($${fallbackParamIndex}::text[])`;
+            fallbackParams.push(acceptableStyles);
+            fallbackParamIndex++;
+          }
+          
+          fallbackQuery += ` AND (
+            -- PRIMARY: Check vendors.specializations JSONB column (same as profile API)
+            -- Profile API shows: specializations: ["dermatology"] - check if problemId is in this array
+            (v.specializations IS NOT NULL 
+             AND jsonb_typeof(v.specializations) = 'array'
+             AND jsonb_array_length(v.specializations) > 0
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+               WHERE spec = ANY($${fallbackParamIndex}::text[])
+             )) OR
+            -- Fallback: Check vendor_specializations table
+            v.id IN (
+              SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($${fallbackParamIndex}::text[])
+            ) OR
+            -- Fallback: Check vendors.metadata.specializations
+            (v.metadata IS NOT NULL 
+             AND v.metadata->'specializations' IS NOT NULL
+             AND jsonb_typeof(v.metadata->'specializations') = 'array'
+             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+               WHERE spec = ANY($${fallbackParamIndex}::text[])
+             ))
+          )
+          LIMIT 50
+          `;
+          
+          fallbackParams.push(subCategoryIds);
+          
+          const fallbackResult = await query(fallbackQuery, fallbackParams);
+          console.log(`[BY-PROBLEM] 🔍 Fallback query returned ${fallbackResult.rows.length} services`);
+          
+          if (fallbackResult.rows.length > 0) {
+            // Add fallback results to main results
+            for (const row of fallbackResult.rows) {
+              servicesResult.rows.push({
+                service_id: row.id,
+                id: row.id,
+                service_name: row.service_name,
+                name: row.service_name,
+                description: row.service_name,
+                price: row.price || '0',
+                duration_minutes: row.duration_minutes || 30,
+                duration: row.duration_minutes || 30,
+                service_style: row.service_style,
+                vendor_id: row.vendor_id,
+                business_name: row.business_name,
+                vendor_name: row.business_name,
+                profile_photo_url: row.profile_photo_url,
+                logo_url: null,
+                metadata: row.metadata || {},
+                vendor_metadata: row.metadata || {},
+                vendor_type: row.vendor_type,
+                vendorType: row.vendor_type,
+                role_name: row.role_name || '',
+                roleName: row.role_name || '',
+                vendor_rating: 0,
+                vendorRating: 0,
+                vendor_reviews: 0,
+                vendorReviews: 0,
+                city: row.city,
+                state: row.state,
+                latitude: row.latitude,
+                longitude: row.longitude,
+                created_at: row.created_at
+              });
+            }
+            console.log(`[BY-PROBLEM] ✅ Added ${fallbackResult.rows.length} services from fallback query - Total results: ${servicesResult.rows.length}`);
+          }
+        } catch (fallbackErr: any) {
+          console.error(`[BY-PROBLEM] Fallback query error:`, fallbackErr.message);
+        }
+      }
+      
+      // ✅ ADDITIONAL DEBUG: Test if vendor would match by checking directly
+      if (servicesResult.rows.length === 0 && subCategoryIds.length > 0) {
+        const testVendorId = '8dc26f50-0ebe-4b33-91d4-f6d58402ca45'; // The vendor we're testing
+        const testQuery = `
+          SELECT 
+            v.id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
+            COUNT(vs.id) as service_count,
+            array_agg(DISTINCT vs.service_style) FILTER (WHERE vs.service_style IS NOT NULL) as service_styles,
+            array_agg(DISTINCT vs.is_enabled) FILTER (WHERE vs.is_enabled IS NOT NULL) as service_enabled,
+            array_agg(DISTINCT vs.publish_status) FILTER (WHERE vs.publish_status IS NOT NULL) as service_publish_status,
+            EXISTS (
+              SELECT 1 FROM vendor_specializations vs2 
+              WHERE vs2.vendor_id = v.id AND vs2.specialization = ANY($1::text[])
+            ) as has_spec_in_table,
+            EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+              WHERE spec = ANY($1::text[])
+            ) as has_spec_in_jsonb,
+            -- Test the actual query conditions
+            COUNT(vs_match.id) as matching_service_count
+          FROM vendors v
+          LEFT JOIN vendor_services vs ON vs.vendor_id = v.id
+          LEFT JOIN vendor_services vs_match ON vs_match.vendor_id = v.id 
+            AND vs_match.is_enabled = true 
+            AND (vs_match.publish_status IN ('published', 'auto_published', 'draft') OR vs_match.publish_status IS NULL)
+            AND (${serviceStyle ? `vs_match.service_style = '${serviceStyle}'` : 'true'})
+            AND (
+              v.id IN (
+                SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($1::text[])
+              ) OR
+              (v.specializations IS NOT NULL AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+                WHERE spec = ANY($1::text[])
+              ))
+            )
+          WHERE v.id = $2
+          GROUP BY v.id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations
+        `;
+        try {
+          const testResult = await query(testQuery, [subCategoryIds, testVendorId]);
+          if (testResult.rows.length > 0) {
+            const vendor = testResult.rows[0];
+            console.log(`[BY-PROBLEM] 🔍 TEST VENDOR DEBUG:`, JSON.stringify({
+              id: vendor.id,
+              name: vendor.business_name,
+              status: vendor.status,
+              is_active: vendor.is_active,
+              vendor_type: vendor.vendor_type,
+              specializations: vendor.specializations,
+              service_count: vendor.service_count,
+              matching_service_count: vendor.matching_service_count,
+              service_styles: vendor.service_styles,
+              service_enabled: vendor.service_enabled,
+              service_publish_status: vendor.service_publish_status,
+              has_spec_in_table: vendor.has_spec_in_table,
+              has_spec_in_jsonb: vendor.has_spec_in_jsonb,
+              would_match_status: isDevOrUatEnvironment ? (vendor.status === 'approved' || vendor.status === 'pending') : vendor.status === 'approved',
+              would_match_active: vendor.is_active === true,
+              would_match_vendor_type: true, // Business/clinic vendors can offer at_home services
+              would_match_service: vendor.service_count > 0 && 
+                                   (vendor.service_enabled && vendor.service_enabled.includes(true)) &&
+                                   (vendor.service_publish_status && (vendor.service_publish_status.includes('published') || vendor.service_publish_status.includes('auto_published') || vendor.service_publish_status.includes(null))),
+              would_match_service_style: serviceStyle ? (vendor.service_styles && vendor.service_styles.includes(serviceStyle)) : true,
+              would_match_specialization: vendor.has_spec_in_table || vendor.has_spec_in_jsonb,
+              subCategoryIds: subCategoryIds
+            }, null, 2));
+          }
+        } catch (testErr: any) {
+          console.error(`[BY-PROBLEM] Test query error:`, testErr.message);
+        }
+      }
+      
+      // ✅ DEBUG: If no results, check if vendors with matching specializations exist (regardless of status/services)
+      if (servicesResult.rows.length === 0 && subCategoryIds.length > 0) {
+        const debugQuery = `
+          SELECT v.id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations, 
+                 COUNT(vs.id) as service_count,
+                 array_agg(DISTINCT vs.service_style) FILTER (WHERE vs.service_style IS NOT NULL) as service_styles,
+                 array_agg(DISTINCT vs.is_enabled) FILTER (WHERE vs.is_enabled IS NOT NULL) as service_enabled_flags,
+                 array_agg(DISTINCT vs.publish_status) FILTER (WHERE vs.publish_status IS NOT NULL) as service_publish_statuses,
+                 array_agg(DISTINCT vs.service_style || ':' || vs.is_enabled::text || ':' || COALESCE(vs.publish_status, 'null')) 
+                   FILTER (WHERE vs.service_style = $2 OR vs.service_style IS NULL) as matching_services
+          FROM vendors v
+          LEFT JOIN vendor_services vs ON vs.vendor_id = v.id
+          WHERE (
+            (v.specializations IS NOT NULL AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+              WHERE spec = ANY($1::text[])
+            )) OR
+            v.id IN (
+              SELECT vendor_id 
+              FROM vendor_specializations 
+              WHERE specialization = ANY($1::text[])
+            )
+          )
+          GROUP BY v.id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations
+          LIMIT 10
+        `;
+        const debugServiceStyle = serviceStyle || 'at_home';
+        const debugResult = await query(debugQuery, [subCategoryIds, debugServiceStyle]).catch((err: any) => {
+          console.error(`[BY-PROBLEM] DEBUG query error:`, err.message);
+          return { rows: [] };
+        });
+        console.log(`[BY-PROBLEM] DEBUG: Found ${debugResult.rows.length} vendors with matching specializations:`, 
+          debugResult.rows.map((r: any) => ({
+            id: r.id,
+            name: r.business_name,
+            status: r.status,
+            is_active: r.is_active,
+            vendor_type: r.vendor_type,
+            specializations: r.specializations,
+            service_count: r.service_count,
+            service_styles: r.service_styles,
+            service_enabled: r.service_enabled_flags,
+            service_publish_statuses: r.service_publish_statuses,
+            matching_services: r.matching_services
+          }))
+        );
+      }
 
       const vendorIds = [...new Set(servicesResult.rows.map((r: any) => r.vendor_id))];
       const specMap: Record<string, string[]> = {};
@@ -776,7 +1148,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         const serviceData: any = {
           serviceId: service.service_id,
           name: service.name,
-          description: service.description,
+          description: cleanDescription(service.description),
           price: parseFloat(service.price || '0'),
           duration: parseInt(service.duration || '0'),
           serviceStyle: service.service_style,
@@ -788,8 +1160,8 @@ export function registerProblemGridEndpoints(app: Hono) {
           relevanceScore: 1.0,
           id: `${service.vendor_id}_${service.service_id}`,
           type: 'vendor',
-          photo: service.profile_photo_url || service.profile_image || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
-          photoUrl: service.profile_photo_url || service.profile_image || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
+          photo: service.profile_photo_url || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
+          photoUrl: service.profile_photo_url || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
           rating: parseFloat(service.vendor_rating || '0'),
           reviewCount: parseInt(service.vendor_reviews || '0'),
           specializations: specMap[service.vendor_id] || [],
@@ -815,6 +1187,16 @@ export function registerProblemGridEndpoints(app: Hono) {
 
         return serviceData;
       });
+
+      // ✅ FIX: Post-query filter to ensure serviceStyle matches (safety filter)
+      // Business/clinic vendors CAN offer at_home services - do not exclude them
+      if (serviceStyle && acceptableStyles && acceptableStyles.length > 0) {
+        services = services.filter((service: any) => {
+          const serviceStyleValue = service.serviceStyle || service.service_style;
+          return acceptableStyles.includes(serviceStyleValue);
+        });
+        console.log(`[BY-PROBLEM] After post-query filter for ${serviceStyle}: ${services.length} services remaining`);
+      }
 
       // Sort by relevance (rating + distance if available)
       services.sort((a: any, b: any) => {
@@ -865,9 +1247,14 @@ export function registerProblemGridEndpoints(app: Hono) {
         [problemId]
       );
 
-      const subCategoryIds = mappingsResult.rows.length > 0
+      // ✅ CRITICAL FIX: Always include the original problemId in search, not just mapped subCategoryIds
+      // Vendors store specializations as "dermatology" (from specialization_master), not "sub_dermatology"
+      // So we need to search for BOTH the original problemId AND any mapped subCategoryIds
+      const mappedSubCategoryIds = mappingsResult.rows.length > 0
         ? mappingsResult.rows.map((r: any) => r.sub_category_id)
-        : [problemId]; // When no mapping, problemId is specialization_id from specialization_master
+        : [];
+      // Always include the original problemId (this is what vendors store in specializations)
+      const subCategoryIds = [...new Set([problemId, ...mappedSubCategoryIds])];
       let roleIds = mappingsResult.rows.length > 0
         ? [...new Set(mappingsResult.rows.map((r: any) => r.role_id))]
         : []; // When no mapping, no role filter unless roleId query provided
@@ -876,20 +1263,38 @@ export function registerProblemGridEndpoints(app: Hono) {
         roleIds = [roleId];
       }
 
+      console.log(`[VENDORS-BY-PROBLEM] 🔍 problemId: ${problemId}, mappedSubCategoryIds: ${JSON.stringify(mappedSubCategoryIds)}, final subCategoryIds: ${JSON.stringify(subCategoryIds)}`);
+
       // Get vendors with matching specializations (vendor_specializations.specialization = problemId or sub_category_id)
+      // ✅ FIX: Calculate aggregations in subqueries, then join to vendors to avoid GROUP BY issues
       let vendorsQuery = `
-        SELECT DISTINCT
+        SELECT 
           v.*,
           r.name as role_name,
           r.display_name as role_display_name,
-          COALESCE(AVG(rev.rating), 0) as avg_rating,
-          COUNT(DISTINCT rev.id) as total_reviews,
-          COUNT(DISTINCT b.id) as total_bookings
+          COALESCE(rev_stats.avg_rating, 0) as avg_rating,
+          COALESCE(rev_stats.total_reviews, 0) as total_reviews,
+          COALESCE(b_stats.total_bookings, 0) as total_bookings
         FROM vendors v
-        INNER JOIN roles r ON v.role_id = r.id
-        LEFT JOIN reviews rev ON rev.vendor_id = v.id AND rev.is_approved = true
-        LEFT JOIN bookings b ON b.vendor_id = v.id AND b.status = 'completed'
-        WHERE v.status = 'approved' 
+        LEFT JOIN roles r ON v.role_id = r.id
+        LEFT JOIN (
+          SELECT 
+            vendor_id,
+            AVG(rating) as avg_rating,
+            COUNT(DISTINCT id) as total_reviews
+          FROM reviews
+          WHERE is_approved = true
+          GROUP BY vendor_id
+        ) rev_stats ON rev_stats.vendor_id = v.id
+        LEFT JOIN (
+          SELECT 
+            vendor_id,
+            COUNT(DISTINCT id) as total_bookings
+          FROM bookings
+          WHERE status = 'completed'
+          GROUP BY vendor_id
+        ) b_stats ON b_stats.vendor_id = v.id
+        WHERE (v.status = 'approved' OR v.status = 'pending')
           AND v.is_active = true
       `;
 
@@ -897,18 +1302,53 @@ export function registerProblemGridEndpoints(app: Hono) {
       let paramIndex = 1;
 
       // Match by role (when from mappings or when roleId query provided)
-      if (roleIds.length > 0) {
+      // ✅ FIX: Only apply role filter if roleId is explicitly provided via query param
+      // Don't filter by role if roleIds come from problem_grid_mappings (those are just hints)
+      // This allows vendors with any role to appear if they have the specialization
+      if (roleId) {
+        // Only filter by role if explicitly requested via roleId query param
         vendorsQuery += ` AND (r.id::text = ANY($${paramIndex}::text[]) OR r.name = ANY($${paramIndex + 1}::text[]))`;
         params.push(roleIds, roleIds);
         paramIndex += 2;
+        console.log(`[VENDORS-BY-PROBLEM] 🔍 Filtering by roleIds (from query param): ${JSON.stringify(roleIds)}`);
+      } else {
+        // No role filter - allow vendors with any role
+        console.log(`[VENDORS-BY-PROBLEM] 🔍 No role filter applied (roleIds from mappings ignored): ${JSON.stringify(roleIds)}`);
       }
 
       // Match by specialization: vendor_specializations.specialization = problemId or sub_category_id
+      // ✅ CRITICAL FIX: Prioritize vendors.specializations JSONB column (same schema as profile API)
+      // Profile API shows: specializations: ["dermatology"] - this is in vendors.specializations JSONB
+      // We need to query the same schema where profile API gets its data from
       if (subCategoryIds.length > 0) {
-        vendorsQuery += ` AND v.id IN (
-          SELECT vendor_id 
-          FROM vendor_specializations 
-          WHERE specialization = ANY($${paramIndex}::text[])
+        console.log(`[VENDORS-BY-PROBLEM] 🔍 Searching for vendors with specialization IDs: ${JSON.stringify(subCategoryIds)}`);
+        // ✅ CRITICAL: Check BOTH vendor_specializations table AND vendors.specializations JSONB
+        // Profile API loads from vendor_specializations table first, then falls back to JSONB
+        // So we need to check BOTH to match what profile API returns
+        vendorsQuery += ` AND (
+          -- ✅ PRIMARY: Check vendor_specializations table (where profile API loads from first)
+          -- Profile API: SELECT specialization FROM vendor_specializations WHERE vendor_id = $1
+          v.id IN (
+            SELECT vendor_id 
+            FROM vendor_specializations 
+            WHERE specialization = ANY($${paramIndex}::text[])
+          ) OR
+          -- ✅ SECONDARY: Check vendors.specializations JSONB column (profile API fallback)
+          -- This is where the profile API gets specializations from: GET /vendor/:vendorId/profile returns v.specializations
+          (v.specializations IS NOT NULL 
+           AND jsonb_typeof(v.specializations) = 'array'
+           AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+            WHERE spec = ANY($${paramIndex}::text[])
+          )) OR
+          -- ✅ FALLBACK: Check vendors.metadata.specializations
+          (v.metadata IS NOT NULL 
+           AND v.metadata->'specializations' IS NOT NULL
+           AND jsonb_typeof(v.metadata->'specializations') = 'array'
+           AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+            WHERE spec = ANY($${paramIndex}::text[])
+          ))
         )`;
         params.push(subCategoryIds);
         paramIndex++;
@@ -920,7 +1360,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           SELECT DISTINCT vs.vendor_id
           FROM vendor_services vs
           WHERE vs.is_enabled = true
-            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)
             ${feeMin ? `AND vs.price >= $${paramIndex}` : ''}
             ${feeMax ? `AND vs.price <= $${paramIndex + (feeMin ? 1 : 0)}` : ''}
         )`;
@@ -935,12 +1375,147 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       vendorsQuery += `
-        GROUP BY v.id, r.name, r.display_name
-        ORDER BY avg_rating DESC, total_bookings DESC
+        ORDER BY rev_stats.avg_rating DESC NULLS LAST, b_stats.total_bookings DESC NULLS LAST
         LIMIT 50
       `;
 
+      // ✅ DEBUG: Log query and params for troubleshooting
+      console.log(`[VENDORS-BY-PROBLEM] 🔍 Executing query with params:`, JSON.stringify(params));
+      console.log(`[VENDORS-BY-PROBLEM] 🔍 Query: ${vendorsQuery.substring(0, 500)}...`);
+      console.log(`[VENDORS-BY-PROBLEM] 🔍 problemId: ${problemId}, subCategoryIds: ${JSON.stringify(subCategoryIds)}, roleIds: ${JSON.stringify(roleIds)}`);
+
+      // ✅ TEST: First check if we can find vendors with the specialization directly
+      if (subCategoryIds.length > 0) {
+        try {
+          // Test 1: Check vendor_specializations table
+          const checkTableQuery = `SELECT COUNT(*) as count, array_agg(vendor_id) as vendor_ids FROM vendor_specializations WHERE specialization = ANY($1::text[])`;
+          const tableResult = await query(checkTableQuery, [subCategoryIds]);
+          console.log(`[VENDORS-BY-PROBLEM] 🔍 TEST: vendor_specializations table has ${tableResult.rows[0]?.count || 0} rows with spec ${JSON.stringify(subCategoryIds)}`);
+          if (tableResult.rows[0]?.vendor_ids) {
+            console.log(`[VENDORS-BY-PROBLEM] 🔍 TEST: Vendor IDs in table: ${JSON.stringify(tableResult.rows[0].vendor_ids)}`);
+          }
+
+          // Test 2: Check vendors.specializations JSONB
+          const checkJsonbQuery = `
+            SELECT COUNT(*) as count, array_agg(id) as vendor_ids 
+            FROM vendors 
+            WHERE specializations IS NOT NULL 
+              AND jsonb_typeof(specializations) = 'array'
+              AND jsonb_array_length(specializations) > 0
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(specializations) AS spec 
+                WHERE spec = ANY($1::text[])
+              )
+          `;
+          const jsonbResult = await query(checkJsonbQuery, [subCategoryIds]);
+          console.log(`[VENDORS-BY-PROBLEM] 🔍 TEST: vendors.specializations JSONB has ${jsonbResult.rows[0]?.count || 0} vendors with spec ${JSON.stringify(subCategoryIds)}`);
+          if (jsonbResult.rows[0]?.vendor_ids) {
+            console.log(`[VENDORS-BY-PROBLEM] 🔍 TEST: Vendor IDs in JSONB: ${JSON.stringify(jsonbResult.rows[0].vendor_ids)}`);
+          }
+
+          // Test 3: Full query with all conditions
+          const testQuery = `
+            SELECT v.id, v.business_name, v.status, v.is_active, v.specializations, v.vendor_type, v.role_id,
+                   EXISTS (
+                     SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+                     WHERE spec = ANY($1::text[])
+                   ) as has_spec_in_jsonb,
+                   EXISTS (
+                     SELECT 1 FROM vendor_specializations vs 
+                     WHERE vs.vendor_id = v.id AND vs.specialization = ANY($1::text[])
+                   ) as has_spec_in_table,
+                   (SELECT COUNT(*) FROM vendor_specializations vs WHERE vs.vendor_id = v.id) as total_specs_in_table
+            FROM vendors v
+            WHERE (
+              (v.specializations IS NOT NULL 
+               AND jsonb_typeof(v.specializations) = 'array'
+               AND jsonb_array_length(v.specializations) > 0
+               AND EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+                 WHERE spec = ANY($1::text[])
+               )) OR
+              v.id IN (
+                SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($1::text[])
+              )
+            )
+            AND (v.status = 'approved' OR v.status = 'pending')
+            AND v.is_active = true
+            LIMIT 10
+          `;
+          const testResult = await query(testQuery, [subCategoryIds]);
+          console.log(`[VENDORS-BY-PROBLEM] 🔍 TEST QUERY: Found ${testResult.rows.length} vendors with matching specialization`);
+          if (testResult.rows.length > 0) {
+            testResult.rows.forEach((r: any) => {
+              console.log(`[VENDORS-BY-PROBLEM] 🔍 Vendor: ${r.business_name} (${r.id})`);
+              console.log(`[VENDORS-BY-PROBLEM] 🔍   Status: ${r.status}, Active: ${r.is_active}, Role: ${r.role_id}`);
+              console.log(`[VENDORS-BY-PROBLEM] 🔍   Specializations JSONB: ${JSON.stringify(r.specializations)}`);
+              console.log(`[VENDORS-BY-PROBLEM] 🔍   Has spec in JSONB: ${r.has_spec_in_jsonb}, Has spec in table: ${r.has_spec_in_table}`);
+              console.log(`[VENDORS-BY-PROBLEM] 🔍   Total specs in table: ${r.total_specs_in_table}`);
+            });
+          } else {
+            console.log(`[VENDORS-BY-PROBLEM] ⚠️ TEST QUERY: No vendors found with specialization ${JSON.stringify(subCategoryIds)}`);
+          }
+        } catch (testErr: any) {
+          console.error(`[VENDORS-BY-PROBLEM] Test query error:`, testErr.message, testErr.stack);
+        }
+      }
+
       const vendorsResult = await query(vendorsQuery, params);
+      console.log(`[VENDORS-BY-PROBLEM] ✅ Query returned ${vendorsResult.rows.length} vendors`);
+
+      // ✅ DEBUG: Check if specific vendor appears in results
+      const targetVendorId = 'd19d9358-c9c0-4a44-9c93-bd2e2d592320';
+      const foundTargetVendor = vendorsResult.rows.find((v: any) => v.id === targetVendorId);
+      if (foundTargetVendor) {
+        console.log(`[VENDORS-BY-PROBLEM] ✅ Found target vendor ${targetVendorId} in results!`);
+      } else {
+        console.log(`[VENDORS-BY-PROBLEM] ⚠️ Target vendor ${targetVendorId} NOT found in results. Checking why...`);
+        // Debug why target vendor didn't appear
+        try {
+          const debugQuery = `
+            SELECT 
+              v.id, v.business_name, v.status, v.is_active, v.specializations, v.vendor_type, v.role_id,
+              r.name as role_name,
+              EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
+                WHERE spec = ANY($1::text[])
+              ) as has_spec_in_jsonb,
+              EXISTS (
+                SELECT 1 FROM vendor_specializations vs 
+                WHERE vs.vendor_id = v.id AND vs.specialization = ANY($1::text[])
+              ) as has_spec_in_table,
+              (v.status = 'approved' OR v.status = 'pending') as status_ok,
+              v.is_active as is_active_ok
+            FROM vendors v
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE v.id = $2
+          `;
+          const debugResult = await query(debugQuery, [subCategoryIds, targetVendorId]);
+          if (debugResult.rows.length > 0) {
+            const vendor = debugResult.rows[0];
+            console.log(`[VENDORS-BY-PROBLEM] 🔍 DEBUG target vendor:`, JSON.stringify({
+              id: vendor.id,
+              name: vendor.business_name,
+              status: vendor.status,
+              is_active: vendor.is_active,
+              specializations: vendor.specializations,
+              has_spec_in_jsonb: vendor.has_spec_in_jsonb,
+              has_spec_in_table: vendor.has_spec_in_table,
+              status_ok: vendor.status_ok,
+              is_active_ok: vendor.is_active_ok,
+              role_id: vendor.role_id,
+              role_name: vendor.role_name,
+              would_match: vendor.has_spec_in_jsonb || vendor.has_spec_in_table,
+              would_pass_status: vendor.status_ok && vendor.is_active_ok,
+              subCategoryIds: subCategoryIds
+            }, null, 2));
+          } else {
+            console.log(`[VENDORS-BY-PROBLEM] ⚠️ Target vendor ${targetVendorId} not found in database`);
+          }
+        } catch (debugErr: any) {
+          console.error(`[VENDORS-BY-PROBLEM] Debug query error:`, debugErr.message);
+        }
+      }
 
       // Enrich vendors with distance, services, schedule, and specialists
       const vendors = await Promise.all(
@@ -949,7 +1524,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           const servicesResult = await query(
             `SELECT id, service_id, service_name, price, duration_minutes, service_style, category, sub_category
              FROM vendor_services
-             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
+             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published','draft') OR publish_status IS NULL)
              ORDER BY price ASC
              LIMIT 10`,
             [vendor.id]
@@ -963,13 +1538,13 @@ export function registerProblemGridEndpoints(app: Hono) {
               s.name as full_name,
               s.role,
               s.experience_years,
-              s.specialization,
-              s.rating as staff_rating,
+              NULL as specialization,
+              0 as staff_rating,
               s.is_active,
               NULL as photo
              FROM staff s
              WHERE s.vendor_id = $1 AND s.is_active = true
-             ORDER BY s.rating DESC NULLS LAST, s.experience_years DESC
+             ORDER BY s.experience_years DESC NULLS LAST
              LIMIT 20`,
             [vendor.id]
           );
@@ -1185,6 +1760,29 @@ export function registerProblemGridEndpoints(app: Hono) {
         }))
       );
 
+      // ✅ DEBUG: Include test query results in response for debugging
+      let debugInfo: any = null;
+      if (subCategoryIds.length > 0 && vendors.length === 0) {
+        try {
+          const debugTableQuery = `SELECT COUNT(*) as count FROM vendor_specializations WHERE specialization = ANY($1::text[])`;
+          const debugTableResult = await query(debugTableQuery, [subCategoryIds]);
+          const debugJsonbQuery = `
+            SELECT COUNT(*) as count FROM vendors 
+            WHERE specializations IS NOT NULL 
+              AND jsonb_typeof(specializations) = 'array'
+              AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(specializations) AS spec WHERE spec = ANY($1::text[]))
+          `;
+          const debugJsonbResult = await query(debugJsonbQuery, [subCategoryIds]);
+          debugInfo = {
+            subCategoryIds,
+            vendor_specializations_count: debugTableResult.rows[0]?.count || 0,
+            vendors_jsonb_count: debugJsonbResult.rows[0]?.count || 0,
+          };
+        } catch (e) {
+          debugInfo = { error: (e as Error).message };
+        }
+      }
+
       return c.json({
         success: true,
         vendors,
@@ -1195,6 +1793,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         },
         total: vendors.length,
         problemId,
+        ...(debugInfo && { debug: debugInfo }),
       });
     } catch (error: any) {
       console.error('Error fetching vendors by problem:', error);

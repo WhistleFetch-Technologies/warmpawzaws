@@ -189,7 +189,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   useEffect(() => {
     loadServiceDetails();
     loadCustomerData();
-    loadRazorpayScript();
+    // Razorpay script is now pre-loaded via separate useEffect
   }, [serviceId, customerPhone]);
 
   useEffect(() => {
@@ -204,11 +204,71 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
     }
   }, [selectedDate, selectedTime, selectedAddress, service]);
 
-  const loadRazorpayScript = () => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.body.appendChild(script);
+  // ✅ FIX: Pre-load Razorpay script on component mount so it's ready when user clicks payment
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !window.Razorpay) {
+      console.log('🔄 [RAZORPAY] Pre-loading Razorpay script on component mount...');
+      loadRazorpayScript().catch((error) => {
+        console.warn('⚠️ [RAZORPAY] Failed to pre-load script (will retry on payment):', error.message);
+        // Don't show error to user - will retry when payment button is clicked
+      });
+    } else if (window.Razorpay) {
+      console.log('✅ [RAZORPAY] Razorpay script already loaded');
+    }
+  }, []); // Only run once on mount
+
+  const loadRazorpayScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined') {
+        reject(new Error('Window is not available'));
+        return;
+      }
+      
+      // If already loaded, resolve immediately
+      if (window.Razorpay) {
+        resolve();
+        return;
+      }
+      
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+      if (existingScript) {
+        // Wait for existing script to load
+        existingScript.addEventListener('load', () => {
+          if (window.Razorpay) {
+            resolve();
+          } else {
+            reject(new Error('Razorpay script loaded but window.Razorpay is not available'));
+          }
+        });
+        existingScript.addEventListener('error', () => {
+          reject(new Error('Failed to load Razorpay script'));
+        });
+        return;
+      }
+      
+      // Create and load new script
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      
+      script.onload = () => {
+        // Wait a bit for Razorpay to initialize
+        setTimeout(() => {
+          if (window.Razorpay) {
+            resolve();
+          } else {
+            reject(new Error('Razorpay script loaded but window.Razorpay is not available'));
+          }
+        }, 100);
+      };
+      
+      script.onerror = () => {
+        reject(new Error('Failed to load Razorpay script'));
+      };
+      
+      document.body.appendChild(script);
+    });
   };
 
   const loadServiceDetails = async () => {
@@ -592,42 +652,176 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         return;
       }
 
-      // Create Razorpay order - use camelCase for consistency
-      const orderRes = await apiClient.post<any>('/payments/create-order', {
+      // ✅ FIX: Use /razorpay/create-order instead of /payments/create-order
+      // /payments/create-order creates a payment record but doesn't return Razorpay orderId
+      // /razorpay/create-order creates the actual Razorpay order and returns orderId + keyId
+      console.log('🔄 [PAYMENT] Creating Razorpay order...', {
         bookingId: newBookingId,
         amount: amountToPay,
-        useWallet: useWallet,
-        walletAmount: useWallet && wallet ? Math.min(wallet.balance, service.price) : 0,
       });
-
-      // ✅ FIX: Handle both response formats
-      const orderId = orderRes.data?.orderId || orderRes.orderId || orderRes.order_id;
-      if (!orderId) {
-        throw new Error(orderRes.error || 'Failed to create payment order');
+      
+      let orderRes: any;
+      try {
+        orderRes = await apiClient.post<any>('/razorpay/create-order', {
+          bookingId: newBookingId,
+          amount: amountToPay,
+          useWallet: useWallet,
+          walletAmount: useWallet && wallet ? Math.min(wallet.balance, service.price) : 0,
+        }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+      } catch (orderError: any) {
+        console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
+          error: orderError.message,
+          status: orderError.status,
+          statusCode: orderError.statusCode,
+          response: orderError.response,
+          responseData: orderError.responseData,
+        });
+        // Re-throw with better error message
+        const errorMsg = orderError.responseData?.error || orderError.response?.error || orderError.message || 'Failed to create payment order';
+        throw new Error(`Failed to create payment order: ${errorMsg}`);
+      }
+      
+      console.log('✅ [PAYMENT] Razorpay order response (raw):', JSON.stringify(orderRes, null, 2));
+      console.log('✅ [PAYMENT] Response type:', typeof orderRes);
+      console.log('✅ [PAYMENT] Response keys:', orderRes ? Object.keys(orderRes) : 'null/undefined');
+      console.log('✅ [PAYMENT] Is array?', Array.isArray(orderRes));
+      
+      // ✅ FIX: Handle ALL possible response structures
+      // Backend returns: { orderId, keyId, amount, currency } directly via this.success()
+      // But could also be wrapped in: { success: true, data: { ... } } or { data: { ... } }
+      // Or error response: { error: "..." } or { success: false, error: "..." }
+      
+      // Check for error response first
+      if (orderRes?.error || (orderRes?.success === false)) {
+        const errorMsg = typeof orderRes.error === 'string' 
+          ? orderRes.error 
+          : orderRes.error?.message || 'Failed to create payment order';
+        console.error('❌ [PAYMENT] Error in response:', errorMsg);
+        throw new Error(errorMsg);
+      }
+      
+      // ✅ FIX: Try to extract orderId from all possible locations, including nested structures
+      let razorpayOrderId: string | undefined = undefined;
+      let keyId: string | undefined = undefined;
+      let orderAmount: number | undefined = undefined;
+      
+      // Strategy 1: Direct fields
+      if (orderRes?.orderId) razorpayOrderId = orderRes.orderId;
+      if (orderRes?.keyId) keyId = orderRes.keyId;
+      if (orderRes?.amount != null) orderAmount = typeof orderRes.amount === 'number' ? orderRes.amount : parseFloat(orderRes.amount);
+      
+      // Strategy 2: Wrapped in data
+      if (!razorpayOrderId && orderRes?.data) {
+        if (orderRes.data.orderId) razorpayOrderId = orderRes.data.orderId;
+        if (orderRes.data.keyId) keyId = orderRes.data.keyId;
+        if (orderRes.data.amount != null) orderAmount = typeof orderRes.data.amount === 'number' ? orderRes.data.amount : parseFloat(orderRes.data.amount);
+      }
+      
+      // Strategy 3: Wrapped in success.data
+      if (!razorpayOrderId && orderRes?.success?.data) {
+        if (orderRes.success.data.orderId) razorpayOrderId = orderRes.success.data.orderId;
+        if (orderRes.success.data.keyId) keyId = orderRes.success.data.keyId;
+        if (orderRes.success.data.amount != null) orderAmount = typeof orderRes.success.data.amount === 'number' ? orderRes.success.data.amount : parseFloat(orderRes.success.data.amount);
+      }
+      
+      // Strategy 4: Alternative field names
+      if (!razorpayOrderId) {
+        razorpayOrderId = orderRes?.razorpay_order_id || orderRes?.razorpayOrderId || orderRes?.id;
+      }
+      if (!keyId) {
+        keyId = orderRes?.key || orderRes?.razorpayKey || orderRes?.razorpay_key;
+      }
+      
+      // Strategy 5: Fallback to environment variable for keyId
+      if (!keyId) {
+        keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY;
+      }
+      
+      console.log('🔍 [PAYMENT] Extracted values:', { 
+        razorpayOrderId: razorpayOrderId ? `${razorpayOrderId.substring(0, 20)}...` : 'MISSING',
+        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
+        orderAmount,
+        hasData: !!orderRes?.data,
+        hasSuccess: !!orderRes?.success,
+        responseKeys: orderRes ? Object.keys(orderRes) : [],
+        // Deep inspection
+        orderIdType: orderRes?.orderId ? typeof orderRes.orderId : 'not found',
+        dataOrderIdType: orderRes?.data?.orderId ? typeof orderRes.data.orderId : 'not found',
+      });
+      
+      if (!razorpayOrderId) {
+        // ✅ ENHANCED: Log the entire response structure for debugging
+        console.error('❌ [PAYMENT] No orderId found in response. Full response structure:', {
+          response: orderRes,
+          stringified: JSON.stringify(orderRes, null, 2),
+          type: typeof orderRes,
+          isArray: Array.isArray(orderRes),
+          keys: orderRes ? Object.keys(orderRes) : [],
+          hasOrderId: !!orderRes?.orderId,
+          hasData: !!orderRes?.data,
+          dataKeys: orderRes?.data ? Object.keys(orderRes.data) : [],
+          hasSuccess: !!orderRes?.success,
+          successKeys: orderRes?.success ? Object.keys(orderRes.success) : [],
+          // Check all possible nested paths
+          nestedPaths: {
+            'orderRes.orderId': orderRes?.orderId,
+            'orderRes.data.orderId': orderRes?.data?.orderId,
+            'orderRes.success.data.orderId': orderRes?.success?.data?.orderId,
+            'orderRes.razorpay_order_id': orderRes?.razorpay_order_id,
+            'orderRes.id': orderRes?.id,
+          }
+        });
+        throw new Error('Failed to create payment order: No order ID received from server. Please check the response structure.');
+      }
+      
+      if (!keyId) {
+        console.error('❌ [PAYMENT] No keyId in response and NEXT_PUBLIC_RAZORPAY_KEY not set');
+        throw new Error('Payment gateway configuration error: Razorpay key not found');
+      }
+      
+      console.log('✅ [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
+      
+      // ✅ FIX: Wait for Razorpay script to load before opening checkout
+      if (typeof window !== 'undefined' && !window.Razorpay) {
+        console.log('⏳ [PAYMENT] Waiting for Razorpay script to load...');
+        try {
+          await loadRazorpayScript();
+          console.log('✅ [PAYMENT] Razorpay script loaded successfully');
+        } catch (scriptError: any) {
+          console.error('❌ [PAYMENT] Failed to load Razorpay script:', scriptError);
+          throw new Error('Payment gateway script failed to load. Please refresh the page and try again.');
+        }
       }
 
-      // Open Razorpay checkout - use the extracted orderId variable
-      const razorpayKey = orderRes.data?.key || orderRes.razorpayKey || orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
+      // Open Razorpay checkout - use the extracted razorpayOrderId variable
       const options = {
-        key: razorpayKey,
+        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
         amount: amountToPay * 100,
         currency: 'INR',
         name: 'Warmpawz',
         description: `Booking: ${service.name}`,
-        order_id: orderId,
+        order_id: razorpayOrderId,
         handler: async (response: any) => {
           try {
-            // Verify payment - use camelCase for API contract compliance
-            await apiClient.post('/payments/verify', {
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-              bookingId: newBookingId,
+            console.log('✅ [RAZORPAY] Payment response received:', {
+              order_id: response.razorpay_order_id,
+              payment_id: response.razorpay_payment_id,
+              has_signature: !!response.razorpay_signature,
             });
+
+            // ✅ FIX: Use /razorpay/verify-payment endpoint with snake_case fields (same as UniversalPaymentPage)
+            console.log('🔄 [RAZORPAY] Verifying payment...');
+            await apiClient.post('/razorpay/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            console.log('✅ [RAZORPAY] Payment verified successfully');
             setStep('confirmed');
-          } catch (err) {
-            console.error('Payment verification failed:', err);
-            alert('Payment verification failed. Please contact support.');
+          } catch (err: any) {
+            console.error('❌ [PAYMENT] Verification failed:', err);
+            const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
+            alert(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
           }
         },
         prefill: {
@@ -642,9 +836,27 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
           },
         },
       };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
+      
+      // ✅ FIX: Double-check Razorpay is available before opening
+      if (!window.Razorpay) {
+        console.error('❌ [PAYMENT] Razorpay not available after script load');
+        throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
+      }
+      
+      console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
+        razorpayOrderId,
+        amount: amountToPay,
+        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing'
+      });
+      
+      try {
+        const razorpay = new window.Razorpay(options);
+        razorpay.open();
+        console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
+      } catch (openError: any) {
+        console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
+        throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
+      }
     } catch (err: any) {
       console.error('Booking error:', err);
       alert(err.message || 'Failed to create booking');
@@ -727,9 +939,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       </div>
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 pb-32">
+      <main className="max-w-4xl mx-auto px-4 pb-32 overflow-x-hidden">
         {step === 'details' && (
-          <div className="bg-white rounded-2xl p-0 shadow-sm">
+          <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-xl font-bold mb-4">Service Details</h2>
             <div className="space-y-4">
               <div className="flex items-center gap-4">
@@ -760,13 +972,13 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'datetime' && (
-          <div className="bg-white rounded-2xl p-0 shadow-sm">
+          <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-xl font-bold mb-4">Select Date & Time</h2>
             
             {/* Date Selection */}
-            <div className="mb-0">
-              <h3 className="font-medium text-gray-700 mb-0">Select Date</h3>
-              <div className="flex gap-3 overflow-x-auto pb-0">
+            <div className="mb-6">
+              <h3 className="font-medium text-gray-700 mb-3">Select Date</h3>
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
                 {getNextDays().map((day) => (
                   <button
                     key={day.date}
@@ -774,7 +986,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                       setSelectedDate(day.date);
                       setSelectedTime('');
                     }}
-                    className={`flex-shrink-0 px-4 py-0 rounded-xl text-center min-w-[80px] ${
+                    className={`flex-shrink-0 px-4 py-3 rounded-xl text-center min-w-[80px] ${
                       selectedDate === day.date
                         ? 'bg-orange-500 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -788,9 +1000,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
             {/* Time Selection */}
             {selectedDate && (
-              <div>
-                <h3 className="font-medium text-gray-700 mb-0">Select Time</h3>
-                <div className="grid grid-cols-4 gap-3">
+              <div className="mt-6">
+                <h3 className="font-medium text-gray-700 mb-3">Select Time</h3>
+                <div className="grid grid-cols-4 gap-3 overflow-hidden">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (
                       <button
@@ -998,24 +1210,24 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                       selectedAddress === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                    <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">
+                          <span className="text-lg flex-shrink-0">
                             {addr.label?.toLowerCase() === 'home' ? '🏠' : 
                              addr.label?.toLowerCase() === 'work' ? '🏢' : '📍'}
                           </span>
-                          <p className="font-medium text-gray-900">{addr.label || 'Address'}</p>
+                          <p className="font-medium text-gray-900 truncate">{addr.label || 'Address'}</p>
                           {addr.isDefault && (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full flex-shrink-0">Default</span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
+                        <p className="text-sm text-gray-600 mt-1 line-clamp-2 break-words">
                           {addr.addressLine1 || addr.address}
                           {addr.addressLine2 && `, ${addr.addressLine2}`}
                         </p>
-                        <p className="text-sm text-gray-500">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
-                        {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                        <p className="text-sm text-gray-500 line-clamp-1 break-words">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
+                        {addr.landmark && <p className="text-xs text-gray-400 truncate">Near: {addr.landmark}</p>}
                       </div>
                       {selectedAddress === addr.id && (
                         <span className="text-orange-500 text-xl ml-2">✓</span>
@@ -1059,7 +1271,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
         {step === 'payment' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl p-0 shadow-sm">
+            <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
               <h2 className="text-xl font-bold mb-4">Review Booking</h2>
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -1086,11 +1298,11 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                 placeholder="Add notes for the provider (optional)"
                 rows={2}
-                className="w-full mt-4 px-4 py-0 border rounded-xl focus:ring-2 focus:ring-orange-500"
+                className="w-full mt-4 px-4 py-3 border rounded-xl focus:ring-2 focus:ring-orange-500 resize-none overflow-hidden"
               />
             </div>
 
-            <div className="bg-white rounded-2xl p-1 shadow-sm">
+            <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
               <h2 className="text-xl font-bold mb-4">Payment</h2>
               <div className="space-y-3">
                 {/* ✅ SUBSCRIPTION COVERAGE BADGE */}
@@ -1499,6 +1711,11 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     isDefault: true,
     latitude: 0,
     longitude: 0,
+    flatNo: '',
+    houseNo: '',
+    floor: '',
+    streetName: '',
+    apartmentName: '',
   });
 
   const detectCurrentLocation = () => {
@@ -1587,6 +1804,11 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
       const updatedAddresses = [...existingAddresses, {
         ...formData,
         address: formData.addressLine1 + (formData.addressLine2 ? ', ' + formData.addressLine2 : ''),
+        flatNo: formData.flatNo || undefined,
+        houseNo: formData.houseNo || undefined,
+        floor: formData.floor || undefined,
+        streetName: formData.streetName || undefined,
+        apartmentName: formData.apartmentName || undefined,
       }];
       
       await apiClient.post('/customer/addresses', {
@@ -1684,6 +1906,62 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
               onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
               placeholder="Area, Locality (Optional)"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Optional: Flat, House, Floor, Street, Apartment */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Flat / Unit no.</label>
+              <input
+                type="text"
+                value={formData.flatNo}
+                onChange={(e) => setFormData({ ...formData, flatNo: e.target.value })}
+                placeholder="e.g. 401"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">House / Building no.</label>
+              <input
+                type="text"
+                value={formData.houseNo}
+                onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
+                placeholder="e.g. 12"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Floor</label>
+              <input
+                type="text"
+                value={formData.floor}
+                onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+                placeholder="e.g. 4th"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Street name</label>
+              <input
+                type="text"
+                value={formData.streetName}
+                onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
+                placeholder="Street name"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Apartment / Building / Society name</label>
+            <input
+              type="text"
+              value={formData.apartmentName}
+              onChange={(e) => setFormData({ ...formData, apartmentName: e.target.value })}
+              placeholder="e.g. Green Valley Apartments"
+              className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
             />
           </div>
 

@@ -92,6 +92,7 @@ export function VendorServiceConfigurationScreen({
   const [savingEdit, setSavingEdit] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState<Service | null>(null); // ✅ NEW: Delete confirmation
   const [staffCount, setStaffCount] = useState<number>(0); // ✅ NEW: Track staff count for solo vendor check
+  const [dirtyServiceIds, setDirtyServiceIds] = useState<Set<string>>(new Set()); // ✅ FIX: Track which services actually changed (dirty tracking)
   
   // Custom service form
   const [customServiceForm, setCustomServiceForm] = useState({
@@ -312,6 +313,13 @@ export function VendorServiceConfigurationScreen({
       
       // Vendor's added services FIRST (so they always show for publishing, regardless of catalog role)
       const vendorAddedFromCatalog: any[] = [];
+      // ✅ FIX: Track service_names that the vendor already has (to filter out duplicate catalog entries)
+      const vendorServiceNames = new Set<string>();
+      vendorServices.forEach((s: any) => {
+        const sName = (s.service_name || s.serviceName || s.name || '').toLowerCase().trim();
+        if (sName) vendorServiceNames.add(sName);
+      });
+      
       catalogServices.forEach((catalogSvc: any) => {
         // ✅ CRITICAL: Match by catalog.id (UUID), not by serviceId (TEXT)
         // catalogSvc.catalogId is service_catalog.id (UUID) - this matches vendor_services.service_id (UUID)
@@ -327,7 +335,17 @@ export function VendorServiceConfigurationScreen({
         .filter((catalogSvc: any) => {
           // ✅ CRITICAL: Check by catalog.id (UUID), not by serviceId (TEXT)
           const catalogUuid = catalogSvc.catalogId || catalogSvc.id;
-          return catalogUuid ? !vendorServiceIds.has(String(catalogUuid)) : true;
+          if (catalogUuid && vendorServiceIds.has(String(catalogUuid))) return false;
+          
+          // ✅ FIX: ALSO filter out catalog entries whose service_name already exists in vendor's services
+          // This prevents duplicate "Home Visit Consultation" entries that cause ID collisions when toggled
+          const catalogName = (catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || '').toLowerCase().trim();
+          if (catalogName && vendorServiceNames.has(catalogName)) {
+            console.log(`🚫 Filtering out catalog entry "${catalogName}" - vendor already has a service with this name`);
+            return false;
+          }
+          
+          return true;
         })
         .map((catalogSvc: any) => {
           const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
@@ -359,10 +377,22 @@ export function VendorServiceConfigurationScreen({
         }));
       
       // ✅ FIX: Vendor's added services first, then catalog not yet added
-      const allServices = [...vendorAddedFromCatalog, ...customVendorServices, ...catalogNotAdded];
+      // ✅ FIX: Deduplicate by ID to prevent React key conflicts
+      const mergedServices = [...vendorAddedFromCatalog, ...customVendorServices, ...catalogNotAdded];
+      const seenIds = new Set<string>();
+      const allServices = mergedServices.filter(s => {
+        if (seenIds.has(s.id)) {
+          console.warn(`⚠️ Duplicate service ID detected: ${s.id} (${s.name || s.serviceName}). Removing duplicate.`);
+          return false;
+        }
+        seenIds.add(s.id);
+        return true;
+      });
       console.log(`✅ Total services: ${allServices.length} (${vendorAddedFromCatalog.length} added, ${customVendorServices.length} custom, ${catalogNotAdded.length} available to add)`);
       
       setServices(allServices);
+      setDirtyServiceIds(new Set()); // ✅ FIX: Clear dirty tracking after fresh load
+      setHasChanges(false);
     } catch (error) {
       console.error('❌ Error loading services:', error);
       toast.error('Error loading services');
@@ -378,14 +408,14 @@ export function VendorServiceConfigurationScreen({
     
     const newEnabled = !service.isEnabled;
     
-    // Optimistically update UI
-    setServices(services.map(s => 
+    // ✅ FIX: Use functional state update to avoid stale closure issues
+    setServices(prev => prev.map(s => 
       s.id === serviceId ? { ...s, isEnabled: newEnabled } : s
     ));
     
     try {
       if (newEnabled && service.isPlatformService && !service.isVendorEnabled) {
-        // ✅ FIX: First time enabling a catalog service - ADD to vendor offerings
+        // ✅ First time enabling a catalog service - ADD to vendor offerings
         console.log(`➕ Adding catalog service ${service.serviceName} to vendor offerings...`);
         const result = await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
           catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
@@ -397,15 +427,10 @@ export function VendorServiceConfigurationScreen({
         
         if (result?.success) {
           toast.success(`${service.serviceName} added to your offerings!`);
-          // Update the service with the new vendor service ID
-          setServices(services.map(s => 
-            s.id === serviceId ? { 
-              ...s, 
-              isEnabled: true, 
-              isVendorEnabled: true,
-              id: result.vendorServiceId || result.id || s.id 
-            } : s
-          ));
+          // ✅ FIX: Reload from scratch to prevent duplicate ID issues
+          // The add-from-catalog endpoint may return an existing vendor_services.id
+          // that already belongs to another service in our list (matched by service_name)
+          await loadServices();
         } else {
           throw new Error(result?.error || 'Failed to add service');
         }
@@ -417,7 +442,10 @@ export function VendorServiceConfigurationScreen({
           duration: service.customDuration ?? service.duration ?? 30,
         });
         toast.success(`${service.serviceName} disabled`);
-        await loadServices(); // Reload to ensure state is synced
+        // ✅ FIX: Use functional state update (no stale closure)
+        setServices(prev => prev.map(s => 
+          s.id === serviceId ? { ...s, isEnabled: false } : s
+        ));
       } else if (newEnabled && service.isVendorEnabled) {
         // Re-enabling a previously disabled vendor service
         console.log(`✅ Re-enabling vendor service ${service.serviceName}...`);
@@ -426,7 +454,10 @@ export function VendorServiceConfigurationScreen({
           duration: service.customDuration ?? service.duration ?? 30,
         });
         toast.success(`${service.serviceName} enabled`);
-        await loadServices(); // Reload to ensure state is synced
+        // ✅ FIX: Use functional state update (no stale closure)
+        setServices(prev => prev.map(s => 
+          s.id === serviceId ? { ...s, isEnabled: true } : s
+        ));
       } else if (newEnabled && !service.isVendorEnabled && service.isPlatformService) {
         // Enabling a catalog service that hasn't been added yet - add it
         console.log(`➕ Adding and enabling catalog service ${service.serviceName}...`);
@@ -440,7 +471,8 @@ export function VendorServiceConfigurationScreen({
         
         if (result?.success) {
           toast.success(`${service.serviceName} added and enabled!`);
-          await loadServices(); // Reload to get the new vendor service ID
+          // ✅ FIX: Reload from scratch to prevent duplicate ID issues
+          await loadServices();
         } else {
           throw new Error(result?.error || 'Failed to add service');
         }
@@ -450,8 +482,8 @@ export function VendorServiceConfigurationScreen({
     } catch (error: any) {
       console.error('Error toggling service:', error);
       toast.error(error.message || 'Failed to update service');
-      // Revert optimistic update on error
-      setServices(services.map(s => 
+      // ✅ FIX: Use functional state update for revert (no stale closure)
+      setServices(prev => prev.map(s => 
         s.id === serviceId ? { ...s, isEnabled: !newEnabled } : s
       ));
     }
@@ -468,9 +500,10 @@ export function VendorServiceConfigurationScreen({
       return;
     }
     
-    setServices(services.map(s => 
+    setServices(prev => prev.map(s => 
       s.id === serviceId ? { ...s, customPrice: price } : s
     ));
+    setDirtyServiceIds(prev => new Set(prev).add(serviceId)); // ✅ FIX: Track dirty
     setHasChanges(true);
   };
 
@@ -485,16 +518,18 @@ export function VendorServiceConfigurationScreen({
       return;
     }
     
-    setServices(services.map(s => 
+    setServices(prev => prev.map(s => 
       s.id === serviceId ? { ...s, customDuration: duration } : s
     ));
+    setDirtyServiceIds(prev => new Set(prev).add(serviceId)); // ✅ FIX: Track dirty
     setHasChanges(true);
   };
 
   const updateServiceDescription = (serviceId: string, description: string) => {
-    setServices(services.map(s => 
+    setServices(prev => prev.map(s => 
       s.id === serviceId ? { ...s, customDescription: description } : s
     ));
+    setDirtyServiceIds(prev => new Set(prev).add(serviceId)); // ✅ FIX: Track dirty
     setHasChanges(true);
   };
 
@@ -510,13 +545,21 @@ export function VendorServiceConfigurationScreen({
 
   // ✅ NEW: Bulk selection functions
   const enableAllServices = () => {
-    setServices(services.map(s => ({ ...s, isEnabled: true })));
+    setServices(prev => {
+      const allIds = prev.map(s => s.id);
+      setDirtyServiceIds(old => { const n = new Set(old); allIds.forEach(id => n.add(id)); return n; });
+      return prev.map(s => ({ ...s, isEnabled: true }));
+    });
     setHasChanges(true);
     toast.success('All services enabled');
   };
 
   const disableAllServices = () => {
-    setServices(services.map(s => ({ ...s, isEnabled: false })));
+    setServices(prev => {
+      const allIds = prev.map(s => s.id);
+      setDirtyServiceIds(old => { const n = new Set(old); allIds.forEach(id => n.add(id)); return n; });
+      return prev.map(s => ({ ...s, isEnabled: false }));
+    });
     setHasChanges(true);
     toast.success('All services disabled');
   };
@@ -604,17 +647,21 @@ export function VendorServiceConfigurationScreen({
   };
 
   const enableCategory = (category: string) => {
-    setServices(services.map(s => 
-      s.categoryName === category ? { ...s, isEnabled: true } : s
-    ));
+    setServices(prev => {
+      const catIds = prev.filter(s => s.categoryName === category).map(s => s.id);
+      setDirtyServiceIds(old => { const n = new Set(old); catIds.forEach(id => n.add(id)); return n; });
+      return prev.map(s => s.categoryName === category ? { ...s, isEnabled: true } : s);
+    });
     setHasChanges(true);
     toast.success(`All ${category} services enabled`);
   };
 
   const disableCategory = (category: string) => {
-    setServices(services.map(s => 
-      s.categoryName === category ? { ...s, isEnabled: false } : s
-    ));
+    setServices(prev => {
+      const catIds = prev.filter(s => s.categoryName === category).map(s => s.id);
+      setDirtyServiceIds(old => { const n = new Set(old); catIds.forEach(id => n.add(id)); return n; });
+      return prev.map(s => s.categoryName === category ? { ...s, isEnabled: false } : s);
+    });
     setHasChanges(true);
     toast.success(`All ${category} services disabled`);
   };
@@ -642,7 +689,7 @@ export function VendorServiceConfigurationScreen({
 
       if (data && data.success) {
         toast.success('Service deleted successfully');
-        setServices(services.filter(s => s.id !== serviceId));
+        setServices(prev => prev.filter(s => s.id !== serviceId));
         setShowDeleteDialog(null);
         setHasChanges(false);
         // Reload services to ensure UI is in sync
@@ -707,56 +754,55 @@ export function VendorServiceConfigurationScreen({
     }
   };
 
+  // ✅ Helper: Validate a service has a proper vendor_services row and ID
+  const isValidVendorService = (s: Service): boolean => {
+    if (s.isVendorEnabled !== true) return false;
+    if (!s.id) return false;
+    if (s.id.startsWith('temp_')) return false;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id);
+    if (!isUUID) return false;
+    if (s.id === s.serviceId || s.id === s.catalogServiceId) return false;
+    return true;
+  };
+
   const saveConfiguration = async () => {
     try {
       setSaving(true);
-      console.log('💾 Saving service configuration...');
       
-      // ✅ FIX: Only save services that have a vendor_services row (vendor-added or custom)
-      // Must have isVendorEnabled === true AND a valid vendor_services.id
-      const servicesWithVendorRow = services.filter(s => {
-        // Must be explicitly enabled in vendor_services
-        if (s.isVendorEnabled !== true) return false;
-        // Must have a vendor_services.id (not just catalog ID)
-        // When isVendorEnabled is true, s.id should be vendor_services.id
-        if (!s.id) return false;
-        // ✅ CRITICAL: If id starts with 'temp_', it's not a vendor_services.id
-        if (s.id.startsWith('temp_')) {
-          console.warn(`⚠️ Service ${s.name || s.serviceName} has temp ID. Skipping.`);
-          return false;
-        }
-        // ✅ CRITICAL: Validate it's a UUID format (vendor_services.id is always UUID)
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id);
-        if (!isUUID) {
-          console.warn(`⚠️ Service ${s.name || s.serviceName} has invalid ID format: ${s.id}. Skipping.`);
-          return false;
-        }
-        // ✅ CRITICAL: If id equals serviceId or catalogServiceId, it's likely a catalog ID, not vendor_services.id
-        if (s.id === s.serviceId || s.id === s.catalogServiceId || s.id === s.catalogId) {
-          console.warn(`⚠️ Service ${s.name || s.serviceName} has catalog ID instead of vendor_services.id. Skipping.`);
-          return false;
-        }
+      // ✅ FIX: Only save services that have ACTUALLY CHANGED (dirty tracking)
+      // This prevents saving ALL 72+ services when only 1 changed
+      const dirtyIds = dirtyServiceIds;
+      
+      if (dirtyIds.size === 0) {
+        console.log('💾 No dirty services to save - skipping save');
+        setHasChanges(false);
         return true;
-      });
-      
-      if (servicesWithVendorRow.length === 0) {
-        toast.info('No services to save. Please add services from catalog first.');
-        return false;
       }
       
-      const servicesToSave = servicesWithVendorRow.map(s => ({
-        vendorServiceId: s.id, // ✅ FIX: This is vendor_services.id when isVendorEnabled is true
-        catalogServiceId: s.serviceId || s.catalogServiceId, // Catalog ID for reference
-        serviceName: s.name || s.serviceName || 'Unnamed Service',
-        isEnabled: s.isEnabled,
-        customPrice: s.customPrice,
-        customDuration: s.customDuration,
-        customDescription: s.customDescription,
-        price: s.price || s.basePrice || 0, // Include base price for validation fallback
-        isNewService: s.isCustomService || false
-      }));
+      console.log(`💾 Saving ${dirtyIds.size} dirty service(s) (out of ${services.length} total)...`);
+      
+      // ✅ FIX: Only save services that actually changed AND have a valid vendor_services row
+      const servicesToSave = services
+        .filter(s => dirtyIds.has(s.id) && isValidVendorService(s))
+        .map(s => ({
+          vendorServiceId: s.id,
+          catalogServiceId: s.serviceId || s.catalogServiceId,
+          serviceName: s.name || s.serviceName || 'Unnamed Service',
+          isEnabled: s.isEnabled,
+          customPrice: s.customPrice,
+          customDuration: s.customDuration,
+          customDescription: s.customDescription,
+          price: s.price || s.basePrice || 0,
+        }));
 
-      // ✅ NEW: Validate enabled services
+      if (servicesToSave.length === 0) {
+        console.log('💾 No valid dirty services to save');
+        setHasChanges(false);
+        setDirtyServiceIds(new Set());
+        return true;
+      }
+
+      // ✅ Validate enabled services
       const invalidServices = servicesToSave.filter(s => {
         if (!s.isEnabled) return false;
         const price = s.customPrice ?? s.price ?? 0;
@@ -769,7 +815,7 @@ export function VendorServiceConfigurationScreen({
         return false;
       }
 
-      // ✅ Run PUTs sequentially with retry on 503 so save works seamlessly (no Lambda/DB overload)
+      // ✅ FIX: Save ONLY dirty services (not ALL services) - each gets one PUT call
       for (let i = 0; i < servicesToSave.length; i++) {
         const service = servicesToSave[i];
         const price = service.customPrice ?? service.price ?? 0;
@@ -777,33 +823,26 @@ export function VendorServiceConfigurationScreen({
           console.error(`❌ CRITICAL: vendorServiceId matches catalogServiceId! Skipping ${service.serviceName}`);
           continue;
         }
-        // ✅ duration_minutes is NOT NULL: always send a valid number (backend fallback is 30)
-        const durationMins = Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30));
-        console.log(`💾 Saving service: vendorServiceId=${service.vendorServiceId}, serviceName=${service.serviceName}`);
+        const durationMins = Math.max(5, Math.min(1440, Number(service.customDuration ?? 30) || 30));
+        console.log(`💾 Saving dirty service: vendorServiceId=${service.vendorServiceId}, serviceName=${service.serviceName}`);
         await putWithRetry(() =>
           apiClient.put(`/vendor/${vendorId}/services/${service.vendorServiceId}`, {
             is_enabled: service.isEnabled,
             price,
             customPrice: service.customPrice,
             duration: durationMins,
-            customDuration: service.customDuration ?? service.duration ?? durationMins,
+            customDuration: service.customDuration ?? durationMins,
             description: service.customDescription,
           })
         );
         if (i < servicesToSave.length - 1) await delayMs(250);
       }
-      const data: { success: boolean; error?: string } = { success: true };
 
-      if (data && data.success) {
-        console.log('✅ Configuration saved:', data);
-        toast.success('Services saved successfully');
-        setHasChanges(false);
-        return true;
-      } else {
-        console.error('❌ Failed to save configuration:', data);
-        toast.error(data?.error || 'Failed to save configuration');
-        return false;
-      }
+      console.log(`✅ Saved ${servicesToSave.length} dirty service(s)`);
+      toast.success(`${servicesToSave.length} service(s) saved successfully`);
+      setHasChanges(false);
+      setDirtyServiceIds(new Set()); // ✅ Clear dirty tracking after save
+      return true;
     } catch (error) {
       console.error('❌ Error saving configuration:', error);
       toast.error('Error saving configuration');
@@ -817,33 +856,59 @@ export function VendorServiceConfigurationScreen({
     try {
       setIsPublishing(true);
       
-      // First save the configuration
+      // First save any pending dirty changes
       const saved = await saveConfiguration();
       if (!saved) return;
       
       console.log('🚀 Publishing services...');
       
-      const toPublish = services.filter(
-        s => s.isEnabled && s.isVendorEnabled === true && (s.vendorServiceId || s.id) && s.id !== s.serviceId && s.id !== s.catalogServiceId
-      );
-      for (let i = 0; i < toPublish.length; i++) {
-        const service = toPublish[i];
-        const vendorServiceId = service.vendorServiceId ?? service.id;
-        await putWithRetry(() =>
-          apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'published' })
-        );
-        if (i < toPublish.length - 1) await delayMs(250);
+      // ✅ FIX: Only publish services that are ENABLED, have a vendor row, and are NOT already published
+      const toPublish = services.filter(s => {
+        if (!s.isEnabled) return false;
+        if (s.isVendorEnabled !== true) return false;
+        if (!isValidVendorService(s)) return false;
+        // ✅ KEY FIX: Skip services already published - this prevents 144 API calls
+        if (s.publishStatus === 'published' || s.publish_status === 'published') return false;
+        return true;
+      });
+      
+      if (toPublish.length === 0) {
+        console.log('🚀 All enabled services are already published - nothing to do');
+        toast.info('All enabled services are already published');
+        return;
       }
-      const data: { success: boolean; status?: string; publishedCount?: number; error?: string } = { success: true };
+      
+      console.log(`🚀 Publishing ${toPublish.length} service(s) (${services.length - toPublish.length} already published, skipped)`);
+      
+      // ✅ FIX: Use bulk-publish endpoint if available, otherwise fall back to individual PUTs
+      try {
+        const serviceIds = toPublish.map(s => s.vendorServiceId ?? s.id);
+        console.log(`🚀 Bulk-publishing ${serviceIds.length} service(s):`, serviceIds);
+        const bulkResult = await apiClient.post(`/vendor/${vendorId}/services/bulk-publish`, {
+          serviceIds,
+          publishStatus: 'published',
+        }) as any;
+        if (bulkResult?.success) {
+          console.log(`✅ Bulk published ${toPublish.length} service(s)`);
+        } else {
+          throw new Error('bulk-publish returned success=false');
+        }
+      } catch (bulkError: any) {
+        // ✅ Fallback: individual PUTs (only for the unpublished ones!)
+        console.warn('⚠️ Bulk-publish not available or failed, falling back to individual PUTs:', bulkError?.message);
+        for (let i = 0; i < toPublish.length; i++) {
+          const service = toPublish[i];
+          const vendorServiceId = service.vendorServiceId ?? service.id;
+          await putWithRetry(() =>
+            apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'published' })
+          );
+          if (i < toPublish.length - 1) await delayMs(250);
+        }
+      }
 
-      if (data && data.success) {
-        console.log('✅ Services published:', data);
-        toast.success('Services published successfully!');
-        await loadServices();
-      } else {
-        console.error('❌ Failed to publish:', data);
-        toast.error(data?.error || 'Failed to publish services');
-      }
+      console.log(`✅ ${toPublish.length} service(s) published`);
+      toast.success(`${toPublish.length} service(s) published successfully!`);
+      await loadServices(); // Refresh to get updated publish_status
     } catch (error) {
       console.error('❌ Error publishing services:', error);
       toast.error('Error publishing services');
