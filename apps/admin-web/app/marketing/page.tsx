@@ -424,10 +424,31 @@ export default function MarketingPromotionsTab() {
 			const data = await apiClient.get("/marketing/promotions");
 			if ((data as any).success) {
 				// Ensure promotions is an array
-				const promotions = Array.isArray((data as any).promotions) 
+				const rawPromotions = Array.isArray((data as any).promotions) 
 					? (data as any).promotions 
 					: [];
-				setPromotions(promotions);
+				
+				// Map API response fields to frontend expected fields
+				const mappedPromotions = rawPromotions.map((promo: any) => ({
+					...promo,
+					// Map name -> title (for display)
+					title: promo.name || promo.title || '',
+					// Map subtitle/description
+					subtitle: promo.subtitle || promo.description || '',
+					// Map discount_type -> discountType
+					discountType: promo.discount_type || promo.discountType || 'percentage',
+					// Map discount_value -> discountValue
+					discountValue: promo.discount_value !== undefined ? promo.discount_value : (promo.discountValue !== undefined ? promo.discountValue : 0),
+					// Map is_active -> isActive
+					isActive: promo.is_active !== undefined ? promo.is_active : (promo.isActive !== undefined ? promo.isActive : true),
+					// Map serviceCategory (if applicable_services exists)
+					serviceCategory: promo.serviceCategory || promo.target_category || 'all',
+					// Map validFrom/validUntil
+					validFrom: promo.validFrom || promo.start_date || '',
+					validUntil: promo.validUntil || promo.end_date || '',
+				}));
+				
+				setPromotions(mappedPromotions);
 			}
 		} catch (error) {
 			console.error("Error loading promotions:", error);

@@ -171399,6 +171399,8 @@ function registerServiceCatalogEndpoints(app3) {
       const vendorId = c.req.query("vendorId");
       const groupBy = c.req.query("groupBy");
       const serviceStyle = c.req.query("serviceStyle");
+      const categoryId = c.req.query("categoryId");
+      const search = c.req.query("search");
       let role = null;
       let roleConfig = {};
       if (roleId) {
@@ -171500,6 +171502,25 @@ function registerServiceCatalogEndpoints(app3) {
         params.push(serviceStyle);
         paramIndex++;
         console.log(`[Admin Service Catalog] Filtering by service style: ${serviceStyle}`);
+      }
+      if (categoryId) {
+        catalogQuery += ` AND (category_id = $${paramIndex}::uuid OR category_id::text = $${paramIndex})`;
+        params.push(categoryId);
+        paramIndex++;
+        console.log(`[Admin Service Catalog] Filtering by category ID: ${categoryId}`);
+      }
+      if (search && search.trim()) {
+        const searchTerm = `%${search.trim().toLowerCase()}%`;
+        catalogQuery += ` AND (
+          LOWER(service_name) LIKE $${paramIndex} OR 
+          LOWER(display_name) LIKE $${paramIndex} OR 
+          LOWER(description) LIKE $${paramIndex} OR 
+          LOWER(category_name) LIKE $${paramIndex} OR 
+          LOWER(sub_category_name) LIKE $${paramIndex}
+        )`;
+        params.push(searchTerm);
+        paramIndex++;
+        console.log(`[Admin Service Catalog] Filtering by search term: ${search}`);
       }
       catalogQuery += ` ORDER BY category_name ASC, sub_category_name ASC NULLS LAST, display_order ASC, service_name ASC`;
       const services = await query(catalogQuery, params);
@@ -178504,7 +178525,7 @@ function registerPromotionEndpoints(app3) {
       let queryStr = "SELECT * FROM promotions WHERE 1=1";
       const params = [];
       let paramIndex = 1;
-      if (active === "true" || active === void 0) {
+      if (active === "true") {
         queryStr += ` AND is_active = true AND (end_date IS NULL OR end_date >= NOW())`;
       } else if (active === "false") {
         queryStr += ` AND (is_active = false OR end_date < NOW())`;
@@ -178540,14 +178561,24 @@ function registerPromotionEndpoints(app3) {
       const body = await c.req.json();
       const {
         name,
+        title,
+        // Frontend sends 'title' instead of 'name'
         code: codeInput,
         description,
+        subtitle,
+        // Frontend may send 'subtitle' as description
         promotionType,
         type,
         discountType,
         discountValue,
+        discount_type,
+        // Backend format
+        discount_value,
+        // Backend format
         minOrderAmount,
+        min_order_amount,
         maxDiscountAmount,
+        max_discount_amount,
         startDate,
         endDate,
         validFrom,
@@ -178561,34 +178592,61 @@ function registerPromotionEndpoints(app3) {
         is_spotlight = false,
         published = false
       } = body;
-      if (!name || !promotionType || !discountType || !discountValue) {
-        return c.json({ error: "name, promotionType, discountType, and discountValue are required" }, 400);
-      }
+      const finalName = name || title || "";
+      const finalDescription = description || subtitle || "";
+      const finalDiscountType = discountType || discount_type || "percentage";
+      const finalDiscountValue = discountValue !== void 0 ? discountValue : discount_value !== void 0 ? discount_value : 0;
       const finalPromotionType = promotionType || type || "flash_sale";
+      if (!finalName || !finalDiscountType || finalDiscountValue === void 0) {
+        return c.json({
+          error: "name/title, discountType/discount_type, and discountValue/discount_value are required",
+          received: {
+            name: finalName || null,
+            title: title || null,
+            discountType: finalDiscountType || null,
+            discountValue: finalDiscountValue !== void 0 ? finalDiscountValue : null,
+            promotionType: finalPromotionType || null
+          }
+        }, 400);
+      }
       const finalStartDate = startDate || validFrom || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const finalEndDate = endDate || validUntil || null;
       const finalIsActive = active !== void 0 ? active : isActive !== false;
       const finalApplicableServices = applicable_services || applicableServices || null;
-      const promotion = await insert("promotions", {
-        name,
-        code: codeInput ? String(codeInput).toUpperCase() : null,
-        description: description || "",
+      const promotionData = {
+        name: finalName,
+        description: finalDescription,
         promotion_type: finalPromotionType,
-        discount_type: discountType,
-        discount_value: parseFloat(discountValue),
-        min_order_amount: minOrderAmount ? parseFloat(minOrderAmount) : null,
-        max_discount_amount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null,
+        discount_type: finalDiscountType,
+        discount_value: parseFloat(String(finalDiscountValue)),
+        min_order_amount: minOrderAmount || min_order_amount ? parseFloat(String(minOrderAmount || min_order_amount)) : null,
+        max_discount_amount: maxDiscountAmount || max_discount_amount ? parseFloat(String(maxDiscountAmount || max_discount_amount)) : null,
         start_date: new Date(finalStartDate).toISOString().split("T")[0],
         end_date: finalEndDate ? new Date(finalEndDate).toISOString().split("T")[0] : null,
         is_active: finalIsActive,
         applicable_services: finalApplicableServices ? Array.isArray(finalApplicableServices) ? JSON.stringify(finalApplicableServices) : finalApplicableServices : null,
         applicable_roles: applicableRoles || null,
-        priority: parseInt(priority) || 0,
+        priority: parseInt(String(priority)) || 0,
         is_spotlight: is_spotlight === true,
         published: published === true,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      if (codeInput) {
+        promotionData.code = String(codeInput).toUpperCase();
+      }
+      let promotion;
+      try {
+        promotion = await insert("promotions", promotionData);
+      } catch (insertError) {
+        if (insertError.message && insertError.message.includes('column "code"') && promotionData.code) {
+          console.warn("[Promotions] Code column does not exist, retrying without code");
+          delete promotionData.code;
+          promotion = await insert("promotions", promotionData);
+        } else {
+          throw insertError;
+        }
+      }
       return c.json({
         success: true,
         promotion: promotion[0],
@@ -178718,13 +178776,12 @@ function registerPromotionEndpoints(app3) {
         applicable_to,
         is_active = true
       } = body;
-      if (!code || !name || !discount_type || discount_value === void 0) {
-        return c.json({ error: "code, name, discount_type, and discount_value are required" }, 400);
+      if (!name || !discount_type || discount_value === void 0) {
+        return c.json({ error: "name, discount_type, and discount_value are required" }, 400);
       }
-      const promotion = await insert("promotions", {
-        code: code.toUpperCase(),
+      const promotionData = {
         name,
-        description,
+        description: description || "",
         discount_type,
         discount_value,
         min_order_amount: min_order_value,
@@ -178735,7 +178792,22 @@ function registerPromotionEndpoints(app3) {
         max_uses_per_user: usage_limit_per_user,
         applicable_to: applicable_to || "all",
         is_active
-      });
+      };
+      if (code) {
+        promotionData.code = code.toUpperCase();
+      }
+      let promotion;
+      try {
+        promotion = await insert("promotions", promotionData);
+      } catch (insertError) {
+        if (insertError.message && insertError.message.includes('column "code"') && promotionData.code) {
+          console.warn("[Promotions] Code column does not exist, retrying without code");
+          delete promotionData.code;
+          promotion = await insert("promotions", promotionData);
+        } else {
+          throw insertError;
+        }
+      }
       return c.json({
         success: true,
         promotion: promotion[0],
@@ -178814,10 +178886,20 @@ function registerPromotionEndpoints(app3) {
       queryStr += ` ORDER BY created_at DESC`;
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : result.rows || [];
+      const mappedCoupons = rows.map((coupon) => ({
+        ...coupon,
+        type: coupon.discount_type || coupon.type,
+        value: coupon.discount_value || coupon.value,
+        usageLimit: coupon.max_uses || coupon.usage_limit || coupon.usageLimit,
+        usageCount: coupon.uses_count || coupon.current_uses || coupon.usage_count || 0,
+        validUntil: coupon.end_date || coupon.expires_at || coupon.valid_until || coupon.validUntil,
+        validFrom: coupon.start_date || coupon.starts_at || coupon.valid_from || coupon.validFrom,
+        createdAt: coupon.created_at || coupon.createdAt
+      }));
       return c.json({
         success: true,
-        coupons: rows,
-        total: rows.length
+        coupons: mappedCoupons,
+        total: mappedCoupons.length
       });
     } catch (error) {
       console.error("Error fetching coupons:", error);
@@ -178948,23 +179030,52 @@ function registerPromotionEndpoints(app3) {
       const body = await c.req.json();
       const updateData = {};
       if (body.code !== void 0) updateData.code = body.code.toUpperCase();
-      if (body.discount_type !== void 0) updateData.discount_type = body.discount_type;
-      if (body.discount_value !== void 0) updateData.discount_value = body.discount_value;
-      if (body.min_order_value !== void 0) updateData.min_order_amount = body.min_order_value;
-      if (body.max_discount !== void 0) updateData.max_discount_amount = body.max_discount;
-      if (body.valid_from !== void 0) updateData.start_date = new Date(body.valid_from);
-      if (body.valid_until !== void 0) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
-      if (body.usage_limit !== void 0) updateData.max_uses = body.usage_limit;
-      if (body.is_active !== void 0) updateData.is_active = body.is_active;
+      if (body.discount_type !== void 0 || body.type !== void 0) {
+        updateData.discount_type = body.discount_type || body.type;
+      }
+      if (body.discount_value !== void 0 || body.value !== void 0) {
+        updateData.discount_value = body.discount_value !== void 0 ? body.discount_value : body.value;
+      }
+      if (body.min_order_value !== void 0 || body.minOrderAmount !== void 0) {
+        updateData.min_order_amount = body.min_order_value !== void 0 ? body.min_order_value : body.minOrderAmount;
+      }
+      if (body.max_discount !== void 0 || body.maxDiscountAmount !== void 0) {
+        updateData.max_discount_amount = body.max_discount !== void 0 ? body.max_discount : body.maxDiscountAmount;
+      }
+      if (body.valid_from !== void 0 || body.validFrom !== void 0) {
+        updateData.start_date = new Date(body.valid_from || body.validFrom);
+      }
+      if (body.valid_until !== void 0 || body.validUntil !== void 0) {
+        const expiryDate = body.valid_until || body.validUntil;
+        updateData.end_date = expiryDate ? new Date(expiryDate) : null;
+      }
+      if (body.usage_limit !== void 0 || body.usageLimit !== void 0) {
+        const limit = body.usage_limit !== void 0 ? body.usage_limit : body.usageLimit;
+        updateData.max_uses = limit > 0 ? limit : null;
+      }
+      if (body.is_active !== void 0 || body.isActive !== void 0) {
+        updateData.is_active = body.is_active !== void 0 ? body.is_active : body.isActive;
+      }
       await update("coupons", { id }, updateData);
       const updated = await query(
         "SELECT * FROM coupons WHERE id = $1::uuid",
         [id]
       );
       const couponRows = Array.isArray(updated) ? updated : updated.rows || [];
+      const coupon = couponRows[0];
+      const mappedCoupon = {
+        ...coupon,
+        type: coupon.discount_type || coupon.type,
+        value: coupon.discount_value || coupon.value,
+        usageLimit: coupon.max_uses || coupon.usage_limit || coupon.usageLimit,
+        usageCount: coupon.uses_count || coupon.current_uses || coupon.usage_count || 0,
+        validUntil: coupon.end_date || coupon.expires_at || coupon.valid_until || coupon.validUntil,
+        validFrom: coupon.start_date || coupon.starts_at || coupon.valid_from || coupon.validFrom,
+        createdAt: coupon.created_at || coupon.createdAt
+      };
       return c.json({
         success: true,
-        coupon: couponRows[0],
+        coupon: mappedCoupon,
         message: "Coupon updated successfully"
       });
     } catch (error) {
@@ -181252,8 +181363,12 @@ function registerEventEndpoints(app3) {
         return c.json({ error: "title, start_date, and start_time are required" }, 400);
       }
       const venue = typeof location === "string" ? { address: location } : location || {};
+      const finalVendorId = vendor_id || null;
+      if (!finalVendorId) {
+        console.log("[Events] Creating admin event without vendor_id");
+      }
       const event = await insert("events", {
-        vendor_id: vendor_id || null,
+        vendor_id: finalVendorId,
         name: title,
         description: description || null,
         category: category || "other",
@@ -197032,10 +197147,22 @@ function registerAdminAdvancedEndpoints(app3) {
       const stats = await query(`
         SELECT 
           COUNT(*) as total_pets,
-          COUNT(*) FILTER (WHERE species = 'dog') as dog_count,
-          COUNT(*) FILTER (WHERE species = 'cat') as cat_count,
-          COUNT(*) FILTER (WHERE species NOT IN ('dog', 'cat')) as other_count,
-          COALESCE(AVG(age_years + age_months::numeric / 12), 0) as avg_age
+          COUNT(*) FILTER (WHERE LOWER(species) = 'dog' OR LOWER(species) = 'dogs') as dog_count,
+          COUNT(*) FILTER (WHERE LOWER(species) = 'cat' OR LOWER(species) = 'cats') as cat_count,
+          COUNT(*) FILTER (WHERE LOWER(species) NOT IN ('dog', 'cat')) as other_count,
+          COALESCE(
+            AVG(
+              CASE 
+                WHEN date_of_birth IS NOT NULL THEN
+                  EXTRACT(YEAR FROM AGE(CURRENT_DATE, date_of_birth))
+                WHEN medical_history->>'dob' IS NOT NULL THEN
+                  EXTRACT(YEAR FROM AGE(CURRENT_DATE, (medical_history->>'dob')::date))
+                WHEN age_years IS NOT NULL OR age_months IS NOT NULL THEN
+                  COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12
+                ELSE NULL
+              END
+            ), 0
+          ) as avg_age
         FROM pets
       `).catch(() => ({ rows: [{
         total_pets: "0",
@@ -197047,8 +197174,67 @@ function registerAdminAdvancedEndpoints(app3) {
       const topBreeds = await query(`
         SELECT breed, COUNT(*) as count
         FROM pets
-        WHERE breed IS NOT NULL
+        WHERE breed IS NOT NULL AND breed != ''
         GROUP BY breed
+        ORDER BY count DESC
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+      const ageDistribution = await query(`
+        SELECT 
+          CASE 
+            WHEN date_of_birth IS NOT NULL THEN
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE, date_of_birth))
+            WHEN medical_history->>'dob' IS NOT NULL THEN
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE, (medical_history->>'dob')::date))
+            WHEN age_years IS NOT NULL OR age_months IS NOT NULL THEN
+              COALESCE(age_years, 0) + FLOOR(COALESCE(age_months, 0)::numeric / 12)
+            ELSE NULL
+          END as calculated_age
+        FROM pets
+        WHERE date_of_birth IS NOT NULL 
+           OR medical_history->>'dob' IS NOT NULL 
+           OR age_years IS NOT NULL 
+           OR age_months IS NOT NULL
+      `).catch(() => ({ rows: [] }));
+      const ageGroups = {
+        "0-1": 0,
+        "2-5": 0,
+        "6-10": 0,
+        "11-15": 0,
+        "16+": 0
+      };
+      ageDistribution.rows.forEach((row) => {
+        const age = parseFloat(row.calculated_age || "0");
+        if (age <= 1) ageGroups["0-1"]++;
+        else if (age <= 5) ageGroups["2-5"]++;
+        else if (age <= 10) ageGroups["6-10"]++;
+        else if (age <= 15) ageGroups["11-15"]++;
+        else ageGroups["16+"]++;
+      });
+      const ageDistributionArray = Object.entries(ageGroups).map(([ageGroup, count]) => ({
+        ageGroup,
+        count
+      }));
+      const healthTrends = await query(`
+        WITH condition_counts AS (
+          SELECT 
+            UNNEST(ARRAY(
+              SELECT jsonb_array_elements_text(medical_history->'chronicConditions')
+              FROM pets
+              WHERE medical_history->'chronicConditions' IS NOT NULL
+            )) as condition_name
+          UNION ALL
+          SELECT 
+            record_type as condition_name
+          FROM medical_records
+          WHERE record_type IS NOT NULL
+        )
+        SELECT 
+          condition_name as condition,
+          COUNT(*) as count
+        FROM condition_counts
+        WHERE condition_name IS NOT NULL AND condition_name != ''
+        GROUP BY condition_name
         ORDER BY count DESC
         LIMIT 10
       `).catch(() => ({ rows: [] }));
@@ -197062,6 +197248,11 @@ function registerAdminAdvancedEndpoints(app3) {
           avgAge: parseFloat(stats.rows[0]?.avg_age || "0"),
           topBreeds: topBreeds.rows.map((r) => ({
             breed: r.breed,
+            count: parseInt(r.count, 10)
+          })),
+          ageDistribution: ageDistributionArray,
+          healthTrends: healthTrends.rows.map((r) => ({
+            condition: r.condition,
             count: parseInt(r.count, 10)
           }))
         }
@@ -197098,17 +197289,48 @@ function registerAdminAdvancedEndpoints(app3) {
       const params = [];
       let paramIndex = 1;
       if (species && species !== "all") {
-        queryStr += ` AND p.species = $${paramIndex}`;
+        queryStr += ` AND LOWER(p.species) = LOWER($${paramIndex})`;
         params.push(species);
         paramIndex++;
       }
       queryStr += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
       const pets = await query(queryStr, params);
+      const mappedPets = (pets.rows || []).map((pet) => {
+        let calculatedAge = 0;
+        if (pet.date_of_birth) {
+          const birthDate = new Date(pet.date_of_birth);
+          const now = /* @__PURE__ */ new Date();
+          const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
+          calculatedAge = Math.floor(ageInMonths / 12);
+        } else if (pet.medical_history?.dob) {
+          const birthDate = new Date(pet.medical_history.dob);
+          const now = /* @__PURE__ */ new Date();
+          const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
+          calculatedAge = Math.floor(ageInMonths / 12);
+        } else if (pet.age_years || pet.age_months) {
+          calculatedAge = (pet.age_years || 0) + Math.floor((pet.age_months || 0) / 12);
+        }
+        const healthConditions = pet.medical_history?.chronicConditions || pet.medical_history?.healthConditions || [];
+        return {
+          id: pet.id,
+          name: pet.name || "",
+          species: pet.species || "",
+          breed: pet.breed || "",
+          age: calculatedAge,
+          weight: pet.weight_kg || 0,
+          healthConditions: Array.isArray(healthConditions) ? healthConditions : [],
+          vaccinations: pet.medical_history?.vaccinations || pet.vaccination_records || [],
+          owner: pet.owner_name || "",
+          ownerId: pet.customer_id || "",
+          lastCheckup: pet.medical_history?.lastCheckup || null,
+          services: []
+        };
+      });
       return c.json({
         success: true,
-        pets: pets.rows || [],
-        total: pets.rows?.length || 0
+        pets: mappedPets,
+        total: mappedPets.length
       });
     } catch (error) {
       console.error("Error fetching pets:", error);
@@ -197164,6 +197386,163 @@ function registerAdminAdvancedEndpoints(app3) {
       return c.json({ success: true, insights: [] });
     }
   });
+  app3.get("/admin/pets/vaccination-coverage", async (c) => {
+    try {
+      const totalPets = await query(`
+        SELECT COUNT(*) as total FROM pets
+      `).catch(() => ({ rows: [{ total: "0" }] }));
+      const totalPetsCount = parseInt(totalPets.rows[0]?.total || "0", 10);
+      if (totalPetsCount === 0) {
+        return c.json({
+          success: true,
+          coverage: {
+            rabies: 0,
+            distemper: 0,
+            parvovirus: 0
+          }
+        });
+      }
+      const vaccinationData = await query(`
+        WITH vaccination_flattened AS (
+          SELECT 
+            p.id,
+            UNNEST(ARRAY(
+              SELECT jsonb_array_elements_text(medical_history->'vaccinations')
+              FROM pets
+              WHERE medical_history->'vaccinations' IS NOT NULL
+            )) as vaccination_name
+          FROM pets p
+          WHERE p.medical_history->'vaccinations' IS NOT NULL
+          UNION ALL
+          SELECT 
+            p.id,
+            v->>'name' as vaccination_name
+          FROM pets p,
+          LATERAL jsonb_array_elements(p.vaccination_records) v
+          WHERE p.vaccination_records IS NOT NULL
+        )
+        SELECT 
+          LOWER(vaccination_name) as vaccine_type,
+          COUNT(DISTINCT id) as vaccinated_count
+        FROM vaccination_flattened
+        WHERE vaccination_name IS NOT NULL
+        GROUP BY LOWER(vaccination_name)
+      `).catch(() => ({ rows: [] }));
+      const coverage = {
+        rabies: 0,
+        distemper: 0,
+        parvovirus: 0
+      };
+      vaccinationData.rows.forEach((row) => {
+        const vaccineType = (row.vaccine_type || "").toLowerCase();
+        const vaccinatedCount = parseInt(row.vaccinated_count || "0", 10);
+        const percentage = totalPetsCount > 0 ? vaccinatedCount / totalPetsCount * 100 : 0;
+        if (vaccineType.includes("rabies")) {
+          coverage.rabies = Math.round(percentage);
+        } else if (vaccineType.includes("distemper")) {
+          coverage.distemper = Math.round(percentage);
+        } else if (vaccineType.includes("parvo")) {
+          coverage.parvovirus = Math.round(percentage);
+        }
+      });
+      return c.json({
+        success: true,
+        coverage
+      });
+    } catch (error) {
+      console.error("Error fetching vaccination coverage:", error);
+      return c.json({
+        success: true,
+        coverage: {
+          rabies: 0,
+          distemper: 0,
+          parvovirus: 0
+        }
+      });
+    }
+  });
+  app3.get("/admin/pets/health-recommendations", async (c) => {
+    try {
+      const now = /* @__PURE__ */ new Date();
+      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1e3);
+      const vaccinationReminders = await query(`
+        WITH vaccination_due AS (
+          SELECT 
+            p.id,
+            v->>'nextDueDate' as next_due_date,
+            v->>'name' as vaccine_name
+          FROM pets p,
+          LATERAL jsonb_array_elements(COALESCE(p.vaccination_records, '[]'::jsonb)) v
+          WHERE p.vaccination_records IS NOT NULL
+            AND (v->>'nextDueDate')::date BETWEEN CURRENT_DATE AND $1::date
+          UNION ALL
+          SELECT 
+            p.id,
+            v->>'nextDueDate' as next_due_date,
+            v->>'name' as vaccine_name
+          FROM pets p,
+          LATERAL jsonb_array_elements(COALESCE(p.medical_history->'vaccinations', '[]'::jsonb)) v
+          WHERE p.medical_history->'vaccinations' IS NOT NULL
+            AND (v->>'nextDueDate')::date BETWEEN CURRENT_DATE AND $1::date
+        )
+        SELECT COUNT(DISTINCT id) as count
+        FROM vaccination_due
+      `, [thirtyDaysFromNow.toISOString().split("T")[0]]).catch(() => ({ rows: [{ count: "0" }] }));
+      const checkupReminders = await query(`
+        SELECT COUNT(*) as count
+        FROM pets p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM medical_records mr
+          WHERE mr.pet_id = p.id
+            AND mr.record_type = 'checkup'
+            AND mr.created_at > CURRENT_DATE - INTERVAL '6 months'
+        )
+      `).catch(() => ({ rows: [{ count: "0" }] }));
+      const overweightPets = await query(`
+        WITH species_avg_weight AS (
+          SELECT 
+            species,
+            AVG(weight_kg) as avg_weight
+          FROM pets
+          WHERE weight_kg IS NOT NULL
+          GROUP BY species
+        )
+        SELECT COUNT(*) as count
+        FROM pets p
+        JOIN species_avg_weight s ON p.species = s.species
+        WHERE p.weight_kg > s.avg_weight * 1.2
+      `).catch(() => ({ rows: [{ count: "0" }] }));
+      return c.json({
+        success: true,
+        recommendations: [
+          {
+            type: "vaccination",
+            title: "Vaccination Reminder",
+            message: `${parseInt(vaccinationReminders.rows[0]?.count || "0", 10)} pets due for vaccination this month`,
+            priority: "high"
+          },
+          {
+            type: "checkup",
+            title: "Wellness Checkup",
+            message: `${parseInt(checkupReminders.rows[0]?.count || "0", 10)} pets haven't had checkup in 6+ months`,
+            priority: "medium"
+          },
+          {
+            type: "nutrition",
+            title: "Nutrition Consultation",
+            message: `Recommend for overweight pets (${parseInt(overweightPets.rows[0]?.count || "0", 10)} identified)`,
+            priority: "low"
+          }
+        ]
+      });
+    } catch (error) {
+      console.error("Error fetching health recommendations:", error);
+      return c.json({
+        success: true,
+        recommendations: []
+      });
+    }
+  });
   app3.get("/admin/profile/:adminId", async (c) => {
     const handler2 = new GetAdminProfileHandler();
     const event = createApiGatewayEvent19(c.req);
@@ -197197,35 +197576,114 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/catalog/categories", async (c) => {
     try {
-      const categories = await query(`
-        SELECT 
-          id::text as id,
-          COALESCE(category_id::text, '') as category_id,
-          name::text as name,
-          COALESCE(description::text, '') as description,
-          COALESCE(icon::text, '') as icon,
-          COALESCE(icon_color::text, 'text-gray-500') as icon_color,
-          COALESCE(display_order::integer, 0) as display_order,
-          COALESCE(is_active::boolean, true) as is_active,
-          COALESCE(created_at::text, '') as created_at,
-          COALESCE(updated_at::text, '') as updated_at
-        FROM service_categories
-        WHERE is_active = true OR is_active IS NULL
-        ORDER BY display_order ASC NULLS LAST, name ASC
-        LIMIT 1000
-      `);
-      const safeCategories = (categories.rows || []).map((cat) => ({
-        id: String(cat.id || ""),
-        category_id: String(cat.category_id || ""),
-        name: String(cat.name || ""),
-        description: String(cat.description || ""),
-        icon: String(cat.icon || ""),
-        icon_color: String(cat.icon_color || "text-gray-500"),
-        display_order: parseInt(cat.display_order) || 0,
-        is_active: cat.is_active !== false,
-        created_at: String(cat.created_at || ""),
-        updated_at: String(cat.updated_at || "")
-      }));
+      const type = c.req.query("type") || "service";
+      const tableName = type === "ecommerce" ? "ecommerce_categories" : "service_categories";
+      let categories;
+      try {
+        if (type === "ecommerce") {
+          categories = await query(`
+            SELECT 
+              id::text as id,
+              name::text as name,
+              COALESCE(description::text, '') as description,
+              COALESCE(display_order::integer, 0) as display_order,
+              COALESCE(is_active::boolean, true) as is_active,
+              COALESCE(created_at::text, '') as created_at
+            FROM ecommerce_categories
+            WHERE is_active = true OR is_active IS NULL
+            ORDER BY display_order ASC NULLS LAST, name ASC
+            LIMIT 1000
+          `);
+          if (categories.rows.length === 0) {
+            console.log("[Categories] ecommerce_categories table is empty, auto-seeding default categories");
+            const defaultCategories = [
+              { name: "Pet Food", description: "Dog food, cat food, and treats", display_order: 1 },
+              { name: "Pet Accessories", description: "Collars, leashes, bowls, and more", display_order: 2 },
+              { name: "Pet Toys", description: "Interactive toys, chew toys, and plush toys", display_order: 3 },
+              { name: "Pet Grooming", description: "Shampoos, brushes, and grooming tools", display_order: 4 },
+              { name: "Pet Health", description: "Supplements, vitamins, and health products", display_order: 5 },
+              { name: "Pet Beds & Furniture", description: "Beds, crates, and pet furniture", display_order: 6 },
+              { name: "Pet Clothing", description: "Jackets, sweaters, and costumes", display_order: 7 },
+              { name: "Pet Travel", description: "Carriers, car seats, and travel accessories", display_order: 8 },
+              { name: "Pet Pharmacy", description: "Medications and prescription items", display_order: 9 },
+              { name: "Pet Training", description: "Training aids, clickers, and pads", display_order: 10 }
+            ];
+            for (const cat of defaultCategories) {
+              try {
+                await query(
+                  `INSERT INTO ecommerce_categories (name, description, display_order, is_active)
+                   VALUES ($1, $2, $3, true)
+                   ON CONFLICT (name) DO NOTHING`,
+                  [cat.name, cat.description, cat.display_order]
+                );
+              } catch (seedError) {
+                console.warn(`[Categories] Error seeding category ${cat.name}:`, seedError.message);
+              }
+            }
+            categories = await query(`
+              SELECT 
+                id::text as id,
+                name::text as name,
+                COALESCE(description::text, '') as description,
+                COALESCE(display_order::integer, 0) as display_order,
+                COALESCE(is_active::boolean, true) as is_active,
+                COALESCE(created_at::text, '') as created_at
+              FROM ecommerce_categories
+              WHERE is_active = true OR is_active IS NULL
+              ORDER BY display_order ASC NULLS LAST, name ASC
+              LIMIT 1000
+            `);
+          }
+        } else {
+          categories = await query(`
+            SELECT 
+              id::text as id,
+              COALESCE(category_id::text, '') as category_id,
+              name::text as name,
+              COALESCE(description::text, '') as description,
+              COALESCE(icon::text, '') as icon,
+              COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+              COALESCE(display_order::integer, 0) as display_order,
+              COALESCE(is_active::boolean, true) as is_active,
+              COALESCE(created_at::text, '') as created_at,
+              COALESCE(updated_at::text, '') as updated_at
+            FROM service_categories
+            WHERE is_active = true OR is_active IS NULL
+            ORDER BY display_order ASC NULLS LAST, name ASC
+            LIMIT 1000
+          `);
+        }
+      } catch (tableError) {
+        if (tableError.message && tableError.message.includes("does not exist")) {
+          console.warn(`[Categories] Table ${tableName} does not exist, returning empty array`);
+          return c.json({
+            success: true,
+            categories: [],
+            total: 0
+          });
+        }
+        throw tableError;
+      }
+      const safeCategories = (categories.rows || []).map((cat) => {
+        const base = {
+          id: String(cat.id || ""),
+          name: String(cat.name || ""),
+          description: String(cat.description || ""),
+          display_order: parseInt(cat.display_order) || 0,
+          is_active: cat.is_active !== false,
+          created_at: String(cat.created_at || "")
+        };
+        if (type === "service") {
+          return {
+            ...base,
+            category_id: String(cat.category_id || ""),
+            icon: String(cat.icon || ""),
+            icon_color: String(cat.icon_color || "text-gray-500"),
+            updated_at: String(cat.updated_at || "")
+          };
+        }
+        return base;
+      });
       return c.json({
         success: true,
         categories: safeCategories,
@@ -197313,13 +197771,30 @@ function registerAdminAdvancedEndpoints(app3) {
         iconColor,
         hasProblemGrid,
         vendorRoles,
-        status
+        status,
+        type
       } = body;
       if (!name) {
         return c.json({ success: false, error: "Category name is required" }, 400);
       }
-      const maxOrder = await query("SELECT COALESCE(MAX(display_order), 0) as max_order FROM service_categories").catch(() => ({ rows: [{ max_order: 0 }] }));
+      const categoryType = type || "service";
+      const tableName = categoryType === "ecommerce" ? "ecommerce_categories" : "service_categories";
+      const maxOrder = await query(`SELECT COALESCE(MAX(display_order), 0) as max_order FROM ${tableName}`).catch(() => ({ rows: [{ max_order: 0 }] }));
       const nextOrder = parseInt(maxOrder.rows[0]?.max_order || "0", 10) + 1;
+      if (categoryType === "ecommerce") {
+        const newCategory2 = await insert("ecommerce_categories", {
+          name,
+          description: description || "",
+          display_order: nextOrder,
+          is_active: status !== "inactive",
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        return c.json({
+          success: true,
+          message: "E-commerce category created successfully",
+          category: newCategory2[0]
+        });
+      }
       const finalCategoryId = categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now()}`;
       const newCategory = await insert("service_categories", {
         category_id: finalCategoryId,
@@ -197393,23 +197868,28 @@ function registerAdminAdvancedEndpoints(app3) {
     try {
       const products = await query(`
         SELECT 
-          id::text as id,
-          name,
-          description,
-          category_id::text as category_id,
-          price,
-          stock,
-          status,
-          created_at::text as created_at,
-          updated_at::text as updated_at
-        FROM products 
-        ORDER BY created_at DESC 
+          p.id::text as id,
+          p.name,
+          p.description,
+          p.category_id::text as category_id,
+          p.sku,
+          p.price,
+          p.stock,
+          p.status,
+          p.created_at::text as created_at,
+          p.updated_at::text as updated_at,
+          ec.name as category_name
+        FROM products p
+        LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
+        ORDER BY p.created_at DESC 
         LIMIT 50
       `);
       const safeProducts = (products.rows || []).map((p) => ({
         ...p,
         id: String(p.id || ""),
         category_id: String(p.category_id || ""),
+        category: String(p.category_name || "Uncategorized"),
+        sku: String(p.sku || ""),
         price: parseFloat(p.price || "0"),
         stock: parseInt(p.stock || "0", 10),
         status: String(p.status || "active")
@@ -197427,17 +197907,49 @@ function registerAdminAdvancedEndpoints(app3) {
       if (!name || !price) {
         return c.json({ success: false, error: "Product name and price are required" }, 400);
       }
-      const newProduct = await insert("products", {
+      let normalizedCategoryId = null;
+      if (categoryId && typeof categoryId === "string" && categoryId.trim() !== "") {
+        normalizedCategoryId = categoryId.trim();
+      }
+      let validatedCategoryId = null;
+      if (normalizedCategoryId) {
+        try {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(normalizedCategoryId)) {
+            console.warn(`[CreateProduct] Invalid UUID format for categoryId: ${normalizedCategoryId}`);
+            validatedCategoryId = null;
+          } else {
+            const categoryCheck = await query(
+              `SELECT id FROM ecommerce_categories WHERE id = $1::uuid AND (is_active = true OR is_active IS NULL) LIMIT 1`,
+              [normalizedCategoryId]
+            );
+            if (categoryCheck.rows && categoryCheck.rows.length > 0) {
+              validatedCategoryId = normalizedCategoryId;
+              console.log(`[CreateProduct] Validated category: ${validatedCategoryId}`);
+            } else {
+              console.warn(`[CreateProduct] Category ${normalizedCategoryId} not found in ecommerce_categories or inactive, setting to null`);
+              validatedCategoryId = null;
+            }
+          }
+        } catch (catError) {
+          console.warn(`[CreateProduct] Could not validate category: ${catError.message}`);
+          validatedCategoryId = null;
+        }
+      }
+      const insertPayload = {
         name,
         description: description || "",
-        category_id: categoryId || null,
+        category_id: validatedCategoryId,
+        // Will be null if invalid or not provided
         price: parseFloat(price) || 0,
         stock: parseInt(stock || "0", 10),
         status: status || "active",
         is_active: status !== "inactive",
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      console.log(`[CreateProduct] Inserting product with category_id: ${validatedCategoryId === null ? "NULL" : validatedCategoryId}`);
+      const newProduct = await insert("products", insertPayload);
       return c.json({
         success: true,
         message: "Product created successfully",
@@ -197446,6 +197958,12 @@ function registerAdminAdvancedEndpoints(app3) {
     } catch (error) {
       console.error("Error creating product:", error);
       const errorResponse = createSafeErrorResponse(error, "Failed to create product", 500);
+      if (errorResponse.error && typeof errorResponse.error === "string" && errorResponse.error.includes("foreign key constraint")) {
+        return c.json({
+          success: false,
+          error: "Invalid category selected. The category does not exist in the system. Please select a valid product category or leave it empty."
+        }, 400);
+      }
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
@@ -200644,6 +201162,200 @@ function registerAdminAdvancedEndpoints(app3) {
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app3.put("/admin/payouts/:id", async (c) => {
+    const payoutId = c.req.param("id");
+    try {
+      if (!payoutId) {
+        return c.json({ success: false, error: "Invalid payout ID" }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const amount = body.amount != null ? parseFloat(String(body.amount)) : null;
+      const commission = body.commission != null ? parseFloat(String(body.commission)) : null;
+      const tds = body.tds != null ? parseFloat(String(body.tds)) : null;
+      const netAmount = body.netAmount != null ? parseFloat(String(body.netAmount)) : body.net_amount != null ? parseFloat(String(body.net_amount)) : null;
+      const isSettlement = String(payoutId).startsWith("settlement-");
+      const actualId = isSettlement ? String(payoutId).replace(/^settlement-/, "") : payoutId;
+      if (!isSettlement && !isValidUUID(actualId)) {
+        return c.json({ success: false, error: "Invalid payout ID" }, 400);
+      }
+      let payout = null;
+      let tableName = "payouts";
+      let idColumn = "id";
+      if (isSettlement) {
+        try {
+          const settlements = await query(
+            `SELECT * FROM settlements WHERE id = $1 LIMIT 1`,
+            [actualId]
+          );
+          payout = (settlements.rows || [])[0];
+          tableName = "settlements";
+          idColumn = "id";
+        } catch (settlementErr) {
+          return c.json({ success: false, error: "Settlement not found" }, 404);
+        }
+      } else {
+        const payouts = await query(
+          `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+          [actualId]
+        );
+        payout = (payouts.rows || [])[0];
+      }
+      if (!payout) {
+        return c.json({ success: false, error: isSettlement ? "Settlement not found" : "Payout not found" }, 404);
+      }
+      const status = isSettlement ? payout.settlement_status ?? payout.status ?? "" : payout.payout_status ?? payout.status ?? "";
+      const allowedForEdit = ["pending", "scheduled", "failed", "processing"];
+      if (!allowedForEdit.includes(status)) {
+        return c.json({
+          success: false,
+          error: `${isSettlement ? "Settlement" : "Payout"} cannot be edited (status: ${status}). Only pending, scheduled, processing, or failed ${isSettlement ? "settlements" : "payouts"} can be edited.`
+        }, 400);
+      }
+      const updates = [];
+      const values = [];
+      let paramIndex = 1;
+      const columnCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = $1
+        AND column_name IN ('amount', 'total_amount', 'commission', 'tds', 'net_amount', 'commission_amount', 'tds_amount', 'settlement_status', 'status')
+      `, [tableName]);
+      const existingColumns = (columnCheck.rows || []).map((r) => r.column_name);
+      if (amount != null && !isNaN(amount) && amount >= 0) {
+        if (isSettlement) {
+          if (existingColumns.includes("total_amount")) {
+            updates.push(`total_amount = $${paramIndex}`);
+            values.push(amount);
+            paramIndex++;
+          }
+        } else {
+          if (existingColumns.includes("amount")) {
+            updates.push(`amount = $${paramIndex}`);
+            values.push(amount);
+            paramIndex++;
+          }
+        }
+      }
+      if (commission != null && !isNaN(commission) && commission >= 0) {
+        if (existingColumns.includes("commission_amount")) {
+          updates.push(`commission_amount = $${paramIndex}`);
+          values.push(commission);
+          paramIndex++;
+        } else if (existingColumns.includes("commission")) {
+          updates.push(`commission = $${paramIndex}`);
+          values.push(commission);
+          paramIndex++;
+        }
+      }
+      if (tds != null && !isNaN(tds) && tds >= 0) {
+        if (existingColumns.includes("tds_amount")) {
+          updates.push(`tds_amount = $${paramIndex}`);
+          values.push(tds);
+          paramIndex++;
+        } else if (existingColumns.includes("tds")) {
+          updates.push(`tds = $${paramIndex}`);
+          values.push(tds);
+          paramIndex++;
+        }
+      }
+      if (netAmount != null && !isNaN(netAmount) && netAmount >= 0) {
+        if (existingColumns.includes("net_amount")) {
+          updates.push(`net_amount = $${paramIndex}`);
+          values.push(netAmount);
+          paramIndex++;
+        }
+      }
+      if (updates.length === 0) {
+        return c.json({ success: false, error: "No valid fields to update" }, 400);
+      }
+      if (existingColumns.includes("updated_at")) {
+        updates.push(`updated_at = NOW()`);
+      }
+      const updateQuery = `
+        UPDATE ${tableName} 
+        SET ${updates.join(", ")}
+        WHERE ${idColumn} = $${paramIndex}
+        RETURNING *
+      `;
+      values.push(actualId);
+      const result = await query(updateQuery, values);
+      const updatedPayout = (result.rows || [])[0];
+      return c.json({
+        success: true,
+        message: `${isSettlement ? "Settlement" : "Payout"} updated successfully`,
+        payout: updatedPayout,
+        settlement: isSettlement ? updatedPayout : void 0
+      });
+    } catch (error) {
+      console.error("Error updating payout:", error);
+      const msg = error?.message ?? (typeof error === "string" ? error : "Failed to update payout");
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+  app3.delete("/admin/payouts/:id", async (c) => {
+    const payoutId = c.req.param("id");
+    try {
+      if (!payoutId) {
+        return c.json({ success: false, error: "Invalid payout ID" }, 400);
+      }
+      const isSettlement = String(payoutId).startsWith("settlement-");
+      const actualId = isSettlement ? String(payoutId).replace(/^settlement-/, "") : payoutId;
+      if (!isSettlement && !isValidUUID(actualId)) {
+        return c.json({ success: false, error: "Invalid payout ID" }, 400);
+      }
+      let payout = null;
+      let tableName = "payouts";
+      let idColumn = "id";
+      if (isSettlement) {
+        try {
+          const settlements = await query(
+            `SELECT * FROM settlements WHERE id = $1 LIMIT 1`,
+            [actualId]
+          );
+          payout = (settlements.rows || [])[0];
+          tableName = "settlements";
+          idColumn = "id";
+        } catch (settlementErr) {
+          return c.json({ success: false, error: "Settlement not found" }, 404);
+        }
+      } else {
+        const payouts = await query(
+          `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+          [actualId]
+        );
+        payout = (payouts.rows || [])[0];
+      }
+      if (!payout) {
+        return c.json({ success: false, error: isSettlement ? "Settlement not found" : "Payout not found" }, 404);
+      }
+      const status = isSettlement ? payout.settlement_status ?? payout.status ?? "" : payout.payout_status ?? payout.status ?? "";
+      const allowedForDelete = ["pending", "scheduled"];
+      if (!allowedForDelete.includes(status)) {
+        return c.json({
+          success: false,
+          error: `${isSettlement ? "Settlement" : "Payout"} cannot be deleted (status: ${status}). Only pending or scheduled ${isSettlement ? "settlements" : "payouts"} can be deleted.`
+        }, 400);
+      }
+      if (!isSettlement && payout.razorpay_payout_id) {
+        return c.json({
+          success: false,
+          error: "Payout cannot be deleted because it has already been sent to Razorpay. Use reject or cancel instead."
+        }, 400);
+      }
+      await query(
+        `DELETE FROM ${tableName} WHERE ${idColumn} = $1`,
+        [actualId]
+      );
+      return c.json({
+        success: true,
+        message: `${isSettlement ? "Settlement" : "Payout"} deleted successfully`
+      });
+    } catch (error) {
+      console.error("Error deleting payout:", error);
+      const msg = error?.message ?? (typeof error === "string" ? error : "Failed to delete payout");
+      return c.json({ success: false, error: msg }, 500);
     }
   });
   app3.post("/admin/payouts/:id/process", async (c) => {

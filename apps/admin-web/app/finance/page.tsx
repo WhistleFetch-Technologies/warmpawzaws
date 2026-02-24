@@ -19,6 +19,7 @@ import {
 	Building,
 	RefreshCw,
 	Package,
+	X,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import {
@@ -75,6 +76,7 @@ function FinanceManagementContent() {
 	const validTabs: TabType[] = ["dashboard", "fee-config", "payment-policies", "refund-policies", "cancellation-policy", "ecommerce-policies", "gst-config", "flexible-tax", "settlements", "payouts", "tiers", "schedule-settings", "payment-settings", "settlement-rules", "reports"];
 	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
 	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+	const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
 	// Sync tab when URL param changes (e.g., from /payment-refund redirect)
 	useEffect(() => {
@@ -393,10 +395,7 @@ function FinanceManagementContent() {
 									</div>
 									<Button
 										variant="outline"
-										onClick={() => {
-											// Advanced settings functionality - can be expanded later
-											console.log('Advanced settlement schedule settings');
-										}}
+										onClick={() => setShowAdvancedSettings(true)}
 									>
 										Advanced Settings
 									</Button>
@@ -516,6 +515,88 @@ function FinanceManagementContent() {
 										<p className="text-sm text-orange-600">Platform Commission</p>
 										<p className="text-2xl font-bold text-orange-700">₹1,87,000</p>
 									</div>
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* Advanced Settings Modal */}
+					{showAdvancedSettings && (
+						<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+							<div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+								<div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+									<h3 className="text-xl font-bold text-gray-900">Advanced Settlement Schedule Settings</h3>
+									<button
+										onClick={() => setShowAdvancedSettings(false)}
+										className="p-2 hover:bg-gray-100 rounded-full"
+									>
+										<X className="w-5 h-5" />
+									</button>
+								</div>
+								<div className="p-6 space-y-6">
+									<div>
+										<h4 className="font-semibold text-gray-900 mb-3">Schedule Configuration</h4>
+										<p className="text-sm text-gray-600 mb-4">
+											Advanced settings for settlement schedule processing. These settings control how settlements are calculated and processed automatically.
+										</p>
+										<div className="space-y-4">
+											<div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+												<p className="text-sm font-medium text-blue-900 mb-2">Schedule Behavior</p>
+												<ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+													<li>Settlements are calculated based on the configured schedule type and time</li>
+													<li>Only vendors with verified bank accounts are eligible for automatic processing</li>
+													<li>Minimum payout amount threshold applies to all automatic settlements</li>
+													<li>Failed payouts can be retried from Payout Management</li>
+												</ul>
+											</div>
+											<div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+												<p className="text-sm font-medium text-yellow-900 mb-2">Important Notes</p>
+												<ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+													<li>Schedule changes take effect on the next scheduled run</li>
+													<li>Manual "Process Now" runs calculation immediately but does not auto-process payouts</li>
+													<li>Payout processing must be done manually from Payout Management</li>
+													<li>Timezone settings affect when scheduled runs execute</li>
+												</ul>
+											</div>
+											<div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+												<p className="text-sm font-medium text-gray-900 mb-2">Settlement Period</p>
+												<p className="text-sm text-gray-600">
+													The settlement period (days) is controlled by the default tier in Tier Management. 
+													This ensures consistency across all vendors and prevents conflicts.
+												</p>
+											</div>
+										</div>
+									</div>
+									<div>
+										<h4 className="font-semibold text-gray-900 mb-3">Processing Workflow</h4>
+										<div className="space-y-2 text-sm text-gray-600">
+											<div className="flex items-start gap-2">
+												<span className="font-medium text-gray-900">1.</span>
+												<span>Scheduled run calculates settlements based on bookings/orders in the period</span>
+											</div>
+											<div className="flex items-start gap-2">
+												<span className="font-medium text-gray-900">2.</span>
+												<span>Settlements are created with status "pending"</span>
+											</div>
+											<div className="flex items-start gap-2">
+												<span className="font-medium text-gray-900">3.</span>
+												<span>If auto-process is enabled, settlements are queued for payout processing</span>
+											</div>
+											<div className="flex items-start gap-2">
+												<span className="font-medium text-gray-900">4.</span>
+												<span>Payouts are processed via payment gateway/bank API</span>
+											</div>
+											<div className="flex items-start gap-2">
+												<span className="font-medium text-gray-900">5.</span>
+												<span>Status updates to "completed" or "failed" based on processing result</span>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
+									<Button onClick={() => setShowAdvancedSettings(false)} variant="outline">
+										Close
+									</Button>
 								</div>
 							</div>
 						</div>

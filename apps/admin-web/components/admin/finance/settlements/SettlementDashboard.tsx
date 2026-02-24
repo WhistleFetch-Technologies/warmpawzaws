@@ -9,6 +9,7 @@ import {
   Filter,
   Download,
   CheckCircle2,
+  X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -43,6 +44,7 @@ interface Settlement {
   amount: number;
   commission: number;
   status: 'Due' | 'Pending' | 'Paid' | 'Failed';
+  originalStatus: string; // Store original API status for filtering
   date: string;
   failure_reason?: string;
 }
@@ -57,9 +59,13 @@ interface AnalyticsData {
 
 export function SettlementDashboard() {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [filteredSettlements, setFilteredSettlements] = useState<Settlement[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterDateRange, setFilterDateRange] = useState<string>('all');
 
   const COLORS = ['#FF8C42', '#4F46E5', '#10B981', '#F59E0B'];
 
@@ -68,6 +74,10 @@ export function SettlementDashboard() {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    applyFilters();
+  }, [settlements, filterStatus, filterDateRange]);
 
   const loadData = async () => {
     setLoading(true);
@@ -89,17 +99,21 @@ export function SettlementDashboard() {
         paid: 'Paid',
         failed: 'Failed',
       };
-      setSettlements(list.map((s: any) => ({
-        id: s.id,
-        vendorName: s.vendorName ?? s.vendor_name ?? 'Unknown',
-        vendorRole: s.vendor_role ?? null,
-        businessType: s.business_type ?? null,
-        amount: Number(s.amount ?? s.vendor_amount ?? s.net_amount ?? 0),
-        commission: Number(s.commission ?? s.commission_amount ?? 0),
-        status: statusMap[String(s.status ?? s.settlement_status ?? '').toLowerCase()] ?? 'Pending',
-        date: s.date ?? s.created_at ?? s.period_start ?? '',
-        failure_reason: s.failure_reason,
-      })));
+      setSettlements(list.map((s: any) => {
+        const originalStatus = String(s.status ?? s.settlement_status ?? '').toLowerCase();
+        return {
+          id: s.id,
+          vendorName: s.vendorName ?? s.vendor_name ?? 'Unknown',
+          vendorRole: s.vendor_role ?? null,
+          businessType: s.business_type ?? null,
+          amount: Number(s.amount ?? s.vendor_amount ?? s.net_amount ?? 0),
+          commission: Number(s.commission ?? s.commission_amount ?? 0),
+          status: statusMap[originalStatus] ?? 'Pending',
+          originalStatus: originalStatus, // Store original for filtering
+          date: s.date ?? s.created_at ?? s.period_start ?? '',
+          failure_reason: s.failure_reason,
+        };
+      }));
       const analytics = analyticsData?.data?.analytics ?? analyticsData?.analytics ?? null;
       if (analytics) {
         setAnalytics(analytics);
@@ -134,6 +148,78 @@ export function SettlementDashboard() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const applyFilters = () => {
+    let filtered = [...settlements];
+
+    // Status filter - use originalStatus to match API values
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter((s) => {
+        const filterValue = filterStatus.toLowerCase();
+        const originalStatus = s.originalStatus?.toLowerCase() || '';
+        
+        // Map filter values to API status values
+        const statusMapping: Record<string, string[]> = {
+          'due': ['due'],
+          'pending': ['pending', 'processing'], // processing is also shown as pending
+          'paid': ['completed', 'processed', 'paid'],
+          'failed': ['failed'],
+        };
+        
+        const matchingStatuses = statusMapping[filterValue] || [];
+        return matchingStatuses.includes(originalStatus);
+      });
+    }
+
+    // Date range filter
+    if (filterDateRange !== 'all') {
+      const now = new Date();
+      const cutoffDate = new Date();
+      if (filterDateRange === '7d') {
+        cutoffDate.setDate(now.getDate() - 7);
+      } else if (filterDateRange === '30d') {
+        cutoffDate.setDate(now.getDate() - 30);
+      } else if (filterDateRange === '90d') {
+        cutoffDate.setDate(now.getDate() - 90);
+      }
+      filtered = filtered.filter((s) => {
+        if (!s.date) return false;
+        const settlementDate = new Date(s.date);
+        return settlementDate >= cutoffDate;
+      });
+    }
+
+    // Always set filteredSettlements, even if empty
+    // This ensures we show "No settlements found" when filters don't match anything
+    setFilteredSettlements(filtered);
+  };
+
+  const handleExport = () => {
+    // Determine if filters are active
+    const hasActiveFilters = filterStatus !== 'all' || filterDateRange !== 'all';
+    // If filters are active, export filtered results; otherwise export all
+    const dataToExport = hasActiveFilters ? filteredSettlements : settlements;
+    const csv = [
+      ['Vendor', 'Role/Business Type', 'Amount', 'Commission', 'Status', 'Date'].join(','),
+      ...dataToExport.map((s) => [
+        `"${(s.vendorName ?? 'Unknown').replace(/"/g, '""')}"`,
+        `"${((s.vendorRole || s.businessType) ?? '').replace(/"/g, '""')}"`,
+        s.amount ?? 0,
+        s.commission ?? 0,
+        s.status,
+        s.date ? new Date(s.date).toLocaleDateString() : '',
+      ].join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `settlements-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Settlements exported successfully');
   };
 
   if (loading) {
@@ -281,11 +367,11 @@ export function SettlementDashboard() {
           <div className="flex items-center justify-between">
             <CardTitle>All Settlements</CardTitle>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)}>
                 <Filter className="w-4 h-4 mr-2" />
                 Filter
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleExport}>
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
@@ -306,14 +392,25 @@ export function SettlementDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {settlements.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                    No settlements found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                settlements.map((settlement) => (
+              {(() => {
+                // Determine if filters are active
+                const hasActiveFilters = filterStatus !== 'all' || filterDateRange !== 'all';
+                
+                // If filters are active, use filteredSettlements (even if empty)
+                // If no filters are active, use all settlements
+                const displaySettlements = hasActiveFilters ? filteredSettlements : settlements;
+                
+                if (displaySettlements.length === 0) {
+                  return (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                        No settlements found
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
+                
+                return displaySettlements.map((settlement) => (
                   <TableRow key={settlement.id}>
                     <TableCell className="font-medium">{settlement.vendorName ?? 'Unknown'}</TableCell>
                     <TableCell>
@@ -362,12 +459,69 @@ export function SettlementDashboard() {
                       )}
                     </TableCell>
                   </TableRow>
-                ))
-              )}
+                ));
+              })()}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Filter Modal */}
+      {showFilterModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Filter Settlements</h3>
+              <button
+                onClick={() => setShowFilterModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                >
+                  <option value="all">All Status</option>
+                  <option value="due">Due</option>
+                  <option value="pending">Pending / Processing</option>
+                  <option value="paid">Paid / Completed</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
+                <select
+                  value={filterDateRange}
+                  onChange={(e) => setFilterDateRange(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                >
+                  <option value="all">All Time</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
+              <Button onClick={() => {
+                setFilterStatus('all');
+                setFilterDateRange('all');
+              }} variant="outline">
+                Reset
+              </Button>
+              <Button onClick={() => setShowFilterModal(false)} className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
+                Apply Filters
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

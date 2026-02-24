@@ -756,8 +756,16 @@ export function registerEventEndpoints(app: Hono) {
 
       const venue = typeof location === 'string' ? { address: location } : location || {};
 
+      // For admin-created events, vendor_id can be null (after migration 604)
+      // If vendor_id is not provided, we'll set it to null for admin-created events
+      const finalVendorId = vendor_id || null;
+      
+      if (!finalVendorId) {
+        console.log('[Events] Creating admin event without vendor_id');
+      }
+
       const event = await insert('events', {
-        vendor_id: vendor_id || null,
+        vendor_id: finalVendorId,
         name: title,
         description: description || null,
         category: category || 'other',

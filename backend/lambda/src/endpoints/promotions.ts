@@ -812,11 +812,14 @@ export function registerPromotionEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      if (active === 'true' || active === undefined) {
+      // Only filter by active status if explicitly requested
+      // By default, return ALL promotions (both active and inactive) for admin UI
+      if (active === 'true') {
         queryStr += ` AND is_active = true AND (end_date IS NULL OR end_date >= NOW())`;
       } else if (active === 'false') {
         queryStr += ` AND (is_active = false OR end_date < NOW())`;
       }
+      // If active is undefined, don't filter - return all promotions
 
       if (type) {
         queryStr += ` AND promotion_type = $${paramIndex}`;
@@ -858,14 +861,20 @@ export function registerPromotionEndpoints(app: Hono) {
       const body = await c.req.json();
       const {
         name,
+        title, // Frontend sends 'title' instead of 'name'
         code: codeInput,
         description,
+        subtitle, // Frontend may send 'subtitle' as description
         promotionType,
         type,
         discountType,
         discountValue,
+        discount_type, // Backend format
+        discount_value, // Backend format
         minOrderAmount,
+        min_order_amount,
         maxDiscountAmount,
+        max_discount_amount,
         startDate,
         endDate,
         validFrom,
@@ -880,37 +889,71 @@ export function registerPromotionEndpoints(app: Hono) {
         published = false,
       } = body;
 
-      if (!name || !promotionType || !discountType || !discountValue) {
-        return c.json({ error: 'name, promotionType, discountType, and discountValue are required' }, 400);
+      // Support both frontend field names (title, discountType, discountValue) and backend names (name, discount_type, discount_value)
+      const finalName = name || title || '';
+      const finalDescription = description || subtitle || '';
+      const finalDiscountType = discountType || discount_type || 'percentage';
+      const finalDiscountValue = discountValue !== undefined ? discountValue : (discount_value !== undefined ? discount_value : 0);
+      const finalPromotionType = promotionType || type || 'flash_sale';
+
+      if (!finalName || !finalDiscountType || finalDiscountValue === undefined) {
+        return c.json({ 
+          error: 'name/title, discountType/discount_type, and discountValue/discount_value are required',
+          received: {
+            name: finalName || null,
+            title: title || null,
+            discountType: finalDiscountType || null,
+            discountValue: finalDiscountValue !== undefined ? finalDiscountValue : null,
+            promotionType: finalPromotionType || null,
+          }
+        }, 400);
       }
 
       // Phase 0.1: Support both frontend field names and DB column names
-      const finalPromotionType = promotionType || type || 'flash_sale';
       const finalStartDate = startDate || validFrom || new Date().toISOString().split('T')[0];
       const finalEndDate = endDate || validUntil || null;
       const finalIsActive = active !== undefined ? active : (isActive !== false);
       const finalApplicableServices = applicable_services || applicableServices || null;
 
-      const promotion = await insert('promotions', {
-        name,
-        code: codeInput ? String(codeInput).toUpperCase() : null,
-        description: description || '',
+      // Build promotion data, only include code if column exists
+      const promotionData: any = {
+        name: finalName,
+        description: finalDescription,
         promotion_type: finalPromotionType,
-        discount_type: discountType,
-        discount_value: parseFloat(discountValue),
-        min_order_amount: minOrderAmount ? parseFloat(minOrderAmount) : null,
-        max_discount_amount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null,
+        discount_type: finalDiscountType,
+        discount_value: parseFloat(String(finalDiscountValue)),
+        min_order_amount: (minOrderAmount || min_order_amount) ? parseFloat(String(minOrderAmount || min_order_amount)) : null,
+        max_discount_amount: (maxDiscountAmount || max_discount_amount) ? parseFloat(String(maxDiscountAmount || max_discount_amount)) : null,
         start_date: new Date(finalStartDate).toISOString().split('T')[0],
         end_date: finalEndDate ? new Date(finalEndDate).toISOString().split('T')[0] : null,
         is_active: finalIsActive,
         applicable_services: finalApplicableServices ? (Array.isArray(finalApplicableServices) ? JSON.stringify(finalApplicableServices) : finalApplicableServices) : null,
         applicable_roles: applicableRoles || null,
-        priority: parseInt(priority) || 0,
+        priority: parseInt(String(priority)) || 0,
         is_spotlight: is_spotlight === true,
         published: published === true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      };
+
+      // Only add code if provided (column may not exist in all environments)
+      if (codeInput) {
+        promotionData.code = String(codeInput).toUpperCase();
+      }
+
+      let promotion;
+      try {
+        promotion = await insert('promotions', promotionData);
+      } catch (insertError: any) {
+        // If error is about missing 'code' column, retry without it
+        if (insertError.message && insertError.message.includes('column "code"') && promotionData.code) {
+          console.warn('[Promotions] Code column does not exist, retrying without code');
+          delete promotionData.code;
+          promotion = await insert('promotions', promotionData);
+        } else {
+          throw insertError;
+        }
+      }
 
       return c.json({
         success: true,
@@ -1084,14 +1127,14 @@ export function registerPromotionEndpoints(app: Hono) {
         is_active = true,
       } = body;
 
-      if (!code || !name || !discount_type || discount_value === undefined) {
-        return c.json({ error: 'code, name, discount_type, and discount_value are required' }, 400);
+      if (!name || !discount_type || discount_value === undefined) {
+        return c.json({ error: 'name, discount_type, and discount_value are required' }, 400);
       }
 
-      const promotion = await insert('promotions', {
-        code: code.toUpperCase(),
+      // Build promotion data, code is optional (column may not exist in all environments)
+      const promotionData: any = {
         name,
-        description,
+        description: description || '',
         discount_type,
         discount_value,
         min_order_amount: min_order_value,
@@ -1102,7 +1145,26 @@ export function registerPromotionEndpoints(app: Hono) {
         max_uses_per_user: usage_limit_per_user,
         applicable_to: applicable_to || 'all',
         is_active,
-      });
+      };
+
+      // Only add code if provided (column may not exist in all environments)
+      if (code) {
+        promotionData.code = code.toUpperCase();
+      }
+
+      let promotion;
+      try {
+        promotion = await insert('promotions', promotionData);
+      } catch (insertError: any) {
+        // If error is about missing 'code' column, retry without it
+        if (insertError.message && insertError.message.includes('column "code"') && promotionData.code) {
+          console.warn('[Promotions] Code column does not exist, retrying without code');
+          delete promotionData.code;
+          promotion = await insert('promotions', promotionData);
+        } else {
+          throw insertError;
+        }
+      }
 
       return c.json({
         success: true,
@@ -1213,10 +1275,22 @@ export function registerPromotionEndpoints(app: Hono) {
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
 
+      // Map database fields to frontend format
+      const mappedCoupons = rows.map((coupon: any) => ({
+        ...coupon,
+        type: coupon.discount_type || coupon.type,
+        value: coupon.discount_value || coupon.value,
+        usageLimit: coupon.max_uses || coupon.usage_limit || coupon.usageLimit,
+        usageCount: coupon.uses_count || coupon.current_uses || coupon.usage_count || 0,
+        validUntil: coupon.end_date || coupon.expires_at || coupon.valid_until || coupon.validUntil,
+        validFrom: coupon.start_date || coupon.starts_at || coupon.valid_from || coupon.validFrom,
+        createdAt: coupon.created_at || coupon.createdAt,
+      }));
+
       return c.json({
         success: true,
-        coupons: rows,
-        total: rows.length,
+        coupons: mappedCoupons,
+        total: mappedCoupons.length,
       });
     } catch (error: any) {
       console.error('Error fetching coupons:', error);
@@ -1378,15 +1452,34 @@ export function registerPromotionEndpoints(app: Hono) {
       const body = await c.req.json();
 
       const updateData: any = {};
+      // Handle both frontend and backend field names
       if (body.code !== undefined) updateData.code = body.code.toUpperCase();
-      if (body.discount_type !== undefined) updateData.discount_type = body.discount_type;
-      if (body.discount_value !== undefined) updateData.discount_value = body.discount_value;
-      if (body.min_order_value !== undefined) updateData.min_order_amount = body.min_order_value;
-      if (body.max_discount !== undefined) updateData.max_discount_amount = body.max_discount;
-      if (body.valid_from !== undefined) updateData.start_date = new Date(body.valid_from);
-      if (body.valid_until !== undefined) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
-      if (body.usage_limit !== undefined) updateData.max_uses = body.usage_limit;
-      if (body.is_active !== undefined) updateData.is_active = body.is_active;
+      if (body.discount_type !== undefined || body.type !== undefined) {
+        updateData.discount_type = body.discount_type || body.type;
+      }
+      if (body.discount_value !== undefined || body.value !== undefined) {
+        updateData.discount_value = body.discount_value !== undefined ? body.discount_value : body.value;
+      }
+      if (body.min_order_value !== undefined || body.minOrderAmount !== undefined) {
+        updateData.min_order_amount = body.min_order_value !== undefined ? body.min_order_value : body.minOrderAmount;
+      }
+      if (body.max_discount !== undefined || body.maxDiscountAmount !== undefined) {
+        updateData.max_discount_amount = body.max_discount !== undefined ? body.max_discount : body.maxDiscountAmount;
+      }
+      if (body.valid_from !== undefined || body.validFrom !== undefined) {
+        updateData.start_date = new Date(body.valid_from || body.validFrom);
+      }
+      if (body.valid_until !== undefined || body.validUntil !== undefined) {
+        const expiryDate = body.valid_until || body.validUntil;
+        updateData.end_date = expiryDate ? new Date(expiryDate) : null;
+      }
+      if (body.usage_limit !== undefined || body.usageLimit !== undefined) {
+        const limit = body.usage_limit !== undefined ? body.usage_limit : body.usageLimit;
+        updateData.max_uses = limit > 0 ? limit : null;
+      }
+      if (body.is_active !== undefined || body.isActive !== undefined) {
+        updateData.is_active = body.is_active !== undefined ? body.is_active : body.isActive;
+      }
 
       await update('coupons', { id }, updateData);
 
@@ -1396,9 +1489,23 @@ export function registerPromotionEndpoints(app: Hono) {
         [id]
       );
       const couponRows = Array.isArray(updated) ? updated : (updated as any).rows || [];
+      const coupon = couponRows[0];
+      
+      // Map database fields to frontend format
+      const mappedCoupon = {
+        ...coupon,
+        type: coupon.discount_type || coupon.type,
+        value: coupon.discount_value || coupon.value,
+        usageLimit: coupon.max_uses || coupon.usage_limit || coupon.usageLimit,
+        usageCount: coupon.uses_count || coupon.current_uses || coupon.usage_count || 0,
+        validUntil: coupon.end_date || coupon.expires_at || coupon.valid_until || coupon.validUntil,
+        validFrom: coupon.start_date || coupon.starts_at || coupon.valid_from || coupon.validFrom,
+        createdAt: coupon.created_at || coupon.createdAt,
+      };
+      
       return c.json({
         success: true,
-        coupon: couponRows[0],
+        coupon: mappedCoupon,
         message: 'Coupon updated successfully',
       });
     } catch (error: any) {

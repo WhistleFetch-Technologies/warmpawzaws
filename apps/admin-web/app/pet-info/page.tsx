@@ -117,8 +117,8 @@ export default function PetIntelligenceSystem() {
 				setStats(statsRes.stats);
 			}
 
-			// Load all pets
-			const petsRes = await apiClient.get<any>("/admin/pets/all");
+			// Load all pets (with higher limit to get all pets)
+			const petsRes = await apiClient.get<any>("/admin/pets/all?limit=1000");
 			if (petsRes.success) {
 				setPets(petsRes.pets || []);
 			}
@@ -135,57 +135,120 @@ export default function PetIntelligenceSystem() {
 		}
 	};
 
+	// Load vaccination coverage and health recommendations
+	useEffect(() => {
+		if (activeTab === 'health') {
+			loadHealthData();
+		}
+	}, [activeTab]);
+
+	const [vaccinationCoverage, setVaccinationCoverage] = useState({
+		rabies: 0,
+		distemper: 0,
+		parvovirus: 0,
+	});
+
+	const [healthRecommendations, setHealthRecommendations] = useState<any[]>([]);
+
+	const loadHealthData = async () => {
+		try {
+			// Load vaccination coverage
+			const coverageRes = await apiClient.get<any>("/admin/pets/vaccination-coverage");
+			if (coverageRes.success) {
+				setVaccinationCoverage(coverageRes.coverage || { rabies: 0, distemper: 0, parvovirus: 0 });
+			}
+
+			// Load health recommendations
+			const recommendationsRes = await apiClient.get<any>("/admin/pets/health-recommendations");
+			if (recommendationsRes.success) {
+				setHealthRecommendations(recommendationsRes.recommendations || []);
+			}
+		} catch (err) {
+			console.error("Error loading health data:", err);
+		}
+	};
+
 	const exportPetData = () => {
 		try {
 			const csvRows = [];
 
 			csvRows.push("Warmpawz Pet Database Export");
 			csvRows.push(`Generated: ${new Date().toLocaleString()}`);
+			csvRows.push(`Total Pets: ${pets.length}`);
 			csvRows.push("");
 
 			csvRows.push(
-				"Pet ID,Name,Species,Breed,Age,Weight,Owner,Health Conditions"
+				"Pet ID,Name,Species,Breed,Age (years),Weight (kg),Owner Name,Owner Phone,Health Conditions"
 			);
-			pets.forEach((pet) => {
+			
+			// Export all pets (not just filtered ones) for complete export
+			const petsToExport = pets.length > 0 ? pets : [];
+			
+			if (petsToExport.length === 0) {
+				alert("No pet data available to export");
+				return;
+			}
+
+			petsToExport.forEach((pet) => {
+				// Escape CSV values (handle commas, quotes, newlines)
+				const escapeCsv = (value: any) => {
+					if (value === null || value === undefined) return '';
+					const str = String(value);
+					if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+						return `"${str.replace(/"/g, '""')}"`;
+					}
+					return str;
+				};
+
 				csvRows.push(
 					[
-						pet.id,
-						pet.name,
-						pet.species,
-						pet.breed,
-						pet.age,
-						pet.weight,
-						pet.owner,
-						(pet.healthConditions || []).join(";"),
+						escapeCsv(pet.id),
+						escapeCsv(pet.name),
+						escapeCsv(pet.species),
+						escapeCsv(pet.breed),
+						escapeCsv(pet.age),
+						escapeCsv(pet.weight),
+						escapeCsv(pet.owner),
+						escapeCsv((pet.healthConditions || []).join("; ")),
 					].join(",")
 				);
 			});
 
 			const csvContent = csvRows.join("\n");
-			const blob = new Blob([csvContent], { type: "text/csv" });
+			const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
 			link.download = `pets-database-${Date.now()}.csv`;
+			document.body.appendChild(link);
 			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
 
-			console.log("✅ Pet data exported");
+			console.log(`✅ Pet data exported: ${petsToExport.length} pets`);
 		} catch (err) {
 			console.error("Export error:", err);
-			alert("Failed to export pet data");
+			alert("Failed to export pet data: " + (err as Error).message);
 		}
 	};
 
 	const filteredPets = pets.filter((pet) => {
+		if (!pet) return false;
+
+		const searchLower = searchQuery.toLowerCase();
 		const matchesSearch =
 			!searchQuery ||
-			pet.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			pet.breed.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			pet.owner.toLowerCase().includes(searchQuery.toLowerCase());
+			(pet.name && pet.name.toLowerCase().includes(searchLower)) ||
+			(pet.breed && pet.breed.toLowerCase().includes(searchLower)) ||
+			(pet.owner && pet.owner.toLowerCase().includes(searchLower)) ||
+			(pet.species && pet.species.toLowerCase().includes(searchLower));
 
+		const petSpeciesLower = pet.species?.toLowerCase() || '';
 		const matchesSpecies =
 			speciesFilter === "all" ||
-			pet.species.toLowerCase() === speciesFilter.toLowerCase();
+			(speciesFilter === "dog" && (petSpeciesLower === "dog" || petSpeciesLower === "dogs")) ||
+			(speciesFilter === "cat" && (petSpeciesLower === "cat" || petSpeciesLower === "cats")) ||
+			(speciesFilter === "other" && petSpeciesLower !== "dog" && petSpeciesLower !== "cat" && petSpeciesLower !== "dogs" && petSpeciesLower !== "cats");
 
 		return matchesSearch && matchesSpecies;
 	});
@@ -550,36 +613,45 @@ export default function PetIntelligenceSystem() {
 										<div>
 											<div className="flex justify-between text-sm mb-1">
 												<span>Rabies</span>
-												<span>85%</span>
+												<span>{vaccinationCoverage.rabies}%</span>
 											</div>
 											<div className="w-full bg-gray-200 rounded-full h-2">
 												<div
-													className="bg-green-600 h-2 rounded-full"
-													style={{ width: "85%" }}
+													className={`h-2 rounded-full ${
+														vaccinationCoverage.rabies >= 80 ? 'bg-green-600' :
+														vaccinationCoverage.rabies >= 50 ? 'bg-yellow-600' : 'bg-red-600'
+													}`}
+													style={{ width: `${Math.min(vaccinationCoverage.rabies, 100)}%` }}
 												></div>
 											</div>
 										</div>
 										<div>
 											<div className="flex justify-between text-sm mb-1">
 												<span>Distemper</span>
-												<span>72%</span>
+												<span>{vaccinationCoverage.distemper}%</span>
 											</div>
 											<div className="w-full bg-gray-200 rounded-full h-2">
 												<div
-													className="bg-green-600 h-2 rounded-full"
-													style={{ width: "72%" }}
+													className={`h-2 rounded-full ${
+														vaccinationCoverage.distemper >= 80 ? 'bg-green-600' :
+														vaccinationCoverage.distemper >= 50 ? 'bg-yellow-600' : 'bg-red-600'
+													}`}
+													style={{ width: `${Math.min(vaccinationCoverage.distemper, 100)}%` }}
 												></div>
 											</div>
 										</div>
 										<div>
 											<div className="flex justify-between text-sm mb-1">
 												<span>Parvovirus</span>
-												<span>68%</span>
+												<span>{vaccinationCoverage.parvovirus}%</span>
 											</div>
 											<div className="w-full bg-gray-200 rounded-full h-2">
 												<div
-													className="bg-yellow-600 h-2 rounded-full"
-													style={{ width: "68%" }}
+													className={`h-2 rounded-full ${
+														vaccinationCoverage.parvovirus >= 80 ? 'bg-green-600' :
+														vaccinationCoverage.parvovirus >= 50 ? 'bg-yellow-600' : 'bg-red-600'
+													}`}
+													style={{ width: `${Math.min(vaccinationCoverage.parvovirus, 100)}%` }}
 												></div>
 											</div>
 										</div>
@@ -589,37 +661,22 @@ export default function PetIntelligenceSystem() {
 								<Card className="p-6">
 									<h3 className="font-semibold mb-4">Health Recommendations</h3>
 									<div className="space-y-3">
-										<div className="flex items-start gap-3">
-											<div className="w-2 h-2 bg-red-600 rounded-full mt-2"></div>
-											<div>
-												<p className="font-medium text-sm">
-													Vaccination Reminder
-												</p>
-												<p className="text-xs text-gray-600">
-													245 pets due for vaccination this month
-												</p>
-											</div>
-										</div>
-										<div className="flex items-start gap-3">
-											<div className="w-2 h-2 bg-yellow-600 rounded-full mt-2"></div>
-											<div>
-												<p className="font-medium text-sm">Wellness Checkup</p>
-												<p className="text-xs text-gray-600">
-													128 pets haven't had checkup in 6+ months
-												</p>
-											</div>
-										</div>
-										<div className="flex items-start gap-3">
-											<div className="w-2 h-2 bg-green-600 rounded-full mt-2"></div>
-											<div>
-												<p className="font-medium text-sm">
-													Nutrition Consultation
-												</p>
-												<p className="text-xs text-gray-600">
-													Recommend for overweight pets (89 identified)
-												</p>
-											</div>
-										</div>
+										{healthRecommendations.length > 0 ? (
+											healthRecommendations.map((rec, idx) => (
+												<div key={idx} className="flex items-start gap-3">
+													<div className={`w-2 h-2 rounded-full mt-2 ${
+														rec.priority === 'high' ? 'bg-red-600' :
+														rec.priority === 'medium' ? 'bg-yellow-600' : 'bg-green-600'
+													}`}></div>
+													<div>
+														<p className="font-medium text-sm">{rec.title}</p>
+														<p className="text-xs text-gray-600">{rec.message}</p>
+													</div>
+												</div>
+											))
+										) : (
+											<p className="text-sm text-gray-500">No recommendations at this time</p>
+										)}
 									</div>
 								</Card>
 							</div>

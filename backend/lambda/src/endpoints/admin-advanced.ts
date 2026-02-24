@@ -1309,13 +1309,27 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/pets/stats', async (c) => {
     try {
+      // Calculate average age from DOB if available, otherwise use age_years + age_months
+      // Also check medical_history->>'dob' as fallback
       const stats = await query(`
         SELECT 
           COUNT(*) as total_pets,
-          COUNT(*) FILTER (WHERE species = 'dog') as dog_count,
-          COUNT(*) FILTER (WHERE species = 'cat') as cat_count,
-          COUNT(*) FILTER (WHERE species NOT IN ('dog', 'cat')) as other_count,
-          COALESCE(AVG(age_years + age_months::numeric / 12), 0) as avg_age
+          COUNT(*) FILTER (WHERE LOWER(species) = 'dog' OR LOWER(species) = 'dogs') as dog_count,
+          COUNT(*) FILTER (WHERE LOWER(species) = 'cat' OR LOWER(species) = 'cats') as cat_count,
+          COUNT(*) FILTER (WHERE LOWER(species) NOT IN ('dog', 'cat')) as other_count,
+          COALESCE(
+            AVG(
+              CASE 
+                WHEN date_of_birth IS NOT NULL THEN
+                  EXTRACT(YEAR FROM AGE(CURRENT_DATE, date_of_birth))
+                WHEN medical_history->>'dob' IS NOT NULL THEN
+                  EXTRACT(YEAR FROM AGE(CURRENT_DATE, (medical_history->>'dob')::date))
+                WHEN age_years IS NOT NULL OR age_months IS NOT NULL THEN
+                  COALESCE(age_years, 0) + COALESCE(age_months, 0)::numeric / 12
+                ELSE NULL
+              END
+            ), 0
+          ) as avg_age
         FROM pets
       `).catch(() => ({ rows: [{
         total_pets: '0',
@@ -1328,8 +1342,75 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const topBreeds = await query(`
         SELECT breed, COUNT(*) as count
         FROM pets
-        WHERE breed IS NOT NULL
+        WHERE breed IS NOT NULL AND breed != ''
         GROUP BY breed
+        ORDER BY count DESC
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+
+      // Get age distribution
+      const ageDistribution = await query(`
+        SELECT 
+          CASE 
+            WHEN date_of_birth IS NOT NULL THEN
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE, date_of_birth))
+            WHEN medical_history->>'dob' IS NOT NULL THEN
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE, (medical_history->>'dob')::date))
+            WHEN age_years IS NOT NULL OR age_months IS NOT NULL THEN
+              COALESCE(age_years, 0) + FLOOR(COALESCE(age_months, 0)::numeric / 12)
+            ELSE NULL
+          END as calculated_age
+        FROM pets
+        WHERE date_of_birth IS NOT NULL 
+           OR medical_history->>'dob' IS NOT NULL 
+           OR age_years IS NOT NULL 
+           OR age_months IS NOT NULL
+      `).catch(() => ({ rows: [] }));
+
+      // Group into age ranges
+      const ageGroups: Record<string, number> = {
+        '0-1': 0,
+        '2-5': 0,
+        '6-10': 0,
+        '11-15': 0,
+        '16+': 0
+      };
+
+      ageDistribution.rows.forEach((row: any) => {
+        const age = parseFloat(row.calculated_age || '0');
+        if (age <= 1) ageGroups['0-1']++;
+        else if (age <= 5) ageGroups['2-5']++;
+        else if (age <= 10) ageGroups['6-10']++;
+        else if (age <= 15) ageGroups['11-15']++;
+        else ageGroups['16+']++;
+      });
+
+      const ageDistributionArray = Object.entries(ageGroups).map(([ageGroup, count]) => ({
+        ageGroup,
+        count
+      }));
+
+      // Get health trends from medical_records and medical_history
+      const healthTrends = await query(`
+        WITH condition_counts AS (
+          SELECT 
+            UNNEST(ARRAY(
+              SELECT jsonb_array_elements_text(medical_history->'chronicConditions')
+              FROM pets
+              WHERE medical_history->'chronicConditions' IS NOT NULL
+            )) as condition_name
+          UNION ALL
+          SELECT 
+            record_type as condition_name
+          FROM medical_records
+          WHERE record_type IS NOT NULL
+        )
+        SELECT 
+          condition_name as condition,
+          COUNT(*) as count
+        FROM condition_counts
+        WHERE condition_name IS NOT NULL AND condition_name != ''
+        GROUP BY condition_name
         ORDER BY count DESC
         LIMIT 10
       `).catch(() => ({ rows: [] }));
@@ -1344,6 +1425,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           avgAge: parseFloat(stats.rows[0]?.avg_age || '0'),
           topBreeds: topBreeds.rows.map((r: any) => ({
             breed: r.breed,
+            count: parseInt(r.count, 10),
+          })),
+          ageDistribution: ageDistributionArray,
+          healthTrends: healthTrends.rows.map((r: any) => ({
+            condition: r.condition,
             count: parseInt(r.count, 10),
           })),
         },
@@ -1383,7 +1469,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       let paramIndex = 1;
 
       if (species && species !== 'all') {
-        queryStr += ` AND p.species = $${paramIndex}`;
+        queryStr += ` AND LOWER(p.species) = LOWER($${paramIndex})`;
         params.push(species);
         paramIndex++;
       }
@@ -1393,10 +1479,53 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const pets = await query(queryStr, params);
 
+      // Map pets data to frontend format
+      const mappedPets = (pets.rows || []).map((pet: any) => {
+        // Calculate age from DOB or use age_years/age_months
+        let calculatedAge = 0;
+        if (pet.date_of_birth) {
+          const birthDate = new Date(pet.date_of_birth);
+          const now = new Date();
+          const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + 
+                             (now.getMonth() - birthDate.getMonth());
+          calculatedAge = Math.floor(ageInMonths / 12);
+        } else if (pet.medical_history?.dob) {
+          const birthDate = new Date(pet.medical_history.dob);
+          const now = new Date();
+          const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + 
+                             (now.getMonth() - birthDate.getMonth());
+          calculatedAge = Math.floor(ageInMonths / 12);
+        } else if (pet.age_years || pet.age_months) {
+          calculatedAge = (pet.age_years || 0) + Math.floor((pet.age_months || 0) / 12);
+        }
+
+        // Extract health conditions from medical_history
+        const healthConditions = pet.medical_history?.chronicConditions || 
+                                 pet.medical_history?.healthConditions || 
+                                 [];
+
+        return {
+          id: pet.id,
+          name: pet.name || '',
+          species: pet.species || '',
+          breed: pet.breed || '',
+          age: calculatedAge,
+          weight: pet.weight_kg || 0,
+          healthConditions: Array.isArray(healthConditions) ? healthConditions : [],
+          vaccinations: pet.medical_history?.vaccinations || 
+                       pet.vaccination_records || 
+                       [],
+          owner: pet.owner_name || '',
+          ownerId: pet.customer_id || '',
+          lastCheckup: pet.medical_history?.lastCheckup || null,
+          services: [],
+        };
+      });
+
       return c.json({
         success: true,
-        pets: pets.rows || [],
-        total: pets.rows?.length || 0,
+        pets: mappedPets,
+        total: mappedPets.length,
       });
     } catch (error: any) {
       console.error('Error fetching pets:', error);
@@ -1456,6 +1585,182 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  // Get vaccination coverage statistics
+  app.get('/admin/pets/vaccination-coverage', async (c) => {
+    try {
+      const totalPets = await query(`
+        SELECT COUNT(*) as total FROM pets
+      `).catch(() => ({ rows: [{ total: '0' }] }));
+
+      const totalPetsCount = parseInt(totalPets.rows[0]?.total || '0', 10);
+
+      if (totalPetsCount === 0) {
+        return c.json({
+          success: true,
+          coverage: {
+            rabies: 0,
+            distemper: 0,
+            parvovirus: 0,
+          },
+        });
+      }
+
+      // Check vaccination records in medical_history and vaccination_records
+      const vaccinationData = await query(`
+        WITH vaccination_flattened AS (
+          SELECT 
+            p.id,
+            UNNEST(ARRAY(
+              SELECT jsonb_array_elements_text(medical_history->'vaccinations')
+              FROM pets
+              WHERE medical_history->'vaccinations' IS NOT NULL
+            )) as vaccination_name
+          FROM pets p
+          WHERE p.medical_history->'vaccinations' IS NOT NULL
+          UNION ALL
+          SELECT 
+            p.id,
+            v->>'name' as vaccination_name
+          FROM pets p,
+          LATERAL jsonb_array_elements(p.vaccination_records) v
+          WHERE p.vaccination_records IS NOT NULL
+        )
+        SELECT 
+          LOWER(vaccination_name) as vaccine_type,
+          COUNT(DISTINCT id) as vaccinated_count
+        FROM vaccination_flattened
+        WHERE vaccination_name IS NOT NULL
+        GROUP BY LOWER(vaccination_name)
+      `).catch(() => ({ rows: [] }));
+
+      const coverage: Record<string, number> = {
+        rabies: 0,
+        distemper: 0,
+        parvovirus: 0,
+      };
+
+      vaccinationData.rows.forEach((row: any) => {
+        const vaccineType = (row.vaccine_type || '').toLowerCase();
+        const vaccinatedCount = parseInt(row.vaccinated_count || '0', 10);
+        const percentage = totalPetsCount > 0 ? (vaccinatedCount / totalPetsCount) * 100 : 0;
+
+        if (vaccineType.includes('rabies')) {
+          coverage.rabies = Math.round(percentage);
+        } else if (vaccineType.includes('distemper')) {
+          coverage.distemper = Math.round(percentage);
+        } else if (vaccineType.includes('parvo')) {
+          coverage.parvovirus = Math.round(percentage);
+        }
+      });
+
+      return c.json({
+        success: true,
+        coverage,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vaccination coverage:', error);
+      return c.json({
+        success: true,
+        coverage: {
+          rabies: 0,
+          distemper: 0,
+          parvovirus: 0,
+        },
+      });
+    }
+  });
+
+  // Get health recommendations
+  app.get('/admin/pets/health-recommendations', async (c) => {
+    try {
+      const now = new Date();
+      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      // Vaccination reminders - pets due for vaccination in next 30 days
+      const vaccinationReminders = await query(`
+        WITH vaccination_due AS (
+          SELECT 
+            p.id,
+            v->>'nextDueDate' as next_due_date,
+            v->>'name' as vaccine_name
+          FROM pets p,
+          LATERAL jsonb_array_elements(COALESCE(p.vaccination_records, '[]'::jsonb)) v
+          WHERE p.vaccination_records IS NOT NULL
+            AND (v->>'nextDueDate')::date BETWEEN CURRENT_DATE AND $1::date
+          UNION ALL
+          SELECT 
+            p.id,
+            v->>'nextDueDate' as next_due_date,
+            v->>'name' as vaccine_name
+          FROM pets p,
+          LATERAL jsonb_array_elements(COALESCE(p.medical_history->'vaccinations', '[]'::jsonb)) v
+          WHERE p.medical_history->'vaccinations' IS NOT NULL
+            AND (v->>'nextDueDate')::date BETWEEN CURRENT_DATE AND $1::date
+        )
+        SELECT COUNT(DISTINCT id) as count
+        FROM vaccination_due
+      `, [thirtyDaysFromNow.toISOString().split('T')[0]]).catch(() => ({ rows: [{ count: '0' }] }));
+
+      // Wellness checkup reminders - pets without checkup in last 6 months
+      const checkupReminders = await query(`
+        SELECT COUNT(*) as count
+        FROM pets p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM medical_records mr
+          WHERE mr.pet_id = p.id
+            AND mr.record_type = 'checkup'
+            AND mr.created_at > CURRENT_DATE - INTERVAL '6 months'
+        )
+      `).catch(() => ({ rows: [{ count: '0' }] }));
+
+      // Overweight pets - weight > 20% above average for species
+      const overweightPets = await query(`
+        WITH species_avg_weight AS (
+          SELECT 
+            species,
+            AVG(weight_kg) as avg_weight
+          FROM pets
+          WHERE weight_kg IS NOT NULL
+          GROUP BY species
+        )
+        SELECT COUNT(*) as count
+        FROM pets p
+        JOIN species_avg_weight s ON p.species = s.species
+        WHERE p.weight_kg > s.avg_weight * 1.2
+      `).catch(() => ({ rows: [{ count: '0' }] }));
+
+      return c.json({
+        success: true,
+        recommendations: [
+          {
+            type: 'vaccination',
+            title: 'Vaccination Reminder',
+            message: `${parseInt(vaccinationReminders.rows[0]?.count || '0', 10)} pets due for vaccination this month`,
+            priority: 'high',
+          },
+          {
+            type: 'checkup',
+            title: 'Wellness Checkup',
+            message: `${parseInt(checkupReminders.rows[0]?.count || '0', 10)} pets haven't had checkup in 6+ months`,
+            priority: 'medium',
+          },
+          {
+            type: 'nutrition',
+            title: 'Nutrition Consultation',
+            message: `Recommend for overweight pets (${parseInt(overweightPets.rows[0]?.count || '0', 10)} identified)`,
+            priority: 'low',
+          },
+        ],
+      });
+    } catch (error: any) {
+      console.error('Error fetching health recommendations:', error);
+      return c.json({
+        success: true,
+        recommendations: [],
+      });
+    }
+  });
+
   app.get('/admin/profile/:adminId', async (c) => {
     const handler = new GetAdminProfileHandler();
     const event = createApiGatewayEvent(c.req);
@@ -1506,23 +1811,86 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // Ensure all fields are properly typed and never undefined
       let categories;
       try {
-        categories = await query(`
-          SELECT 
-            id::text as id,
-            COALESCE(category_id::text, '') as category_id,
-            name::text as name,
-            COALESCE(description::text, '') as description,
-            COALESCE(icon::text, '') as icon,
-            COALESCE(icon_color::text, 'text-gray-500') as icon_color,
-            COALESCE(display_order::integer, 0) as display_order,
-            COALESCE(is_active::boolean, true) as is_active,
-            COALESCE(created_at::text, '') as created_at,
-            COALESCE(updated_at::text, '') as updated_at
-          FROM ${tableName}
-          WHERE is_active = true OR is_active IS NULL
-          ORDER BY display_order ASC NULLS LAST, name ASC
-          LIMIT 1000
-        `);
+        if (type === 'ecommerce') {
+          // For ecommerce_categories, use simpler query (no category_id field)
+          categories = await query(`
+            SELECT 
+              id::text as id,
+              name::text as name,
+              COALESCE(description::text, '') as description,
+              COALESCE(display_order::integer, 0) as display_order,
+              COALESCE(is_active::boolean, true) as is_active,
+              COALESCE(created_at::text, '') as created_at
+            FROM ecommerce_categories
+            WHERE is_active = true OR is_active IS NULL
+            ORDER BY display_order ASC NULLS LAST, name ASC
+            LIMIT 1000
+          `);
+          
+          // Auto-seed default ecommerce categories if table is empty
+          if (categories.rows.length === 0) {
+            console.log('[Categories] ecommerce_categories table is empty, auto-seeding default categories');
+            const defaultCategories = [
+              { name: 'Pet Food', description: 'Dog food, cat food, and treats', display_order: 1 },
+              { name: 'Pet Accessories', description: 'Collars, leashes, bowls, and more', display_order: 2 },
+              { name: 'Pet Toys', description: 'Interactive toys, chew toys, and plush toys', display_order: 3 },
+              { name: 'Pet Grooming', description: 'Shampoos, brushes, and grooming tools', display_order: 4 },
+              { name: 'Pet Health', description: 'Supplements, vitamins, and health products', display_order: 5 },
+              { name: 'Pet Beds & Furniture', description: 'Beds, crates, and pet furniture', display_order: 6 },
+              { name: 'Pet Clothing', description: 'Jackets, sweaters, and costumes', display_order: 7 },
+              { name: 'Pet Travel', description: 'Carriers, car seats, and travel accessories', display_order: 8 },
+              { name: 'Pet Pharmacy', description: 'Medications and prescription items', display_order: 9 },
+              { name: 'Pet Training', description: 'Training aids, clickers, and pads', display_order: 10 },
+            ];
+            
+            for (const cat of defaultCategories) {
+              try {
+                await query(
+                  `INSERT INTO ecommerce_categories (name, description, display_order, is_active)
+                   VALUES ($1, $2, $3, true)
+                   ON CONFLICT (name) DO NOTHING`,
+                  [cat.name, cat.description, cat.display_order]
+                );
+              } catch (seedError: any) {
+                console.warn(`[Categories] Error seeding category ${cat.name}:`, seedError.message);
+              }
+            }
+            
+            // Re-fetch categories after seeding
+            categories = await query(`
+              SELECT 
+                id::text as id,
+                name::text as name,
+                COALESCE(description::text, '') as description,
+                COALESCE(display_order::integer, 0) as display_order,
+                COALESCE(is_active::boolean, true) as is_active,
+                COALESCE(created_at::text, '') as created_at
+              FROM ecommerce_categories
+              WHERE is_active = true OR is_active IS NULL
+              ORDER BY display_order ASC NULLS LAST, name ASC
+              LIMIT 1000
+            `);
+          }
+        } else {
+          // For service_categories, use full query with category_id
+          categories = await query(`
+            SELECT 
+              id::text as id,
+              COALESCE(category_id::text, '') as category_id,
+              name::text as name,
+              COALESCE(description::text, '') as description,
+              COALESCE(icon::text, '') as icon,
+              COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+              COALESCE(display_order::integer, 0) as display_order,
+              COALESCE(is_active::boolean, true) as is_active,
+              COALESCE(created_at::text, '') as created_at,
+              COALESCE(updated_at::text, '') as updated_at
+            FROM service_categories
+            WHERE is_active = true OR is_active IS NULL
+            ORDER BY display_order ASC NULLS LAST, name ASC
+            LIMIT 1000
+          `);
+        }
       } catch (tableError: any) {
         // If table doesn't exist, return empty array
         if (tableError.message && tableError.message.includes('does not exist')) {
@@ -1537,18 +1905,30 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
       
       // Ensure all fields are strings/numbers (no undefined) to prevent UI errors
-      const safeCategories = (categories.rows || []).map((cat: any) => ({
-        id: String(cat.id || ''),
-        category_id: String(cat.category_id || ''),
-        name: String(cat.name || ''),
-        description: String(cat.description || ''),
-        icon: String(cat.icon || ''),
-        icon_color: String(cat.icon_color || 'text-gray-500'),
-        display_order: parseInt(cat.display_order) || 0,
-        is_active: cat.is_active !== false,
-        created_at: String(cat.created_at || ''),
-        updated_at: String(cat.updated_at || ''),
-      }));
+      const safeCategories = (categories.rows || []).map((cat: any) => {
+        const base = {
+          id: String(cat.id || ''),
+          name: String(cat.name || ''),
+          description: String(cat.description || ''),
+          display_order: parseInt(cat.display_order) || 0,
+          is_active: cat.is_active !== false,
+          created_at: String(cat.created_at || ''),
+        };
+        
+        // Add service_categories specific fields
+        if (type === 'service') {
+          return {
+            ...base,
+            category_id: String(cat.category_id || ''),
+            icon: String(cat.icon || ''),
+            icon_color: String(cat.icon_color || 'text-gray-500'),
+            updated_at: String(cat.updated_at || ''),
+          };
+        }
+        
+        // For ecommerce_categories, return base fields only
+        return base;
+      });
       
       return c.json({ 
         success: true, 
@@ -1644,18 +2024,40 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const body = await c.req.json().catch(() => ({}));
       const { 
         categoryId, name, description, icon, iconColor, 
-        hasProblemGrid, vendorRoles, status 
+        hasProblemGrid, vendorRoles, status, type
       } = body;
 
       if (!name) {
         return c.json({ success: false, error: 'Category name is required' }, 400);
       }
 
-      // Get max display_order
-      const maxOrder = await query('SELECT COALESCE(MAX(display_order), 0) as max_order FROM service_categories').catch(() => ({ rows: [{ max_order: 0 }] }));
+      // Support type parameter: 'service' (default) or 'ecommerce' (for products)
+      const categoryType = type || 'service';
+      const tableName = categoryType === 'ecommerce' ? 'ecommerce_categories' : 'service_categories';
+
+      // Get max display_order from appropriate table
+      const maxOrder = await query(`SELECT COALESCE(MAX(display_order), 0) as max_order FROM ${tableName}`).catch(() => ({ rows: [{ max_order: 0 }] }));
       const nextOrder = parseInt(maxOrder.rows[0]?.max_order || '0', 10) + 1;
 
-      // Use provided category_id or generate one
+      // Handle ecommerce_categories vs service_categories
+      if (categoryType === 'ecommerce') {
+        // For ecommerce_categories, use UUID id (no category_id field)
+        const newCategory = await insert('ecommerce_categories', {
+          name,
+          description: description || '',
+          display_order: nextOrder,
+          is_active: status !== 'inactive',
+          created_at: new Date().toISOString(),
+        });
+        
+        return c.json({
+          success: true,
+          message: 'E-commerce category created successfully',
+          category: newCategory[0],
+        });
+      }
+      
+      // For service_categories, use category_id
       const finalCategoryId = categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
       
       const newCategory = await insert('service_categories', {
@@ -1740,17 +2142,20 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const products = await query(`
         SELECT 
-          id::text as id,
-          name,
-          description,
-          category_id::text as category_id,
-          price,
-          stock,
-          status,
-          created_at::text as created_at,
-          updated_at::text as updated_at
-        FROM products 
-        ORDER BY created_at DESC 
+          p.id::text as id,
+          p.name,
+          p.description,
+          p.category_id::text as category_id,
+          p.sku,
+          p.price,
+          p.stock,
+          p.status,
+          p.created_at::text as created_at,
+          p.updated_at::text as updated_at,
+          ec.name as category_name
+        FROM products p
+        LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
+        ORDER BY p.created_at DESC 
         LIMIT 50
       `);
       
@@ -1758,6 +2163,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ...p,
         id: String(p.id || ''),
         category_id: String(p.category_id || ''),
+        category: String(p.category_name || 'Uncategorized'),
+        sku: String(p.sku || ''),
         price: parseFloat(p.price || '0'),
         stock: parseInt(p.stock || '0', 10),
         status: String(p.status || 'active'),
@@ -1779,22 +2186,36 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Product name and price are required' }, 400);
       }
 
+      // Normalize categoryId: convert empty string, whitespace, or invalid values to null
+      let normalizedCategoryId: string | null = null;
+      if (categoryId && typeof categoryId === 'string' && categoryId.trim() !== '') {
+        normalizedCategoryId = categoryId.trim();
+      }
+
       // Validate category_id exists in ecommerce_categories if provided
       let validatedCategoryId: string | null = null;
-      if (categoryId) {
+      if (normalizedCategoryId) {
         try {
-          // Check if ecommerce_categories table exists and category is valid
-          const categoryCheck = await query(
-            `SELECT id FROM ecommerce_categories WHERE id = $1::uuid LIMIT 1`,
-            [categoryId]
-          );
-          
-          if (categoryCheck.rows && categoryCheck.rows.length > 0) {
-            validatedCategoryId = categoryId;
-          } else {
-            console.warn(`[CreateProduct] Category ${categoryId} not found in ecommerce_categories, setting to null`);
-            // Don't fail - allow null category_id
+          // Validate UUID format first
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(normalizedCategoryId)) {
+            console.warn(`[CreateProduct] Invalid UUID format for categoryId: ${normalizedCategoryId}`);
             validatedCategoryId = null;
+          } else {
+            // Check if ecommerce_categories table exists and category is valid
+            const categoryCheck = await query(
+              `SELECT id FROM ecommerce_categories WHERE id = $1::uuid AND (is_active = true OR is_active IS NULL) LIMIT 1`,
+              [normalizedCategoryId]
+            );
+            
+            if (categoryCheck.rows && categoryCheck.rows.length > 0) {
+              validatedCategoryId = normalizedCategoryId;
+              console.log(`[CreateProduct] Validated category: ${validatedCategoryId}`);
+            } else {
+              console.warn(`[CreateProduct] Category ${normalizedCategoryId} not found in ecommerce_categories or inactive, setting to null`);
+              // Don't fail - allow null category_id
+              validatedCategoryId = null;
+            }
           }
         } catch (catError: any) {
           // If ecommerce_categories table doesn't exist or query fails, allow null
@@ -1803,17 +2224,22 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         }
       }
 
-      const newProduct = await insert('products', {
+      // Build insert payload - explicitly set category_id to null if not validated
+      const insertPayload: any = {
         name,
         description: description || '',
-        category_id: validatedCategoryId,
+        category_id: validatedCategoryId, // Will be null if invalid or not provided
         price: parseFloat(price) || 0,
         stock: parseInt(stock || '0', 10),
         status: status || 'active',
         is_active: status !== 'inactive',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      };
+
+      console.log(`[CreateProduct] Inserting product with category_id: ${validatedCategoryId === null ? 'NULL' : validatedCategoryId}`);
+
+      const newProduct = await insert('products', insertPayload);
 
       return c.json({
         success: true,
@@ -1829,7 +2255,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           errorResponse.error.includes('foreign key constraint')) {
         return c.json({ 
           success: false, 
-          error: 'Invalid category selected. Please select a valid product category or leave it empty.' 
+          error: 'Invalid category selected. The category does not exist in the system. Please select a valid product category or leave it empty.' 
         }, 400);
       }
       
@@ -5380,6 +5806,254 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  // PUT /admin/payouts/:id - Update payout
+  app.put('/admin/payouts/:id', async (c) => {
+    const payoutId = c.req.param('id');
+    try {
+      if (!payoutId) {
+        return c.json({ success: false, error: 'Invalid payout ID' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const amount = body.amount != null ? parseFloat(String(body.amount)) : null;
+      const commission = body.commission != null ? parseFloat(String(body.commission)) : null;
+      const tds = body.tds != null ? parseFloat(String(body.tds)) : null;
+      const netAmount = body.netAmount != null ? parseFloat(String(body.netAmount)) : body.net_amount != null ? parseFloat(String(body.net_amount)) : null;
+
+      // Check if this is a settlement-based payout
+      const isSettlement = String(payoutId).startsWith('settlement-');
+      const actualId = isSettlement ? String(payoutId).replace(/^settlement-/, '') : payoutId;
+
+      if (!isSettlement && !isValidUUID(actualId)) {
+        return c.json({ success: false, error: 'Invalid payout ID' }, 400);
+      }
+
+      let payout: any = null;
+      let tableName = 'payouts';
+      let idColumn = 'id';
+
+      if (isSettlement) {
+        // This is a settlement, check settlements table
+        try {
+          const settlements = await query(
+            `SELECT * FROM settlements WHERE id = $1 LIMIT 1`,
+            [actualId]
+          );
+          payout = (settlements.rows || [])[0] as any;
+          tableName = 'settlements';
+          idColumn = 'id';
+        } catch (settlementErr: any) {
+          // settlements table might not exist or have different schema
+          return c.json({ success: false, error: 'Settlement not found' }, 404);
+        }
+      } else {
+        // This is a regular payout, check payouts table
+        const payouts = await query(
+          `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+          [actualId]
+        );
+        payout = (payouts.rows || [])[0] as any;
+      }
+
+      if (!payout) {
+        return c.json({ success: false, error: isSettlement ? 'Settlement not found' : 'Payout not found' }, 404);
+      }
+
+      // Check if payout/settlement can be edited (only pending/scheduled/failed can be edited)
+      const status = isSettlement 
+        ? (payout.settlement_status ?? payout.status ?? '')
+        : (payout.payout_status ?? payout.status ?? '');
+      const allowedForEdit = ['pending', 'scheduled', 'failed', 'processing'];
+      if (!allowedForEdit.includes(status)) {
+        return c.json({ 
+          success: false, 
+          error: `${isSettlement ? 'Settlement' : 'Payout'} cannot be edited (status: ${status}). Only pending, scheduled, processing, or failed ${isSettlement ? 'settlements' : 'payouts'} can be edited.` 
+        }, 400);
+      }
+
+      // Build update query dynamically based on what's provided
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      // Check if columns exist first
+      const columnCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = $1
+        AND column_name IN ('amount', 'total_amount', 'commission', 'tds', 'net_amount', 'commission_amount', 'tds_amount', 'settlement_status', 'status')
+      `, [tableName]);
+      const existingColumns = (columnCheck.rows || []).map((r: any) => r.column_name);
+
+      // For settlements, use total_amount; for payouts, use amount
+      if (amount != null && !isNaN(amount) && amount >= 0) {
+        if (isSettlement) {
+          if (existingColumns.includes('total_amount')) {
+            updates.push(`total_amount = $${paramIndex}`);
+            values.push(amount);
+            paramIndex++;
+          }
+        } else {
+          if (existingColumns.includes('amount')) {
+            updates.push(`amount = $${paramIndex}`);
+            values.push(amount);
+            paramIndex++;
+          }
+        }
+      }
+
+      if (commission != null && !isNaN(commission) && commission >= 0) {
+        // For settlements, use commission_amount; for payouts, try commission_amount first, then commission
+        if (existingColumns.includes('commission_amount')) {
+          updates.push(`commission_amount = $${paramIndex}`);
+          values.push(commission);
+          paramIndex++;
+        } else if (existingColumns.includes('commission')) {
+          updates.push(`commission = $${paramIndex}`);
+          values.push(commission);
+          paramIndex++;
+        }
+      }
+
+      if (tds != null && !isNaN(tds) && tds >= 0) {
+        // For settlements, use tds_amount; for payouts, try tds_amount first, then tds
+        if (existingColumns.includes('tds_amount')) {
+          updates.push(`tds_amount = $${paramIndex}`);
+          values.push(tds);
+          paramIndex++;
+        } else if (existingColumns.includes('tds')) {
+          updates.push(`tds = $${paramIndex}`);
+          values.push(tds);
+          paramIndex++;
+        }
+      }
+
+      if (netAmount != null && !isNaN(netAmount) && netAmount >= 0) {
+        if (existingColumns.includes('net_amount')) {
+          updates.push(`net_amount = $${paramIndex}`);
+          values.push(netAmount);
+          paramIndex++;
+        }
+      }
+
+      if (updates.length === 0) {
+        return c.json({ success: false, error: 'No valid fields to update' }, 400);
+      }
+
+      // Add updated_at
+      if (existingColumns.includes('updated_at')) {
+        updates.push(`updated_at = NOW()`);
+      }
+
+      // Update the payout or settlement
+      const updateQuery = `
+        UPDATE ${tableName} 
+        SET ${updates.join(', ')}
+        WHERE ${idColumn} = $${paramIndex}
+        RETURNING *
+      `;
+      values.push(actualId);
+
+      const result = await query(updateQuery, values);
+      const updatedPayout = (result.rows || [])[0] as any;
+
+      return c.json({
+        success: true,
+        message: `${isSettlement ? 'Settlement' : 'Payout'} updated successfully`,
+        payout: updatedPayout,
+        settlement: isSettlement ? updatedPayout : undefined,
+      });
+    } catch (error: any) {
+      console.error('Error updating payout:', error);
+      const msg = error?.message ?? (typeof error === 'string' ? error : 'Failed to update payout');
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  // DELETE /admin/payouts/:id - Delete payout
+  app.delete('/admin/payouts/:id', async (c) => {
+    const payoutId = c.req.param('id');
+    try {
+      if (!payoutId) {
+        return c.json({ success: false, error: 'Invalid payout ID' }, 400);
+      }
+
+      // Check if this is a settlement-based payout
+      const isSettlement = String(payoutId).startsWith('settlement-');
+      const actualId = isSettlement ? String(payoutId).replace(/^settlement-/, '') : payoutId;
+
+      if (!isSettlement && !isValidUUID(actualId)) {
+        return c.json({ success: false, error: 'Invalid payout ID' }, 400);
+      }
+
+      let payout: any = null;
+      let tableName = 'payouts';
+      let idColumn = 'id';
+
+      if (isSettlement) {
+        // This is a settlement, check settlements table
+        try {
+          const settlements = await query(
+            `SELECT * FROM settlements WHERE id = $1 LIMIT 1`,
+            [actualId]
+          );
+          payout = (settlements.rows || [])[0] as any;
+          tableName = 'settlements';
+          idColumn = 'id';
+        } catch (settlementErr: any) {
+          // settlements table might not exist or have different schema
+          return c.json({ success: false, error: 'Settlement not found' }, 404);
+        }
+      } else {
+        // This is a regular payout, check payouts table
+        const payouts = await query(
+          `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+          [actualId]
+        );
+        payout = (payouts.rows || [])[0] as any;
+      }
+
+      if (!payout) {
+        return c.json({ success: false, error: isSettlement ? 'Settlement not found' : 'Payout not found' }, 404);
+      }
+
+      // Check if payout/settlement can be deleted (only pending/scheduled can be deleted)
+      const status = isSettlement 
+        ? (payout.settlement_status ?? payout.status ?? '')
+        : (payout.payout_status ?? payout.status ?? '');
+      const allowedForDelete = ['pending', 'scheduled'];
+      if (!allowedForDelete.includes(status)) {
+        return c.json({ 
+          success: false, 
+          error: `${isSettlement ? 'Settlement' : 'Payout'} cannot be deleted (status: ${status}). Only pending or scheduled ${isSettlement ? 'settlements' : 'payouts'} can be deleted.` 
+        }, 400);
+      }
+
+      // Check if payout has been processed (has razorpay_payout_id) - only for payouts, not settlements
+      if (!isSettlement && payout.razorpay_payout_id) {
+        return c.json({ 
+          success: false, 
+          error: 'Payout cannot be deleted because it has already been sent to Razorpay. Use reject or cancel instead.' 
+        }, 400);
+      }
+
+      // Delete the payout or settlement
+      await query(
+        `DELETE FROM ${tableName} WHERE ${idColumn} = $1`,
+        [actualId]
+      );
+
+      return c.json({
+        success: true,
+        message: `${isSettlement ? 'Settlement' : 'Payout'} deleted successfully`,
+      });
+    } catch (error: any) {
+      console.error('Error deleting payout:', error);
+      const msg = error?.message ?? (typeof error === 'string' ? error : 'Failed to delete payout');
+      return c.json({ success: false, error: msg }, 500);
     }
   });
 

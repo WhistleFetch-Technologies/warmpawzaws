@@ -86,17 +86,63 @@ export default function ServiceCatalogPage() {
   // DATA LOADING
   // ============================================================================
 
+  // Debounce search term to avoid too many API calls
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500); // 500ms debounce
+    
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [filterCategory, filterStatus, filterStyle, debouncedSearchTerm]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
       
+      // Build query parameters from filters
+      const queryParams = new URLSearchParams();
+      queryParams.append('groupBy', 'subcategory');
+      
+      if (filterStatus) {
+        queryParams.append('status', filterStatus);
+      }
+      
+      if (filterStyle && filterStyle !== 'all') {
+        // Map frontend style values to backend values
+        const styleMap: Record<string, string> = {
+          'at_home': 'at_home',
+          'home': 'at_home',
+          'at_center': 'at_center',
+          'centre': 'at_center',
+          'center': 'at_center',
+          'tele': 'tele',
+          'teleconsultation': 'tele',
+          'tele-consultation': 'tele',
+        };
+        const backendStyle = styleMap[filterStyle] || filterStyle;
+        queryParams.append('serviceStyle', backendStyle);
+      }
+      
+      if (filterCategory) {
+        queryParams.append('categoryId', filterCategory);
+      }
+      
+      if (debouncedSearchTerm) {
+        queryParams.append('search', debouncedSearchTerm);
+      }
+      
+      const queryString = queryParams.toString();
+      const servicesUrl = `/admin/service-catalog${queryString ? `?${queryString}` : ''}`;
+      
       const [servicesRes, categoriesRes, statsRes] = await Promise.all([
-        apiClient.get<any>('/admin/service-catalog?groupBy=subcategory'),
+        apiClient.get<any>(servicesUrl),
         apiClient.get<any>('/service-catalog/categories'),
         apiClient.get<any>('/admin/catalog/stats'),
       ]);

@@ -106,15 +106,6 @@ export function ECommerceDashboard({
     { label: 'Pending Settlements', value: analytics?.pendingSettlements || 0, icon: CreditCard, color: 'text-purple-600 bg-purple-50' },
   ];
 
-  // Quick actions
-  const quickActions = [
-    { label: 'Product Approvals', icon: CheckCircle, onClick: onNavigateToProducts, count: analytics?.pendingApprovals || 0 },
-    { label: 'Manage Sellers', icon: Store, onClick: onNavigateToSellers },
-    { label: 'View Orders', icon: ShoppingCart, onClick: onNavigateToOrders },
-    { label: 'Settlements', icon: CreditCard, onClick: onNavigateToSettlements },
-    { label: 'Promotions', icon: Tag, onClick: onNavigateToPromotions },
-    { label: 'Categories', icon: Settings, onClick: onNavigateToCategories },
-  ];
 
   const getOrderStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -190,29 +181,6 @@ export function ECommerceDashboard({
         ))}
       </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-        <h3 className="font-semibold text-slate-900 mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {quickActions.map((action, index) => (
-            <button
-              key={index}
-              onClick={action.onClick}
-              className="flex flex-col items-center gap-2 p-4 rounded-xl border border-slate-200 hover:border-orange-300 hover:bg-orange-50 transition-all group"
-            >
-              <div className="p-3 rounded-xl bg-slate-100 group-hover:bg-orange-100 transition-colors relative">
-                <action.icon className="w-5 h-5 text-slate-600 group-hover:text-orange-600" />
-                {action.count !== undefined && action.count > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {action.count}
-                  </span>
-                )}
-              </div>
-              <span className="text-sm font-medium text-slate-700 group-hover:text-orange-700">{action.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Orders */}

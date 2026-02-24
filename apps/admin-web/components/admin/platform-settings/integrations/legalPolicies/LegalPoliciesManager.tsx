@@ -226,13 +226,19 @@ export function LegalPoliciesManager() {
           : 'Terms of Service',
       });
 
-      if (response.success) {
+      // Check for success indicators: message with "success" or presence of policyId
+      if (response.message && (response.message.toLowerCase().includes('success') || response.policyId)) {
         setSaveSuccess(policyType);
         // Refresh policies
         await loadPolicies();
         setTimeout(() => setSaveSuccess(null), 3000);
+      } else if (response.success) {
+        // Also support success field if present
+        setSaveSuccess(policyType);
+        await loadPolicies();
+        setTimeout(() => setSaveSuccess(null), 3000);
       } else {
-        alert('Failed to save policy: ' + (response.error || 'Unknown error'));
+        alert('Failed to save policy: ' + (response.error || response.message || 'Unknown error'));
       }
     } catch (error: any) {
       console.error('Error saving policy:', error);

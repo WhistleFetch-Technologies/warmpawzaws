@@ -13,9 +13,27 @@ export function CustomServiceApproval() {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/services?status=pending_approval');
-      setServices((data as any).data?.services || (data as any).services || []);
+      const rawServices = (data as any).data?.services || (data as any).services || [];
+      
+      // Map API response (snake_case) to component format (camelCase)
+      const mappedServices = rawServices.map((s: any) => ({
+        id: s.id,
+        serviceName: s.service_name || s.name || 'Unnamed Service',
+        categoryName: s.category || s.category_name || 'Uncategorized',
+        vendorName: s.vendor_name || s.business_name || 'Unknown Vendor',
+        price: parseFloat(s.price || s.base_price || 0),
+        serviceId: s.service_id,
+        vendorId: s.vendor_id,
+        description: s.description || s.custom_description,
+        serviceStyle: s.service_style,
+        duration: s.duration_minutes,
+        publishStatus: s.publish_status,
+      }));
+      
+      setServices(mappedServices);
     } catch (error) {
       console.error('Error loading services:', error);
+      toast.error('Failed to load services');
     } finally {
       setLoading(false);
     }
@@ -102,11 +120,11 @@ export function CustomServiceApproval() {
                   <tr key={service.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div>
-                        <p className="font-medium text-black">{service.serviceName}</p>
-                        <p className="text-xs text-gray-500">{service.categoryName}</p>
+                        <p className="font-medium text-black">{service.serviceName || 'Unnamed Service'}</p>
+                        <p className="text-xs text-gray-500">{service.categoryName || 'Uncategorized'}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{service.vendorName || '-'}</td>
+                    <td className="px-6 py-4 text-gray-600">{service.vendorName || 'Unknown Vendor'}</td>
                     <td className="px-6 py-4 text-gray-600">₹{service.price || 0}</td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">

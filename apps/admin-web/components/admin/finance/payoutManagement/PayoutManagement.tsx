@@ -16,6 +16,8 @@ import {
   Eye,
   FileText,
   X,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { Card, Badge, Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
@@ -58,6 +60,14 @@ export function PayoutManagement() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [editingPayout, setEditingPayout] = useState<Payout | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    amount: 0,
+    commission: 0,
+    tds: 0,
+    netAmount: 0,
+  });
 
   // Stats
   const [stats, setStats] = useState({
@@ -187,6 +197,57 @@ export function PayoutManagement() {
       loadStats();
     } catch (error) {
       toast.error('Failed to reject payout');
+    }
+  };
+
+  const handleEditPayout = (payout: Payout) => {
+    setEditingPayout(payout);
+    setEditFormData({
+      amount: payout.amount ?? 0,
+      commission: payout.commission ?? 0,
+      tds: payout.tds ?? 0,
+      netAmount: payout.netAmount ?? (payout.amount ?? 0) - (payout.commission ?? 0) - (payout.tds ?? 0),
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingPayout) return;
+
+    try {
+      // Calculate net amount
+      const netAmount = editFormData.amount - editFormData.commission - editFormData.tds;
+      
+      await apiClient.put(`/admin/payouts/${editingPayout.id}`, {
+        amount: editFormData.amount,
+        commission: editFormData.commission,
+        tds: editFormData.tds,
+        netAmount: netAmount,
+      });
+      toast.success('Payout updated successfully');
+      setShowEditModal(false);
+      setEditingPayout(null);
+      loadPayouts();
+      loadStats();
+    } catch (error: any) {
+      const msg = error?.message ?? 'Failed to update payout';
+      toast.error(msg);
+    }
+  };
+
+  const handleDeletePayout = async (payout: Payout) => {
+    if (!confirm(`Are you sure you want to delete this payout? This action cannot be undone.\n\nVendor: ${payout.vendorName}\nAmount: ₹${(payout.netAmount ?? 0).toLocaleString()}`)) {
+      return;
+    }
+
+    try {
+      await apiClient.delete(`/admin/payouts/${payout.id}`);
+      toast.success('Payout deleted successfully');
+      loadPayouts();
+      loadStats();
+    } catch (error: any) {
+      const msg = error?.message ?? 'Failed to delete payout';
+      toast.error(msg);
     }
   };
 
@@ -409,9 +470,31 @@ export function PayoutManagement() {
                           }}
                           variant="ghost"
                           size="sm"
+                          title="View Details"
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
+                        {status !== 'completed' && (
+                          <Button
+                            onClick={() => handleEditPayout(payout)}
+                            variant="ghost"
+                            size="sm"
+                            title="Edit Payout"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {status !== 'completed' && (
+                          <Button
+                            onClick={() => handleDeletePayout(payout)}
+                            variant="ghost"
+                            size="sm"
+                            title="Delete Payout"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                         {(status === 'pending' || status === 'processing' || status === 'failed') && (
                           <Button
                             onClick={() => handleProcessPayout(payout)}
@@ -549,6 +632,103 @@ export function PayoutManagement() {
                   {(selectedPayout.status ?? (selectedPayout as any).payout_status) === 'failed' ? 'Retry Payout' : 'Process Payout'}
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Payout Modal */}
+      {showEditModal && editingPayout && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Edit Payout</h3>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingPayout(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Vendor</p>
+                <p className="font-semibold">{editingPayout.vendorName ?? (editingPayout as any).vendor_name ?? '-'}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Gross Amount (₹)</label>
+                <Input
+                  type="number"
+                  value={editFormData.amount}
+                  onChange={(e) => {
+                    const amount = Number(e.target.value) || 0;
+                    setEditFormData({
+                      ...editFormData,
+                      amount,
+                      netAmount: amount - editFormData.commission - editFormData.tds,
+                    });
+                  }}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Commission (₹)</label>
+                <Input
+                  type="number"
+                  value={editFormData.commission}
+                  onChange={(e) => {
+                    const commission = Number(e.target.value) || 0;
+                    setEditFormData({
+                      ...editFormData,
+                      commission,
+                      netAmount: editFormData.amount - commission - editFormData.tds,
+                    });
+                  }}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">TDS (₹)</label>
+                <Input
+                  type="number"
+                  value={editFormData.tds}
+                  onChange={(e) => {
+                    const tds = Number(e.target.value) || 0;
+                    setEditFormData({
+                      ...editFormData,
+                      tds,
+                      netAmount: editFormData.amount - editFormData.commission - tds,
+                    });
+                  }}
+                  className="w-full"
+                />
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-500 mb-1">Net Amount</p>
+                <p className="text-lg font-bold text-green-600">
+                  ₹{(editFormData.amount - editFormData.commission - editFormData.tds).toLocaleString()}
+                </p>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
+              <Button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingPayout(null);
+                }}
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveEdit}
+                className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
+              >
+                Save Changes
+              </Button>
             </div>
           </div>
         </div>

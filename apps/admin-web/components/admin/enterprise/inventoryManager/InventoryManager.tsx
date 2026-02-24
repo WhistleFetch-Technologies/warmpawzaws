@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	Search,
 	Filter,
@@ -11,6 +11,7 @@ import {
 	Trash2,
 	ArrowUpRight,
 	ArrowDownRight,
+	Loader2,
 } from "lucide-react";
 
 import {
@@ -44,6 +45,55 @@ export function InventoryManager() {
 	const [products, setProducts] = useState<Product[]>([]);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [showAddModal, setShowAddModal] = useState(false);
+	const [loading, setLoading] = useState(true);
+
+	// Fetch products on mount
+	useEffect(() => {
+		loadProducts();
+	}, []);
+
+	const loadProducts = async () => {
+		try {
+			setLoading(true);
+			const response = await apiClient.get<any>("/admin/catalog/products");
+			
+			if (response.success && response.products) {
+				// Map API response to Product interface
+				const mappedProducts: Product[] = response.products.map((p: any) => {
+					// Determine stock status
+					let status: Product["status"] = "in_stock";
+					const stockNum = parseInt(p.stock || 0, 10);
+					if (stockNum === 0) {
+						status = "out_of_stock";
+					} else if (stockNum <= 5) {
+						status = "low_stock";
+					}
+
+					return {
+						id: p.id || "",
+						name: p.name || "Unnamed Product",
+						sku: p.sku || `SKU-${p.id?.slice(0, 8) || "N/A"}`,
+						category: p.category || p.category_name || (p.category_id ? "Category" : "Uncategorized"),
+						stock: stockNum,
+						minStock: 5, // Default min stock
+						price: parseFloat(p.price || 0),
+						status,
+						lastUpdated: p.updated_at || p.created_at || new Date().toISOString(),
+					};
+				});
+				
+				setProducts(mappedProducts);
+			} else {
+				setProducts([]);
+			}
+		} catch (error) {
+			console.error("Error loading products:", error);
+			toast.error("Failed to load products");
+			setProducts([]);
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	const getStatusColor = (status: string) => {
 		switch (status) {
@@ -91,7 +141,7 @@ export function InventoryManager() {
 	const filteredProducts = products.filter(
 		(p) =>
 			p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+			(p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()))
 	);
 
 	return (
@@ -169,10 +219,19 @@ export function InventoryManager() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{filteredProducts.length === 0 ? (
+						{loading ? (
+							<TableRow>
+								<TableCell colSpan={6} className="text-center py-8">
+									<div className="flex items-center justify-center gap-2">
+										<Loader2 className="w-5 h-5 animate-spin text-[#FF8C42]" />
+										<span className="text-gray-500">Loading products...</span>
+									</div>
+								</TableCell>
+							</TableRow>
+						) : filteredProducts.length === 0 ? (
 							<TableRow>
 								<TableCell colSpan={6} className="text-center py-8 text-gray-500">
-									No products found
+									{searchQuery ? "No products found matching your search" : "No products found"}
 								</TableCell>
 							</TableRow>
 						) : (
@@ -250,8 +309,9 @@ export function InventoryManager() {
 				onClose={() => setShowAddModal(false)}
 				onSuccess={() => {
 					setShowAddModal(false);
-					// TODO: Reload products list
 					toast.success("Product added successfully");
+					// Reload products list after creating
+					loadProducts();
 				}}
 			/>
 		</div>

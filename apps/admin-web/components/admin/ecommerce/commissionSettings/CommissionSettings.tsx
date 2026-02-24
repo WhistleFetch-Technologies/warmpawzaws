@@ -216,6 +216,45 @@ export function CommissionSettings() {
     }
   };
 
+  const addTier = () => {
+    console.log('addTier called');
+    const newTier: VendorTier = {
+      id: `tier_${Date.now()}`,
+      name: 'New Tier',
+      commissionRate: 15,
+      requirements: {},
+      benefits: ['Standard benefits'],
+      color: 'bg-gray-100 text-gray-700',
+    };
+    console.log('Setting editingTier and showTierModal', newTier);
+    setEditingTier(newTier);
+    setShowTierModal(true);
+  };
+
+  const saveTier = (tier: VendorTier) => {
+    if (tier.id.startsWith('tier_')) {
+      const existing = vendorTiers.find((t) => t.id === tier.id);
+      if (existing) {
+        setVendorTiers(
+          vendorTiers.map((t) =>
+            t.id === tier.id ? tier : t
+          )
+        );
+      } else {
+        setVendorTiers([...vendorTiers, tier]);
+      }
+    }
+    setShowTierModal(false);
+    setEditingTier(null);
+  };
+
+  const deleteTier = (tierId: string) => {
+    if (confirm('Are you sure you want to delete this tier?')) {
+      setVendorTiers(vendorTiers.filter((t) => t.id !== tierId));
+      toast.success('Tier deleted');
+    }
+  };
+
   const toggleRuleExpanded = (ruleId: string) => {
     const newExpanded = new Set(expandedRules);
     if (newExpanded.has(ruleId)) {
@@ -393,7 +432,16 @@ export function CommissionSettings() {
             <Users className="w-5 h-5 text-[#FF8C42]" />
             <h3 className="font-semibold text-gray-900">Vendor Tier System</h3>
           </div>
-          <Button onClick={() => setShowTierModal(true)} variant="outline" size="sm">
+          <Button 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              addTier();
+            }} 
+            variant="outline" 
+            size="sm"
+            type="button"
+          >
             <Plus className="w-4 h-4 mr-2" />
             Add Tier
           </Button>
@@ -669,6 +717,19 @@ export function CommissionSettings() {
           }}
         />
       )}
+
+      {/* Tier Modal */}
+      {showTierModal && editingTier && (
+        <TierEditorModal
+          tier={editingTier}
+          onSave={saveTier}
+          onClose={() => {
+            console.log('Closing tier modal');
+            setShowTierModal(false);
+            setEditingTier(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -688,6 +749,30 @@ function CommissionCalculator({
   const [orderValue, setOrderValue] = useState(1000);
   const [category, setCategory] = useState('');
   const [vendorTier, setVendorTier] = useState('');
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const data = await apiClient.get<any>('/admin/catalog/categories?type=ecommerce');
+      const cats = (data as any).categories || (data as any).data?.categories || [];
+      setCategories(cats.map((c: any) => ({
+        id: c.id || c.category_id || '',
+        name: c.name || c.category_name || 'Unnamed',
+      })));
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      // Fallback to empty array
+      setCategories([]);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
 
   const commission = calculateCommission(orderValue, category, vendorTier);
   const commissionRate = (commission / orderValue) * 100;
@@ -715,13 +800,20 @@ function CommissionCalculator({
             value={category}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={loadingCategories}
           >
             <option value="">Select category</option>
-            <option value="food">Food</option>
-            <option value="toys">Toys</option>
-            <option value="accessories">Accessories</option>
-            <option value="medicine">Medicine</option>
-            <option value="grooming">Grooming</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+            {categories.length === 0 && !loadingCategories && (
+              <option value="" disabled>No categories available</option>
+            )}
+            {loadingCategories && (
+              <option value="" disabled>Loading categories...</option>
+            )}
           </select>
         </div>
         <div>
@@ -734,11 +826,15 @@ function CommissionCalculator({
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select tier</option>
-            {vendorTiers.map((tier) => (
-              <option key={tier.id} value={tier.id}>
-                {tier.name}
-              </option>
-            ))}
+            {vendorTiers && vendorTiers.length > 0 ? (
+              vendorTiers.map((tier) => (
+                <option key={tier.id} value={tier.id}>
+                  {tier.name}
+                </option>
+              ))
+            ) : (
+              <option value="" disabled>No tiers available</option>
+            )}
           </select>
         </div>
       </div>
@@ -968,6 +1064,100 @@ function RuleEditorModal({
           >
             <Save className="w-4 h-4 mr-2" />
             Save Rule
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tier Editor Modal Component
+function TierEditorModal({
+  tier,
+  onSave,
+  onClose,
+}: {
+  tier: VendorTier;
+  onSave: (tier: VendorTier) => void;
+  onClose: () => void;
+}) {
+  const [editedTier, setEditedTier] = useState<VendorTier>(tier);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+          <h3 className="text-xl font-bold text-gray-900">
+            {tier.id.startsWith('tier_') ? 'Edit' : 'New'} Vendor Tier
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tier Name *</label>
+            <input
+              type="text"
+              value={editedTier.name}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedTier({ ...editedTier, name: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              placeholder="e.g., Bronze, Silver, Gold"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Commission Rate (%) *</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={editedTier.commissionRate}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedTier({ ...editedTier, commissionRate: parseFloat(e.target.value) || 0 })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Color Class</label>
+            <select
+              value={editedTier.color}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEditedTier({ ...editedTier, color: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+            >
+              <option value="bg-orange-100 text-orange-700">Orange (Bronze)</option>
+              <option value="bg-gray-100 text-gray-700">Gray (Silver)</option>
+              <option value="bg-yellow-100 text-yellow-700">Yellow (Gold)</option>
+              <option value="bg-purple-100 text-purple-700">Purple (Platinum)</option>
+              <option value="bg-blue-100 text-blue-700">Blue</option>
+              <option value="bg-green-100 text-green-700">Green</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Benefits (one per line)</label>
+            <textarea
+              value={editedTier.benefits.join('\n')}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedTier({ ...editedTier, benefits: e.target.value.split('\n').filter(b => b.trim()) })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              rows={4}
+              placeholder="Basic support&#10;Standard listing"
+            />
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
+          <Button onClick={onClose} variant="outline">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onSave(editedTier)}
+            className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            Save Tier
           </Button>
         </div>
       </div>

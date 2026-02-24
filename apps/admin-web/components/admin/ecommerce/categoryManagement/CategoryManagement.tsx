@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Save,
   Plus,
@@ -117,7 +117,28 @@ export function CategoryManagement() {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/categories');
-      setCategories((data as any).data?.categories || (data as any).categories || getDefaultCategories());
+      const rawCategories = (data as any).data?.categories || (data as any).categories || [];
+      
+      // Map API response to component format (is_active -> enabled, display_order -> order)
+      const mappedCategories = rawCategories.map((cat: any) => {
+        const enabled = cat.is_active !== undefined ? Boolean(cat.is_active) : (cat.enabled !== undefined ? Boolean(cat.enabled) : true);
+        return {
+          ...cat,
+          enabled: enabled,
+          is_active: cat.is_active, // Keep original for compatibility
+          order: cat.display_order !== undefined ? cat.display_order : (cat.order !== undefined ? cat.order : 0),
+          parentId: cat.parent_category_id || cat.parentId || null,
+          slug: cat.slug || cat.name?.toLowerCase().replace(/\s+/g, '-') || '',
+        };
+      });
+      
+      console.log('[Categories] Loaded', mappedCategories.length, 'categories. Sample:', {
+        name: mappedCategories[0]?.name,
+        enabled: mappedCategories[0]?.enabled,
+        is_active: mappedCategories[0]?.is_active
+      });
+      
+      setCategories(mappedCategories.length > 0 ? mappedCategories : getDefaultCategories());
     } catch (error) {
       console.error('Error loading categories:', error);
       setCategories(getDefaultCategories());
@@ -202,23 +223,43 @@ export function CategoryManagement() {
     setExpandedCategories(newExpanded);
   };
 
-  const getFilteredCategories = () => {
-    let filtered = categories;
+  const filteredCategories = useMemo(() => {
+    let filtered = [...categories]; // Create a copy to avoid mutating state
 
-    if (searchQuery) {
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(
         (c) =>
-          c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.description?.toLowerCase().includes(searchQuery.toLowerCase())
+          c.name.toLowerCase().includes(query) ||
+          c.description?.toLowerCase().includes(query) ||
+          c.slug?.toLowerCase().includes(query)
       );
     }
 
+    // Apply status filter
     if (filterEnabled !== null) {
-      filtered = filtered.filter((c) => c.enabled === filterEnabled);
+      const beforeFilter = filtered.length;
+      filtered = filtered.filter((c) => {
+        // Check both enabled and is_active fields for compatibility
+        const isEnabled = c.enabled !== undefined ? c.enabled : (c.is_active !== undefined ? c.is_active : true);
+        
+        if (filterEnabled === true) {
+          // Active Only: must be enabled
+          return isEnabled === true;
+        } else if (filterEnabled === false) {
+          // Disabled Only: must be disabled
+          return isEnabled === false;
+        }
+        return true;
+      });
+      console.log('[Categories Filter] Applied filter:', filterEnabled, 'Before:', beforeFilter, 'After:', filtered.length, 'Categories:', filtered.map(c => ({ name: c.name, enabled: c.enabled, is_active: c.is_active })));
     }
 
-    return filtered.sort((a, b) => a.order - b.order);
-  };
+    return filtered.sort((a, b) => (a.order || 0) - (b.order || 0));
+  }, [categories, searchQuery, filterEnabled]);
+
+  const getFilteredCategories = () => filteredCategories;
 
   const getRootCategories = () => {
     return getFilteredCategories().filter((c) => !c.parentId);
@@ -339,12 +380,17 @@ export function CategoryManagement() {
 
           <div className="flex items-center gap-2">
             <select
-              value={filterEnabled === null ? 'all' : filterEnabled.toString()}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                setFilterEnabled(
-                  e.target.value === 'all' ? null : e.target.value === 'true'
-                )
-              }
+              value={filterEnabled === null ? 'all' : (filterEnabled === true ? 'true' : 'false')}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                const value = e.target.value;
+                if (value === 'all') {
+                  setFilterEnabled(null);
+                } else if (value === 'true') {
+                  setFilterEnabled(true);
+                } else if (value === 'false') {
+                  setFilterEnabled(false);
+                }
+              }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
             >
               <option value="all">All Status</option>

@@ -827,6 +827,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       const vendorId = c.req.query('vendorId'); // Optional: for vendor-specific filtering
       const groupBy = c.req.query('groupBy'); // 'category' | 'subcategory' | 'none'
       const serviceStyle = c.req.query('serviceStyle'); // ✅ NEW: Filter by service style (at_home, at_center, tele)
+      const categoryId = c.req.query('categoryId'); // ✅ NEW: Filter by category ID
+      const search = c.req.query('search'); // ✅ NEW: Search by service name, description, etc.
 
       // ✅ CRITICAL: Get role from DB if roleId provided (no frontend dependency)
       let role = null;
@@ -949,6 +951,29 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         params.push(serviceStyle);
         paramIndex++;
         console.log(`[Admin Service Catalog] Filtering by service style: ${serviceStyle}`);
+      }
+
+      // ✅ NEW: Filter by category ID if provided
+      if (categoryId) {
+        catalogQuery += ` AND (category_id = $${paramIndex}::uuid OR category_id::text = $${paramIndex})`;
+        params.push(categoryId);
+        paramIndex++;
+        console.log(`[Admin Service Catalog] Filtering by category ID: ${categoryId}`);
+      }
+
+      // ✅ NEW: Search filter if provided
+      if (search && search.trim()) {
+        const searchTerm = `%${search.trim().toLowerCase()}%`;
+        catalogQuery += ` AND (
+          LOWER(service_name) LIKE $${paramIndex} OR 
+          LOWER(display_name) LIKE $${paramIndex} OR 
+          LOWER(description) LIKE $${paramIndex} OR 
+          LOWER(category_name) LIKE $${paramIndex} OR 
+          LOWER(sub_category_name) LIKE $${paramIndex}
+        )`;
+        params.push(searchTerm);
+        paramIndex++;
+        console.log(`[Admin Service Catalog] Filtering by search term: ${search}`);
       }
 
       catalogQuery += ` ORDER BY category_name ASC, sub_category_name ASC NULLS LAST, display_order ASC, service_name ASC`;

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import React, { useState, useEffect, useRef } from 'react';
+import { apiClient, isUatMode } from '@/lib/api-client';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { StatCard } from '@/components/admin/shared/StatCard';
 import { EnhancedButton } from '@/components/admin/shared/EnhancedButton';
@@ -675,7 +675,12 @@ function CreateEventModal({
     expected_attendees: '',
     status: 'draft',
     banner: null as File | null,
+    bannerPreview: null as string | null,
+    bannerUrl: null as string | null,
   });
+  
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (event) {
@@ -694,6 +699,8 @@ function CreateEventModal({
         expected_attendees: event.max_participants?.toString() || '',
         status: event.status || 'draft',
         banner: null,
+        bannerPreview: event.image_url || null,
+        bannerUrl: event.image_url || null,
       });
     } else {
       setFormData({
@@ -707,9 +714,110 @@ function CreateEventModal({
         expected_attendees: '',
         status: 'draft',
         banner: null,
+        bannerPreview: null,
+        bannerUrl: null,
       });
     }
   }, [event, isOpen]);
+
+  const handleBannerUpload = async (file: File) => {
+    try {
+      setUploadingBanner(true);
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please upload an image file');
+        return;
+      }
+      
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        toast.error('Image size must be less than 5MB');
+        return;
+      }
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({
+          ...prev,
+          bannerPreview: reader.result as string,
+        }));
+      };
+      reader.readAsDataURL(file);
+      
+      // Upload to S3 - use a system vendor ID for admin-created events
+      // First, try to get a system/admin vendor ID, or use a default
+      let systemVendorId = '00000000-0000-0000-0000-000000000000'; // Default system vendor UUID
+      
+      try {
+        // Try to find an admin/system vendor
+        const vendorsResponse = await apiClient.get<any>('/admin/vendors?limit=1');
+        if (vendorsResponse && Array.isArray(vendorsResponse) && vendorsResponse.length > 0) {
+          systemVendorId = vendorsResponse[0].id;
+        } else if (vendorsResponse && (vendorsResponse as any).vendors && Array.isArray((vendorsResponse as any).vendors) && (vendorsResponse as any).vendors.length > 0) {
+          systemVendorId = (vendorsResponse as any).vendors[0].id;
+        }
+      } catch (e) {
+        console.warn('Could not fetch vendor ID, using default');
+      }
+      
+      // Use fetch directly for FormData (apiClient.post stringifies everything)
+      const formDataToUpload = new FormData();
+      formDataToUpload.append('file', file);
+      formDataToUpload.append('vendorId', systemVendorId);
+      formDataToUpload.append('documentType', 'event_banner');
+      
+      const baseUrl = apiClient.getBaseUrl();
+      // Get auth token from localStorage (apiClient.getAuthToken is private)
+      const token = typeof window !== 'undefined' ? localStorage.getItem('adminAuthToken') : null;
+      
+      const response = await fetch(`${baseUrl}/storage/upload`, {
+        method: 'POST',
+        body: formDataToUpload,
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(isUatMode() ? { 'X-UAT-Mode': 'true' } : {}),
+        },
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(errorData.error || 'Failed to upload banner');
+      }
+      
+      const uploadResponse = await response.json();
+      
+      if (uploadResponse.url || uploadResponse.fileUrl || uploadResponse.s3Url) {
+        const imageUrl = uploadResponse.url || uploadResponse.fileUrl || uploadResponse.s3Url;
+        setFormData(prev => ({
+          ...prev,
+          banner: file,
+          bannerUrl: imageUrl,
+        }));
+        toast.success('Banner uploaded successfully!');
+      } else {
+        toast.error('Failed to upload banner - no URL returned');
+      }
+    } catch (error: any) {
+      console.error('Error uploading banner:', error);
+      toast.error(error.message || 'Failed to upload banner');
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleBannerUpload(file);
+    }
+  };
+
+  const handleBannerClick = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleSubmit = async () => {
     if (!formData.title || !formData.date || !formData.start_time) {
@@ -719,6 +827,47 @@ function CreateEventModal({
 
     try {
       setLoading(true);
+      
+      // Upload banner if a new file is selected
+      let imageUrl = formData.bannerUrl;
+      if (formData.banner && !formData.bannerUrl) {
+        // Get system vendor ID for upload
+        let systemVendorId = '00000000-0000-0000-0000-000000000000';
+        try {
+          const vendorsResponse = await apiClient.get<any>('/admin/vendors?limit=1');
+          if (vendorsResponse && Array.isArray(vendorsResponse) && vendorsResponse.length > 0) {
+            systemVendorId = vendorsResponse[0].id;
+          } else if (vendorsResponse && (vendorsResponse as any).vendors && Array.isArray((vendorsResponse as any).vendors) && (vendorsResponse as any).vendors.length > 0) {
+            systemVendorId = (vendorsResponse as any).vendors[0].id;
+          }
+        } catch (e) {
+          console.warn('Could not fetch vendor ID, using default');
+        }
+        
+        // Use fetch directly for FormData (apiClient.post stringifies everything)
+        const formDataToUpload = new FormData();
+        formDataToUpload.append('file', formData.banner);
+        formDataToUpload.append('vendorId', systemVendorId);
+        formDataToUpload.append('documentType', 'event_banner');
+        
+        const baseUrl = apiClient.getBaseUrl();
+        const token = typeof window !== 'undefined' ? localStorage.getItem('adminAuthToken') : null;
+        
+        const uploadResponse = await fetch(`${baseUrl}/storage/upload`, {
+          method: 'POST',
+          body: formDataToUpload,
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(isUatMode() ? { 'X-UAT-Mode': 'true' } : {}),
+          },
+        });
+        
+        if (uploadResponse.ok) {
+          const uploadData = await uploadResponse.json();
+          imageUrl = uploadData.url || uploadData.fileUrl || uploadData.s3Url || imageUrl;
+        }
+      }
+      
       const payload = {
         title: formData.title,
         description: formData.description,
@@ -730,6 +879,7 @@ function CreateEventModal({
         location: formData.location,
         max_participants: parseInt(formData.expected_attendees) || undefined,
         status: formData.status,
+        image_url: imageUrl || undefined,
       };
 
       if (event) {
@@ -903,14 +1053,62 @@ function CreateEventModal({
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Add banner for your event
           </label>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#FF8C42] transition-colors cursor-pointer">
-            <div className="text-gray-400 mb-2">
-              <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-            </div>
-            <p className="text-sm text-gray-600">No media added yet</p>
-            <p className="text-xs text-gray-500 mt-1">Click to upload banner image</p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <div 
+            onClick={handleBannerClick}
+            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#FF8C42] transition-colors cursor-pointer relative"
+          >
+            {uploadingBanner ? (
+              <div className="flex flex-col items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-4 border-[#FF8C42] border-t-transparent mb-2"></div>
+                <p className="text-sm text-gray-600">Uploading...</p>
+              </div>
+            ) : formData.bannerPreview ? (
+              <div className="relative">
+                <img 
+                  src={formData.bannerPreview} 
+                  alt="Banner preview" 
+                  className="max-h-48 mx-auto rounded-lg object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFormData(prev => ({
+                      ...prev,
+                      banner: null,
+                      bannerPreview: null,
+                      bannerUrl: null,
+                    }));
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <p className="text-xs text-gray-500 mt-2">Click to change image</p>
+              </div>
+            ) : (
+              <>
+                <div className="text-gray-400 mb-2">
+                  <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <p className="text-sm text-gray-600">No media added yet</p>
+                <p className="text-xs text-gray-500 mt-1">Click to upload banner image</p>
+              </>
+            )}
           </div>
         </div>
       </div>

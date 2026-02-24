@@ -382,10 +382,39 @@ export function CouponManagement() {
 											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
-													usageLimit: parseInt(e.target.value),
+													usageLimit: parseInt(e.target.value) || 0,
 												})
 											}
 											placeholder="0 for unlimited"
+										/>
+									</div>
+								</div>
+
+								<div className="grid grid-cols-2 gap-4">
+									<div className="space-y-2">
+										<label className="text-sm font-medium">Valid From</label>
+										<Input
+											type="date"
+											value={formData.validFrom}
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+												setFormData({
+													...formData,
+													validFrom: e.target.value,
+												})
+											}
+										/>
+									</div>
+									<div className="space-y-2">
+										<label className="text-sm font-medium">Expiry Date</label>
+										<Input
+											type="date"
+											value={formData.validUntil}
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+												setFormData({
+													...formData,
+													validUntil: e.target.value,
+												})
+											}
 										/>
 									</div>
 								</div>
@@ -491,16 +520,16 @@ export function CouponManagement() {
 								</div>
 
 								<div className="text-sm">
-									<span className="font-medium">{coupon.usageCount || 0}</span>
+									<span className="font-medium">{coupon.usageCount || coupon.uses_count || coupon.current_uses || 0}</span>
 									<span className="text-gray-400">
 										{" "}
-										/ {coupon.usageLimit || "∞"}
+										/ {coupon.usageLimit || coupon.max_uses || coupon.usage_limit || "∞"}
 									</span>
 								</div>
 
 								<div className="text-sm text-gray-600">
-									{coupon.validUntil
-										? new Date(coupon.validUntil).toLocaleDateString()
+									{coupon.validUntil || coupon.end_date || coupon.expires_at
+										? new Date(coupon.validUntil || coupon.end_date || coupon.expires_at).toLocaleDateString()
 										: "No expiry"}
 								</div>
 
