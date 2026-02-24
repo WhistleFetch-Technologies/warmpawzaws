@@ -173,7 +173,7 @@ async function extractAuth(c: Context): Promise<{
     const isUATToken = payload.iss === 'warmpawz-uat' || payload.issuer === 'warmpawz-uat';
 
     console.log(`[AuthMiddleware] Token verified successfully - userId: ${userId}, role: ${userRole}, isUAT: ${isUATToken}`);
-    
+
     return {
       valid: true,
       userId,

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X } from 'lucide-react';
+import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText } from 'lucide-react';
 import { Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { CustomDropdown } from './CustomDropdown';
 import { VendorDetailsModal } from './VendorDetailsModal';
+import { EditVendorDocumentsModal } from './EditVendorDocumentsModal';
 
 interface DiscoveryHealth {
   hasPhoto: boolean;
@@ -57,6 +58,8 @@ export function ActiveVendorsTab() {
   const [cityFilter, setCityFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [editingDocumentsVendorId, setEditingDocumentsVendorId] = useState<string | null>(null);
+  const [editingDocumentsVendorName, setEditingDocumentsVendorName] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
 
@@ -528,6 +531,19 @@ export function ActiveVendorsTab() {
                       Call
                     </Button>
                   </div>
+                  {/* ✅ NEW: Edit Documents button */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="hover:bg-blue-50 hover:border-blue-200 text-blue-600"
+                    onClick={() => {
+                      setEditingDocumentsVendorId(vendor.id);
+                      setEditingDocumentsVendorName(vendor.name);
+                    }}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Edit Documents
+                  </Button>
                   {/* ✅ NEW: Deactivate button */}
                   <Button
                     size="sm"
@@ -550,6 +566,18 @@ export function ActiveVendorsTab() {
           isOpen={!!selectedVendorId}
           onClose={() => setSelectedVendorId(null)}
           vendorId={selectedVendorId}
+        />
+      )}
+
+      {editingDocumentsVendorId && (
+        <EditVendorDocumentsModal
+          isOpen={!!editingDocumentsVendorId}
+          onClose={() => {
+            setEditingDocumentsVendorId(null);
+            setEditingDocumentsVendorName('');
+          }}
+          vendorId={editingDocumentsVendorId}
+          vendorName={editingDocumentsVendorName}
         />
       )}
     </div>

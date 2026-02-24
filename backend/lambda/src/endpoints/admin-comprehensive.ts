@@ -385,15 +385,15 @@ class AdminLoginHandler extends BaseHandler {
         } else {
           // Cognito is configured - use it
           try {
-            const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../utils/cognito-client');
-            const cognitoUser = await getOrCreateCognitoUser(admin.email, undefined, 'admin');
-            const cognitoTokens = await authenticateCognitoUser(admin.email);
-            tokens = {
-              accessToken: cognitoTokens.accessToken,
-              idToken: cognitoTokens.idToken,
-              refreshToken: cognitoTokens.refreshToken,
-              expiresIn: cognitoTokens.expiresIn,
-            };
+        const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../utils/cognito-client');
+        const cognitoUser = await getOrCreateCognitoUser(admin.email, undefined, 'admin');
+        const cognitoTokens = await authenticateCognitoUser(admin.email);
+        tokens = {
+          accessToken: cognitoTokens.accessToken,
+          idToken: cognitoTokens.idToken,
+          refreshToken: cognitoTokens.refreshToken,
+          expiresIn: cognitoTokens.expiresIn,
+        };
           } catch (cognitoError: any) {
             // If Cognito fails, fallback to JWT
             console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using JWT fallback`);
@@ -1302,7 +1302,49 @@ class GetVendorDocumentsHandler extends BaseHandler {
       let vendorPhone: string | null = null;
 
       // ============================================================================
-      // STRATEGY 1: Query via vendor_identity JOIN (standard path)
+      // STRATEGY 1: Query vendor_documents table FIRST (source of truth for admin updates)
+      // ============================================================================
+      try {
+        const vendorDocsResult = await query(`
+          SELECT 
+            id,
+            document_type as type,
+            document_name as name,
+            document_url as url,
+            file_type,
+            is_verified as verified,
+            uploaded_at,
+            updated_at
+          FROM vendor_documents
+          WHERE vendor_id = $1
+          ORDER BY updated_at DESC NULLS LAST, uploaded_at DESC
+        `, [vendorId]);
+
+        if (vendorDocsResult.rows && vendorDocsResult.rows.length > 0) {
+          console.log(`[GetVendorDocuments] Found ${vendorDocsResult.rows.length} documents in vendor_documents table`);
+          
+          vendorDocsResult.rows.forEach((doc: any) => {
+            // document_url stores the S3 key (not a full URL)
+            const s3Key = doc.url && !doc.url.startsWith('http') ? doc.url : this.extractS3Key(doc.url);
+            documents.push({
+              id: doc.id,
+              type: doc.type,
+              name: getDocumentLabel(doc.type),
+              url: doc.url, // Will be refreshed to presigned URL later
+              fileKey: s3Key,
+              uploadedAt: doc.uploaded_at,
+              updatedAt: doc.updated_at,
+              status: 'uploaded',
+              verified: doc.verified || false
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('[GetVendorDocuments] vendor_documents table query failed:', e);
+      }
+
+      // ============================================================================
+      // STRATEGY 2: Query via vendor_identity JOIN (fallback for documents not in table)
       // ============================================================================
       const docsResult = await query(`
         SELECT 
@@ -1328,50 +1370,101 @@ class GetVendorDocumentsHandler extends BaseHandler {
         vendorPhone = row.vendor_phone || row.v_phone;
         console.log(`[GetVendorDocuments] Found via JOIN. Application ID: ${row.application_id}, Phone: ${vendorPhone}`);
         
-        // Parse uploaded_documents from application
-        documents = this.parseDocumentsFromRow(row);
-      }
-
-      // ============================================================================
-      // STRATEGY 2: Query vendor_documents table directly
-      // ============================================================================
-      try {
-        const vendorDocsResult = await query(`
-          SELECT 
-            id,
-            document_type as type,
-            document_name as name,
-            document_url as url,
-            file_type,
-            is_verified as verified,
-            uploaded_at
-          FROM vendor_documents
-          WHERE vendor_id = $1
-          ORDER BY uploaded_at DESC
-        `, [vendorId]);
-
-        if (vendorDocsResult.rows && vendorDocsResult.rows.length > 0) {
-          console.log(`[GetVendorDocuments] Found ${vendorDocsResult.rows.length} documents in vendor_documents table`);
-          
-          const existingTypes = new Set(documents.map(d => d.type.toLowerCase()));
-          
-          vendorDocsResult.rows.forEach((doc: any) => {
-            if (!existingTypes.has(doc.type?.toLowerCase())) {
-              documents.push({
-                id: doc.id,
-                type: doc.type,
-                name: getDocumentLabel(doc.type),
-                url: doc.url,
-                fileKey: this.extractS3Key(doc.url),
-                uploadedAt: doc.uploaded_at,
-                status: 'uploaded',
-                verified: doc.verified || false
-              });
+        // Parse uploaded_documents from application (only add if not already in documents from table)
+        const jsonDocs = this.parseDocumentsFromRow(row);
+        
+        // Normalize document type mapping for comparison
+        // This ensures panCard, pan_card, and pan all map to the same normalized type
+        const normalizeType = (type: string): string => {
+          if (!type) return '';
+          const normalized = type.toLowerCase().replace(/[_-]/g, '');
+          const typeMap: Record<string, string> = {
+            'pancard': 'pan_card',
+            'pan': 'pan_card',
+            'businesslicense': 'business_license',
+            'license': 'business_license',
+            'certificate': 'certifications',
+            'certifications': 'certifications',
+            'gstcertificate': 'gst_certificate',
+            'gst': 'gst_certificate',
+            'aadhaarfront': 'aadhaar_front',
+            'aadhaarback': 'aadhaar_back',
+            'addressproof': 'address_proof',
+            'veterinarylicense': 'veterinary_license',
+          };
+          return typeMap[normalized] || normalized;
+        };
+        
+        // Get existing document types from vendor_documents table (normalized)
+        // Use a Map to track the most recent document per normalized type
+        const documentsByNormalizedType = new Map<string, any>();
+        
+        // First, add all table documents (they take ABSOLUTE priority)
+        documents.forEach(doc => {
+          const normalizedType = normalizeType(doc.type);
+          if (normalizedType) {
+            // Table documents always take priority - never replace with JSON docs
+            const existing = documentsByNormalizedType.get(normalizedType);
+            const docIsFromTable = doc.id && !doc.id.startsWith('doc-');
+            const existingIsFromTable = existing && existing.id && !existing.id.startsWith('doc-');
+            
+            if (!existing) {
+              documentsByNormalizedType.set(normalizedType, doc);
+              console.log(`[GetVendorDocuments] Added table doc: ${doc.type} (${normalizedType}), id=${doc.id}`);
+            } else if (docIsFromTable && !existingIsFromTable) {
+              // Replace JSON doc with table doc
+              documentsByNormalizedType.set(normalizedType, doc);
+              console.log(`[GetVendorDocuments] Replaced JSON doc with table doc: ${doc.type} (${normalizedType})`);
+            } else if (docIsFromTable && existingIsFromTable) {
+              // Both from table, keep the one with latest updatedAt
+              if (doc.updatedAt && (!existing.updatedAt || doc.updatedAt > existing.updatedAt)) {
+                documentsByNormalizedType.set(normalizedType, doc);
+                console.log(`[GetVendorDocuments] Replaced with newer table doc: ${doc.type} (${normalizedType})`);
+              }
             }
-          });
+          }
+        });
+        
+        console.log(`[GetVendorDocuments] Table documents (${documents.length}):`, documents.map(d => ({ type: d.type, normalized: normalizeType(d.type), id: d.id, fromTable: d.id && !d.id.startsWith('doc-') })));
+        console.log(`[GetVendorDocuments] JSON documents BEFORE filtering (${jsonDocs.length}):`, jsonDocs.map(d => ({ type: d.type, normalized: normalizeType(d.type), id: d.id })));
+        console.log(`[GetVendorDocuments] Existing normalized types in map after table:`, Array.from(documentsByNormalizedType.keys()));
+        console.log(`[GetVendorDocuments] Map contents:`, Array.from(documentsByNormalizedType.entries()).map(([k, v]) => ({ key: k, type: v.type, id: v.id })));
+        
+        // Only add documents from JSON that don't exist in table (by normalized type)
+        // CRITICAL: Table documents take absolute priority - never add JSON doc if table doc exists
+        jsonDocs.forEach((jsonDoc: any) => {
+          const normalizedType = normalizeType(jsonDoc.type);
+          const jsonDocType = jsonDoc.type || '';
+          console.log(`[GetVendorDocuments] Checking JSON doc: "${jsonDocType}" -> normalized: "${normalizedType}", exists in map: ${documentsByNormalizedType.has(normalizedType)}`);
+          
+          if (!normalizedType) {
+            console.log(`[GetVendorDocuments] ⚠️ Skipping JSON doc with no type: ${jsonDocType}`);
+            return;
+          }
+          
+          // Check if we already have a document for this normalized type
+          if (documentsByNormalizedType.has(normalizedType)) {
+            const existing = documentsByNormalizedType.get(normalizedType);
+            const existingIsFromTable = existing.id && !existing.id.startsWith('doc-');
+            console.log(`[GetVendorDocuments] ❌ SKIPPING JSON document: ${jsonDocType} (normalized: ${normalizedType}) - already have ${existing.type} (fromTable: ${existingIsFromTable}, id: ${existing.id})`);
+            return; // CRITICAL: Don't add JSON doc if table doc exists
+          }
+          
+          // Only add if we don't have this normalized type yet AND the JSON doc type is already normalized
+          // If the JSON doc type doesn't match the normalized type, it means it's an old variant - skip it
+          if (jsonDocType.toLowerCase().replace(/[_-]/g, '') !== normalizedType.toLowerCase().replace(/[_-]/g, '')) {
+            console.log(`[GetVendorDocuments] ⚠️ SKIPPING old variant: ${jsonDocType} (normalized: ${normalizedType}) - this is an old variant that should be removed`);
+            return;
         }
-      } catch (e) {
-        console.warn('[GetVendorDocuments] vendor_documents table query failed:', e);
+          
+          // Only add if we don't have this normalized type yet
+          console.log(`[GetVendorDocuments] ✅ Adding JSON document: ${jsonDocType} (normalized: ${normalizedType})`);
+          documentsByNormalizedType.set(normalizedType, jsonDoc);
+        });
+        
+        // Replace documents array with deduplicated list
+        documents = Array.from(documentsByNormalizedType.values());
+        console.log(`[GetVendorDocuments] After STRATEGY 2 deduplication: ${documents.length} documents`);
       }
 
       // ============================================================================
@@ -1432,11 +1525,213 @@ class GetVendorDocumentsHandler extends BaseHandler {
       }
 
       // ============================================================================
+      // Final deduplication: Ensure only one document per normalized type
+      // ============================================================================
+      const normalizeTypeFinal = (type: string): string => {
+        if (!type) return '';
+        const normalized = type.toLowerCase().replace(/[_-]/g, '');
+        const typeMap: Record<string, string> = {
+          'pancard': 'pan_card',
+          'pan': 'pan_card',
+          'businesslicense': 'business_license',
+          'license': 'business_license',
+          'certificate': 'certifications',
+          'certifications': 'certifications',
+          'gstcertificate': 'gst_certificate',
+          'gst': 'gst_certificate',
+          'aadhaarfront': 'aadhaar_front',
+          'aadhaarback': 'aadhaar_back',
+          'addressproof': 'address_proof',
+          'veterinarylicense': 'veterinary_license',
+        };
+        return typeMap[normalized] || normalized;
+      };
+      
+      console.log(`[GetVendorDocuments] Before final deduplication: ${documents.length} documents`);
+      documents.forEach(doc => {
+        console.log(`  - Type: "${doc.type}" -> normalized: "${normalizeTypeFinal(doc.type)}", ID: ${doc.id}, FromTable: ${doc.id && !doc.id.startsWith('doc-')}`);
+      });
+      
+      // Deduplicate by normalized type
+      // Strategy: Sort documents so table documents come first, then deduplicate
+      // This ensures table documents always take priority
+      const isFromTable = (doc: any) => doc.id && !doc.id.startsWith('doc-');
+      
+      // Sort: table documents first, then JSON documents
+      documents.sort((a, b) => {
+        const aFromTable = isFromTable(a);
+        const bFromTable = isFromTable(b);
+        if (aFromTable && !bFromTable) return -1;
+        if (!aFromTable && bFromTable) return 1;
+        // Both from same source, prefer newer
+        if (a.updatedAt && b.updatedAt) {
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        }
+        return 0;
+      });
+      
+      const finalDocumentsMap = new Map<string, any>();
+      documents.forEach(doc => {
+        const normalizedType = normalizeTypeFinal(doc.type);
+        if (normalizedType) {
+          // Since we sorted table docs first, the first one we encounter wins
+          if (!finalDocumentsMap.has(normalizedType)) {
+            console.log(`[GetVendorDocuments] Adding document: ${doc.type} (${normalizedType}), FromTable: ${isFromTable(doc)}`);
+            finalDocumentsMap.set(normalizedType, doc);
+          } else {
+            const existing = finalDocumentsMap.get(normalizedType);
+            console.log(`[GetVendorDocuments] Skipping duplicate: ${doc.type} (${normalizedType}), existing: ${existing.type}, FromTable: ${isFromTable(doc)}`);
+          }
+        }
+      });
+      
+      documents = Array.from(finalDocumentsMap.values());
+      console.log(`[GetVendorDocuments] After final deduplication: ${documents.length} documents`);
+      documents.forEach(doc => {
+        console.log(`  - Final: Type: "${doc.type}", ID: ${doc.id}`);
+      });
+
+      // ============================================================================
       // Generate fresh presigned URLs for all documents
       // ============================================================================
       documents = await this.refreshDocumentUrls(documents);
 
-      console.log(`[GetVendorDocuments] Returning ${documents.length} documents`);
+      // ============================================================================
+      // FINAL SAFETY CHECK: Remove any remaining duplicates by normalized type
+      // MUST run AFTER refreshDocumentUrls in case it modifies documents
+      // Use a simple, direct filter approach
+      // ============================================================================
+      const normalizeForFinalCheck = (type: string): string => {
+        if (!type) return '';
+        const normalized = type.toLowerCase().replace(/[_-]/g, '');
+        const typeMap: Record<string, string> = {
+          'pancard': 'pan_card',
+          'pan': 'pan_card',
+          'businesslicense': 'business_license',
+          'license': 'business_license',
+          'certificate': 'certifications',
+          'certifications': 'certifications',
+          'gstcertificate': 'gst_certificate',
+          'gst': 'gst_certificate',
+          'aadhaarfront': 'aadhaar_front',
+          'aadhaarback': 'aadhaar_back',
+          'addressproof': 'address_proof',
+          'veterinarylicense': 'veterinary_license',
+        };
+        return typeMap[normalized] || normalized;
+      };
+      
+      console.log(`[GetVendorDocuments] Before final safety check: ${documents.length} documents`);
+      
+      // Sort: table documents first
+      documents.sort((a, b) => {
+        const aFromTable = a.id && !a.id.startsWith('doc-');
+        const bFromTable = b.id && !b.id.startsWith('doc-');
+        if (aFromTable && !bFromTable) return -1;
+        if (!aFromTable && bFromTable) return 1;
+        return 0;
+      });
+      
+      // Filter: keep only first document per normalized type
+      const seenNormalizedTypes = new Set<string>();
+      const deduplicated: any[] = [];
+      
+      for (const doc of documents) {
+        const normalizedType = normalizeForFinalCheck(doc.type);
+        if (normalizedType && !seenNormalizedTypes.has(normalizedType)) {
+          seenNormalizedTypes.add(normalizedType);
+          deduplicated.push(doc);
+          console.log(`[GetVendorDocuments] ✅ Keeping: ${doc.type} (${normalizedType}), id=${doc.id}`);
+        } else if (normalizedType) {
+          console.log(`[GetVendorDocuments] ❌ Filtering out duplicate: ${doc.type} (${normalizedType}), id=${doc.id}`);
+        }
+      }
+      
+      documents = deduplicated;
+      console.log(`[GetVendorDocuments] After final safety check: ${documents.length} documents`);
+      
+      // Final verification and force cleanup: count PAN documents
+      const panDocs = documents.filter(d => {
+        const norm = normalizeForFinalCheck(d.type);
+        return norm === 'pan_card';
+      });
+      console.log(`[GetVendorDocuments] PAN documents in final array: ${panDocs.length}`);
+      if (panDocs.length > 1) {
+        console.error(`[GetVendorDocuments] ERROR: Still have ${panDocs.length} PAN documents after deduplication!`);
+        // Force remove: keep only the table document
+        const tablePan = panDocs.find(d => d.id && !d.id.startsWith('doc-'));
+        if (tablePan) {
+          console.log(`[GetVendorDocuments] Force keeping only table PAN doc: ${tablePan.id}, removing ${panDocs.length - 1} duplicates`);
+          documents = documents.filter(d => {
+            const norm = normalizeForFinalCheck(d.type);
+            if (norm === 'pan_card') {
+              return d.id === tablePan.id;
+            }
+            return true;
+          });
+          console.log(`[GetVendorDocuments] After force cleanup: ${documents.length} documents, PAN: ${documents.filter(d => normalizeForFinalCheck(d.type) === 'pan_card').length}`);
+        } else {
+          // No table doc, keep the first one
+          console.log(`[GetVendorDocuments] No table PAN doc found, keeping first: ${panDocs[0].id}`);
+          const firstPanId = panDocs[0].id;
+          documents = documents.filter(d => {
+            const norm = normalizeForFinalCheck(d.type);
+            if (norm === 'pan_card') {
+              return d.id === firstPanId;
+            }
+            return true;
+          });
+        }
+      }
+
+      // ABSOLUTE FINAL CHECK: Direct PAN document filter
+      const panDocsFinal = documents.filter(d => {
+        const type = (d.type || '').toLowerCase();
+        return type.includes('pan');
+      });
+      if (panDocsFinal.length > 1) {
+        console.error(`[GetVendorDocuments] CRITICAL: ${panDocsFinal.length} PAN docs before return! Filtering...`);
+        const tablePan = panDocsFinal.find(d => d.id && !d.id.startsWith('doc-'));
+        if (tablePan) {
+          documents = documents.filter(d => {
+            const type = (d.type || '').toLowerCase();
+            if (type.includes('pan')) {
+              return d.id === tablePan.id;
+            }
+            return true;
+          });
+          console.log(`[GetVendorDocuments] After absolute final check: ${documents.length} docs, PAN: ${documents.filter(d => (d.type || '').toLowerCase().includes('pan')).length}`);
+        }
+      }
+
+      // ULTIMATE FINAL FIX: Create a completely new array with duplicates removed
+      // This is the absolute last check before returning
+      const finalDocsMap = new Map<string, any>();
+      documents.forEach(doc => {
+        const type = (doc.type || '').toLowerCase();
+        let key = type;
+        // Normalize PAN types - all PAN variants map to 'pan_card'
+        if (type.includes('pan')) {
+          key = 'pan_card';
+        }
+        // Only add if we don't have this key, or if current doc is from table and existing is not
+        if (!finalDocsMap.has(key)) {
+          finalDocsMap.set(key, doc);
+          console.log(`[GetVendorDocuments] Final map: Added ${doc.type} (key: ${key}), id=${doc.id}`);
+        } else {
+          const existing = finalDocsMap.get(key);
+          const docIsTable = doc.id && !doc.id.startsWith('doc-');
+          const existingIsTable = existing.id && !existing.id.startsWith('doc-');
+          if (docIsTable && !existingIsTable) {
+            console.log(`[GetVendorDocuments] Final map: Replacing JSON doc with table doc for key ${key}`);
+            finalDocsMap.set(key, doc);
+          } else {
+            console.log(`[GetVendorDocuments] Final map: Skipping duplicate ${doc.type} (key: ${key}), keeping existing`);
+          }
+        }
+      });
+      documents = Array.from(finalDocsMap.values());
+      console.log(`[GetVendorDocuments] After ultimate final fix: ${documents.length} documents`);
 
       return this.success({ 
         success: true, 
@@ -1450,120 +1745,179 @@ class GetVendorDocumentsHandler extends BaseHandler {
     }
   }
 
+  // Normalize document type (helper for parseDocumentsFromRow)
+  // This ensures panCard, pan_card, and pan all become pan_card
+  private normalizeDocumentType(type: string): string {
+    if (!type) return 'document';
+    const normalized = type.toLowerCase().replace(/[_-]/g, '');
+    const typeMap: Record<string, string> = {
+      'pancard': 'pan_card',
+      'pan': 'pan_card',
+      'businesslicense': 'business_license',
+      'license': 'business_license',
+      'certificate': 'certifications',
+      'certifications': 'certifications',
+      'gstcertificate': 'gst_certificate',
+      'gst': 'gst_certificate',
+      'aadhaarfront': 'aadhaar_front',
+      'aadhaarback': 'aadhaar_back',
+      'addressproof': 'address_proof',
+      'veterinarylicense': 'veterinary_license',
+    };
+    const result = typeMap[normalized] || type;
+    if (type !== result) {
+      console.log(`[parseDocumentsFromRow] Normalized "${type}" -> "${result}"`);
+    }
+    return result;
+  }
+
   // Parse documents from database row
   private parseDocumentsFromRow(row: any): any[] {
     const documents: any[] = [];
 
-    // Parse uploaded_documents
+    const normalize = (type: string) => this.normalizeDocumentType(type);
+  
+    // ============================================================================
+    // 1️⃣ Parse uploaded_documents
+    // ============================================================================
     if (row.uploaded_documents) {
       try {
-        const docs = typeof row.uploaded_documents === 'string' 
+        const docs =
+          typeof row.uploaded_documents === "string"
           ? JSON.parse(row.uploaded_documents) 
           : row.uploaded_documents;
         
         if (Array.isArray(docs)) {
           docs.forEach((doc: any, idx: number) => {
+            const rawType = doc.type || doc.documentType || "document";
+            const normalizedType = normalize(rawType);
+  
             if (doc.url || doc.fileUrl) {
               documents.push({
-                id: doc.id || `doc-${idx}-${Date.now()}`,
-                type: doc.type || doc.documentType || 'document',
-                name: getDocumentLabel(doc.type || doc.documentType || 'document'),
+                id: doc.id || `doc-${normalizedType}-${idx}`,
+                type: normalizedType, // ✅ ALWAYS normalized
+                name: getDocumentLabel(normalizedType),
                 url: doc.url || doc.fileUrl,
                 fileKey: this.extractS3Key(doc.url || doc.fileUrl),
                 uploadedAt: doc.uploadedAt || doc.createdAt,
-                status: doc.status || 'uploaded',
+                status: doc.status || "uploaded",
                 verified: doc.verified || false,
-                originalName: doc.name || doc.fileName
+                originalName: doc.name || doc.fileName,
               });
             }
           });
-        } else if (typeof docs === 'object') {
+        } else if (typeof docs === "object") {
           Object.entries(docs).forEach(([type, value], idx) => {
-            const docData = typeof value === 'string' ? { url: value } : value as any;
+            const normalizedType = normalize(type);
+            const docData = typeof value === "string" ? { url: value } : (value as any);
+  
             if (docData.url) {
               documents.push({
-                id: `doc-${type}-${idx}`,
-                type,
-                name: getDocumentLabel(type),
+                id: `doc-${normalizedType}-${idx}`,
+                type: normalizedType, // ✅ normalized
+                name: getDocumentLabel(normalizedType),
                 url: docData.url,
                 fileKey: this.extractS3Key(docData.url),
                 uploadedAt: docData.uploadedAt,
-                status: docData.status || 'uploaded',
+                status: docData.status || "uploaded",
                 verified: docData.verified || false,
-                originalName: docData.name || docData.fileName
+                originalName: docData.name || docData.fileName,
               });
             }
           });
         }
       } catch (e) {
-        console.warn('[GetVendorDocuments] Could not parse uploaded_documents:', e);
+        console.warn("[GetVendorDocuments] Could not parse uploaded_documents:", e);
       }
     }
 
-    // Parse application_payload for document URLs
+    // ============================================================================
+    // 2️⃣ Parse application_payload
+    // ============================================================================
     if (row.application_payload) {
       try {
-        const payload = typeof row.application_payload === 'string'
+        const payload =
+          typeof row.application_payload === "string"
           ? JSON.parse(row.application_payload)
           : row.application_payload;
         
-        const existingTypes = new Set(documents.map(d => d.type.toLowerCase()));
+        // IMPORTANT: use normalized types only
+        const existingTypes = new Set(
+          documents.map((d) => normalize(d.type))
+        );
         
-        // Check for common document fields in payload
+        // -----------------------------------------
+        // Standard document fields
+        // -----------------------------------------
         const documentFields = [
-          { key: 'gstCertificate', type: 'gst_certificate' },
-          { key: 'panCard', type: 'pan_card' },
-          { key: 'businessLicense', type: 'business_license' },
-          { key: 'idProof', type: 'id_proof' },
-          { key: 'aadhaarFront', type: 'aadhaar_front' },
-          { key: 'aadhaarBack', type: 'aadhaar_back' },
-          { key: 'policeVerification', type: 'police_verification' },
-          { key: 'cancelledCheque', type: 'cancelled_cheque' },
-          { key: 'profilePhoto', type: 'profile_photo' },
-          { key: 'veterinaryLicense', type: 'veterinary_license' },
-          { key: 'certifications', type: 'certifications' },
-          { key: 'insurance', type: 'insurance' },
-          { key: 'addressProof', type: 'address_proof' },
+          { key: "gstCertificate", type: "gst_certificate" },
+          { key: "panCard", type: "pan_card" },
+          { key: "businessLicense", type: "business_license" },
+          { key: "idProof", type: "id_proof" },
+          { key: "aadhaarFront", type: "aadhaar_front" },
+          { key: "aadhaarBack", type: "aadhaar_back" },
+          { key: "policeVerification", type: "police_verification" },
+          { key: "cancelledCheque", type: "cancelled_cheque" },
+          { key: "profilePhoto", type: "profile_photo" },
+          { key: "veterinaryLicense", type: "veterinary_license" },
+          { key: "certifications", type: "certifications" },
+          { key: "insurance", type: "insurance" },
+          { key: "addressProof", type: "address_proof" },
         ];
 
         documentFields.forEach(({ key, type }) => {
+          const normalizedType = normalize(type);
           const url = payload[key];
-          if (url && typeof url === 'string' && !existingTypes.has(type)) {
+  
+          if (url && typeof url === "string" && !existingTypes.has(normalizedType)) {
             documents.push({
-              id: `doc-${type}`,
-              type,
-              name: getDocumentLabel(type),
+              id: `doc-${normalizedType}`,
+              type: normalizedType, // ✅ normalized
+              name: getDocumentLabel(normalizedType),
               url,
               fileKey: this.extractS3Key(url),
-              status: 'uploaded',
-              verified: false
+              status: "uploaded",
+              verified: false,
             });
-            existingTypes.add(type);
+  
+            existingTypes.add(normalizedType);
           }
         });
 
-        // Also check for uploadedDocuments object within payload
-        if (payload.uploadedDocuments && typeof payload.uploadedDocuments === 'object') {
-          Object.entries(payload.uploadedDocuments).forEach(([type, docData]: [string, any]) => {
-            if (!existingTypes.has(type.toLowerCase())) {
-              const url = typeof docData === 'string' ? docData : docData?.url;
+        // -----------------------------------------
+        // uploadedDocuments inside payload
+        // -----------------------------------------
+        if (payload.uploadedDocuments && typeof payload.uploadedDocuments === "object") {
+          Object.entries(payload.uploadedDocuments).forEach(
+            ([type, docData]: [string, any]) => {
+  
+              const normalizedType = normalize(type);
+  
+              if (existingTypes.has(normalizedType)) {
+                return; // 🚫 Skip duplicates
+              }
+  
+              const url =
+                typeof docData === "string" ? docData : docData?.url;
+  
               if (url) {
                 documents.push({
-                  id: `doc-payload-${type}`,
-                  type,
-                  name: getDocumentLabel(type),
+                  id: `doc-payload-${normalizedType}`,
+                  type: normalizedType, // ✅ normalized
+                  name: getDocumentLabel(normalizedType),
                   url,
                   fileKey: this.extractS3Key(url),
-                  status: 'uploaded',
-                  verified: false
+                  status: "uploaded",
+                  verified: false,
                 });
-                existingTypes.add(type.toLowerCase());
+  
+                existingTypes.add(normalizedType);
               }
             }
-          });
+          );
         }
       } catch (e) {
-        console.warn('[GetVendorDocuments] Could not parse application_payload:', e);
+        console.warn("[GetVendorDocuments] Could not parse application_payload:", e);
       }
     }
 
@@ -1597,7 +1951,22 @@ class GetVendorDocumentsHandler extends BaseHandler {
 
     const refreshedDocs = await Promise.all(documents.map(async (doc) => {
       try {
-        const fileKey = doc.fileKey || this.extractS3Key(doc.url);
+        // document_url may contain either:
+        // 1. S3 key (if stored directly, e.g., "vendors/xxx/documents/...")
+        // 2. Full presigned URL (if stored as URL, e.g., "https://...")
+        // 3. S3 key extracted from URL
+        let fileKey = doc.fileKey;
+        
+        if (!fileKey) {
+          // Try to extract from URL or use URL directly if it's already a key
+          if (doc.url && !doc.url.startsWith('http')) {
+            // Already a key, not a URL
+            fileKey = doc.url;
+          } else {
+            // Extract key from URL
+            fileKey = this.extractS3Key(doc.url);
+          }
+        }
         
         if (fileKey && !fileKey.startsWith('http')) {
           // Generate fresh presigned URL (valid for 1 hour)
@@ -1626,6 +1995,433 @@ class GetVendorDocumentsHandler extends BaseHandler {
 
     return refreshedDocs;
   }
+}
+
+// ✅ NEW: Update vendor documents helper function (Admin-only document correction tool)
+async function updateVendorDocumentsHelper(
+  vendorId: string,
+  formData: FormData,
+  adminId: string
+): Promise<{ success: boolean; updatedDocuments: any[]; errors: any[]; documents: any[] }> {
+  console.log(`[UpdateVendorDocuments] Updating documents for vendor: ${vendorId}`);
+
+  // Verify vendor exists
+  const vendorCheck = await query(
+    `SELECT id, phone, business_name FROM vendors WHERE id = $1`,
+    [vendorId]
+  );
+
+  if (!vendorCheck.rows || vendorCheck.rows.length === 0) {
+    throw new Error('Vendor not found');
+  }
+
+  const vendor = vendorCheck.rows[0];
+
+  // Initialize S3 client
+  const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+  const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+  
+  const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+  const bucketName = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
+
+  // Document type mapping
+  const documentTypeMap: Record<string, string> = {
+    'panCard': 'pan_card',
+    'pan': 'pan_card',
+    'license': 'business_license',
+    'businessLicense': 'business_license',
+    'certificate': 'certifications',
+    'certifications': 'certifications',
+    'gstCertificate': 'gst_certificate',
+    'gst': 'gst_certificate',
+    'aadhaarFront': 'aadhaar_front',
+    'aadhaarBack': 'aadhaar_back',
+    'addressProof': 'address_proof',
+    'veterinaryLicense': 'veterinary_license',
+  };
+
+  const updatedDocuments: any[] = [];
+  const uploadErrors: any[] = [];
+
+  // Extract files and fields from FormData
+  // Note: In Node.js, FormData file values are Blob objects, not File objects
+  const files: Record<string, any> = {};
+  const fields: Record<string, string> = {};
+
+  // Check if File constructor exists (browser) or use Blob check (Node.js)
+  const FileConstructor = typeof File !== 'undefined' ? File : null;
+  const BlobConstructor = typeof Blob !== 'undefined' ? Blob : null;
+
+  for (const [key, value] of formData.entries()) {
+    // Check if value is a file/blob object
+    const isFile = FileConstructor && value instanceof FileConstructor;
+    const isBlob = BlobConstructor && value instanceof BlobConstructor;
+    // Also check for file-like objects (have name, size, type properties)
+    const isFileLike = value && typeof value === 'object' && 
+                       ('name' in value || 'size' in value || 'type' in value || 'stream' in value);
+    
+    if (isFile || isBlob || isFileLike) {
+      files[key] = value;
+    } else {
+      fields[key] = value as string;
+    }
+  }
+
+  if (Object.keys(files).length === 0) {
+    throw new Error('No files provided');
+  }
+
+  // Process each uploaded file
+  for (const [fieldName, file] of Object.entries(files)) {
+    try {
+      // Determine document type
+      let documentType = documentTypeMap[fieldName] || fieldName;
+      
+      // If custom document type provided
+      if (fieldName === 'documentFile' && fields.documentType) {
+        documentType = fields.documentType;
+      }
+
+      // Validate file type
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+      const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+      
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+      const isValidType = allowedTypes.includes(file.type) || 
+                         allowedExtensions.includes(`.${fileExt}`);
+
+      if (!isValidType) {
+        uploadErrors.push({
+          field: fieldName,
+          error: `Invalid file type. Allowed: PDF, JPG, PNG`
+        });
+        continue;
+      }
+
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        uploadErrors.push({
+          field: fieldName,
+          error: `File size exceeds 10MB limit`
+        });
+        continue;
+      }
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 11);
+      const fileName = `vendors/${vendorId}/documents/${documentType}_${timestamp}_${random}.${fileExt}`;
+
+      // Convert File to ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // Upload to S3
+      await s3Client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileName,
+        Body: uint8Array,
+        ContentType: file.type || 'application/octet-stream',
+      }));
+
+      // Store S3 key (not presigned URL) - presigned URLs expire
+      // We'll generate fresh presigned URLs when fetching
+      const s3Key = fileName;
+      
+      // Generate presigned URL for immediate return (7 days expiry)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: bucketName,
+          Key: fileName,
+        }),
+        { expiresIn: 604800 } // 7 days
+      );
+
+      // Check if document already exists in vendor_documents table
+      // Use normalized type comparison to find existing documents
+      const typeVariants: Record<string, string[]> = {
+        'pan_card': ['panCard', 'pan', 'pan_card'],
+        'business_license': ['businessLicense', 'license', 'business_license'],
+        'certifications': ['certificate', 'certifications'],
+        'gst_certificate': ['gstCertificate', 'gst', 'gst_certificate'],
+        'aadhaar_front': ['aadhaarFront', 'aadhaar_front'],
+        'aadhaar_back': ['aadhaarBack', 'aadhaar_back'],
+        'address_proof': ['addressProof', 'address_proof'],
+        'veterinary_license': ['veterinaryLicense', 'veterinary_license'],
+      };
+      
+      const variants = typeVariants[documentType] || [documentType];
+      const variantPlaceholders = variants.map((_, idx) => `$${idx + 2}`).join(', ');
+      
+      const existingDoc = await query(
+        `SELECT id, document_url, document_type FROM vendor_documents 
+         WHERE vendor_id = $1 AND document_type IN (${variantPlaceholders})
+         ORDER BY updated_at DESC NULLS LAST, uploaded_at DESC LIMIT 1`,
+        [vendorId, ...variants]
+      );
+
+      const oldUrl = existingDoc.rows.length > 0 ? existingDoc.rows[0].document_url : null;
+      const oldDocType = existingDoc.rows.length > 0 ? existingDoc.rows[0].document_type : null;
+
+      // Update or insert in vendor_documents table
+      if (existingDoc.rows.length > 0) {
+        // Update existing document - use the normalized documentType
+        await query(
+          `UPDATE vendor_documents 
+           SET document_url = $1, 
+               document_name = $2,
+               document_type = $3,
+               file_type = $4,
+               file_size = $5,
+               uploaded_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $6`,
+          [
+            s3Key, // Store S3 key, not presigned URL
+            file.name,
+            documentType, // Normalize to snake_case
+            file.type || `application/${fileExt}`,
+            file.size,
+            existingDoc.rows[0].id
+          ]
+        );
+        
+        // If the old document had a different type variant, delete it to avoid duplicates
+        if (oldDocType && oldDocType !== documentType && variants.includes(oldDocType)) {
+          // The UPDATE above already updated it, so we're good
+          console.log(`[UpdateVendorDocuments] Updated document type from ${oldDocType} to ${documentType}`);
+        }
+      } else {
+        // Insert new document
+        await query(
+          `INSERT INTO vendor_documents 
+           (vendor_id, document_type, document_name, document_url, file_type, file_size, uploaded_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [
+            vendorId,
+            documentType,
+            file.name,
+            s3Key, // Store S3 key, not presigned URL
+            file.type || `application/${fileExt}`,
+            file.size
+          ]
+        );
+      }
+
+      // Optionally update vendor_onboarding_applications.uploaded_documents JSON
+      // Also remove old document type variants to prevent duplicates
+      try {
+        const appResult = await query(
+          `SELECT voa.id, voa.uploaded_documents, voa.application_payload
+           FROM vendor_identity vi
+           JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
+           WHERE vi.phone = $1
+           ORDER BY voa.submitted_at DESC
+           LIMIT 1`,
+          [vendor.phone]
+        );
+
+        if (appResult.rows.length > 0) {
+          const app = appResult.rows[0];
+          let uploadedDocs = app.uploaded_documents || {};
+          
+          if (typeof uploadedDocs === 'string') {
+            uploadedDocs = JSON.parse(uploadedDocs);
+          }
+
+          // Normalize document type variants - remove old variants that map to the same document
+          const typeVariants: Record<string, string[]> = {
+            'pan_card': ['panCard', 'pan', 'pan_card'],
+            'business_license': ['businessLicense', 'license', 'business_license'],
+            'certifications': ['certificate', 'certifications'],
+            'gst_certificate': ['gstCertificate', 'gst', 'gst_certificate'],
+            'aadhaar_front': ['aadhaarFront', 'aadhaar_front'],
+            'aadhaar_back': ['aadhaarBack', 'aadhaar_back'],
+            'address_proof': ['addressProof', 'address_proof'],
+            'veterinary_license': ['veterinaryLicense', 'veterinary_license'],
+          };
+
+          // Find all variants for this document type
+          const variants = typeVariants[documentType] || [documentType];
+          
+          console.log(`[UpdateVendorDocuments] Removing variants: ${variants.join(', ')} for documentType: ${documentType}`);
+          console.log(`[UpdateVendorDocuments] Current uploadedDocs keys: ${Object.keys(uploadedDocs).join(', ')}`);
+          
+          // Remove all old variants - handle both object keys and nested structures
+          // Check all possible key variations (case-insensitive, with/without underscores)
+          const keysToDelete: string[] = [];
+          Object.keys(uploadedDocs).forEach(key => {
+            const normalizedKey = key.toLowerCase().replace(/[_-]/g, '');
+            variants.forEach(variant => {
+              const normalizedVariant = variant.toLowerCase().replace(/[_-]/g, '');
+              if (normalizedKey === normalizedVariant) {
+                keysToDelete.push(key);
+              }
+            });
+          });
+          
+          keysToDelete.forEach(key => {
+            console.log(`[UpdateVendorDocuments] Deleting JSON key: ${key}`);
+            delete uploadedDocs[key];
+          });
+          
+          // Also check if uploadedDocs is an array and remove matching items
+          if (Array.isArray(uploadedDocs)) {
+            uploadedDocs = uploadedDocs.filter((doc: any) => {
+              const docType = (doc.type || doc.documentType || '').toLowerCase().replace(/[_-]/g, '');
+              const shouldRemove = variants.some(v => {
+                const normalizedVariant = v.toLowerCase().replace(/[_-]/g, '');
+                return docType === normalizedVariant;
+              });
+              if (shouldRemove) {
+                console.log(`[UpdateVendorDocuments] Removing array item with type: ${doc.type || doc.documentType}`);
+              }
+              return !shouldRemove;
+            });
+          }
+
+          // Add the new document with the normalized type
+          // Store S3 key, not presigned URL (presigned URLs expire)
+          uploadedDocs[documentType] = {
+            url: s3Key, // Store S3 key, not presigned URL
+            name: file.name,
+            type: documentType,
+            uploadedAt: new Date().toISOString()
+          };
+          
+          console.log(`[UpdateVendorDocuments] Updated JSON: removed variants ${variants.join(', ')}, added ${documentType} with S3 key: ${s3Key}`);
+
+          await query(
+            `UPDATE vendor_onboarding_applications
+             SET uploaded_documents = $1::jsonb,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [JSON.stringify(uploadedDocs), app.id]
+          );
+
+          // ============================================================================
+          // CLEANUP application_payload: Remove all variants of this document type
+          // ============================================================================
+          if (app.application_payload) {
+            try {
+              let applicationPayload = app.application_payload;
+              
+              if (typeof applicationPayload === 'string') {
+                applicationPayload = JSON.parse(applicationPayload);
+              }
+
+              if (applicationPayload && typeof applicationPayload === 'object') {
+                // Normalization function: toLowerCase() and remove "_" and "-"
+                const normalizeKey = (key: string): string => {
+                  return key.toLowerCase().replace(/[_-]/g, '');
+                };
+
+                // Get normalized variants for comparison
+                const normalizedVariants = variants.map(v => normalizeKey(v));
+                
+                console.log(`[UpdateVendorDocuments] Cleaning application_payload. Normalized variants: ${normalizedVariants.join(', ')}`);
+                console.log(`[UpdateVendorDocuments] Current application_payload keys: ${Object.keys(applicationPayload).join(', ')}`);
+
+                // Find and delete all keys that match any variant (normalization-based)
+                const keysToDeleteFromPayload: string[] = [];
+                Object.keys(applicationPayload).forEach(key => {
+                  const normalizedKey = normalizeKey(key);
+                  if (normalizedVariants.includes(normalizedKey)) {
+                    keysToDeleteFromPayload.push(key);
+                  }
+                });
+
+                // Delete matching keys
+                keysToDeleteFromPayload.forEach(key => {
+                  console.log(`[UpdateVendorDocuments] Deleting application_payload key: ${key}`);
+                  delete applicationPayload[key];
+                });
+
+                // Update application_payload in database
+                if (keysToDeleteFromPayload.length > 0) {
+                  await query(
+                    `UPDATE vendor_onboarding_applications
+                     SET application_payload = $1::jsonb,
+                         updated_at = NOW()
+                     WHERE id = $2`,
+                    [JSON.stringify(applicationPayload), app.id]
+                  );
+                  console.log(`[UpdateVendorDocuments] Cleaned application_payload: removed ${keysToDeleteFromPayload.length} variant(s)`);
+                } else {
+                  console.log(`[UpdateVendorDocuments] No matching keys found in application_payload`);
+                }
+              }
+            } catch (payloadError) {
+              console.warn('[UpdateVendorDocuments] Could not clean application_payload:', payloadError);
+              // Don't fail the request if this cleanup fails
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[UpdateVendorDocuments] Could not update application documents:', e);
+        // Don't fail the request if this update fails
+      }
+
+      // Log audit entry
+      try {
+        const { logAuditEntry } = await import('../utils/audit-log');
+        await logAuditEntry({
+          entityType: 'vendor',
+          entityId: vendorId,
+          action: 'document_updated',
+          oldValues: oldUrl ? { url: oldUrl } : null,
+          newValues: { url: signedUrl, documentType, fileName: file.name },
+          changedFields: [documentType],
+          actorId: adminId,
+          actorType: 'admin',
+        });
+      } catch (e) {
+        console.warn('[UpdateVendorDocuments] Could not log audit entry:', e);
+      }
+
+      updatedDocuments.push({
+        type: documentType,
+        name: file.name,
+        url: signedUrl,
+        fileName: fileName
+      });
+
+    } catch (error: any) {
+      console.error(`[UpdateVendorDocuments] Error processing ${fieldName}:`, error);
+      uploadErrors.push({
+        field: fieldName,
+        error: error.message || 'Upload failed'
+      });
+    }
+  }
+
+  if (uploadErrors.length > 0 && updatedDocuments.length === 0) {
+    throw new Error(`All uploads failed: ${uploadErrors.map(e => `${e.field}: ${e.error}`).join(', ')}`);
+  }
+
+  // Fetch updated documents list
+  const getDocsHandler = new GetVendorDocumentsHandler();
+  const docsResult = await getDocsHandler.execute(
+    {
+      rawPath: `/admin/vendors/${vendorId}/documents`,
+      rawQueryString: '',
+      headers: {},
+      pathParameters: { vendorId },
+      requestContext: { http: { method: 'GET', path: `/admin/vendors/${vendorId}/documents` } }
+    },
+    { awsRequestId: `req-${Date.now()}`, functionName: 'warmpawz-api-handler' }
+  );
+
+  const docsData = JSON.parse(docsResult.body);
+
+  return {
+    success: true,
+    updatedDocuments,
+    errors: uploadErrors,
+    documents: docsData.documents || []
+  };
 }
 
 class GetVendorClarificationRequestsHandler extends BaseHandler {
@@ -2608,7 +3404,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       const requestBody = await c.req.json().catch(() => ({}));
       console.log('[ADMIN AUTH] Request body:', JSON.stringify(requestBody));
       
-      const handler = new AdminLoginHandler();
+    const handler = new AdminLoginHandler();
       const event = createApiGatewayEventWithBody(c.req, requestBody);
       const context = createLambdaContext();
       const result = await handler.execute(event, context);
@@ -2622,10 +3418,10 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   app.get('/admin/auth/me', async (c) => {
     try {
       const handler = new GetCurrentAdminHandler();
-      const event = createApiGatewayEvent(c.req);
-      const context = createLambdaContext();
-      const result = await handler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Get current admin error:', error);
       return c.json({ error: error.message || 'Internal server error' }, 500);
@@ -2937,6 +3733,42 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // ✅ NEW: Update vendor documents (Admin-only document correction tool)
+  app.patch('/admin/vendors/:vendorId/documents', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      
+      // Get admin ID from context (set by requireAdmin middleware)
+      const adminId = c.get('userId') || c.get('userRole') || 'system';
+
+      // Parse multipart form data
+      const formData = await c.req.formData();
+
+      // Call helper function
+      const result = await updateVendorDocumentsHelper(vendorId, formData, adminId);
+
+      return c.json({
+        success: result.success,
+        message: `Updated ${result.updatedDocuments.length} document(s)`,
+        updatedDocuments: result.updatedDocuments,
+        errors: result.errors.length > 0 ? result.errors : undefined,
+        documents: result.documents
+      }, 200);
+    } catch (error: any) {
+      console.error('[UpdateVendorDocuments] Route error:', error);
+      if (error.message === 'Vendor not found') {
+        return c.json({ error: error.message }, 404);
+      }
+      if (error.message === 'No files provided') {
+        return c.json({ error: error.message }, 400);
+      }
+      if (error.message.includes('All uploads failed')) {
+        return c.json({ error: error.message }, 400);
+      }
+      return c.json({ error: error.message || 'Failed to update vendor documents' }, 500);
+    }
   });
 
   app.get('/admin/vendors/clarification-requests', async (c) => {

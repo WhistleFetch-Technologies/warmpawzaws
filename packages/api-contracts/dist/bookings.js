@@ -52,6 +52,8 @@ exports.CreateBookingRequestSchema = zod_1.z.object({
     customerPhone: zod_1.z.string().optional(),
     customerName: zod_1.z.string().optional(),
     petName: zod_1.z.string().optional(),
+    /** When provided and valid, booking uses package credit: totalAmount=0, payment_status=completed, no payment step */
+    packagePurchaseId: zod_1.z.string().uuid('Invalid package purchase ID format').optional(),
 });
 exports.UpdateBookingStatusRequestSchema = zod_1.z.object({
     status: zod_1.z.enum([

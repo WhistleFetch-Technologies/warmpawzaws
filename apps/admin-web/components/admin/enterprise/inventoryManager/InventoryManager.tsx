@@ -26,6 +26,7 @@ import {
 } from "@warmpawz/ui";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
+import { AddProductModal } from "@/components/admin/catalog/AddProductModal";
 
 interface Product {
 	id: string;
@@ -42,6 +43,7 @@ interface Product {
 export function InventoryManager() {
 	const [products, setProducts] = useState<Product[]>([]);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [showAddModal, setShowAddModal] = useState(false);
 
 	const getStatusColor = (status: string) => {
 		switch (status) {
@@ -145,7 +147,10 @@ export function InventoryManager() {
 					<Button variant="outline" className="gap-2 bg-white">
 						<Filter className="w-4 h-4" /> Filter
 					</Button>
-					<Button className="gap-2 bg-[#FF8C42] hover:bg-[#e67a30]">
+					<Button 
+						className="gap-2 bg-[#FF8C42] hover:bg-[#e67a30]"
+						onClick={() => setShowAddModal(true)}
+					>
 						<Plus className="w-4 h-4" /> Add Product
 					</Button>
 				</div>
@@ -239,6 +244,16 @@ export function InventoryManager() {
 					</TableBody>
 				</Table>
 			</div>
+
+			<AddProductModal
+				isOpen={showAddModal}
+				onClose={() => setShowAddModal(false)}
+				onSuccess={() => {
+					setShowAddModal(false);
+					// TODO: Reload products list
+					toast.success("Product added successfully");
+				}}
+			/>
 		</div>
 	);
 }

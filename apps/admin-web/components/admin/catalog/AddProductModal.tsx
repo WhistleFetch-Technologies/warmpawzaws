@@ -35,10 +35,18 @@ export function AddProductModal({
 
   const loadCategories = async () => {
     try {
-      const data = await apiClient.get<any>('/admin/catalog/categories');
+      // Load ecommerce_categories for products (not service_categories)
+      const data = await apiClient.get<any>('/admin/catalog/categories?type=ecommerce');
       setCategories(data.categories || []);
     } catch (error) {
       console.error('Error loading categories:', error);
+      // Fallback: try without type parameter
+      try {
+        const fallbackData = await apiClient.get<any>('/admin/catalog/categories');
+        setCategories(fallbackData.categories || []);
+      } catch (fallbackError) {
+        console.error('Error loading categories (fallback):', fallbackError);
+      }
     }
   };
 

@@ -120073,7 +120073,9 @@ var require_bookings = __commonJS({
       serviceName: zod_1.z.string().optional(),
       customerPhone: zod_1.z.string().optional(),
       customerName: zod_1.z.string().optional(),
-      petName: zod_1.z.string().optional()
+      petName: zod_1.z.string().optional(),
+      /** When provided and valid, booking uses package credit: totalAmount=0, payment_status=completed, no payment step */
+      packagePurchaseId: zod_1.z.string().uuid("Invalid package purchase ID format").optional()
     });
     exports2.UpdateBookingStatusRequestSchema = zod_1.z.object({
       status: zod_1.z.enum([
@@ -192877,8 +192879,13 @@ function registerStorageEndpoints(app3) {
       }
       const uploadResults = [];
       const entries = Array.from(formData.entries());
+      const FileConstructor = typeof File !== "undefined" ? File : null;
+      const BlobConstructor = typeof Blob !== "undefined" ? Blob : null;
       for (const [key, value] of entries) {
-        if (value instanceof File && key !== "vendorId") {
+        const isFile = FileConstructor && value instanceof FileConstructor;
+        const isBlob = BlobConstructor && value instanceof BlobConstructor;
+        const isFileLike = value && typeof value === "object" && ("name" in value || "size" in value || "type" in value || "stream" in value);
+        if ((isFile || isBlob || isFileLike) && key !== "vendorId") {
           const file = value;
           const documentType = key;
           console.log(`\u{1F4E4} Uploading: ${documentType} - ${file.name}`);
@@ -215633,6 +215640,42 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
     try {
       let documents = [];
       let vendorPhone = null;
+      try {
+        const vendorDocsResult = await query(`
+          SELECT 
+            id,
+            document_type as type,
+            document_name as name,
+            document_url as url,
+            file_type,
+            is_verified as verified,
+            uploaded_at,
+            updated_at
+          FROM vendor_documents
+          WHERE vendor_id = $1
+          ORDER BY updated_at DESC NULLS LAST, uploaded_at DESC
+        `, [vendorId]);
+        if (vendorDocsResult.rows && vendorDocsResult.rows.length > 0) {
+          console.log(`[GetVendorDocuments] Found ${vendorDocsResult.rows.length} documents in vendor_documents table`);
+          vendorDocsResult.rows.forEach((doc) => {
+            const s3Key = doc.url && !doc.url.startsWith("http") ? doc.url : this.extractS3Key(doc.url);
+            documents.push({
+              id: doc.id,
+              type: doc.type,
+              name: getDocumentLabel(doc.type),
+              url: doc.url,
+              // Will be refreshed to presigned URL later
+              fileKey: s3Key,
+              uploadedAt: doc.uploaded_at,
+              updatedAt: doc.updated_at,
+              status: "uploaded",
+              verified: doc.verified || false
+            });
+          });
+        }
+      } catch (e) {
+        console.warn("[GetVendorDocuments] vendor_documents table query failed:", e);
+      }
       const docsResult = await query(`
         SELECT 
           voa.uploaded_documents,
@@ -215655,42 +215698,74 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
         const row = docsResult.rows[0];
         vendorPhone = row.vendor_phone || row.v_phone;
         console.log(`[GetVendorDocuments] Found via JOIN. Application ID: ${row.application_id}, Phone: ${vendorPhone}`);
-        documents = this.parseDocumentsFromRow(row);
-      }
-      try {
-        const vendorDocsResult = await query(`
-          SELECT 
-            id,
-            document_type as type,
-            document_name as name,
-            document_url as url,
-            file_type,
-            is_verified as verified,
-            uploaded_at
-          FROM vendor_documents
-          WHERE vendor_id = $1
-          ORDER BY uploaded_at DESC
-        `, [vendorId]);
-        if (vendorDocsResult.rows && vendorDocsResult.rows.length > 0) {
-          console.log(`[GetVendorDocuments] Found ${vendorDocsResult.rows.length} documents in vendor_documents table`);
-          const existingTypes = new Set(documents.map((d) => d.type.toLowerCase()));
-          vendorDocsResult.rows.forEach((doc) => {
-            if (!existingTypes.has(doc.type?.toLowerCase())) {
-              documents.push({
-                id: doc.id,
-                type: doc.type,
-                name: getDocumentLabel(doc.type),
-                url: doc.url,
-                fileKey: this.extractS3Key(doc.url),
-                uploadedAt: doc.uploaded_at,
-                status: "uploaded",
-                verified: doc.verified || false
-              });
+        const jsonDocs = this.parseDocumentsFromRow(row);
+        const normalizeType = (type) => {
+          if (!type) return "";
+          const normalized = type.toLowerCase().replace(/[_-]/g, "");
+          const typeMap = {
+            "pancard": "pan_card",
+            "pan": "pan_card",
+            "businesslicense": "business_license",
+            "license": "business_license",
+            "certificate": "certifications",
+            "certifications": "certifications",
+            "gstcertificate": "gst_certificate",
+            "gst": "gst_certificate",
+            "aadhaarfront": "aadhaar_front",
+            "aadhaarback": "aadhaar_back",
+            "addressproof": "address_proof",
+            "veterinarylicense": "veterinary_license"
+          };
+          return typeMap[normalized] || normalized;
+        };
+        const documentsByNormalizedType = /* @__PURE__ */ new Map();
+        documents.forEach((doc) => {
+          const normalizedType = normalizeType(doc.type);
+          if (normalizedType) {
+            const existing = documentsByNormalizedType.get(normalizedType);
+            const docIsFromTable = doc.id && !doc.id.startsWith("doc-");
+            const existingIsFromTable = existing && existing.id && !existing.id.startsWith("doc-");
+            if (!existing) {
+              documentsByNormalizedType.set(normalizedType, doc);
+              console.log(`[GetVendorDocuments] Added table doc: ${doc.type} (${normalizedType}), id=${doc.id}`);
+            } else if (docIsFromTable && !existingIsFromTable) {
+              documentsByNormalizedType.set(normalizedType, doc);
+              console.log(`[GetVendorDocuments] Replaced JSON doc with table doc: ${doc.type} (${normalizedType})`);
+            } else if (docIsFromTable && existingIsFromTable) {
+              if (doc.updatedAt && (!existing.updatedAt || doc.updatedAt > existing.updatedAt)) {
+                documentsByNormalizedType.set(normalizedType, doc);
+                console.log(`[GetVendorDocuments] Replaced with newer table doc: ${doc.type} (${normalizedType})`);
+              }
             }
-          });
-        }
-      } catch (e) {
-        console.warn("[GetVendorDocuments] vendor_documents table query failed:", e);
+          }
+        });
+        console.log(`[GetVendorDocuments] Table documents (${documents.length}):`, documents.map((d) => ({ type: d.type, normalized: normalizeType(d.type), id: d.id, fromTable: d.id && !d.id.startsWith("doc-") })));
+        console.log(`[GetVendorDocuments] JSON documents BEFORE filtering (${jsonDocs.length}):`, jsonDocs.map((d) => ({ type: d.type, normalized: normalizeType(d.type), id: d.id })));
+        console.log(`[GetVendorDocuments] Existing normalized types in map after table:`, Array.from(documentsByNormalizedType.keys()));
+        console.log(`[GetVendorDocuments] Map contents:`, Array.from(documentsByNormalizedType.entries()).map(([k, v]) => ({ key: k, type: v.type, id: v.id })));
+        jsonDocs.forEach((jsonDoc) => {
+          const normalizedType = normalizeType(jsonDoc.type);
+          const jsonDocType = jsonDoc.type || "";
+          console.log(`[GetVendorDocuments] Checking JSON doc: "${jsonDocType}" -> normalized: "${normalizedType}", exists in map: ${documentsByNormalizedType.has(normalizedType)}`);
+          if (!normalizedType) {
+            console.log(`[GetVendorDocuments] \u26A0\uFE0F Skipping JSON doc with no type: ${jsonDocType}`);
+            return;
+          }
+          if (documentsByNormalizedType.has(normalizedType)) {
+            const existing = documentsByNormalizedType.get(normalizedType);
+            const existingIsFromTable = existing.id && !existing.id.startsWith("doc-");
+            console.log(`[GetVendorDocuments] \u274C SKIPPING JSON document: ${jsonDocType} (normalized: ${normalizedType}) - already have ${existing.type} (fromTable: ${existingIsFromTable}, id: ${existing.id})`);
+            return;
+          }
+          if (jsonDocType.toLowerCase().replace(/[_-]/g, "") !== normalizedType.toLowerCase().replace(/[_-]/g, "")) {
+            console.log(`[GetVendorDocuments] \u26A0\uFE0F SKIPPING old variant: ${jsonDocType} (normalized: ${normalizedType}) - this is an old variant that should be removed`);
+            return;
+          }
+          console.log(`[GetVendorDocuments] \u2705 Adding JSON document: ${jsonDocType} (normalized: ${normalizedType})`);
+          documentsByNormalizedType.set(normalizedType, jsonDoc);
+        });
+        documents = Array.from(documentsByNormalizedType.values());
+        console.log(`[GetVendorDocuments] After STRATEGY 2 deduplication: ${documents.length} documents`);
       }
       if (documents.length === 0 && vendorPhone) {
         console.log(`[GetVendorDocuments] Trying phone-based lookup: ${vendorPhone}`);
@@ -215736,8 +215811,172 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
           console.warn("[GetVendorDocuments] Direct application lookup failed:", e);
         }
       }
+      const normalizeTypeFinal = (type) => {
+        if (!type) return "";
+        const normalized = type.toLowerCase().replace(/[_-]/g, "");
+        const typeMap = {
+          "pancard": "pan_card",
+          "pan": "pan_card",
+          "businesslicense": "business_license",
+          "license": "business_license",
+          "certificate": "certifications",
+          "certifications": "certifications",
+          "gstcertificate": "gst_certificate",
+          "gst": "gst_certificate",
+          "aadhaarfront": "aadhaar_front",
+          "aadhaarback": "aadhaar_back",
+          "addressproof": "address_proof",
+          "veterinarylicense": "veterinary_license"
+        };
+        return typeMap[normalized] || normalized;
+      };
+      console.log(`[GetVendorDocuments] Before final deduplication: ${documents.length} documents`);
+      documents.forEach((doc) => {
+        console.log(`  - Type: "${doc.type}" -> normalized: "${normalizeTypeFinal(doc.type)}", ID: ${doc.id}, FromTable: ${doc.id && !doc.id.startsWith("doc-")}`);
+      });
+      const isFromTable = (doc) => doc.id && !doc.id.startsWith("doc-");
+      documents.sort((a, b) => {
+        const aFromTable = isFromTable(a);
+        const bFromTable = isFromTable(b);
+        if (aFromTable && !bFromTable) return -1;
+        if (!aFromTable && bFromTable) return 1;
+        if (a.updatedAt && b.updatedAt) {
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        }
+        return 0;
+      });
+      const finalDocumentsMap = /* @__PURE__ */ new Map();
+      documents.forEach((doc) => {
+        const normalizedType = normalizeTypeFinal(doc.type);
+        if (normalizedType) {
+          if (!finalDocumentsMap.has(normalizedType)) {
+            console.log(`[GetVendorDocuments] Adding document: ${doc.type} (${normalizedType}), FromTable: ${isFromTable(doc)}`);
+            finalDocumentsMap.set(normalizedType, doc);
+          } else {
+            const existing = finalDocumentsMap.get(normalizedType);
+            console.log(`[GetVendorDocuments] Skipping duplicate: ${doc.type} (${normalizedType}), existing: ${existing.type}, FromTable: ${isFromTable(doc)}`);
+          }
+        }
+      });
+      documents = Array.from(finalDocumentsMap.values());
+      console.log(`[GetVendorDocuments] After final deduplication: ${documents.length} documents`);
+      documents.forEach((doc) => {
+        console.log(`  - Final: Type: "${doc.type}", ID: ${doc.id}`);
+      });
       documents = await this.refreshDocumentUrls(documents);
-      console.log(`[GetVendorDocuments] Returning ${documents.length} documents`);
+      const normalizeForFinalCheck = (type) => {
+        if (!type) return "";
+        const normalized = type.toLowerCase().replace(/[_-]/g, "");
+        const typeMap = {
+          "pancard": "pan_card",
+          "pan": "pan_card",
+          "businesslicense": "business_license",
+          "license": "business_license",
+          "certificate": "certifications",
+          "certifications": "certifications",
+          "gstcertificate": "gst_certificate",
+          "gst": "gst_certificate",
+          "aadhaarfront": "aadhaar_front",
+          "aadhaarback": "aadhaar_back",
+          "addressproof": "address_proof",
+          "veterinarylicense": "veterinary_license"
+        };
+        return typeMap[normalized] || normalized;
+      };
+      console.log(`[GetVendorDocuments] Before final safety check: ${documents.length} documents`);
+      documents.sort((a, b) => {
+        const aFromTable = a.id && !a.id.startsWith("doc-");
+        const bFromTable = b.id && !b.id.startsWith("doc-");
+        if (aFromTable && !bFromTable) return -1;
+        if (!aFromTable && bFromTable) return 1;
+        return 0;
+      });
+      const seenNormalizedTypes = /* @__PURE__ */ new Set();
+      const deduplicated = [];
+      for (const doc of documents) {
+        const normalizedType = normalizeForFinalCheck(doc.type);
+        if (normalizedType && !seenNormalizedTypes.has(normalizedType)) {
+          seenNormalizedTypes.add(normalizedType);
+          deduplicated.push(doc);
+          console.log(`[GetVendorDocuments] \u2705 Keeping: ${doc.type} (${normalizedType}), id=${doc.id}`);
+        } else if (normalizedType) {
+          console.log(`[GetVendorDocuments] \u274C Filtering out duplicate: ${doc.type} (${normalizedType}), id=${doc.id}`);
+        }
+      }
+      documents = deduplicated;
+      console.log(`[GetVendorDocuments] After final safety check: ${documents.length} documents`);
+      const panDocs = documents.filter((d) => {
+        const norm = normalizeForFinalCheck(d.type);
+        return norm === "pan_card";
+      });
+      console.log(`[GetVendorDocuments] PAN documents in final array: ${panDocs.length}`);
+      if (panDocs.length > 1) {
+        console.error(`[GetVendorDocuments] ERROR: Still have ${panDocs.length} PAN documents after deduplication!`);
+        const tablePan = panDocs.find((d) => d.id && !d.id.startsWith("doc-"));
+        if (tablePan) {
+          console.log(`[GetVendorDocuments] Force keeping only table PAN doc: ${tablePan.id}, removing ${panDocs.length - 1} duplicates`);
+          documents = documents.filter((d) => {
+            const norm = normalizeForFinalCheck(d.type);
+            if (norm === "pan_card") {
+              return d.id === tablePan.id;
+            }
+            return true;
+          });
+          console.log(`[GetVendorDocuments] After force cleanup: ${documents.length} documents, PAN: ${documents.filter((d) => normalizeForFinalCheck(d.type) === "pan_card").length}`);
+        } else {
+          console.log(`[GetVendorDocuments] No table PAN doc found, keeping first: ${panDocs[0].id}`);
+          const firstPanId = panDocs[0].id;
+          documents = documents.filter((d) => {
+            const norm = normalizeForFinalCheck(d.type);
+            if (norm === "pan_card") {
+              return d.id === firstPanId;
+            }
+            return true;
+          });
+        }
+      }
+      const panDocsFinal = documents.filter((d) => {
+        const type = (d.type || "").toLowerCase();
+        return type.includes("pan");
+      });
+      if (panDocsFinal.length > 1) {
+        console.error(`[GetVendorDocuments] CRITICAL: ${panDocsFinal.length} PAN docs before return! Filtering...`);
+        const tablePan = panDocsFinal.find((d) => d.id && !d.id.startsWith("doc-"));
+        if (tablePan) {
+          documents = documents.filter((d) => {
+            const type = (d.type || "").toLowerCase();
+            if (type.includes("pan")) {
+              return d.id === tablePan.id;
+            }
+            return true;
+          });
+          console.log(`[GetVendorDocuments] After absolute final check: ${documents.length} docs, PAN: ${documents.filter((d) => (d.type || "").toLowerCase().includes("pan")).length}`);
+        }
+      }
+      const finalDocsMap = /* @__PURE__ */ new Map();
+      documents.forEach((doc) => {
+        const type = (doc.type || "").toLowerCase();
+        let key = type;
+        if (type.includes("pan")) {
+          key = "pan_card";
+        }
+        if (!finalDocsMap.has(key)) {
+          finalDocsMap.set(key, doc);
+          console.log(`[GetVendorDocuments] Final map: Added ${doc.type} (key: ${key}), id=${doc.id}`);
+        } else {
+          const existing = finalDocsMap.get(key);
+          const docIsTable = doc.id && !doc.id.startsWith("doc-");
+          const existingIsTable = existing.id && !existing.id.startsWith("doc-");
+          if (docIsTable && !existingIsTable) {
+            console.log(`[GetVendorDocuments] Final map: Replacing JSON doc with table doc for key ${key}`);
+            finalDocsMap.set(key, doc);
+          } else {
+            console.log(`[GetVendorDocuments] Final map: Skipping duplicate ${doc.type} (key: ${key}), keeping existing`);
+          }
+        }
+      });
+      documents = Array.from(finalDocsMap.values());
+      console.log(`[GetVendorDocuments] After ultimate final fix: ${documents.length} documents`);
       return this.success({
         success: true,
         documents,
@@ -215749,19 +215988,48 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
       return this.error(error.message || "Failed to fetch vendor documents", 500);
     }
   }
+  // Normalize document type (helper for parseDocumentsFromRow)
+  // This ensures panCard, pan_card, and pan all become pan_card
+  normalizeDocumentType(type) {
+    if (!type) return "document";
+    const normalized = type.toLowerCase().replace(/[_-]/g, "");
+    const typeMap = {
+      "pancard": "pan_card",
+      "pan": "pan_card",
+      "businesslicense": "business_license",
+      "license": "business_license",
+      "certificate": "certifications",
+      "certifications": "certifications",
+      "gstcertificate": "gst_certificate",
+      "gst": "gst_certificate",
+      "aadhaarfront": "aadhaar_front",
+      "aadhaarback": "aadhaar_back",
+      "addressproof": "address_proof",
+      "veterinarylicense": "veterinary_license"
+    };
+    const result = typeMap[normalized] || type;
+    if (type !== result) {
+      console.log(`[parseDocumentsFromRow] Normalized "${type}" -> "${result}"`);
+    }
+    return result;
+  }
   // Parse documents from database row
   parseDocumentsFromRow(row) {
     const documents = [];
+    const normalize2 = (type) => this.normalizeDocumentType(type);
     if (row.uploaded_documents) {
       try {
         const docs = typeof row.uploaded_documents === "string" ? JSON.parse(row.uploaded_documents) : row.uploaded_documents;
         if (Array.isArray(docs)) {
           docs.forEach((doc, idx) => {
+            const rawType = doc.type || doc.documentType || "document";
+            const normalizedType = normalize2(rawType);
             if (doc.url || doc.fileUrl) {
               documents.push({
-                id: doc.id || `doc-${idx}-${Date.now()}`,
-                type: doc.type || doc.documentType || "document",
-                name: getDocumentLabel(doc.type || doc.documentType || "document"),
+                id: doc.id || `doc-${normalizedType}-${idx}`,
+                type: normalizedType,
+                // ✅ ALWAYS normalized
+                name: getDocumentLabel(normalizedType),
                 url: doc.url || doc.fileUrl,
                 fileKey: this.extractS3Key(doc.url || doc.fileUrl),
                 uploadedAt: doc.uploadedAt || doc.createdAt,
@@ -215773,12 +216041,14 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
           });
         } else if (typeof docs === "object") {
           Object.entries(docs).forEach(([type, value], idx) => {
+            const normalizedType = normalize2(type);
             const docData = typeof value === "string" ? { url: value } : value;
             if (docData.url) {
               documents.push({
-                id: `doc-${type}-${idx}`,
-                type,
-                name: getDocumentLabel(type),
+                id: `doc-${normalizedType}-${idx}`,
+                type: normalizedType,
+                // ✅ normalized
+                name: getDocumentLabel(normalizedType),
                 url: docData.url,
                 fileKey: this.extractS3Key(docData.url),
                 uploadedAt: docData.uploadedAt,
@@ -215796,7 +216066,9 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
     if (row.application_payload) {
       try {
         const payload = typeof row.application_payload === "string" ? JSON.parse(row.application_payload) : row.application_payload;
-        const existingTypes = new Set(documents.map((d) => d.type.toLowerCase()));
+        const existingTypes = new Set(
+          documents.map((d) => normalize2(d.type))
+        );
         const documentFields = [
           { key: "gstCertificate", type: "gst_certificate" },
           { key: "panCard", type: "pan_card" },
@@ -215813,38 +216085,45 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
           { key: "addressProof", type: "address_proof" }
         ];
         documentFields.forEach(({ key, type }) => {
+          const normalizedType = normalize2(type);
           const url = payload[key];
-          if (url && typeof url === "string" && !existingTypes.has(type)) {
+          if (url && typeof url === "string" && !existingTypes.has(normalizedType)) {
             documents.push({
-              id: `doc-${type}`,
-              type,
-              name: getDocumentLabel(type),
+              id: `doc-${normalizedType}`,
+              type: normalizedType,
+              // ✅ normalized
+              name: getDocumentLabel(normalizedType),
               url,
               fileKey: this.extractS3Key(url),
               status: "uploaded",
               verified: false
             });
-            existingTypes.add(type);
+            existingTypes.add(normalizedType);
           }
         });
         if (payload.uploadedDocuments && typeof payload.uploadedDocuments === "object") {
-          Object.entries(payload.uploadedDocuments).forEach(([type, docData]) => {
-            if (!existingTypes.has(type.toLowerCase())) {
+          Object.entries(payload.uploadedDocuments).forEach(
+            ([type, docData]) => {
+              const normalizedType = normalize2(type);
+              if (existingTypes.has(normalizedType)) {
+                return;
+              }
               const url = typeof docData === "string" ? docData : docData?.url;
               if (url) {
                 documents.push({
-                  id: `doc-payload-${type}`,
-                  type,
-                  name: getDocumentLabel(type),
+                  id: `doc-payload-${normalizedType}`,
+                  type: normalizedType,
+                  // ✅ normalized
+                  name: getDocumentLabel(normalizedType),
                   url,
                   fileKey: this.extractS3Key(url),
                   status: "uploaded",
                   verified: false
                 });
-                existingTypes.add(type.toLowerCase());
+                existingTypes.add(normalizedType);
               }
             }
-          });
+          );
         }
       } catch (e) {
         console.warn("[GetVendorDocuments] Could not parse application_payload:", e);
@@ -215873,7 +216152,14 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
     const bucketName = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || "warmpawz-dev-uploads";
     const refreshedDocs = await Promise.all(documents.map(async (doc) => {
       try {
-        const fileKey = doc.fileKey || this.extractS3Key(doc.url);
+        let fileKey = doc.fileKey;
+        if (!fileKey) {
+          if (doc.url && !doc.url.startsWith("http")) {
+            fileKey = doc.url;
+          } else {
+            fileKey = this.extractS3Key(doc.url);
+          }
+        }
         if (fileKey && !fileKey.startsWith("http")) {
           const signedUrl = await getSignedUrl4(
             s3Client6,
@@ -215898,6 +216184,327 @@ var GetVendorDocumentsHandler = class extends BaseHandler {
     return refreshedDocs;
   }
 };
+async function updateVendorDocumentsHelper(vendorId, formData, adminId) {
+  console.log(`[UpdateVendorDocuments] Updating documents for vendor: ${vendorId}`);
+  const vendorCheck = await query(
+    `SELECT id, phone, business_name FROM vendors WHERE id = $1`,
+    [vendorId]
+  );
+  if (!vendorCheck.rows || vendorCheck.rows.length === 0) {
+    throw new Error("Vendor not found");
+  }
+  const vendor = vendorCheck.rows[0];
+  const { S3Client: S3Client7, PutObjectCommand: PutObjectCommand6, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+  const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+  const bucketName = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || "warmpawz-dev-uploads";
+  const documentTypeMap = {
+    "panCard": "pan_card",
+    "pan": "pan_card",
+    "license": "business_license",
+    "businessLicense": "business_license",
+    "certificate": "certifications",
+    "certifications": "certifications",
+    "gstCertificate": "gst_certificate",
+    "gst": "gst_certificate",
+    "aadhaarFront": "aadhaar_front",
+    "aadhaarBack": "aadhaar_back",
+    "addressProof": "address_proof",
+    "veterinaryLicense": "veterinary_license"
+  };
+  const updatedDocuments = [];
+  const uploadErrors = [];
+  const files = {};
+  const fields = {};
+  const FileConstructor = typeof File !== "undefined" ? File : null;
+  const BlobConstructor = typeof Blob !== "undefined" ? Blob : null;
+  for (const [key, value] of formData.entries()) {
+    const isFile = FileConstructor && value instanceof FileConstructor;
+    const isBlob = BlobConstructor && value instanceof BlobConstructor;
+    const isFileLike = value && typeof value === "object" && ("name" in value || "size" in value || "type" in value || "stream" in value);
+    if (isFile || isBlob || isFileLike) {
+      files[key] = value;
+    } else {
+      fields[key] = value;
+    }
+  }
+  if (Object.keys(files).length === 0) {
+    throw new Error("No files provided");
+  }
+  for (const [fieldName, file] of Object.entries(files)) {
+    try {
+      let documentType = documentTypeMap[fieldName] || fieldName;
+      if (fieldName === "documentFile" && fields.documentType) {
+        documentType = fields.documentType;
+      }
+      const allowedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
+      const allowedExtensions = [".pdf", ".jpg", ".jpeg", ".png"];
+      const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
+      const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(`.${fileExt}`);
+      if (!isValidType) {
+        uploadErrors.push({
+          field: fieldName,
+          error: `Invalid file type. Allowed: PDF, JPG, PNG`
+        });
+        continue;
+      }
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        uploadErrors.push({
+          field: fieldName,
+          error: `File size exceeds 10MB limit`
+        });
+        continue;
+      }
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 11);
+      const fileName = `vendors/${vendorId}/documents/${documentType}_${timestamp}_${random}.${fileExt}`;
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      await s3Client6.send(new PutObjectCommand6({
+        Bucket: bucketName,
+        Key: fileName,
+        Body: uint8Array,
+        ContentType: file.type || "application/octet-stream"
+      }));
+      const s3Key = fileName;
+      const signedUrl = await getSignedUrl4(
+        s3Client6,
+        new GetObjectCommand5({
+          Bucket: bucketName,
+          Key: fileName
+        }),
+        { expiresIn: 604800 }
+        // 7 days
+      );
+      const typeVariants = {
+        "pan_card": ["panCard", "pan", "pan_card"],
+        "business_license": ["businessLicense", "license", "business_license"],
+        "certifications": ["certificate", "certifications"],
+        "gst_certificate": ["gstCertificate", "gst", "gst_certificate"],
+        "aadhaar_front": ["aadhaarFront", "aadhaar_front"],
+        "aadhaar_back": ["aadhaarBack", "aadhaar_back"],
+        "address_proof": ["addressProof", "address_proof"],
+        "veterinary_license": ["veterinaryLicense", "veterinary_license"]
+      };
+      const variants = typeVariants[documentType] || [documentType];
+      const variantPlaceholders = variants.map((_, idx) => `$${idx + 2}`).join(", ");
+      const existingDoc = await query(
+        `SELECT id, document_url, document_type FROM vendor_documents 
+         WHERE vendor_id = $1 AND document_type IN (${variantPlaceholders})
+         ORDER BY updated_at DESC NULLS LAST, uploaded_at DESC LIMIT 1`,
+        [vendorId, ...variants]
+      );
+      const oldUrl = existingDoc.rows.length > 0 ? existingDoc.rows[0].document_url : null;
+      const oldDocType = existingDoc.rows.length > 0 ? existingDoc.rows[0].document_type : null;
+      if (existingDoc.rows.length > 0) {
+        await query(
+          `UPDATE vendor_documents 
+           SET document_url = $1, 
+               document_name = $2,
+               document_type = $3,
+               file_type = $4,
+               file_size = $5,
+               uploaded_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $6`,
+          [
+            s3Key,
+            // Store S3 key, not presigned URL
+            file.name,
+            documentType,
+            // Normalize to snake_case
+            file.type || `application/${fileExt}`,
+            file.size,
+            existingDoc.rows[0].id
+          ]
+        );
+        if (oldDocType && oldDocType !== documentType && variants.includes(oldDocType)) {
+          console.log(`[UpdateVendorDocuments] Updated document type from ${oldDocType} to ${documentType}`);
+        }
+      } else {
+        await query(
+          `INSERT INTO vendor_documents 
+           (vendor_id, document_type, document_name, document_url, file_type, file_size, uploaded_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [
+            vendorId,
+            documentType,
+            file.name,
+            s3Key,
+            // Store S3 key, not presigned URL
+            file.type || `application/${fileExt}`,
+            file.size
+          ]
+        );
+      }
+      try {
+        const appResult = await query(
+          `SELECT voa.id, voa.uploaded_documents, voa.application_payload
+           FROM vendor_identity vi
+           JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
+           WHERE vi.phone = $1
+           ORDER BY voa.submitted_at DESC
+           LIMIT 1`,
+          [vendor.phone]
+        );
+        if (appResult.rows.length > 0) {
+          const app3 = appResult.rows[0];
+          let uploadedDocs = app3.uploaded_documents || {};
+          if (typeof uploadedDocs === "string") {
+            uploadedDocs = JSON.parse(uploadedDocs);
+          }
+          const typeVariants2 = {
+            "pan_card": ["panCard", "pan", "pan_card"],
+            "business_license": ["businessLicense", "license", "business_license"],
+            "certifications": ["certificate", "certifications"],
+            "gst_certificate": ["gstCertificate", "gst", "gst_certificate"],
+            "aadhaar_front": ["aadhaarFront", "aadhaar_front"],
+            "aadhaar_back": ["aadhaarBack", "aadhaar_back"],
+            "address_proof": ["addressProof", "address_proof"],
+            "veterinary_license": ["veterinaryLicense", "veterinary_license"]
+          };
+          const variants2 = typeVariants2[documentType] || [documentType];
+          console.log(`[UpdateVendorDocuments] Removing variants: ${variants2.join(", ")} for documentType: ${documentType}`);
+          console.log(`[UpdateVendorDocuments] Current uploadedDocs keys: ${Object.keys(uploadedDocs).join(", ")}`);
+          const keysToDelete = [];
+          Object.keys(uploadedDocs).forEach((key) => {
+            const normalizedKey = key.toLowerCase().replace(/[_-]/g, "");
+            variants2.forEach((variant) => {
+              const normalizedVariant = variant.toLowerCase().replace(/[_-]/g, "");
+              if (normalizedKey === normalizedVariant) {
+                keysToDelete.push(key);
+              }
+            });
+          });
+          keysToDelete.forEach((key) => {
+            console.log(`[UpdateVendorDocuments] Deleting JSON key: ${key}`);
+            delete uploadedDocs[key];
+          });
+          if (Array.isArray(uploadedDocs)) {
+            uploadedDocs = uploadedDocs.filter((doc) => {
+              const docType = (doc.type || doc.documentType || "").toLowerCase().replace(/[_-]/g, "");
+              const shouldRemove = variants2.some((v) => {
+                const normalizedVariant = v.toLowerCase().replace(/[_-]/g, "");
+                return docType === normalizedVariant;
+              });
+              if (shouldRemove) {
+                console.log(`[UpdateVendorDocuments] Removing array item with type: ${doc.type || doc.documentType}`);
+              }
+              return !shouldRemove;
+            });
+          }
+          uploadedDocs[documentType] = {
+            url: s3Key,
+            // Store S3 key, not presigned URL
+            name: file.name,
+            type: documentType,
+            uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          console.log(`[UpdateVendorDocuments] Updated JSON: removed variants ${variants2.join(", ")}, added ${documentType} with S3 key: ${s3Key}`);
+          await query(
+            `UPDATE vendor_onboarding_applications
+             SET uploaded_documents = $1::jsonb,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [JSON.stringify(uploadedDocs), app3.id]
+          );
+          if (app3.application_payload) {
+            try {
+              let applicationPayload = app3.application_payload;
+              if (typeof applicationPayload === "string") {
+                applicationPayload = JSON.parse(applicationPayload);
+              }
+              if (applicationPayload && typeof applicationPayload === "object") {
+                const normalizeKey = (key) => {
+                  return key.toLowerCase().replace(/[_-]/g, "");
+                };
+                const normalizedVariants = variants2.map((v) => normalizeKey(v));
+                console.log(`[UpdateVendorDocuments] Cleaning application_payload. Normalized variants: ${normalizedVariants.join(", ")}`);
+                console.log(`[UpdateVendorDocuments] Current application_payload keys: ${Object.keys(applicationPayload).join(", ")}`);
+                const keysToDeleteFromPayload = [];
+                Object.keys(applicationPayload).forEach((key) => {
+                  const normalizedKey = normalizeKey(key);
+                  if (normalizedVariants.includes(normalizedKey)) {
+                    keysToDeleteFromPayload.push(key);
+                  }
+                });
+                keysToDeleteFromPayload.forEach((key) => {
+                  console.log(`[UpdateVendorDocuments] Deleting application_payload key: ${key}`);
+                  delete applicationPayload[key];
+                });
+                if (keysToDeleteFromPayload.length > 0) {
+                  await query(
+                    `UPDATE vendor_onboarding_applications
+                     SET application_payload = $1::jsonb,
+                         updated_at = NOW()
+                     WHERE id = $2`,
+                    [JSON.stringify(applicationPayload), app3.id]
+                  );
+                  console.log(`[UpdateVendorDocuments] Cleaned application_payload: removed ${keysToDeleteFromPayload.length} variant(s)`);
+                } else {
+                  console.log(`[UpdateVendorDocuments] No matching keys found in application_payload`);
+                }
+              }
+            } catch (payloadError) {
+              console.warn("[UpdateVendorDocuments] Could not clean application_payload:", payloadError);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[UpdateVendorDocuments] Could not update application documents:", e);
+      }
+      try {
+        const { logAuditEntry: logAuditEntry2 } = await Promise.resolve().then(() => (init_audit_log(), audit_log_exports));
+        await logAuditEntry2({
+          entityType: "vendor",
+          entityId: vendorId,
+          action: "document_updated",
+          oldValues: oldUrl ? { url: oldUrl } : null,
+          newValues: { url: signedUrl, documentType, fileName: file.name },
+          changedFields: [documentType],
+          actorId: adminId,
+          actorType: "admin"
+        });
+      } catch (e) {
+        console.warn("[UpdateVendorDocuments] Could not log audit entry:", e);
+      }
+      updatedDocuments.push({
+        type: documentType,
+        name: file.name,
+        url: signedUrl,
+        fileName
+      });
+    } catch (error) {
+      console.error(`[UpdateVendorDocuments] Error processing ${fieldName}:`, error);
+      uploadErrors.push({
+        field: fieldName,
+        error: error.message || "Upload failed"
+      });
+    }
+  }
+  if (uploadErrors.length > 0 && updatedDocuments.length === 0) {
+    throw new Error(`All uploads failed: ${uploadErrors.map((e) => `${e.field}: ${e.error}`).join(", ")}`);
+  }
+  const getDocsHandler = new GetVendorDocumentsHandler();
+  const docsResult = await getDocsHandler.execute(
+    {
+      rawPath: `/admin/vendors/${vendorId}/documents`,
+      rawQueryString: "",
+      headers: {},
+      pathParameters: { vendorId },
+      requestContext: { http: { method: "GET", path: `/admin/vendors/${vendorId}/documents` } }
+    },
+    { awsRequestId: `req-${Date.now()}`, functionName: "warmpawz-api-handler" }
+  );
+  const docsData = JSON.parse(docsResult.body);
+  return {
+    success: true,
+    updatedDocuments,
+    errors: uploadErrors,
+    documents: docsData.documents || []
+  };
+}
 var GetVendorClarificationRequestsHandler = class extends BaseHandler {
   async handle(context) {
     try {
@@ -217026,6 +217633,33 @@ function registerAdminComprehensiveEndpoints(app3) {
     const context = createLambdaContext38();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.patch("/admin/vendors/:vendorId/documents", async (c) => {
+    try {
+      const vendorId = c.req.param("vendorId");
+      const adminId = c.get("userId") || c.get("userRole") || "system";
+      const formData = await c.req.formData();
+      const result = await updateVendorDocumentsHelper(vendorId, formData, adminId);
+      return c.json({
+        success: result.success,
+        message: `Updated ${result.updatedDocuments.length} document(s)`,
+        updatedDocuments: result.updatedDocuments,
+        errors: result.errors.length > 0 ? result.errors : void 0,
+        documents: result.documents
+      }, 200);
+    } catch (error) {
+      console.error("[UpdateVendorDocuments] Route error:", error);
+      if (error.message === "Vendor not found") {
+        return c.json({ error: error.message }, 404);
+      }
+      if (error.message === "No files provided") {
+        return c.json({ error: error.message }, 400);
+      }
+      if (error.message.includes("All uploads failed")) {
+        return c.json({ error: error.message }, 400);
+      }
+      return c.json({ error: error.message || "Failed to update vendor documents" }, 500);
+    }
   });
   app3.get("/admin/vendors/clarification-requests", async (c) => {
     const handler2 = new GetVendorClarificationRequestsHandler();

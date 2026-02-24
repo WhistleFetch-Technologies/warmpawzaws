@@ -73,6 +73,8 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     customerPhone: z.ZodOptional<z.ZodString>;
     customerName: z.ZodOptional<z.ZodString>;
     petName: z.ZodOptional<z.ZodString>;
+    /** When provided and valid, booking uses package credit: totalAmount=0, payment_status=completed, no payment step */
+    packagePurchaseId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     serviceId: string;
     customerId: string;
@@ -106,6 +108,7 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     customerPhone?: string | undefined;
     customerName?: string | undefined;
     petName?: string | undefined;
+    packagePurchaseId?: string | undefined;
 }, {
     serviceId: string;
     customerId: string;
@@ -139,6 +142,7 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     customerPhone?: string | undefined;
     customerName?: string | undefined;
     petName?: string | undefined;
+    packagePurchaseId?: string | undefined;
 }>;
 export declare const UpdateBookingStatusRequestSchema: z.ZodObject<{
     status: z.ZodEnum<["pending", "confirmed", "scheduled", "in_progress", "completed", "cancelled", "no_show", "rescheduled", "sample_collected", "sample_received_at_lab", "processing", "reports_ready"]>;

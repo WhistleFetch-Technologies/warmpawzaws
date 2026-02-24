@@ -205,8 +205,18 @@ export function registerStorageEndpoints(app: Hono) {
       const uploadResults: any[] = [];
       const entries = Array.from(formData.entries());
 
+      // Check if File constructor exists (browser) or use Blob check (Node.js)
+      const FileConstructor = typeof File !== 'undefined' ? File : null;
+      const BlobConstructor = typeof Blob !== 'undefined' ? Blob : null;
+
       for (const [key, value] of entries) {
-        if (value instanceof File && key !== 'vendorId') {
+        // Check if value is a file/blob object
+        const isFile = FileConstructor && value instanceof FileConstructor;
+        const isBlob = BlobConstructor && value instanceof BlobConstructor;
+        const isFileLike = value && typeof value === 'object' && 
+                           ('name' in value || 'size' in value || 'type' in value || 'stream' in value);
+        
+        if ((isFile || isBlob || isFileLike) && key !== 'vendorId') {
           const file = value;
           const documentType = key; // The field name is the document type
 

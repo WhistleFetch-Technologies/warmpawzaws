@@ -1498,25 +1498,43 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Catalog Endpoints
   app.get('/admin/catalog/categories', async (c) => {
     try {
+      // Support type query parameter: 'service' (default) or 'ecommerce' (for products)
+      const type = c.req.query('type') || 'service';
+      const tableName = type === 'ecommerce' ? 'ecommerce_categories' : 'service_categories';
+      
       // Use safe query that handles UUID/TEXT schema conflict
       // Ensure all fields are properly typed and never undefined
-      const categories = await query(`
-        SELECT 
-          id::text as id,
-          COALESCE(category_id::text, '') as category_id,
-          name::text as name,
-          COALESCE(description::text, '') as description,
-          COALESCE(icon::text, '') as icon,
-          COALESCE(icon_color::text, 'text-gray-500') as icon_color,
-          COALESCE(display_order::integer, 0) as display_order,
-          COALESCE(is_active::boolean, true) as is_active,
-          COALESCE(created_at::text, '') as created_at,
-          COALESCE(updated_at::text, '') as updated_at
-        FROM service_categories
-        WHERE is_active = true OR is_active IS NULL
-        ORDER BY display_order ASC NULLS LAST, name ASC
-        LIMIT 1000
-      `);
+      let categories;
+      try {
+        categories = await query(`
+          SELECT 
+            id::text as id,
+            COALESCE(category_id::text, '') as category_id,
+            name::text as name,
+            COALESCE(description::text, '') as description,
+            COALESCE(icon::text, '') as icon,
+            COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+            COALESCE(display_order::integer, 0) as display_order,
+            COALESCE(is_active::boolean, true) as is_active,
+            COALESCE(created_at::text, '') as created_at,
+            COALESCE(updated_at::text, '') as updated_at
+          FROM ${tableName}
+          WHERE is_active = true OR is_active IS NULL
+          ORDER BY display_order ASC NULLS LAST, name ASC
+          LIMIT 1000
+        `);
+      } catch (tableError: any) {
+        // If table doesn't exist, return empty array
+        if (tableError.message && tableError.message.includes('does not exist')) {
+          console.warn(`[Categories] Table ${tableName} does not exist, returning empty array`);
+          return c.json({ 
+            success: true, 
+            categories: [],
+            total: 0
+          });
+        }
+        throw tableError;
+      }
       
       // Ensure all fields are strings/numbers (no undefined) to prevent UI errors
       const safeCategories = (categories.rows || []).map((cat: any) => ({
@@ -1761,10 +1779,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Product name and price are required' }, 400);
       }
 
+      // Validate category_id exists in ecommerce_categories if provided
+      let validatedCategoryId: string | null = null;
+      if (categoryId) {
+        try {
+          // Check if ecommerce_categories table exists and category is valid
+          const categoryCheck = await query(
+            `SELECT id FROM ecommerce_categories WHERE id = $1::uuid LIMIT 1`,
+            [categoryId]
+          );
+          
+          if (categoryCheck.rows && categoryCheck.rows.length > 0) {
+            validatedCategoryId = categoryId;
+          } else {
+            console.warn(`[CreateProduct] Category ${categoryId} not found in ecommerce_categories, setting to null`);
+            // Don't fail - allow null category_id
+            validatedCategoryId = null;
+          }
+        } catch (catError: any) {
+          // If ecommerce_categories table doesn't exist or query fails, allow null
+          console.warn(`[CreateProduct] Could not validate category: ${catError.message}`);
+          validatedCategoryId = null;
+        }
+      }
+
       const newProduct = await insert('products', {
         name,
         description: description || '',
-        category_id: categoryId || null,
+        category_id: validatedCategoryId,
         price: parseFloat(price) || 0,
         stock: parseInt(stock || '0', 10),
         status: status || 'active',
@@ -1781,6 +1823,16 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating product:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create product', 500);
+      
+      // Provide more specific error message for foreign key violations
+      if (errorResponse.error && typeof errorResponse.error === 'string' && 
+          errorResponse.error.includes('foreign key constraint')) {
+        return c.json({ 
+          success: false, 
+          error: 'Invalid category selected. Please select a valid product category or leave it empty.' 
+        }, 400);
+      }
+      
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
