@@ -357,9 +357,10 @@ class AdminLoginHandler extends BaseHandler {
       });
       console.log(`[ADMIN AUTH] Updated last_login_at for admin ${admin.id}`);
 
-      // Generate proper JWT tokens (use Cognito in production if configured, otherwise JWT fallback)
+      // Generate proper JWT tokens (use Cognito in production if configured, otherwise production JWT)
       let tokens;
       if (isUATMode) {
+        // UAT Mode: Use UAT JWT tokens
         const { generateUATJWTToken } = await import('../utils/jwt-generator');
         tokens = await generateUATJWTToken({
           userId: admin.id,
@@ -368,20 +369,20 @@ class AdminLoginHandler extends BaseHandler {
           expiresIn: 3600,
         });
       } else {
-        // Production: Use Cognito if configured, otherwise fallback to JWT
+        // Production Mode: Use Cognito if configured, otherwise use PRODUCTION JWT (NOT UAT)
         const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || '';
         
         if (!cognitoUserPoolId) {
-          // Cognito not configured - use JWT tokens as fallback
-          console.warn(`[ADMIN AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
-          const { generateUATJWTToken } = await import('../utils/jwt-generator');
-          tokens = await generateUATJWTToken({
+          // Cognito not configured - use PRODUCTION JWT tokens (NOT UAT tokens)
+          console.warn(`[ADMIN AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using PRODUCTION JWT tokens`);
+          const { generateProductionJWTToken } = await import('../utils/jwt-generator');
+          tokens = await generateProductionJWTToken({
             userId: admin.id,
             phone: admin.email,
             role: 'admin',
             expiresIn: 24 * 60 * 60, // 24 hours for production
           });
-          console.log('[ADMIN AUTH] Production Mode: Generated JWT tokens (Cognito fallback)');
+          console.log('[ADMIN AUTH] Production Mode: Generated PRODUCTION JWT tokens (issuer: warmpawz-api, NOT warmpawz-uat)');
         } else {
           // Cognito is configured - use it
           try {
@@ -395,15 +396,16 @@ class AdminLoginHandler extends BaseHandler {
           expiresIn: cognitoTokens.expiresIn,
         };
           } catch (cognitoError: any) {
-            // If Cognito fails, fallback to JWT
-            console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using JWT fallback`);
-            const { generateUATJWTToken } = await import('../utils/jwt-generator');
-            tokens = await generateUATJWTToken({
+            // If Cognito fails, use PRODUCTION JWT (NOT UAT)
+            console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using PRODUCTION JWT fallback`);
+            const { generateProductionJWTToken } = await import('../utils/jwt-generator');
+            tokens = await generateProductionJWTToken({
               userId: admin.id,
               phone: admin.email,
               role: 'admin',
               expiresIn: 24 * 60 * 60, // 24 hours
             });
+            console.log('[ADMIN AUTH] Production Mode: Generated PRODUCTION JWT tokens (Cognito fallback, issuer: warmpawz-api)');
           }
         }
       }

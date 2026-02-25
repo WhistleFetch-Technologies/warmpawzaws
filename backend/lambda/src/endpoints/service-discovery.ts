@@ -63,17 +63,17 @@ function isProductionEnvironment(): boolean {
  */
 function extractS3KeyFromUrl(url: string | null | undefined): string | null {
   if (!url || typeof url !== 'string') return null;
-  
-    // If it's already just a key (no http/https), return as-is
-    if (!url.startsWith('http')) {
+
+  // If it's already just a key (no http/https), return as-is
+  if (!url.startsWith('http')) {
     return url.trim();
-    }
-    
+  }
+
   try {
     // If it's a pre-signed URL or full S3 URL, extract the key
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
-    
+
     // Remove leading slash and extract key (before query params)
     if (pathname) {
       // Remove leading slash if present
@@ -92,20 +92,20 @@ function extractS3KeyFromUrl(url: string | null | undefined): string | null {
       if (s3Match && s3Match[1]) {
         return s3Match[1].trim();
       }
-      
+
       // Pattern 2: Extract vendors/... pattern (most common)
       const vendorsMatch = url.match(/(vendors\/[^?]+)/);
       if (vendorsMatch && vendorsMatch[1]) {
         return vendorsMatch[1].trim();
       }
-      
+
       console.warn(`[EXTRACT-S3-KEY] Could not extract key from URL: ${url?.substring(0, 150)}`);
     } catch (regexError) {
       console.error(`[EXTRACT-S3-KEY] Error in regex extraction:`, regexError);
       return null;
     }
   }
-  
+
   return null;
 }
 
@@ -115,7 +115,7 @@ function extractS3KeyFromUrl(url: string | null | undefined): string | null {
  */
 async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
   if (!s3KeyOrUrl) return null;
-  
+
   try {
     const s3Key = extractS3KeyFromUrl(s3KeyOrUrl);
     if (!s3Key) {
@@ -123,14 +123,14 @@ async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Pr
       // ✅ FIX: Return null instead of expired URL to prevent 403 errors
       return null;
     }
-    
+
     console.log(`[PRESIGNED-URL] Regenerating URL for S3 key: ${s3Key}`);
-    
+
     const { S3Client, GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
     const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
     const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
     const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-    
+
     // ✅ FIX: Verify object exists before generating presigned URL
     try {
       const headCommand = new HeadObjectCommand({
@@ -147,7 +147,7 @@ async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Pr
       console.warn(`[PRESIGNED-URL] Error checking object existence for ${s3Key}:`, headError?.message);
       // Continue anyway - might be a permission issue, not a missing object
     }
-    
+
     const signedUrl = await getSignedUrl(
       s3Client,
       new GetObjectCommand({
@@ -156,12 +156,12 @@ async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Pr
       }),
       { expiresIn: 604800 } // 7 days
     );
-    
+
     if (!signedUrl || typeof signedUrl !== 'string' || !signedUrl.startsWith('https://')) {
       console.error(`[PRESIGNED-URL] Invalid presigned URL generated for ${s3Key}`);
       return null; // ✅ FIX: Return null instead of expired URL to prevent 403 errors
     }
-    
+
     console.log(`[PRESIGNED-URL] Successfully regenerated URL for ${s3Key} (length: ${signedUrl.length})`);
     return signedUrl;
   } catch (error: any) {
@@ -269,7 +269,7 @@ function roleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | un
   if (!normalized) return true;
   const config = parseRoleConfig(roleConfig);
   if (!config) return true;
-  
+
   // ✅ FIX: Handle nested serviceStyles structure (serviceStyles.solo, serviceStyles.selected, etc.)
   let styles: string[] = [];
   if (config?.serviceStyles) {
@@ -283,9 +283,9 @@ function roleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | un
   } else if (config?.service_styles) {
     styles = normalizeServiceStylesArray(config.service_styles);
   }
-  
+
   if (styles.length === 0) return true;
-  
+
   // ✅ FIX: For at_center service style, be more permissive
   // If a vendor has a published at_center service (verified by SQL query),
   // they should be discoverable even if role_config doesn't explicitly list it
@@ -302,7 +302,7 @@ function roleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | un
     console.log('[roleConfigAllowsStyle] Allowing at_center despite role_config not explicitly listing it (vendor has published service)');
     return true;
   }
-  
+
   const allows = styles.includes(normalized);
   console.log('[roleConfigAllowsStyle] serviceStyle=%s, normalized=%s, styles=%s, allows=%s', serviceStyle, normalized, JSON.stringify(styles), allows);
   return allows;
@@ -420,7 +420,7 @@ async function resolveTargetRolesForDiscovery(category?: string | null, roleId?:
   const discoverable = await getDiscoverableRoleNames();
   let rawCategory = category?.toLowerCase().trim() || (roleId ? getCategoryFromRole(roleId) : null);
   // Normalize customer tile categoryIds to discovery category (e.g. lab-diagnostics → diagnostics for role lookup)
-  if (rawCategory === 'lab-diagnostics') rawCategory = 'diagnostics';
+  if (rawCategory === 'lab-diagnostics') { rawCategory = 'diagnostics' };
   const effectiveCategory = rawCategory && getCategoryFromRole(rawCategory) !== 'other' ? getCategoryFromRole(rawCategory) : rawCategory;
   if (effectiveCategory) {
     const fromDb = discoverable.filter((role) => getCategoryFromRole(role) === effectiveCategory);
@@ -470,7 +470,7 @@ async function getNextAvailableSlot(
     const currentDayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const SLOT_DURATION = 30; // minutes - atomic slot size
-    
+
     // Build query to get availability WINDOWS (start + end time) for slot generation
     let va2Query = `
       SELECT day_of_week,
@@ -481,20 +481,20 @@ async function getNextAvailableSlot(
         AND (is_available IS NULL OR is_available = true)
     `;
     const params: any[] = [vendorId, phone || ''];
-    
+
     if (serviceStyleFilter && serviceStyleFilter.length > 0) {
       va2Query += ` AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))`;
       params.push(serviceStyleFilter);
     }
-    
+
     va2Query += ` ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`;
-    
+
     const va2 = await query(va2Query, params);
     if (!va2.rows || va2.rows.length === 0) return null;
-    
+
     // ✅ ENHANCED: Check up to 14 days ahead, generating 30-min slots and checking bookings
     // This ensures the "next available slot" is truly available (not already booked)
-    
+
     // Helper: convert HH:MM to minutes
     const toMin = (t: any): number => {
       const s = (t || '09:00').toString();
@@ -502,7 +502,7 @@ async function getNextAvailableSlot(
       const [h, m] = clean.split(':').map(Number);
       return (h || 0) * 60 + (m || 0);
     };
-    
+
     // Resolve vendor ID for bookings query (bookings use vendors.id, not vendor_identity.id)
     let bookingsVendorId = vendorId;
     try {
@@ -514,17 +514,17 @@ async function getNextAvailableSlot(
         bookingsVendorId = viCheck.rows[0].vendor_id;
       }
     } catch (_) { /* use original vendorId */ }
-    
+
     for (let dayOffset = 0; dayOffset <= 13; dayOffset++) {
       const checkDate = new Date(now);
       checkDate.setDate(checkDate.getDate() + dayOffset);
       const checkDayOfWeek = checkDate.getDay();
       const dateStr = checkDate.toISOString().split('T')[0];
-      
+
       // Find availability windows for this day of week
       const dayWindows = va2.rows.filter((r: any) => Number(r.day_of_week) === checkDayOfWeek);
       if (dayWindows.length === 0) continue;
-      
+
       // ✅ CRITICAL: Get booked slot times for this date (atomic: only start times matter)
       let bookedTimes: Set<string> = new Set();
       try {
@@ -545,31 +545,31 @@ async function getNextAvailableSlot(
           bookedTimes.add(timeStr);
         }
       } catch (_) { /* no bookings = all slots free */ }
-      
+
       // Generate 30-min slots from availability windows and find first non-booked
       for (const window of dayWindows) {
         const winStart = toMin(window.start_time);
         const winEnd = toMin(window.end_time);
-        
+
         let currentMinutes = winStart;
         while (currentMinutes + SLOT_DURATION <= winEnd) {
           const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
-          
+
           // Skip if past (for today)
           if (dayOffset === 0 && timeStr <= currentHHMM) {
             currentMinutes += SLOT_DURATION;
             continue;
           }
-          
+
           // ✅ CRITICAL: Skip if this slot is already booked (atomic check)
           if (bookedTimes.has(timeStr)) {
             currentMinutes += SLOT_DURATION;
             continue;
           }
-          
+
           // Found a truly available slot!
           const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-          
+
           let display: string;
           if (dayOffset === 0) {
             display = `Today ${formatted}`;
@@ -580,7 +580,7 @@ async function getNextAvailableSlot(
           } else {
             display = `${checkDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatted}`;
           }
-          
+
           return {
             date: dateStr,
             time: timeStr,
@@ -589,7 +589,7 @@ async function getNextAvailableSlot(
         }
       }
     }
-    
+
     return null; // No available slot found in next 14 days
   } catch (_) {
     return null;
@@ -619,7 +619,7 @@ function deduplicateServices(services: any[]): any[] {
     const serviceName = service.name || service.service_name || service.serviceName || '';
     const serviceStyle = service.serviceStyle || service.service_style || '';
     const key = `${serviceName}_${serviceStyle}`.toLowerCase().trim();
-    
+
     if (key && !seen.has(key)) {
       seen.set(key, service);
     } else if (key && seen.has(key)) {
@@ -700,7 +700,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   app.get('/customer/debug/at-center-vendors', async (c) => {
     try {
       const category = c.req.query('category') || 'vet';
-      
+
       // Query 1: All vendors with at_center services
       const allVendors = await query(`
         SELECT 
@@ -945,7 +945,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       if (!tableCheck.rows[0]?.exists) {
         // Return fallback services from vendor_services if service_catalog doesn't exist
         console.log('[Platform Services] service_catalog table not found, using vendor_services fallback');
-        
+
         let fallbackQuery = `
           SELECT DISTINCT 
             vs.id,
@@ -964,21 +964,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
             AND (LOWER(r.name) = LOWER($1) OR LOWER(r.display_name) = LOWER($1))
         `;
-        
+
         const fallbackParams: any[] = [roleId];
         let paramIdx = 2;
-        
+
         if (serviceStyle && serviceStyle !== 'all') {
           const acceptableStyles = acceptableStylesForService(serviceStyle);
           fallbackQuery += ` AND vs.service_style = ANY($${paramIdx}::text[])`;
           fallbackParams.push(acceptableStyles);
           paramIdx++;
         }
-        
+
         fallbackQuery += ` LIMIT 50`;
-        
+
         const fallbackResult = await query(fallbackQuery, fallbackParams).catch(() => ({ rows: [] }));
-        
+
         const services = fallbackResult.rows.map((row: any) => ({
           id: row.service_id || row.id,
           serviceId: row.service_id,
@@ -1141,7 +1141,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const targetRoles = await resolveTargetRolesForDiscovery(effectiveCategory || null, effectiveCategory ? null : (roleId || null));
         let targetRolesLower = targetRoles.map((r) => r.toLowerCase());
         console.log('[discover-services] at_home/tele category=%s roleId=%s effectiveCategory=%s targetRoles=%s', category, roleId, effectiveCategory, JSON.stringify(targetRolesLower));
-        
+
         // ✅ FIX: Ensure vet_solo is included for vet category
         if (effectiveCategory === 'vet' && !targetRolesLower.includes('vet_solo')) {
           console.log('[discover-services] tele: Adding vet_solo to targetRoles (not in resolved roles)');
@@ -1151,7 +1151,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         }
         console.log('[discover-services] tele: Final targetRolesLower=', JSON.stringify(targetRolesLower));
-        
+
         // ✅ DEBUG: Check if vet_solo is in target roles
         const vetSoloInTarget = targetRolesLower.includes('vet_solo');
         console.log('[discover-services] tele: vet_solo in targetRoles?', vetSoloInTarget);
@@ -1174,21 +1174,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         // Role filter: match any role in the expanded category list (like by-style); LOWER + space→underscore for compatibility.
         // ✅ FIX: Make role filter more permissive - use LIKE for partial matches
-        const roleRestrictClause = targetRolesLower.length > 0
-          ? ` AND r.id IS NOT NULL AND (
-              LOWER(r.name) = ANY($1::text[]) 
-              OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[])
-              OR EXISTS (SELECT 1 FROM unnest($1::text[]) AS role_name WHERE LOWER(r.name) LIKE '%' || role_name || '%' OR LOWER(r.name) LIKE '%' || REPLACE(role_name, '_', '') || '%')
-            )`
-          : '';
-        const soloCondition = targetRolesLower.length > 0 ? '' : ` AND (v.vendor_type = 'solo' OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%' OR LOWER(COALESCE(r.name, '')) LIKE '%solo%')`;
+        // const roleRestrictClause = targetRolesLower.length > 0
+        //   ? ` AND r.id IS NOT NULL AND (
+        //       LOWER(r.name) = ANY($1::text[]) 
+        //       OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[])
+        //       OR EXISTS (SELECT 1 FROM unnest($1::text[]) AS role_name WHERE LOWER(r.name) LIKE '%' || role_name || '%' OR LOWER(r.name) LIKE '%' || REPLACE(role_name, '_', '') || '%')
+        //     )`
+        //   : '';
+        // const soloCondition = targetRolesLower.length > 0 ? '' : ` AND (v.vendor_type = 'solo' OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%' OR LOWER(COALESCE(r.name, '')) LIKE '%solo%')`;
 
         const acceptableServiceStyles = acceptableStylesForService(serviceStyle);
         console.log('[discover-services] at_home/tele: acceptableServiceStyles=', JSON.stringify(acceptableServiceStyles), 'for serviceStyle=', serviceStyle);
         // ✅ FIX: Build SQL-safe list of acceptable styles for EXISTS clause
         // These are internal constants, not user input, so safe to inline
         const acceptableStylesSql = acceptableServiceStyles.map(s => `'${s.replace(/'/g, "''")}'`).join(', ');
-        
+
         // Params: [targetRoles] only when $1 is actually used in the query
         // For 'vet' category, we use LIKE '%vet%' (no params needed)
         // For other categories with target roles, we use $1 via roleRestrict
@@ -1280,7 +1280,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vendor_type: vendorResults.rows[0].vendor_type
           }));
         }
-        
+
         for (const vendor of vendorResults.rows) {
           // ✅ DEBUG: Log role_config check
           const roleConfigAllows = roleConfigAllowsStyle((vendor as any).role_config, serviceStyle);
@@ -1306,7 +1306,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             );
             completedBookings = parseInt(bookingsResult.rows[0]?.count || '0', 10);
           } catch (bookErr) { /* Continue */ }
-          
+
           // ✅ FIX: Calculate distance if customer coordinates provided
           let distance: number | null = null;
           let distanceText: string | null = null;
@@ -1315,15 +1315,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const lon1 = parseFloat(longitude as string);
             const lat2 = parseFloat(vendor.latitude);
             const lon2 = parseFloat(vendor.longitude);
-            
+
             // Haversine formula
             const R = 6371; // Earth's radius in km
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             distance = R * c;
             distanceText = distance < 1 ? `${Math.round(distance * 1000)}m away` : `${distance.toFixed(1)} km away`;
           }
@@ -1433,7 +1433,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
           }
-          
+
           allProviders.push({
             id: vendor.id,
             vendorId: vendor.id,
@@ -1564,7 +1564,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       if (serviceStyle === 'at_center') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         console.log('[discover-services] at_center: acceptableStyles=', acceptableStyles);
-        
+
         // Resolve target roles BEFORE building query so we can include category/role filter
         const roleIdForCenter = (roleId) ? (() => {
           const m: Record<string, string> = {
@@ -1587,7 +1587,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         }
         console.log('[discover-services] at_center: final targetRoles=%s', JSON.stringify(targetRoles));
-        
+
         // Use INNER JOIN like debug endpoint - this matches the working query
         // ✅ FIX: Add category/role filter to SQL query
         params = [acceptableStyles];
@@ -1600,7 +1600,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           categoryFilterClause = ` AND (LOWER(COALESCE(v.category, '')) = LOWER($${params.length + 1}) OR LOWER(r.name) LIKE LOWER($${params.length + 1} || '%'))`;
           params.push(category.toLowerCase());
         }
-        
+
         vendorQuery = `
           SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config,
             COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
@@ -1661,7 +1661,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       console.log('[discover-services] at_center: executing query with params:', JSON.stringify(params));
       console.log('[discover-services] at_center: query preview:', vendorQuery.substring(0, 800));
-      
+
       // DEBUG: Check if specific vendor would match query conditions
       const DEBUG_VENDOR_ID = '863d5f9f-2cec-4792-9ea8-64c98059061c';
       try {
@@ -1677,7 +1677,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           INNER JOIN roles r ON v.role_id = r.id
           WHERE v.id = $2
         `, [acceptableStyles, DEBUG_VENDOR_ID]);
-        
+
         if (debugVendorCheck.rows.length > 0) {
           const dv = debugVendorCheck.rows[0];
           console.log('[discover-services] at_center: DEBUG vendor check:', JSON.stringify({
@@ -1696,7 +1696,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       } catch (debugErr: any) {
         console.log('[discover-services] at_center: DEBUG check error:', debugErr.message);
       }
-      
+
       let vendorResults = await query(vendorQuery, params);
       let vendors = vendorResults.rows;
       console.log('[discover-services] at_center: found %s vendors before enrichment', vendors.length);
@@ -1709,7 +1709,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           status: vendors[0].status,
           is_active: vendors[0].is_active
         }));
-        
+
         // Check if debug vendor is in results
         const debugVendorInResults = vendors.find((v: any) => v.id === DEBUG_VENDOR_ID);
         if (debugVendorInResults) {
@@ -1731,18 +1731,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendors.map(async (vendor: any) => {
           const DEBUG_VENDOR_ID = '863d5f9f-2cec-4792-9ea8-64c98059061c';
           const isDebugVendor = vendor.id === DEBUG_VENDOR_ID;
-          
+
           if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
             if (isDebugVendor) {
               console.log('[discover-services] at_center: ❌ DEBUG vendor %s filtered by roleConfigAllowsStyle', vendor.id);
               console.log('[discover-services] at_center: DEBUG role_config:', JSON.stringify(vendor.role_config, null, 2));
               console.log('[discover-services] at_center: DEBUG serviceStyle:', serviceStyle);
             } else {
-            console.log('[discover-services] at_center: vendor %s filtered by roleConfigAllowsStyle', vendor.id);
+              console.log('[discover-services] at_center: vendor %s filtered by roleConfigAllowsStyle', vendor.id);
             }
             return null;
           }
-          
+
           if (isDebugVendor) {
             console.log('[discover-services] at_center: ✅ DEBUG vendor %s passed roleConfigAllowsStyle check', vendor.id);
           }
@@ -1764,17 +1764,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             WHERE vs.vendor_id = $1
               AND vs.is_enabled = true
           `;
-          
+
           // ✅ FIX: When serviceStyle is specified, filter by it (include legacy aliases)
           if (serviceStyle && serviceStyle !== 'all') {
             const acceptableStyles = acceptableStylesForService(serviceStyle);
             servicesQuery += ` AND vs.service_style = ANY($2::text[])`;
             servicesParams.push(acceptableStyles);
           }
-          
+
           servicesQuery += ` AND (vs.publish_status IN ('published','auto_published','draft') OR vs.publish_status IS NULL)`;
           servicesQuery += ` ORDER BY vs.publish_status DESC, vs.service_name LIMIT 10`;
-          
+
           const services = await query(servicesQuery, servicesParams);
 
           // Get reviews and calculate rating
@@ -1850,7 +1850,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
 
           // ✅ FIX: Detect if vendor is solo/individual
-          const isSoloProvider = 
+          const isSoloProvider =
             (vendor.role_name || '').toLowerCase().includes('solo') ||
             (vendor.role_display_name || '').toLowerCase().includes('solo') ||
             (vendor.role_name || '').includes('_solo');
@@ -1870,7 +1870,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]).catch(() => ({ rows: [] }));
             specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
             if (specializations.length === 0 && vendor.specializations) {
-              specializations = Array.isArray(vendor.specializations) ? 
+              specializations = Array.isArray(vendor.specializations) ?
                 vendor.specializations : JSON.parse(vendor.specializations || '[]');
             }
             if (specializations.length === 0) {
@@ -2028,7 +2028,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           (o.duration != null && Number(o.duration) > 0) && (o.name || o.category)
         );
         const hasAnyServices = v.featuredOfferings && v.featuredOfferings.length > 0;
-        
+
         // For at_center: require businessName, at least one service, AND availability set
         // Vendors without availability should not appear in discovery results
         if (serviceStyle === 'at_center') {
@@ -2049,9 +2049,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         filteredVendors = filteredVendors.filter((v: any) => {
           if (v.featuredOfferings && v.featuredOfferings.length > 0) {
             // Check if any offering has at_center style
-            const hasAtCenterOffering = v.featuredOfferings.some((offering: any) => 
-              offering.serviceStyle === 'at_center' || 
-              offering.serviceStyle === 'at_vendor' || 
+            const hasAtCenterOffering = v.featuredOfferings.some((offering: any) =>
+              offering.serviceStyle === 'at_center' ||
+              offering.serviceStyle === 'at_vendor' ||
               offering.serviceStyle === 'at_clinic'
             );
             if (hasAtCenterOffering) return true;
@@ -2130,40 +2130,40 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('[discover-services] Error discovering services:', error);
       console.error('[discover-services] Error stack:', error?.stack);
-      
+
       // ✅ FIX: Return proper error codes instead of masking with 200 OK
       // This allows frontend to handle errors properly and enables better debugging
       const errorMessage = error?.message || 'Unknown error discovering services';
-      
+
       // Check for specific error types
       if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
-        return c.json({ 
-          success: false, 
+        return c.json({
+          success: false,
           error: 'Service temporarily busy. Please try again in a moment.',
           code: 'POOL_EXHAUSTED',
-          vendors: [], 
-          total: 0 
+          vendors: [],
+          total: 0
         }, 503);
       }
-      
+
       if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
-        return c.json({ 
-          success: false, 
+        return c.json({
+          success: false,
           error: 'Request timed out. Please try again.',
           code: 'TIMEOUT',
-          vendors: [], 
-          total: 0 
+          vendors: [],
+          total: 0
         }, 504);
       }
-      
+
       // Return 500 for other errors (with fallback empty data for graceful degradation)
-      return c.json({ 
-        success: false, 
+      return c.json({
+        success: false,
         error: 'Failed to discover services. Please try again.',
         code: 'INTERNAL_ERROR',
         _debug: process.env.NODE_ENV !== 'production' ? errorMessage : undefined,
-        vendors: [], 
-        total: 0 
+        vendors: [],
+        total: 0
       }, 500);
     }
   });
@@ -2192,7 +2192,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Resolve vendor (frontend may pass vendor_identity.id or staff's vendor_id; resolve to vendors.id)
       console.log(`[SLOTS] ========== STARTING VENDOR RESOLUTION ==========`);
       console.log(`[SLOTS] Input vendorId from URL: ${vendorId}`);
-      
+
       // ✅ CRITICAL: First check if input vendorId is a vendor_identity.id and get its linked vendor_id
       let linkedVendorId: string | null = null;
       try {
@@ -2216,16 +2216,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       } catch (e: any) {
         console.warn(`[SLOTS] Could not check vendor_identity: ${e?.message}`);
       }
-      
+
       let resolvedVendorId: string;
       let availabilityIdsForQuery: string[];
       let canonicalVendorId: string;
-      
+
       console.log(`[SLOTS] ========== CUSTOMER SLOTS REQUEST START ==========`);
       console.log(`[SLOTS] Input vendorId (from URL param): ${vendorId}`);
       console.log(`[SLOTS] Requested date: ${date}`);
       console.log(`[SLOTS] Requested serviceStyle: ${serviceStyle}`);
-      
+
       const vendor = await resolveVendorById(vendorId);
       console.log(`[SLOTS] resolveVendorById result:`, vendor ? { id: vendor.id, business_name: vendor.business_name, phone: vendor.phone, status: vendor.status, is_active: vendor.is_active } : 'null');
       if (!vendor) {
@@ -2245,8 +2245,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             console.log(`[SLOTS] ✅ Using linked vendor_id directly: ${canonicalVendorId}`);
             console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
           } else {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
+            return c.json({ error: 'Vendor not found' }, 404);
+          }
         } else {
           return c.json({ error: 'Vendor not found' }, 404);
         }
@@ -2254,21 +2254,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // ✅ CRITICAL: Check if vendor exists but availability might be stored under a different vendor_id
         // This can happen if vendor was recreated or there are duplicate vendor records
         console.log(`[SLOTS] Vendor found: id=${vendor.id}, business_name=${vendor.business_name}, phone=${vendor.phone}`);
-        
+
         // Check if availability exists for this vendor_id
         const availabilityCheck = await query(
           `SELECT COUNT(*) as count FROM vendor_availability_v2 WHERE vendor_id::text = $1`,
           [vendor.id]
         ).catch(() => ({ rows: [{ count: 0 }] }));
-        
+
         const availabilityCount = parseInt(availabilityCheck.rows[0]?.count || '0', 10);
         console.log(`[SLOTS] Availability records for vendor.id ${vendor.id}: ${availabilityCount}`);
-        
+
         // ✅ FIX: Always check for other vendors with same phone that have availability
         // This handles the case where availability is stored under a different vendor_id
         let finalVendorId = vendor.id;
         let allAvailabilityIds: string[] = [];
-        
+
         if (vendor.phone) {
           console.log(`[SLOTS] Checking for other vendors with same phone (${vendor.phone}) that have availability...`);
           const duplicateVendors = await query(
@@ -2280,17 +2280,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              LIMIT 10`,
             [vendor.phone]
           ).catch(() => ({ rows: [] }));
-          
+
           if (duplicateVendors.rows.length > 0) {
             console.log(`[SLOTS] Found ${duplicateVendors.rows.length} vendor(s) with same phone:`);
             duplicateVendors.rows.forEach((dup: any) => {
               console.log(`[SLOTS]   - vendor.id: ${dup.id}, business_name: ${dup.business_name}, availability_count: ${dup.availability_count}`);
             });
-            
+
             // Find the vendor with the most availability (or use current vendor if it has availability)
-            const vendorWithMostAvailability = duplicateVendors.rows.find((dup: any) => parseInt(dup.availability_count || '0', 10) > 0) || 
-                                               (availabilityCount > 0 ? { id: vendor.id, availability_count: availabilityCount } : null);
-            
+            const vendorWithMostAvailability = duplicateVendors.rows.find((dup: any) => parseInt(dup.availability_count || '0', 10) > 0) ||
+              (availabilityCount > 0 ? { id: vendor.id, availability_count: availabilityCount } : null);
+
             if (vendorWithMostAvailability) {
               finalVendorId = vendorWithMostAvailability.id;
               console.log(`[SLOTS] ✅ Using vendor with availability: ${finalVendorId} (availability_count: ${vendorWithMostAvailability.availability_count})`);
@@ -2304,7 +2304,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } else {
           finalVendorId = vendor.id;
         }
-        
+
         // ✅ CRITICAL: Use EXACT same logic as GET /vendor/:vendorId/availability endpoint
         // That endpoint uses getVendorIdsForAvailabilityLookup and queries with ANY($1::text[])
         // This automatically includes all vendors with same phone, so availability will be found
@@ -2318,10 +2318,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
         console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
         console.log(`[SLOTS] Are input and resolved different? ${vendorId !== vendor.id ? 'YES - This might be the issue!' : 'NO - Same ID'}`);
-        
+
         // ✅ CRITICAL: Check vendor status
         console.log(`[SLOTS] Vendor status check: status=${vendor.status}, is_active=${vendor.is_active}, is_online=${vendor.is_online}`);
-        
+
         // ✅ CRITICAL: Check what availability exists for each ID
         console.log(`[SLOTS] Checking availability records...`);
         for (const availId of availabilityIdsForQuery) {
@@ -2335,7 +2335,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             [availId]
           ).catch(() => ({ rows: [{ count: 0, days: [], styles: [] }] }));
           console.log(`[SLOTS]   - vendor_id ${availId}: ${availCheck.rows[0]?.count || 0} records, days: ${JSON.stringify(availCheck.rows[0]?.days)}, styles: ${JSON.stringify(availCheck.rows[0]?.styles)}`);
-          
+
           // ✅ CRITICAL: Also check vendor status for this ID
           const vendorStatusCheck = await query(
             `SELECT id::text, business_name, status, is_active, is_online 
@@ -2360,7 +2360,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             }
           }
         }
-        
+
         // ✅ CRITICAL: Also check availability under the original input vendor ID (in case it's different)
         if (vendorId !== finalVendorId && !availabilityIdsForQuery.includes(vendorId)) {
           console.log(`[SLOTS] ⚠️ Input vendorId ${vendorId} not in availabilityIdsForQuery, checking availability directly...`);
@@ -2375,7 +2375,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             console.log(`[SLOTS] ✅ Added ${vendorId} to availabilityIdsForQuery`);
           }
         }
-        
+
         // ✅ CRITICAL: Find ALL vendor_identity records for this vendor and check if availability exists under any of them
         // This handles the case where availability was saved under vendor_identity.id instead of vendors.id
         if (vendor.phone) {
@@ -2496,7 +2496,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           message: 'Vendor is on holiday or vacation on this date',
         });
       }
-      
+
       // Staff-based availability (at_home/tele): still uses staff_availability_slots; past-window enforced below
       if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         let staffQuery = `
@@ -2565,8 +2565,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             if (!bookedByStaff[sid]) {
               bookedByStaff[sid] = new Set();
             }
-            const time = typeof booking.booking_time === 'string' 
-              ? booking.booking_time.substring(0, 5) 
+            const time = typeof booking.booking_time === 'string'
+              ? booking.booking_time.substring(0, 5)
               : booking.booking_time;
             bookedByStaff[sid].add(time);
           }
@@ -2594,7 +2594,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
             while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
               const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
-              
+
               // ✅ ENFORCE: Past booking window (scheduling policy min notice)
               let isPast = false;
               if (isToday) {
@@ -2651,11 +2651,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const normalizedServiceStyle = (serviceStyle === 'at_vendor' || serviceStyle === 'at_center') ? 'at_center' : serviceStyle;
       const acceptableStylesForSlot: string[] =
         normalizedServiceStyle === 'at_center' ? ['at_center', 'at_vendor'] :
-        normalizedServiceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] :
-        [normalizedServiceStyle];
+          normalizedServiceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] :
+            [normalizedServiceStyle];
       const dayOfWeekValues = dayOfWeek === 0 ? [0, 7] : [dayOfWeek];
       let va2Slots: any[] = [];
-      
+
       // ✅ DEBUG: Log vendor ID resolution
       console.log(`[SLOTS] ========== VENDOR ID RESOLUTION ==========`);
       console.log(`[SLOTS] inputVendorId=${vendorId}`);
@@ -2667,7 +2667,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       console.log(`[SLOTS] serviceStyle=${serviceStyle}, normalizedServiceStyle=${normalizedServiceStyle}`);
       console.log(`[SLOTS] acceptableStylesForSlot=${JSON.stringify(acceptableStylesForSlot)}`);
       console.log(`[SLOTS] dayOfWeekValues=${JSON.stringify(dayOfWeekValues)}`);
-      
+
       // ✅ DEBUG: Check if any availability records exist for this vendor
       try {
         // First, check if ANY records exist for ANY of the availabilityIds (to see if vendor_id matches)
@@ -2690,7 +2690,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           console.log(`[SLOTS] ⚠️ NO RECORDS FOUND for any vendor_id in availabilityIdsForQuery!`);
           console.log(`[SLOTS] This means vendor_id in vendor_availability_v2 doesn't match any ID in availabilityIdsForQuery`);
         }
-        
+
         // Check ALL vendor_availability_v2 records for this vendor (no filters)
         const allVA2Records = await query(
           `SELECT vendor_id::text, day_of_week, 
@@ -2712,7 +2712,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } else {
           console.log(`[SLOTS] ⚠️ NO RECORDS FOUND for canonicalVendorId!`);
         }
-        
+
         // Diagnostic query with filters
         const diagnosticQuery = await query(
           `SELECT 
@@ -2738,13 +2738,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       } catch (diagErr: any) {
         console.warn(`[SLOTS] Diagnostic query failed:`, diagErr?.message);
       }
-      
+
       // ✅ CRITICAL: Before querying, ensure we have ALL possible vendor IDs that might have availability
       // This includes vendor_identity.id if the vendor saved under that ID
       console.log(`[SLOTS] ========== FINAL availabilityIdsForQuery BEFORE QUERY ==========`);
       console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
       console.log(`[SLOTS] This array will be used to query vendor_availability_v2`);
-      
+
       // ✅ CRITICAL: Direct query to verify data exists BEFORE main query block
       // Try querying WITHOUT vendor status filters first, as vendor might not be approved/active but still have availability
       console.log(`[SLOTS] ========== DIRECT VERIFICATION QUERY (NO VENDOR STATUS FILTERS) ==========`);
@@ -2803,7 +2803,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
               const serviceType = row.service_type || row.service_style || '';
               return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
-                     acceptableStylesForSlot.includes(serviceType);
+                acceptableStylesForSlot.includes(serviceType);
             });
             if (styleFiltered.length > 0) {
               console.log(`[SLOTS] ✅ After style filtering, ${styleFiltered.length} records match service style`);
@@ -2818,7 +2818,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       } catch (verifyErr: any) {
         console.error(`[SLOTS] Direct verification query failed: ${verifyErr?.message}`);
       }
-      
+
       // ✅ CRITICAL: If verification found records, use them directly (they're already filtered by service style and is_available)
       // Only run main query if verification found no records
       if (verificationSlots.length === 0) {
@@ -2826,23 +2826,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         try {
           // ✅ CRITICAL FIX: Since SQL test confirms records exist, try fallback query FIRST
           // This ensures we always find weekly availability even if service style filter is too strict
-        console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
-        console.log(`[SLOTS] dayOfWeekValues: ${JSON.stringify(dayOfWeekValues)}`);
-        console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
-        console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
-        
-        // ✅ CRITICAL FIX: Use ENHANCED AVAILABILITY VIEW (vendor_availability_full)
-        // This view automatically filters by is_online, status='approved', is_active=true
-        // This ensures we only get availability for vendors that are actually available
-        console.log(`[SLOTS] Using ENHANCED AVAILABILITY VIEW with availabilityIdsForQuery=${JSON.stringify(availabilityIdsForQuery)}, dayOfWeek=${dayOfWeek}, acceptableStylesForSlot=${JSON.stringify(acceptableStylesForSlot)}`);
-        try {
-          // First try with service style filter using the enhanced view
-          // ✅ CRITICAL: Use minimal columns that exist in all schema versions
-          console.log(`[SLOTS] Attempting query with style filter...`);
-          let arrayQueryWithStyle: any = { rows: [] };
+          console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
+          console.log(`[SLOTS] dayOfWeekValues: ${JSON.stringify(dayOfWeekValues)}`);
+          console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
+          console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
+
+          // ✅ CRITICAL FIX: Use ENHANCED AVAILABILITY VIEW (vendor_availability_full)
+          // This view automatically filters by is_online, status='approved', is_active=true
+          // This ensures we only get availability for vendors that are actually available
+          console.log(`[SLOTS] Using ENHANCED AVAILABILITY VIEW with availabilityIdsForQuery=${JSON.stringify(availabilityIdsForQuery)}, dayOfWeek=${dayOfWeek}, acceptableStylesForSlot=${JSON.stringify(acceptableStylesForSlot)}`);
           try {
-            arrayQueryWithStyle = await query(
-              `SELECT va.id, va.day_of_week, 
+            // First try with service style filter using the enhanced view
+            // ✅ CRITICAL: Use minimal columns that exist in all schema versions
+            console.log(`[SLOTS] Attempting query with style filter...`);
+            let arrayQueryWithStyle: any = { rows: [] };
+            try {
+              arrayQueryWithStyle = await query(
+                `SELECT va.id, va.day_of_week, 
                       COALESCE(va.time_window_start, va.start_time) as time_window_start, 
                       COALESCE(va.time_window_end, va.end_time) as time_window_end,
                       va.start_time, va.end_time,
@@ -2865,29 +2865,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                  AND v.status = 'approved'
                  AND v.is_active = true
                ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
-              [availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot]
-            );
-            console.log(`[SLOTS] Query with style filter succeeded: ${arrayQueryWithStyle.rows.length} rows`);
-          } catch (err: any) {
-            console.log(`[SLOTS] Query with style filter failed: ${err?.message}`);
-            console.log(`[SLOTS] Error details:`, err);
-            arrayQueryWithStyle = { rows: [] };
-          }
-          va2Slots = arrayQueryWithStyle?.rows || [];
-          console.log(`[SLOTS] Array query (with style filter) found ${va2Slots.length} records`);
-          if (va2Slots.length > 0) {
-            console.log(`[SLOTS] ✅ SUCCESS! Found ${va2Slots.length} records using array query with style filter`);
-            console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
-            console.log(`[SLOTS] First record time_window_start: ${va2Slots[0]?.time_window_start || va2Slots[0]?.start_time}, time_window_end: ${va2Slots[0]?.time_window_end || va2Slots[0]?.end_time}`);
-            console.log(`[SLOTS] First record service_styles: ${JSON.stringify(va2Slots[0]?.service_styles)}`);
-          } else {
-            console.log(`[SLOTS] ⚠️ Array query with style filter returned 0 - trying without style filter...`);
-            // Fallback: try without style filter using enhanced view (includes online status check)
-            console.log(`[SLOTS] Attempting query without style filter...`);
-            let arrayQueryNoStyle: any = { rows: [] };
-            try {
-              arrayQueryNoStyle = await query(
-                `SELECT va.id, va.day_of_week, 
+                [availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot]
+              );
+              console.log(`[SLOTS] Query with style filter succeeded: ${arrayQueryWithStyle.rows.length} rows`);
+            } catch (err: any) {
+              console.log(`[SLOTS] Query with style filter failed: ${err?.message}`);
+              console.log(`[SLOTS] Error details:`, err);
+              arrayQueryWithStyle = { rows: [] };
+            }
+            va2Slots = arrayQueryWithStyle?.rows || [];
+            console.log(`[SLOTS] Array query (with style filter) found ${va2Slots.length} records`);
+            if (va2Slots.length > 0) {
+              console.log(`[SLOTS] ✅ SUCCESS! Found ${va2Slots.length} records using array query with style filter`);
+              console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+              console.log(`[SLOTS] First record time_window_start: ${va2Slots[0]?.time_window_start || va2Slots[0]?.start_time}, time_window_end: ${va2Slots[0]?.time_window_end || va2Slots[0]?.end_time}`);
+              console.log(`[SLOTS] First record service_styles: ${JSON.stringify(va2Slots[0]?.service_styles)}`);
+            } else {
+              console.log(`[SLOTS] ⚠️ Array query with style filter returned 0 - trying without style filter...`);
+              // Fallback: try without style filter using enhanced view (includes online status check)
+              console.log(`[SLOTS] Attempting query without style filter...`);
+              let arrayQueryNoStyle: any = { rows: [] };
+              try {
+                arrayQueryNoStyle = await query(
+                  `SELECT va.id, va.day_of_week, 
                         COALESCE(va.time_window_start, va.start_time) as time_window_start, 
                         COALESCE(va.time_window_end, va.end_time) as time_window_end,
                         va.start_time, va.end_time,
@@ -2902,44 +2902,44 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                    AND v.status = 'approved'
                    AND v.is_active = true
                  ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
-                [availabilityIdsForQuery, dayOfWeekValues]
-              );
-              console.log(`[SLOTS] Query without style filter succeeded: ${arrayQueryNoStyle.rows.length} rows`);
-            } catch (err: any) {
-              console.log(`[SLOTS] Query without style filter failed: ${err?.message}`);
-              arrayQueryNoStyle = { rows: [] };
-            }
-            const noStyleRows = arrayQueryNoStyle?.rows || [];
-            console.log(`[SLOTS] Array query (NO style filter) found ${noStyleRows.length} records`);
-            if (noStyleRows.length > 0) {
-              console.log(`[SLOTS] ⚠️ Records exist but service style filter excluded them!`);
-              console.log(`[SLOTS] Sample record service_styles: ${JSON.stringify(noStyleRows[0].service_styles)}`);
-              console.log(`[SLOTS] Sample record service_type: ${noStyleRows[0].service_type}`);
-              console.log(`[SLOTS] Sample record service_style: ${noStyleRows[0].service_style}`);
-              console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
-              console.log(`[SLOTS] Sample record time_window_start: ${noStyleRows[0]?.time_window_start || noStyleRows[0]?.start_time}, time_window_end: ${noStyleRows[0]?.time_window_end || noStyleRows[0]?.end_time}`);
-              // ✅ FIX: Filter by service style BEFORE using records - don't use records that don't match
-              const styleFiltered = noStyleRows.filter((row: any) => {
-                const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
-                const serviceType = row.service_type || row.service_style || '';
-                return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
-                       acceptableStylesForSlot.includes(serviceType);
-              });
-              if (styleFiltered.length > 0) {
-                console.log(`[SLOTS] ✅ After style filtering, ${styleFiltered.length} records match service style`);
-                va2Slots = styleFiltered;
-              } else {
-                console.log(`[SLOTS] ⚠️ No records match service style after filtering - will return empty slots`);
-                va2Slots = []; // Don't use records that don't match service style
+                  [availabilityIdsForQuery, dayOfWeekValues]
+                );
+                console.log(`[SLOTS] Query without style filter succeeded: ${arrayQueryNoStyle.rows.length} rows`);
+              } catch (err: any) {
+                console.log(`[SLOTS] Query without style filter failed: ${err?.message}`);
+                arrayQueryNoStyle = { rows: [] };
               }
-            } else {
-              // ✅ CRITICAL: Try query without vendor status filters (vendor might be offline or not approved)
-              console.log(`[SLOTS] ⚠️ No availability found even without service style filter, trying without vendor status filters...`);
-              console.log(`[SLOTS] Attempting query without vendor status filters...`);
-              let noStatusFilterResult: any = { rows: [] };
-              try {
-                noStatusFilterResult = await query(
-                  `SELECT va.id, va.day_of_week, 
+              const noStyleRows = arrayQueryNoStyle?.rows || [];
+              console.log(`[SLOTS] Array query (NO style filter) found ${noStyleRows.length} records`);
+              if (noStyleRows.length > 0) {
+                console.log(`[SLOTS] ⚠️ Records exist but service style filter excluded them!`);
+                console.log(`[SLOTS] Sample record service_styles: ${JSON.stringify(noStyleRows[0].service_styles)}`);
+                console.log(`[SLOTS] Sample record service_type: ${noStyleRows[0].service_type}`);
+                console.log(`[SLOTS] Sample record service_style: ${noStyleRows[0].service_style}`);
+                console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
+                console.log(`[SLOTS] Sample record time_window_start: ${noStyleRows[0]?.time_window_start || noStyleRows[0]?.start_time}, time_window_end: ${noStyleRows[0]?.time_window_end || noStyleRows[0]?.end_time}`);
+                // ✅ FIX: Filter by service style BEFORE using records - don't use records that don't match
+                const styleFiltered = noStyleRows.filter((row: any) => {
+                  const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+                  const serviceType = row.service_type || row.service_style || '';
+                  return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                    acceptableStylesForSlot.includes(serviceType);
+                });
+                if (styleFiltered.length > 0) {
+                  console.log(`[SLOTS] ✅ After style filtering, ${styleFiltered.length} records match service style`);
+                  va2Slots = styleFiltered;
+                } else {
+                  console.log(`[SLOTS] ⚠️ No records match service style after filtering - will return empty slots`);
+                  va2Slots = []; // Don't use records that don't match service style
+                }
+              } else {
+                // ✅ CRITICAL: Try query without vendor status filters (vendor might be offline or not approved)
+                console.log(`[SLOTS] ⚠️ No availability found even without service style filter, trying without vendor status filters...`);
+                console.log(`[SLOTS] Attempting query without vendor status filters...`);
+                let noStatusFilterResult: any = { rows: [] };
+                try {
+                  noStatusFilterResult = await query(
+                    `SELECT va.id, va.day_of_week, 
                           COALESCE(va.time_window_start, va.start_time) as time_window_start, 
                           COALESCE(va.time_window_end, va.end_time) as time_window_end,
                           va.start_time, va.end_time,
@@ -2950,29 +2950,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                      AND va.day_of_week = ANY($2::int[])
                      AND (COALESCE(va.is_available, true) = true)
                    ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
-                  [availabilityIdsForQuery, dayOfWeekValues]
-                );
-                console.log(`[SLOTS] Query without vendor status filters succeeded: ${noStatusFilterResult.rows.length} rows`);
-              } catch (err: any) {
-                console.log(`[SLOTS] Query without vendor status filters failed: ${err?.message}`);
-                noStatusFilterResult = { rows: [] };
-              }
-              console.log(`[SLOTS] ⚠️ Query without vendor status filters returned ${noStatusFilterResult.rows.length} rows`);
-              if (noStatusFilterResult.rows.length > 0) {
-                va2Slots = noStatusFilterResult.rows;
-                console.log(`[SLOTS] ✅ Using results without vendor status filters (${va2Slots.length} slots)`);
-                console.log(`[SLOTS] ⚠️ WARNING: Vendor status filters excluded these records! Vendor may not be approved/active/online.`);
-                console.log(`[SLOTS] First record from no-status-filter query:`, JSON.stringify(noStatusFilterResult.rows[0]));
-              } else {
-                console.log(`[SLOTS] ⚠️ No records found even without style filter for availabilityIdsForQuery`);
-                console.log(`[SLOTS] This means no availability exists for vendor_id in ${JSON.stringify(availabilityIdsForQuery)} on day_of_week ${dayOfWeek}`);
-                // ✅ CRITICAL: Last resort - query without ANY filters except vendor_id and day_of_week
-                console.log(`[SLOTS] ⚠️ Last resort: Querying without ANY filters (except vendor_id and day_of_week)...`);
-                console.log(`[SLOTS] Attempting last resort query (no filters except vendor_id and day_of_week)...`);
-                let lastResortQuery: any = { rows: [] };
-                try {
-                  lastResortQuery = await query(
-                    `SELECT va.id, va.day_of_week, 
+                    [availabilityIdsForQuery, dayOfWeekValues]
+                  );
+                  console.log(`[SLOTS] Query without vendor status filters succeeded: ${noStatusFilterResult.rows.length} rows`);
+                } catch (err: any) {
+                  console.log(`[SLOTS] Query without vendor status filters failed: ${err?.message}`);
+                  noStatusFilterResult = { rows: [] };
+                }
+                console.log(`[SLOTS] ⚠️ Query without vendor status filters returned ${noStatusFilterResult.rows.length} rows`);
+                if (noStatusFilterResult.rows.length > 0) {
+                  va2Slots = noStatusFilterResult.rows;
+                  console.log(`[SLOTS] ✅ Using results without vendor status filters (${va2Slots.length} slots)`);
+                  console.log(`[SLOTS] ⚠️ WARNING: Vendor status filters excluded these records! Vendor may not be approved/active/online.`);
+                  console.log(`[SLOTS] First record from no-status-filter query:`, JSON.stringify(noStatusFilterResult.rows[0]));
+                } else {
+                  console.log(`[SLOTS] ⚠️ No records found even without style filter for availabilityIdsForQuery`);
+                  console.log(`[SLOTS] This means no availability exists for vendor_id in ${JSON.stringify(availabilityIdsForQuery)} on day_of_week ${dayOfWeek}`);
+                  // ✅ CRITICAL: Last resort - query without ANY filters except vendor_id and day_of_week
+                  console.log(`[SLOTS] ⚠️ Last resort: Querying without ANY filters (except vendor_id and day_of_week)...`);
+                  console.log(`[SLOTS] Attempting last resort query (no filters except vendor_id and day_of_week)...`);
+                  let lastResortQuery: any = { rows: [] };
+                  try {
+                    lastResortQuery = await query(
+                      `SELECT va.id, va.day_of_week, 
                             COALESCE(va.time_window_start, va.start_time) as time_window_start, 
                             COALESCE(va.time_window_end, va.end_time) as time_window_end,
                             va.start_time, va.end_time,
@@ -2982,44 +2982,44 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                      WHERE va.vendor_id::text = ANY($1::text[])
                        AND va.day_of_week = ANY($2::int[])
                      ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
-                    [availabilityIdsForQuery, dayOfWeekValues]
-                  );
-                  console.log(`[SLOTS] Last resort query succeeded: ${lastResortQuery.rows.length} rows`);
-                } catch (err: any) {
-                  console.log(`[SLOTS] Last resort query failed: ${err?.message}`);
-                  lastResortQuery = { rows: [] };
-                }
-                console.log(`[SLOTS] ⚠️ Last resort query returned ${lastResortQuery.rows.length} rows`);
-                if (lastResortQuery.rows.length > 0) {
-                  // ✅ FIX: Filter last resort results by service style - don't use all records
-                  if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
-                    const styleFiltered = lastResortQuery.rows.filter((row: any) => {
-                      const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
-                      const serviceType = row.service_type || row.service_style || '';
-                      return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
-                             acceptableStylesForSlot.includes(serviceType);
-                    });
-                    if (styleFiltered.length > 0) {
-                      va2Slots = styleFiltered;
-                      console.log(`[SLOTS] ✅ Using last resort results (${styleFiltered.length} slots after service style filter, from ${lastResortQuery.rows.length} total)`);
-                    } else {
-                      console.log(`[SLOTS] ⚠️ Last resort query found records but none match service style - will return empty slots`);
-                      va2Slots = [];
-                    }
-                  } else {
-                  va2Slots = lastResortQuery.rows;
-                    console.log(`[SLOTS] ✅ Using last resort results (${va2Slots.length} slots) - NO SERVICE STYLE FILTER`);
+                      [availabilityIdsForQuery, dayOfWeekValues]
+                    );
+                    console.log(`[SLOTS] Last resort query succeeded: ${lastResortQuery.rows.length} rows`);
+                  } catch (err: any) {
+                    console.log(`[SLOTS] Last resort query failed: ${err?.message}`);
+                    lastResortQuery = { rows: [] };
                   }
-                  if (va2Slots.length > 0) {
-                    console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+                  console.log(`[SLOTS] ⚠️ Last resort query returned ${lastResortQuery.rows.length} rows`);
+                  if (lastResortQuery.rows.length > 0) {
+                    // ✅ FIX: Filter last resort results by service style - don't use all records
+                    if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
+                      const styleFiltered = lastResortQuery.rows.filter((row: any) => {
+                        const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+                        const serviceType = row.service_type || row.service_style || '';
+                        return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
+                          acceptableStylesForSlot.includes(serviceType);
+                      });
+                      if (styleFiltered.length > 0) {
+                        va2Slots = styleFiltered;
+                        console.log(`[SLOTS] ✅ Using last resort results (${styleFiltered.length} slots after service style filter, from ${lastResortQuery.rows.length} total)`);
+                      } else {
+                        console.log(`[SLOTS] ⚠️ Last resort query found records but none match service style - will return empty slots`);
+                        va2Slots = [];
+                      }
+                    } else {
+                      va2Slots = lastResortQuery.rows;
+                      console.log(`[SLOTS] ✅ Using last resort results (${va2Slots.length} slots) - NO SERVICE STYLE FILTER`);
+                    }
+                    if (va2Slots.length > 0) {
+                      console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+                    }
                   }
                 }
               }
             }
+          } catch (innerErr: any) {
+            console.error(`[SLOTS] Inner query block failed: ${innerErr?.message}`);
           }
-        } catch (innerErr: any) {
-          console.error(`[SLOTS] Inner query block failed: ${innerErr?.message}`);
-        }
         } catch (queryErr: any) {
           console.error(`[SLOTS] ========== QUERY BLOCK FAILED ==========`);
           console.error(`[SLOTS] Query failed: ${queryErr?.message}`);
@@ -3029,7 +3029,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           va2Slots = [];
         }
       }
-      
+
       // ✅ CRITICAL: Prioritize verificationSlots since they're already filtered correctly (service style + is_available, no vendor status filter)
       // This ensures we find availability even if vendor status filters exclude records
       // ✅ FIX: Ensure verificationSlots are filtered by service style
@@ -3041,14 +3041,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
             const serviceType = row.service_type || row.service_style || '';
             return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
-                   acceptableStylesForSlot.includes(serviceType);
+              acceptableStylesForSlot.includes(serviceType);
           });
           if (styleFiltered.length !== verificationSlots.length) {
             console.log(`[SLOTS] ⚠️ Verification slots filtered: ${verificationSlots.length} -> ${styleFiltered.length} (removed non-matching service styles)`);
           }
           va2Slots = styleFiltered;
         } else {
-        va2Slots = verificationSlots;
+          va2Slots = verificationSlots;
         }
       } else if (va2Slots.length === 0) {
         console.log(`[SLOTS] ========== NO RECORDS FOUND (verification: ${verificationSlots.length}, main query: ${va2Slots.length}) ==========`);
@@ -3060,7 +3060,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
             const serviceType = row.service_type || row.service_style || '';
             return serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
-                   acceptableStylesForSlot.includes(serviceType);
+              acceptableStylesForSlot.includes(serviceType);
           });
           if (styleFiltered.length !== va2Slots.length) {
             console.log(`[SLOTS] ⚠️ Main query results filtered: ${va2Slots.length} -> ${styleFiltered.length} (removed non-matching service styles)`);
@@ -3068,7 +3068,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           va2Slots = styleFiltered;
         }
       }
-      
+
       console.log(`[SLOTS] ========== FINAL QUERY RESULT ==========`);
       console.log(`[SLOTS] va2Slots.length: ${va2Slots.length}`);
       console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
@@ -3095,7 +3095,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             [availabilityIdsForQuery]
           );
           console.log(`[SLOTS] ⚠️ ENHANCED AVAILABILITY DEBUG - Vendor status check: ${JSON.stringify(vendorStatusCheck.rows)}`);
-          
+
           // Check if vendor is offline or not approved
           for (const vendor of vendorStatusCheck.rows) {
             const issues: string[] = [];
@@ -3110,7 +3110,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           console.warn(`[SLOTS] Enhanced availability debug failed: ${debugErr?.message}`);
         }
       }
-      
+
       // ✅ CRITICAL: Error handling is done by the endpoint handler's catch block
       // The verification query and main query already have their own error handling
 
@@ -3182,7 +3182,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
             const serviceType = row.service_type || row.service_style || '';
             const hasMatchingStyle = serviceStyles.some((style: string) => acceptableStylesForSlot.includes(style)) ||
-                                    acceptableStylesForSlot.includes(serviceType);
+              acceptableStylesForSlot.includes(serviceType);
             if (!hasMatchingStyle) {
               console.log(`[SLOTS] Filtering out record: service_styles=${JSON.stringify(serviceStyles)}, service_type=${serviceType}, acceptableStyles=${JSON.stringify(acceptableStylesForSlot)}`);
             } else {
@@ -3217,7 +3217,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             });
           }
         }
-        
+
         const slots: any[] = [];
         let slotsGenerated = 0;
         let slotsSkipped = 0;
@@ -3228,7 +3228,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log(`[SLOTS] Current time (now): ${now.toISOString()}`);
         console.log(`[SLOTS] minNoticeMinutes: ${minNoticeMinutes}`);
         console.log(`[SLOTS] Processing ${filteredSlots.length} availability records...`);
-        
+
         for (const row of filteredSlots) {
           const startTime = row.time_window_start || row.start_time;
           const endTime = row.time_window_end || row.end_time;
@@ -3311,17 +3311,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const slotEnd = currentMinutes + slotDuration;
             const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
               const bStart = timeToMinutes(b.booking_time);
-              
+
               // ✅ ATOMIC: Use slotDuration (30 min) for booking end, NOT stored duration_minutes
               // This ensures each booking blocks exactly ONE slot, regardless of service duration
               const bEnd = bStart + slotDuration;  // ✅ ATOMIC: one slot = one booking
-              
+
               const overlaps = currentMinutes < bEnd && slotEnd > bStart;
-              
+
               if (overlaps) {
                 console.log(`[SLOTS] OVERLAP (atomic): slot ${timeStr} blocked by booking at ${b.booking_time}`);
               }
-              
+
               return overlaps;
             });
 
@@ -3354,7 +3354,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             let filteredServiceStyles: string[] = [];
             if (Array.isArray(row.service_styles) && row.service_styles.length > 0) {
               // Filter to only include styles that match the requested serviceStyle
-              filteredServiceStyles = row.service_styles.filter((style: string) => 
+              filteredServiceStyles = row.service_styles.filter((style: string) =>
                 acceptableStylesForSlot.includes(style)
               );
               // If no matching styles found, use the requested serviceStyle as fallback
@@ -3365,7 +3365,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               // If no service_styles array, use the requested serviceStyle
               filteredServiceStyles = [normalizedServiceStyle];
             }
-            
+
             const slotPayload: Record<string, unknown> = {
               time: timeStr,
               available,
@@ -3385,7 +3385,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           console.log(`[SLOTS]   Record complete: Generated ${slotsGeneratedForThisRecord} slots, skipped ${slotsSkippedForThisRecord} slots`);
           slotsSkipped += (Math.floor((winEnd - winStart) / slotDuration) - slotsGeneratedForThisRecord);
         }
-        
+
         console.log(`[SLOTS] ========== SLOT GENERATION COMPLETE ==========`);
         console.log(`[SLOTS] Total slots generated: ${slotsGenerated}`);
         console.log(`[SLOTS] Slots skipped: ${slotsSkipped}`);
@@ -3393,13 +3393,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         const sortedSlots = slots.sort((a: any, b: any) => (a.time || '').localeCompare(b.time || ''));
         console.log(`[SLOTS] Returning ${sortedSlots.length} sorted slots`);
-        
+
         // ✅ FIX: Track metadata to distinguish "no availability" vs "all booked"
         const hadAvailabilityRecords = va2Slots.length > 0;
         const availableSlotsCount = sortedSlots.filter((s: any) => s.available === true).length;
         const bookedSlotsCount = sortedSlots.filter((s: any) => s.booked === true).length;
         const allBooked = hadAvailabilityRecords && availableSlotsCount === 0 && bookedSlotsCount > 0;
-        
+
         return c.json({
           success: true,
           slots: sortedSlots,
@@ -3425,12 +3425,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ✅ FIX: Check if availability exists but was filtered out (all booked/past)
       const hadAvailabilityRecords = va2Slots.length > 0;
       let message = 'No advance availability set for this day and service type. Vendor must set schedule in Advanced Availability.';
-      
+
       if (hadAvailabilityRecords) {
         // Availability exists but all slots were filtered (booked/past/breaks)
         message = 'All available slots for this date are currently booked or unavailable.';
       }
-      
+
       return c.json({
         success: true,
         slots: [],
@@ -3530,7 +3530,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               }
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // vendor_services.service_id can point to services.id (legacy) OR service_catalog.id (catalog-origin)
@@ -3593,7 +3593,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         let metadata: any = {};
         try {
           metadata = typeof row.vs_metadata === 'string' ? (row.vs_metadata ? JSON.parse(row.vs_metadata) : {}) : (row.vs_metadata || {});
-        } catch (_) {}
+        } catch (_) { }
         const isPackage = !!metadata?.isPackage || metadata?.type === 'package';
         const packageDetails = isPackage && (metadata?.totalSessions != null || metadata?.validityDays != null) ? {
           totalSessions: metadata.totalSessions ?? null,
@@ -3694,7 +3694,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
          WHERE table_name = 'services' AND column_name = 'is_global'`
       );
       const hasIsGlobal = serviceColumns.rows.length > 0;
-      
+
       const services = await query(
         `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
          FROM services s
@@ -3736,13 +3736,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       try {
         const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [resolvedVendorId]);
         vendorSpecializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
-      } catch (_) {}
+      } catch (_) { }
       if (vendorSpecializations.length === 0 && vendor.specializations) {
         try {
           vendorSpecializations = Array.isArray(vendor.specializations)
             ? vendor.specializations
             : JSON.parse(vendor.specializations || '[]');
-        } catch (_) {}
+        } catch (_) { }
       }
 
       let vendorServiceStyles: string[] = [];
@@ -3754,14 +3754,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           [resolvedVendorId]
         );
         vendorServiceStyles = (styleRes.rows || []).map((r: any) => normalizeServiceStyle(r.service_style)).filter(Boolean) as string[];
-      } catch (_) {}
+      } catch (_) { }
 
       let facilityPhotos: string[] = [];
       try {
         const meta = vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : null;
         const raw = meta?.facility_photos || meta?.photos || [];
         facilityPhotos = Array.isArray(raw) ? raw.filter(Boolean) : [];
-      } catch (_) {}
+      } catch (_) { }
 
       return c.json({
         success: true,
@@ -3837,9 +3837,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           paramIndex++;
         } else {
           // ✅ FIX: Use only role name/display_name comparison (case-insensitive), not id::text
-        vendorQuery += ` AND (LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`;
-        params.push(roleId);
-        paramIndex++;
+          vendorQuery += ` AND (LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`;
+          params.push(roleId);
+          paramIndex++;
         }
       }
 
@@ -3903,7 +3903,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               if (r.vendor_id) vendorIdsWithActivePackage.add(r.vendor_id);
             });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // Enrich vendors with unified card shape: photoUrl, specializations, nextAvailable, distanceText, serviceStyles
@@ -3937,7 +3937,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           try {
             const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]);
             specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
-          } catch (_) {}
+          } catch (_) { }
           if (specializations.length === 0 && vendor.specializations) {
             specializations = Array.isArray(vendor.specializations) ? vendor.specializations : (typeof vendor.specializations === 'string' ? JSON.parse(vendor.specializations || '[]') : []);
           }
@@ -3972,7 +3972,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 };
               }
             }
-          } catch (_) {}
+          } catch (_) { }
 
           const servicesCountRes = await query(
             `SELECT COUNT(*) as count FROM vendor_services vs WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`,
@@ -4050,7 +4050,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error in /customer/vendors/search:', error);
-      return c.json({ 
+      return c.json({
         success: false,
         error: error.message || 'Failed to search vendors',
         vendors: [],
@@ -4209,9 +4209,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           params.push(targetRoles);
           paramIdx++;
         } else {
-        // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
-        queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
-        params.push(roleId);
+          // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
+          queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
+          params.push(roleId);
           paramIdx++;
         }
       }
@@ -4263,12 +4263,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const rev = await query(`SELECT AVG(rating) as avg_rating, COUNT(*) as c FROM reviews WHERE vendor_id = $1 AND is_approved = true`, [vendorId]);
           rating = parseFloat(rev.rows[0]?.avg_rating || '0');
           reviewCount = parseInt(rev.rows[0]?.c || '0', 10);
-        } catch (_) {}
+        } catch (_) { }
         let specializations: string[] = [];
         try {
           const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendorId]);
           specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
-        } catch (_) {}
+        } catch (_) { }
         if (specializations.length === 0 && row.specializations) {
           specializations = Array.isArray(row.specializations) ? row.specializations : (typeof row.specializations === 'string' ? JSON.parse(row.specializations || '[]') : []);
         }
@@ -4298,7 +4298,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               display: daysToAdd === 0 ? `Today ${formatted}` : daysToAdd === 1 ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
             };
           }
-        } catch (_) {}
+        } catch (_) { }
         const distanceKm = row.distance_km != null ? parseFloat(row.distance_km) : null;
         const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
         const normalizedStyle = normalizeServiceStyle(serviceStyle || '') || serviceStyle || '';
@@ -4361,7 +4361,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
          WHERE table_name = 'services' AND column_name = 'is_global'`
       );
       const hasIsGlobal = serviceColumns.rows.length > 0;
-      
+
       const services = await query(
         `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
          FROM services s
@@ -4394,23 +4394,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ FIX: Extract facility data from vendor metadata and operating_hours
       const metadata = (vendor.metadata as any) || {};
-      const operatingHours = vendor.operating_hours 
-        ? (typeof vendor.operating_hours === 'string' 
-            ? JSON.parse(vendor.operating_hours) 
-            : vendor.operating_hours)
+      const operatingHours = vendor.operating_hours
+        ? (typeof vendor.operating_hours === 'string'
+          ? JSON.parse(vendor.operating_hours)
+          : vendor.operating_hours)
         : null;
 
       // ✅ FIX: Generate presigned URLs for photos on-demand (since bucket has public access blocked)
       const rawPhotos = metadata.facility_photos || [];
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
       const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
-      
+
       console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
-      
+
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const s3Client = new S3Client({ region: AWS_REGION });
-      
+
       const photos = await Promise.all(
         rawPhotos.map(async (photoItem: string) => {
           try {
@@ -4418,9 +4418,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
               return null;
             }
-            
+
             let fileKey = photoItem.trim();
-            
+
             // Extract key from various formats
             if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
               // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
@@ -4459,14 +4459,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
               return photoItem;
             }
-            
+
             if (!fileKey || fileKey.length === 0) {
               console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
               return null;
             }
-            
+
             console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
-            
+
             // ✅ FIX: Verify the object exists before generating presigned URL
             try {
               const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
@@ -4482,21 +4482,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               }
               console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
             }
-            
+
             // Generate fresh presigned URL (valid for 7 days)
             const command = new GetObjectCommand({
               Bucket: BUCKET_NAME,
               Key: fileKey,
             });
-            
+
             const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
-            
+
             // ✅ FIX: Validate presigned URL format
             if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
               console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
               return null;
             }
-            
+
             console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
             return presignedUrl;
           } catch (error: any) {
@@ -4510,7 +4510,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         })
       );
-      
+
       const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
       console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
@@ -4575,40 +4575,40 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ FIX: Build update data object, mapping frontend fields to database columns
       const updateData: any = {};
-      
+
       // Address fields
       if (facilityData.address !== undefined) updateData.address = facilityData.address;
       if (facilityData.city !== undefined) updateData.city = facilityData.city;
       if (facilityData.state !== undefined) updateData.state = facilityData.state;
       if (facilityData.pincode !== undefined) updateData.pincode = facilityData.pincode;
       if (facilityData.country !== undefined) updateData.country = facilityData.country;
-      
+
       // Location coordinates
       if (facilityData.latitude !== undefined) updateData.latitude = facilityData.latitude;
       if (facilityData.longitude !== undefined) updateData.longitude = facilityData.longitude;
-      
+
       // Operating hours (stored as JSONB)
       if (facilityData.operatingHours !== undefined || facilityData.operating_hours !== undefined) {
         updateData.operating_hours = facilityData.operatingHours || facilityData.operating_hours;
       }
-      
+
       // ✅ FIX: Build metadata object once to avoid overwriting
       const existingMetadata = (vendor.metadata as any) || {};
       const updatedMetadata: any = { ...existingMetadata };
       let metadataChanged = false;
-      
+
       // Amenities (stored in metadata)
       if (facilityData.amenities !== undefined) {
         updatedMetadata.amenities = facilityData.amenities;
         metadataChanged = true;
       }
-      
+
       // Custom amenities
       if (facilityData.customAmenities !== undefined) {
         updatedMetadata.customAmenities = facilityData.customAmenities;
         metadataChanged = true;
       }
-      
+
       // Specializations (stored in metadata + vendors.specializations column + vendor_specializations table for 360° discovery)
       if (facilityData.specializations !== undefined) {
         const specArr = Array.isArray(facilityData.specializations)
@@ -4620,7 +4620,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         updateData.specializations = specArr;
         // vendor_specializations table will be synced below after vendor update
       }
-      
+
       // Facility photos (stored in metadata)
       if (facilityData.photos !== undefined || facilityData.facility_photos !== undefined) {
         const photosInput = facilityData.photos || facilityData.facility_photos || [];
@@ -4629,12 +4629,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           if (!photoItem || typeof photoItem !== 'string') {
             return null;
           }
-          
+
           // If it's already a key (starts with vendors/), return as-is
           if (photoItem.startsWith('vendors/')) {
             return photoItem;
           }
-          
+
           // If it's a presigned URL or full S3 URL, extract the key
           if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
             // Extract key from full S3 URL
@@ -4650,23 +4650,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               return urlParts.substring(vendorsIndex);
             }
           }
-          
+
           // If we can't extract a key, return null (invalid photo)
           console.warn(`[FACILITY-SAVE] Could not normalize photo, skipping:`, photoItem);
           return null;
         }).filter((key): key is string => key !== null && key.length > 0);
-        
+
         console.log(`[FACILITY-SAVE] Normalized ${normalizedPhotos.length} photos from ${photosInput.length} input photos`);
         updatedMetadata.facility_photos = normalizedPhotos;
         metadataChanged = true;
       }
-      
+
       // ✅ FIX: Store description in metadata (column doesn't exist in vendors table)
       if (facilityData.description !== undefined) {
         updatedMetadata.description = facilityData.description;
         metadataChanged = true;
       }
-      
+
       // Update metadata if any metadata fields changed
       if (metadataChanged) {
         // ✅ FIX B1: Check if metadata column exists before trying to update it
@@ -4678,14 +4678,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             `SELECT column_name FROM information_schema.columns 
              WHERE table_name = 'vendors' AND column_name = 'metadata'`
           );
-          
+
           if (columnCheck.rows.length === 0) {
             // Column doesn't exist, add it
             console.log('[FACILITY] Metadata column missing, adding it...');
             await query('ALTER TABLE vendors ADD COLUMN IF NOT EXISTS metadata JSONB');
             console.log('[FACILITY] Metadata column added successfully');
           }
-          
+
           updateData.metadata = updatedMetadata;
         } catch (metadataError: any) {
           console.error('[FACILITY] Error handling metadata column:', metadataError);
@@ -4698,7 +4698,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           console.warn('[FACILITY] Skipping metadata update - column may not exist');
         }
       }
-      
+
       // ✅ FIX: Validate that at least one field is being updated
       if (Object.keys(updateData).length === 0) {
         return c.json({ error: 'No valid fields to update. Please provide at least one facility field' }, 400);
@@ -4763,9 +4763,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   app.post("/vendor/facility/:vendorId/upload-photos", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
+
       console.log(`📸 [FACILITY-PHOTOS] Uploading photos for vendor: ${vendorId}`);
-      
+
       // Resolve vendor (frontend may pass vendor_identity.id; data is stored by vendors.id)
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
@@ -4776,34 +4776,34 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Parse the multipart form data
       const formData = await c.req.formData();
       const photos = formData.getAll('photos') as File[];
-      
+
       if (!photos || photos.length === 0) {
         return c.json({ error: 'No photos provided' }, 400);
       }
 
       console.log(`📸 [FACILITY-PHOTOS] Processing ${photos.length} photos`);
-      
+
       // Upload photos to S3
       const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-      
+
       const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-      
+
       const photoUrls: string[] = [];
       const photoKeys: string[] = [];
-      
+
       for (const photo of photos) {
         try {
           // Generate a unique filename
           const timestamp = Date.now();
           const ext = photo.name.split('.').pop() || 'jpg';
           const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
-          
+
           // Convert File to ArrayBuffer and upload to S3
           const arrayBuffer = await photo.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
-          
+
           await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET_NAME,
             Key: fileKey,
@@ -4811,11 +4811,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ContentType: photo.type || 'image/jpeg',
             // ✅ FIX: No ACL needed - bucket has public access blocked, we'll use presigned URLs
           }));
-          
+
           // ✅ FIX: Store S3 key only (not URL) - we'll generate presigned URLs on-demand when retrieving
           photoUrls.push(fileKey); // Store key, not URL
           photoKeys.push(fileKey);
-          
+
           console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey}`);
         } catch (photoError: any) {
           console.error(`❌ [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
@@ -4827,7 +4827,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const existingMetadata = (vendor.metadata as any) || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
-      
+
       const { update } = await import('../database/rds-connection');
       await update('vendors', { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
@@ -4855,7 +4855,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   app.get("/customer/facility/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
+
       if (!vendorId || !isValidUUID(vendorId)) {
         return c.json({ error: 'Valid vendor ID is required' }, 400);
       }
@@ -4902,23 +4902,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ FIX: Extract metadata for description, custom amenities, and photos
       const metadata = (vendor.metadata as any) || {};
-      const operatingHours = vendor.operating_hours 
-        ? (typeof vendor.operating_hours === 'string' 
-            ? JSON.parse(vendor.operating_hours) 
-            : vendor.operating_hours)
+      const operatingHours = vendor.operating_hours
+        ? (typeof vendor.operating_hours === 'string'
+          ? JSON.parse(vendor.operating_hours)
+          : vendor.operating_hours)
         : null;
 
       // ✅ FIX: Generate presigned URLs for photos on-demand (since bucket has public access blocked)
       const rawPhotos = metadata.facility_photos || [];
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
       const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
-      
+
       console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
-      
+
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const s3Client = new S3Client({ region: AWS_REGION });
-      
+
       const photos = await Promise.all(
         rawPhotos.map(async (photoItem: string) => {
           try {
@@ -4926,9 +4926,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
               return null;
             }
-            
+
             let fileKey = photoItem.trim();
-            
+
             // Extract key from various formats
             if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
               // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
@@ -4967,14 +4967,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
               return photoItem;
             }
-            
+
             if (!fileKey || fileKey.length === 0) {
               console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
               return null;
             }
-            
+
             console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
-            
+
             // ✅ FIX: Verify the object exists before generating presigned URL
             try {
               const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
@@ -4990,21 +4990,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               }
               console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
             }
-            
+
             // Generate fresh presigned URL (valid for 7 days)
             const command = new GetObjectCommand({
               Bucket: BUCKET_NAME,
               Key: fileKey,
             });
-            
+
             const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
-            
+
             // ✅ FIX: Validate presigned URL format
             if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
               console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
               return null;
             }
-            
+
             console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
             return presignedUrl;
           } catch (error: any) {
@@ -5018,7 +5018,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         })
       );
-      
+
       const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
       console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
@@ -5088,7 +5088,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const serviceStyle = c.req.query('style') || c.req.query('serviceStyle');
-      
+
       if (!vendorId || !isValidUUID(vendorId)) {
         return c.json({ error: 'Valid vendor ID is required', success: false }, 400);
       }
@@ -5116,15 +5116,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND vs.is_enabled = true 
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
       `;
-      
+
       const params: any[] = [vendorId];
-      
+
       if (serviceStyle) {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         servicesQuery += ` AND vs.service_style = ANY($2::text[])`;
         params.push(acceptableStyles);
       }
-      
+
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
 
       const servicesResult = await query(servicesQuery, params);
@@ -5198,7 +5198,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const maxDistance = c.req.query('maxDistance'); // ✅ NEW: Maximum distance filter in km
       const minRating = c.req.query('minRating'); // ✅ NEW: Minimum rating filter
       const sortBy = c.req.query('sortBy') || (rules.discovery_sort_default as string) || 'relevance'; // ✅ Rule engine: default sort
-      
+
       if (!serviceStyle) {
         return c.json({ error: 'Service style is required (tele, at_home, at_center)', success: false }, 400);
       }
@@ -5248,7 +5248,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
             AND (r.name IS NULL OR LOWER(r.name) NOT LIKE '%solo%')
         `;
-        
+
         const params: any[] = [acceptableStyles];
         let paramIndex = 2;
 
@@ -5293,7 +5293,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // ✅ CRITICAL FIX: Check vendor_specializations table first (primary source)
           // This is where vendors store specializations selected in their profile
           // Both vendor and customer use specialization_id (e.g., "dermatology") from specialization_master
-            vendorsQuery += ` AND (
+          vendorsQuery += ` AND (
             -- Primary: Check vendor_specializations table (where vendors store specializations from profile)
             v.id IN (
               SELECT vendor_id 
@@ -5367,7 +5367,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 const m = typeof (vendor as any).metadata === 'string' ? JSON.parse((vendor as any).metadata) : (vendor as any).metadata;
                 const arr = m?.specializations;
                 if (Array.isArray(arr)) specializations = arr.slice(0, 5);
-              } catch (_) {}
+              } catch (_) { }
             }
 
             // Phase 2: photos, priceMin, priceMax, hasPackages, bestForProblem
@@ -5451,7 +5451,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // ✅ Apply distance filter: use maxDistance param if provided, else rule-book default radius (at_center discovery)
         const effectiveMaxKm = maxDistanceKm !== null ? maxDistanceKm : (customerLat && customerLng ? radius : null);
         if (effectiveMaxKm !== null && customerLat && customerLng) {
-          filteredVendors = filteredVendors.filter(v => 
+          filteredVendors = filteredVendors.filter(v =>
             v.distance === null || v.distance <= effectiveMaxKm
           );
         }
@@ -5464,15 +5464,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               if (a.distance === null) return 1;
               if (b.distance === null) return -1;
               return a.distance - b.distance;
-            
+
             case 'rating':
               return parseFloat(b.rating) - parseFloat(a.rating);
-            
+
             case 'price':
               const aPrice = a.services[0]?.price || 0;
               const bPrice = b.services[0]?.price || 0;
               return aPrice - bPrice;
-            
+
             case 'relevance':
             default:
               const aScore = (parseFloat(a.rating) * 10) + (a.reviewCount * 0.5) + (a.distance !== null ? Math.max(0, 50 - a.distance) : 0);
@@ -5538,11 +5538,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const enabledByStaffCondition = has_enabled_by_staff ? 'AND ss.enabled_by_staff = true' : '';
       const acceptableStylesForStaff = acceptableStylesForService(serviceStyle);
       const serviceStyleFilter = has_service_styles ? 'ss.service_styles && $PARAM::text[]' : 'TRUE';
-      const avgRatingSubquery = (has_reviews_table && has_reviews_staff_id) 
-        ? 'COALESCE((SELECT AVG(rating) FROM reviews WHERE staff_id = s.id), 0)' 
+      const avgRatingSubquery = (has_reviews_table && has_reviews_staff_id)
+        ? 'COALESCE((SELECT AVG(rating) FROM reviews WHERE staff_id = s.id), 0)'
         : '0';
-      const reviewCountSubquery = (has_reviews_table && has_reviews_staff_id) 
-        ? 'COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0)' 
+      const reviewCountSubquery = (has_reviews_table && has_reviews_staff_id)
+        ? 'COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0)'
         : '0';
 
       // Category role mapping - all canonical roles so discovery works for every customer tile
@@ -5601,18 +5601,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         }
       }
-      
+
       // ✅ FIX: Also include category roles if category is provided (combine with roleId results)
       if (category) {
         const categoryRoleList = categoryRoles[category.toLowerCase()] || [];
         targetRoles = [...new Set([...targetRoles, ...categoryRoleList])];
       }
-      
+
       // ✅ FIX: If no roles found, use category as fallback
       if (targetRoles.length === 0 && category) {
         targetRoles = categoryRoles[category.toLowerCase()] || [];
       }
-      
+
       console.log(`[Services By Style] Target roles for roleId=${roleId}, category=${category}:`, targetRoles);
 
       // ========== 1. Get Individual Providers (no vendor_id, verified) ==========
@@ -5648,10 +5648,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // Check if staff has services with this style enabled (check both staff_services AND vendor_services)
-      const styleFilterWithParam = has_service_styles 
-        ? `ss.service_styles && $${individualParamIdx}::text[]` 
+      const styleFilterWithParam = has_service_styles
+        ? `ss.service_styles && $${individualParamIdx}::text[]`
         : 'TRUE';
-      
+
       individualQuery += ` AND (
         EXISTS (
           SELECT 1 FROM staff_services ss 
@@ -5744,8 +5744,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // Calculate distance if location available
         let distance = null;
         if (customerLat && customerLng && ind.default_location) {
-          const loc = typeof ind.default_location === 'string' 
-            ? JSON.parse(ind.default_location) 
+          const loc = typeof ind.default_location === 'string'
+            ? JSON.parse(ind.default_location)
             : ind.default_location;
           if (loc.lat && loc.lng) {
             distance = calculateDistance(customerLat, customerLng, parseFloat(loc.lat), parseFloat(loc.lng));
@@ -5844,10 +5844,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // Check if staff has services with this style enabled (check both staff_services AND vendor_services)
-      const staffStyleFilterWithParam = has_service_styles 
-        ? `ss.service_styles && $${staffParamIdx}::text[]` 
+      const staffStyleFilterWithParam = has_service_styles
+        ? `ss.service_styles && $${staffParamIdx}::text[]`
         : 'TRUE';
-        
+
       staffQuery += ` AND (
         EXISTS (
           SELECT 1 FROM staff_services ss 
@@ -5943,8 +5943,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // First try staff's default_location, then vendor's location
           let lat = null, lng = null;
           if (staff.default_location) {
-            const loc = typeof staff.default_location === 'string' 
-              ? JSON.parse(staff.default_location) 
+            const loc = typeof staff.default_location === 'string'
+              ? JSON.parse(staff.default_location)
               : staff.default_location;
             lat = loc.lat;
             lng = loc.lng;
@@ -5960,7 +5960,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
         // ✅ FIX: Check availability for staff providers (filtered by service style)
-        const staffNextAvailable = staff.vendor_id 
+        const staffNextAvailable = staff.vendor_id
           ? await getNextAvailableSlot(staff.vendor_id, staff.phone || '', acceptableStyles)
           : null;
 
@@ -6053,10 +6053,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
           )
       `;
-      
+
       const vendorIdentityParams: any[] = [acceptableStylesFallback];
       let vendorIdentityParamIdx = 2;
-      
+
       if (targetRoles.length > 0) {
         const targetRolesLower = targetRoles.map((r: string) => r.toLowerCase());
         vendorIdentityQuery += ` AND (
@@ -6068,17 +6068,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorIdentityParams.push(targetRolesLower.map((r: string) => r.replace(/[_\s()]/g, '')));
         vendorIdentityParamIdx += 2;
       }
-      
+
       vendorIdentityQuery += ` ORDER BY vi.id LIMIT ${Math.min(100, Math.max(1, maxResults))}`;
-      
+
       console.log(`[Services By Style] Querying vendor_identity for solo providers...`);
       const vendorIdentityResult = await query(vendorIdentityQuery, vendorIdentityParams).catch((err) => {
         console.error('[Services By Style] Vendor identity query error:', err);
         return { rows: [] };
       });
-      
+
       console.log(`[Services By Style] Found ${vendorIdentityResult.rows.length} solo providers from vendor_identity`);
-      
+
       for (const vi of vendorIdentityResult.rows) {
         // Get services for this vendor_identity provider
         const servicesResult = await query(
@@ -6098,10 +6098,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            ORDER BY vs.price ASC`,
           [vi.vendor_id, acceptableStylesFallback]
         ).catch(() => ({ rows: [] }));
-        
+
         if (servicesResult.rows.length === 0) continue;
         if (serviceStyle && !roleConfigAllowsStyle((vi as any).role_config, serviceStyle)) continue;
-        
+
         // ✅ FIX: Check availability for vendor_identity providers (filtered by service style)
         const viNextAvailable = await getNextAvailableSlot(vi.vendor_id, vi.phone || '', acceptableStyles);
 
@@ -6118,11 +6118,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
         const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
         const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
-        
+
         const minPrice = servicesResult.rows.length > 0
           ? Math.min(...servicesResult.rows.map((s: any) => parseFloat(s.price || 0)))
           : 0;
-        
+
         providers.push({
           providerId: vi.vendor_id,
           providerType: 'vendor',
@@ -6163,7 +6163,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }))),
         });
       }
-      
+
       // ========== 4. FALLBACK: Vendors with at_home/tele – align with admin active (any published service when category set) ==========
       const vendorIdsWithStaff = new Set(providers.map(p => p.vendorId).filter(Boolean));
       const hasLogoUrlFallback = await columnExists('vendors', 'logo_url');
@@ -6211,7 +6211,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ${vendorFallbackSoloCondition}
           ${vendorFallbackExistsService}
       `;
-      
+
       const vendorFallbackParams: any[] = [acceptableStylesFallback];
       let vendorFallbackParamIdx = 2;
 
@@ -6220,7 +6220,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // This ensures vendors with roles like "Vet Solo", "Veterinarian (Solo)", "vet_solo" all match
         const targetRolesLower = targetRoles.map((r: string) => r.toLowerCase());
         const targetRolesNormalized = targetRolesLower.map((r: string) => r.replace(/[_\s()]/g, ''));
-        
+
         vendorFallbackQuery += ` AND (
           LOWER(r.name) = ANY($${vendorFallbackParamIdx}::text[])
           OR LOWER(r.display_name) = ANY($${vendorFallbackParamIdx}::text[])
@@ -6239,17 +6239,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       console.log(`[Services By Style] Vendor fallback query:`, vendorFallbackQuery.substring(0, 200));
       console.log(`[Services By Style] Vendor fallback params:`, vendorFallbackParams);
-      
+
       const vendorFallbackResult = await query(vendorFallbackQuery, vendorFallbackParams).catch((err) => {
         console.error('[Services By Style] Vendor fallback query error:', err);
         return { rows: [] };
       });
-      
+
       console.log(`[Services By Style] Vendor fallback found ${vendorFallbackResult.rows.length} vendors`);
-      
+
       // ✅ DEBUG: Check for specific vendor "Dr_Shivang_98765 42310_SOLO"
       if (vendorFallbackResult.rows.length > 0) {
-        const shivangVendor = vendorFallbackResult.rows.find((v: any) => 
+        const shivangVendor = vendorFallbackResult.rows.find((v: any) =>
           (v.business_name && (v.business_name.includes('Shivang') || v.business_name.includes('42310'))) ||
           (v.owner_name && (v.owner_name.includes('Shivang') || v.owner_name.includes('42310'))) ||
           (v.phone && (v.phone.includes('42310') || v.phone.includes('98765')))
@@ -6286,11 +6286,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               role_name: v.role_name,
               role_display_name: v.role_display_name
             });
-            
+
             // Check why it didn't match - comprehensive diagnosis
             const statusCheck = (v.status === 'approved' || v.status === 'active') && v.is_active === true;
             console.log(`[Services By Style] ✅ Status check: ${statusCheck} (status: ${v.status}, is_active: ${v.is_active})`);
-            
+
             // Check services
             const servicesCheck = await query(`
               SELECT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status
@@ -6302,16 +6302,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               services: servicesCheck.rows,
               acceptable_styles: acceptableStylesFallback
             });
-            
-            const enabledPublishedServices = servicesCheck.rows.filter(s => 
-              s.is_enabled === true && 
+
+            const enabledPublishedServices = servicesCheck.rows.filter(s =>
+              s.is_enabled === true &&
               (s.publish_status === 'published' || s.publish_status === 'auto_published' || s.publish_status === 'draft' || s.publish_status === null)
             );
             console.log(`[Services By Style] ✅ Enabled & published services: ${enabledPublishedServices.length}`);
-            
+
             // Check role matching
             if (targetRoles.length > 0) {
-              const roleMatches = targetRoles.some((role: string) => 
+              const roleMatches = targetRoles.some((role: string) =>
                 v.role_name?.toLowerCase() === role.toLowerCase() ||
                 v.role_display_name?.toLowerCase() === role.toLowerCase()
               );
@@ -6370,7 +6370,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const m = typeof meta === 'string' ? JSON.parse(meta) : meta;
             if (Array.isArray(m?.amenities)) amenities = m.amenities;
           }
-        } catch (_) {}
+        } catch (_) { }
         const specializations = vendor.specializations
           ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]'))
           : [];
@@ -6438,7 +6438,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ✅ FIX: Business/clinic vendors with at_home services ARE allowed in at_home results
       // The service_style filter on vendor_services already ensures only vendors with at_home services appear
       console.log(`[Services By Style] Providers after service filter: ${filteredProviders.length} (business/clinic with at_home services are included)`);
-      
+
       // ✅ FIX: For at_center, filter out at_home services (fallback filter)
       if (serviceStyle === 'at_center') {
         filteredProviders = filteredProviders.map(p => ({
@@ -6458,7 +6458,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ Apply maxDistance filter
       if (maxDistanceKm !== null && customerLat && customerLng) {
-        filteredProviders = filteredProviders.filter(p => 
+        filteredProviders = filteredProviders.filter(p =>
           p.distance === null || p.distance <= maxDistanceKm
         );
       }
@@ -6472,17 +6472,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             if (a.distance === null) return 1;
             if (b.distance === null) return -1;
             return a.distance - b.distance;
-          
+
           case 'rating':
             // Sort by rating descending (highest first)
             return parseFloat(b.rating) - parseFloat(a.rating);
-          
+
           case 'price':
             // Sort by lowest service price
             const aPrice = a.services[0]?.price || 0;
             const bPrice = b.services[0]?.price || 0;
             return aPrice - bPrice;
-          
+
           case 'relevance':
           default:
             // Relevance: weighted score of rating + review count + distance bonus
@@ -6655,7 +6655,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         try {
           const meta = typeof vs.metadata === 'string' ? (vs.metadata ? JSON.parse(vs.metadata) : {}) : (vs.metadata || {});
           taxCategoryId = meta.taxCategoryId || meta.tax_category || null;
-        } catch (_) {}
+        } catch (_) { }
       } else {
         const catalogRow = await query(
           `SELECT id, base_price, category_id, category_name FROM service_catalog WHERE (service_id = $1 OR id = $1::uuid) AND status = 'active'`,
@@ -6711,11 +6711,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const couponInfo = discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')
         ? {
-            code: couponCode,
-            type: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountType || 'percent',
-            value: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountValue || 0,
-            applied: true,
-          }
+          code: couponCode,
+          type: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountType || 'percent',
+          value: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountValue || 0,
+          applied: true,
+        }
         : { applied: false };
 
       return c.json({
@@ -6765,15 +6765,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       `, [`%${phone}%`, phone]);
 
       if (vendorResult.rows.length === 0) {
-        return c.json({ 
-          found: false, 
+        return c.json({
+          found: false,
           message: 'Vendor not found',
           search_phone: phone
         });
       }
 
       const vendor = vendorResult.rows[0];
-      
+
       // Check services
       const servicesResult = await query(`
         SELECT 
@@ -6790,8 +6790,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       `, [vendor.id]);
 
       // Check tele services specifically
-      const teleServices = servicesResult.rows.filter(s => 
-        (s.service_style === 'tele' || s.service_style === 'online') && 
+      const teleServices = servicesResult.rows.filter(s =>
+        (s.service_style === 'tele' || s.service_style === 'online') &&
         s.is_enabled === true &&
         (s.publish_status === 'published' || s.publish_status === 'auto_published' || s.publish_status === 'draft' || s.publish_status === null)
       );
@@ -6808,18 +6808,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Check role matching for vet
       const targetRoles = ['veterinarian', 'vet', 'vet_clinic', 'vet_solo', 'Veterinarian (Solo)', 'Vet Solo', 'Veterinary Clinic'];
-      eligibility.roleMatches = targetRoles.some(role => 
+      eligibility.roleMatches = targetRoles.some(role =>
         vendor.role_name?.toLowerCase() === role.toLowerCase() ||
         vendor.role_display_name?.toLowerCase() === role.toLowerCase()
       );
 
       // If vendor is pending but has all other requirements, offer to approve
-      const canApprove = !eligibility.statusApproved && 
-                        eligibility.isActive && 
-                        eligibility.hasRole && 
-                        eligibility.hasServices && 
-                        eligibility.hasTeleServices && 
-                        eligibility.roleMatches;
+      const canApprove = !eligibility.statusApproved &&
+        eligibility.isActive &&
+        eligibility.hasRole &&
+        eligibility.hasServices &&
+        eligibility.hasTeleServices &&
+        eligibility.roleMatches;
 
       return c.json({
         found: true,
@@ -6859,7 +6859,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const body = await c.req.json();
       const vendorId = body.vendorId || body.id;
-      
+
       if (!vendorId) {
         return c.json({ error: 'Vendor ID required' }, 400);
       }

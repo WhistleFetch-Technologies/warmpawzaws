@@ -10,10 +10,11 @@
 #   2. Bookings (references services and vendor)
 #   3. Vendor Services, Specializations, Service Areas, Staff
 #   4. Services (must be deleted after bookings)
-#   5. Reviews, Package Purchases, Prescriptions
-#   6. Vendor (main record)
-#   7. Vendor Onboarding Applications
-#   8. Vendor Identity
+#   5. Products (references vendor)
+#   6. Reviews, Package Purchases, Prescriptions
+#   7. Vendor (main record)
+#   8. Vendor Onboarding Applications
+#   9. Vendor Identity
 # 
 # Usage:
 #   .\scripts\db-crud\delete-vendor.ps1 -VendorId <vendor-uuid> [-Environment prod] [-Force]
@@ -126,6 +127,7 @@ $CountQueries = @{
     "Reviews" = "SELECT COUNT(*) FROM reviews WHERE vendor_id = '$VendorId'"
     "Package Purchases" = "SELECT COUNT(*) FROM package_purchases WHERE vendor_id = '$VendorId'"
     "Prescriptions" = "SELECT COUNT(*) FROM prescriptions WHERE vendor_id = '$VendorId'"
+    "Products" = "SELECT COUNT(*) FROM products WHERE vendor_id = '$VendorId'"
     "Vendor Service Areas" = "SELECT COUNT(*) FROM vendor_service_areas WHERE vendor_id = '$VendorId'"
     "Vendor Promotions" = "SELECT COUNT(*) FROM vendor_promotions WHERE vendor_id = '$VendorId'"
     "Vendor Capabilities" = "SELECT COUNT(*) FROM vendor_capabilities WHERE vendor_id = '$VendorId'"
@@ -250,6 +252,12 @@ $DeletionSteps = @(
     @{
         Name = "Prescriptions"
         Sql = "DELETE FROM prescriptions WHERE vendor_id = '$VendorId'"
+        Type = "Delete"
+        Optional = $true
+    },
+    @{
+        Name = "Products (references vendor)"
+        Sql = "DELETE FROM products WHERE vendor_id = '$VendorId'"
         Type = "Delete"
         Optional = $true
     },

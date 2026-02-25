@@ -86,10 +86,29 @@ export default function RootLayout({
                 } catch (e) { console.error('Error loading runtime-config.js', e); }
               })();
               // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
-              // Only run if NOT in production mode
+              // CRITICAL: Only run if NOT in production mode AND UAT mode is explicitly enabled
               (function() {
+                // CRITICAL: NEVER auto-login in production mode
+                if (window.__WARMPAWZ_PROD_MODE__ === true) {
+                  console.log('🔧 [Production Mode] Auto-login disabled - user must login');
+                  return;
+                }
+                
                 var config = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
-                var isUatMode = config.uatMode === true && !window.__WARMPAWZ_PROD_MODE__;
+                
+                // CRITICAL: Check multiple indicators of production mode
+                var isProduction = config.environment === 'production' || 
+                                   config.uatMode === false ||
+                                   (config.apiBaseUrl && config.apiBaseUrl.includes('mss9sa4y01')); // Prod API gateway
+                
+                if (isProduction) {
+                  console.log('🔧 [Production Mode Detected] Auto-login disabled - user must login');
+                  return;
+                }
+                
+                // Only auto-login if UAT mode is explicitly enabled and NOT in production
+                var isUatMode = config.uatMode === true && !isProduction;
+                
                 if (isUatMode && typeof localStorage !== 'undefined') {
                   var token = localStorage.getItem('adminAuthToken');
                   if (!token) {
@@ -97,6 +116,8 @@ export default function RootLayout({
                     localStorage.setItem('adminEmail', 'admin@warmpawz.com');
                     console.log('🔧 [UAT Mode] Auto-logged in for direct page access');
                   }
+                } else {
+                  console.log('🔧 [Non-UAT Mode] Auto-login disabled - user must login');
                 }
               })();
             `,

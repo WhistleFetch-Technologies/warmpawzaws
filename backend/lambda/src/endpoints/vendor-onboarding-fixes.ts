@@ -277,6 +277,38 @@ export function registerVendorOnboardingFixes(app: Hono) {
         }
       }
 
+      // ✅ PRE-DEDUPLICATION: Remove obvious duplicates from database fields first
+      const preSeenIds = new Set<string>();
+      const preSeenFieldNames = new Set<string>();
+      const initialCount = fields.length;
+      
+      fields = fields.filter((f: any) => {
+        const id = f.id || '';
+        const fieldName = f.fieldName || f.name || '';
+        
+        // Skip if duplicate by ID
+        if (id && preSeenIds.has(id)) {
+          console.log(`[FORM SCHEMA] ⚠️ Pre-dedup: Removing duplicate by ID: ${id} (${f.label || 'unknown'})`);
+          return false;
+        }
+        
+        // Skip if duplicate by fieldName (but allow if it's a new_field that will be checked later)
+        if (fieldName && preSeenFieldNames.has(fieldName) && fieldName !== 'new_field') {
+          console.log(`[FORM SCHEMA] ⚠️ Pre-dedup: Removing duplicate by fieldName: ${fieldName} (${f.label || 'unknown'})`);
+          return false;
+        }
+        
+        // Mark as seen
+        if (id) preSeenIds.add(id);
+        if (fieldName) preSeenFieldNames.add(fieldName);
+        
+        return true;
+      });
+      
+      if (fields.length < initialCount) {
+        console.log(`[FORM SCHEMA] Pre-deduplication removed ${initialCount - fields.length} duplicate(s). Remaining: ${fields.length}`);
+      }
+
       // ✅ NEW: Import and merge KYC fields for the role (same as admin endpoint)
       try {
         const { 
@@ -319,17 +351,153 @@ export function registerVendorOnboardingFixes(app: Hono) {
             declarationType: f.declarationType || f.id,
           }));
           
-          // Merge KYC fields with stored fields: DB overrides apply on top of KYC defaults
+          // ✅ AGGRESSIVE DEDUPLICATION: Remove duplicates and new_field conflicts
           const kycFieldIds = new Set(kycFormFields.map((f: any) => f.id));
+          const kycFieldNames = new Set(kycFormFields.map((f: any) => f.fieldName || f.name));
+          const kycFieldLabels = new Set(kycFormFields.map((f: any) => (f.label || '').toLowerCase().trim()));
+          
+          // Build a map of KYC fields by semantic key (label + type + section) for duplicate detection
+          const kycSemanticMap = new Map<string, any>();
+          kycFormFields.forEach((kf: any) => {
+            const semanticKey = `${(kf.label || '').toLowerCase().trim()}_${kf.type}_${kf.section}`;
+            kycSemanticMap.set(semanticKey, kf);
+          });
+          
           const dbFields = [...fields]; // copy from onboarding_forms
-          const nonKycFields = fields.filter((f: any) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName) && !kycFieldIds.has(f.name));
+          
+          // ✅ STEP 1: Filter out fields that match KYC by ID, fieldName, or name
+          const nonKycFields = fields.filter((f: any) => {
+            // Skip if it's a KYC field by ID/fieldName/name
+            if (kycFieldIds.has(f.id) || kycFieldNames.has(f.fieldName) || kycFieldNames.has(f.name)) {
+              return false;
+            }
+            
+            // ✅ STEP 2: Remove fields with fieldName="new_field" that duplicate KYC fields semantically
+            if (f.fieldName === 'new_field' || f.fieldName === 'newField' || f.fieldName === 'new-field') {
+              const fieldLabel = (f.label || '').toLowerCase().trim();
+              const semanticKey = `${fieldLabel}_${f.type}_${f.section}`;
+              
+              // If this new_field semantically matches a KYC field, remove it
+              if (kycSemanticMap.has(semanticKey)) {
+                console.log(`[FORM SCHEMA] ⚠️ Removing duplicate new_field: "${f.label}" (matches KYC field)`);
+                return false;
+              }
+              
+              // Also check if label contains keywords that match KYC fields
+              const labelKeywords = ['aadhaar', 'aadhar', 'pan', 'gst', 'cancelled cheque', 'cancellation cheque', 'cancelled check'];
+              const matchedKeyword = labelKeywords.find(keyword => fieldLabel.includes(keyword.toLowerCase()));
+              if (matchedKeyword) {
+                // Check if any KYC field has similar label
+                const hasMatchingKyc = Array.from(kycSemanticMap.values()).some((kf: any) => {
+                  const kycLabel = (kf.label || '').toLowerCase();
+                  return kycLabel.includes(matchedKeyword.toLowerCase()) && kf.section === f.section;
+                });
+                if (hasMatchingKyc) {
+                  console.log(`[FORM SCHEMA] ⚠️ Removing duplicate new_field: "${f.label}" (matches KYC keyword: ${matchedKeyword})`);
+                  return false;
+                }
+              }
+            }
+            
+            return true;
+          });
+          
+          // ✅ STEP 3: Merge KYC fields with stored overrides (DB overrides apply on top of KYC defaults)
           const mergedKycFields = kycFormFields.map((kf: any) => {
             const stored = dbFields.find((f: any) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
             return stored ? { ...kf, ...stored } : kf;
           });
-          fields = [...nonKycFields, ...mergedKycFields];
           
-          console.log(`[FORM SCHEMA] Total fields after KYC merge: ${fields.length}`);
+          // ✅ STEP 4: For business roles, remove solo-specific Aadhaar fields if business-specific ones exist
+          if (vendorType === 'business') {
+            const hasOwnerAadhaar = mergedKycFields.some((f: any) => 
+              f.id === 'ownerAadhaarNumber' || f.fieldName === 'ownerAadhaarNumber'
+            );
+            
+            if (hasOwnerAadhaar) {
+              // Remove solo-specific aadhaarNumber if ownerAadhaarNumber exists
+              const soloAadhaarIndex = mergedKycFields.findIndex((f: any) => 
+                f.id === 'aadhaarNumber' && f.fieldName === 'aadhaarNumber'
+              );
+              if (soloAadhaarIndex >= 0) {
+                console.log(`[FORM SCHEMA] ⚠️ Removing solo-specific aadhaarNumber (business has ownerAadhaarNumber)`);
+                mergedKycFields.splice(soloAadhaarIndex, 1);
+              }
+              
+              // Also remove from nonKycFields if present
+              const soloAadhaarInNonKyc = nonKycFields.findIndex((f: any) => 
+                f.id === 'aadhaarNumber' || f.fieldName === 'aadhaarNumber'
+              );
+              if (soloAadhaarInNonKyc >= 0) {
+                console.log(`[FORM SCHEMA] ⚠️ Removing solo-specific aadhaarNumber from non-KYC fields`);
+                nonKycFields.splice(soloAadhaarInNonKyc, 1);
+              }
+            }
+          }
+          
+          // ✅ STEP 5: AGGRESSIVE Final deduplication using multiple criteria
+          const finalFieldsMap = new Map<string, any>();
+          const seenIds = new Set<string>();
+          const seenFieldNames = new Set<string>();
+          const seenSemanticKeys = new Set<string>();
+          
+          // Helper to generate semantic key for duplicate detection
+          const getSemanticKey = (f: any) => {
+            const label = (f.label || '').toLowerCase().trim().replace(/\s+/g, '_');
+            const type = f.type || 'text';
+            const section = f.section || 'additional_information';
+            return `${label}_${type}_${section}`;
+          };
+          
+          // Add non-KYC fields first (lower priority)
+          nonKycFields.forEach((f: any) => {
+            const id = f.id || '';
+            const fieldName = f.fieldName || f.name || '';
+            const semanticKey = getSemanticKey(f);
+            
+            // Skip if already seen by any criteria
+            if (id && seenIds.has(id)) {
+              console.log(`[FORM SCHEMA] ⚠️ Skipping duplicate by ID: ${id} (${f.label})`);
+              return;
+            }
+            if (fieldName && seenFieldNames.has(fieldName)) {
+              console.log(`[FORM SCHEMA] ⚠️ Skipping duplicate by fieldName: ${fieldName} (${f.label})`);
+              return;
+            }
+            if (seenSemanticKeys.has(semanticKey)) {
+              console.log(`[FORM SCHEMA] ⚠️ Skipping duplicate by semantic key: ${semanticKey} (${f.label})`);
+              return;
+            }
+            
+            // Mark as seen
+            if (id) seenIds.add(id);
+            if (fieldName) seenFieldNames.add(fieldName);
+            seenSemanticKeys.add(semanticKey);
+            
+            // Use ID as primary key, fallback to fieldName, then semantic key
+            const key = id || fieldName || semanticKey;
+            finalFieldsMap.set(key, f);
+          });
+          
+          // Add merged KYC fields (higher priority - overwrites duplicates)
+          mergedKycFields.forEach((f: any) => {
+            const id = f.id || '';
+            const fieldName = f.fieldName || f.name || '';
+            const semanticKey = getSemanticKey(f);
+            
+            // Mark as seen (KYC fields take precedence)
+            if (id) seenIds.add(id);
+            if (fieldName) seenFieldNames.add(fieldName);
+            seenSemanticKeys.add(semanticKey);
+            
+            // Use ID as primary key, fallback to fieldName, then semantic key
+            const key = id || fieldName || semanticKey;
+            finalFieldsMap.set(key, f); // Overwrite if exists
+          });
+          
+          fields = Array.from(finalFieldsMap.values());
+          
+          console.log(`[FORM SCHEMA] Total fields after aggressive deduplication: ${fields.length} (IDs: ${seenIds.size}, FieldNames: ${seenFieldNames.size}, Semantic: ${seenSemanticKeys.size})`);
         }
       } catch (kycError: any) {
         console.error('[FORM SCHEMA] Error loading KYC fields:', kycError?.message || kycError);

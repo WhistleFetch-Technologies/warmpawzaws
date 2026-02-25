@@ -96,21 +96,41 @@ export async function verifyCognitoToken(
       return fallbackPayload;
     }
 
-    // Check if this is a UAT token (issued by warmpawz-uat)
-    // ✅ FIX: Always check for UAT tokens first, even in production
-    // This allows properly signed JWT tokens from login endpoint (when Cognito not configured)
+    // Check if this is a production JWT token (issued by warmpawz-api)
+    // Production tokens are used when Cognito is not configured
     try {
-      const { verifyUATJWTToken } = await import('./jwt-generator');
-      const uatResult = await verifyUATJWTToken(token);
-      if (uatResult.valid && uatResult.payload) {
-        console.log('[JWT] UAT token verified successfully (issuer: warmpawz-uat)');
-        return uatResult.payload as CognitoTokenPayload;
+      const { verifyProductionJWTToken } = await import('./jwt-generator');
+      const prodResult = await verifyProductionJWTToken(token);
+      if (prodResult.valid && prodResult.payload) {
+        console.log('[JWT] Production JWT token verified successfully (issuer: warmpawz-api)');
+        return prodResult.payload as CognitoTokenPayload;
       } else {
-        console.log(`[JWT] UAT token verification failed: ${uatResult.error || 'unknown error'}`);
+        console.log(`[JWT] Production JWT token verification failed: ${prodResult.error || 'unknown error'}`);
       }
-    } catch (uatError: any) {
-      // Not a UAT token or verification failed, continue with Cognito verification
-      console.log(`[JWT] UAT token check error (continuing to Cognito): ${uatError.message || 'unknown'}`);
+    } catch (prodError: any) {
+      // Not a production JWT token or verification failed, continue with UAT/Cognito verification
+      console.log(`[JWT] Production JWT token check error (continuing): ${prodError.message || 'unknown'}`);
+    }
+
+    // Check if this is a UAT token (issued by warmpawz-uat)
+    // UAT tokens are only allowed in UAT mode
+    const isUATMode = process.env.UAT_MODE === 'true';
+    if (isUATMode) {
+      try {
+        const { verifyUATJWTToken } = await import('./jwt-generator');
+        const uatResult = await verifyUATJWTToken(token);
+        if (uatResult.valid && uatResult.payload) {
+          console.log('[JWT] UAT token verified successfully (issuer: warmpawz-uat)');
+          return uatResult.payload as CognitoTokenPayload;
+        } else {
+          console.log(`[JWT] UAT token verification failed: ${uatResult.error || 'unknown error'}`);
+        }
+      } catch (uatError: any) {
+        // Not a UAT token or verification failed, continue with Cognito verification
+        console.log(`[JWT] UAT token check error (continuing to Cognito): ${uatError.message || 'unknown'}`);
+      }
+    } else {
+      console.log('[JWT] UAT mode is disabled - skipping UAT token verification');
     }
 
     // Use environment variables if not provided

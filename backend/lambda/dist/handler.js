@@ -112025,7 +112025,9 @@ var init_esm2 = __esm({
 // src/utils/jwt-generator.ts
 var jwt_generator_exports = {};
 __export(jwt_generator_exports, {
+  generateProductionJWTToken: () => generateProductionJWTToken,
   generateUATJWTToken: () => generateUATJWTToken,
+  verifyProductionJWTToken: () => verifyProductionJWTToken,
   verifyUATJWTToken: () => verifyUATJWTToken
 });
 async function generateUATJWTToken(params) {
@@ -112063,12 +112065,63 @@ async function generateUATJWTToken(params) {
     expiresIn
   };
 }
+async function generateProductionJWTToken(params) {
+  const { userId, phone, role, expiresIn = 24 * 60 * 60 } = params;
+  const PROD_JWT_SECRET = process.env.PROD_JWT_SECRET || process.env.JWT_SECRET || UAT_JWT_SECRET;
+  const secret = new TextEncoder().encode(PROD_JWT_SECRET);
+  const now = Math.floor(Date.now() / 1e3);
+  const exp = now + expiresIn;
+  const accessToken = await new SignJWT({
+    sub: userId,
+    "cognito:username": phone,
+    phone_number: phone,
+    "custom:user_type": role,
+    "cognito:groups": [role],
+    token_use: "access"
+  }).setProtectedHeader({ alg: "HS256" }).setIssuedAt(now).setExpirationTime(exp).setIssuer("warmpawz-api").setAudience("warmpawz-api").sign(secret);
+  const idToken = await new SignJWT({
+    sub: userId,
+    "cognito:username": phone,
+    phone_number: phone,
+    "custom:user_type": role,
+    "cognito:groups": [role],
+    token_use: "id"
+  }).setProtectedHeader({ alg: "HS256" }).setIssuedAt(now).setExpirationTime(exp).setIssuer("warmpawz-api").setAudience("warmpawz-api").sign(secret);
+  const refreshExp = now + 7 * 24 * 60 * 60;
+  const refreshToken = await new SignJWT({
+    sub: userId,
+    "cognito:username": phone,
+    token_use: "refresh"
+  }).setProtectedHeader({ alg: "HS256" }).setIssuedAt(now).setExpirationTime(refreshExp).setIssuer("warmpawz-api").setAudience("warmpawz-api").sign(secret);
+  console.log(`[JWT Generator] Generated PRODUCTION tokens for ${role} ${userId} (expires in ${expiresIn}s)`);
+  return {
+    accessToken,
+    idToken,
+    refreshToken,
+    expiresIn
+  };
+}
 async function verifyUATJWTToken(token) {
   try {
     const secret = new TextEncoder().encode(UAT_JWT_SECRET);
     const { jwtVerify: jwtVerify2 } = await Promise.resolve().then(() => (init_esm2(), esm_exports));
     const { payload } = await jwtVerify2(token, secret, {
       issuer: "warmpawz-uat",
+      audience: "warmpawz-api"
+    });
+    return { valid: true, payload };
+  } catch (error) {
+    return { valid: false, error: error.message };
+  }
+}
+async function verifyProductionJWTToken(token) {
+  try {
+    const PROD_JWT_SECRET = process.env.PROD_JWT_SECRET || process.env.JWT_SECRET || UAT_JWT_SECRET;
+    const secret = new TextEncoder().encode(PROD_JWT_SECRET);
+    const { jwtVerify: jwtVerify2 } = await Promise.resolve().then(() => (init_esm2(), esm_exports));
+    const { payload } = await jwtVerify2(token, secret, {
+      issuer: "warmpawz-api",
+      // Production issuer (NOT warmpawz-uat)
       audience: "warmpawz-api"
     });
     return { valid: true, payload };
@@ -112143,16 +112196,33 @@ async function verifyCognitoToken(token, userPoolId, clientId, region = "ap-sout
       return fallbackPayload;
     }
     try {
-      const { verifyUATJWTToken: verifyUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-      const uatResult = await verifyUATJWTToken2(token);
-      if (uatResult.valid && uatResult.payload) {
-        console.log("[JWT] UAT token verified successfully (issuer: warmpawz-uat)");
-        return uatResult.payload;
+      const { verifyProductionJWTToken: verifyProductionJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
+      const prodResult = await verifyProductionJWTToken2(token);
+      if (prodResult.valid && prodResult.payload) {
+        console.log("[JWT] Production JWT token verified successfully (issuer: warmpawz-api)");
+        return prodResult.payload;
       } else {
-        console.log(`[JWT] UAT token verification failed: ${uatResult.error || "unknown error"}`);
+        console.log(`[JWT] Production JWT token verification failed: ${prodResult.error || "unknown error"}`);
       }
-    } catch (uatError) {
-      console.log(`[JWT] UAT token check error (continuing to Cognito): ${uatError.message || "unknown"}`);
+    } catch (prodError) {
+      console.log(`[JWT] Production JWT token check error (continuing): ${prodError.message || "unknown"}`);
+    }
+    const isUATMode2 = process.env.UAT_MODE === "true";
+    if (isUATMode2) {
+      try {
+        const { verifyUATJWTToken: verifyUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
+        const uatResult = await verifyUATJWTToken2(token);
+        if (uatResult.valid && uatResult.payload) {
+          console.log("[JWT] UAT token verified successfully (issuer: warmpawz-uat)");
+          return uatResult.payload;
+        } else {
+          console.log(`[JWT] UAT token verification failed: ${uatResult.error || "unknown error"}`);
+        }
+      } catch (uatError) {
+        console.log(`[JWT] UAT token check error (continuing to Cognito): ${uatError.message || "unknown"}`);
+      }
+    } else {
+      console.log("[JWT] UAT mode is disabled - skipping UAT token verification");
     }
     userPoolId = userPoolId || process.env.COGNITO_USER_POOL_ID;
     clientId = clientId || process.env.COGNITO_CLIENT_ID;
@@ -134028,6 +134098,27 @@ function registerVendorOnboardingFixes(app3) {
           console.error(`\u274C [FORM SCHEMA] Failed to create default form:`, insertError);
         }
       }
+      const preSeenIds = /* @__PURE__ */ new Set();
+      const preSeenFieldNames = /* @__PURE__ */ new Set();
+      const initialCount = fields.length;
+      fields = fields.filter((f) => {
+        const id = f.id || "";
+        const fieldName = f.fieldName || f.name || "";
+        if (id && preSeenIds.has(id)) {
+          console.log(`[FORM SCHEMA] \u26A0\uFE0F Pre-dedup: Removing duplicate by ID: ${id} (${f.label || "unknown"})`);
+          return false;
+        }
+        if (fieldName && preSeenFieldNames.has(fieldName) && fieldName !== "new_field") {
+          console.log(`[FORM SCHEMA] \u26A0\uFE0F Pre-dedup: Removing duplicate by fieldName: ${fieldName} (${f.label || "unknown"})`);
+          return false;
+        }
+        if (id) preSeenIds.add(id);
+        if (fieldName) preSeenFieldNames.add(fieldName);
+        return true;
+      });
+      if (fields.length < initialCount) {
+        console.log(`[FORM SCHEMA] Pre-deduplication removed ${initialCount - fields.length} duplicate(s). Remaining: ${fields.length}`);
+      }
       try {
         const {
           getKYCFieldsForRole: getKYCFieldsForRole2,
@@ -134065,14 +134156,109 @@ function registerVendorOnboardingFixes(app3) {
             declarationType: f.declarationType || f.id
           }));
           const kycFieldIds = new Set(kycFormFields.map((f) => f.id));
+          const kycFieldNames = new Set(kycFormFields.map((f) => f.fieldName || f.name));
+          const kycFieldLabels = new Set(kycFormFields.map((f) => (f.label || "").toLowerCase().trim()));
+          const kycSemanticMap = /* @__PURE__ */ new Map();
+          kycFormFields.forEach((kf) => {
+            const semanticKey = `${(kf.label || "").toLowerCase().trim()}_${kf.type}_${kf.section}`;
+            kycSemanticMap.set(semanticKey, kf);
+          });
           const dbFields = [...fields];
-          const nonKycFields = fields.filter((f) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName) && !kycFieldIds.has(f.name));
+          const nonKycFields = fields.filter((f) => {
+            if (kycFieldIds.has(f.id) || kycFieldNames.has(f.fieldName) || kycFieldNames.has(f.name)) {
+              return false;
+            }
+            if (f.fieldName === "new_field" || f.fieldName === "newField" || f.fieldName === "new-field") {
+              const fieldLabel = (f.label || "").toLowerCase().trim();
+              const semanticKey = `${fieldLabel}_${f.type}_${f.section}`;
+              if (kycSemanticMap.has(semanticKey)) {
+                console.log(`[FORM SCHEMA] \u26A0\uFE0F Removing duplicate new_field: "${f.label}" (matches KYC field)`);
+                return false;
+              }
+              const labelKeywords = ["aadhaar", "aadhar", "pan", "gst", "cancelled cheque", "cancellation cheque", "cancelled check"];
+              const matchedKeyword = labelKeywords.find((keyword) => fieldLabel.includes(keyword.toLowerCase()));
+              if (matchedKeyword) {
+                const hasMatchingKyc = Array.from(kycSemanticMap.values()).some((kf) => {
+                  const kycLabel = (kf.label || "").toLowerCase();
+                  return kycLabel.includes(matchedKeyword.toLowerCase()) && kf.section === f.section;
+                });
+                if (hasMatchingKyc) {
+                  console.log(`[FORM SCHEMA] \u26A0\uFE0F Removing duplicate new_field: "${f.label}" (matches KYC keyword: ${matchedKeyword})`);
+                  return false;
+                }
+              }
+            }
+            return true;
+          });
           const mergedKycFields = kycFormFields.map((kf) => {
             const stored = dbFields.find((f) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
             return stored ? { ...kf, ...stored } : kf;
           });
-          fields = [...nonKycFields, ...mergedKycFields];
-          console.log(`[FORM SCHEMA] Total fields after KYC merge: ${fields.length}`);
+          if (vendorType === "business") {
+            const hasOwnerAadhaar = mergedKycFields.some(
+              (f) => f.id === "ownerAadhaarNumber" || f.fieldName === "ownerAadhaarNumber"
+            );
+            if (hasOwnerAadhaar) {
+              const soloAadhaarIndex = mergedKycFields.findIndex(
+                (f) => f.id === "aadhaarNumber" && f.fieldName === "aadhaarNumber"
+              );
+              if (soloAadhaarIndex >= 0) {
+                console.log(`[FORM SCHEMA] \u26A0\uFE0F Removing solo-specific aadhaarNumber (business has ownerAadhaarNumber)`);
+                mergedKycFields.splice(soloAadhaarIndex, 1);
+              }
+              const soloAadhaarInNonKyc = nonKycFields.findIndex(
+                (f) => f.id === "aadhaarNumber" || f.fieldName === "aadhaarNumber"
+              );
+              if (soloAadhaarInNonKyc >= 0) {
+                console.log(`[FORM SCHEMA] \u26A0\uFE0F Removing solo-specific aadhaarNumber from non-KYC fields`);
+                nonKycFields.splice(soloAadhaarInNonKyc, 1);
+              }
+            }
+          }
+          const finalFieldsMap = /* @__PURE__ */ new Map();
+          const seenIds = /* @__PURE__ */ new Set();
+          const seenFieldNames = /* @__PURE__ */ new Set();
+          const seenSemanticKeys = /* @__PURE__ */ new Set();
+          const getSemanticKey = (f) => {
+            const label = (f.label || "").toLowerCase().trim().replace(/\s+/g, "_");
+            const type = f.type || "text";
+            const section = f.section || "additional_information";
+            return `${label}_${type}_${section}`;
+          };
+          nonKycFields.forEach((f) => {
+            const id = f.id || "";
+            const fieldName = f.fieldName || f.name || "";
+            const semanticKey = getSemanticKey(f);
+            if (id && seenIds.has(id)) {
+              console.log(`[FORM SCHEMA] \u26A0\uFE0F Skipping duplicate by ID: ${id} (${f.label})`);
+              return;
+            }
+            if (fieldName && seenFieldNames.has(fieldName)) {
+              console.log(`[FORM SCHEMA] \u26A0\uFE0F Skipping duplicate by fieldName: ${fieldName} (${f.label})`);
+              return;
+            }
+            if (seenSemanticKeys.has(semanticKey)) {
+              console.log(`[FORM SCHEMA] \u26A0\uFE0F Skipping duplicate by semantic key: ${semanticKey} (${f.label})`);
+              return;
+            }
+            if (id) seenIds.add(id);
+            if (fieldName) seenFieldNames.add(fieldName);
+            seenSemanticKeys.add(semanticKey);
+            const key = id || fieldName || semanticKey;
+            finalFieldsMap.set(key, f);
+          });
+          mergedKycFields.forEach((f) => {
+            const id = f.id || "";
+            const fieldName = f.fieldName || f.name || "";
+            const semanticKey = getSemanticKey(f);
+            if (id) seenIds.add(id);
+            if (fieldName) seenFieldNames.add(fieldName);
+            seenSemanticKeys.add(semanticKey);
+            const key = id || fieldName || semanticKey;
+            finalFieldsMap.set(key, f);
+          });
+          fields = Array.from(finalFieldsMap.values());
+          console.log(`[FORM SCHEMA] Total fields after aggressive deduplication: ${fields.length} (IDs: ${seenIds.size}, FieldNames: ${seenFieldNames.size}, Semantic: ${seenSemanticKeys.size})`);
         }
       } catch (kycError) {
         console.error("[FORM SCHEMA] Error loading KYC fields:", kycError?.message || kycError);
@@ -143066,18 +143252,52 @@ function registerOnboardingFormManagementEndpoints(app3) {
       if (forms.length > 0) {
         fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
       }
+      const preSeenIds = /* @__PURE__ */ new Set();
+      const preSeenFieldNames = /* @__PURE__ */ new Set();
+      const initialCount = fields.length;
+      fields = fields.filter((f) => {
+        const id = f.id || "";
+        const fieldName = f.fieldName || f.name || "";
+        if (id && preSeenIds.has(id)) {
+          console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Pre-dedup: Removing duplicate by ID: ${id} (${f.label || "unknown"})`);
+          return false;
+        }
+        if (fieldName && preSeenFieldNames.has(fieldName) && fieldName !== "new_field") {
+          console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Pre-dedup: Removing duplicate by fieldName: ${fieldName} (${f.label || "unknown"})`);
+          return false;
+        }
+        if (id) preSeenIds.add(id);
+        if (fieldName) preSeenFieldNames.add(fieldName);
+        return true;
+      });
+      if (fields.length < initialCount) {
+        console.log(`[GET /admin/onboarding-fields/:roleId] Pre-deduplication removed ${initialCount - fields.length} duplicate(s). Remaining: ${fields.length}`);
+      }
       try {
         const {
           getKYCFieldsForRole: getKYCFieldsForRole2,
           ROLE_KYC_CONFIGS: ROLE_KYC_CONFIGS2,
           KYC_SECTIONS: KYC_SECTIONS2
         } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
-        let kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
-        if (kycFields.length === 0) {
+        const roleConfigCheck = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
+        const isBusinessRole = roleConfigCheck?.vendorTypes?.includes("business") || actualRoleName.includes("clinic") || actualRoleName.includes("business") || actualRoleName === "vet_clinic" || actualRoleName === "veterinary_clinic";
+        let kycFields = [];
+        if (isBusinessRole) {
           kycFields = getKYCFieldsForRole2(actualRoleName, "business");
-        }
-        if (kycFields.length === 0) {
-          kycFields = getKYCFieldsForRole2(actualRoleName);
+          if (kycFields.length === 0) {
+            kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
+          }
+          if (kycFields.length === 0) {
+            kycFields = getKYCFieldsForRole2(actualRoleName);
+          }
+        } else {
+          kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
+          if (kycFields.length === 0) {
+            kycFields = getKYCFieldsForRole2(actualRoleName, "business");
+          }
+          if (kycFields.length === 0) {
+            kycFields = getKYCFieldsForRole2(actualRoleName);
+          }
         }
         if (kycFields.length > 0) {
           console.log(`[GET /admin/onboarding-fields/:roleId] Adding ${kycFields.length} KYC fields for role ${actualRoleName}`);
@@ -143107,14 +143327,111 @@ function registerOnboardingFormManagementEndpoints(app3) {
             // Use explicit declarationType if set, otherwise fallback to id
           }));
           const kycFieldIds = new Set(kycFormFields.map((f) => f.id));
+          const kycFieldNames = new Set(kycFormFields.map((f) => f.fieldName || f.name));
+          const kycFieldLabels = new Set(kycFormFields.map((f) => (f.label || "").toLowerCase().trim()));
+          const kycSemanticMap = /* @__PURE__ */ new Map();
+          kycFormFields.forEach((kf) => {
+            const semanticKey = `${(kf.label || "").toLowerCase().trim()}_${kf.type}_${kf.section}`;
+            kycSemanticMap.set(semanticKey, kf);
+          });
           const dbFields = [...fields];
-          const nonKycFields = fields.filter((f) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName));
+          const nonKycFields = fields.filter((f) => {
+            if (kycFieldIds.has(f.id) || kycFieldNames.has(f.fieldName) || kycFieldNames.has(f.name)) {
+              return false;
+            }
+            if (f.fieldName === "new_field" || f.fieldName === "newField" || f.fieldName === "new-field") {
+              const fieldLabel = (f.label || "").toLowerCase().trim();
+              const semanticKey = `${fieldLabel}_${f.type}_${f.section}`;
+              if (kycSemanticMap.has(semanticKey)) {
+                console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Removing duplicate new_field: "${f.label}" (matches KYC field)`);
+                return false;
+              }
+              const labelKeywords = ["aadhaar", "aadhar", "pan", "gst", "cancelled cheque", "cancellation cheque", "cancelled check"];
+              const matchedKeyword = labelKeywords.find((keyword) => fieldLabel.includes(keyword.toLowerCase()));
+              if (matchedKeyword) {
+                const hasMatchingKyc = Array.from(kycSemanticMap.values()).some((kf) => {
+                  const kycLabel = (kf.label || "").toLowerCase();
+                  return kycLabel.includes(matchedKeyword.toLowerCase()) && kf.section === f.section;
+                });
+                if (hasMatchingKyc) {
+                  console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Removing duplicate new_field: "${f.label}" (matches KYC keyword: ${matchedKeyword})`);
+                  return false;
+                }
+              }
+            }
+            return true;
+          });
           const mergedKycFields = kycFormFields.map((kf) => {
             const stored = dbFields.find((f) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
             return stored ? { ...kf, ...stored } : kf;
           });
-          fields = [...nonKycFields, ...mergedKycFields];
-          console.log(`[GET /admin/onboarding-fields/:roleId] Total fields after merge: ${fields.length}`);
+          const roleConfig2 = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
+          const isBusinessRole2 = roleConfig2?.vendorTypes?.includes("business") || actualRoleName.includes("clinic") || actualRoleName.includes("business") || actualRoleName === "vet_clinic" || actualRoleName === "veterinary_clinic";
+          if (isBusinessRole2) {
+            const hasOwnerAadhaar = mergedKycFields.some(
+              (f) => f.id === "ownerAadhaarNumber" || f.fieldName === "ownerAadhaarNumber"
+            );
+            if (hasOwnerAadhaar) {
+              const soloAadhaarIndex = mergedKycFields.findIndex(
+                (f) => f.id === "aadhaarNumber" && f.fieldName === "aadhaarNumber"
+              );
+              if (soloAadhaarIndex >= 0) {
+                console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Removing solo-specific aadhaarNumber (business has ownerAadhaarNumber)`);
+                mergedKycFields.splice(soloAadhaarIndex, 1);
+              }
+              const soloAadhaarInNonKyc = nonKycFields.findIndex(
+                (f) => f.id === "aadhaarNumber" || f.fieldName === "aadhaarNumber"
+              );
+              if (soloAadhaarInNonKyc >= 0) {
+                console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Removing solo-specific aadhaarNumber from non-KYC fields`);
+                nonKycFields.splice(soloAadhaarInNonKyc, 1);
+              }
+            }
+          }
+          const finalFieldsMap = /* @__PURE__ */ new Map();
+          const seenIds = /* @__PURE__ */ new Set();
+          const seenFieldNames = /* @__PURE__ */ new Set();
+          const seenSemanticKeys = /* @__PURE__ */ new Set();
+          const getSemanticKey = (f) => {
+            const label = (f.label || "").toLowerCase().trim().replace(/\s+/g, "_");
+            const type = f.type || "text";
+            const section = f.section || "additional_information";
+            return `${label}_${type}_${section}`;
+          };
+          nonKycFields.forEach((f) => {
+            const id = f.id || "";
+            const fieldName = f.fieldName || f.name || "";
+            const semanticKey = getSemanticKey(f);
+            if (id && seenIds.has(id)) {
+              console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Skipping duplicate by ID: ${id} (${f.label})`);
+              return;
+            }
+            if (fieldName && seenFieldNames.has(fieldName)) {
+              console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Skipping duplicate by fieldName: ${fieldName} (${f.label})`);
+              return;
+            }
+            if (seenSemanticKeys.has(semanticKey)) {
+              console.log(`[GET /admin/onboarding-fields/:roleId] \u26A0\uFE0F Skipping duplicate by semantic key: ${semanticKey} (${f.label})`);
+              return;
+            }
+            if (id) seenIds.add(id);
+            if (fieldName) seenFieldNames.add(fieldName);
+            seenSemanticKeys.add(semanticKey);
+            const key = id || fieldName || semanticKey;
+            finalFieldsMap.set(key, f);
+          });
+          mergedKycFields.forEach((f) => {
+            const id = f.id || "";
+            const fieldName = f.fieldName || f.name || "";
+            const semanticKey = getSemanticKey(f);
+            if (id) seenIds.add(id);
+            if (fieldName) seenFieldNames.add(fieldName);
+            seenSemanticKeys.add(semanticKey);
+            const key = id || fieldName || semanticKey;
+            finalFieldsMap.set(key, f);
+          });
+          fields = Array.from(finalFieldsMap.values());
+          console.log(`[GET /admin/onboarding-fields/:roleId] Total fields after aggressive deduplication: ${fields.length} (IDs: ${seenIds.size}, FieldNames: ${seenFieldNames.size}, Semantic: ${seenSemanticKeys.size})`);
         }
         const roleConfig = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
         const roleSections = roleConfig?.sections || KYC_SECTIONS2;
@@ -215650,16 +215967,16 @@ var AdminLoginHandler = class extends BaseHandler {
       } else {
         const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || "";
         if (!cognitoUserPoolId) {
-          console.warn(`[ADMIN AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
-          const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-          tokens = await generateUATJWTToken2({
+          console.warn(`[ADMIN AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using PRODUCTION JWT tokens`);
+          const { generateProductionJWTToken: generateProductionJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
+          tokens = await generateProductionJWTToken2({
             userId: admin2.id,
             phone: admin2.email,
             role: "admin",
             expiresIn: 24 * 60 * 60
             // 24 hours for production
           });
-          console.log("[ADMIN AUTH] Production Mode: Generated JWT tokens (Cognito fallback)");
+          console.log("[ADMIN AUTH] Production Mode: Generated PRODUCTION JWT tokens (issuer: warmpawz-api, NOT warmpawz-uat)");
         } else {
           try {
             const { getOrCreateCognitoUser: getOrCreateCognitoUser2, authenticateCognitoUser: authenticateCognitoUser2 } = await Promise.resolve().then(() => (init_cognito_client(), cognito_client_exports));
@@ -215672,15 +215989,16 @@ var AdminLoginHandler = class extends BaseHandler {
               expiresIn: cognitoTokens.expiresIn
             };
           } catch (cognitoError) {
-            console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using JWT fallback`);
-            const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-            tokens = await generateUATJWTToken2({
+            console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using PRODUCTION JWT fallback`);
+            const { generateProductionJWTToken: generateProductionJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
+            tokens = await generateProductionJWTToken2({
               userId: admin2.id,
               phone: admin2.email,
               role: "admin",
               expiresIn: 24 * 60 * 60
               // 24 hours
             });
+            console.log("[ADMIN AUTH] Production Mode: Generated PRODUCTION JWT tokens (Cognito fallback, issuer: warmpawz-api)");
           }
         }
       }
