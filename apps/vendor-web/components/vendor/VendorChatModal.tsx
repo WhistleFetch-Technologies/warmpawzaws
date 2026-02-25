@@ -652,22 +652,48 @@ export function VendorChatModal({
                               : 'bg-white text-gray-900 rounded-bl-sm shadow-sm border border-gray-100'
                           }`}>
                             {/* File/Image attachment */}
-                            {message.message_type !== 'text' && message.file_name && (
+                            {message.message_type === 'image' && (message.file_url || message.file_id) && (
                               <a 
                                 href={message.file_url || `${getApiBaseUrl()}/chat/file/${encodeURIComponent(message.file_id || '')}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`flex items-center gap-2 mb-2 ${
-                                  message.sender_type === 'vendor' ? 'text-white/90' : 'text-blue-600'
-                                } hover:underline`}
+                                className="block mb-2"
+                              >
+                                <img 
+                                  src={message.file_url || `${getApiBaseUrl()}/chat/file/${encodeURIComponent(message.file_id || '')}`}
+                                  alt={message.file_name || 'Image'}
+                                  className="max-w-full rounded-lg max-h-48 object-cover"
+                                  onError={(e) => {
+                                    // Fallback to file icon if image fails to load
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              </a>
+                            )}
+                            {message.message_type !== 'text' && message.message_type !== 'image' && (message.file_name || message.file_id) && (
+                              <a 
+                                href={message.file_url || `${getApiBaseUrl()}/chat/file/${encodeURIComponent(message.file_id || '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`flex items-center gap-2 p-2 rounded-lg mb-2 ${
+                                  message.sender_type === 'vendor' 
+                                    ? 'bg-white/20 text-white hover:bg-white/30' 
+                                    : 'bg-gray-50 text-blue-600 hover:bg-gray-100 border border-gray-200'
+                                } transition-colors`}
                               >
                                 {getMessageIcon(message.message_type)}
-                                <span className="text-sm truncate">{message.file_name}</span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm font-medium truncate block">{message.file_name || 'Document'}</span>
+                                  <span className="text-xs opacity-75">Tap to open</span>
+                                </div>
                               </a>
                             )}
                             
-                            {/* Message text */}
-                            <p className="whitespace-pre-wrap break-words">{message.message}</p>
+                            {/* Message text - hide generic "Sent a document/photo" if we have a file */}
+                            {!(message.message_type !== 'text' && (message.file_url || message.file_id) && 
+                              /^Sent a (document|photo|video)$/i.test(message.message || '')) && (
+                              <p className="whitespace-pre-wrap break-words">{message.message}</p>
+                            )}
                           </div>
                           
                           {/* Time and read status */}

@@ -658,7 +658,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // Check if base service exists in services table (required for foreign key)
         const baseServiceId = service.service_id || serviceId;
         console.log(`[BOOKING] Checking if base service ${baseServiceId} exists in services table for foreign key constraint`);
-        const baseServices = await select('services', { id: baseServiceId });
+        // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
+        const baseServicesResult = await client.query(
+          `SELECT * FROM services WHERE id = $1::uuid`,
+          [baseServiceId]
+        );
+        const baseServices = baseServicesResult.rows;
         
         let finalServiceId: string;
         if (baseServices.length === 0) {
@@ -667,21 +672,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           console.warn(`[BOOKING] Base service ${baseServiceId} not found in services table. Creating service entry for custom service.`);
           
           try {
-            await insert('services', {
-              id: baseServiceId,
-              name: service.service_name || service.name || 'Custom Service',
-              description: service.custom_description || service.description || '',
-              category: service.category || 'custom',
-              price: service.price || service.custom_price || 0,
-              duration_minutes: service.duration_minutes || service.custom_duration || 30,
-              vendor_id: vendorId,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            });
+            // ✅ CRITICAL FIX: Use SAVEPOINT to prevent transaction abort if INSERT fails
+            // In PostgreSQL, a failed query inside a transaction aborts the ENTIRE transaction
+            // even if JavaScript catches the error. SAVEPOINTs allow recovery from errors.
+            await client.query('SAVEPOINT sp_create_service');
+            await client.query(
+              `INSERT INTO services (id, name, description, category, price, duration_minutes, vendor_id, is_active, created_at, updated_at)
+               VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10)
+               ON CONFLICT (id) DO NOTHING`,
+              [
+                baseServiceId,
+                service.service_name || service.name || 'Custom Service',
+                service.custom_description || service.description || '',
+                service.category || 'custom',
+                service.price || service.custom_price || 0,
+                service.duration_minutes || service.custom_duration || 30,
+                vendorId,
+                true,
+                new Date().toISOString(),
+                new Date().toISOString(),
+              ]
+            );
+            await client.query('RELEASE SAVEPOINT sp_create_service');
             console.log(`[BOOKING] Created service entry in services table: ${baseServiceId}`);
           } catch (insertError: any) {
-            // If insert fails (e.g., duplicate key), service might have been created concurrently
+            // ✅ CRITICAL: Rollback to savepoint to keep transaction alive
+            await client.query('ROLLBACK TO SAVEPOINT sp_create_service').catch(() => {});
             console.warn(`[BOOKING] Failed to create service entry (may already exist): ${insertError.message}`);
           }
           
@@ -810,7 +826,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const addressIdFromRequest = body.addressId || body.address_id;
         if (addressIdFromRequest) {
           try {
-            const addresses = await select('customer_addresses', { id: addressIdFromRequest });
+            // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
+            const addressesResult = await client.query(
+              `SELECT * FROM customer_addresses WHERE id = $1::uuid`,
+              [addressIdFromRequest]
+            );
+            const addresses = addressesResult.rows;
             if (addresses.length > 0) {
               const addr = addresses[0] as any;
               addressIdToStore = addressIdFromRequest;
@@ -915,7 +936,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let fullAddressText = address;
         if (addressIdToStore) {
           try {
-            const addrRows = await select('customer_addresses', { id: addressIdToStore });
+            // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
+            const addrRowsResult = await client.query(
+              `SELECT * FROM customer_addresses WHERE id = $1::uuid`,
+              [addressIdToStore]
+            );
+            const addrRows = addrRowsResult.rows;
             if (addrRows.length > 0) {
               const addrRec = addrRows[0] as any;
               const addrParts: string[] = [];

@@ -598,7 +598,9 @@ export async function upsert(
 // ============================================================================
 
 /**
- * Execute a function within a database transaction
+ * Execute a function within a database transaction.
+ * ✅ FIX: Defensively resets any lingering transaction state before BEGIN
+ * to prevent "current transaction is aborted" errors from stale connections.
  */
 export async function withTransaction<T>(
   callback: (client: PoolClient) => Promise<T>
@@ -606,12 +608,19 @@ export async function withTransaction<T>(
   const client = await getClient();
   
   try {
+    // ✅ CRITICAL FIX: Reset any lingering transaction state from a previously-used connection
+    // In PostgreSQL, if a connection was returned to the pool with an aborted transaction,
+    // all subsequent queries on it will fail with:
+    //   "current transaction is aborted, commands ignored until end of transaction block"
+    // A ROLLBACK clears this state. If there's no active transaction, ROLLBACK is a no-op warning.
+    try { await client.query('ROLLBACK'); } catch (_) { /* no-op if no active transaction */ }
+    
     await client.query('BEGIN');
     const result = await callback(client);
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch (_) { /* ignore rollback errors */ }
     throw error;
   } finally {
     client.release();

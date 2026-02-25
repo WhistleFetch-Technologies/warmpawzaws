@@ -4661,23 +4661,37 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const notifications = await query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50').catch(() => ({ rows: [] }));
       
-      const safeNotifications = (notifications.rows || []).map((n: any) => ({
-        id: String(n.id || ''),
-        title: String(n.title || ''),
-        message: String(n.message || ''),
-        type: String(n.type || 'info'),
-        target_audience: String(n.target_audience || 'all'),
-        target_regions: n.target_regions || [],
-        target_user_ids: n.target_user_ids || [],
-        channels: n.channels || [],
-        scheduled_at: n.scheduled_at ? String(n.scheduled_at) : undefined,
-        sent_at: n.sent_at ? String(n.sent_at) : undefined,
-        status: String(n.status || 'draft'),
-        sent_count: parseInt(n.sent_count || '0', 10),
-        delivered_count: parseInt(n.delivered_count || '0', 10),
-        opened_count: parseInt(n.opened_count || '0', 10),
-        created_at: String(n.created_at || ''),
-      }));
+      const safeNotifications = (notifications.rows || []).map((n: any) => {
+        // ✅ FIX: Parse channels - PostgreSQL arrays can come as strings or arrays
+        let channels: string[] = [];
+        if (n.channels) {
+          if (Array.isArray(n.channels)) {
+            channels = n.channels;
+          } else if (typeof n.channels === 'string') {
+            // PostgreSQL array string format: "{push,sms,email}" or "push,sms,email"
+            const cleaned = n.channels.replace(/[{}"]/g, '');
+            channels = cleaned ? cleaned.split(',').map((c: string) => c.trim()).filter(Boolean) : [];
+          }
+        }
+        
+        return {
+          id: String(n.id || ''),
+          title: String(n.title || ''),
+          message: String(n.message || ''),
+          type: String(n.type || 'info'),
+          target_audience: String(n.target_audience || 'all'),
+          target_regions: Array.isArray(n.target_regions) ? n.target_regions : (n.target_regions ? [n.target_regions] : []),
+          target_user_ids: Array.isArray(n.target_user_ids) ? n.target_user_ids : (n.target_user_ids ? [n.target_user_ids] : []),
+          channels: channels,
+          scheduled_at: n.scheduled_at ? String(n.scheduled_at) : undefined,
+          sent_at: n.sent_at ? String(n.sent_at) : undefined,
+          status: String(n.status || 'draft'),
+          sent_count: parseInt(n.sent_count || '0', 10),
+          delivered_count: parseInt(n.delivered_count || '0', 10),
+          opened_count: parseInt(n.opened_count || '0', 10),
+          created_at: String(n.created_at || ''),
+        };
+      });
 
       return c.json({ success: true, notifications: safeNotifications });
     } catch (error: any) {

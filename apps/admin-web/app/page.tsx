@@ -15,6 +15,7 @@ const UAT_CREDENTIALS = {
 };
 
 // Helper function to check UAT mode from runtime config
+// ✅ FIX: Also check hostname to NEVER allow UAT mode on production hostnames
 function isUatMode(): boolean {
   if (typeof window === 'undefined') {
     // Server-side: check if production mode is explicitly set
@@ -24,7 +25,17 @@ function isUatMode(): boolean {
     return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
   }
   
-  // Client-side: Check production mode flag first
+  // ✅ FIX: Check production hostname FIRST - NEVER return true on production hostnames
+  const hostname = window.location.hostname || '';
+  const isProductionHostname = hostname.includes('cloudfront.net') || 
+                               hostname.includes('warmpawz.com');
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+  
+  if (isProductionHostname && !isLocalhost) {
+    return false; // NEVER UAT mode on production hostnames
+  }
+  
+  // Client-side: Check production mode flag
   if ((window as any).__WARMPAWZ_PROD_MODE__ === true) {
     return false;
   }
@@ -32,18 +43,9 @@ function isUatMode(): boolean {
   // Check runtime config (for deployed static builds)
   const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
   if (runtimeConfig) {
-    // If uatMode is explicitly set to false, respect it
-    if (runtimeConfig.uatMode === false) {
-      return false;
-    }
-    // If uatMode is explicitly set to true, use it
-    if (runtimeConfig.uatMode === true) {
-      return true;
-    }
-    // If environment is production, disable UAT mode
-    if (runtimeConfig.environment === 'production') {
-      return false;
-    }
+    if (runtimeConfig.uatMode === false) return false;
+    if (runtimeConfig.uatMode === true) return true;
+    if (runtimeConfig.environment === 'production') return false;
   }
   
   // Fallback to build-time env vars (only if not in production)

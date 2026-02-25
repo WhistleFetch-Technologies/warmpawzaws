@@ -25,38 +25,36 @@ function getRuntimeConfig(): RuntimeConfig {
  * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
  */
 function isProductionEnvironment(): boolean {
+  // ✅ FIX: Check hostname FIRST as it's the most reliable signal
+  // This prevents any race condition where runtime config hasn't loaded yet
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    // Development indicators - check FIRST
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
+      return false;
+    }
+    // Production CloudFront domains
+    if (hostname.includes('cloudfront.net') || 
+        hostname.includes('warmpawz.com')) {
+      return true;
+    }
+  }
+  
+  // Check prod mode flag
+  if (typeof window !== 'undefined' && (window as any).__WARMPAWZ_PROD_MODE__ === true) {
+    return true;
+  }
+  
   const cfg = getRuntimeConfig();
   
-  // 1. Check runtime config environment field
+  // Check runtime config environment field
   if (cfg.environment) {
     return cfg.environment === 'production';
   }
   
-  // 2. Check NEXT_PUBLIC_ENVIRONMENT env var
+  // Check NEXT_PUBLIC_ENVIRONMENT env var
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
     return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  }
-  
-  // 3. Check NODE_ENV
-  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
-    return process.env.NODE_ENV === 'production';
-  }
-  
-  // 4. Check hostname (production CloudFront domains)
-  if (typeof window !== 'undefined' && window.location) {
-    const hostname = window.location.hostname;
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
-        hostname.includes('warmpawz.com') ||
-        hostname.includes('admin.warmpawz.com') ||
-        hostname.includes('vendor.warmpawz.com') ||
-        hostname.includes('customer.warmpawz.com')) {
-      return true;
-    }
-    // Development indicators
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
-      return false;
-    }
   }
   
   // Default to production for safety
@@ -92,9 +90,27 @@ function getApiBaseUrl(): string {
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
+// ✅ FIX: NEVER allow UAT mode on production hostnames
 export function isUatMode(): boolean {
-  if (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true) {
-    return true;
+  if (typeof window !== 'undefined') {
+    // ✅ FIX: Check production hostname - NEVER return true for production
+    const hostname = window.location.hostname || '';
+    const isProductionHostname = hostname.includes('cloudfront.net') || 
+                                 hostname.includes('warmpawz.com');
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    
+    if (isProductionHostname && !isLocalhost) {
+      return false; // NEVER UAT mode on production hostnames
+    }
+    
+    // Check prod mode flag
+    if ((window as any).__WARMPAWZ_PROD_MODE__ === true) {
+      return false;
+    }
+    
+    if (getRuntimeConfig().uatMode === true) {
+      return true;
+    }
   }
   return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
 }

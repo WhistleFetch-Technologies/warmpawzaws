@@ -47,12 +47,51 @@ interface TrackingData {
 }
 
 interface TrackingPageClientProps {
-  bookingId: string;
+  bookingId?: string;
 }
 
-export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
+export function TrackingPageClient({ bookingId: bookingIdProp }: TrackingPageClientProps) {
   const router = useRouter();
-  
+
+  // ✅ CRITICAL FIX: Extract bookingId from URL path for static export compatibility
+  // In static export mode, params.bookingId may be 'placeholder' or empty
+  const bookingIdFromPath =
+    typeof window !== 'undefined'
+      ? window.location.pathname.match(/\/tracking\/([^/?]+)/)?.[1]
+      : null;
+  const bookingIdFromQuery =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('bookingId')
+      : null;
+  const normalizeBookingId = (value?: string | null) => (value && value !== 'placeholder' && value !== '_' ? value : '');
+  const bookingId =
+    normalizeBookingId(bookingIdProp) ||
+    normalizeBookingId(bookingIdFromPath) ||
+    normalizeBookingId(bookingIdFromQuery) ||
+    '';
+
+  // ✅ CRITICAL FIX: Handle phone query param for authentication (direct links from WhatsApp/SMS)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const phoneFromUrl = urlParams.get('phone');
+    
+    if (phoneFromUrl) {
+      // Store phone for API authentication if not already logged in
+      const existingPhone = localStorage.getItem('customerPhone');
+      if (!existingPhone) {
+        localStorage.setItem('customerPhone', phoneFromUrl);
+      }
+      
+      // Ensure auth token exists for API calls (UAT mode)
+      const existingToken = localStorage.getItem('authToken');
+      if (!existingToken) {
+        const uatToken = `uat-token-customer-${phoneFromUrl}-${Date.now()}`;
+        localStorage.setItem('authToken', uatToken);
+      }
+    }
+  }, []);
+
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -682,6 +721,25 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
     
     return `https://maps.googleapis.com/maps/api/staticmap?size=400x300&${markers}&${path}&key=${apiKey}`;
   };
+
+  // ✅ CRITICAL FIX: Show error if no bookingId could be resolved (static export edge case)
+  if (!bookingId) {
+    return (
+      <div className="min-h-screen min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100 p-4">
+        <div className="text-center p-6 bg-white rounded-2xl shadow-lg w-full max-w-sm mx-auto">
+          <div className="text-5xl mb-4">📍</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Invalid Tracking Link</h2>
+          <p className="text-gray-500 mb-4 text-sm">No booking ID found in the URL. Please use a valid tracking link.</p>
+          <button
+            onClick={() => router.push('/')}
+            className="w-full px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition font-medium"
+          >
+            Go to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

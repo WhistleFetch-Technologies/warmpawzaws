@@ -303,6 +303,28 @@ function roleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | un
     return true;
   }
 
+  // ✅ CRITICAL FIX: For tele and at_home service styles, be more permissive for at_center businesses
+  // If an at_center business (vendor_type = 'business' or 'center') has a published tele/at_home service
+  // (verified by SQL query), they should be discoverable even if role_config doesn't explicitly list it.
+  // This ensures centers/clinics offering tele/at_home services are discoverable in production mode.
+  // Note: We can't check vendor_type here (this function only receives roleConfig), but the SQL query
+  // already ensures only vendors with the service style are included, so it's safe to be permissive.
+  // The special case for at_center above shows this pattern is acceptable.
+  if (normalized === 'tele' || normalized === 'at_home') {
+    // Allow if role_config includes the style or any of its aliases
+    const teleAliases = ['tele', 'online', 'video_consultation', 'video', 'remote'];
+    const atHomeAliases = ['at_home', 'home', 'at_home_visit', 'home_visit'];
+    const relevantAliases = normalized === 'tele' ? teleAliases : atHomeAliases;
+    if (styles.some(s => relevantAliases.includes(s))) {
+      return true;
+    }
+    // If role_config has serviceStyles defined but doesn't include tele/at_home,
+    // still allow it (vendor has published service, so role_config might be outdated)
+    // This is safe because the SQL query already verified the vendor has a published service
+    console.log('[roleConfigAllowsStyle] Allowing %s despite role_config not explicitly listing it (vendor has published service)', normalized);
+    return true;
+  }
+
   const allows = styles.includes(normalized);
   console.log('[roleConfigAllowsStyle] serviceStyle=%s, normalized=%s, styles=%s, allows=%s', serviceStyle, normalized, JSON.stringify(styles), allows);
   return allows;
@@ -466,7 +488,10 @@ async function getNextAvailableSlot(
   serviceStyleFilter?: string[]
 ): Promise<{ date: string; time: string; display: string } | null> {
   try {
-    const now = new Date();
+    // ✅ CRITICAL FIX: Use IST time since all vendor times are in IST
+    const IST_OFFSET_MS_LOCAL = 5.5 * 60 * 60 * 1000;
+    const nowUTCLocal = new Date();
+    const now = new Date(nowUTCLocal.getTime() + IST_OFFSET_MS_LOCAL); // IST time
     const currentDayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const SLOT_DURATION = 30; // minutes - atomic slot size
@@ -483,7 +508,27 @@ async function getNextAvailableSlot(
     const params: any[] = [vendorId, phone || ''];
 
     if (serviceStyleFilter && serviceStyleFilter.length > 0) {
-      va2Query += ` AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))`;
+      // ✅ FIX: Dynamically check which columns exist to avoid "column does not exist" errors
+      // Dev/UAT may only have service_styles (array), while prod may have both service_style and service_styles
+      let styleConditions: string[] = [];
+      try {
+        const colCheck = await query(`
+          SELECT 
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_styles') as has_service_styles,
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_style') as has_service_style,
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_type') as has_service_type
+        `);
+        const cols = colCheck.rows[0] || {};
+        if (cols.has_service_styles) styleConditions.push(`COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]`);
+        if (cols.has_service_style) styleConditions.push(`service_style = ANY($3::text[])`);
+        if (cols.has_service_type) styleConditions.push(`service_type = ANY($3::text[])`);
+      } catch (_) {
+        // Fallback to just service_styles (safest, present in both dev and prod)
+        styleConditions = [`COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]`];
+      }
+      if (styleConditions.length > 0) {
+        va2Query += ` AND (${styleConditions.join(' OR ')})`;
+      }
       params.push(serviceStyleFilter);
     }
 
@@ -591,7 +636,8 @@ async function getNextAvailableSlot(
     }
 
     return null; // No available slot found in next 14 days
-  } catch (_) {
+  } catch (err: any) {
+    console.error('[getNextAvailableSlot] ERROR vendor=%s: %s', vendorId?.substring(0, 8), err?.message || err);
     return null;
   }
 }
@@ -1219,6 +1265,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               OR EXISTS (SELECT 1 FROM unnest($1::text[]) AS role_name WHERE LOWER(r.name) LIKE '%' || role_name || '%' OR LOWER(r.name) LIKE '%' || REPLACE(role_name, '_', '') || '%')
             )`
           : '';
+        // ✅ CRITICAL FIX: For tele/at_home services, when roleId is provided, ALWAYS include at_center businesses
+        // (vendor_type = 'business' or 'center') that have the service style, regardless of role matching.
+        // The EXISTS clause at the end ensures they have the service style.
+        // This ensures centers/clinics offering tele/at_home services are fetched in production mode.
+        // When roleId is NOT provided, soloOnlyClause already includes businesses/clinics, so no extra condition needed.
+        let roleAndVendorTypeCondition = '';
+        if (targetRolesLower.length > 0) {
+          // When roleId is provided: include vendors that match role OR are at_center businesses
+          const roleFilterPart = effectiveCategory === 'vet' 
+            ? `LOWER(COALESCE(r.name, '')) LIKE '%vet%'`
+            : roleRestrict.replace(' AND ', ''); // Remove leading ' AND ' to get just the condition
+          roleAndVendorTypeCondition = ` AND (${roleFilterPart} OR v.vendor_type IN ('business', 'center'))`;
+        } else {
+          // When roleId is NOT provided: soloOnlyClause already handles filtering, just apply category/role filter
+          roleAndVendorTypeCondition = effectiveCategory === 'vet' 
+            ? ` AND LOWER(COALESCE(r.name, '')) LIKE '%vet%'`
+            : roleRestrict;
+        }
         let vendorQuery = `
           SELECT DISTINCT 
             v.id,
@@ -1248,7 +1312,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND v.is_active = true
             AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
             ${soloOnlyClause}
-            ${effectiveCategory === 'vet' ? ` AND LOWER(COALESCE(r.name, '')) LIKE '%vet%'` : roleRestrict}
+            ${roleAndVendorTypeCondition}
             AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
@@ -2433,12 +2497,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           console.warn('[SLOTS] debug: VA2 lookup failed', e?.message);
         }
       }
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // ✅ CRITICAL FIX: All times in the system are IST (UTC+5:30).
+      // Lambda runs in UTC, so we must offset comparisons by +5:30 to correctly determine past slots.
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+      const nowUTC = new Date();
+      const nowIST = new Date(nowUTC.getTime() + IST_OFFSET_MS); // Current time in IST
+
+      // Use IST-based "today" for date comparison
+      const todayIST = new Date(nowIST);
+      todayIST.setHours(0, 0, 0, 0);
       const requestedDateOnly = new Date(requestedDate);
       requestedDateOnly.setHours(0, 0, 0, 0);
-      const isToday = requestedDateOnly.getTime() === today.getTime();
-      const now = new Date();
+      const isToday = requestedDateOnly.getTime() === todayIST.getTime();
+      const now = nowIST; // Use IST time for all "now" comparisons
+
+      console.log(`[SLOTS] Timezone: nowUTC=${nowUTC.toISOString()}, nowIST=${nowIST.toISOString()}, todayIST=${todayIST.toISOString()}, requestedDate=${requestedDateOnly.toISOString()}, isToday=${isToday}`);
 
       // Scheduling policy: min notice (past booking window) - used for both staff and va2 paths
       let minNoticeMinutes = 30;
@@ -2573,16 +2646,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
           // Generate 30-minute slots for each staff availability window
           const slots: any[] = [];
-          const now = new Date();
-          const requestedDate = new Date(date);
-
-          // ✅ FIX: Only check if slot is in the past if the date is TODAY
-          // For future dates, all slots should be available (unless booked)
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const requestedDateOnly = new Date(requestedDate);
-          requestedDateOnly.setHours(0, 0, 0, 0);
-          const isToday = requestedDateOnly.getTime() === today.getTime();
+          // ✅ CRITICAL FIX: Use IST time (already defined above) for past slot checks
+          // Staff slot times are in IST, so we must compare with IST current time
+          // nowIST, todayIST, isToday are already defined above with IST offset
 
           for (const staffSlot of staffSlotsResult.rows) {
             const [startHour, startMin] = staffSlot.start_time.split(':').map(Number);
@@ -2596,11 +2662,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
 
               // ✅ ENFORCE: Past booking window (scheduling policy min notice)
+              // ✅ CRITICAL FIX: Compare IST slot time with IST current time
+              // Slot times are in IST, nowIST and minBookingTime are also in IST
               let isPast = false;
               if (isToday) {
-                const slotDateTime = new Date(requestedDate);
-                slotDateTime.setHours(currentHour, currentMin, 0, 0);
-                isPast = slotDateTime < minBookingTime;
+                // Build IST slot time: use todayIST as base (which is IST midnight)
+                // Then add slot hours/minutes to get IST slot time
+                const slotMinutesFromMidnight = currentHour * 60 + currentMin;
+                const currentISTMinutesFromMidnight = nowIST.getHours() * 60 + nowIST.getMinutes();
+                // Slot is past if its IST time + buffer is before current IST time
+                isPast = (slotMinutesFromMidnight + minNoticeMinutes) <= currentISTMinutesFromMidnight;
               }
 
               // Check if booked for this staff
@@ -3269,15 +3340,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             }
 
             // 1) Past booking window - for today, include past slots but mark as unavailable
+            // ✅ CRITICAL FIX: Compare slot time (IST) with current IST time using minutes-from-midnight
+            // This avoids timezone conversion issues since all times are in IST
             let isPastSlot = false;
             if (isToday) {
-              const slotDateTime = new Date(requestedDate);
-              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
-              isPastSlot = slotDateTime < minBookingTime;
+              const currentISTMinutesFromMidnight = nowIST.getHours() * 60 + nowIST.getMinutes();
+              // Slot is past if its IST time + buffer is before current IST time
+              isPastSlot = (currentMinutes + minNoticeMinutes) <= currentISTMinutesFromMidnight;
               if (isPastSlot) {
-                console.log(`[SLOTS]     ${timeStr} is in the past (${slotDateTime.toISOString()} < ${minBookingTime.toISOString()}) - will include as unavailable`);
+                console.log(`[SLOTS]     ${timeStr} is in the past (slot=${currentMinutes}min + notice=${minNoticeMinutes}min <= currentIST=${currentISTMinutesFromMidnight}min) - will mark as unavailable`);
               } else {
-                console.log(`[SLOTS]     ✅ ${timeStr} is NOT in the past (${slotDateTime.toISOString()} >= ${minBookingTime.toISOString()})`);
+                console.log(`[SLOTS]     ✅ ${timeStr} is NOT in the past (slot=${currentMinutes}min + notice=${minNoticeMinutes}min > currentIST=${currentISTMinutesFromMidnight}min)`);
               }
             } else {
               console.log(`[SLOTS]     ✅ ${timeStr} is for future date (not today), skipping past check`);
@@ -3808,7 +3881,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   app.get("/customer/vendors/search", async (c) => {
     try {
       const roleId = c.req.query('roleId');
-      const searchQuery = c.req.query('query'); // Renamed to avoid shadowing the query function
+      const searchQuery = c.req.query('query');
       const location = c.req.query('location');
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
@@ -3945,6 +4018,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           let nextAvailable: { date: string; time: string; display: string } | null = null;
           try {
             const styleArray = serviceStyle === 'at_center' ? ['at_center', 'at_vendor'] : serviceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] : [serviceStyle].filter(Boolean);
+            
             if (styleArray.length > 0) {
               const today = new Date();
               const dayOfWeek = today.getDay();
@@ -5334,9 +5408,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 vs.service_name,
                 vs.price,
                 COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-                COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+                COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
                 vs.category as category_name
                FROM vendor_services vs
+               LEFT JOIN services s ON vs.service_id = s.id
                WHERE vs.vendor_id = $1 
                  AND vs.service_style = ANY($2::text[])
                  AND vs.service_style != 'at_home'
@@ -5729,9 +5804,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
               vs.category
              FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
              WHERE vs.vendor_id = $1 
                AND vs.service_style = $2
                AND vs.is_enabled = true
@@ -5925,9 +6001,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
               vs.category
              FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
              WHERE vs.vendor_id = $1 
                AND vs.service_style = ANY($2::text[])
                AND vs.is_enabled = true
@@ -6088,9 +6165,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
             vs.category
            FROM vendor_services vs
+           LEFT JOIN services s ON vs.service_id = s.id
            WHERE vs.vendor_id::text = $1 
              AND vs.service_style = ANY($2::text[])
              AND vs.is_enabled = true
@@ -6335,6 +6413,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         // Get services for this vendor
         // ✅ FIX: Include 'auto_published' status to match the EXISTS check above
+        // ✅ FIX: Added LEFT JOIN services for 3-level description fallback
         const servicesResult = await query(
           `SELECT 
             vs.id,
@@ -6342,9 +6421,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
             vs.category
            FROM vendor_services vs
+           LEFT JOIN services s ON vs.service_id = s.id
            WHERE vs.vendor_id = $1 
              AND vs.service_style = ANY($2::text[])
              AND vs.is_enabled = true

@@ -220,7 +220,11 @@ export default function NotificationsPage() {
                         <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
                           <span>To: {notif.target_audience}</span>
                           <span>•</span>
-                          <span>{notif.channels.join(', ')}</span>
+                          <span>
+                            {Array.isArray(notif.channels) 
+                              ? notif.channels.join(', ') 
+                              : (notif.channels || 'N/A')}
+                          </span>
                         </div>
                       </div>
                     </div>

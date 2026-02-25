@@ -291,22 +291,58 @@ export function UniversalBookingRouter({
       ) as any;
 
       if (response.success && response.slots) {
-        setTimeSlots(response.slots);
+        // ✅ CRITICAL FIX: Double-check past slots on client side using browser's local time
+        // This ensures past slots are never shown as available, even if backend timezone is wrong
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const isToday = date === todayStr;
+        
+        const filteredSlots = response.slots.map((slot: TimeSlot) => {
+          if (isToday && slot.available) {
+            const [slotHour, slotMin] = slot.time.split(':').map(Number);
+            const slotMinutesFromMidnight = slotHour * 60 + slotMin;
+            const currentMinutesFromMidnight = now.getHours() * 60 + now.getMinutes();
+            // Mark as unavailable if slot time + 30min buffer is past current time
+            if (slotMinutesFromMidnight + 30 <= currentMinutesFromMidnight) {
+              return { ...slot, available: false, isPast: true };
+            }
+          }
+          return slot;
+        });
+        setTimeSlots(filteredSlots);
       } else {
-        // Fallback to default slots if API fails
+        // Fallback to default slots if API fails - mark past slots as unavailable
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const isToday = date === todayStr;
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const defaultSlots: TimeSlot[] = [
           '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
           '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-        ].map(time => ({ time, available: true }));
+        ].map(time => {
+          const [h, m] = time.split(':').map(Number);
+          const slotMinutes = h * 60 + m;
+          const isPast = isToday && (slotMinutes + 30 <= currentMinutes);
+          return { time, available: !isPast };
+        });
         setTimeSlots(defaultSlots);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      // Fallback to default slots on error
+      // Fallback to default slots on error - mark past slots as unavailable
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const isToday = date === todayStr;
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const defaultSlots: TimeSlot[] = [
         '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
         '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-      ].map(time => ({ time, available: true }));
+      ].map(time => {
+        const [h, m] = time.split(':').map(Number);
+        const slotMinutes = h * 60 + m;
+        const isPast = isToday && (slotMinutes + 30 <= currentMinutes);
+        return { time, available: !isPast };
+      });
       setTimeSlots(defaultSlots);
     } finally {
       setLoadingSlots(false);
@@ -1045,7 +1081,13 @@ export function UniversalBookingRouter({
                   </div>
                 ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {timeSlots.map((slot) => (
+                    {timeSlots.map((slot) => {
+                      // Format time to 12-hour format for display
+                      const [h, m] = slot.time.split(':').map(Number);
+                      const ampm = h >= 12 ? 'PM' : 'AM';
+                      const hour12 = h % 12 || 12;
+                      const displayTime = `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
+                      return (
                       <button
                         key={slot.time}
                         onClick={() => slot.available && setSelectedTime(slot.time)}
@@ -1058,9 +1100,10 @@ export function UniversalBookingRouter({
                               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
                       >
-                        {slot.time}
+                        {displayTime}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

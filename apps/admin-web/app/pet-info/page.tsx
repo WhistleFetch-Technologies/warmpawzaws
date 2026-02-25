@@ -111,23 +111,22 @@ export default function PetIntelligenceSystem() {
 	const loadPetData = async () => {
 		setLoading(true);
 		try {
+			// ✅ FIX: API returns data directly without a 'success' field
 			// Load pet statistics
 			const statsRes = await apiClient.get<any>("/admin/pets/stats");
-			if (statsRes.success) {
-				setStats(statsRes.stats);
+			if (statsRes.stats || statsRes.totalPets !== undefined) {
+				setStats(statsRes.stats || statsRes);
 			}
 
 			// Load all pets (with higher limit to get all pets)
 			const petsRes = await apiClient.get<any>("/admin/pets/all?limit=1000");
-			if (petsRes.success) {
-				setPets(petsRes.pets || []);
-			}
+			const petsData = petsRes.pets || (Array.isArray(petsRes) ? petsRes : []);
+			setPets(petsData);
 
 			// Load breed insights
 			const insightsRes = await apiClient.get<any>("/admin/pets/breed-insights");
-			if (insightsRes.success) {
-				setBreedInsights(insightsRes.insights || []);
-			}
+			const insightsData = insightsRes.insights || (Array.isArray(insightsRes) ? insightsRes : []);
+			setBreedInsights(insightsData);
 		} catch (err) {
 			console.error("Error loading pet data:", err);
 		} finally {
@@ -152,17 +151,17 @@ export default function PetIntelligenceSystem() {
 
 	const loadHealthData = async () => {
 		try {
+			// ✅ FIX: API returns data directly without a 'success' field
 			// Load vaccination coverage
 			const coverageRes = await apiClient.get<any>("/admin/pets/vaccination-coverage");
-			if (coverageRes.success) {
-				setVaccinationCoverage(coverageRes.coverage || { rabies: 0, distemper: 0, parvovirus: 0 });
+			if (coverageRes.coverage) {
+				setVaccinationCoverage(coverageRes.coverage);
 			}
 
 			// Load health recommendations
 			const recommendationsRes = await apiClient.get<any>("/admin/pets/health-recommendations");
-			if (recommendationsRes.success) {
-				setHealthRecommendations(recommendationsRes.recommendations || []);
-			}
+			const recsData = recommendationsRes.recommendations || (Array.isArray(recommendationsRes) ? recommendationsRes : []);
+			setHealthRecommendations(recsData);
 		} catch (err) {
 			console.error("Error loading health data:", err);
 		}

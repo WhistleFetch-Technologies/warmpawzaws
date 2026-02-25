@@ -146,18 +146,32 @@ export function UniversalServicesByStyle({
           }
           
           // ✅ FIX: Normalize nextAvailableSlot to always be a string
+          // Handle all possible field names: nextAvailable (API), nextAvailableSlot, nextAvailability
           providerData = providerData.map((p: any) => {
-            if (p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
+            // Priority 1: nextAvailable (returned by by-style API)
+            if (p.nextAvailable && typeof p.nextAvailable === 'object') {
+              p.nextAvailableSlot = p.nextAvailable.display || p.nextAvailable.formattedDisplay || 
+                (p.nextAvailable.date && p.nextAvailable.time 
+                  ? `${p.nextAvailable.date} ${p.nextAvailable.time}` 
+                  : undefined);
+            } else if (typeof p.nextAvailable === 'string') {
+              p.nextAvailableSlot = p.nextAvailable;
+            }
+            // Priority 2: nextAvailableSlot (if already set as object, normalize to string)
+            if (!p.nextAvailableSlot && p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
               p.nextAvailableSlot = p.nextAvailableSlot.formattedDisplay || p.nextAvailableSlot.display || 
                 (p.nextAvailableSlot.date && p.nextAvailableSlot.time 
                   ? `${p.nextAvailableSlot.date} ${p.nextAvailableSlot.time}` 
                   : undefined);
             }
-            if (p.nextAvailability && typeof p.nextAvailability === 'object') {
+            // Priority 3: nextAvailability (legacy)
+            if (!p.nextAvailableSlot && p.nextAvailability && typeof p.nextAvailability === 'object') {
               p.nextAvailableSlot = p.nextAvailability.formattedDisplay || p.nextAvailability.display || 
                 (p.nextAvailability.date && p.nextAvailability.time 
                   ? `${p.nextAvailability.date} ${p.nextAvailability.time}` 
                   : undefined);
+            } else if (!p.nextAvailableSlot && typeof p.nextAvailability === 'string') {
+              p.nextAvailableSlot = p.nextAvailability;
             }
             return p;
           });
@@ -276,6 +290,16 @@ export function UniversalServicesByStyle({
               isVerified: provider.isVerified,
               isIndividualProvider: provider.isIndividualProvider || !provider.vendorId,
               nextAvailableSlot: (() => {
+                // Priority 1: nextAvailable (API returns this field name)
+                if (provider.nextAvailable && typeof provider.nextAvailable === 'object') {
+                  return provider.nextAvailable.display || provider.nextAvailable.formattedDisplay || 
+                    (provider.nextAvailable.date && provider.nextAvailable.time 
+                      ? `${provider.nextAvailable.date} ${provider.nextAvailable.time}` 
+                      : undefined);
+                }
+                if (typeof provider.nextAvailable === 'string') {
+                  return provider.nextAvailable;
+                }
                 // If nextAvailableSlot is already a string, use it
                 if (typeof provider.nextAvailableSlot === 'string') {
                   return provider.nextAvailableSlot;

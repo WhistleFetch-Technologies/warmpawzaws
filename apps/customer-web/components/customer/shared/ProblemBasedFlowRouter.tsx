@@ -464,19 +464,30 @@ export function ProblemBasedFlowRouter({
             }
             
             const isAvailable = providers.length > 0;
-            // Phase 2: earliest slot from first provider's nextAvailableSlot/nextAvailability
+            // Phase 2: earliest slot from first provider's nextAvailable/nextAvailableSlot/nextAvailability
             let earliestSlot: string | undefined;
             const first = providers[0];
             if (first) {
               let slot: string | undefined;
-              // Handle nextAvailableSlot
-              if (typeof first.nextAvailableSlot === 'string') {
-                slot = first.nextAvailableSlot;
-              } else if (first.nextAvailableSlot && typeof first.nextAvailableSlot === 'object') {
-                slot = first.nextAvailableSlot.formattedDisplay || first.nextAvailableSlot.display || 
-                  (first.nextAvailableSlot.date && first.nextAvailableSlot.time 
-                    ? `${first.nextAvailableSlot.date} ${first.nextAvailableSlot.time}` 
+              // Priority 1: nextAvailable (API returns this field name)
+              if (first.nextAvailable && typeof first.nextAvailable === 'object') {
+                slot = first.nextAvailable.display || first.nextAvailable.formattedDisplay || 
+                  (first.nextAvailable.date && first.nextAvailable.time 
+                    ? `${first.nextAvailable.date} ${first.nextAvailable.time}` 
                     : undefined);
+              } else if (typeof first.nextAvailable === 'string') {
+                slot = first.nextAvailable;
+              }
+              // Fallback: Handle nextAvailableSlot
+              if (!slot) {
+                if (typeof first.nextAvailableSlot === 'string') {
+                  slot = first.nextAvailableSlot;
+                } else if (first.nextAvailableSlot && typeof first.nextAvailableSlot === 'object') {
+                  slot = first.nextAvailableSlot.formattedDisplay || first.nextAvailableSlot.display || 
+                    (first.nextAvailableSlot.date && first.nextAvailableSlot.time 
+                      ? `${first.nextAvailableSlot.date} ${first.nextAvailableSlot.time}` 
+                      : undefined);
+                }
               }
               // Fallback to nextAvailability
               if (!slot) {

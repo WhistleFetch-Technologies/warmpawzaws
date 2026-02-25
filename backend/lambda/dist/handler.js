@@ -107822,12 +107822,19 @@ async function upsert(table, data, conflictColumn = "id") {
 async function withTransaction(callback) {
   const client2 = await getClient();
   try {
+    try {
+      await client2.query("ROLLBACK");
+    } catch (_) {
+    }
     await client2.query("BEGIN");
     const result = await callback(client2);
     await client2.query("COMMIT");
     return result;
   } catch (error) {
-    await client2.query("ROLLBACK");
+    try {
+      await client2.query("ROLLBACK");
+    } catch (_) {
+    }
     throw error;
   } finally {
     client2.release();
@@ -135677,25 +135684,38 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         }
         const baseServiceId = service.service_id || serviceId;
         console.log(`[BOOKING] Checking if base service ${baseServiceId} exists in services table for foreign key constraint`);
-        const baseServices = await select("services", { id: baseServiceId });
+        const baseServicesResult = await client2.query(
+          `SELECT * FROM services WHERE id = $1::uuid`,
+          [baseServiceId]
+        );
+        const baseServices = baseServicesResult.rows;
         let finalServiceId;
         if (baseServices.length === 0) {
           console.warn(`[BOOKING] Base service ${baseServiceId} not found in services table. Creating service entry for custom service.`);
           try {
-            await insert("services", {
-              id: baseServiceId,
-              name: service.service_name || service.name || "Custom Service",
-              description: service.custom_description || service.description || "",
-              category: service.category || "custom",
-              price: service.price || service.custom_price || 0,
-              duration_minutes: service.duration_minutes || service.custom_duration || 30,
-              vendor_id: vendorId,
-              is_active: true,
-              created_at: (/* @__PURE__ */ new Date()).toISOString(),
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
+            await client2.query("SAVEPOINT sp_create_service");
+            await client2.query(
+              `INSERT INTO services (id, name, description, category, price, duration_minutes, vendor_id, is_active, created_at, updated_at)
+               VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10)
+               ON CONFLICT (id) DO NOTHING`,
+              [
+                baseServiceId,
+                service.service_name || service.name || "Custom Service",
+                service.custom_description || service.description || "",
+                service.category || "custom",
+                service.price || service.custom_price || 0,
+                service.duration_minutes || service.custom_duration || 30,
+                vendorId,
+                true,
+                (/* @__PURE__ */ new Date()).toISOString(),
+                (/* @__PURE__ */ new Date()).toISOString()
+              ]
+            );
+            await client2.query("RELEASE SAVEPOINT sp_create_service");
             console.log(`[BOOKING] Created service entry in services table: ${baseServiceId}`);
           } catch (insertError) {
+            await client2.query("ROLLBACK TO SAVEPOINT sp_create_service").catch(() => {
+            });
             console.warn(`[BOOKING] Failed to create service entry (may already exist): ${insertError.message}`);
           }
           finalServiceId = baseServiceId;
@@ -135798,7 +135818,11 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         const addressIdFromRequest = body.addressId || body.address_id;
         if (addressIdFromRequest) {
           try {
-            const addresses = await select("customer_addresses", { id: addressIdFromRequest });
+            const addressesResult = await client2.query(
+              `SELECT * FROM customer_addresses WHERE id = $1::uuid`,
+              [addressIdFromRequest]
+            );
+            const addresses = addressesResult.rows;
             if (addresses.length > 0) {
               const addr = addresses[0];
               addressIdToStore = addressIdFromRequest;
@@ -135884,7 +135908,11 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         let fullAddressText = address;
         if (addressIdToStore) {
           try {
-            const addrRows = await select("customer_addresses", { id: addressIdToStore });
+            const addrRowsResult = await client2.query(
+              `SELECT * FROM customer_addresses WHERE id = $1::uuid`,
+              [addressIdToStore]
+            );
+            const addrRows = addrRowsResult.rows;
             if (addrRows.length > 0) {
               const addrRec = addrRows[0];
               const addrParts = [];
@@ -143435,12 +143463,14 @@ function registerOnboardingFormManagementEndpoints(app3) {
         }
         const roleConfig = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
         const roleSections = roleConfig?.sections || KYC_SECTIONS2;
-        const sections2 = getSectionsFromFieldsWithKYC2(fields, roleSections);
+        const activeFields2 = fields.filter((f) => f.isActive !== false);
+        const sections2 = getSectionsFromFieldsWithKYC2(activeFields2, roleSections);
         return c.json({
           success: true,
           roleId: actualRoleName,
           roleName: role.display_name || actualRoleName,
-          fields,
+          fields: activeFields2,
+          // ✅ FIX: Return only active fields
           sections: sections2,
           version: await getFormVersion(actualRoleName),
           kycFieldCount: kycFields.length
@@ -143448,18 +143478,111 @@ function registerOnboardingFormManagementEndpoints(app3) {
       } catch (kycError) {
         console.error("[GET /admin/onboarding-fields/:roleId] Error loading KYC fields:", kycError);
       }
-      const sections = getSectionsFromFields2(fields);
+      const activeFields = fields.filter((f) => f.isActive !== false);
+      const sections = getSectionsFromFields2(activeFields);
       return c.json({
         success: true,
         roleId: actualRoleName,
         roleName: role.display_name || actualRoleName,
-        fields,
+        fields: activeFields,
+        // ✅ FIX: Return only active fields
         sections,
         version: await getFormVersion(actualRoleName)
       });
     } catch (error) {
       console.error("Error fetching onboarding fields:", error);
       return c.json({ error: error.message || "Failed to fetch onboarding fields" }, 500);
+    }
+  });
+  app3.get("/admin/onboarding-fields/:roleId/:fieldId", async (c) => {
+    try {
+      const { roleId, fieldId } = c.req.param();
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: "Role not found", requestedRole: roleId }, 404);
+      }
+      const actualRoleName = role.name;
+      const forms = await select("onboarding_forms", { role_id: actualRoleName });
+      if (forms.length === 0) {
+        return c.json({ error: "Form not found for this role" }, 404);
+      }
+      let dbFields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
+      let field = dbFields.find(
+        (f) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId
+      );
+      if (!field) {
+        try {
+          const { getKYCFieldsForRole: getKYCFieldsForRole2, ROLE_KYC_CONFIGS: ROLE_KYC_CONFIGS2 } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+          const roleConfigCheck = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
+          const isBusinessRole = roleConfigCheck?.vendorTypes?.includes("business") || actualRoleName.includes("clinic") || actualRoleName.includes("business") || actualRoleName === "vet_clinic" || actualRoleName === "veterinary_clinic";
+          let kycFields = [];
+          if (isBusinessRole) {
+            kycFields = getKYCFieldsForRole2(actualRoleName, "business");
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName);
+            }
+          } else {
+            kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName, "business");
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName);
+            }
+          }
+          const kycField = kycFields.find(
+            (f) => f.id === fieldId || f.fieldName === fieldId
+          );
+          if (kycField) {
+            const kycFormField = {
+              id: kycField.id,
+              fieldName: kycField.fieldName,
+              name: kycField.fieldName,
+              label: kycField.label,
+              type: kycField.type,
+              section: kycField.section,
+              isMandatory: kycField.isMandatory,
+              required: kycField.required,
+              requiresVerification: kycField.requiresVerification || false,
+              verificationEndpoint: kycField.verificationEndpoint || null,
+              placeholder: kycField.placeholder || "",
+              helpText: kycField.helpText || "",
+              options: kycField.options || [],
+              validation: kycField.validation || {},
+              displayOrder: kycField.displayOrder,
+              order: kycField.displayOrder,
+              isActive: true,
+              softBlock: kycField.softBlock || false,
+              declarationText: kycField.declarationText || null,
+              declarationType: kycField.declarationType || kycField.id
+            };
+            const storedOverride = dbFields.find(
+              (f) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId
+            );
+            field = storedOverride ? { ...kycFormField, ...storedOverride } : kycFormField;
+          }
+        } catch (kycError) {
+          console.error("[GET /admin/onboarding-fields/:roleId/:fieldId] Error loading KYC fields:", kycError);
+        }
+      }
+      if (!field) {
+        console.log(`[GET /admin/onboarding-fields/:roleId/:fieldId] Field "${fieldId}" not found in role "${actualRoleName}"`);
+        console.log(`[GET] Available DB field IDs:`, dbFields.map((f) => f.id || f.fieldName || f.name).join(", "));
+        return c.json({ error: "Field not found" }, 404);
+      }
+      return c.json({
+        success: true,
+        field,
+        roleId: actualRoleName,
+        roleName: role.display_name || actualRoleName,
+        isKycField: !dbFields.find((f) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId)
+      });
+    } catch (error) {
+      console.error("Error fetching onboarding field:", error);
+      return c.json({ error: error.message || "Failed to fetch field" }, 500);
     }
   });
   app3.post("/admin/onboarding-fields/:roleId", async (c) => {
@@ -143470,7 +143593,8 @@ function registerOnboardingFormManagementEndpoints(app3) {
       if (!role) {
         return c.json({ error: "Role not found" }, 404);
       }
-      const forms = await select("onboarding_forms", { role_id: roleId });
+      const actualRoleName = role.name;
+      const forms = await select("onboarding_forms", { role_id: actualRoleName });
       let existingFields = [];
       if (forms.length > 0) {
         existingFields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
@@ -143501,14 +143625,14 @@ function registerOnboardingFormManagementEndpoints(app3) {
       existingFields.push(newField);
       existingFields.sort((a, b) => a.displayOrder - b.displayOrder);
       if (forms.length > 0) {
-        await update("onboarding_forms", { role_id: roleId }, {
+        await update("onboarding_forms", { role_id: actualRoleName }, {
           fields: JSON.stringify(existingFields),
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         });
-        await incrementFormVersion(roleId);
+        await incrementFormVersion(actualRoleName);
       } else {
         await insert("onboarding_forms", {
-          role_id: roleId,
+          role_id: actualRoleName,
           fields: JSON.stringify(existingFields),
           status: "active",
           version: 1,
@@ -143605,27 +143729,144 @@ function registerOnboardingFormManagementEndpoints(app3) {
   app3.delete("/admin/onboarding-fields/:roleId/:fieldId", async (c) => {
     try {
       const { roleId, fieldId } = c.req.param();
-      const forms = await select("onboarding_forms", { role_id: roleId });
-      if (forms.length === 0) {
-        return c.json({ error: "Form not found for this role" }, 404);
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: "Role not found", requestedRole: roleId }, 404);
       }
-      let fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
-      const filteredFields = fields.filter((f) => f.id !== fieldId);
-      if (fields.length === filteredFields.length) {
+      const actualRoleName = role.name;
+      await query(`
+        CREATE TABLE IF NOT EXISTS onboarding_forms (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          role_id VARCHAR(255) UNIQUE NOT NULL,
+          fields JSONB NOT NULL,
+          sections JSONB,
+          status VARCHAR(50) DEFAULT 'active',
+          version INTEGER DEFAULT 1,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `).catch(() => {
+      });
+      let forms = await select("onboarding_forms", { role_id: actualRoleName });
+      let fields = [];
+      if (forms.length > 0) {
+        fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
+      }
+      const fieldIndex = fields.findIndex(
+        (f) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId
+      );
+      let isKycField = false;
+      let kycFieldBase = null;
+      if (fieldIndex < 0) {
+        try {
+          const { getKYCFieldsForRole: getKYCFieldsForRole2, ROLE_KYC_CONFIGS: ROLE_KYC_CONFIGS2 } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+          const roleConfigCheck = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
+          const isBusinessRole = roleConfigCheck?.vendorTypes?.includes("business") || actualRoleName.includes("clinic") || actualRoleName.includes("business") || actualRoleName === "vet_clinic" || actualRoleName === "veterinary_clinic";
+          let kycFields = [];
+          if (isBusinessRole) {
+            kycFields = getKYCFieldsForRole2(actualRoleName, "business");
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName);
+            }
+          } else {
+            kycFields = getKYCFieldsForRole2(actualRoleName, "solo");
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName, "business");
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole2(actualRoleName);
+            }
+          }
+          kycFieldBase = kycFields.find(
+            (f) => f.id === fieldId || f.fieldName === fieldId
+          );
+          if (kycFieldBase) {
+            isKycField = true;
+            console.log(`[DELETE] Field "${fieldId}" is a KYC field - creating stored override with isActive=false`);
+          }
+        } catch (kycError) {
+          console.error("[DELETE] Error checking KYC fields:", kycError);
+        }
+      }
+      if (fieldIndex < 0 && !isKycField) {
+        console.log(`[DELETE /admin/onboarding-fields/:roleId/:fieldId] Field "${fieldId}" not found in role "${actualRoleName}"`);
+        console.log(`[DELETE] Available field IDs:`, fields.map((f) => f.id || f.fieldName || f.name).join(", "));
         return c.json({ error: "Field not found" }, 404);
       }
-      filteredFields.forEach((f, idx) => {
-        f.displayOrder = idx;
-        f.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      });
-      await update("onboarding_forms", { role_id: roleId }, {
-        fields: JSON.stringify(filteredFields),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      await incrementFormVersion(roleId);
+      let deletedField;
+      if (isKycField) {
+        const storedOverride = {
+          id: fieldId,
+          fieldName: fieldId,
+          name: fieldId,
+          label: kycFieldBase.label,
+          type: kycFieldBase.type,
+          section: kycFieldBase.section,
+          isActive: false,
+          // ✅ KEY: Mark as inactive to hide it
+          isMandatory: kycFieldBase.isMandatory,
+          required: kycFieldBase.required,
+          requiresVerification: kycFieldBase.requiresVerification || false,
+          verificationEndpoint: kycFieldBase.verificationEndpoint || null,
+          placeholder: kycFieldBase.placeholder || "",
+          helpText: kycFieldBase.helpText || "",
+          options: kycFieldBase.options || [],
+          validation: kycFieldBase.validation || {},
+          displayOrder: kycFieldBase.displayOrder || 0,
+          softBlock: kycFieldBase.softBlock || false,
+          declarationText: kycFieldBase.declarationText || null,
+          declarationType: kycFieldBase.declarationType || fieldId,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString()
+          // Mark as deleted
+        };
+        const existingOverrideIndex = fields.findIndex(
+          (f) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId
+        );
+        if (existingOverrideIndex >= 0) {
+          fields[existingOverrideIndex] = storedOverride;
+          deletedField = storedOverride;
+        } else {
+          fields.push(storedOverride);
+          deletedField = storedOverride;
+        }
+      } else {
+        deletedField = fields[fieldIndex];
+        fields.splice(fieldIndex, 1);
+        fields.forEach((f, idx) => {
+          f.displayOrder = idx;
+          f.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        });
+      }
+      if (forms.length > 0) {
+        await update("onboarding_forms", { role_id: actualRoleName }, {
+          fields: JSON.stringify(fields),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      } else {
+        await insert("onboarding_forms", {
+          role_id: actualRoleName,
+          fields: JSON.stringify(fields),
+          status: "active",
+          version: 1,
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      await incrementFormVersion(actualRoleName);
+      console.log(`[DELETE /admin/onboarding-fields/:roleId/:fieldId] Successfully ${isKycField ? "deactivated (KYC field)" : "deleted"} field "${fieldId}" from role "${actualRoleName}"`);
       return c.json({
         success: true,
-        message: "Field deleted successfully"
+        message: isKycField ? "KYC field deactivated successfully (stored override created)" : "Field deleted successfully",
+        deletedField: {
+          id: deletedField.id,
+          fieldName: deletedField.fieldName || deletedField.name,
+          label: deletedField.label
+        },
+        isKycField
       });
     } catch (error) {
       console.error("Error deleting onboarding field:", error);
@@ -152876,6 +153117,16 @@ function roleConfigAllowsStyle(roleConfig, serviceStyle) {
     console.log("[roleConfigAllowsStyle] Allowing at_center despite role_config not explicitly listing it (vendor has published service)");
     return true;
   }
+  if (normalized === "tele" || normalized === "at_home") {
+    const teleAliases = ["tele", "online", "video_consultation", "video", "remote"];
+    const atHomeAliases = ["at_home", "home", "at_home_visit", "home_visit"];
+    const relevantAliases = normalized === "tele" ? teleAliases : atHomeAliases;
+    if (styles.some((s) => relevantAliases.includes(s))) {
+      return true;
+    }
+    console.log("[roleConfigAllowsStyle] Allowing %s despite role_config not explicitly listing it (vendor has published service)", normalized);
+    return true;
+  }
   const allows = styles.includes(normalized);
   console.log("[roleConfigAllowsStyle] serviceStyle=%s, normalized=%s, styles=%s, allows=%s", serviceStyle, normalized, JSON.stringify(styles), allows);
   return allows;
@@ -153026,7 +153277,10 @@ var CATEGORY_ROLE_NAMES = {
 async function resolveTargetRolesForDiscovery(category, roleId) {
   const discoverable = await getDiscoverableRoleNames();
   let rawCategory = category?.toLowerCase().trim() || (roleId ? getCategoryFromRole(roleId) : null);
-  if (rawCategory === "lab-diagnostics") rawCategory = "diagnostics";
+  if (rawCategory === "lab-diagnostics") {
+    rawCategory = "diagnostics";
+  }
+  ;
   const effectiveCategory = rawCategory && getCategoryFromRole(rawCategory) !== "other" ? getCategoryFromRole(rawCategory) : rawCategory;
   if (effectiveCategory) {
     const fromDb = discoverable.filter((role) => getCategoryFromRole(role) === effectiveCategory);
@@ -153055,7 +153309,9 @@ async function resolveCustomerIdFromPhoneForDiscovery(phone) {
 }
 async function getNextAvailableSlot(vendorId, phone, serviceStyleFilter) {
   try {
-    const now = /* @__PURE__ */ new Date();
+    const IST_OFFSET_MS_LOCAL = 5.5 * 60 * 60 * 1e3;
+    const nowUTCLocal = /* @__PURE__ */ new Date();
+    const now = new Date(nowUTCLocal.getTime() + IST_OFFSET_MS_LOCAL);
     const currentDayOfWeek = now.getDay();
     const currentHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const SLOT_DURATION = 30;
@@ -153069,7 +153325,24 @@ async function getNextAvailableSlot(vendorId, phone, serviceStyleFilter) {
     `;
     const params = [vendorId, phone || ""];
     if (serviceStyleFilter && serviceStyleFilter.length > 0) {
-      va2Query += ` AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))`;
+      let styleConditions = [];
+      try {
+        const colCheck = await query(`
+          SELECT 
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_styles') as has_service_styles,
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_style') as has_service_style,
+            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_type') as has_service_type
+        `);
+        const cols = colCheck.rows[0] || {};
+        if (cols.has_service_styles) styleConditions.push(`COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]`);
+        if (cols.has_service_style) styleConditions.push(`service_style = ANY($3::text[])`);
+        if (cols.has_service_type) styleConditions.push(`service_type = ANY($3::text[])`);
+      } catch (_) {
+        styleConditions = [`COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]`];
+      }
+      if (styleConditions.length > 0) {
+        va2Query += ` AND (${styleConditions.join(" OR ")})`;
+      }
       params.push(serviceStyleFilter);
     }
     va2Query += ` ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`;
@@ -153153,7 +153426,8 @@ async function getNextAvailableSlot(vendorId, phone, serviceStyleFilter) {
       }
     }
     return null;
-  } catch (_) {
+  } catch (err) {
+    console.error("[getNextAvailableSlot] ERROR vendor=%s: %s", vendorId?.substring(0, 8), err?.message || err);
     return null;
   }
 }
@@ -153621,12 +153895,6 @@ function registerServiceDiscoveryEndpoints(app3) {
         const ruleRadiusKm = typeof discoveryRules.discovery_radius_km === "number" ? discoveryRules.discovery_radius_km : 50;
         const ruleMaxResults = typeof discoveryRules.discovery_max_results === "number" ? discoveryRules.discovery_max_results : 50;
         const ruleSortDefault = typeof discoveryRules.discovery_sort_default === "string" ? discoveryRules.discovery_sort_default : "relevance";
-        const roleRestrictClause = targetRolesLower.length > 0 ? ` AND r.id IS NOT NULL AND (
-              LOWER(r.name) = ANY($1::text[]) 
-              OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[])
-              OR EXISTS (SELECT 1 FROM unnest($1::text[]) AS role_name WHERE LOWER(r.name) LIKE '%' || role_name || '%' OR LOWER(r.name) LIKE '%' || REPLACE(role_name, '_', '') || '%')
-            )` : "";
-        const soloCondition = targetRolesLower.length > 0 ? "" : ` AND (v.vendor_type = 'solo' OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%' OR LOWER(COALESCE(r.name, '')) LIKE '%solo%')`;
         const acceptableServiceStyles = acceptableStylesForService(serviceStyle);
         console.log("[discover-services] at_home/tele: acceptableServiceStyles=", JSON.stringify(acceptableServiceStyles), "for serviceStyle=", serviceStyle);
         const acceptableStylesSql = acceptableServiceStyles.map((s) => `'${s.replace(/'/g, "''")}'`).join(", ");
@@ -153647,6 +153915,13 @@ function registerServiceDiscoveryEndpoints(app3) {
               OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[])
               OR EXISTS (SELECT 1 FROM unnest($1::text[]) AS role_name WHERE LOWER(r.name) LIKE '%' || role_name || '%' OR LOWER(r.name) LIKE '%' || REPLACE(role_name, '_', '') || '%')
             )` : "";
+        let roleAndVendorTypeCondition = "";
+        if (targetRolesLower.length > 0) {
+          const roleFilterPart = effectiveCategory === "vet" ? `LOWER(COALESCE(r.name, '')) LIKE '%vet%'` : roleRestrict.replace(" AND ", "");
+          roleAndVendorTypeCondition = ` AND (${roleFilterPart} OR v.vendor_type IN ('business', 'center'))`;
+        } else {
+          roleAndVendorTypeCondition = effectiveCategory === "vet" ? ` AND LOWER(COALESCE(r.name, '')) LIKE '%vet%'` : roleRestrict;
+        }
         let vendorQuery2 = `
           SELECT DISTINCT 
             v.id,
@@ -153676,7 +153951,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             AND v.is_active = true
             AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
             ${soloOnlyClause}
-            ${effectiveCategory === "vet" ? ` AND LOWER(COALESCE(r.name, '')) LIKE '%vet%'` : roleRestrict}
+            ${roleAndVendorTypeCondition}
             AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
@@ -154674,12 +154949,16 @@ function registerServiceDiscoveryEndpoints(app3) {
           console.warn("[SLOTS] debug: VA2 lookup failed", e?.message);
         }
       }
-      const today = /* @__PURE__ */ new Date();
-      today.setHours(0, 0, 0, 0);
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1e3;
+      const nowUTC = /* @__PURE__ */ new Date();
+      const nowIST = new Date(nowUTC.getTime() + IST_OFFSET_MS);
+      const todayIST = new Date(nowIST);
+      todayIST.setHours(0, 0, 0, 0);
       const requestedDateOnly = new Date(requestedDate);
       requestedDateOnly.setHours(0, 0, 0, 0);
-      const isToday = requestedDateOnly.getTime() === today.getTime();
-      const now = /* @__PURE__ */ new Date();
+      const isToday = requestedDateOnly.getTime() === todayIST.getTime();
+      const now = nowIST;
+      console.log(`[SLOTS] Timezone: nowUTC=${nowUTC.toISOString()}, nowIST=${nowIST.toISOString()}, todayIST=${todayIST.toISOString()}, requestedDate=${requestedDateOnly.toISOString()}, isToday=${isToday}`);
       let minNoticeMinutes = 30;
       try {
         const policies = await query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
@@ -154789,13 +155068,6 @@ function registerServiceDiscoveryEndpoints(app3) {
             bookedByStaff[sid].add(time);
           }
           const slots = [];
-          const now2 = /* @__PURE__ */ new Date();
-          const requestedDate2 = new Date(date);
-          const today2 = /* @__PURE__ */ new Date();
-          today2.setHours(0, 0, 0, 0);
-          const requestedDateOnly2 = new Date(requestedDate2);
-          requestedDateOnly2.setHours(0, 0, 0, 0);
-          const isToday2 = requestedDateOnly2.getTime() === today2.getTime();
           for (const staffSlot of staffSlotsResult.rows) {
             const [startHour, startMin] = staffSlot.start_time.split(":").map(Number);
             const [endHour, endMin] = staffSlot.end_time.split(":").map(Number);
@@ -154805,10 +155077,10 @@ function registerServiceDiscoveryEndpoints(app3) {
             while (currentHour < endHour || currentHour === endHour && currentMin < endMin) {
               const timeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMin).padStart(2, "0")}`;
               let isPast = false;
-              if (isToday2) {
-                const slotDateTime = new Date(requestedDate2);
-                slotDateTime.setHours(currentHour, currentMin, 0, 0);
-                isPast = slotDateTime < minBookingTime;
+              if (isToday) {
+                const slotMinutesFromMidnight = currentHour * 60 + currentMin;
+                const currentISTMinutesFromMidnight = nowIST.getHours() * 60 + nowIST.getMinutes();
+                isPast = slotMinutesFromMidnight + minNoticeMinutes <= currentISTMinutesFromMidnight;
               }
               const isBooked = staffBookedTimes.has(timeStr);
               slots.push({
@@ -155385,13 +155657,12 @@ function registerServiceDiscoveryEndpoints(app3) {
             }
             let isPastSlot = false;
             if (isToday) {
-              const slotDateTime = new Date(requestedDate);
-              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
-              isPastSlot = slotDateTime < minBookingTime;
+              const currentISTMinutesFromMidnight = nowIST.getHours() * 60 + nowIST.getMinutes();
+              isPastSlot = currentMinutes + minNoticeMinutes <= currentISTMinutesFromMidnight;
               if (isPastSlot) {
-                console.log(`[SLOTS]     ${timeStr} is in the past (${slotDateTime.toISOString()} < ${minBookingTime.toISOString()}) - will include as unavailable`);
+                console.log(`[SLOTS]     ${timeStr} is in the past (slot=${currentMinutes}min + notice=${minNoticeMinutes}min <= currentIST=${currentISTMinutesFromMidnight}min) - will mark as unavailable`);
               } else {
-                console.log(`[SLOTS]     \u2705 ${timeStr} is NOT in the past (${slotDateTime.toISOString()} >= ${minBookingTime.toISOString()})`);
+                console.log(`[SLOTS]     \u2705 ${timeStr} is NOT in the past (slot=${currentMinutes}min + notice=${minNoticeMinutes}min > currentIST=${currentISTMinutesFromMidnight}min)`);
               }
             } else {
               console.log(`[SLOTS]     \u2705 ${timeStr} is for future date (not today), skipping past check`);
@@ -157070,9 +157341,10 @@ function registerServiceDiscoveryEndpoints(app3) {
                 vs.service_name,
                 vs.price,
                 COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
-                COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+                COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
                 vs.category as category_name
                FROM vendor_services vs
+               LEFT JOIN services s ON vs.service_id = s.id
                WHERE vs.vendor_id = $1 
                  AND vs.service_style = ANY($2::text[])
                  AND vs.service_style != 'at_home'
@@ -157403,9 +157675,10 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
               vs.category
              FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
              WHERE vs.vendor_id = $1 
                AND vs.service_style = $2
                AND vs.is_enabled = true
@@ -157568,9 +157841,10 @@ function registerServiceDiscoveryEndpoints(app3) {
               vs.price,
               COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
               vs.service_name,
-              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+              COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
               vs.category
              FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
              WHERE vs.vendor_id = $1 
                AND vs.service_style = ANY($2::text[])
                AND vs.is_enabled = true
@@ -157707,9 +157981,10 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
             vs.category
            FROM vendor_services vs
+           LEFT JOIN services s ON vs.service_id = s.id
            WHERE vs.vendor_id::text = $1 
              AND vs.service_style = ANY($2::text[])
              AND vs.is_enabled = true
@@ -157915,9 +158190,10 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.price,
             COALESCE(vs.custom_duration, vs.duration_minutes) as duration,
             vs.service_name,
-            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1)) as description,
+            COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), s.description) as description,
             vs.category
            FROM vendor_services vs
+           LEFT JOIN services s ON vs.service_id = s.id
            WHERE vs.vendor_id = $1 
              AND vs.service_style = ANY($2::text[])
              AND vs.is_enabled = true
@@ -174749,11 +175025,34 @@ function registerChatEndpoints(app3) {
          ORDER BY created_at ASC`,
         [bookingId2]
       ).catch(() => ({ rows: [] }));
+      const enrichedMessages = await Promise.all(
+        (messages.rows || []).map(async (msg) => {
+          if (msg.file_id && (msg.message_type === "file" || msg.message_type === "image" || msg.message_type === "video")) {
+            try {
+              const { S3Client: S3Client7, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+              const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+              const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+              const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
+              const signedUrl = await getSignedUrl4(
+                s3Client6,
+                new GetObjectCommand5({ Bucket: BUCKET_NAME3, Key: msg.file_id }),
+                { expiresIn: 604800 }
+                // 7 days
+              );
+              return { ...msg, file_url: signedUrl };
+            } catch (err) {
+              console.warn(`[CHAT] Failed to generate presigned URL for file_id=${msg.file_id}: ${err?.message}`);
+              return msg;
+            }
+          }
+          return msg;
+        })
+      );
       const customer = booking.customer_id ? await select("customers", { id: booking.customer_id }) : [];
       const vendor = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
       return c.json({
         success: true,
-        messages: messages.rows || [],
+        messages: enrichedMessages,
         chatAvailable: isChatAvailable,
         // ✅ CRITICAL FIX: Include chat availability
         booking: {
@@ -200383,23 +200682,34 @@ function registerAdminAdvancedEndpoints(app3) {
   app3.get("/admin/notifications", async (c) => {
     try {
       const notifications = await query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50").catch(() => ({ rows: [] }));
-      const safeNotifications = (notifications.rows || []).map((n) => ({
-        id: String(n.id || ""),
-        title: String(n.title || ""),
-        message: String(n.message || ""),
-        type: String(n.type || "info"),
-        target_audience: String(n.target_audience || "all"),
-        target_regions: n.target_regions || [],
-        target_user_ids: n.target_user_ids || [],
-        channels: n.channels || [],
-        scheduled_at: n.scheduled_at ? String(n.scheduled_at) : void 0,
-        sent_at: n.sent_at ? String(n.sent_at) : void 0,
-        status: String(n.status || "draft"),
-        sent_count: parseInt(n.sent_count || "0", 10),
-        delivered_count: parseInt(n.delivered_count || "0", 10),
-        opened_count: parseInt(n.opened_count || "0", 10),
-        created_at: String(n.created_at || "")
-      }));
+      const safeNotifications = (notifications.rows || []).map((n) => {
+        let channels = [];
+        if (n.channels) {
+          if (Array.isArray(n.channels)) {
+            channels = n.channels;
+          } else if (typeof n.channels === "string") {
+            const cleaned = n.channels.replace(/[{}"]/g, "");
+            channels = cleaned ? cleaned.split(",").map((c2) => c2.trim()).filter(Boolean) : [];
+          }
+        }
+        return {
+          id: String(n.id || ""),
+          title: String(n.title || ""),
+          message: String(n.message || ""),
+          type: String(n.type || "info"),
+          target_audience: String(n.target_audience || "all"),
+          target_regions: Array.isArray(n.target_regions) ? n.target_regions : n.target_regions ? [n.target_regions] : [],
+          target_user_ids: Array.isArray(n.target_user_ids) ? n.target_user_ids : n.target_user_ids ? [n.target_user_ids] : [],
+          channels,
+          scheduled_at: n.scheduled_at ? String(n.scheduled_at) : void 0,
+          sent_at: n.sent_at ? String(n.sent_at) : void 0,
+          status: String(n.status || "draft"),
+          sent_count: parseInt(n.sent_count || "0", 10),
+          delivered_count: parseInt(n.delivered_count || "0", 10),
+          opened_count: parseInt(n.opened_count || "0", 10),
+          created_at: String(n.created_at || "")
+        };
+      });
       return c.json({ success: true, notifications: safeNotifications });
     } catch (error) {
       console.error("Error fetching notifications:", error);
@@ -241144,7 +241454,7 @@ This Vendor Onboarding Agreement ("Agreement") is entered into between Warmpawz 
     - Continued use of the platform after amendments constitutes acceptance.
 
 By proceeding with onboarding, you acknowledge that you have read, understood, and agree to be bound by all terms and conditions stated in this Agreement.`;
-var DEFAULT_TERMS_OF_SERVICE = `TERMS OF SERVICE
+var DEFAULT_VENDOR_TERMS_OF_SERVICE = `VENDOR TERMS OF SERVICE
 
 These Terms of Service ("Terms") govern your use of the Warmpawz Platform as a service provider.
 
@@ -241209,15 +241519,150 @@ These Terms of Service ("Terms") govern your use of the Warmpawz Platform as a s
     - Suspicious activities must be reported immediately.
 
 These Terms may be updated from time to time. Continued use of the platform constitutes acceptance of updated Terms.`;
+var DEFAULT_CUSTOMER_TERMS_OF_SERVICE = `CUSTOMER TERMS OF SERVICE
+
+These Terms of Service ("Terms") govern your use of the Warmpawz Platform as a customer.
+
+1. PLATFORM USE
+   - You must be at least 18 years old to use this platform.
+   - You are responsible for maintaining the confidentiality of your account credentials.
+   - You agree to provide accurate and complete information when creating an account.
+
+2. BOOKING AND PAYMENTS
+   - All bookings are subject to availability and vendor confirmation.
+   - Payment must be made through the platform's secure payment gateway.
+   - Refunds are processed according to the platform's refund policy.
+
+3. SERVICE DELIVERY
+   - Services will be provided by verified vendors on the platform.
+   - You must be present or available at the scheduled service time.
+   - OTP verification may be required before service commencement.
+
+4. CANCELLATION AND REFUNDS
+   - Cancellations must be made according to the platform's cancellation policy.
+   - Refund eligibility depends on the timing of cancellation and service type.
+   - Platform fees may be non-refundable.
+
+5. RATINGS AND REVIEWS
+   - You may rate and review services after completion.
+   - Reviews must be honest and based on actual experience.
+   - False or malicious reviews may result in account suspension.
+
+6. DISPUTE RESOLUTION
+   - Disputes should be raised through the platform's support system.
+   - The platform will mediate disputes between customers and vendors.
+   - Platform decisions are final and binding.
+
+7. LIABILITY
+   - The platform acts as an intermediary between customers and vendors.
+   - The platform is not liable for services provided by vendors.
+   - Vendors are responsible for their own insurance and liability coverage.
+
+8. INTELLECTUAL PROPERTY
+   - All platform content, logos, and branding are proprietary.
+   - You may not copy, modify, or distribute platform content without permission.
+
+9. DATA PROTECTION
+   - Your personal data is protected according to our Privacy Policy.
+   - You have the right to access, modify, or delete your personal data.
+   - Data is used only for platform operations and service delivery.
+
+10. ACCOUNT TERMINATION
+    - The platform reserves the right to suspend or terminate accounts for violations.
+    - You may close your account at any time through account settings.
+    - Outstanding obligations must be fulfilled before account closure.
+
+These Terms may be updated from time to time. Continued use of the platform constitutes acceptance of updated Terms.`;
+var DEFAULT_PRIVACY_POLICY = `PRIVACY POLICY
+
+This Privacy Policy describes how Warmpawz Platform ("we", "our", or "Platform") collects, uses, and protects your personal information.
+
+1. INFORMATION WE COLLECT
+   - Personal information: name, email, phone number, address
+   - Payment information: payment methods, billing details (processed securely)
+   - Service information: booking history, preferences, pet information
+   - Device information: IP address, device type, browser information
+   - Location data: for service delivery and matching with nearby vendors
+
+2. HOW WE USE YOUR INFORMATION
+   - To provide and improve our services
+   - To process bookings and payments
+   - To communicate with you about services and updates
+   - To match you with appropriate service providers
+   - To comply with legal obligations
+   - To prevent fraud and ensure platform security
+
+3. INFORMATION SHARING
+   - We share necessary information with vendors to complete bookings
+   - We may share data with payment processors for transaction processing
+   - We do not sell your personal information to third parties
+   - We may share data if required by law or to protect platform rights
+
+4. DATA SECURITY
+   - We use industry-standard security measures to protect your data
+   - Payment information is encrypted and processed securely
+   - Access to personal data is restricted to authorized personnel only
+   - Regular security audits and updates are performed
+
+5. DATA RETENTION
+   - We retain your data as long as your account is active
+   - Transaction data is retained as required by law
+   - You may request deletion of your data at any time
+   - Some data may be retained for legal or business purposes
+
+6. YOUR RIGHTS
+   - Right to access your personal data
+   - Right to correct inaccurate data
+   - Right to delete your data (subject to legal requirements)
+   - Right to object to data processing
+   - Right to data portability
+
+7. COOKIES AND TRACKING
+   - We use cookies to improve user experience
+   - Cookies help remember your preferences and login status
+   - You can control cookie settings through your browser
+   - Some features may not work if cookies are disabled
+
+8. THIRD-PARTY SERVICES
+   - We may use third-party services for analytics and payment processing
+   - These services have their own privacy policies
+   - We are not responsible for third-party privacy practices
+
+9. CHILDREN'S PRIVACY
+   - Our platform is not intended for users under 18 years of age
+   - We do not knowingly collect data from children
+   - If we discover data from children, we will delete it immediately
+
+10. CHANGES TO THIS POLICY
+    - We may update this Privacy Policy from time to time
+    - Changes will be notified through the platform or email
+    - Continued use after changes constitutes acceptance
+
+11. CONTACT US
+    - For privacy concerns, contact us through the platform support system
+    - We will respond to privacy requests within 30 days
+
+By using our platform, you acknowledge that you have read and understood this Privacy Policy.`;
 var GetPlatformPoliciesHandler = class extends BaseHandler {
   async handle(context) {
     try {
       await this.ensureTableExists();
       const policiesResult = await query(`
-        SELECT 
+        SELECT DISTINCT ON (
+          CASE 
+            WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+            ELSE policy_type
+          END
+        )
           id,
-          policy_type,
-          title,
+          CASE 
+            WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+            ELSE policy_type
+          END as policy_type,
+          CASE 
+            WHEN policy_type = 'terms_of_service' THEN 'Vendor Terms of Service'
+            ELSE title
+          END as title,
           content,
           version,
           is_active,
@@ -241226,7 +241671,14 @@ var GetPlatformPoliciesHandler = class extends BaseHandler {
           updated_by
         FROM platform_policies
         WHERE is_active = true
-        ORDER BY policy_type
+        AND policy_type IN ('vendor_terms_of_service', 'customer_terms_of_service', 'privacy_policy', 'terms_of_service')
+        ORDER BY 
+          CASE 
+            WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+            ELSE policy_type
+          END,
+          version DESC,
+          updated_at DESC
       `);
       let policies = [];
       if (Array.isArray(policiesResult)) {
@@ -241251,24 +241703,53 @@ var GetPlatformPoliciesHandler = class extends BaseHandler {
         lastUpdatedAt: p.updatedAt || p.updated_at,
         lastUpdatedBy: p.updatedBy || p.updated_by || "System"
       }));
-      if (normalizedPolicies.length === 0) {
+      const policyMap = /* @__PURE__ */ new Map();
+      for (const policy of normalizedPolicies) {
+        if (policy.policyType === "vendor_onboarding_agreement") {
+          continue;
+        }
+        const existing = policyMap.get(policy.policyType);
+        if (!existing) {
+          policyMap.set(policy.policyType, policy);
+        } else {
+          const existingVersion = existing.version || 1;
+          const newVersion = policy.version || 1;
+          const existingDate = new Date(existing.lastUpdatedAt || 0).getTime();
+          const newDate = new Date(policy.lastUpdatedAt || 0).getTime();
+          if (newVersion > existingVersion || newVersion === existingVersion && newDate > existingDate) {
+            policyMap.set(policy.policyType, policy);
+          }
+        }
+      }
+      const deduplicatedPolicies = Array.from(policyMap.values());
+      if (deduplicatedPolicies.length === 0) {
         return this.success({
           policies: [
             {
-              id: "default_vendor_agreement",
-              policyType: "vendor_onboarding_agreement",
-              title: "Vendor Onboarding Agreement",
-              content: DEFAULT_VENDOR_ONBOARDING_AGREEMENT,
+              id: "default_vendor_terms",
+              policyType: "vendor_terms_of_service",
+              title: "Vendor Terms of Service",
+              content: DEFAULT_VENDOR_TERMS_OF_SERVICE,
               version: 1,
               isActive: true,
               lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString(),
               lastUpdatedBy: "System"
             },
             {
-              id: "default_terms",
-              policyType: "terms_of_service",
-              title: "Terms of Service",
-              content: DEFAULT_TERMS_OF_SERVICE,
+              id: "default_customer_terms",
+              policyType: "customer_terms_of_service",
+              title: "Customer Terms of Service",
+              content: DEFAULT_CUSTOMER_TERMS_OF_SERVICE,
+              version: 1,
+              isActive: true,
+              lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+              lastUpdatedBy: "System"
+            },
+            {
+              id: "default_privacy",
+              policyType: "privacy_policy",
+              title: "Privacy Policy",
+              content: DEFAULT_PRIVACY_POLICY,
               version: 1,
               isActive: true,
               lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -241278,7 +241759,7 @@ var GetPlatformPoliciesHandler = class extends BaseHandler {
           isDefault: true
         });
       }
-      return this.success({ policies: normalizedPolicies });
+      return this.success({ policies: deduplicatedPolicies });
     } catch (error) {
       console.error("Error fetching platform policies:", error);
       return this.error(`Failed to fetch policies: ${error.message}`, 500);
@@ -241307,38 +241788,269 @@ var GetPlatformPoliciesHandler = class extends BaseHandler {
 var SavePlatformPolicyHandler = class extends BaseHandler {
   async handle(context) {
     const body = this.parseBody(context.event);
-    const { policyType, title, content } = body;
+    let { policyType, title, content } = body;
     if (!policyType || !content) {
       return this.error("Policy type and content are required", 400);
     }
+    const allowedPolicyTypes = ["vendor_terms_of_service", "customer_terms_of_service", "privacy_policy"];
+    if (!allowedPolicyTypes.includes(policyType) && policyType !== "terms_of_service") {
+      return this.error(`Policy type '${policyType}' is not allowed. Allowed types: ${allowedPolicyTypes.join(", ")}`, 400);
+    }
     try {
-      const existingResult = await query(`
-        SELECT id, version FROM platform_policies 
-        WHERE policy_type = $1
-      `, [policyType]);
+      if (policyType === "terms_of_service") {
+        console.log("[PLATFORM-POLICIES] Migrating legacy terms_of_service to vendor_terms_of_service");
+        const legacyResult = await query(`
+          SELECT id, version, content, title FROM platform_policies 
+          WHERE policy_type = 'terms_of_service'
+        `);
+        const legacy = Array.isArray(legacyResult) ? legacyResult : legacyResult.rows || [];
+        if (legacy.length > 0) {
+          const existingVendorTermsResult = await query(`
+            SELECT id, version FROM platform_policies 
+            WHERE policy_type = 'vendor_terms_of_service' AND is_active = true
+            ORDER BY version DESC, updated_at DESC
+            LIMIT 1
+          `);
+          const existingVendorTerms = Array.isArray(existingVendorTermsResult) ? existingVendorTermsResult : existingVendorTermsResult.rows || [];
+          if (existingVendorTerms.length > 0) {
+            await query(`
+              UPDATE platform_policies 
+              SET is_active = false, updated_at = NOW()
+              WHERE policy_type = 'vendor_terms_of_service' AND id != $1 AND is_active = true
+            `, [existingVendorTerms[0].id]);
+            await query(`
+              UPDATE platform_policies 
+              SET is_active = false, updated_at = NOW()
+              WHERE policy_type = 'terms_of_service'
+            `);
+            const version4 = (existingVendorTerms[0].version || 1) + 1;
+            await query(`
+              UPDATE platform_policies 
+              SET 
+                title = COALESCE($1, 'Vendor Terms of Service'),
+                content = $2,
+                version = $3,
+                updated_at = NOW(),
+                updated_by = $4,
+                is_active = true
+              WHERE id = $5
+            `, [
+              title || "Vendor Terms of Service",
+              content,
+              version4,
+              "Admin",
+              existingVendorTerms[0].id
+            ]);
+            return this.success({
+              message: "Policy migrated and saved successfully",
+              policyId: existingVendorTerms[0].id,
+              policyType: "vendor_terms_of_service",
+              version: version4,
+              migrated: true
+            });
+          } else {
+            const legacyToKeep = legacy[0].id;
+            await query(`
+              UPDATE platform_policies 
+              SET is_active = false, updated_at = NOW()
+              WHERE policy_type = 'terms_of_service' AND id != $1
+            `, [legacyToKeep]);
+            await query(`
+              UPDATE platform_policies 
+              SET 
+                policy_type = 'vendor_terms_of_service',
+                title = COALESCE($1, 'Vendor Terms of Service'),
+                content = $2,
+                version = version + 1,
+                updated_at = NOW(),
+                updated_by = $3,
+                is_active = true
+              WHERE id = $4
+            `, [
+              title || "Vendor Terms of Service",
+              content,
+              "Admin",
+              legacyToKeep
+            ]);
+            return this.success({
+              message: "Policy migrated and saved successfully",
+              policyId: legacyToKeep,
+              policyType: "vendor_terms_of_service",
+              version: (legacy[0].version || 1) + 1,
+              migrated: true
+            });
+          }
+        } else {
+          policyType = "vendor_terms_of_service";
+        }
+      }
+      let existingResult;
+      if (policyType === "vendor_terms_of_service") {
+        existingResult = await query(`
+          SELECT DISTINCT ON (
+            CASE 
+              WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+              ELSE policy_type
+            END
+          )
+            id, 
+            policy_type as actual_policy_type,
+            version, 
+            updated_at,
+            content as current_content
+          FROM platform_policies 
+          WHERE is_active = true
+          AND (
+            policy_type = 'vendor_terms_of_service' 
+            OR policy_type = 'terms_of_service'
+          )
+          ORDER BY 
+            CASE 
+              WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+              ELSE policy_type
+            END,
+            version DESC,
+            updated_at DESC
+        `);
+      } else {
+        existingResult = await query(`
+          SELECT DISTINCT ON (policy_type)
+            id, 
+            policy_type as actual_policy_type,
+            version, 
+            updated_at,
+            content as current_content
+          FROM platform_policies 
+          WHERE policy_type = $1 
+          AND is_active = true
+          ORDER BY policy_type, version DESC, updated_at DESC
+        `, [policyType]);
+      }
       const existing = Array.isArray(existingResult) ? existingResult : existingResult.rows || [];
       let policyId;
       let version3;
       if (existing.length > 0) {
         policyId = existing[0].id;
-        version3 = (existing[0].version || 1) + 1;
-        await query(`
+        const actualPolicyType = existing[0].actual_policy_type || policyType;
+        const currentVersion = existing[0].version || 1;
+        version3 = currentVersion + 1;
+        console.log(`[PLATFORM-POLICIES] Updating policy ${policyType}, actual DB type: ${actualPolicyType}, id: ${policyId}, current version: ${currentVersion}, new version: ${version3}`);
+        if (policyType === "vendor_terms_of_service") {
+          await query(`
+            UPDATE platform_policies 
+            SET is_active = false, updated_at = NOW()
+            WHERE (
+              policy_type = 'vendor_terms_of_service' 
+              OR policy_type = 'terms_of_service'
+            ) AND id != $1
+          `, [policyId]);
+          if (actualPolicyType === "terms_of_service") {
+            const migrateResult = await query(`
+              UPDATE platform_policies 
+              SET 
+                policy_type = 'vendor_terms_of_service',
+                title = $1,
+                content = $2,
+                version = $3,
+                updated_at = NOW(),
+                updated_by = $4,
+                is_active = true
+              WHERE id = $5
+              RETURNING id, version, content, updated_at
+            `, [
+              title || "Vendor Terms of Service",
+              content,
+              version3,
+              "Admin",
+              policyId
+            ]);
+            const migrated = Array.isArray(migrateResult) ? migrateResult : migrateResult.rows || [];
+            if (migrated.length === 0) {
+              console.error(`[PLATFORM-POLICIES] Failed to migrate policy ${policyId}`);
+              return this.error("Failed to migrate policy", 500);
+            }
+            console.log(`[PLATFORM-POLICIES] Successfully migrated policy ${policyId} from terms_of_service to vendor_terms_of_service, version: ${migrated[0].version}`);
+            return this.success({
+              message: "Policy migrated and saved successfully",
+              policyId,
+              policyType: "vendor_terms_of_service",
+              version: version3,
+              migrated: true
+            });
+          }
+        } else {
+          await query(`
+            UPDATE platform_policies 
+            SET is_active = false, updated_at = NOW()
+            WHERE policy_type = $1 AND id != $2
+          `, [policyType, policyId]);
+        }
+        const updateResult = await query(`
           UPDATE platform_policies 
           SET 
             title = $1,
             content = $2,
             version = $3,
             updated_at = NOW(),
-            updated_by = $4
-          WHERE policy_type = $5
+            updated_by = $4,
+            is_active = true
+          WHERE id = $5
+          RETURNING id, version, content, updated_at
         `, [
           title || policyType.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
           content,
           version3,
           "Admin",
           // In real implementation, get from auth context
-          policyType
+          policyId
         ]);
+        const updated = Array.isArray(updateResult) ? updateResult : updateResult.rows || [];
+        if (updated.length === 0) {
+          console.error(`[PLATFORM-POLICIES] Failed to update policy ${policyId}`);
+          return this.error("Failed to update policy", 500);
+        }
+        console.log(`[PLATFORM-POLICIES] Successfully updated policy ${policyId}, new version: ${updated[0].version}, content length: ${updated[0].content?.length || 0}`);
+        let verifyResult;
+        if (policyType === "vendor_terms_of_service") {
+          verifyResult = await query(`
+            SELECT DISTINCT ON (
+              CASE 
+                WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+                ELSE policy_type
+              END
+            )
+              id, content, version, updated_at, policy_type
+            FROM platform_policies 
+            WHERE is_active = true
+            AND (
+              policy_type = 'vendor_terms_of_service' 
+              OR policy_type = 'terms_of_service'
+            )
+            ORDER BY 
+              CASE 
+                WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+                ELSE policy_type
+              END,
+              version DESC,
+              updated_at DESC
+          `);
+        } else {
+          verifyResult = await query(`
+            SELECT DISTINCT ON (policy_type)
+              id, content, version, updated_at, policy_type
+            FROM platform_policies 
+            WHERE policy_type = $1 AND is_active = true
+            ORDER BY policy_type, version DESC, updated_at DESC
+          `, [policyType]);
+        }
+        const verified = Array.isArray(verifyResult) ? verifyResult : verifyResult.rows || [];
+        if (verified.length > 0) {
+          const contentMatches = verified[0].content === content || verified[0].content?.trim() === content.trim();
+          console.log(`[PLATFORM-POLICIES] Verification: content matches=${contentMatches}, version=${verified[0].version}, id=${verified[0].id}`);
+          if (!contentMatches) {
+            console.error(`[PLATFORM-POLICIES] WARNING: Content mismatch! Expected length: ${content.length}, Got length: ${verified[0].content?.length || 0}`);
+          }
+        }
       } else {
         policyId = (0, import_crypto50.randomUUID)();
         version3 = 1;
@@ -241374,17 +242086,47 @@ var GetVendorPolicyHandler = class extends BaseHandler {
       let policies;
       if (policyType === "all") {
         policiesResult = await query(`
-          SELECT policy_type, title, content, version, updated_at
+          SELECT 
+            CASE 
+              WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+              ELSE policy_type
+            END as policy_type,
+            CASE 
+              WHEN policy_type = 'terms_of_service' THEN 'Vendor Terms of Service'
+              ELSE title
+            END as title,
+            content, 
+            version, 
+            updated_at
           FROM platform_policies
           WHERE is_active = true
-          AND policy_type IN ('vendor_onboarding_agreement', 'terms_of_service')
+          AND policy_type IN ('vendor_onboarding_agreement', 'vendor_terms_of_service', 'terms_of_service')
         `);
       } else {
+        let queryPolicyType = policyType;
+        if (policyType === "terms_of_service") {
+          queryPolicyType = "vendor_terms_of_service";
+        }
         policiesResult = await query(`
-          SELECT policy_type, title, content, version, updated_at
+          SELECT 
+            CASE 
+              WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
+              ELSE policy_type
+            END as policy_type,
+            CASE 
+              WHEN policy_type = 'terms_of_service' THEN 'Vendor Terms of Service'
+              ELSE title
+            END as title,
+            content, 
+            version, 
+            updated_at
           FROM platform_policies
-          WHERE is_active = true AND policy_type = $1
-        `, [policyType]);
+          WHERE is_active = true 
+          AND (
+            policy_type = $1 
+            OR (policy_type = 'terms_of_service' AND $1 = 'vendor_terms_of_service')
+          )
+        `, [queryPolicyType]);
       }
       policies = Array.isArray(policiesResult) ? policiesResult : policiesResult.rows || [];
       if (policies.length === 0) {
@@ -241397,11 +242139,29 @@ var GetVendorPolicyHandler = class extends BaseHandler {
             updated_at: /* @__PURE__ */ new Date()
           });
         }
-        if (policyType === "all" || policyType === "terms_of_service") {
+        if (policyType === "all" || policyType === "vendor_terms_of_service" || policyType === "terms_of_service") {
           policies.push({
-            policy_type: "terms_of_service",
-            title: "Terms of Service",
-            content: DEFAULT_TERMS_OF_SERVICE,
+            policy_type: policyType === "terms_of_service" ? "terms_of_service" : "vendor_terms_of_service",
+            title: "Vendor Terms of Service",
+            content: DEFAULT_VENDOR_TERMS_OF_SERVICE,
+            version: 1,
+            updated_at: /* @__PURE__ */ new Date()
+          });
+        }
+        if (policyType === "all" || policyType === "customer_terms_of_service") {
+          policies.push({
+            policy_type: "customer_terms_of_service",
+            title: "Customer Terms of Service",
+            content: DEFAULT_CUSTOMER_TERMS_OF_SERVICE,
+            version: 1,
+            updated_at: /* @__PURE__ */ new Date()
+          });
+        }
+        if (policyType === "all" || policyType === "privacy_policy") {
+          policies.push({
+            policy_type: "privacy_policy",
+            title: "Privacy Policy",
+            content: DEFAULT_PRIVACY_POLICY,
             version: 1,
             updated_at: /* @__PURE__ */ new Date()
           });
@@ -241428,9 +242188,21 @@ var GetVendorPolicyHandler = class extends BaseHandler {
             version: 1
           },
           {
-            policyType: "terms_of_service",
-            title: "Terms of Service",
-            content: DEFAULT_TERMS_OF_SERVICE,
+            policyType: "vendor_terms_of_service",
+            title: "Vendor Terms of Service",
+            content: DEFAULT_VENDOR_TERMS_OF_SERVICE,
+            version: 1
+          },
+          {
+            policyType: "customer_terms_of_service",
+            title: "Customer Terms of Service",
+            content: DEFAULT_CUSTOMER_TERMS_OF_SERVICE,
+            version: 1
+          },
+          {
+            policyType: "privacy_policy",
+            title: "Privacy Policy",
+            content: DEFAULT_PRIVACY_POLICY,
             version: 1
           }
         ],

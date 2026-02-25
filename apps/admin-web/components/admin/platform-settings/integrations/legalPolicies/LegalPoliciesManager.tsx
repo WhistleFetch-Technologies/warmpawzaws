@@ -71,7 +71,7 @@ This Vendor Onboarding Agreement ("Agreement") is entered into between Warmpawz 
 
 By proceeding with onboarding, you acknowledge that you have read, understood, and agree to be bound by all terms and conditions stated in this Agreement.`;
 
-const DEFAULT_TERMS_OF_SERVICE = `TERMS OF SERVICE
+const DEFAULT_VENDOR_TERMS_OF_SERVICE = `VENDOR TERMS OF SERVICE
 
 These Terms of Service ("Terms") govern your use of the Warmpawz Platform as a service provider.
 
@@ -137,12 +137,138 @@ These Terms of Service ("Terms") govern your use of the Warmpawz Platform as a s
 
 These Terms may be updated from time to time. Continued use of the platform constitutes acceptance of updated Terms.`;
 
+const DEFAULT_CUSTOMER_TERMS_OF_SERVICE = `CUSTOMER TERMS OF SERVICE
+
+These Terms of Service ("Terms") govern your use of the Warmpawz Platform as a customer.
+
+1. PLATFORM USE
+   - You must be at least 18 years old to use this platform.
+   - You are responsible for maintaining the confidentiality of your account credentials.
+   - You agree to provide accurate and complete information when creating an account.
+
+2. BOOKING AND PAYMENTS
+   - All bookings are subject to availability and vendor confirmation.
+   - Payment must be made through the platform's secure payment gateway.
+   - Refunds are processed according to the platform's refund policy.
+
+3. SERVICE DELIVERY
+   - Services will be provided by verified vendors on the platform.
+   - You must be present or available at the scheduled service time.
+   - OTP verification may be required before service commencement.
+
+4. CANCELLATION AND REFUNDS
+   - Cancellations must be made according to the platform's cancellation policy.
+   - Refund eligibility depends on the timing of cancellation and service type.
+   - Platform fees may be non-refundable.
+
+5. RATINGS AND REVIEWS
+   - You may rate and review services after completion.
+   - Reviews must be honest and based on actual experience.
+   - False or malicious reviews may result in account suspension.
+
+6. DISPUTE RESOLUTION
+   - Disputes should be raised through the platform's support system.
+   - The platform will mediate disputes between customers and vendors.
+   - Platform decisions are final and binding.
+
+7. LIABILITY
+   - The platform acts as an intermediary between customers and vendors.
+   - The platform is not liable for services provided by vendors.
+   - Vendors are responsible for their own insurance and liability coverage.
+
+8. INTELLECTUAL PROPERTY
+   - All platform content, logos, and branding are proprietary.
+   - You may not copy, modify, or distribute platform content without permission.
+
+9. DATA PROTECTION
+   - Your personal data is protected according to our Privacy Policy.
+   - You have the right to access, modify, or delete your personal data.
+   - Data is used only for platform operations and service delivery.
+
+10. ACCOUNT TERMINATION
+    - The platform reserves the right to suspend or terminate accounts for violations.
+    - You may close your account at any time through account settings.
+    - Outstanding obligations must be fulfilled before account closure.
+
+These Terms may be updated from time to time. Continued use of the platform constitutes acceptance of updated Terms.`;
+
+const DEFAULT_PRIVACY_POLICY = `PRIVACY POLICY
+
+This Privacy Policy describes how Warmpawz Platform ("we", "our", or "Platform") collects, uses, and protects your personal information.
+
+1. INFORMATION WE COLLECT
+   - Personal information: name, email, phone number, address
+   - Payment information: payment methods, billing details (processed securely)
+   - Service information: booking history, preferences, pet information
+   - Device information: IP address, device type, browser information
+   - Location data: for service delivery and matching with nearby vendors
+
+2. HOW WE USE YOUR INFORMATION
+   - To provide and improve our services
+   - To process bookings and payments
+   - To communicate with you about services and updates
+   - To match you with appropriate service providers
+   - To comply with legal obligations
+   - To prevent fraud and ensure platform security
+
+3. INFORMATION SHARING
+   - We share necessary information with vendors to complete bookings
+   - We may share data with payment processors for transaction processing
+   - We do not sell your personal information to third parties
+   - We may share data if required by law or to protect platform rights
+
+4. DATA SECURITY
+   - We use industry-standard security measures to protect your data
+   - Payment information is encrypted and processed securely
+   - Access to personal data is restricted to authorized personnel only
+   - Regular security audits and updates are performed
+
+5. DATA RETENTION
+   - We retain your data as long as your account is active
+   - Transaction data is retained as required by law
+   - You may request deletion of your data at any time
+   - Some data may be retained for legal or business purposes
+
+6. YOUR RIGHTS
+   - Right to access your personal data
+   - Right to correct inaccurate data
+   - Right to delete your data (subject to legal requirements)
+   - Right to object to data processing
+   - Right to data portability
+
+7. COOKIES AND TRACKING
+   - We use cookies to improve user experience
+   - Cookies help remember your preferences and login status
+   - You can control cookie settings through your browser
+   - Some features may not work if cookies are disabled
+
+8. THIRD-PARTY SERVICES
+   - We may use third-party services for analytics and payment processing
+   - These services have their own privacy policies
+   - We are not responsible for third-party privacy practices
+
+9. CHILDREN'S PRIVACY
+   - Our platform is not intended for users under 18 years of age
+   - We do not knowingly collect data from children
+   - If we discover data from children, we will delete it immediately
+
+10. CHANGES TO THIS POLICY
+    - We may update this Privacy Policy from time to time
+    - Changes will be notified through the platform or email
+    - Continued use after changes constitutes acceptance
+
+11. CONTACT US
+    - For privacy concerns, contact us through the platform support system
+    - We will respond to privacy requests within 30 days
+
+By using our platform, you acknowledge that you have read and understood this Privacy Policy.`;
+
 export function LegalPoliciesManager() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [policies, setPolicies] = useState<PolicyContent[]>([]);
   const [editedContent, setEditedContent] = useState<Record<string, string>>({});
-  const [activePolicy, setActivePolicy] = useState<string>('vendor_onboarding_agreement');
+  const [activePolicy, setActivePolicy] = useState<string>('vendor_terms_of_service');
   const [previewMode, setPreviewMode] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
@@ -155,11 +281,13 @@ export function LegalPoliciesManager() {
       setLoading(true);
       const response = await apiClient.get<any>('/admin/platform-policies');
       
-      if (response.success && response.policies) {
-        setPolicies(response.policies);
-        // Initialize edited content with current values
+      // ✅ FIX: API returns { policies: [...] } without a 'success' field
+      const policiesData = response.policies || response;
+      if (policiesData && Array.isArray(policiesData) && policiesData.length > 0) {
+        setPolicies(policiesData);
+        // Initialize edited content with current values from API
         const contentMap: Record<string, string> = {};
-        response.policies.forEach((p: PolicyContent) => {
+        policiesData.forEach((p: PolicyContent) => {
           contentMap[p.policyType] = p.content;
         });
         setEditedContent(contentMap);
@@ -189,10 +317,30 @@ export function LegalPoliciesManager() {
         lastUpdatedBy: 'System',
       },
       {
-        id: 'default_terms',
-        policyType: 'terms_of_service',
-        title: 'Terms of Service',
-        content: DEFAULT_TERMS_OF_SERVICE,
+        id: 'default_vendor_terms',
+        policyType: 'vendor_terms_of_service',
+        title: 'Vendor Terms of Service',
+        content: DEFAULT_VENDOR_TERMS_OF_SERVICE,
+        version: 1,
+        isActive: true,
+        lastUpdatedAt: new Date().toISOString(),
+        lastUpdatedBy: 'System',
+      },
+      {
+        id: 'default_customer_terms',
+        policyType: 'customer_terms_of_service',
+        title: 'Customer Terms of Service',
+        content: DEFAULT_CUSTOMER_TERMS_OF_SERVICE,
+        version: 1,
+        isActive: true,
+        lastUpdatedAt: new Date().toISOString(),
+        lastUpdatedBy: 'System',
+      },
+      {
+        id: 'default_privacy',
+        policyType: 'privacy_policy',
+        title: 'Privacy Policy',
+        content: DEFAULT_PRIVACY_POLICY,
         version: 1,
         isActive: true,
         lastUpdatedAt: new Date().toISOString(),
@@ -203,7 +351,9 @@ export function LegalPoliciesManager() {
     setPolicies(defaultPolicies);
     setEditedContent({
       vendor_onboarding_agreement: DEFAULT_VENDOR_ONBOARDING_AGREEMENT,
-      terms_of_service: DEFAULT_TERMS_OF_SERVICE,
+      vendor_terms_of_service: DEFAULT_VENDOR_TERMS_OF_SERVICE,
+      customer_terms_of_service: DEFAULT_CUSTOMER_TERMS_OF_SERVICE,
+      privacy_policy: DEFAULT_PRIVACY_POLICY,
     });
   };
 
@@ -218,12 +368,18 @@ export function LegalPoliciesManager() {
       setSaving(policyType);
       setSaveSuccess(null);
       
+      // Map policy types to titles
+      const policyTitles: Record<string, string> = {
+        'vendor_onboarding_agreement': 'Vendor Onboarding Agreement',
+        'vendor_terms_of_service': 'Vendor Terms of Service',
+        'customer_terms_of_service': 'Customer Terms of Service',
+        'privacy_policy': 'Privacy Policy',
+      };
+
       const response = await apiClient.post<any>('/admin/platform-policies', {
         policyType,
         content: content.trim(),
-        title: policyType === 'vendor_onboarding_agreement' 
-          ? 'Vendor Onboarding Agreement' 
-          : 'Terms of Service',
+        title: policyTitles[policyType] || policyType.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
       });
 
       // Check for success indicators: message with "success" or presence of policyId
@@ -253,9 +409,14 @@ export function LegalPoliciesManager() {
       return;
     }
 
-    const defaultContent = policyType === 'vendor_onboarding_agreement' 
-      ? DEFAULT_VENDOR_ONBOARDING_AGREEMENT 
-      : DEFAULT_TERMS_OF_SERVICE;
+    const defaultContents: Record<string, string> = {
+      'vendor_onboarding_agreement': DEFAULT_VENDOR_ONBOARDING_AGREEMENT,
+      'vendor_terms_of_service': DEFAULT_VENDOR_TERMS_OF_SERVICE,
+      'customer_terms_of_service': DEFAULT_CUSTOMER_TERMS_OF_SERVICE,
+      'privacy_policy': DEFAULT_PRIVACY_POLICY,
+    };
+
+    const defaultContent = defaultContents[policyType] || '';
 
     setEditedContent(prev => ({
       ...prev,
@@ -301,26 +462,36 @@ export function LegalPoliciesManager() {
         </div>
 
         {/* Policy Tabs */}
-        <div className="flex gap-2 mt-6">
+        <div className="flex gap-2 mt-6 flex-wrap">
           <button
-            onClick={() => setActivePolicy('vendor_onboarding_agreement')}
+            onClick={() => setActivePolicy('vendor_terms_of_service')}
             className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              activePolicy === 'vendor_onboarding_agreement'
+              activePolicy === 'vendor_terms_of_service'
                 ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-2 border-transparent'
             }`}
           >
-            Vendor Onboarding Agreement
+            Vendor Terms of Service
           </button>
           <button
-            onClick={() => setActivePolicy('terms_of_service')}
+            onClick={() => setActivePolicy('customer_terms_of_service')}
             className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              activePolicy === 'terms_of_service'
+              activePolicy === 'customer_terms_of_service'
                 ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-2 border-transparent'
             }`}
           >
-            Terms of Service
+            Customer Terms of Service
+          </button>
+          <button
+            onClick={() => setActivePolicy('privacy_policy')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              activePolicy === 'privacy_policy'
+                ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-2 border-transparent'
+            }`}
+          >
+            Privacy Policy
           </button>
         </div>
       </div>
@@ -331,8 +502,14 @@ export function LegalPoliciesManager() {
           <div>
             <h3 className="text-lg font-semibold text-gray-900">
               {activePolicy === 'vendor_onboarding_agreement' 
-                ? 'Vendor Onboarding Agreement' 
-                : 'Terms of Service'}
+                ? 'Vendor Onboarding Agreement'
+                : activePolicy === 'vendor_terms_of_service'
+                ? 'Vendor Terms of Service'
+                : activePolicy === 'customer_terms_of_service'
+                ? 'Customer Terms of Service'
+                : activePolicy === 'privacy_policy'
+                ? 'Privacy Policy'
+                : 'Policy'}
             </h3>
             {getCurrentPolicy() && (
               <p className="text-xs text-gray-500 mt-1">

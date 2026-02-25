@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Search, Bell, MessageSquare, User, Plus, RefreshCw, TrendingUp, 
   AlertTriangle, Shield, BarChart3, Calendar, IndianRupee, FileText, 
@@ -35,6 +36,7 @@ interface AdminVendorManagementProps {
 }
 
 export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps = {}) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'overview' | 'applications' | 'deactivation' | 'reverification' | 'compliance' | 'active-vendors' | 'insights'>('overview');
   const [stats, setStats] = useState<VendorStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,11 +135,19 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
                   <Plus className="w-4 h-4 mr-2" />
                   Add Vendor
                 </Button>
-                <button className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors relative">
+                <button 
+                  onClick={() => router.push('/notifications')}
+                  className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors relative"
+                  title="Notifications"
+                >
                   <Bell className="w-5 h-5 text-gray-600" />
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
                 </button>
-                <button className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors">
+                <button 
+                  onClick={() => router.push('/notifications')}
+                  className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors"
+                  title="Messages"
+                >
                   <MessageSquare className="w-5 h-5 text-gray-600" />
                 </button>
               </div>

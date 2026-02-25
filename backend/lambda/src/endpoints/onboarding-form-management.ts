@@ -1005,14 +1005,18 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
         // Use role's sections if available, otherwise use all KYC sections
         const roleSections = roleConfig?.sections || KYC_SECTIONS;
         
-        // Group fields by section using KYC-aware section mapping
-        const sections = getSectionsFromFieldsWithKYC(fields, roleSections);
+        // ✅ FIX: Filter out inactive fields (including KYC fields with stored override isActive=false)
+        // Admin UI should only show active fields
+        const activeFields = fields.filter((f: any) => f.isActive !== false);
+        
+        // Group fields by section using KYC-aware section mapping (only active fields)
+        const sections = getSectionsFromFieldsWithKYC(activeFields, roleSections);
         
         return c.json({
           success: true,
           roleId: actualRoleName,
           roleName: role.display_name || actualRoleName,
-          fields,
+          fields: activeFields, // ✅ FIX: Return only active fields
           sections,
           version: await getFormVersion(actualRoleName),
           kycFieldCount: kycFields.length,
@@ -1023,20 +1027,148 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       }
 
       // Fallback: If KYC import fails, return fields without KYC
+      // ✅ FIX: Filter out inactive fields
+      const activeFields = fields.filter((f: any) => f.isActive !== false);
       // Group fields by section (legacy)
-      const sections = getSectionsFromFields(fields);
+      const sections = getSectionsFromFields(activeFields);
 
       return c.json({
         success: true,
         roleId: actualRoleName,
         roleName: role.display_name || actualRoleName,
-        fields,
+        fields: activeFields, // ✅ FIX: Return only active fields
         sections,
         version: await getFormVersion(actualRoleName),
       });
     } catch (error: any) {
       console.error('Error fetching onboarding fields:', error);
       return c.json({ error: error.message || 'Failed to fetch onboarding fields' }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/onboarding-fields/:roleId/:fieldId
+   * Get a specific onboarding field by ID
+   * ✅ FIX: Also check KYC fields (same as GET all fields endpoint)
+   */
+  app.get('/admin/onboarding-fields/:roleId/:fieldId', async (c) => {
+    try {
+      const { roleId, fieldId } = c.req.param();
+
+      // ✅ FIX: Resolve role (same as PUT/DELETE) so alias roleId works
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: 'Role not found', requestedRole: roleId }, 404);
+      }
+      const actualRoleName = role.name;
+
+      const forms = await select('onboarding_forms', { role_id: actualRoleName });
+      if (forms.length === 0) {
+        return c.json({ error: 'Form not found for this role' }, 404);
+      }
+
+      let dbFields: any[] = typeof forms[0].fields === 'string'
+        ? JSON.parse(forms[0].fields)
+        : forms[0].fields || [];
+
+      // ✅ FIX: First check database fields
+      let field = dbFields.find((f: any) => 
+        f.id === fieldId || 
+        f.fieldName === fieldId || 
+        f.name === fieldId
+      );
+
+      // ✅ FIX: If not found in DB, check KYC fields (same logic as GET all fields)
+      if (!field) {
+        try {
+          const { getKYCFieldsForRole, ROLE_KYC_CONFIGS } = await import('../lib/kyc-form-fields');
+          
+          const roleConfigCheck = ROLE_KYC_CONFIGS[actualRoleName] || 
+                                  ROLE_KYC_CONFIGS[`${actualRoleName}_solo`] || 
+                                  ROLE_KYC_CONFIGS[`${actualRoleName}_business`];
+          const isBusinessRole = roleConfigCheck?.vendorTypes?.includes('business') || 
+                                actualRoleName.includes('clinic') || 
+                                actualRoleName.includes('business') ||
+                                actualRoleName === 'vet_clinic' ||
+                                actualRoleName === 'veterinary_clinic';
+          
+          let kycFields: any[] = [];
+          if (isBusinessRole) {
+            kycFields = getKYCFieldsForRole(actualRoleName, 'business');
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName, 'solo');
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName);
+            }
+          } else {
+            kycFields = getKYCFieldsForRole(actualRoleName, 'solo');
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName, 'business');
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName);
+            }
+          }
+          
+          // Convert KYC field to form field format and check for stored override
+          const kycField = kycFields.find((f: any) => 
+            f.id === fieldId || f.fieldName === fieldId
+          );
+          
+          if (kycField) {
+            const kycFormField = {
+              id: kycField.id,
+              fieldName: kycField.fieldName,
+              name: kycField.fieldName,
+              label: kycField.label,
+              type: kycField.type,
+              section: kycField.section,
+              isMandatory: kycField.isMandatory,
+              required: kycField.required,
+              requiresVerification: kycField.requiresVerification || false,
+              verificationEndpoint: kycField.verificationEndpoint || null,
+              placeholder: kycField.placeholder || '',
+              helpText: kycField.helpText || '',
+              options: kycField.options || [],
+              validation: kycField.validation || {},
+              displayOrder: kycField.displayOrder,
+              order: kycField.displayOrder,
+              isActive: true,
+              softBlock: kycField.softBlock || false,
+              declarationText: kycField.declarationText || null,
+              declarationType: kycField.declarationType || kycField.id,
+            };
+            
+            // Check for stored override in DB
+            const storedOverride = dbFields.find((f: any) => 
+              f.id === fieldId || f.fieldName === fieldId || f.name === fieldId
+            );
+            
+            // Merge stored override on top of KYC default
+            field = storedOverride ? { ...kycFormField, ...storedOverride } : kycFormField;
+          }
+        } catch (kycError) {
+          console.error('[GET /admin/onboarding-fields/:roleId/:fieldId] Error loading KYC fields:', kycError);
+        }
+      }
+
+      if (!field) {
+        console.log(`[GET /admin/onboarding-fields/:roleId/:fieldId] Field "${fieldId}" not found in role "${actualRoleName}"`);
+        console.log(`[GET] Available DB field IDs:`, dbFields.map((f: any) => f.id || f.fieldName || f.name).join(', '));
+        return c.json({ error: 'Field not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        field,
+        roleId: actualRoleName,
+        roleName: role.display_name || actualRoleName,
+        isKycField: !dbFields.find((f: any) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId),
+      });
+    } catch (error: any) {
+      console.error('Error fetching onboarding field:', error);
+      return c.json({ error: error.message || 'Failed to fetch field' }, 500);
     }
   });
 
@@ -1049,14 +1181,15 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       const { roleId } = c.req.param();
       const fieldData = await c.req.json();
 
-      // Validate role exists with case-insensitive fallback
+      // ✅ FIX: Validate role exists with case-insensitive fallback and use actual role name
       const role = await getRoleByName(roleId);
       if (!role) {
         return c.json({ error: 'Role not found' }, 404);
       }
+      const actualRoleName = role.name;
 
-      // Get existing fields
-      const forms = await select('onboarding_forms', { role_id: roleId });
+      // Get existing fields (use actual role name from DB)
+      const forms = await select('onboarding_forms', { role_id: actualRoleName });
       let existingFields: any[] = [];
 
       if (forms.length > 0) {
@@ -1098,16 +1231,16 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       // Sort by display order
       existingFields.sort((a: any, b: any) => a.displayOrder - b.displayOrder);
 
-      // Save updated fields
+      // Save updated fields (use actual role name from DB)
       if (forms.length > 0) {
-        await update('onboarding_forms', { role_id: roleId }, {
+        await update('onboarding_forms', { role_id: actualRoleName }, {
           fields: JSON.stringify(existingFields),
           updated_at: new Date().toISOString(),
         });
-        await incrementFormVersion(roleId);
+        await incrementFormVersion(actualRoleName);
       } else {
         await insert('onboarding_forms', {
-          role_id: roleId,
+          role_id: actualRoleName,
           fields: JSON.stringify(existingFields),
           status: 'active',
           version: 1,
@@ -1227,41 +1360,190 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
   /**
    * DELETE /admin/onboarding-fields/:roleId/:fieldId
    * Delete an onboarding field
+   * ✅ FIX: Match fields by id, fieldName, or name (same as PUT endpoint)
+   * ✅ FIX: Resolve role aliases using getRoleByName (same as PUT endpoint)
+   * ✅ FIX: Handle KYC fields by creating stored override with isActive=false
    */
   app.delete('/admin/onboarding-fields/:roleId/:fieldId', async (c) => {
     try {
       const { roleId, fieldId } = c.req.param();
 
-      const forms = await select('onboarding_forms', { role_id: roleId });
-      if (forms.length === 0) {
-        return c.json({ error: 'Form not found for this role' }, 404);
+      // ✅ FIX: Resolve role (same as PUT) so alias roleId works and DB uses canonical name
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: 'Role not found', requestedRole: roleId }, 404);
+      }
+      const actualRoleName = role.name;
+
+      // Ensure table exists
+      await query(`
+        CREATE TABLE IF NOT EXISTS onboarding_forms (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          role_id VARCHAR(255) UNIQUE NOT NULL,
+          fields JSONB NOT NULL,
+          sections JSONB,
+          status VARCHAR(50) DEFAULT 'active',
+          version INTEGER DEFAULT 1,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `).catch(() => {});
+
+      let forms = await select('onboarding_forms', { role_id: actualRoleName });
+      
+      let fields: any[] = [];
+      if (forms.length > 0) {
+        fields = typeof forms[0].fields === 'string'
+          ? JSON.parse(forms[0].fields)
+          : forms[0].fields || [];
       }
 
-      let fields: any[] = typeof forms[0].fields === 'string'
-        ? JSON.parse(forms[0].fields)
-        : forms[0].fields || [];
+      // ✅ FIX: Match field by id, fieldName, or name (same logic as PUT endpoint)
+      const fieldIndex = fields.findIndex((f: any) => 
+        f.id === fieldId || 
+        f.fieldName === fieldId || 
+        f.name === fieldId
+      );
 
-      const filteredFields = fields.filter((f: any) => f.id !== fieldId);
-      if (fields.length === filteredFields.length) {
+      // ✅ FIX: If field not in DB, check if it's a KYC field
+      let isKycField = false;
+      let kycFieldBase: any = null;
+      
+      if (fieldIndex < 0) {
+        try {
+          const { getKYCFieldsForRole, ROLE_KYC_CONFIGS } = await import('../lib/kyc-form-fields');
+          
+          const roleConfigCheck = ROLE_KYC_CONFIGS[actualRoleName] || 
+                                  ROLE_KYC_CONFIGS[`${actualRoleName}_solo`] || 
+                                  ROLE_KYC_CONFIGS[`${actualRoleName}_business`];
+          const isBusinessRole = roleConfigCheck?.vendorTypes?.includes('business') || 
+                                actualRoleName.includes('clinic') || 
+                                actualRoleName.includes('business') ||
+                                actualRoleName === 'vet_clinic' ||
+                                actualRoleName === 'veterinary_clinic';
+          
+          let kycFields: any[] = [];
+          if (isBusinessRole) {
+            kycFields = getKYCFieldsForRole(actualRoleName, 'business');
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName, 'solo');
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName);
+            }
+          } else {
+            kycFields = getKYCFieldsForRole(actualRoleName, 'solo');
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName, 'business');
+            }
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(actualRoleName);
+            }
+          }
+          
+          kycFieldBase = kycFields.find((f: any) => 
+            f.id === fieldId || f.fieldName === fieldId
+          );
+          
+          if (kycFieldBase) {
+            isKycField = true;
+            console.log(`[DELETE] Field "${fieldId}" is a KYC field - creating stored override with isActive=false`);
+          }
+        } catch (kycError) {
+          console.error('[DELETE] Error checking KYC fields:', kycError);
+        }
+      }
+
+      if (fieldIndex < 0 && !isKycField) {
+        console.log(`[DELETE /admin/onboarding-fields/:roleId/:fieldId] Field "${fieldId}" not found in role "${actualRoleName}"`);
+        console.log(`[DELETE] Available field IDs:`, fields.map((f: any) => f.id || f.fieldName || f.name).join(', '));
         return c.json({ error: 'Field not found' }, 404);
       }
 
-      // Reorder remaining fields
-      filteredFields.forEach((f: any, idx: number) => {
-        f.displayOrder = idx;
-        f.updatedAt = new Date().toISOString();
-      });
+      let deletedField: any;
+
+      if (isKycField) {
+        // ✅ FIX: For KYC fields, create a stored override with isActive=false
+        // This will hide the field when GET merges KYC fields with stored overrides
+        const storedOverride = {
+          id: fieldId,
+          fieldName: fieldId,
+          name: fieldId,
+          label: kycFieldBase.label,
+          type: kycFieldBase.type,
+          section: kycFieldBase.section,
+          isActive: false, // ✅ KEY: Mark as inactive to hide it
+          isMandatory: kycFieldBase.isMandatory,
+          required: kycFieldBase.required,
+          requiresVerification: kycFieldBase.requiresVerification || false,
+          verificationEndpoint: kycFieldBase.verificationEndpoint || null,
+          placeholder: kycFieldBase.placeholder || '',
+          helpText: kycFieldBase.helpText || '',
+          options: kycFieldBase.options || [],
+          validation: kycFieldBase.validation || {},
+          displayOrder: kycFieldBase.displayOrder || 0,
+          softBlock: kycFieldBase.softBlock || false,
+          declarationText: kycFieldBase.declarationText || null,
+          declarationType: kycFieldBase.declarationType || fieldId,
+          updatedAt: new Date().toISOString(),
+          deletedAt: new Date().toISOString(), // Mark as deleted
+        };
+        
+        // Check if override already exists
+        const existingOverrideIndex = fields.findIndex((f: any) => 
+          f.id === fieldId || f.fieldName === fieldId || f.name === fieldId
+        );
+        
+        if (existingOverrideIndex >= 0) {
+          // Update existing override
+          fields[existingOverrideIndex] = storedOverride;
+          deletedField = storedOverride;
+        } else {
+          // Add new override
+          fields.push(storedOverride);
+          deletedField = storedOverride;
+        }
+      } else {
+        // Regular field - remove from array
+        deletedField = fields[fieldIndex];
+        fields.splice(fieldIndex, 1);
+
+        // Reorder remaining fields
+        fields.forEach((f: any, idx: number) => {
+          f.displayOrder = idx;
+          f.updatedAt = new Date().toISOString();
+        });
+      }
 
       // Save updated fields
-      await update('onboarding_forms', { role_id: roleId }, {
-        fields: JSON.stringify(filteredFields),
-        updated_at: new Date().toISOString(),
-      });
-      await incrementFormVersion(roleId);
+      if (forms.length > 0) {
+        await update('onboarding_forms', { role_id: actualRoleName }, {
+          fields: JSON.stringify(fields),
+          updated_at: new Date().toISOString(),
+        });
+      } else {
+        await insert('onboarding_forms', {
+          role_id: actualRoleName,
+          fields: JSON.stringify(fields),
+          status: 'active',
+          version: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      await incrementFormVersion(actualRoleName);
+
+      console.log(`[DELETE /admin/onboarding-fields/:roleId/:fieldId] Successfully ${isKycField ? 'deactivated (KYC field)' : 'deleted'} field "${fieldId}" from role "${actualRoleName}"`);
 
       return c.json({
         success: true,
-        message: 'Field deleted successfully',
+        message: isKycField ? 'KYC field deactivated successfully (stored override created)' : 'Field deleted successfully',
+        deletedField: {
+          id: deletedField.id,
+          fieldName: deletedField.fieldName || deletedField.name,
+          label: deletedField.label,
+        },
+        isKycField,
       });
     } catch (error: any) {
       console.error('Error deleting onboarding field:', error);

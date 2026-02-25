@@ -325,21 +325,27 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     }
   }, [booking, bookingId]);
 
-  // ✅ FIX #2: Enable chat for tele consultations during confirmed/in_progress, not just after completion
+  // ✅ FIX #2: Enable chat for ALL active bookings (confirmed, in_progress, active) + completed within 7 days
   const canChat = () => {
     if (!booking) return false;
     
-    // For tele consultations, allow chat during confirmed/in_progress status
-    if (booking.serviceStyle === 'tele' && (booking.status === 'confirmed' || booking.status === 'in_progress')) {
+    // Allow chat during any active booking status (confirmed, in_progress, active, scheduled)
+    const activeStatuses = ['confirmed', 'in_progress', 'active', 'scheduled', 'pending'];
+    if (activeStatuses.includes(booking.status)) {
       return true;
     }
     
-    // For other services, only allow chat after completion (within 7 days)
-    if (booking.status !== 'completed' || !booking.otpVerifiedAt) return false;
-    const completedAt = new Date(booking.otpVerifiedAt);
-    const now = new Date();
-    const daysDiff = Math.floor((now.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24));
-    return daysDiff <= 7;
+    // For completed bookings, allow chat within 7 days
+    if (booking.status === 'completed') {
+      const completedAt = booking.otpVerifiedAt || booking.updatedAt || booking.completedAt;
+      if (!completedAt) return false;
+      const completedDate = new Date(completedAt);
+      const now = new Date();
+      const daysDiff = Math.floor((now.getTime() - completedDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysDiff <= 7;
+    }
+    
+    return false;
   };
 
   const canFollowUp = () => {
@@ -1076,7 +1082,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Chat Button - Only for completed bookings within 7 days */}
+              {/* Chat Button - For active bookings and completed within 7 days */}
               {canChat() && (
                 <Button
                   onClick={() => setCommunicationMode('chat')}
@@ -1084,9 +1090,14 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 >
                   <MessageCircle className="w-5 h-5" />
                   Chat with Vendor
-                  <span className="ml-auto bg-green-700 px-2 py-0.5 rounded-full text-xs">
-                    {Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(booking.otpVerifiedAt).getTime()) / (1000 * 60 * 60 * 24)))} days left
-                  </span>
+                  {booking.status === 'completed' && (booking.otpVerifiedAt || booking.updatedAt || booking.completedAt) && (
+                    <span className="ml-auto bg-green-700 px-2 py-0.5 rounded-full text-xs">
+                      {Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(booking.otpVerifiedAt || booking.updatedAt || booking.completedAt).getTime()) / (1000 * 60 * 60 * 24)))} days left
+                    </span>
+                  )}
+                  {booking.status !== 'completed' && (
+                    <span className="ml-auto bg-green-700 px-2 py-0.5 rounded-full text-xs">Active</span>
+                  )}
                 </Button>
               )}
 
@@ -1110,9 +1121,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 >
                   <CalendarPlus className="w-5 h-5" />
                   Follow-Up Chat
-                  <span className="ml-auto bg-orange-700 px-2 py-0.5 rounded-full text-xs">
-                    {Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(booking.otpVerifiedAt).getTime()) / (1000 * 60 * 60 * 24)))} days left
-                  </span>
+                  {(booking.otpVerifiedAt || booking.updatedAt || booking.completedAt) && (
+                    <span className="ml-auto bg-orange-700 px-2 py-0.5 rounded-full text-xs">
+                      {Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(booking.otpVerifiedAt || booking.updatedAt || booking.completedAt).getTime()) / (1000 * 60 * 60 * 24)))} days left
+                    </span>
+                  )}
                 </Button>
               )}
             </div>

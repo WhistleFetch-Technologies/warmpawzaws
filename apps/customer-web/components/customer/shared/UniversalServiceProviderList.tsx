@@ -118,7 +118,7 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-      <div 
+      <div
         className="bg-white w-full max-w-lg rounded-t-3xl max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
@@ -138,11 +138,10 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
                 <button
                   key={rating ?? 'all'}
                   onClick={() => setLocalFilters(f => ({ ...f, rating }))}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                    localFilters.rating === rating
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${localFilters.rating === rating
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   {rating ? `${rating}+ ⭐` : 'All'}
                 </button>
@@ -158,11 +157,10 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
                 <button
                   key={years ?? 'all'}
                   onClick={() => setLocalFilters(f => ({ ...f, experienceMin: years }))}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                    localFilters.experienceMin === years
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${localFilters.experienceMin === years
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   {years ? `${years}+ years` : 'Any'}
                 </button>
@@ -178,11 +176,10 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
                 <button
                   key={km ?? 'all'}
                   onClick={() => setLocalFilters(f => ({ ...f, maxDistance: km }))}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                    localFilters.maxDistance === km
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${localFilters.maxDistance === km
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   {km ? `${km} km` : 'Any'}
                 </button>
@@ -197,11 +194,10 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setLocalFilters(f => ({ ...f, specialization: null }))}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                    localFilters.specialization === null
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${localFilters.specialization === null
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   All
                 </button>
@@ -209,11 +205,10 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
                   <button
                     key={spec}
                     onClick={() => setLocalFilters(f => ({ ...f, specialization: spec }))}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                      localFilters.specialization === spec
-                        ? 'bg-orange-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition ${localFilters.specialization === spec
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
                   >
                     {spec}
                   </button>
@@ -235,11 +230,10 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
                 <button
                   key={option.value}
                   onClick={() => setLocalFilters(f => ({ ...f, sortBy: option.value as any }))}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                    localFilters.sortBy === option.value
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${localFilters.sortBy === option.value
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   {option.label}
                 </button>
@@ -326,7 +320,7 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
   };
 
   return (
-    <Card 
+    <Card
       className="p-4 cursor-pointer hover:shadow-lg transition-all border border-gray-100 bg-white"
       onClick={onClick}
     >
@@ -341,9 +335,9 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
                 ))}
               </div>
             ) : provider.photo ? (
-              <img 
-                src={provider.photo} 
-                alt={provider.name} 
+              <img
+                src={provider.photo}
+                alt={provider.name}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -461,14 +455,14 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
  */
 function cleanProviderName(name: string): string {
   if (!name) return 'Provider';
-  
+
   // Remove trailing numbers/IDs (common pattern: name followed by long number)
   // Match: space followed by 10+ digits at the end
   const cleaned = name.replace(/\s+\d{10,}$/, '').trim();
-  
+
   // Also remove any trailing UUID-like patterns (with or without dashes)
   const cleaned2 = cleaned.replace(/\s+[a-f0-9]{8,}(-[a-f0-9]{4,}){0,}$/i, '').trim();
-  
+
   return cleaned2 || name || 'Provider';
 }
 
@@ -530,11 +524,11 @@ export function UniversalServiceProviderList({
 }: UniversalServiceProviderListProps) {
   // Use problemId as alias for specialization if provided
   const specializationFilter = specialization || problemId;
-  
+
   // ✅ NEW: Get problems for this category
   const categoryProblems = problems || DEFAULT_PROBLEMS[category] || [];
   const [selectedProblem, setSelectedProblem] = useState<string | null>(specializationFilter || null);
-  
+
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [sponsoredProviders, setSponsoredProviders] = useState<any[]>([]);
@@ -591,11 +585,11 @@ export function UniversalServiceProviderList({
       }
 
       // Build specialization filter param
-      const specializationParam = specializationFilter 
-        ? `&specialization=${encodeURIComponent(specializationFilter)}` 
+      const specializationParam = specializationFilter
+        ? `&specialization=${encodeURIComponent(specializationFilter)}`
         : '';
-      const problemTitleParam = problemTitle 
-        ? `&problemTitle=${encodeURIComponent(problemTitle)}` 
+      const problemTitleParam = problemTitle
+        ? `&problemTitle=${encodeURIComponent(problemTitle)}`
         : '';
 
       // Fetch providers for this service style and category
@@ -605,10 +599,10 @@ export function UniversalServiceProviderList({
 
       if (response.success) {
         let providerData = response.providers || response.vendors || [];
-        
+
         // ✅ FIX: Backend now correctly returns business/clinic vendors with at_home services
         // No need to filter them out - clinics can offer at_home services (e.g., vaccinations at home)
-        
+
         // Clean provider names to remove trailing IDs and map nextAvailable to nextAvailableSlot
         const cleanedProviders = providerData.map((p: any) => ({
           ...p,
@@ -630,17 +624,17 @@ export function UniversalServiceProviderList({
             return undefined;
           })(),
         }));
-        
+
         // ✅ FIX: If primary endpoint returns 0 providers, also try fallback
         if (cleanedProviders.length > 0) {
           setProviders(cleanedProviders);
           console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
           return; // Exit early if we have providers
         }
-        
+
         console.log(`⚠️ Primary endpoint returned 0 providers for ${category}/${serviceStyle}, trying fallback...`);
       }
-      
+
       // Try fallback endpoint (also called when primary returns empty results)
       // ✅ FIX: Remove roleId from discover-services call - category is sufficient and avoids uuid=text error
       const fallbackResponse = await apiClient.get(
@@ -648,17 +642,17 @@ export function UniversalServiceProviderList({
       ) as any;
 
       const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-      
+
       // Group by provider
       const providerMap = new Map<string, Provider>();
       servicesData.forEach((item: any) => {
         const providerId = item.providerId || item.vendorId || item.id;
-        
+
         if (!providerMap.has(providerId)) {
           // Clean the name to remove trailing IDs/numbers
           const rawName = item.name || item.vendorName || item.businessName || 'Provider';
           const cleanedName = cleanProviderName(rawName);
-          
+
           providerMap.set(providerId, {
             providerId,
             providerType: item.providerType || 'vendor',
@@ -683,15 +677,26 @@ export function UniversalServiceProviderList({
             isVerified: item.isVerified,
             isOnline: item.isOnline,
             nextAvailableSlot: (() => {
+              // If nextAvailable is an object (API returns this field name), extract display
+              if (item.nextAvailable && typeof item.nextAvailable === 'object') {
+                return item.nextAvailable.display || item.nextAvailable.formattedDisplay ||
+                  (item.nextAvailable.date && item.nextAvailable.time
+                    ? `${item.nextAvailable.date} ${item.nextAvailable.time}`
+                    : undefined);
+              }
+              // If nextAvailable is a string, use it
+              if (typeof item.nextAvailable === 'string') {
+                return item.nextAvailable;
+              }
               // If nextAvailability is a string, use it
               if (typeof item.nextAvailability === 'string') {
                 return item.nextAvailability;
               }
               // If nextAvailability is an object, extract formattedDisplay or display
               if (item.nextAvailability && typeof item.nextAvailability === 'object') {
-                return item.nextAvailability.formattedDisplay || item.nextAvailability.display || 
-                  (item.nextAvailability.date && item.nextAvailability.time 
-                    ? `${item.nextAvailability.date} ${item.nextAvailability.time}` 
+                return item.nextAvailability.formattedDisplay || item.nextAvailability.display ||
+                  (item.nextAvailability.date && item.nextAvailability.time
+                    ? `${item.nextAvailability.date} ${item.nextAvailability.time}`
                     : undefined);
               }
               // If nextAvailableSlot is a string, use it
@@ -700,9 +705,9 @@ export function UniversalServiceProviderList({
               }
               // If nextAvailableSlot is an object, extract formattedDisplay or display
               if (item.nextAvailableSlot && typeof item.nextAvailableSlot === 'object') {
-                return item.nextAvailableSlot.formattedDisplay || item.nextAvailableSlot.display || 
-                  (item.nextAvailableSlot.date && item.nextAvailableSlot.time 
-                    ? `${item.nextAvailableSlot.date} ${item.nextAvailableSlot.time}` 
+                return item.nextAvailableSlot.formattedDisplay || item.nextAvailableSlot.display ||
+                  (item.nextAvailableSlot.date && item.nextAvailableSlot.time
+                    ? `${item.nextAvailableSlot.date} ${item.nextAvailableSlot.time}`
                     : undefined);
               }
               return undefined;
@@ -726,12 +731,12 @@ export function UniversalServiceProviderList({
             }];
           }
         }
-        
+
         // Add service to provider
         // ✅ FIX: Only use serviceName or service_name, avoid using provider name as fallback
         const serviceName = item.serviceName || item.service_name;
         const providerName = item.vendorName || item.businessName || item.business_name || item.providerName;
-        
+
         // Only add if we have a valid service name that's different from the provider name
         if (serviceName && serviceName !== providerName) {
           const provider = providerMap.get(providerId)!;
@@ -777,51 +782,49 @@ export function UniversalServiceProviderList({
   };
 
   // Filter and sort providers
-  const filteredProviders = providers
-    .filter(p => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesName = p.name.toLowerCase().includes(query);
-        const matchesSpec = p.specialization?.toLowerCase().includes(query);
-        const matchesCity = p.city?.toLowerCase().includes(query);
-        if (!matchesName && !matchesSpec && !matchesCity) return false;
-      }
+  const filteredProviders = providers.filter(p => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesName = p.name.toLowerCase().includes(query);
+      const matchesSpec = p.specialization?.toLowerCase().includes(query);
+      const matchesCity = p.city?.toLowerCase().includes(query);
+      if (!matchesName && !matchesSpec && !matchesCity) return false;
+    }
 
-      // Rating filter
-      if (filters.rating && p.rating < filters.rating) return false;
+    // Rating filter
+    if (filters.rating && p.rating < filters.rating) return false;
 
-      // Experience filter
-      if (filters.experienceMin && (p.experienceYears || 0) < filters.experienceMin) return false;
+    // Experience filter
+    if (filters.experienceMin && (p.experienceYears || 0) < filters.experienceMin) return false;
 
-      // Distance filter
-      if (filters.maxDistance && p.distance && p.distance > filters.maxDistance) return false;
+    // Distance filter
+    if (filters.maxDistance && p.distance && p.distance > filters.maxDistance) return false;
 
-      // Specialization filter
-      if (filters.specialization && p.specialization !== filters.specialization) return false;
+    // Specialization filter
+    if (filters.specialization && p.specialization !== filters.specialization) return false;
 
-      return true;
-    })
-    .sort((a, b) => {
-      const aPrice = a.services.length > 0 ? Math.min(...a.services.map(s => s.price)) : (a as any).price ?? (a as any).consultationFee ?? 999999;
-      const bPrice = b.services.length > 0 ? Math.min(...b.services.map(s => s.price)) : (b as any).price ?? (b as any).consultationFee ?? 999999;
-      switch (filters.sortBy) {
-        case 'rating':
-          return b.rating - a.rating;
-        case 'distance':
-          return (a.distance || 999) - (b.distance || 999);
-        case 'price':
-          return aPrice - bPrice;
-        case 'experience':
-          return (b.experienceYears || 0) - (a.experienceYears || 0);
-        case 'availability':
-          if (a.nextAvailableSlot && !b.nextAvailableSlot) return -1;
-          if (!a.nextAvailableSlot && b.nextAvailableSlot) return 1;
-          return 0;
-        default:
-          return 0;
-      }
-    });
+    return true;
+  }).sort((a, b) => {
+    const aPrice = a.services.length > 0 ? Math.min(...a.services.map(s => s.price)) : (a as any).price ?? (a as any).consultationFee ?? 999999;
+    const bPrice = b.services.length > 0 ? Math.min(...b.services.map(s => s.price)) : (b as any).price ?? (b as any).consultationFee ?? 999999;
+    switch (filters.sortBy) {
+      case 'rating':
+        return b.rating - a.rating;
+      case 'distance':
+        return (a.distance || 999) - (b.distance || 999);
+      case 'price':
+        return aPrice - bPrice;
+      case 'experience':
+        return (b.experienceYears || 0) - (a.experienceYears || 0);
+      case 'availability':
+        if (a.nextAvailableSlot && !b.nextAvailableSlot) return -1;
+        if (!a.nextAvailableSlot && b.nextAvailableSlot) return 1;
+        return 0;
+      default:
+        return 0;
+    }
+  });
 
   // Get service style config
   const getStyleConfig = (): { icon: typeof Video; color: string; bgGradient: string; label: string } => {
@@ -868,7 +871,7 @@ export function UniversalServiceProviderList({
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      {/*HEADER SECTION*/}
       <ServiceDashboardHeader
         serviceName={title || styleConfig.label}
         serviceSubtitle={subtitle}
@@ -880,9 +883,9 @@ export function UniversalServiceProviderList({
         headerColor="bg-[#FF8C42]"
       />
 
-      {/* Main Content */}
+      {/*MAIN CONTENT SECTION*/}
       <div className="px-4 pt-2 pb-8">
-        {/* ✅ NEW: Problem Filter Strip */}
+        {/*FILTER SECTION STARTS*/}
         {showProblemFilter && categoryProblems.length > 0 && (
           <div className="mb-4">
             <p className="text-sm font-medium text-gray-700 mb-2">What's the concern?</p>
@@ -890,13 +893,12 @@ export function UniversalServiceProviderList({
               <button
                 onClick={() => {
                   setSelectedProblem(null);
-                  setFilters(f => ({ ...f, specialization: null }));
+                  setFilters(data => ({ ...data, specialization: null }));
                 }}
-                className={`flex-shrink-0 px-3 py-2 rounded-full text-sm font-medium transition-all ${
-                  !selectedProblem
-                    ? 'bg-[#FF8C42] text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`flex-shrink-0 px-3 py-2 rounded-full text-sm font-medium transition-all ${!selectedProblem
+                  ? 'bg-[#FF8C42] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 All
               </button>
@@ -907,11 +909,10 @@ export function UniversalServiceProviderList({
                     setSelectedProblem(problem.id);
                     setFilters(f => ({ ...f, specialization: problem.name }));
                   }}
-                  className={`flex-shrink-0 px-3 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1.5 ${
-                    selectedProblem === problem.id
-                      ? 'bg-[#FF8C42] text-white shadow-md'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`flex-shrink-0 px-3 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1.5 ${selectedProblem === problem.id
+                    ? 'bg-[#FF8C42] text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                 >
                   {problem.icon && <span>{problem.icon}</span>}
                   {problem.name}
@@ -920,8 +921,9 @@ export function UniversalServiceProviderList({
             </div>
           </div>
         )}
+        {/*FILTER SECTION ENDS*/}
 
-        {/* Search Bar */}
+        {/*SEARCH BAR SECTION STARTS*/}
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           <input
@@ -940,39 +942,40 @@ export function UniversalServiceProviderList({
             </button>
           )}
         </div>
-
+        {/*SEARCH BAR SECTION ENDS*/}
+        
         {/* Filters Row */}
         <div className="mb-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFilters(true)}
-            className={`flex-shrink-0 gap-2 ${activeFiltersCount > 0 ? 'border-orange-500 text-orange-600' : ''}`}
-          >
-            <Sliders className="w-4 h-4" />
-            Filters
-            {activeFiltersCount > 0 && (
-              <Badge className="bg-orange-500 text-white text-xs px-1.5">
-                {activeFiltersCount}
-              </Badge>
-            )}
-          </Button>
-
-          {/* Quick Filter Chips */}
-          {['Top Rated', 'Nearest', 'Available Now'].map((chip) => (
-            <button
-              key={chip}
-              onClick={() => {
-                if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: 4.5 }));
-                if (chip === 'Nearest') setFilters(f => ({ ...f, sortBy: 'distance' }));
-                if (chip === 'Available Now') setFilters(f => ({ ...f, sortBy: 'availability' }));
-              }}
-              className="flex-shrink-0 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:border-orange-300"
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters(true)}
+              className={`flex-shrink-0 gap-2 ${activeFiltersCount > 0 ? 'border-orange-500 text-orange-600' : ''}`}
             >
-              {chip}
-            </button>
-          ))}
+              <Sliders className="w-4 h-4" />
+              Filters
+              {activeFiltersCount > 0 && (
+                <Badge className="bg-orange-500 text-white text-xs px-1.5">
+                  {activeFiltersCount}
+                </Badge>
+              )}
+            </Button>
+
+            {/* Quick Filter Chips */}
+            {['Top Rated', 'Nearest', 'Available Now'].map((chip) => (
+              <button
+                key={chip}
+                onClick={() => {
+                  if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: 4.5 }));
+                  if (chip === 'Nearest') setFilters(f => ({ ...f, sortBy: 'distance' }));
+                  if (chip === 'Available Now') setFilters(f => ({ ...f, sortBy: 'availability' }));
+                }}
+                className="flex-shrink-0 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:border-orange-300"
+              >
+                {chip}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -995,7 +998,7 @@ export function UniversalServiceProviderList({
               </div>
               <h3 className="font-bold text-slate-900 mb-2">No Providers Found</h3>
               <p className="text-slate-500 text-sm mb-4">
-                {searchQuery 
+                {searchQuery
                   ? `No results for "${searchQuery}"`
                   : 'No service providers available in your area for this service type.'
                 }

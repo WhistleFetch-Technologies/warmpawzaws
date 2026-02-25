@@ -435,6 +435,32 @@ export function registerChatEndpoints(app: Hono) {
         [bookingId]
       ).catch(() => ({ rows: [] })); // Graceful fallback if table doesn't exist
 
+      // ✅ CRITICAL FIX: Generate presigned URLs for file/image messages
+      // file_id stores the S3 key, but frontend needs a file_url to display the file
+      const enrichedMessages = await Promise.all(
+        (messages.rows || []).map(async (msg: any) => {
+          if (msg.file_id && (msg.message_type === 'file' || msg.message_type === 'image' || msg.message_type === 'video')) {
+            try {
+              const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+              const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+              const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+              const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+              
+              const signedUrl = await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({ Bucket: BUCKET_NAME, Key: msg.file_id }),
+                { expiresIn: 604800 } // 7 days
+              );
+              return { ...msg, file_url: signedUrl };
+            } catch (err: any) {
+              console.warn(`[CHAT] Failed to generate presigned URL for file_id=${msg.file_id}: ${err?.message}`);
+              return msg;
+            }
+          }
+          return msg;
+        })
+      );
+
       // Get customer and vendor details
       const customer = booking.customer_id
         ? await select('customers', { id: booking.customer_id })
@@ -445,7 +471,7 @@ export function registerChatEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        messages: messages.rows || [],
+        messages: enrichedMessages,
         chatAvailable: isChatAvailable, // ✅ CRITICAL FIX: Include chat availability
         booking: {
           id: booking.id,

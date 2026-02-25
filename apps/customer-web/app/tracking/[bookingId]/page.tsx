@@ -8,6 +8,8 @@ export async function generateStaticParams() {
 // Allow dynamic params at runtime (client-side navigation)
 export const dynamicParams = true;
 
-export default function TrackingPage({ params }: { params: { bookingId: string } }) {
-  return <TrackingPageClient bookingId={params.bookingId} />;
+// Server component that renders client component
+// TrackingPageClient will extract bookingId from URL path directly (for static export compatibility)
+export default function TrackingPage({ params }: { params: { bookingId?: string } }) {
+  return <TrackingPageClient bookingId={params?.bookingId ?? ''} />;
 }
