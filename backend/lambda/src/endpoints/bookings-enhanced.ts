@@ -720,10 +720,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let packageSessionNumberToUse: number | null = null;
         let pkgForDeduction: { remaining_sessions: number; unlimited_usage: boolean } | null = null;
 
+        // ✅ CRITICAL FIX: Use SAVEPOINT so that if package_purchases table or columns don't exist,
+        // the PostgreSQL transaction is not aborted.
         if (packagePurchaseId) {
           try {
-            // ✅ FIX: Check if package_purchases table exists before querying
-            const tableCheck = await query(
+            await client.query('SAVEPOINT sp_package_check');
+            const tableCheck = await client.query(
               `SELECT EXISTS (
                 SELECT FROM information_schema.tables 
                 WHERE table_schema = 'public' 
@@ -734,7 +736,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             if (!tableCheck.rows[0]?.exists) {
               console.warn('[BOOKING] package_purchases table not found, skipping package booking');
             } else {
-              const packageResult = await query(
+              const packageResult = await client.query(
                 `SELECT id, remaining_sessions, unlimited_usage, total_sessions
                  FROM package_purchases
                  WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
@@ -751,27 +753,27 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
                 isPackageBooking = true;
                 finalAmount = 0;
-                console.log(`[BOOKING] ✅ Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount ₹0.`);
+                console.log(`[BOOKING] Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount 0.`);
               }
             }
+            await client.query('RELEASE SAVEPOINT sp_package_check');
           } catch (error: any) {
-            // ✅ FIX: Handle table missing errors gracefully
-            const errorMessage = error?.message || String(error);
-            if (errorMessage.includes('does not exist') || errorMessage.includes('relation') || errorMessage.includes('package_purchases')) {
-              console.warn('[BOOKING] package_purchases table not found or query failed, skipping package booking:', errorMessage);
-            } else {
-              console.warn('[BOOKING] Error checking package purchase, skipping package booking:', errorMessage);
-            }
+            await client.query('ROLLBACK TO SAVEPOINT sp_package_check').catch(() => {});
+            console.warn('[BOOKING] Package check failed (table/column may not exist), skipping:', (error as any)?.message);
           }
         }
 
+        // ✅ CRITICAL FIX: Use SAVEPOINT to protect transaction from subscription query failures
+        // The customer_subscriptions table or its columns (e.g. end_date) may not exist in dev/UAT,
+        // which would abort the entire PostgreSQL transaction without a SAVEPOINT.
         try {
           // Skip subscription check when already using package
           if (!isPackageBooking) {
           // Get service category for subscription matching
           const serviceCategory = service.category || baseServices[0]?.category || null;
           
-          const activeSubscriptions = await query(
+          await client.query('SAVEPOINT sp_subscription_check');
+          const activeSubscriptions = await client.query(
             `SELECT * FROM customer_subscriptions 
              WHERE customer_id = $1 
              AND status = 'active'
@@ -787,6 +789,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              LIMIT 1`,
             [customerId, serviceCategory, vendorId]
           );
+          await client.query('RELEASE SAVEPOINT sp_subscription_check');
           
           const subscriptions = (activeSubscriptions as any).rows || [];
           
@@ -797,7 +800,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             finalAmount = 0; // Zero payment for unlimited subscription
             
             // Increment usage count
-            await query(
+            await client.query(
               `UPDATE customer_subscriptions 
                SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
                WHERE id = $1`,
@@ -808,7 +811,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
           }
         } catch (subError) {
-          console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError);
+          await client.query('ROLLBACK TO SAVEPOINT sp_subscription_check').catch(() => {});
+          console.warn('[BOOKING] Could not check subscriptions (table/column may not exist):', (subError as any)?.message);
         }
         
         // ✅ Calculate final amounts considering multiple services
@@ -826,11 +830,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const addressIdFromRequest = body.addressId || body.address_id;
         if (addressIdFromRequest) {
           try {
-            // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
+            await client.query('SAVEPOINT sp_address_lookup');
             const addressesResult = await client.query(
               `SELECT * FROM customer_addresses WHERE id = $1::uuid`,
               [addressIdFromRequest]
             );
+            await client.query('RELEASE SAVEPOINT sp_address_lookup');
             const addresses = addressesResult.rows;
             if (addresses.length > 0) {
               const addr = addresses[0] as any;
@@ -858,7 +863,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               console.log(`[BOOKING] Extracted coordinates from address_id ${addressIdFromRequest}: ${bookingLatitude}, ${bookingLongitude}`);
             }
           } catch (addrErr) {
-            console.warn('[BOOKING] Could not fetch address by address_id:', addrErr);
+            await client.query('ROLLBACK TO SAVEPOINT sp_address_lookup').catch(() => {});
+            console.warn('[BOOKING] Could not fetch address by address_id:', (addrErr as any)?.message);
           }
         }
         
@@ -882,9 +888,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
-        // ✅ Priority 3: If still no coordinates, look up customer's saved addresses by customer_id
+        // Priority 3: If still no coordinates, look up customer's saved addresses by customer_id
         if (!bookingLatitude && customerId) {
           try {
+            await client.query('SAVEPOINT sp_cust_addr_lookup');
             const custAddresses = await client.query(
               `SELECT id, latitude, longitude, coordinates, is_default
                FROM customer_addresses 
@@ -893,6 +900,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                LIMIT 5`,
               [customerId]
             );
+            await client.query('RELEASE SAVEPOINT sp_cust_addr_lookup');
             if (custAddresses.rows.length > 0) {
               console.log(`[BOOKING] Found ${custAddresses.rows.length} saved addresses for customer ${customerId}`);
               for (const addr of custAddresses.rows) {
@@ -928,19 +936,21 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               }
             }
           } catch (custAddrErr: any) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_cust_addr_lookup').catch(() => {});
             console.warn(`[BOOKING] Could not look up customer addresses:`, custAddrErr?.message);
           }
         }
 
-        // ✅ CRITICAL FIX: Build comprehensive address text from customer_addresses if available
+        // Build comprehensive address text from customer_addresses if available
         let fullAddressText = address;
         if (addressIdToStore) {
           try {
-            // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
+            await client.query('SAVEPOINT sp_addr_build');
             const addrRowsResult = await client.query(
               `SELECT * FROM customer_addresses WHERE id = $1::uuid`,
               [addressIdToStore]
             );
+            await client.query('RELEASE SAVEPOINT sp_addr_build');
             const addrRows = addrRowsResult.rows;
             if (addrRows.length > 0) {
               const addrRec = addrRows[0] as any;
@@ -968,7 +978,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               }
             }
           } catch (addrBuildErr) {
-            console.warn('[BOOKING] Could not build full address from customer_addresses:', addrBuildErr);
+            await client.query('ROLLBACK TO SAVEPOINT sp_addr_build').catch(() => {});
+            console.warn('[BOOKING] Could not build full address from customer_addresses:', (addrBuildErr as any)?.message);
           }
         }
 
