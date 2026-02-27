@@ -43,31 +43,44 @@ export function EnhancedAddressAutocomplete({
 }: EnhancedAddressAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<any>(null);
+  const onChangeRef = useRef(onChange);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [apiKey, setApiKey] = useState<string | null>(null);
 
+  // Keep onChange ref up to date
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
   // Fetch Google Maps API key from backend (AWS Secrets Manager)
   useEffect(() => {
     const fetchApiKey = async () => {
+      console.log('[ADDRESS-AUTOCOMPLETE] Fetching Google Maps API key from backend...');
       // Set timeout to prevent infinite loading
       const timeoutId = setTimeout(() => {
-        console.warn('Google Maps API key fetch timeout - disabling autocomplete');
+        console.warn('[ADDRESS-AUTOCOMPLETE] Google Maps API key fetch timeout - disabling autocomplete');
         setIsLoading(false);
       }, 10000); // 10 second timeout
 
       try {
-        const response = await apiClient.get<{ apiKey: string }>('/config/google-maps-key');
+        const response = await apiClient.get<{ apiKey: string; error?: string }>('/config/google-maps-key');
         clearTimeout(timeoutId);
+        if (response?.error) {
+          console.error('[ADDRESS-AUTOCOMPLETE] Backend returned error:', response.error);
+          setIsLoading(false);
+          return;
+        }
         if (response?.apiKey) {
+          console.log('[ADDRESS-AUTOCOMPLETE] Google Maps API key fetched successfully, length:', response.apiKey.length);
           setApiKey(response.apiKey);
         } else {
-          console.warn('Google Maps API key not available from backend');
+          console.warn('[ADDRESS-AUTOCOMPLETE] Google Maps API key not available from backend');
           setIsLoading(false);
         }
-      } catch (error) {
+      } catch (error: any) {
         clearTimeout(timeoutId);
-        console.warn('Failed to fetch Google Maps API key:', error);
+        console.error('[ADDRESS-AUTOCOMPLETE] Failed to fetch Google Maps API key:', error?.message || error);
         setIsLoading(false);
       }
     };
@@ -77,11 +90,16 @@ export function EnhancedAddressAutocomplete({
 
   // Load Google Maps script
   useEffect(() => {
-    if (!apiKey) return;
+    if (!apiKey) {
+      console.log('[ADDRESS-AUTOCOMPLETE] No API key available, skipping script load');
+      return;
+    }
 
+    console.log('[ADDRESS-AUTOCOMPLETE] Loading Google Maps script...');
     // Check if Google Maps is already loaded
     const win = window as any;
     if (win.google && win.google.maps && win.google.maps.places) {
+      console.log('[ADDRESS-AUTOCOMPLETE] Google Maps already loaded');
       setIsLoaded(true);
       setIsLoading(false);
       return;
@@ -89,17 +107,19 @@ export function EnhancedAddressAutocomplete({
 
     // Check if script is already being loaded
     if (document.querySelector(`script[src*="maps.googleapis.com"]`)) {
+      console.log('[ADDRESS-AUTOCOMPLETE] Google Maps script already loading, waiting...');
       // Wait for script to load (with timeout)
       let attempts = 0;
       const maxAttempts = 100; // 10 seconds max (100 * 100ms)
       const checkInterval = setInterval(() => {
         attempts++;
         if (win.google && win.google.maps && win.google.maps.places) {
+          console.log('[ADDRESS-AUTOCOMPLETE] Google Maps script loaded (waited for existing)');
           setIsLoaded(true);
           setIsLoading(false);
           clearInterval(checkInterval);
         } else if (attempts >= maxAttempts) {
-          console.warn('Google Maps script loading timeout');
+          console.warn('[ADDRESS-AUTOCOMPLETE] Google Maps script loading timeout (waited for existing)');
           setIsLoading(false);
           clearInterval(checkInterval);
         }
@@ -108,6 +128,7 @@ export function EnhancedAddressAutocomplete({
     }
 
     // Load Google Maps script
+    console.log('[ADDRESS-AUTOCOMPLETE] Creating and loading Google Maps script...');
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
     script.async = true;
@@ -115,36 +136,44 @@ export function EnhancedAddressAutocomplete({
     
     // Set timeout for script loading
     const scriptTimeout = setTimeout(() => {
-      console.warn('Google Maps script loading timeout');
+      console.warn('[ADDRESS-AUTOCOMPLETE] Google Maps script loading timeout');
       setIsLoading(false);
     }, 15000); // 15 second timeout for script load
     
     script.onload = () => {
       clearTimeout(scriptTimeout);
+      console.log('[ADDRESS-AUTOCOMPLETE] Google Maps script loaded successfully');
       setIsLoaded(true);
       setIsLoading(false);
     };
-    script.onerror = () => {
+    script.onerror = (error) => {
       clearTimeout(scriptTimeout);
-      console.error('Failed to load Google Maps script');
+      console.error('[ADDRESS-AUTOCOMPLETE] Failed to load Google Maps script:', error);
       setIsLoading(false);
     };
     document.head.appendChild(script);
 
     return () => {
-      // Cleanup: remove script if component unmounts
-      const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
-      if (existingScript && existingScript.parentNode) {
-        existingScript.parentNode.removeChild(existingScript);
-      }
+      // Cleanup: remove script if component unmounts (but only if we're the only one using it)
+      // Actually, don't remove it - other components might be using it too
+      // const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
+      // if (existingScript && existingScript.parentNode) {
+      //   existingScript.parentNode.removeChild(existingScript);
+      // }
     };
   }, [apiKey]);
 
   // Initialize autocomplete
   useEffect(() => {
-    if (!isLoaded || !inputRef.current || disabled) return;
+    if (!isLoaded || !inputRef.current || disabled) {
+      if (!isLoaded) console.log('[ADDRESS-AUTOCOMPLETE] Waiting for Google Maps to load...');
+      if (!inputRef.current) console.log('[ADDRESS-AUTOCOMPLETE] Input ref not ready...');
+      if (disabled) console.log('[ADDRESS-AUTOCOMPLETE] Component disabled...');
+      return;
+    }
 
     try {
+      console.log('[ADDRESS-AUTOCOMPLETE] Initializing Google Maps Autocomplete...');
       // Create autocomplete instance
       const win = window as any;
       const autocomplete = new win.google.maps.places.Autocomplete(
@@ -163,13 +192,15 @@ export function EnhancedAddressAutocomplete({
       );
 
       autocompleteRef.current = autocomplete;
+      console.log('[ADDRESS-AUTOCOMPLETE] Autocomplete initialized successfully');
 
       // Handle place selection
       autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
+        console.log('[ADDRESS-AUTOCOMPLETE] Place selected:', place.formatted_address);
         
         if (!place.geometry || !place.geometry.location) {
-          console.warn('No location data available for selected place');
+          console.warn('[ADDRESS-AUTOCOMPLETE] No location data available for selected place');
           return;
         }
 
@@ -203,21 +234,22 @@ export function EnhancedAddressAutocomplete({
           }
         });
 
-        // Call onChange with formatted address and components
-        onChange(place.formatted_address, components);
+        // Call onChange with formatted address and components (use ref to avoid recreation)
+        onChangeRef.current(place.formatted_address, components);
       });
 
       return () => {
         if (autocompleteRef.current) {
+          console.log('[ADDRESS-AUTOCOMPLETE] Cleaning up autocomplete instance');
           win.google.maps.event.clearInstanceListeners(autocompleteRef.current);
           autocompleteRef.current = null;
         }
       };
     } catch (error) {
-      console.error('Error initializing Google Maps autocomplete:', error);
+      console.error('[ADDRESS-AUTOCOMPLETE] Error initializing Google Maps autocomplete:', error);
       setIsLoading(false);
     }
-  }, [isLoaded, disabled, onChange, types, componentRestrictions]);
+  }, [isLoaded, disabled, types, componentRestrictions]); // ✅ FIX: Removed onChange from deps to prevent recreation
 
   return (
     <div className={`relative ${className}`}>
@@ -227,10 +259,21 @@ export function EnhancedAddressAutocomplete({
           ref={inputRef as any}
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            // Update value immediately for controlled input
+            onChange(e.target.value);
+            // Autocomplete dropdown will show automatically via Google Maps
+          }}
+          onFocus={() => {
+            // Ensure autocomplete is ready when user focuses
+            if (isLoaded && autocompleteRef.current && inputRef.current) {
+              console.log('[ADDRESS-AUTOCOMPLETE] Input focused, autocomplete ready');
+            }
+          }}
           placeholder={placeholder}
           required={required}
           disabled={disabled || isLoading}
+          autoComplete="off" // Prevent browser autocomplete from interfering
           className="w-full pl-10 pr-10 py-2 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
         />
         {isLoading && (

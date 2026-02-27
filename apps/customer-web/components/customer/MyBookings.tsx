@@ -608,17 +608,22 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      // ✅ Navigate to tracking page
+                      // ✅ Navigate to tracking page via in-app navigation
                       console.log('[MyBookings] Navigating to tracking page:', {
                         bookingId: booking.bookingId,
                         serviceStyle: booking.serviceStyle,
                         status: booking.status,
                         serviceName: booking.serviceName,
                       });
-                      const trackingUrl = phone 
-                        ? `/tracking/${booking.bookingId}?phone=${encodeURIComponent(phone)}`
-                        : `/tracking/${booking.bookingId}`;
-                      router.push(trackingUrl);
+                      if (onNavigate) {
+                        onNavigate('gps-tracking', { bookingId: booking.bookingId });
+                      } else {
+                        // Fallback: direct navigation (requires CloudFront rewrite)
+                        const trackingUrl = phone 
+                          ? `/tracking/${booking.bookingId}?phone=${encodeURIComponent(phone)}`
+                          : `/tracking/${booking.bookingId}`;
+                        router.push(trackingUrl);
+                      }
                     }}
                     className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm font-medium"
                   >

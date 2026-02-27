@@ -31,8 +31,25 @@ function handler(event) {
     return request;
   }
   
+  // ✅ CRITICAL FIX: Handle dynamic Next.js routes BEFORE generic .html rewrite
+  // These routes have [param] segments that don't have pre-generated HTML files.
+  // They all use a single placeholder.html that the client-side JS hydrates.
+  var dynamicRoutes = [
+    { pattern: /^\/tracking\/[^/]+$/, rewrite: '/tracking/placeholder.html' },
+    { pattern: /^\/video\/[^/]+.*$/, rewrite: '/video/placeholder.html' },
+    { pattern: /^\/booking\/[^/]+$/, rewrite: '/booking/placeholder.html' },
+    { pattern: /^\/orders\/[^/]+\/tracking$/, rewrite: '/orders/placeholder/tracking.html' },
+  ];
+
+  for (var i = 0; i < dynamicRoutes.length; i++) {
+    if (uri.match(dynamicRoutes[i].pattern)) {
+      request.uri = dynamicRoutes[i].rewrite;
+      return request;
+    }
+  }
+
   // Rewrite /ecommerce to /ecommerce.html, /catalog to /catalog.html, etc.
-  // This handles Next.js static export routing
+  // This handles Next.js static export routing for known static pages
   request.uri = uri + '.html';
   
   return request;

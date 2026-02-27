@@ -890,57 +890,100 @@ export function UniversalBookingRouter({
       )}
 
       {/* ✅ FIX: When payment page is shown, render it as full-screen overlay to escape router layout */}
-      {showPaymentPage && selectedVendorService && selectedPet && selectedDate && selectedTime && (() => {
-        const finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId || selectedVendorService.id || serviceId;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        
-        // ✅ FIX: Validate customerId before proceeding to payment
-        if (!customerId) {
-          console.error('[UniversalBookingRouter] No customerId available for payment');
-          toast.error('Please sign in to continue with booking');
-          setShowPaymentPage(false);
-          return null;
-        }
-        
-        if (finalServiceId && uuidRegex.test(finalServiceId)) {
+      {showPaymentPage && (() => {
+        // ✅ CRITICAL FIX: If required data is missing, show error state instead of blank screen
+        if (!selectedVendorService || !selectedPet || !selectedDate || !selectedTime) {
           return (
-            <div className="fixed inset-0 z-50 bg-white">
-              <UniversalPaymentPage
-                type="booking"
-                vendorId={(vendorId || doctorId || clinicId || '') as string}
-                vendorName={doctor?.name || doctor?.clinic_name || `${config.roleName} Clinic`}
-                vendorAddress={selectedServiceType === 'at_center' ? (doctor?.clinic_address || doctor?.address || '') : undefined} // ✅ NEW: Clinic address
-                staffName={selectedServiceType === 'tele' ? (doctor?.name || config.roleName) : selectedServiceType === 'at_home' ? (doctor?.name || config.roleName) : undefined} // ✅ NEW: Staff/doctor name for tele/home
-                staffPhoto={selectedServiceType === 'tele' || selectedServiceType === 'at_home' ? (doctor?.photo || doctor?.profile_photo) : undefined} // ✅ NEW: Doctor photo for tele/home
-                serviceId={finalServiceId}
-                serviceName={selectedVendorService.name || selectedServiceOption?.name || `${config.roleName} Consultation`}
-                serviceDescription={`${selectedServiceOption?.name} for ${selectedPet.name}`}
-                serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-                bookingDate={selectedDate}
-                bookingTime={selectedTime}
-                petId={selectedPet.id}
-                petName={selectedPet.name}
-                petBreed={selectedPet.breed}
-                baseAmount={selectedPackageForSwitch
-                  ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
-                  : (allSelectedServices && allSelectedServices.length > 0 
-                    ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-                    : (selectedVendorService.price || selectedServiceOption?.price || 0))}
-                duration={selectedVendorService.duration || selectedServiceOption?.duration || 15}
-                selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
-                customerPhone={phone}
-                customerId={customerId || undefined}
-                onBack={() => setShowPaymentPage(false)}
-                onSuccess={(bookingId) => {
-                  setBookingId(bookingId);
-                  setShowPaymentPage(false);
-                  setStep('confirmation');
-                }}
-              />
+            <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-6">
+              <div className="text-center max-w-sm">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">⚠️</span>
+                </div>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">Missing Booking Details</h3>
+                <p className="text-gray-600 text-sm mb-4">
+                  {!selectedVendorService ? 'Service not selected. ' : ''}
+                  {!selectedPet ? 'Pet not selected. ' : ''}
+                  {!selectedDate ? 'Date not selected. ' : ''}
+                  {!selectedTime ? 'Time not selected. ' : ''}
+                  Please go back and complete all steps.
+                </p>
+                <button
+                  onClick={() => setShowPaymentPage(false)}
+                  className="bg-[#FF8C42] text-white px-6 py-2.5 rounded-full font-medium hover:bg-[#FF7A2E] transition"
+                >
+                  Go Back
+                </button>
+              </div>
             </div>
           );
         }
-        return null;
+
+        const finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId || selectedVendorService.id || serviceId;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        
+        // ✅ FIX: If customerId is missing or serviceId is not UUID, show error instead of blank screen
+        if (!customerId || !finalServiceId || !uuidRegex.test(finalServiceId)) {
+          return (
+            <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-6">
+              <div className="text-center max-w-sm">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">⚠️</span>
+                </div>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">
+                  {!customerId ? 'Authentication Required' : 'Service Configuration Error'}
+                </h3>
+                <p className="text-gray-600 text-sm mb-4">
+                  {!customerId 
+                    ? 'Please sign in to continue with booking.' 
+                    : 'The selected service has an invalid configuration. Please go back and select a different service.'}
+                </p>
+                <button
+                  onClick={() => setShowPaymentPage(false)}
+                  className="bg-[#FF8C42] text-white px-6 py-2.5 rounded-full font-medium hover:bg-[#FF7A2E] transition"
+                >
+                  Go Back
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 bg-white">
+            <UniversalPaymentPage
+              type="booking"
+              vendorId={(vendorId || doctorId || clinicId || '') as string}
+              vendorName={doctor?.name || doctor?.clinic_name || `${config.roleName} Clinic`}
+              vendorAddress={selectedServiceType === 'at_center' ? (doctor?.clinic_address || doctor?.address || '') : undefined}
+              staffName={selectedServiceType === 'tele' ? (doctor?.name || config.roleName) : selectedServiceType === 'at_home' ? (doctor?.name || config.roleName) : undefined}
+              staffPhoto={selectedServiceType === 'tele' || selectedServiceType === 'at_home' ? (doctor?.photo || doctor?.profile_photo) : undefined}
+              serviceId={finalServiceId}
+              serviceName={selectedVendorService.name || selectedServiceOption?.name || `${config.roleName} Consultation`}
+              serviceDescription={`${selectedServiceOption?.name} for ${selectedPet.name}`}
+              serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+              bookingDate={selectedDate}
+              bookingTime={selectedTime}
+              petId={selectedPet.id}
+              petName={selectedPet.name}
+              petBreed={selectedPet.breed}
+              baseAmount={selectedPackageForSwitch
+                ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
+                : (allSelectedServices && allSelectedServices.length > 0 
+                  ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
+                  : (selectedVendorService.price || selectedServiceOption?.price || 0))}
+              duration={selectedVendorService.duration || selectedServiceOption?.duration || 15}
+              selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
+              customerPhone={phone}
+              customerId={customerId || undefined}
+              onBack={() => setShowPaymentPage(false)}
+              onSuccess={(bookingId) => {
+                setBookingId(bookingId);
+                setShowPaymentPage(false);
+                setStep('confirmation');
+              }}
+            />
+          </div>
+        );
       })()}
 
       {/* Main Content */}

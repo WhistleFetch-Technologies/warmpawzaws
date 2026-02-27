@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText } from 'lucide-react';
+import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText, Edit } from 'lucide-react';
 import { Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { CustomDropdown } from './CustomDropdown';
 import { VendorDetailsModal } from './VendorDetailsModal';
 import { EditVendorDocumentsModal } from './EditVendorDocumentsModal';
+import { EditVendorDetailsModal } from './EditVendorDetailsModal';
 
 interface DiscoveryHealth {
   hasPhoto: boolean;
@@ -60,6 +61,8 @@ export function ActiveVendorsTab() {
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [editingDocumentsVendorId, setEditingDocumentsVendorId] = useState<string | null>(null);
   const [editingDocumentsVendorName, setEditingDocumentsVendorName] = useState<string>('');
+  const [editingDetailsVendorId, setEditingDetailsVendorId] = useState<string | null>(null);
+  const [editingDetailsVendorName, setEditingDetailsVendorName] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
 
@@ -544,6 +547,19 @@ export function ActiveVendorsTab() {
                     <FileText className="w-4 h-4 mr-2" />
                     Edit Documents
                   </Button>
+                  {/* ✅ NEW: Edit Details button */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="hover:bg-purple-50 hover:border-purple-200 text-purple-600"
+                    onClick={() => {
+                      setEditingDetailsVendorId(vendor.id);
+                      setEditingDetailsVendorName(vendor.name);
+                    }}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Details
+                  </Button>
                   {/* ✅ NEW: Deactivate button */}
                   <Button
                     size="sm"
@@ -578,6 +594,19 @@ export function ActiveVendorsTab() {
           }}
           vendorId={editingDocumentsVendorId}
           vendorName={editingDocumentsVendorName}
+        />
+      )}
+
+      {editingDetailsVendorId && (
+        <EditVendorDetailsModal
+          isOpen={!!editingDetailsVendorId}
+          onClose={() => {
+            setEditingDetailsVendorId(null);
+            setEditingDetailsVendorName('');
+          }}
+          vendorId={editingDetailsVendorId}
+          vendorName={editingDetailsVendorName}
+          onUpdate={loadActiveVendors}
         />
       )}
     </div>

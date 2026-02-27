@@ -124260,6 +124260,80 @@ function registerAdminEndpoints(app3) {
       }, 500);
     }
   });
+  app3.post("/admin/update-vendor-profile/:vendorId", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+    try {
+      const {
+        email,
+        phone,
+        business_name,
+        owner_name,
+        status,
+        address
+      } = await c.req.json();
+      const vendorId = c.req.param("vendorId");
+      if (!vendorId) {
+        return c.json({ error: "vendorId is required" }, 400);
+      }
+      const fields = [];
+      const values = [];
+      let index = 1;
+      if (email !== void 0) {
+        fields.push(`email = $${index++}`);
+        values.push(email);
+      }
+      if (phone !== void 0) {
+        fields.push(`phone = $${index++}`);
+        values.push(phone);
+      }
+      if (business_name !== void 0) {
+        fields.push(`business_name = $${index++}`);
+        values.push(business_name);
+      }
+      if (owner_name !== void 0) {
+        fields.push(`owner_name = $${index++}`);
+        values.push(owner_name);
+      }
+      if (status !== void 0) {
+        fields.push(`status = $${index++}`);
+        values.push(status);
+      }
+      if (address !== void 0) {
+        fields.push(`address = $${index++}`);
+        values.push(address);
+      }
+      if (fields.length === 0) {
+        return c.json({ message: "Nothing to update" }, 400);
+      }
+      fields.push(`updated_at = NOW()`);
+      values.push(vendorId);
+      const sql = `
+        UPDATE vendors
+        SET ${fields.join(", ")}
+        WHERE id = $${index}
+        RETURNING *;
+      `;
+      const result = await query(sql, values);
+      return c.json({
+        success: true,
+        message: "vendor updated successfully",
+        records_updated: result.rows.length,
+        verification: result.rows
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("[ADMIN] Error fixing staff vendor_identity:", error);
+        return c.json({
+          success: false,
+          error: error.message,
+          stack: error.stack
+        }, 500);
+      }
+    }
+  });
 }
 function createApiGatewayEvent7(req) {
   return {
@@ -145670,7 +145744,9 @@ function isWithinVideoCallWindow(booking) {
   }
   return { allowed: true };
 }
+var _tableVerified = false;
 async function ensureVideoCallSessionsTable() {
+  if (_tableVerified) return;
   try {
     const checkResult = await query(`
       SELECT column_name FROM information_schema.columns 
@@ -145707,6 +145783,7 @@ async function ensureVideoCallSessionsTable() {
       `);
       console.log("[VIDEO CALL] Table video_call_sessions recreated successfully");
     }
+    _tableVerified = true;
   } catch (error) {
     console.error("[VIDEO CALL] Error ensuring table schema:", error.message);
     if (error.message?.includes("does not exist")) {
@@ -175307,9 +175384,31 @@ function registerChatEndpoints(app3) {
          ORDER BY created_at ASC`,
         [bookingId2]
       ).catch(() => ({ rows: [] }));
+      const enrichedMessages = await Promise.all(
+        (messages.rows || []).map(async (msg) => {
+          if (msg.file_id && (msg.message_type === "file" || msg.message_type === "image" || msg.message_type === "video")) {
+            try {
+              const { S3Client: S3Client7, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+              const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+              const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+              const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
+              const signedUrl = await getSignedUrl4(
+                s3Client6,
+                new GetObjectCommand5({ Bucket: BUCKET_NAME3, Key: msg.file_id }),
+                { expiresIn: 604800 }
+              );
+              return { ...msg, file_url: signedUrl };
+            } catch (err) {
+              console.warn(`[CHAT] Failed to generate presigned URL for file_id=${msg.file_id}: ${err?.message}`);
+              return msg;
+            }
+          }
+          return msg;
+        })
+      );
       return c.json({
         success: true,
-        messages: messages.rows || []
+        messages: enrichedMessages
       });
     } catch (error) {
       console.error("Error fetching messages:", error);
@@ -175375,26 +175474,60 @@ function registerChatEndpoints(app3) {
         { expiresIn: 604800 }
         // 7 days (max for presigned URLs)
       );
-      const newMessage = await insert("chat_messages", {
-        booking_id: bookingId2,
-        sender_phone: senderPhone,
-        sender_name: senderName || null,
-        sender_type: senderType || "customer",
-        message: caption || `Sent a ${file.type.startsWith("image/") ? "photo" : file.type.startsWith("video/") ? "video" : "document"}`,
-        message_type: file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file",
-        file_id: fileKey,
-        file_name: file.name,
-        file_type: file.type,
-        file_size: file.size,
-        is_read: false
-      }).catch(() => {
-        return [{
-          id: `msg_${Date.now()}`,
+      const messageText = caption || `Sent a ${file.type.startsWith("image/") ? "photo" : file.type.startsWith("video/") ? "video" : "document"}`;
+      const messageTypeVal = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file";
+      let newMessage;
+      try {
+        newMessage = await insert("chat_messages", {
           booking_id: bookingId2,
+          sender_phone: senderPhone,
+          sender_name: senderName || null,
+          sender_type: senderType || "customer",
+          message: messageText,
+          message_type: messageTypeVal,
           file_id: fileKey,
-          file_name: file.name
-        }];
-      });
+          file_name: file.name,
+          file_type: file.type,
+          file_size: file.size,
+          is_read: false
+        });
+      } catch (insertErr1) {
+        console.warn("[CHAT] Insert with file_type/file_size failed, retrying without:", insertErr1?.message);
+        try {
+          newMessage = await insert("chat_messages", {
+            booking_id: bookingId2,
+            sender_phone: senderPhone,
+            sender_name: senderName || null,
+            sender_type: senderType || "customer",
+            message: messageText,
+            message_type: messageTypeVal,
+            file_id: fileKey,
+            file_name: file.name,
+            is_read: false
+          });
+        } catch (insertErr2) {
+          console.warn("[CHAT] Insert without file_type/file_size also failed, retrying minimal:", insertErr2?.message);
+          try {
+            newMessage = await insert("chat_messages", {
+              booking_id: bookingId2,
+              sender_phone: senderPhone,
+              sender_type: senderType || "customer",
+              message: messageText,
+              message_type: messageTypeVal,
+              file_id: fileKey,
+              is_read: false
+            });
+          } catch (insertErr3) {
+            console.error("[CHAT] All insert attempts failed:", insertErr3?.message);
+            newMessage = [{
+              id: `msg_${Date.now()}`,
+              booking_id: bookingId2,
+              file_id: fileKey,
+              file_name: file.name
+            }];
+          }
+        }
+      }
       return c.json({
         success: true,
         message: newMessage[0],
@@ -232980,17 +233113,29 @@ var GetPendingReportsForVetHandler = class extends BaseHandler {
       const allColumnNames = allColumnsCheck.rows.map((r) => r.column_name);
       const safeColumnNames = hasReviewedBy ? allColumnNames : allColumnNames.filter((col) => col !== "reviewed_by");
       const selectColumns = safeColumnNames.map((col) => `dr.${col}`).join(", ");
+      const hasVendorId = allColumnNames.includes("vendor_id");
+      const hasCustomerId = allColumnNames.includes("customer_id");
+      const hasPetId = allColumnNames.includes("pet_id");
+      const hasPrescribingVetId = allColumnNames.includes("prescribing_vet_id");
+      if (!hasPrescribingVetId) {
+        console.warn("[DIAGNOSTICS] prescribing_vet_id column does not exist in diagnostic_reports table");
+        return this.success({ success: true, reports: [], count: 0 });
+      }
+      let selectParts = [selectColumns];
+      if (hasVendorId) selectParts.push("v.business_name as diagnostics_vendor_name");
+      if (hasCustomerId) selectParts.push("c.full_name as customer_name");
+      if (hasPetId) {
+        selectParts.push("p.name as pet_name");
+        selectParts.push("p.species as pet_type");
+      }
+      let joinClauses = "";
+      if (hasVendorId) joinClauses += "\n        LEFT JOIN vendors v ON v.id = dr.vendor_id";
+      if (hasCustomerId) joinClauses += "\n        LEFT JOIN customers c ON c.id = dr.customer_id";
+      if (hasPetId) joinClauses += "\n        LEFT JOIN pets p ON p.id = dr.pet_id";
       let reportsQuery = `
         SELECT 
-          ${selectColumns},
-          v.business_name as diagnostics_vendor_name,
-          c.full_name as customer_name,
-          p.name as pet_name,
-          p.species as pet_type
-        FROM diagnostic_reports dr
-        LEFT JOIN vendors v ON v.id = dr.vendor_id
-        LEFT JOIN customers c ON c.id = dr.customer_id
-        LEFT JOIN pets p ON p.id = dr.pet_id
+          ${selectParts.join(",\n          ")}
+        FROM diagnostic_reports dr${joinClauses}
         WHERE dr.prescribing_vet_id = $1 
           AND dr.status IN ('ready', 'requires_action')
       `;
@@ -233010,10 +233155,10 @@ var GetPendingReportsForVetHandler = class extends BaseHandler {
           reportUrl: r.report_url,
           summary: r.summary,
           status: r.status,
-          diagnosticsVendorName: r.diagnostics_vendor_name,
-          customerName: r.customer_name,
-          petName: r.pet_name,
-          petType: r.pet_type,
+          diagnosticsVendorName: r.diagnostics_vendor_name || null,
+          customerName: r.customer_name || null,
+          petName: r.pet_name || null,
+          petType: r.pet_type || null,
           createdAt: r.created_at
         })),
         count: reports.length

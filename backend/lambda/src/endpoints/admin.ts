@@ -36,63 +36,63 @@ class VendorStatsHandler extends BaseHandler {
       // ✅ SQL: Get all vendors
       const vendors = await select('vendors', {});
 
-    const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
-    
-    // ✅ FIX: Get pending applications from vendor_onboarding_applications table (not vendors table)
-    let pendingApplicationsCount = 0;
-    let pendingTodayCount = 0;
-    try {
-      const pendingResult = await query(`
+      const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
+
+      // ✅ FIX: Get pending applications from vendor_onboarding_applications table (not vendors table)
+      let pendingApplicationsCount = 0;
+      let pendingTodayCount = 0;
+      try {
+        const pendingResult = await query(`
         SELECT COUNT(*) as total, 
                SUM(CASE WHEN submitted_at >= CURRENT_DATE THEN 1 ELSE 0 END) as today_count
         FROM vendor_onboarding_applications 
         WHERE status IN ('SUBMITTED', 'PENDING', 'UNDER_REVIEW')
       `);
-      if (pendingResult.rows && pendingResult.rows[0]) {
-        pendingApplicationsCount = parseInt(pendingResult.rows[0].total || '0', 10);
-        pendingTodayCount = parseInt(pendingResult.rows[0].today_count || '0', 10);
+        if (pendingResult.rows && pendingResult.rows[0]) {
+          pendingApplicationsCount = parseInt(pendingResult.rows[0].total || '0', 10);
+          pendingTodayCount = parseInt(pendingResult.rows[0].today_count || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not fetch pending applications from vendor_onboarding_applications:', e);
+        // Fallback to vendors table if the new table doesn't exist
+        const fallbackPending = vendors.filter(v =>
+          v.status === 'pending' || v.status === 'pending_approval'
+        );
+        pendingApplicationsCount = fallbackPending.length;
       }
-    } catch (e) {
-      console.warn('Could not fetch pending applications from vendor_onboarding_applications:', e);
-      // Fallback to vendors table if the new table doesn't exist
-      const fallbackPending = vendors.filter(v => 
-        v.status === 'pending' || v.status === 'pending_approval'
-      );
-      pendingApplicationsCount = fallbackPending.length;
-    }
-    
-    const deactivatedVendors = vendors.filter(v => !v.is_active);
-    const rejectedVendors = vendors.filter(v => v.status === 'rejected');
 
-    // Distribution by category
-    const distributionByCategory: Record<string, number> = {};
-    vendors.forEach(vendor => {
-      if (vendor.category) {
-        distributionByCategory[vendor.category] = 
-          (distributionByCategory[vendor.category] || 0) + 1;
-      }
-    });
+      const deactivatedVendors = vendors.filter(v => !v.is_active);
+      const rejectedVendors = vendors.filter(v => v.status === 'rejected');
 
-    return this.success({
-      activeVendors: {
-        count: activeVendors.length,
-        percentage: vendors.length > 0 
-          ? Math.round((activeVendors.length / vendors.length) * 100) 
-          : 0,
-      },
-      pendingApplications: {
-        count: pendingApplicationsCount,
-        todayCount: pendingTodayCount,
-      },
-      deactivatedVendors: {
-        count: deactivatedVendors.length,
-      },
-      rejectedVendors: {
-        count: rejectedVendors.length,
-      },
-      distributionByCategory,
-      total: vendors.length,
-    });
+      // Distribution by category
+      const distributionByCategory: Record<string, number> = {};
+      vendors.forEach(vendor => {
+        if (vendor.category) {
+          distributionByCategory[vendor.category] =
+            (distributionByCategory[vendor.category] || 0) + 1;
+        }
+      });
+
+      return this.success({
+        activeVendors: {
+          count: activeVendors.length,
+          percentage: vendors.length > 0
+            ? Math.round((activeVendors.length / vendors.length) * 100)
+            : 0,
+        },
+        pendingApplications: {
+          count: pendingApplicationsCount,
+          todayCount: pendingTodayCount,
+        },
+        deactivatedVendors: {
+          count: deactivatedVendors.length,
+        },
+        rejectedVendors: {
+          count: rejectedVendors.length,
+        },
+        distributionByCategory,
+        total: vendors.length,
+      });
     } catch (error: any) {
       console.error('Error in VendorStatsHandler:', error);
       return this.error(error.message || 'Failed to fetch vendor stats', 500);
@@ -266,7 +266,7 @@ class ListVendorsHandler extends BaseHandler {
       let whereConditions: string[] = ['1=1'];
       const params: any[] = [];
       let paramIdx = 1;
-      
+
       // Status filter
       if (status && status !== 'all') {
         whereConditions.push(`v.status = $${paramIdx}`);
@@ -453,10 +453,10 @@ class ListVendorsHandler extends BaseHandler {
  */
 export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?: string; error?: string }> {
   const authHeader = c.req.header('authorization') || c.req.header('Authorization');
-  
+
   // Check for UAT mode - ONLY check UAT_MODE env variable for security
   const uatMode = process.env.UAT_MODE === 'true';
-  
+
   // ✅ FIX: In UAT mode, allow admin access with any valid token or UAT token
   if (uatMode) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -464,9 +464,9 @@ export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; u
       console.log('[ADMIN AUTH] UAT Mode: Allowing admin access without auth header');
       return { authorized: true, userId: 'uat-admin-user' };
     }
-    
+
     const token = authHeader.replace(/^Bearer\s+/i, '');
-    
+
     // Allow UAT tokens immediately (no JWT verification)
     if (token.startsWith('uat-token-')) {
       const suffix = token.replace('uat-token-', '');
@@ -475,7 +475,7 @@ export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; u
         return { authorized: true, userId: 'uat-admin-user' };
       }
     }
-    
+
     // Allow JWT tokens (verify or allow in dev)
     if (token.startsWith('eyJ')) {
       // JWT token or UAT token - verify it's valid
@@ -483,34 +483,34 @@ export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; u
         const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');
         const headers: Record<string, string> = {};
         headers['authorization'] = authHeader;
-        
+
         const result = await extractAndVerifyAuthToken(headers);
-        
+
         if (result.valid && result.payload) {
           // Check if token has admin role or allow in UAT mode
           const groups = result.payload['cognito:groups'] as string[] | undefined;
           const userType = result.payload['custom:user_type'] as string | undefined;
           const role = result.payload['custom:user_type'] as string | undefined;
-          
-          const isAdmin = groups?.includes('admin') || 
-                          groups?.includes('super-admin') || 
-                          userType === 'admin' ||
-                          role === 'admin';
-          
+
+          const isAdmin = groups?.includes('admin') ||
+            groups?.includes('super-admin') ||
+            userType === 'admin' ||
+            role === 'admin';
+
           if (isAdmin || uatMode) {
             return { authorized: true, userId: result.payload.sub || result.payload['cognito:username'] || 'uat-admin-user' };
           }
         }
-        
+
         // In UAT mode, allow any valid token for admin operations
         console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with valid token');
         return { authorized: true, userId: result.payload?.sub || 'uat-admin-user' };
       } catch (tokenError) {
         // SECURITY FIX: Only allow UAT bypass in non-production environments
-        const isProduction = process.env.NODE_ENV === 'production' || 
-                             process.env.STAGE === 'prod' || 
-                             process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
-        
+        const isProduction = process.env.NODE_ENV === 'production' ||
+          process.env.STAGE === 'prod' ||
+          process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
+
         if (!isProduction && token.startsWith('eyJ')) {
           console.log('[ADMIN AUTH] UAT Mode (DEV ONLY): Allowing admin access (token verification skipped)');
           return { authorized: true, userId: 'uat-admin-user' };
@@ -520,21 +520,21 @@ export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; u
       }
     }
   }
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return { authorized: false, error: 'Authentication required' };
   }
 
   const token = authHeader.replace('Bearer ', '');
-  
+
   // Verify JWT token
   try {
     const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');
     const headers: Record<string, string> = {};
     headers['authorization'] = authHeader;
-    
+
     const result = await extractAndVerifyAuthToken(headers);
-    
+
     if (!result.valid || !result.payload) {
       const reason = result.error || 'unknown';
       console.warn('[ADMIN AUTH] Token verification failed:', reason, 'tokenPrefix:', token.slice(0, 20) + '...');
@@ -544,10 +544,10 @@ export async function requireAdminAuth(c: any): Promise<{ authorized: boolean; u
     // Check for admin role in token claims
     const groups = result.payload['cognito:groups'] as string[] | undefined;
     const userType = result.payload['custom:user_type'] as string | undefined;
-    
-    const isAdmin = groups?.includes('admin') || 
-                    groups?.includes('super-admin') || 
-                    userType === 'admin';
+
+    const isAdmin = groups?.includes('admin') ||
+      groups?.includes('super-admin') ||
+      userType === 'admin';
 
     if (!isAdmin) {
       return { authorized: false, error: 'Admin access required' };
@@ -580,7 +580,7 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await statsHandler.execute(event, context);
@@ -593,7 +593,7 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
     const context = createLambdaContext();
@@ -607,7 +607,7 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
     const context = createLambdaContext();
@@ -673,7 +673,7 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await listHandler.execute(event, context);
@@ -687,7 +687,7 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await listHandler.execute(event, context);
@@ -701,9 +701,9 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const applicationId = c.req.param('applicationId');
-    
+
     try {
       // ✅ FIX: Look up vendor_identity by application_id first
       const identityResults = await query(
@@ -715,19 +715,19 @@ export function registerAdminEndpoints(app: Hono) {
          WHERE vi.application_id = $1 OR vi.id = $1 OR voa.id = $1`,
         [applicationId]
       );
-      
+
       let vendorId: string;
       let identity: any = null;
-      
+
       if (identityResults.rows.length > 0) {
         identity = identityResults.rows[0];
-        
+
         // Check if vendor already exists
         const existingVendor = await query(
           `SELECT id FROM vendors WHERE id = $1 OR phone = $2`,
           [identity.vendor_id || identity.id, identity.phone]
         );
-        
+
         if (existingVendor.rows.length > 0) {
           vendorId = existingVendor.rows[0].id;
           // ✅ FIX: Vendor exists but vendor_identity.vendor_id might not be set - link them
@@ -770,7 +770,7 @@ export function registerAdminEndpoints(app: Hono) {
             ]
           );
           vendorId = insertResult.rows[0].id;
-          
+
           // ✅ FIX: Update vendor_identity to link vendor_id and set status
           try {
             await query(
@@ -802,7 +802,7 @@ export function registerAdminEndpoints(app: Hono) {
         }
         vendorId = vendors[0].id;
       }
-      
+
       // ✅ FIX: Ensure facility/profile is provisioned after approval
       // Update vendor record with any missing facility fields from application data
       // Do this BEFORE status update so facility data is available immediately
@@ -810,11 +810,11 @@ export function registerAdminEndpoints(app: Hono) {
         const application = await select('vendor_onboarding_applications', { id: applicationId });
         const currentVendor = await select('vendors', { id: vendorId });
         const vendorRecord = currentVendor.length > 0 ? currentVendor[0] : null;
-        
+
         if (application.length > 0) {
           const appPayload = application[0].application_payload || {};
           const facilityUpdate: any = {};
-          
+
           // Ensure address fields are populated (even if from application)
           if (appPayload.address && (!vendorRecord?.address || vendorRecord.address === 'Unknown' || vendorRecord.address === 'Not specified')) {
             facilityUpdate.address = appPayload.address;
@@ -834,7 +834,7 @@ export function registerAdminEndpoints(app: Hono) {
           if (appPayload.longitude && !vendorRecord?.longitude) {
             facilityUpdate.longitude = appPayload.longitude;
           }
-          
+
           // Update vendor if any facility fields need to be set
           if (Object.keys(facilityUpdate).length > 0) {
             await update('vendors', { id: vendorId }, {
@@ -848,7 +848,7 @@ export function registerAdminEndpoints(app: Hono) {
         console.warn(`⚠️ [Vendor Approval] Failed to provision facility (non-critical):`, facilityErr.message);
         // Don't fail approval if facility provisioning fails - vendor can update later
       }
-      
+
       // Update vendor status to approved
       await update(
         'vendors',
@@ -859,13 +859,13 @@ export function registerAdminEndpoints(app: Hono) {
           is_active: true,
         }
       );
-      
+
       // Update application status if exists
       await query(
         `UPDATE vendor_onboarding_applications SET status = 'APPROVED', updated_at = NOW() WHERE id = $1`,
         [applicationId]
       );
-      
+
       // ✅ FIX: Update vendor_identity status to APPROVED and ensure vendor_id is set
       let updatedIdentity = null;
       try {
@@ -897,7 +897,7 @@ export function registerAdminEndpoints(app: Hono) {
 
       // Process vendor referral - check both metadata AND existing referral records
       let referralProcessed = false;
-      
+
       // Method 1: Check metadata (from signup)
       if (updatedIdentity && updatedIdentity.metadata && updatedIdentity.metadata.referral_code_id) {
         try {
@@ -907,7 +907,7 @@ export function registerAdminEndpoints(app: Hono) {
             referralCode: updatedIdentity.metadata.referral_code || '',
             phone: updatedIdentity.phone || identity?.phone || '',
           });
-          
+
           if (referralResult.success) {
             console.log(`[ADMIN-APPROVAL] ✅ Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
             referralProcessed = true;
@@ -918,14 +918,14 @@ export function registerAdminEndpoints(app: Hono) {
           console.error('[ADMIN-APPROVAL] Error processing vendor referral:', refError);
         }
       }
-      
+
       // Method 2: Check for existing referral records for this vendor (fallback)
       // This handles cases where metadata is missing but referral record exists
       if (!referralProcessed) {
         try {
           const vendorPhone = updatedIdentity?.phone || identity?.phone || '';
           const normalizedPhone = vendorPhone.replace(/\D/g, '').slice(-10);
-          
+
           // Find referral records for this vendor that are approved but don't have points
           const referralRecords = await query(
             `SELECT vr.* FROM vendor_referrals vr
@@ -941,11 +941,11 @@ export function registerAdminEndpoints(app: Hono) {
              LIMIT 1`,
             [vendorId]
           );
-          
+
           if (referralRecords.rows.length > 0) {
             const referralRecord = referralRecords.rows[0];
             console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points, processing now...`);
-            
+
             // Award points directly to referrer
             const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
             const pointsResult = await loyaltyPointsService.awardPoints({
@@ -955,7 +955,7 @@ export function registerAdminEndpoints(app: Hono) {
               referenceId: referralRecord.id,
               description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referralRecord.referral_code}`,
             });
-            
+
             console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referralRecord.referrer_vendor_id}`);
             referralProcessed = true;
           }
@@ -963,7 +963,7 @@ export function registerAdminEndpoints(app: Hono) {
           console.error('[ADMIN-APPROVAL] Error processing referral from record:', refError);
         }
       }
-      
+
       // Method 3: Check for existing referral records by phone (additional fallback)
       // This handles cases where referral was applied/approved but metadata wasn't saved or points weren't awarded
       // IMPORTANT: Only match by phone if referred_vendor_id is NULL (pending referral that hasn't been linked to a vendor yet)
@@ -971,7 +971,7 @@ export function registerAdminEndpoints(app: Hono) {
       if (!referralProcessed) {
         try {
           const vendorPhone = identity?.phone?.replace(/\D/g, '').slice(-10) || '';
-          
+
           // Find referral records for this vendor that:
           // 1. Don't have points awarded yet, OR
           // 2. Have points but wrong/null vendor_id (data inconsistency)
@@ -997,14 +997,14 @@ export function registerAdminEndpoints(app: Hono) {
              LIMIT 1`,
             [vendorId, vendorPhone]
           );
-          
+
           if (existingReferrals.rows.length > 0) {
             const referral = existingReferrals.rows[0];
             const hasPoints = referral.has_points === true;
-            
+
             console.log(`[ADMIN-APPROVAL] Found existing referral record ${referral.id} for vendor ${vendorId}, processing...`);
             console.log(`[ADMIN-APPROVAL] Referral status: ${referral.status}, Referrer: ${referral.referrer_vendor_id}, Referred Vendor ID: ${referral.referred_vendor_id}, Has Points: ${hasPoints}`);
-            
+
             // Only award points if they don't exist yet
             if (!hasPoints) {
               const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
@@ -1015,12 +1015,12 @@ export function registerAdminEndpoints(app: Hono) {
                 referenceId: referral.id,
                 description: `Vendor referral: Admin approved vendor ${vendorId} (code: ${referral.referral_code})`,
               });
-              
+
               console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer ${referral.referrer_vendor_id}`);
             } else {
               console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}, skipping award but will update referral record`);
             }
-            
+
             // CRITICAL: Always update referral record with the correct vendor ID and status
             // This fixes data inconsistencies where points exist but vendor_id is wrong/null
             // IMPORTANT: Update even if referral already has a different vendor_id (data fix)
@@ -1034,10 +1034,10 @@ export function registerAdminEndpoints(app: Hono) {
                WHERE id = $2`,
               [vendorId, referral.id]
             );
-            
+
             console.log(`[ADMIN-APPROVAL] ✅ Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
             console.log(`[ADMIN-APPROVAL] Update result: ${JSON.stringify(updateResult)}`);
-            
+
             referralProcessed = true;
           }
         } catch (refError2: any) {
@@ -1045,14 +1045,14 @@ export function registerAdminEndpoints(app: Hono) {
           console.error('[ADMIN-APPROVAL] Error stack:', refError2.stack);
         }
       }
-      
+
       // Method 4: Check for existing referral records for this vendor (fallback)
       // This handles cases where referral was created but metadata wasn't stored
       // CRITICAL: Also handles referrals with points but wrong/null vendor_id
       if (!referralProcessed) {
         try {
           const vendorPhone = identity?.phone?.replace(/\D/g, '').slice(-10) || '';
-          
+
           // Find referrals by vendor_id OR by phone (if vendor_id is null)
           // Include referrals that have points but wrong vendor_id (data fix)
           const existingReferrals = await query(
@@ -1075,21 +1075,21 @@ export function registerAdminEndpoints(app: Hono) {
              LIMIT 1`,
             [vendorId, vendorPhone]
           );
-          
+
           if (existingReferrals.rows.length > 0) {
             const referral = existingReferrals.rows[0];
             const hasPoints = referral.has_points === true;
-            
+
             console.log(`[ADMIN-APPROVAL] Found existing referral record: ${referral.id}, processing...`);
             console.log(`[ADMIN-APPROVAL] Has points: ${hasPoints}, Current vendor_id: ${referral.referred_vendor_id}`);
-            
+
             // Award points if they don't exist
             if (!hasPoints) {
               // Points not awarded yet - award them now
               // Ensure vendor_refer_friend rule exists
               const { loyaltyRulesInitService } = await import('../lib/services/loyalty-rules-init-service');
               await loyaltyRulesInitService.initializeVendorReferralRules();
-              
+
               const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
               const pointsResult = await loyaltyPointsService.awardPoints({
                 vendorId: referral.referrer_vendor_id,
@@ -1098,12 +1098,12 @@ export function registerAdminEndpoints(app: Hono) {
                 referenceId: referral.id,
                 description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referral.referral_code}`,
               });
-              
+
               console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referral.referrer_vendor_id}`);
             } else {
               console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}`);
             }
-            
+
             // CRITICAL: Always update referral with correct vendor_id and status
             // This fixes cases where points exist but vendor_id is wrong/null
             await query(
@@ -1116,7 +1116,7 @@ export function registerAdminEndpoints(app: Hono) {
                WHERE id = $2`,
               [vendorId, referral.id]
             );
-            
+
             console.log(`[ADMIN-APPROVAL] ✅ Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
             referralProcessed = true;
           }
@@ -1126,7 +1126,7 @@ export function registerAdminEndpoints(app: Hono) {
           // Don't fail approval if referral processing fails
         }
       }
-      
+
       // Create notification
       await insert('notifications', {
         recipient_id: vendorId,
@@ -1137,7 +1137,7 @@ export function registerAdminEndpoints(app: Hono) {
         channels: { email: true, sms: true, inApp: true, push: false },
         is_read: false,
       });
-      
+
       return c.json({
         success: true,
         message: 'Vendor approved successfully',
@@ -1157,18 +1157,18 @@ export function registerAdminEndpoints(app: Hono) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
+
     const applicationId = c.req.param('applicationId');
     const body = await c.req.json().catch(() => ({}));
     const reason = body.reason || 'Application rejected by admin';
-    
+
     try {
       // Update vendor_identity status
       await query(
         `UPDATE vendor_identity SET onboarding_status = 'REJECTED' WHERE application_id = $1 OR id = $1`,
         [applicationId]
       );
-      
+
       // Update application status
       await query(
         `UPDATE vendor_onboarding_applications 
@@ -1176,7 +1176,7 @@ export function registerAdminEndpoints(app: Hono) {
          WHERE id = $1`,
         [applicationId, reason]
       );
-      
+
       return c.json({
         success: true,
         message: 'Application rejected',
@@ -1249,7 +1249,7 @@ export function registerAdminEndpoints(app: Hono) {
     try {
       // For now, allow without auth for testing (add auth later)
       const customers = await select('customers', {});
-      
+
       return c.json({
         success: true,
         count: customers.length,
@@ -1292,7 +1292,7 @@ export function registerAdminEndpoints(app: Hono) {
         ORDER BY b.created_at DESC
         LIMIT 100
       `);
-      
+
       return c.json({
         success: true,
         count: bookings.rows.length,
@@ -1311,7 +1311,7 @@ export function registerAdminEndpoints(app: Hono) {
   app.get('/admin/gst-configs', async (c) => {
     try {
       const gstConfigs = await select('gst_configs', {});
-      
+
       return c.json({
         success: true,
         count: gstConfigs.length,
@@ -1330,7 +1330,7 @@ export function registerAdminEndpoints(app: Hono) {
   app.get('/admin/policies', async (c) => {
     try {
       const policies = await select('cancellation_policies', {});
-      
+
       return c.json({
         success: true,
         count: policies.length,
@@ -1356,7 +1356,7 @@ export function registerAdminEndpoints(app: Hono) {
         LEFT JOIN vendors v ON s.vendor_id = v.id
         ORDER BY s.created_at DESC
       `);
-      
+
       return c.json({
         success: true,
         count: staff.rows.length,
@@ -1384,7 +1384,7 @@ export function registerAdminEndpoints(app: Hono) {
         LEFT JOIN customers c ON p.customer_id = c.id
         ORDER BY p.created_at DESC
       `);
-      
+
       return c.json({
         success: true,
         count: pets.rows.length,
@@ -1400,14 +1400,14 @@ export function registerAdminEndpoints(app: Hono) {
   app.post('/admin/fix-staff-vendor-identity', async (c) => {
     try {
       console.log('[ADMIN] Fixing staff vendor_identity records...');
-      
+
       // Step 1: Delete existing vendor_identity for staff phones
       await query(`
         DELETE FROM vendor_identity
         WHERE phone IN ('8426334832', '5555555555')
       `);
       console.log('[ADMIN] Deleted existing vendor_identity records');
-      
+
       // Step 2: Create/Update vendor_identity with proper staff configuration
       const result = await query(`
         INSERT INTO vendor_identity (
@@ -1467,9 +1467,9 @@ export function registerAdminEndpoints(app: Hono) {
           updated_at = NOW()
         RETURNING *
       `);
-      
+
       console.log('[ADMIN] Created/updated vendor_identity records:', result.rows.length);
-      
+
       // Step 3: Verify the fix
       const verify = await query(`
         SELECT 
@@ -1491,7 +1491,7 @@ export function registerAdminEndpoints(app: Hono) {
         WHERE s.phone IN ('8426334832', '5555555555')
         ORDER BY s.phone
       `);
-      
+
       return c.json({
         success: true,
         message: 'Staff vendor_identity records fixed successfully',
@@ -1500,11 +1500,108 @@ export function registerAdminEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[ADMIN] Error fixing staff vendor_identity:', error);
-      return c.json({ 
+      return c.json({
         success: false,
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       }, 500);
+    }
+  });
+
+
+  //UPDATE VENDOR PROFILE
+  app.post('/admin/update-vendor-profile/:vendorId', async (c) => {
+    // ✅ SECURITY FIX: Require admin authentication
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+
+    try {
+      const {
+        email,
+        phone,
+        business_name,
+        owner_name,
+        status,
+        address
+      } = await c.req.json();
+
+      const vendorId = c.req.param("vendorId");
+      
+      if (!vendorId) {
+        return c.json({ error: "vendorId is required" }, 400);
+      }
+      const fields: string[] = [];
+      const values: any[] = [];
+      let index = 1;
+
+      // Note: 'name' field is not a column in vendors table
+      // Use business_name or owner_name instead
+
+      if (email !== undefined) {
+        fields.push(`email = $${index++}`);
+        values.push(email);
+      }
+
+      if (phone !== undefined) {
+        fields.push(`phone = $${index++}`);
+        values.push(phone);
+      }
+
+      if (business_name !== undefined) {
+        fields.push(`business_name = $${index++}`);
+        values.push(business_name);
+      }
+
+      if (owner_name !== undefined) {
+        fields.push(`owner_name = $${index++}`);
+        values.push(owner_name);
+      }
+
+      if (status !== undefined) {
+        fields.push(`status = $${index++}`);
+        values.push(status);
+      }
+
+      if (address !== undefined) {
+        fields.push(`address = $${index++}`);
+        values.push(address);
+      }
+
+      if (fields.length === 0) {
+        return c.json({ message: "Nothing to update" }, 400);
+      }
+
+      fields.push(`updated_at = NOW()`);
+
+      values.push(vendorId);
+
+      const sql = `
+        UPDATE vendors
+        SET ${fields.join(", ")}
+        WHERE id = $${index}
+        RETURNING *;
+      `;
+
+      const result = await query(sql, values);
+
+
+      return c.json({
+        success: true,
+        message: 'vendor updated successfully',
+        records_updated: result.rows.length,
+        verification: result.rows,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error('[ADMIN] Error fixing staff vendor_identity:', error);
+        return c.json({
+          success: false,
+          error: error.message,
+          stack: error.stack
+        }, 500);
+      }
     }
   });
 }

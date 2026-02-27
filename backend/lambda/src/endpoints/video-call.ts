@@ -84,9 +84,12 @@ function isWithinVideoCallWindow(booking: any): { allowed: boolean; reason?: str
 // ============================================================================
 
 /**
- * Ensure video_call_sessions table has the correct schema
+ * Ensure video_call_sessions table has the correct schema.
+ * Cached per Lambda invocation to avoid repeated DDL checks.
  */
+let _tableVerified = false;
 async function ensureVideoCallSessionsTable(): Promise<void> {
+  if (_tableVerified) return; // Skip if already verified this Lambda invocation
   try {
     // Check if table exists with correct columns
     const checkResult = await query(`
@@ -128,6 +131,7 @@ async function ensureVideoCallSessionsTable(): Promise<void> {
       
       console.log('[VIDEO CALL] Table video_call_sessions recreated successfully');
     }
+    _tableVerified = true;
   } catch (error: any) {
     console.error('[VIDEO CALL] Error ensuring table schema:', error.message);
     // If table doesn't exist at all, create it

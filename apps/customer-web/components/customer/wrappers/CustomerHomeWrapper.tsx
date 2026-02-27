@@ -755,6 +755,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     return (
       <TrackingPageClient 
         bookingId={trackingBookingId}
+        onBack={() => {
+          setCurrentScreen(previousScreen || 'home');
+          setTrackingBookingId(null);
+        }}
       />
     );
   }

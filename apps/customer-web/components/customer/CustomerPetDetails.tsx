@@ -281,14 +281,20 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     );
   }
 
-  if (!pet && !loading) {
+  if (!pet) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center px-6">
-          <p className="text-gray-600 mb-4">Pet not found</p>
-          <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-            Go Back
-          </Button>
+          {loading ? (
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto" />
+          ) : (
+            <>
+              <p className="text-gray-600 mb-4">Pet not found</p>
+              <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+                Go Back
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -323,7 +329,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
             >
               {photoPreview ? (
                 <>
-                  <img src={photoPreview} alt={pet.name} className="w-full h-full object-cover" />
+                  <img src={photoPreview} alt={pet?.name || 'Pet'} className="w-full h-full object-cover" />
                   {editMode && (
                     <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Camera className="w-8 h-8 text-white" />

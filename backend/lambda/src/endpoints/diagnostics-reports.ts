@@ -728,21 +728,41 @@ class GetPendingReportsForVetHandler extends BaseHandler {
       const allColumnNames = allColumnsCheck.rows.map((r: any) => r.column_name);
       const safeColumnNames = hasReviewedBy 
         ? allColumnNames 
-        : allColumnNames.filter(col => col !== 'reviewed_by');
+        : allColumnNames.filter((col: string) => col !== 'reviewed_by');
       
-      const selectColumns = safeColumnNames.map(col => `dr.${col}`).join(', ');
+      const selectColumns = safeColumnNames.map((col: string) => `dr.${col}`).join(', ');
+      
+      // ✅ CRITICAL FIX: Check which JOIN columns actually exist before using them
+      const hasVendorId = allColumnNames.includes('vendor_id');
+      const hasCustomerId = allColumnNames.includes('customer_id');
+      const hasPetId = allColumnNames.includes('pet_id');
+      const hasPrescribingVetId = allColumnNames.includes('prescribing_vet_id');
+
+      // If prescribing_vet_id doesn't exist, return empty (cannot filter by vet)
+      if (!hasPrescribingVetId) {
+        console.warn('[DIAGNOSTICS] prescribing_vet_id column does not exist in diagnostic_reports table');
+        return this.success({ success: true, reports: [], count: 0 });
+      }
+
+      // Build dynamic SELECT with optional JOIN fields
+      let selectParts = [selectColumns];
+      if (hasVendorId) selectParts.push('v.business_name as diagnostics_vendor_name');
+      if (hasCustomerId) selectParts.push('c.full_name as customer_name');
+      if (hasPetId) {
+        selectParts.push('p.name as pet_name');
+        selectParts.push('p.species as pet_type');
+      }
+
+      // Build dynamic JOINs
+      let joinClauses = '';
+      if (hasVendorId) joinClauses += '\n        LEFT JOIN vendors v ON v.id = dr.vendor_id';
+      if (hasCustomerId) joinClauses += '\n        LEFT JOIN customers c ON c.id = dr.customer_id';
+      if (hasPetId) joinClauses += '\n        LEFT JOIN pets p ON p.id = dr.pet_id';
       
       let reportsQuery = `
         SELECT 
-          ${selectColumns},
-          v.business_name as diagnostics_vendor_name,
-          c.full_name as customer_name,
-          p.name as pet_name,
-          p.species as pet_type
-        FROM diagnostic_reports dr
-        LEFT JOIN vendors v ON v.id = dr.vendor_id
-        LEFT JOIN customers c ON c.id = dr.customer_id
-        LEFT JOIN pets p ON p.id = dr.pet_id
+          ${selectParts.join(',\n          ')}
+        FROM diagnostic_reports dr${joinClauses}
         WHERE dr.prescribing_vet_id = $1 
           AND dr.status IN ('ready', 'requires_action')
       `;
@@ -757,7 +777,7 @@ class GetPendingReportsForVetHandler extends BaseHandler {
 
       return this.success({
         success: true,
-        reports: reports.map(r => ({
+        reports: reports.map((r: any) => ({
           id: r.id,
           bookingId: r.booking_id,
           originalBookingId: r.prescribing_vet_booking_id,
@@ -766,10 +786,10 @@ class GetPendingReportsForVetHandler extends BaseHandler {
           reportUrl: r.report_url,
           summary: r.summary,
           status: r.status,
-          diagnosticsVendorName: r.diagnostics_vendor_name,
-          customerName: r.customer_name,
-          petName: r.pet_name,
-          petType: r.pet_type,
+          diagnosticsVendorName: r.diagnostics_vendor_name || null,
+          customerName: r.customer_name || null,
+          petName: r.pet_name || null,
+          petType: r.pet_type || null,
           createdAt: r.created_at,
         })),
         count: reports.length,

@@ -781,9 +781,34 @@ export function registerChatEndpoints(app: Hono) {
         [bookingId]
       ).catch(() => ({ rows: [] }));
 
+      // ✅ FIX: Generate presigned URLs for file messages (same as /conversation endpoint)
+      const enrichedMessages = await Promise.all(
+        (messages.rows || []).map(async (msg: any) => {
+          if (msg.file_id && (msg.message_type === 'file' || msg.message_type === 'image' || msg.message_type === 'video')) {
+            try {
+              const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+              const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+              const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+              const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+              
+              const signedUrl = await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({ Bucket: BUCKET_NAME, Key: msg.file_id }),
+                { expiresIn: 604800 }
+              );
+              return { ...msg, file_url: signedUrl };
+            } catch (err: any) {
+              console.warn(`[CHAT] Failed to generate presigned URL for file_id=${msg.file_id}: ${err?.message}`);
+              return msg;
+            }
+          }
+          return msg;
+        })
+      );
+
       return c.json({
         success: true,
-        messages: messages.rows || [],
+        messages: enrichedMessages,
       });
     } catch (error: any) {
       console.error('Error fetching messages:', error);
@@ -875,26 +900,64 @@ export function registerChatEndpoints(app: Hono) {
       );
 
       // Create chat message with file
-      const newMessage = await insert('chat_messages', {
-        booking_id: bookingId,
-        sender_phone: senderPhone,
-        sender_name: senderName || null,
-        sender_type: senderType || 'customer',
-        message: caption || `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`,
-        message_type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file',
-        file_id: fileKey,
-        file_name: file.name,
-        file_type: file.type,
-        file_size: file.size,
-        is_read: false,
-      }).catch(() => {
-        return [{
-          id: `msg_${Date.now()}`,
+      // ✅ CRITICAL FIX: Retry without file_type/file_size if columns don't exist
+      const messageText = caption || `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`;
+      const messageTypeVal = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file';
+      
+      let newMessage: any[];
+      try {
+        newMessage = await insert('chat_messages', {
           booking_id: bookingId,
+          sender_phone: senderPhone,
+          sender_name: senderName || null,
+          sender_type: senderType || 'customer',
+          message: messageText,
+          message_type: messageTypeVal,
           file_id: fileKey,
           file_name: file.name,
-        }];
-      });
+          file_type: file.type,
+          file_size: file.size,
+          is_read: false,
+        });
+      } catch (insertErr1: any) {
+        console.warn('[CHAT] Insert with file_type/file_size failed, retrying without:', insertErr1?.message);
+        try {
+          // Retry without file_type and file_size (columns may not exist)
+          newMessage = await insert('chat_messages', {
+            booking_id: bookingId,
+            sender_phone: senderPhone,
+            sender_name: senderName || null,
+            sender_type: senderType || 'customer',
+            message: messageText,
+            message_type: messageTypeVal,
+            file_id: fileKey,
+            file_name: file.name,
+            is_read: false,
+          });
+        } catch (insertErr2: any) {
+          console.warn('[CHAT] Insert without file_type/file_size also failed, retrying minimal:', insertErr2?.message);
+          try {
+            // Minimal insert - just the essential fields
+            newMessage = await insert('chat_messages', {
+              booking_id: bookingId,
+              sender_phone: senderPhone,
+              sender_type: senderType || 'customer',
+              message: messageText,
+              message_type: messageTypeVal,
+              file_id: fileKey,
+              is_read: false,
+            });
+          } catch (insertErr3: any) {
+            console.error('[CHAT] All insert attempts failed:', insertErr3?.message);
+            newMessage = [{
+              id: `msg_${Date.now()}`,
+              booking_id: bookingId,
+              file_id: fileKey,
+              file_name: file.name,
+            }];
+          }
+        }
+      }
 
       return c.json({
         success: true,
