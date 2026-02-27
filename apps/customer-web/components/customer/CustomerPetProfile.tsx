@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
+import { ChevronLeft, Plus, Camera, X, ChevronDown } from 'lucide-react';
 // ImageWithFallback component not found - using img tag instead
 import { apiClient } from '@/lib/api-client';
+import { DOG_BREEDS, CAT_BREEDS } from '@/lib/breed-data';
 
 interface Pet {
   id: string;
@@ -41,6 +42,10 @@ interface CustomerPetProfileProps {
 export function CustomerPetProfile({ session, prefillData, onComplete, onBack }: CustomerPetProfileProps) {
   const [currentStep, setCurrentStep] = useState<'list' | 'basic' | 'health' | 'vaccination'>('list');
   const [pets, setPets] = useState<Pet[]>([]);
+  const [breedDropdownOpen, setBreedDropdownOpen] = useState(false);
+  const [breedSearchQuery, setBreedSearchQuery] = useState('');
+  const breedInputRef = useRef<HTMLInputElement>(null);
+  const breedDropdownRef = useRef<HTMLDivElement>(null);
   const [currentPet, setCurrentPet] = useState<Pet>({
     id: '',
     name: prefillData?.petName || '',
@@ -69,6 +74,40 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+
+  // Get filtered breeds based on pet type and search query
+  const getFilteredBreeds = (): string[] => {
+    const breedList = currentPet.type === 'Dog' ? DOG_BREEDS : currentPet.type === 'Cat' ? CAT_BREEDS : [...DOG_BREEDS, ...CAT_BREEDS];
+    if (!breedSearchQuery) return breedList;
+    const query = breedSearchQuery.toLowerCase();
+    return breedList.filter(breed => breed.toLowerCase().includes(query));
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        breedDropdownRef.current &&
+        !breedDropdownRef.current.contains(event.target as Node) &&
+        breedInputRef.current &&
+        !breedInputRef.current.contains(event.target as Node)
+      ) {
+        setBreedDropdownOpen(false);
+        setBreedSearchQuery('');
+      }
+    };
+
+    if (breedDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [breedDropdownOpen]);
+
+  // Reset breed search when pet type changes
+  useEffect(() => {
+    setBreedSearchQuery('');
+    setBreedDropdownOpen(false);
+  }, [currentPet.type]);
 
   // Load existing pets from backend on mount
   useEffect(() => {
@@ -493,17 +532,67 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
         </div>
 
         {/* Breed */}
-        <div className="mb-4">
+        <div className="mb-4 relative">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Breed <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            value={currentPet.breed}
-            onChange={(e) => setCurrentPet({ ...currentPet, breed: e.target.value })}
-            placeholder="e.g., Golden Retriever, Persian"
-            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-          />
+          <div className="relative">
+            <input
+              ref={breedInputRef}
+              type="text"
+              value={breedSearchQuery || currentPet.breed}
+              onChange={(e) => {
+                const query = e.target.value;
+                setBreedSearchQuery(query);
+                setBreedDropdownOpen(true);
+                // If user types a custom breed, update currentPet.breed
+                if (query && !getFilteredBreeds().includes(query)) {
+                  setCurrentPet({ ...currentPet, breed: query });
+                }
+              }}
+              onFocus={() => setBreedDropdownOpen(true)}
+              placeholder="Search breed or type custom..."
+              className="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setBreedDropdownOpen(!breedDropdownOpen);
+                breedInputRef.current?.focus();
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+            >
+              <ChevronDown className={`w-5 h-5 transition-transform ${breedDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {breedDropdownOpen && (
+              <div
+                ref={breedDropdownRef}
+                className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto"
+              >
+                {getFilteredBreeds().length > 0 ? (
+                  getFilteredBreeds().map((breed) => (
+                    <button
+                      key={breed}
+                      type="button"
+                      onClick={() => {
+                        setCurrentPet({ ...currentPet, breed });
+                        setBreedSearchQuery('');
+                        setBreedDropdownOpen(false);
+                      }}
+                      className="w-full px-4 py-2 text-left hover:bg-orange-50 hover:text-[#FF8C42] transition-colors"
+                    >
+                      {breed}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-2 text-gray-500 text-sm">
+                    No breeds found. Type to add custom breed.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Age and Gender Row */}

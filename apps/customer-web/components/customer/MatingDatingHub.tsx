@@ -50,6 +50,8 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
     } catch (error: any) {
       console.error('Error loading profiles:', error);
       setProfiles([]);
+      // ✅ FIX: Show error toast for API failures
+      toast.error('Failed to load pet profiles. Please try again.');
     } finally {
       setLoading(false);
     }

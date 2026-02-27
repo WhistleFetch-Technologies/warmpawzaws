@@ -529,7 +529,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const newBookingStartMinutes = bookingHour * 60 + bookingMin;
         const newBookingEndMinutes = newBookingStartMinutes + bookingDuration;  // ✅ NO buffer
 
-        // Fetch existing bookings for overlap check
+        // ✅ FIX: Fetch existing bookings for overlap check with row-level locking
+        // FOR UPDATE locks the rows, preventing concurrent modifications during the transaction
+        // This ensures atomic slot booking: no two bookings can be created for the same slot simultaneously
         const overlapQuery = staffId
           ? `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
              FROM bookings 

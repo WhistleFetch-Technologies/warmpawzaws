@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Camera } from 'lucide-react';
+import { ArrowLeft, Camera } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import { validateEmail } from '@/lib/validation';
 
 interface UserProfile {
   firstName: string;
@@ -24,9 +25,10 @@ interface CustomerUserProfileProps {
   session: any;
   journeyStage?: string;
   onComplete: (profile: UserProfile) => void;
+  onBack?: () => void;
 }
 
-export function CustomerUserProfile({ session, journeyStage, onComplete }: CustomerUserProfileProps) {
+export function CustomerUserProfile({ session, journeyStage, onComplete, onBack }: CustomerUserProfileProps) {
   const [profile, setProfile] = useState<UserProfile>({
     firstName: '',
     lastName: '',
@@ -119,8 +121,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
     }
 
     // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(profile.email)) {
+    if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
     }
@@ -152,31 +153,23 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
 
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
-      {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-          </svg>
-        </div>
+      {/* Top Bar with Back Button */}
+      <div className="px-4 pt-4 pb-2 flex items-center">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 text-gray-600 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 rounded-full px-3 py-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
+        )}
       </div>
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
         {/* Logo */}
-        <div className="flex justify-center pt-8 mb-6">
+        <div className="flex justify-center pt-4 mb-6">
           <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
         </div>
 

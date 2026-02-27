@@ -187835,11 +187835,40 @@ function registerCustomerProfileEndpoints(app3) {
         }, 400);
       }
       const profileData = validationResult.data;
+      if (profileData.email) {
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
+        if (!emailRegex.test(profileData.email.trim())) {
+          return c.json({
+            success: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "Invalid email format",
+              details: {
+                field: "email",
+                message: "Please enter a valid email address"
+              }
+            }
+          }, 400);
+        }
+      }
       const phone = body.phone || body.profile?.phone;
       if (!phone) {
         return c.json({ error: "Phone number is required" }, 400);
       }
       const cleanPhone = normalizePhone2(phone);
+      if (cleanPhone.length !== 10 || !/^\d{10}$/.test(cleanPhone)) {
+        return c.json({
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid phone number",
+            details: {
+              field: "phone",
+              message: "Phone number must be exactly 10 digits"
+            }
+          }
+        }, 400);
+      }
       let customerId = await resolveCustomerId(cleanPhone);
       if (!customerId) {
         try {
@@ -187957,6 +187986,22 @@ function registerCustomerProfileEndpoints(app3) {
         }, 400);
       }
       const profileData = validationResult.data;
+      if (profileData.email) {
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
+        if (!emailRegex.test(profileData.email.trim())) {
+          return c.json({
+            success: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "Invalid email format",
+              details: {
+                field: "email",
+                message: "Please enter a valid email address"
+              }
+            }
+          }, 400);
+        }
+      }
       const customerId = await resolveCustomerId(identifier);
       if (!customerId) {
         return c.json({ error: "Customer not found" }, 404);

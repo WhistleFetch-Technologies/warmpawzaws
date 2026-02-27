@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { validateEmail } from '@/lib/validation';
 
 interface UserProfile {
   firstName: string;
@@ -110,8 +111,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(profile.email)) {
+    if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
     }

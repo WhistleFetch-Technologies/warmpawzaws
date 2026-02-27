@@ -21,6 +21,9 @@ provider:
     NODE_ENV: local
     AWS_REGION: ap-south-1
     
+    # AWS Chime Configuration
+    CHIME_MEDIA_REGION: ${env:CHIME_MEDIA_REGION, 'ap-south-1'}
+    
     # S3 Configuration
     S3_BUCKET_NAME: ${env:S3_BUCKET_NAME, 'warmpawz-dev-user-uploads-057442119249'}
     
@@ -30,6 +33,7 @@ provider:
     DB_NAME: ${env:DB_NAME, 'warmpawz'}
     DB_USER: ${env:DB_USER, 'postgres'}
     DB_PASSWORD: ${env:DB_PASSWORD, 'postgres'}
+    DB_SSL: ${env:DB_SSL, 'true'}
     
     # Cognito Configuration (use test values)
     COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, 'ap-south-1_TEST123'}

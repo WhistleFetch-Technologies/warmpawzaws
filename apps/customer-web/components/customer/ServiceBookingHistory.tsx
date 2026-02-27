@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Package, Download, FileText, ChevronRight } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Package, Download, FileText, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -163,14 +163,15 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
           style={{ animation: 'slideUp 0.3s ease-out' }}
         >
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
-            <h2 className="font-bold text-gray-800">My {serviceName} Bookings</h2>
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3 rounded-t-[32px] z-10">
+            {/* ✅ FIX: Replace X close button with Back button */}
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
             >
-              <X className="w-5 h-5 text-gray-600" />
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
+            <h2 className="font-bold text-gray-800 flex-1">My {serviceName} Bookings</h2>
           </div>
 
           {loading ? (

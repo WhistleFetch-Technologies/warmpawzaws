@@ -2,40 +2,33 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 interface CustomerOnboardingProps {
   onComplete: (stage: string) => void;
+  onBack?: () => void;
 }
 
-export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
+export function CustomerOnboarding({ onComplete, onBack }: CustomerOnboardingProps) {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#FF8C42] to-[#FF6B9D] flex flex-col w-full max-w-[430px] mx-auto">
-      {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-black">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-          </svg>
-        </div>
+      {/* Top Bar with Back Button */}
+      <div className="px-4 pt-4 pb-2 flex items-center">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 text-black/80 hover:text-black transition-colors bg-white/20 hover:bg-white/30 rounded-full px-3 py-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
+        )}
       </div>
 
       {/* Orange Top Section */}
-      <div className="flex flex-col items-center pt-12 pb-8 px-6">
+      <div className="flex flex-col items-center pt-6 pb-8 px-6">
         {/* Paw Logo with Heart */}
         <div className="mb-8 w-32 h-32 flex items-center justify-center">
           <svg width="120" height="120" viewBox="0 0 120 120" fill="none">

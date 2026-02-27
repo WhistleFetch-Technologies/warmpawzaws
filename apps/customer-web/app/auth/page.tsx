@@ -87,7 +87,7 @@ function AuthPageContent() {
 
   // Otp sending & UAT mode handling
   const sendOtp = async () => {
-    if (!phone || phone.length < 10) {
+    if (!phone || phone.length !== 10) {
       setError('Please enter a valid 10-digit mobile number');
       return;
     }

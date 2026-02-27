@@ -172,7 +172,23 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
 
   // Onboarding flow
   if (showOnboarding) {
-    return <CustomerOnboarding onComplete={handleOnboardingComplete} />;
+    return <CustomerOnboarding 
+      onComplete={handleOnboardingComplete} 
+      onBack={() => {
+        // Go back to auth/login page
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('customerPhone');
+          localStorage.removeItem('customerId');
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('customerData');
+          localStorage.removeItem('customerProfile');
+          localStorage.removeItem('customerPets');
+          localStorage.removeItem('customerOnboardingComplete');
+          localStorage.removeItem('customerJourneyStage');
+          window.location.href = '/auth';
+        }
+      }}
+    />;
   }
 
   // User Profile form
@@ -182,6 +198,13 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
         session={session}
         journeyStage={journeyStage || undefined}
         onComplete={handleUserProfileComplete}
+        onBack={() => {
+          // Go back to stage selection
+          setShowUserProfile(false);
+          setJourneyStage(null);
+          localStorage.removeItem('customerJourneyStage');
+          setShowOnboarding(true);
+        }}
       />
     );
   }

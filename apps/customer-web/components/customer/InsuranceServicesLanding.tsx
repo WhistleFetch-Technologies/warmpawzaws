@@ -39,10 +39,12 @@ export function InsuranceServicesLanding({ phone, onBack, onNavigate }: Insuranc
           ? Number(providerList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.7), 0) / providerList.length).toFixed(1) 
           : '4.7'
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading insurance providers:', error);
       setProviders([]);
       setStats({ activeProviders: 8, policiesIssued: '2K+', rating: '4.7' });
+      // ✅ FIX: Show error toast for API failures
+      toast.error('Failed to load insurance providers. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -73,11 +73,22 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!petId) {
+      console.error('Pet ID is missing');
+      setLoading(false);
+      return;
+    }
     loadPetDetails();
     loadPetBookings();
   }, [phone, petId]);
 
   const loadPetDetails = async () => {
+    if (!petId) {
+      console.error('Cannot load pet details: petId is missing');
+      setLoading(false);
+      return;
+    }
+    
     try {
       setLoading(true);
       // Fetch specific pet by ID
@@ -88,9 +99,14 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
         setPhotoPreview(data.pet.photo || '');
       } else {
         console.error('Failed to load pet:', data?.error);
+        // Pet not found - will show error state
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading pet details:', error);
+      // If 404, pet doesn't exist
+      if (error?.status === 404 || error?.response?.status === 404) {
+        console.error('Pet not found');
+      }
     } finally {
       setLoading(false);
     }
@@ -245,7 +261,27 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     );
   }
 
-  if (!pet) {
+  if (!petId) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center">
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ChevronRight className="w-5 h-5 rotate-180" />
+          </Button>
+          <h1 className="text-lg font-bold">Pet Details</h1>
+        </div>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+            <p className="text-gray-600 mb-2">Pet ID is missing</p>
+            <Button onClick={onBack} className="mt-4">Go Back</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!pet && !loading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center px-6">

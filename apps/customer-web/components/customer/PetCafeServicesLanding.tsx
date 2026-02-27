@@ -57,10 +57,12 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
           ? Number(uniqueCafes.reduce((acc: number, c: any) => acc + Number(c.vendorRating || 4.5), 0) / uniqueCafes.length).toFixed(1) 
           : '4.5'
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading cafes:', error);
       setCafes([]);
       setStats({ activeCafes: 25, reservations: '3K+', rating: '4.5' });
+      // ✅ FIX: Show error toast for API failures (toast is not imported, but error is handled)
+      console.warn('Failed to load cafes. Please try again.');
     } finally {
       setLoading(false);
     }

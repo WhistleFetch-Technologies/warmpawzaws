@@ -396,6 +396,24 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       
       const profileData = validationResult.data;
       
+      // ✅ Validate email format (RFC-compliant)
+      if (profileData.email) {
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
+        if (!emailRegex.test(profileData.email.trim())) {
+          return c.json({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid email format',
+              details: {
+                field: 'email',
+                message: 'Please enter a valid email address',
+              },
+            },
+          }, 400);
+        }
+      }
+      
       // Get phone from body (required for POST endpoint)
       // Note: phone is not part of the validated schema, it comes from body directly
       const phone = body.phone || (body.profile as any)?.phone;
@@ -404,6 +422,22 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
+      
+      // ✅ Validate phone number - must be exactly 10 digits
+      if (cleanPhone.length !== 10 || !/^\d{10}$/.test(cleanPhone)) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid phone number',
+            details: {
+              field: 'phone',
+              message: 'Phone number must be exactly 10 digits',
+            },
+          },
+        }, 400);
+      }
+      
       let customerId = await resolveCustomerId(cleanPhone);
       
       if (!customerId) {
@@ -562,6 +596,24 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
       
       const profileData = validationResult.data;
+
+      // ✅ Validate email format (RFC-compliant)
+      if (profileData.email) {
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
+        if (!emailRegex.test(profileData.email.trim())) {
+          return c.json({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid email format',
+              details: {
+                field: 'email',
+                message: 'Please enter a valid email address',
+              },
+            },
+          }, 400);
+        }
+      }
 
       const customerId = await resolveCustomerId(identifier);
       if (!customerId) {

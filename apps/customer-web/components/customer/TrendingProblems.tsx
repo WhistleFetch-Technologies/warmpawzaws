@@ -48,7 +48,28 @@ export function TrendingProblems({
         item.title.trim() !== ''
       );
       
-      setTrending(validTrending);
+      // ✅ FIX: Deduplicate by problemId, or by title if problemId is missing
+      const seenIds = new Set<string>();
+      const seenTitles = new Set<string>();
+      const deduplicatedTrending = validTrending.filter((item: any) => {
+        // First try to deduplicate by problemId
+        if (item.problemId && typeof item.problemId === 'string') {
+          if (seenIds.has(item.problemId)) {
+            return false; // Duplicate problemId
+          }
+          seenIds.add(item.problemId);
+          return true;
+        }
+        // Fallback to title-based deduplication
+        const titleKey = (item.title || '').toLowerCase().trim();
+        if (seenTitles.has(titleKey)) {
+          return false; // Duplicate title
+        }
+        seenTitles.add(titleKey);
+        return true;
+      });
+      
+      setTrending(deduplicatedTrending);
     } catch (error) {
       console.error('Error fetching trending problems:', error);
       setTrending([]);

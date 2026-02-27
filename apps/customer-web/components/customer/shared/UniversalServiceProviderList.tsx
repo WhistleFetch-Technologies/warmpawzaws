@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Search, Filter, Star, MapPin, Clock, ChevronRight,
   Video, Home, Building2, Shield, Award, GraduationCap, X, Sliders,
-  Phone, Calendar, Heart, Share2, Users, Stethoscope, Scissors
+  Phone, Calendar, Heart, Share2, Users, Stethoscope, Scissors,
+  AlertCircle, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -530,6 +531,7 @@ export function UniversalServiceProviderList({
   const [selectedProblem, setSelectedProblem] = useState<string | null>(specializationFilter || null);
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [sponsoredProviders, setSponsoredProviders] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -772,8 +774,10 @@ export function UniversalServiceProviderList({
       const fallbackProviders = Array.from(providerMap.values());
       console.log(`✅ Loaded ${fallbackProviders.length} providers from fallback for ${category}/${serviceStyle}`);
       setProviders(fallbackProviders);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading providers:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to load service providers. Please try again.';
+      setError(errorMessage);
       toast.error('Failed to load service providers');
       setProviders([]);
     } finally {
@@ -990,6 +994,32 @@ export function UniversalServiceProviderList({
             <div className="flex flex-col items-center justify-center py-12">
               <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mb-4" />
               <p className="text-slate-500">Finding service providers...</p>
+            </div>
+          ) : error ? (
+            // ✅ FIX: Show error state with retry button
+            <div className="flex flex-col items-center justify-center py-20 px-4">
+              <AlertCircle className="w-16 h-16 text-red-400 mb-4" />
+              <h3 className="font-semibold text-gray-900 mb-2">Failed to Load Providers</h3>
+              <p className="text-sm text-gray-600 text-center mb-4">{error}</p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    setError(null);
+                    loadProviders();
+                  }}
+                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={onBack}
+                  className="border-gray-300"
+                >
+                  Go Back
+                </Button>
+              </div>
             </div>
           ) : filteredProviders.length === 0 ? (
             <div className="p-8 text-center bg-slate-50 rounded-2xl">

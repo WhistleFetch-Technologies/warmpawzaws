@@ -9,6 +9,7 @@ import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { safeNumber } from '@/lib/validation';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -759,14 +760,14 @@ export function UniversalBookingRouter({
               id: s.id || s.serviceId,
               serviceId: s.service_id || s.serviceId || s.id,
               name: s.name || s.serviceName,
-              price: Number(s.price) || Number(s.custom_price) || 0,
-              duration: Number(s.duration) || Number(s.duration_minutes) || 30,
-              quantity: Number(s.quantity) || 1,
+              price: safeNumber(s.price, safeNumber(s.custom_price, 0)),
+              duration: safeNumber(s.duration, safeNumber(s.duration_minutes, 30)),
+              quantity: safeNumber(s.quantity, 1),
             }))
           : undefined;
 
         const totalAmountFromServices = selectedServicesForApi && selectedServicesForApi.length > 0
-          ? selectedServicesForApi.reduce((sum, s) => sum + (s.price || 0) * (s.quantity || 1), 0)
+          ? selectedServicesForApi.reduce((sum, s) => sum + safeNumber(s.price, 0) * safeNumber(s.quantity, 1), 0)
           : null;
 
         const bookingData: Record<string, unknown> = {
@@ -1208,7 +1209,7 @@ export function UniversalBookingRouter({
                     ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
                     : (() => {
                         const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
-                        return services.reduce((sum: number, s: any) => sum + (Number(s?.price ?? selectedServiceOption?.price ?? 0) || 0), 0);
+                        return services.reduce((sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0), 0);
                       })()
                 )}</span>
               </div>
@@ -1303,7 +1304,7 @@ export function UniversalBookingRouter({
                       {servicesToDisplay.map((service, index) => {
                         const serviceIdValue = service.id || service.serviceId || '';
                         const serviceNameValue = service.name || service.serviceName || 'Service';
-                        const servicePrice = Number(service.price) || 0;
+                        const servicePrice = safeNumber(service.price, 0);
                         const serviceDuration = service.duration || 0;
                         const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
                         
@@ -1330,7 +1331,7 @@ export function UniversalBookingRouter({
                 // Fallback to single service display - with fallbacks for missing data
                 const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
                 const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
-                const svcPrice = Number(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0) || 0;
+                const svcPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
                 return (
                   <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
                     <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
@@ -1397,10 +1398,10 @@ export function UniversalBookingRouter({
                       : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
                     
                     if (servicesToCalculate.length > 0) {
-                      const total = servicesToCalculate.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
-                      return formatPriceWithSymbol(total);
+                      const total = servicesToCalculate.reduce((sum, s) => sum + safeNumber(s.price, 0), 0);
+                      return formatPriceWithSymbol(isNaN(total) ? 0 : total);
                     }
-                    const fallbackPrice = Number(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0) || 0;
+                    const fallbackPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
                     return formatPriceWithSymbol(fallbackPrice);
                   })()}
                 </span>
@@ -1465,7 +1466,7 @@ export function UniversalBookingRouter({
                 {(() => {
                   const servicesToShow = (allSelectedServices && allSelectedServices.length > 0) ? allSelectedServices : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
                   if (servicesToShow.length > 0) {
-                    const totalAmount = servicesToShow.reduce((sum, s) => sum + (Number(s.price) || 0) * (Number(s.quantity) || 1), 0);
+                    const totalAmount = servicesToShow.reduce((sum, s) => sum + safeNumber(s.price, 0) * safeNumber(s.quantity, 1), 0);
                     return (
                       <>
                         <div className="space-y-1.5 pb-2">
@@ -1473,12 +1474,12 @@ export function UniversalBookingRouter({
                           {servicesToShow.map((s, i) => (
                             <div key={s.id || s.serviceId || i} className="flex justify-between items-center text-xs sm:text-sm">
                               <span className="font-medium">{s.name || s.serviceName}</span>
-                              <span className="text-orange-600">{formatPriceWithSymbol((Number(s.price) || 0) * (Number(s.quantity) || 1))}</span>
+                              <span className="text-orange-600">{formatPriceWithSymbol(safeNumber(s.price, 0) * safeNumber(s.quantity, 1))}</span>
                             </div>
                           ))}
                           <div className="flex justify-between items-center font-semibold pt-1 border-t border-gray-100">
                             <span>Total</span>
-                            <span className="text-orange-600">{formatPriceWithSymbol(totalAmount)}</span>
+                            <span className="text-orange-600">{formatPriceWithSymbol(isNaN(totalAmount) ? 0 : totalAmount)}</span>
                           </div>
                         </div>
                       </>

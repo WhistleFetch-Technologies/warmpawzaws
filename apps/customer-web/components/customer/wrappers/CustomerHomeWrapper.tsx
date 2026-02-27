@@ -662,6 +662,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           phone={phone}
           refreshKey={refreshKey}
           onNavigate={(screen, data) => {
+            // ✅ FIX: Handle Complete Health Package "Book Now" - navigate directly to vet-booking
+            if (screen === 'vet-booking' && (data?.packageId === 'complete-health-package' || data?.filter === 'packages')) {
+              setVetServiceData({
+                packageId: data.packageId,
+                serviceName: data.serviceName || 'Complete Health Package',
+                filter: 'packages',
+              });
+              setCurrentScreen('vet-booking');
+              return;
+            }
+            
             // ✅ Handle order-tracking: meal vs ecommerce/pharmacy (Phase 5)
             if (screen === 'order-tracking') {
               const orderId = data?.orderId;
@@ -1954,8 +1965,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     onBack={handleBack} 
     onNavigate={(screen, data) => {
       if (screen === 'pet-details') {
-         setSelectedPetId(data?.petId);
-         setCurrentScreen('pet-details');
+        if (!data?.petId) {
+          console.error('Pet ID is missing in navigation data');
+          return;
+        }
+        setSelectedPetId(data.petId);
+        setCurrentScreen('pet-details');
       }
     }} 
     onAddPet={() => setCurrentScreen('add-pet')} 

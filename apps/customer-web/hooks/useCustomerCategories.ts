@@ -21,15 +21,26 @@ export const categoryIdToScreen: Record<string, string> = {
   training: 'training',
   boarding: 'boarding',
   walking: 'walker',
+  // ✅ FIX: Merge all diagnostics variants to lab-diagnostics
   diagnostic: 'lab-diagnostics',
+  diagnostics: 'lab-diagnostics',
+  'lab-diagnostics': 'lab-diagnostics',
+  lab: 'lab-diagnostics',
   pharmacy: 'pharmacy',
+  // ✅ FIX: Merge emergency and ambulance to ambulance (Emergency Care)
   emergency: 'ambulance',
+  ambulance: 'ambulance',
+  'emergency_care': 'ambulance',
+  // ✅ FIX: Merge all nutrition variants to nutritionist
   wellness: 'nutritionist',
+  nutrition: 'nutritionist',
+  nutritionist: 'nutritionist',
+  // ✅ FIX: Specialty maps to insurance (Pet Insurance)
   specialty: 'insurance',
+  speciality: 'insurance',
   adoption: 'adoption',
   shop: 'shop',
   marketplace: 'shop',
-  nutrition: 'nutritionist',
   resort: 'resort',
   cafe: 'cafes',
   photography: 'photography',
@@ -39,6 +50,13 @@ export const categoryIdToScreen: Record<string, string> = {
   sunset: 'sunset',
   insurance: 'insurance',
 };
+
+/** Categories to hide from service tiles (e.g., Physiotherapy should be under vet, not separate tile) */
+export const HIDDEN_CATEGORIES: string[] = [
+  'physiotherapy',
+  'physio',
+  'physical_therapy',
+];
 
 export interface QuickServiceTile {
   icon: React.ComponentType<{ className?: string }>;
@@ -81,17 +99,47 @@ export function useCustomerCategories() {
       const list = (res as any)?.categories ?? [];
       setCategories(Array.isArray(list) ? list : []);
 
-      const tiles: QuickServiceTile[] = (Array.isArray(list) ? list : []).map((cat: ApiCategory) => {
+      // ✅ FIX: Filter out hidden categories and deduplicate by screen
+      const filteredList = (Array.isArray(list) ? list : []).filter((cat: ApiCategory) => {
+        const categoryIdLower = (cat.category_id || '').toLowerCase();
+        return !HIDDEN_CATEGORIES.some(hidden => categoryIdLower.includes(hidden.toLowerCase()));
+      });
+
+      // ✅ FIX: Label overrides for merged categories
+      const LABEL_OVERRIDES: Record<string, string> = {
+        'lab-diagnostics': 'Diagnostics / Lab Tests',
+        'ambulance': 'Emergency Care',
+        'nutritionist': 'Nutritionist',
+        'insurance': 'Pet Insurance',
+      };
+
+      // ✅ FIX: Deduplicate by screen - keep first occurrence of each screen
+      const seenScreens = new Set<string>();
+      const tiles: QuickServiceTile[] = [];
+      
+      for (const cat of filteredList) {
         const screen = categoryIdToScreen[cat.category_id] ?? cat.category_id;
+        
+        // Skip if we've already seen this screen (deduplication)
+        if (seenScreens.has(screen)) {
+          continue;
+        }
+        
+        seenScreens.add(screen);
         const IconComponent = getIcon(cat.icon);
-        return {
+        
+        // Apply label override if exists, otherwise use category name
+        const label = LABEL_OVERRIDES[screen] || cat.name || cat.category_id;
+        
+        tiles.push({
           icon: IconComponent,
-          label: cat.name || cat.category_id,
+          label,
           color: iconColorToBg(cat.icon_color),
           screen,
           categoryId: cat.category_id,
-        };
-      });
+        });
+      }
+      
       setQuickServiceTiles(tiles);
     } catch (e: any) {
       console.warn('[useCustomerCategories] Failed to load categories:', e?.message);

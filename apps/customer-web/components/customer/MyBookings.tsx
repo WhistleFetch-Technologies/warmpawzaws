@@ -360,13 +360,15 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     return ['pending', 'confirmed'].includes(booking.status);
   };
 
+  // ✅ FIX: Ensure pending, confirmed, in_progress, arrived, scheduled all show in "Upcoming"
   const filteredBookings = bookings.filter(booking => {
     if (activeFilter === 'all') return true;
     if (activeFilter === 'upcoming') {
-      return booking.status === 'pending' || booking.status === 'confirmed' || booking.status === 'in_progress';
+      // Include all active booking statuses
+      return ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(booking.status);
     }
     if (activeFilter === 'completed') {
-      return booking.status === 'completed';
+      return booking.status === 'completed' || booking.status === 'cancelled';
     }
     return true;
   });
@@ -405,10 +407,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     );
   }
 
+  // ✅ FIX: Include all active statuses in "Upcoming" count
   const dashboardStats = [
     { value: String(bookings.length), label: 'Total' },
-    { value: String(bookings.filter(b => ['pending', 'confirmed', 'in_progress'].includes(b.status)).length), label: 'Upcoming' },
-    { value: String(bookings.filter(b => b.status === 'completed').length), label: 'Completed' }
+    { value: String(bookings.filter(b => ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)).length), label: 'Upcoming' },
+    { value: String(bookings.filter(b => b.status === 'completed' || b.status === 'cancelled').length), label: 'Completed' }
   ];
 
   return (

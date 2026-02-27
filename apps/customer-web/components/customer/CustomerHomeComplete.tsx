@@ -337,12 +337,22 @@ export function CustomerHomeComplete({
     trainer: 'Trainer',
     behavioral: 'Behaviorist',
     behaviorist: 'Behaviorist',
-    emergency: 'Emergency care',
-    ambulance: 'Ambulance',
-    'lab-diagnostics': 'Lab Test',
-    diagnostic: 'Diagnostics',
-    diagnostics: 'Diagnostics',
-    lab: 'Lab Test',
+    // ✅ FIX: Merge emergency and ambulance to "Emergency Care"
+    emergency: 'Emergency Care',
+    ambulance: 'Emergency Care',
+    'emergency_care': 'Emergency Care',
+    // ✅ FIX: Merge all diagnostics variants to "Diagnostics / Lab Tests"
+    'lab-diagnostics': 'Diagnostics / Lab Tests',
+    diagnostic: 'Diagnostics / Lab Tests',
+    diagnostics: 'Diagnostics / Lab Tests',
+    lab: 'Diagnostics / Lab Tests',
+    // ✅ FIX: Merge all nutrition variants to "Nutritionist"
+    nutrition: 'Nutritionist',
+    nutritionist: 'Nutritionist',
+    wellness: 'Nutritionist',
+    // ✅ FIX: Rename specialty to "Pet Insurance"
+    specialty: 'Pet Insurance',
+    speciality: 'Pet Insurance',
     veterinary: 'Vet Care',
     vet: 'Vet Care',
     walking: 'Dog Walker',
@@ -364,9 +374,35 @@ export function CustomerHomeComplete({
   );
   let sourceQuickServices = baseQuickServices;
   if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
-  if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Lab Test', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
+  if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Diagnostics / Lab Tests', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
   if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
   if (!hasBehaviorist) sourceQuickServices = [...sourceQuickServices, { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' }];
+
+  // ✅ FIX: Deduplicate services by screen and apply label overrides
+  const seenScreens = new Set<string>();
+  const deduplicatedServices = sourceQuickServices
+    .map((service: any) => {
+      const screen = service.screen || service.categoryId || '';
+      const categoryId = (service.categoryId || service.screen || '').toLowerCase();
+      
+      // Apply label override
+      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(key => 
+        categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
+      );
+      const label = overrideKey ? SERVICE_LABEL_OVERRIDE[overrideKey] : service.label;
+      
+      return { ...service, label, screen };
+    })
+    .filter((service: any) => {
+      const screen = service.screen || '';
+      if (seenScreens.has(screen)) {
+        return false; // Duplicate - skip
+      }
+      seenScreens.add(screen);
+      return true; // Keep first occurrence
+    });
+  
+  sourceQuickServices = deduplicatedServices;
 
   useEffect(() => {
     loadUserData();
@@ -1233,43 +1269,20 @@ export function CustomerHomeComplete({
   const displayVetServices = vetServicesData.length > 0 ? vetServicesData : defaultVetServices;
   const displayHotDeals = hotDeals.length > 0 ? hotDeals : defaultHotDeals;
 
-  // Use dynamic articles if available, otherwise use defaults
-  const defaultArticles = [
-    {
-      id: 'default-1',
-      title: '10 Tips for Puppy Training',
-      category: 'Training',
-      readTime: '5 min',
-      Icon: Dog
-    },
-    {
-      id: 'default-2',
-      title: 'Best Foods for Senior Dogs',
-      category: 'Nutrition',
-      readTime: '7 min',
-      Icon: UtensilsCrossed
-    },
-    {
-      id: 'default-3',
-      title: 'Understanding Pet Insurance',
-      category: 'Insurance',
-      readTime: '6 min',
-      Icon: Shield
-    },
-  ];
-  
-  const articles = dynamicArticles.length > 0 
-    ? dynamicArticles.map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        category: a.category || 'Tips',
-        readTime: a.readTime || '5 min',
-        Icon: a.category === 'Nutrition' ? UtensilsCrossed 
-          : a.category === 'Insurance' ? Shield 
-          : a.category === 'Health' ? Heart
-          : Dog
-      }))
-    : defaultArticles;
+  // ✅ FIX: Remove dummy articles - show only admin-created articles
+  const articles = dynamicArticles.map((a: any) => ({
+    id: a.id,
+    title: a.title,
+    category: a.category || 'Tips',
+    readTime: a.readTime || '5 min',
+    Icon: a.category === 'Nutrition' ? UtensilsCrossed 
+      : a.category === 'Insurance' ? Shield 
+      : a.category === 'Health' ? Heart
+      : Dog,
+    url: a.url,
+    content: a.content,
+    description: a.description
+  }));
 
   const adoptionOptions = [
     {
@@ -1885,7 +1898,14 @@ export function CustomerHomeComplete({
                     <div className="text-2xl font-bold">₹2,499</div>
                   </div>
                   <button 
-                    onClick={() => onNavigate?.('vet')}
+                    onClick={() => {
+                      // ✅ FIX: Navigate directly to vet booking flow with package filter
+                      onNavigate?.('vet-booking', { 
+                        packageId: 'complete-health-package',
+                        serviceName: 'Complete Health Package',
+                        filter: 'packages'
+                      });
+                    }}
                     className="bg-white text-purple-600 px-4 py-2 rounded-full text-sm font-semibold"
                   >
                     Book Now
@@ -2139,39 +2159,52 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Pet Articles */}
-        <div className="mb-6">
-          <div className="px-6 mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-teal-600" />
-              <h2 className="text-black font-semibold">Pet Care Articles</h2>
-            </div>
-            <button className="text-xs text-teal-600 font-medium flex items-center gap-1">
-              Read More <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="px-6 space-y-3">
-            {articles.map((article, index) => (
-              <div key={index} className="bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm">
-                <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <article.Icon className="w-8 h-8 text-teal-600" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
-                      {article.category}
-                    </span>
-                    <span className="text-xs text-gray-500 flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> {article.readTime}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-semibold text-gray-800">{article.title}</h3>
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+        {/* Pet Articles - ✅ FIX: Only show if admin-created articles exist */}
+        {articles.length > 0 && (
+          <div className="mb-6">
+            <div className="px-6 mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-teal-600" />
+                <h2 className="text-black font-semibold">Pet Care Articles</h2>
               </div>
-            ))}
+              <button className="text-xs text-teal-600 font-medium flex items-center gap-1">
+                Read More <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 space-y-3">
+              {articles.map((article, index) => (
+                <button
+                  key={article.id || index}
+                  onClick={() => {
+                    // ✅ FIX: Navigate to article detail page
+                    if (article.url) {
+                      window.open(article.url, '_blank');
+                    } else {
+                      onNavigate?.('article-detail', { articleId: article.id, article });
+                    }
+                  }}
+                  className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm hover:shadow-md transition-shadow text-left"
+                >
+                  <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <article.Icon className="w-8 h-8 text-teal-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
+                        {article.category}
+                      </span>
+                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> {article.readTime}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-800">{article.title}</h3>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Other Services Highlight */}
         <div className="px-6 mb-6">

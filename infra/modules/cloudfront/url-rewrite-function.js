@@ -1,6 +1,6 @@
 // CloudFront Function: URL Rewrite for Next.js Static Export
 // Rewrites /ecommerce to /ecommerce.html, /catalog to /catalog.html, etc.
-// Also handles dynamic routes by mapping to pre-built placeholder pages.
+// This allows Next.js static export files to be served correctly
 
 function handler(event) {
   var request = event.request;
@@ -31,26 +31,8 @@ function handler(event) {
     return request;
   }
   
-  // ✅ CRITICAL FIX: Handle dynamic routes for Next.js static export
-  // These routes use [param] segments that are pre-built as /placeholder.html
-  // Pattern: /tracking/<bookingId> → /tracking/placeholder.html
-  // The client-side component extracts the actual ID from window.location.pathname
-  var dynamicRoutes = [
-    { pattern: /^\/tracking\/[^/]+$/, rewrite: '/tracking/placeholder.html' },
-    { pattern: /^\/video\/[^/]+.*$/, rewrite: '/video/placeholder.html' },
-    { pattern: /^\/booking\/[^/]+$/, rewrite: '/booking/placeholder.html' },
-    { pattern: /^\/orders\/[^/]+\/tracking$/, rewrite: '/orders/placeholder/tracking.html' },
-  ];
-  
-  for (var i = 0; i < dynamicRoutes.length; i++) {
-    if (uri.match(dynamicRoutes[i].pattern)) {
-      request.uri = dynamicRoutes[i].rewrite;
-      return request;
-    }
-  }
-  
   // Rewrite /ecommerce to /ecommerce.html, /catalog to /catalog.html, etc.
-  // This handles Next.js static export routing for static pages
+  // This handles Next.js static export routing
   request.uri = uri + '.html';
   
   return request;

@@ -12,6 +12,7 @@ import {
 import { BookingDetailModal } from './BookingDetailModal';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { validateEmail } from '@/lib/validation';
 
 interface UserProfile {
   firstName: string;
@@ -196,8 +197,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(profile.email)) {
+    if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
     }
