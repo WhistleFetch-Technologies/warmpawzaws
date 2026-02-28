@@ -364,8 +364,18 @@ export function UniversalAppointmentManagement({
     }
   };
 
+  // Helper function to check if booking is tele consultation
+  const isTeleConsultationBooking = (booking: Booking): boolean => {
+    return booking.serviceType === 'tele' || 
+           booking.serviceType === 'video_consultation' ||
+           (booking as any).service_type === 'tele' ||
+           (booking as any).service_type === 'video_consultation' ||
+           (booking as any).service_style === 'tele';
+  };
+
   const handleStart = async (booking: Booking) => {
-    if (booking.serviceType !== 'tele' && booking.otp) {
+    // ✅ FIX: Check service type FIRST - tele consultations don't need OTP
+    if (!isTeleConsultationBooking(booking) && booking.otp) {
       setSelectedBooking(booking);
       setOtpAction('start');
       setOtpInput('');
@@ -530,7 +540,8 @@ export function UniversalAppointmentManagement({
   }, []);
 
   const handleComplete = async (booking: Booking) => {
-    if (booking.serviceType !== 'tele' && booking.otp) {
+    // ✅ FIX: Check service type FIRST - tele consultations don't need OTP
+    if (!isTeleConsultationBooking(booking) && booking.otp) {
       setSelectedBooking(booking);
       setOtpAction('complete');
       setOtpInput('');
@@ -797,13 +808,16 @@ export function UniversalAppointmentManagement({
                 <div className="text-center py-8">
                   <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto" />
                 </div>
-              ) : bookings.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  No appointments scheduled
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {bookings.map((booking) => (
+              ) : (() => {
+                // ✅ FIX: Filter out completed bookings from main dashboard view
+                const activeBookings = bookings.filter(b => b.status !== 'completed');
+                return activeBookings.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    No appointments scheduled
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {activeBookings.map((booking) => (
                     <div 
                       key={booking.id} 
                       className="border border-gray-200 rounded-xl p-3 cursor-pointer hover:shadow-lg hover:border-[#FF8C42] transition-all"
@@ -981,9 +995,10 @@ export function UniversalAppointmentManagement({
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </>
         )}

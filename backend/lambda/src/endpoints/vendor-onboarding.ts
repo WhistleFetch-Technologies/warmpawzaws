@@ -19,23 +19,26 @@ import { isValidUUID } from '../types/entities';
 class GetOnboardingStatusHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const phone = context.event.queryStringParameters?.phone;
-    
+    console.log('[GetOnboardingStatusHandler] Handler called');
+    console.log('[GetOnboardingStatusHandler] Phone from query params:', phone);
+    console.log('[GetOnboardingStatusHandler] Request ID:', context.requestId);
     if (!phone) {
       return this.error('Phone number is required', 400);
     }
 
     try {
-      // ✅ FIX: Normalize phone number (remove non-digits, handle country codes)
-      const phoneDigits = phone.replace(/\D/g, ''); // Remove all non-digits
+      //Normalize phone number (remove non-digits, handle country codes)
       // If phone has country code (11+ digits), take last 10 digits
       // If phone is 9 digits, pad with leading 0 to make it 10 digits (handles cases like "985342940" -> "0985342940")
-      let normalizedPhone = phoneDigits.length > 10 
-        ? phoneDigits.slice(-10)  // Take last 10 digits if longer
-        : phoneDigits.length === 9 
-          ? '0' + phoneDigits      // Pad with 0 if 9 digits
-          : phoneDigits;            // Use as-is if 10 digits
-      
-      // ✅ NEW: Check which columns exist in vendor_identity
+      const phoneDigits = phone.replace(/\D/g, '');
+
+      let normalizedPhone = phoneDigits.length > 10
+        ? phoneDigits.slice(-10)
+        : phoneDigits.length === 9
+          ? '0' + phoneDigits
+          : phoneDigits;
+
+      //Check which columns exist in vendor_identity
       const viSchemaCheck = await query(`
         SELECT 
           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'user_type') as has_user_type,
@@ -43,319 +46,33 @@ class GetOnboardingStatusHandler extends BaseHandler {
           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'full_name') as has_full_name
       `);
       const viSchema = viSchemaCheck.rows[0] || {};
-      console.log('[ONBOARDING STATUS] vendor_identity schema:', viSchema);
-      
+
       // Get or create vendor identity (try both original and normalized phone)
       let identity = await select('vendor_identity', { phone });
       if (identity.length === 0 && normalizedPhone !== phone) {
         identity = await select('vendor_identity', { phone: normalizedPhone });
       }
-      
-      // ✅ FALLBACK: Check if phone belongs to a staff member in staff table FIRST
-      // This helps us detect staff even if vendor_identity doesn't have user_type='staff' yet
-      let staffMember = null;
-      try {
-        const staffQuery = await query(`
-          SELECT id, name, vendor_id, phone, role
-          FROM staff 
-          WHERE (phone = $1 OR phone = $2) AND is_active = true
-          LIMIT 1
-        `, [phone, normalizedPhone]);
-        
-        if (staffQuery.rows && staffQuery.rows.length > 0) {
-          staffMember = staffQuery.rows[0];
-          console.log(`[ONBOARDING STATUS] Phone ${phone} belongs to staff member ${staffMember.id}, role: ${staffMember.role}`);
-        }
-      } catch (staffError: any) {
-        console.warn('[ONBOARDING STATUS] Error checking staff:', staffError.message);
-      }
-      
-      // ✅ CRITICAL: Check if user_type='staff' in vendor_identity - this is the primary detection method
-      // OR if we found a staff member in staff table and vendor_identity has vendor_id
-      const hasStaffUserType = identity.length > 0 && viSchema.has_user_type && identity[0].user_type === 'staff';
-      const hasVendorIdAndStaffMember = identity.length > 0 && staffMember && identity[0].vendor_id === staffMember.vendor_id;
-      
-      if (hasStaffUserType || hasVendorIdAndStaffMember) {
-        const vendorIdentity = identity[0];
-        console.log(`[ONBOARDING STATUS] ✅ Detected staff in vendor_identity for phone ${phone}`, {
-          has_user_type_column: viSchema.has_user_type,
-          user_type: vendorIdentity.user_type,
-          vendor_id: vendorIdentity.vendor_id,
-          onboarding_status: vendorIdentity.onboarding_status,
-          staff_member_found: !!staffMember
-        });
-        
-        // Force ACTIVATED status for staff and ensure user_type='staff' is set
-        const updateFields: string[] = ['onboarding_status = $1', 'updated_at = NOW()'];
-        const updateValues: any[] = ['ACTIVATED'];
-        let paramIndex = 2;
-        
-        if (viSchema.has_user_type && vendorIdentity.user_type !== 'staff') {
-          updateFields.push(`user_type = $${paramIndex}`);
-          updateValues.push('staff');
-          paramIndex++;
-          vendorIdentity.user_type = 'staff';
-        }
-        
-        if (vendorIdentity.onboarding_status !== 'ACTIVATED') {
-          updateValues.push(vendorIdentity.id);
-          await query(`UPDATE vendor_identity SET ${updateFields.join(', ')} WHERE id = $${paramIndex}::uuid`, updateValues);
-          vendorIdentity.onboarding_status = 'ACTIVATED';
-        } else if (viSchema.has_user_type && vendorIdentity.user_type !== 'staff') {
-          // Status is already ACTIVATED but user_type is wrong
-          updateValues.push(vendorIdentity.id);
-          await query(`UPDATE vendor_identity SET ${updateFields.join(', ')} WHERE id = $${paramIndex}::uuid`, updateValues);
-        }
-        
-        // ✅ CRITICAL: Fetch role info if selected_role_id exists (staff needs role data like vendor solo)
-        let role = null;
-        if (vendorIdentity.selected_role_id) {
-          const roles = await select('roles', {
-            id: vendorIdentity.selected_role_id,
-            is_active: true,
-          });
-          role = roles.length > 0 ? roles[0] : null;
-        }
-        
-        // ✅ CRITICAL: Get staff member info - use staffMember we found earlier, or fetch from staff table
-        let staff_info = null;
-        if (staffMember) {
-          // Use the staffMember we already found
-          staff_info = {
-            staff_id: staffMember.id,
-            staff_name: staffMember.name,
-            vendor_id: staffMember.vendor_id?.toString() || null,
-            role: staffMember.role,
-          };
-        } else if (vendorIdentity.vendor_id) {
-          // Fallback: fetch from staff table if we didn't find it earlier
-          try {
-            const staffQuery = await query(`
-              SELECT id, name, vendor_id, phone, role
-              FROM staff 
-              WHERE vendor_id = $1::uuid AND (phone = $2 OR phone = $3) AND is_active = true
-              LIMIT 1
-            `, [vendorIdentity.vendor_id, phone, normalizedPhone]);
-            
-            if (staffQuery.rows && staffQuery.rows.length > 0) {
-              const foundStaffMember = staffQuery.rows[0];
-              staff_info = {
-                staff_id: foundStaffMember.id,
-                staff_name: foundStaffMember.name,
-                vendor_id: foundStaffMember.vendor_id?.toString() || null,
-                role: foundStaffMember.role,
-              };
-            } else if (vendorIdentity.metadata) {
-              // Fallback to metadata
-              const metadata = typeof vendorIdentity.metadata === 'string' 
-                ? JSON.parse(vendorIdentity.metadata) 
-                : vendorIdentity.metadata;
-              staff_info = {
-                staff_id: metadata?.staff_id,
-                vendor_id: vendorIdentity.vendor_id?.toString() || null,
-              };
-            }
-          } catch (staffError: any) {
-            console.warn('[ONBOARDING STATUS] Error fetching staff info:', staffError.message);
-          }
-        }
-        
-        // Return with all necessary data (same structure as vendor solo)
-        return this.success({
-          identity: vendorIdentity,
-          application: null,
-          role, // ✅ Include role so frontend has roleId
-          staff_info,
-          is_staff: true,
-          nextStep: '/dashboard',
-          feedback: { status: 'ACTIVATED' },
-        });
-      }
-      
+
+      // Create vendor identity if it doesn't exist
       if (identity.length === 0) {
-        // ✅ FIX: If staff member, create with ACTIVATED status and role using raw SQL
-        if (staffMember && staffMember.vendor_id) {
-          // Resolve role ID from staff role name
-          let resolvedRoleId = null;
-          if (staffMember.role) {
-            try {
-              const roleQuery = await query(`
-                SELECT id FROM roles 
-                WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
-                  AND is_active = true
-                LIMIT 1
-              `, [staffMember.role]);
-              
-              if (roleQuery.rows && roleQuery.rows.length > 0) {
-                resolvedRoleId = roleQuery.rows[0].id;
-              }
-            } catch (roleError: any) {
-              console.warn('[ONBOARDING STATUS] Error resolving role:', roleError.message);
-            }
-          }
-          
-          // Build insert query dynamically based on available columns
-          const insertFields = ['phone', 'vendor_id', 'onboarding_status'];
-          const insertValues: any[] = [normalizedPhone, staffMember.vendor_id, 'ACTIVATED'];
-          
-          if (viSchema.has_user_type) {
-            insertFields.push('user_type');
-            insertValues.push('staff');
-          }
-          
-          if (resolvedRoleId) {
-            insertFields.push('selected_role_id');
-            insertValues.push(resolvedRoleId);
-          }
-          
-          if (viSchema.has_full_name) {
-            insertFields.push('full_name');
-            insertValues.push(staffMember.name);
-          }
-          
-          if (viSchema.has_metadata) {
-            insertFields.push('metadata');
-            insertValues.push(JSON.stringify({ staff_id: staffMember.id, created_via: 'staff_onboarding_status' }));
-          }
-          
-          const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
-          const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
-          
-          const newIdentityResult = await query(insertQuery, insertValues);
-          identity = newIdentityResult.rows;
-          console.log(`[ONBOARDING STATUS] Created vendor_identity for staff phone ${normalizedPhone} with user_type='staff'`);
-        } else {
-          // Regular vendor - create with INIT status
-          const insertFields = ['phone', 'onboarding_status'];
-          const insertValues: any[] = [normalizedPhone, 'INIT'];
-          
-          if (viSchema.has_user_type) {
-            insertFields.push('user_type');
-            insertValues.push('vendor');
-          }
-          
-          const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
-          const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
-          
-          const newIdentityResult = await query(insertQuery, insertValues);
-          identity = newIdentityResult.rows;
+        // Regular vendor - create with INIT status
+        const insertFields = ['phone', 'onboarding_status'];
+        const insertValues: any[] = [normalizedPhone, 'INIT'];
+
+        if (viSchema.has_user_type) {
+          insertFields.push('user_type');
+          insertValues.push('vendor');
         }
-      } else {
-        // ✅ FIX: If vendor_identity exists but belongs to staff, ALWAYS update to ACTIVATED
-        const vendorIdentity = identity[0];
-        if (staffMember && staffMember.vendor_id) {
-          // Resolve role ID from staff role name
-          let resolvedRoleId = null;
-          if (staffMember.role) {
-            try {
-              const roleQuery = await query(`
-                SELECT id FROM roles 
-                WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
-                  AND is_active = true
-                LIMIT 1
-              `, [staffMember.role]);
-              
-              if (roleQuery.rows && roleQuery.rows.length > 0) {
-                resolvedRoleId = roleQuery.rows[0].id;
-              }
-            } catch (roleError: any) {
-              console.warn('[ONBOARDING STATUS] Error resolving role:', roleError.message);
-            }
-          }
-          
-          // ✅ FIX: Get vendor_type from vendor's vendor_identity (if exists) or default to 'business'
-          let vendorType = null;
-          try {
-            const vendorTypeQuery = await query(`
-              SELECT vendor_type 
-              FROM vendor_identity 
-              WHERE vendor_id = $1::uuid AND (user_type IS NULL OR user_type = 'vendor')
-              LIMIT 1
-            `, [staffMember.vendor_id]);
-            
-            if (vendorTypeQuery.rows && vendorTypeQuery.rows.length > 0) {
-              vendorType = vendorTypeQuery.rows[0].vendor_type;
-            }
-          } catch (vendorTypeError: any) {
-            console.warn('[ONBOARDING STATUS] Error fetching vendor_type:', vendorTypeError.message);
-          }
-          
-          // ✅ FIX: ALWAYS update staff vendor_identity to ACTIVATED with user_type='staff'
-          const updateFields: string[] = [
-            'onboarding_status = $1',
-            'vendor_id = $2::uuid',
-            'updated_at = NOW()'
-          ];
-          const updateValues: any[] = ['ACTIVATED', staffMember.vendor_id];
-          let paramIndex = 3;
-          
-          // ✅ NEW: Set user_type='staff' if column exists
-          if (viSchema.has_user_type) {
-            updateFields.push(`user_type = $${paramIndex}`);
-            updateValues.push('staff');
-            paramIndex++;
-          }
-          
-          if (resolvedRoleId) {
-            updateFields.push(`selected_role_id = $${paramIndex}::uuid`);
-            updateValues.push(resolvedRoleId);
-            paramIndex++;
-          }
-          
-          // ✅ NEW: Set vendor_type if not already set
-          if (vendorType && !vendorIdentity.vendor_type) {
-            updateFields.push(`vendor_type = $${paramIndex}`);
-            updateValues.push(vendorType);
-            paramIndex++;
-          }
-          
-          // ✅ NEW: Set full_name if column exists
-          if (viSchema.has_full_name && staffMember.name) {
-            updateFields.push(`full_name = $${paramIndex}`);
-            updateValues.push(staffMember.name);
-            paramIndex++;
-          }
-          
-          // ✅ NEW: Set metadata if column exists
-          if (viSchema.has_metadata) {
-            updateFields.push(`metadata = $${paramIndex}::jsonb`);
-            updateValues.push(JSON.stringify({ staff_id: staffMember.id, created_via: 'staff_onboarding_status' }));
-            paramIndex++;
-          }
-          
-          updateValues.push(vendorIdentity.id);
-          
-          await query(`
-            UPDATE vendor_identity 
-            SET ${updateFields.join(', ')}
-            WHERE id = $${paramIndex}::uuid
-          `, updateValues);
-          
-          // ✅ CRITICAL: Update local object with new values
-          vendorIdentity.onboarding_status = 'ACTIVATED';
-          vendorIdentity.vendor_id = staffMember.vendor_id;
-          vendorIdentity.user_type = 'staff';
-          if (resolvedRoleId) {
-            vendorIdentity.selected_role_id = resolvedRoleId;
-          }
-          if (vendorType) {
-            vendorIdentity.vendor_type = vendorType;
-          }
-          
-          console.log(`[ONBOARDING STATUS] Updated vendor_identity ${vendorIdentity.id} to ACTIVATED with user_type='staff' and vendor_type='${vendorType || 'business'}' for staff member ${staffMember.id}`);
-        }
+
+        const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
+        const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+
+        const newIdentityResult = await query(insertQuery, insertValues);
+        identity = newIdentityResult.rows;
       }
 
       const vendorIdentity = identity[0];
-      
-      // ✅ CRITICAL: Final check - if staff member OR user_type='staff', ensure status is ACTIVATED
-      const isStaffUser = staffMember || vendorIdentity?.user_type === 'staff';
-      if (isStaffUser && vendorIdentity && vendorIdentity.onboarding_status !== 'ACTIVATED') {
-        console.warn(`[ONBOARDING STATUS] ⚠️ Staff user has status ${vendorIdentity.onboarding_status}, forcing to ACTIVATED`);
-        vendorIdentity.onboarding_status = 'ACTIVATED';
-        vendorIdentity.user_type = 'staff'; // Ensure this is set
-      }
-      
+
       // Get application if exists
       let application = null;
       if (vendorIdentity.application_id) {
@@ -375,68 +92,17 @@ class GetOnboardingStatusHandler extends BaseHandler {
         role = roles.length > 0 ? roles[0] : null;
       }
 
-      // ✅ FIX GAP VO-1, VO-2: Extract clarification notes and rejection reason
+      // Extract clarification notes and rejection reason
       const clarificationNote = application?.admin_comments || application?.clarification_notes || null;
       const rejectionReason = application?.rejection_reason || null;
       const reviewedAt = application?.reviewed_at || null;
       const reviewedBy = application?.reviewed_by || null;
 
-      // ✅ NEW: Include staff_info if this is a staff member login (check both staffMember and user_type)
-      let staff_info = null;
-      if (staffMember) {
-        staff_info = {
-          staff_id: staffMember.id,
-          staff_name: staffMember.name,
-          vendor_id: staffMember.vendor_id?.toString() || null,
-          role: staffMember.role,
-        };
-        // Also ensure vendor_id is set in identity for frontend detection
-        if (!vendorIdentity.vendor_id && staffMember.vendor_id) {
-          vendorIdentity.vendor_id = staffMember.vendor_id;
-        }
-      } else if (vendorIdentity?.user_type === 'staff' && vendorIdentity?.metadata) {
-        // ✅ NEW: Get staff_info from metadata if user_type is staff but we didn't query staff table
-        const metadata = typeof vendorIdentity.metadata === 'string' 
-          ? JSON.parse(vendorIdentity.metadata) 
-          : vendorIdentity.metadata;
-        staff_info = {
-          staff_id: metadata?.staff_id,
-          vendor_id: vendorIdentity.vendor_id?.toString() || null,
-        };
-      }
-      
-      // ✅ CRITICAL: For staff members, ensure vendor_identity has all necessary fields from vendor record
-      if (isStaffUser && vendorIdentity.vendor_id && !vendorIdentity.business_name) {
-        try {
-          const vendorInfoQuery = await query(`
-            SELECT business_name, phone as vendor_phone
-            FROM vendors 
-            WHERE id = $1::uuid
-            LIMIT 1
-          `, [vendorIdentity.vendor_id]);
-          
-          if (vendorInfoQuery.rows && vendorInfoQuery.rows.length > 0) {
-            const vendorInfo = vendorInfoQuery.rows[0];
-            if (vendorInfo.business_name && viSchema.has_business_name) {
-              // Update vendor_identity with business_name
-              await query('UPDATE vendor_identity SET business_name = $1 WHERE id = $2', 
-                [vendorInfo.business_name, vendorIdentity.id]);
-              vendorIdentity.business_name = vendorInfo.business_name;
-            }
-          }
-        } catch (vendorInfoError: any) {
-          console.warn('[ONBOARDING STATUS] Error fetching vendor info for staff:', vendorInfoError.message);
-        }
-      }
-      
       return this.success({
         identity: vendorIdentity,
         application,
-        role, // ✅ CRITICAL: Include role so frontend has roleId
-        staff_info, // ✅ NEW: Include for frontend staff detection
-        is_staff: isStaffUser, // ✅ FIXED: Use isStaffUser which checks both staffMember and user_type
+        role,
         nextStep: this.getNextStep(vendorIdentity.onboarding_status),
-        // ✅ FIX: Explicitly include feedback for frontend display
         feedback: {
           clarificationNote,
           rejectionReason,
@@ -446,7 +112,10 @@ class GetOnboardingStatusHandler extends BaseHandler {
         },
       });
     } catch (error: any) {
-      console.error('Error getting onboarding status:', error);
+      console.error('[GetOnboardingStatusHandler] Error caught in catch block');
+      console.error('[GetOnboardingStatusHandler] Error message:', error?.message);
+      console.error('[GetOnboardingStatusHandler] Error stack:', error?.stack);
+      console.error('[GetOnboardingStatusHandler] Full error:', error);
       return this.error(error.message || 'Failed to get onboarding status', 500);
     }
   }
@@ -475,14 +144,14 @@ class GetAvailableRolesHandler extends BaseHandler {
     try {
       // Get all active roles
       const roles = await select('roles', { is_active: true });
-      
+
       // Get permissions for each role
       const rolesWithConfig = await Promise.all(
         roles.map(async (role) => {
           const permissions = await select('role_permissions', {
             role_id: role.id,
           });
-          
+
           return {
             id: role.id,
             name: role.name,
@@ -594,7 +263,7 @@ class SelectVendorTypeHandler extends BaseHandler {
 
       const role = roles[0];
       const supportedTypes = role.config?.vendorTypes || [];
-      
+
       if (!supportedTypes.includes(vendor_type)) {
         return this.error(
           `Vendor type '${vendor_type}' is not supported for this role. Supported: ${supportedTypes.join(', ')}`,
@@ -674,8 +343,8 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
 
       if (forms.length > 0) {
         // Parse JSONB fields
-        fields = typeof forms[0].fields === 'string' 
-          ? JSON.parse(forms[0].fields) 
+        fields = typeof forms[0].fields === 'string'
+          ? JSON.parse(forms[0].fields)
           : forms[0].fields || [];
       }
 
@@ -686,7 +355,7 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
       // ✅ NEW: Import and merge KYC fields for the role
       try {
         const { getKYCFieldsForRole, ROLE_KYC_CONFIGS, KYC_SECTIONS } = await import('../lib/kyc-form-fields');
-        
+
         // Get vendor type from identity if available
         let vendorType: 'solo' | 'business' | undefined;
         if (phone) {
@@ -695,13 +364,13 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
             vendorType = identities[0].vendor_type;
           }
         }
-        
+
         // Get KYC fields for this role
         const kycFields = getKYCFieldsForRole(selectedRoleId, vendorType);
-        
+
         if (kycFields.length > 0) {
           console.log(`[FORM-SCHEMA] Adding ${kycFields.length} KYC fields for role ${selectedRoleId}`);
-          
+
           // Convert KYC fields to form field format
           const kycFormFields = kycFields.map((f: any) => ({
             id: f.id,
@@ -724,7 +393,7 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
             declarationText: f.declarationText || null,
             declarationType: f.declarationType || f.id, // Use explicit declarationType if set, otherwise fallback to id
           }));
-          
+
           // Merge KYC fields - KYC fields replace existing fields with same ID
           const kycFieldIds = new Set(kycFormFields.map((f: any) => f.id));
           const nonKycFields = fields.filter((f: any) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.name));
@@ -962,12 +631,12 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
 class SubmitApplicationHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    
+
     // ✅ FIX: Handle both wrapped (application_payload) and unwrapped payload formats
     // Some frontends send: { phone, application_payload: {...}, uploaded_documents: [...] }
     // Others send: { phone, businessName, roleId, ... } (flat structure)
     let normalizedBody = body;
-    
+
     if (!body.application_payload && body.businessName) {
       // Convert flat structure to expected format
       const { phone, uploaded_documents, specializations, agreedToTerms, ...restFields } = body;
@@ -978,7 +647,7 @@ class SubmitApplicationHandler extends BaseHandler {
       };
       console.log('📦 [SUBMIT] Normalized flat payload to wrapped format');
     }
-    
+
     let { phone, application_payload, uploaded_documents } = normalizedBody;
 
     if (!phone || !application_payload) {
@@ -1002,7 +671,7 @@ class SubmitApplicationHandler extends BaseHandler {
     // ✅ FIX: Sanitize application_payload - remove invalid fields and values
     const invalidFieldPatterns = ['new_field', 'newfield', 'new-field'];
     const invalidValuePatterns = ['xxxxxxxx', 'placeholder'];
-    
+
     const sanitizedPayload: Record<string, any> = {};
     for (const [key, value] of Object.entries(application_payload)) {
       // Skip fields with placeholder names
@@ -1046,7 +715,7 @@ class SubmitApplicationHandler extends BaseHandler {
     try {
       // Get vendor identity
       let identities = await select('vendor_identity', { phone });
-      
+
       // ✅ FIX: Auto-create vendor identity if not found
       if (identities.length === 0) {
         console.log('📦 [SUBMIT] Creating new vendor identity for phone:', phone);
@@ -1064,11 +733,11 @@ class SubmitApplicationHandler extends BaseHandler {
       // Note: businessType (e.g., "veterinarian") is different from vendor_type (e.g., "solo" or "business")
       // vendor_type refers to whether the vendor is a solo provider or a business with staff
       const payloadRoleId = application_payload?.roleId || application_payload?.role_id || body.roleId || body.role_id;
-      
+
       // Only use explicit vendor_type values, NOT businessType (which is the category like "veterinarian")
-      let payloadVendorType = application_payload?.vendorType || application_payload?.vendor_type || 
-                               body.vendorType || body.vendor_type;
-      
+      let payloadVendorType = application_payload?.vendorType || application_payload?.vendor_type ||
+        body.vendorType || body.vendor_type;
+
       // Validate vendor_type is a valid value, otherwise default to 'business'
       if (!payloadVendorType || !['solo', 'business', 'center'].includes(payloadVendorType)) {
         payloadVendorType = 'business';
@@ -1082,11 +751,11 @@ class SubmitApplicationHandler extends BaseHandler {
           currentRoleId: identity.selected_role_id,
           currentVendorType: identity.vendor_type
         });
-        
+
         const updateData: Record<string, any> = {
           updated_at: new Date().toISOString(),
         };
-        
+
         if (!identity.selected_role_id && payloadRoleId) {
           updateData.selected_role_id = payloadRoleId;
         }
@@ -1097,15 +766,15 @@ class SubmitApplicationHandler extends BaseHandler {
         if (['INIT', 'ROLE_PENDING'].includes(identity.onboarding_status)) {
           updateData.onboarding_status = 'FORM_PENDING';
         }
-        
+
         await update('vendor_identity', { id: identity.id }, updateData);
-        
+
         // Refresh identity with updated values
         const refreshedIdentities = await select('vendor_identity', { id: identity.id });
         if (refreshedIdentities.length > 0) {
           identity = refreshedIdentities[0];
         }
-        
+
         console.log('✅ [SUBMIT] Updated vendor_identity with role and vendor_type');
       }
 
@@ -1113,7 +782,7 @@ class SubmitApplicationHandler extends BaseHandler {
       if (!identity.selected_role_id && !payloadRoleId) {
         return this.error('Role ID is required. Please provide roleId in the payload or select a role first.', 400);
       }
-      
+
       // Use payloadVendorType as fallback if identity.vendor_type is still not set
       const effectiveVendorType = identity.vendor_type || payloadVendorType || 'business';
       const effectiveRoleId = identity.selected_role_id || payloadRoleId;
@@ -1124,15 +793,15 @@ class SubmitApplicationHandler extends BaseHandler {
 
       // Check if application exists
       let applicationId = identity.application_id;
-      
+
       if (applicationId) {
         const apps = await select('vendor_onboarding_applications', {
           id: applicationId,
         });
-        
+
         if (apps.length > 0) {
           const app = apps[0];
-          
+
           // ✅ FIX: Allow editing if DRAFT, CLARIFICATION_REQUIRED, or REJECTED (vendor can resubmit after rejection)
           if (app.status !== 'DRAFT' && app.status !== 'CLARIFICATION_REQUIRED' && app.status !== 'REJECTED') {
             return this.error('Application is locked and cannot be edited', 403);
@@ -1168,7 +837,7 @@ class SubmitApplicationHandler extends BaseHandler {
           is_locked: true,
           locked_at: new Date().toISOString(),
         });
-        
+
         applicationId = newApp[0].id;
 
         // Link application to identity
@@ -1195,8 +864,8 @@ class SubmitApplicationHandler extends BaseHandler {
     } catch (error: any) {
       console.error('Error submitting application:', error);
       // ✅ FIX: Ensure error message is always a string
-      const errorMessage = typeof error?.message === 'string' 
-        ? error.message 
+      const errorMessage = typeof error?.message === 'string'
+        ? error.message
         : (typeof error === 'string' ? error : 'Failed to submit application');
       return this.error(errorMessage, 500);
     }
@@ -1255,7 +924,7 @@ class AdminReviewApplicationHandler extends BaseHandler {
       if (action === 'APPROVE') {
         newStatus = 'APPROVED';
         newOnboardingStatus = 'APPROVED';
-        
+
         await update(
           'vendor_onboarding_applications',
           { id: applicationId },
@@ -1274,7 +943,7 @@ class AdminReviewApplicationHandler extends BaseHandler {
 
         newStatus = 'CLARIFICATION_REQUIRED';
         newOnboardingStatus = 'CLARIFICATION_REQUIRED';
-        
+
         // Unlock application for editing
         await update(
           'vendor_onboarding_applications',
@@ -1296,7 +965,7 @@ class AdminReviewApplicationHandler extends BaseHandler {
 
         newStatus = 'REJECTED';
         newOnboardingStatus = 'REJECTED';
-        
+
         // ✅ FIX: Unlock application when rejected so vendor can resubmit
         await update(
           'vendor_onboarding_applications',
@@ -1329,7 +998,7 @@ class AdminReviewApplicationHandler extends BaseHandler {
       // ✅ FIX GAP VO-1, VO-2, GN-1: Send push notification to vendor
       try {
         const { pushNotificationService } = await import('../lib/services/push-notification-service');
-        
+
         if (action === 'APPROVE') {
           await pushNotificationService.sendEventNotification({
             eventType: 'vendor_application_approved',
@@ -1344,8 +1013,8 @@ class AdminReviewApplicationHandler extends BaseHandler {
             recipientId: identity.id,
             recipientType: 'vendor',
             relatedId: applicationId,
-            data: { 
-              applicationId, 
+            data: {
+              applicationId,
               comment: comments,
             },
           });
@@ -1355,8 +1024,8 @@ class AdminReviewApplicationHandler extends BaseHandler {
             recipientId: identity.id,
             recipientType: 'vendor',
             relatedId: applicationId,
-            data: { 
-              applicationId, 
+            data: {
+              applicationId,
               reason: rejection_reason,
             },
           });
@@ -1466,7 +1135,7 @@ class ActivateVendorHandler extends BaseHandler {
       const payload = application.application_payload || {};
       const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);
       const pincodeValue = extractPincodeFromPayload(payload);
-      
+
       // ✅ FIX: Extract service_radius from payload
       let serviceRadius: number | null = null;
       const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km'];
@@ -1479,7 +1148,7 @@ class ActivateVendorHandler extends BaseHandler {
           }
         }
       }
-      
+
       // Create vendor record from application
       const vendorData = {
         phone: identity.phone,
@@ -1597,7 +1266,7 @@ class UpdateSetupCompletionHandler extends BaseHandler {
       const updatedSetup = await select('vendor_setup_completion', { vendor_id });
       const updated = updatedSetup[0];
 
-      const allRequired = 
+      const allRequired =
         updated.profile_completed &&
         updated.bank_account_completed &&
         updated.business_hours_completed &&
@@ -1676,17 +1345,17 @@ class GoLiveHandler extends BaseHandler {
       // Sync services to customer app (service catalog, discovery filters, etc.)
       try {
         const { queueSearchIndexUpdate } = require('../utils/aws-clients');
-        
+
         // Get vendor info for name
         const vendors = await select('vendors', { id: vendor_id });
         const vendorInfo = vendors[0] || {};
-        
+
         // Get all vendor services
         const vendorServices = await select('vendor_services', {
           vendor_id: vendor_id,
           is_active: true,
         });
-        
+
         // Queue search index updates for each service
         for (const service of vendorServices) {
           await queueSearchIndexUpdate('service', 'update', service.id, {
@@ -1695,13 +1364,13 @@ class GoLiveHandler extends BaseHandler {
             is_active: true,
           });
         }
-        
+
         // Queue vendor index update
         await queueSearchIndexUpdate('vendor', 'update', vendor_id, {
           is_active: true,
           status: 'active',
         });
-        
+
         console.log(`✅ Services synced to search index for vendor ${vendor_id}`);
       } catch (error: any) {
         console.warn('Failed to sync services to search index:', error);
@@ -1744,9 +1413,9 @@ function createHandlerContext(c: any): HandlerContext {
       logStreamName: 'local',
       getRemainingTimeInMillis: () => 30000,
       callbackWaitsForEmptyEventLoop: true,
-      done: () => {},
-      fail: () => {},
-      succeed: () => {},
+      done: () => { },
+      fail: () => { },
+      succeed: () => { },
     } as any,
     requestId,
   };
@@ -1763,7 +1432,7 @@ async function toHonoResponse(c: any, handler: BaseHandler, context: HandlerCont
   } catch (e) {
     // No body
   }
-  
+
   const result = await handler.handle(context);
   return c.json(JSON.parse(result.body), result.statusCode as 200 | 400 | 404 | 500);
 }
@@ -1771,6 +1440,11 @@ async function toHonoResponse(c: any, handler: BaseHandler, context: HandlerCont
 export function registerVendorOnboardingEndpoints(app: Hono) {
   // Phase 1: Auth & Entry
   app.get('/vendor/onboarding/status', async (c) => {
+    const phone = c.req.query('phone');
+    console.log('[ENDPOINT] /vendor/onboarding/status called');
+    console.log('[ENDPOINT] Phone parameter:', phone);
+    console.log('[ENDPOINT] Request URL:', c.req.url);
+    console.log('[ENDPOINT] Request method:', c.req.method);
     return toHonoResponse(c, new GetOnboardingStatusHandler(), createHandlerContext(c));
   });
 
@@ -1799,7 +1473,7 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
   app.get('/vendor/application/status/:vendorId', async (c) => {
     const vendorId = c.req.param('vendorId');
     console.log('📋 [VENDOR-APPLICATION-STATUS] Getting status for vendorId:', vendorId);
-    
+
     try {
       // First try to find by application ID
       let application = await query(
@@ -1812,8 +1486,8 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
          LIMIT 1`,
         [vendorId]
       );
-      
-      if (!application || application.length === 0) {
+
+      if (!application || application.rows.length === 0) {
         // Try to find by vendor_id in vendors table
         const vendorRecord = await query(
           `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
@@ -1825,9 +1499,9 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
            LIMIT 1`,
           [vendorId]
         );
-        
-        if (vendorRecord && vendorRecord.length > 0) {
-          const vendor = vendorRecord[0];
+
+        if (vendorRecord && vendorRecord.rows.length > 0) {
+          const vendor = vendorRecord.rows[0];
           return c.json({
             success: true,
             application: {
@@ -1841,11 +1515,11 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
             canProceedToSetup: vendor.app_status === 'approved' || vendor.onboarding_status === 'APPROVED',
           });
         }
-        
+
         return c.json({ success: false, error: 'Application not found' }, 404);
       }
-      
-      const app = application[0];
+
+      const app = application.rows[0];
       const isReEditable = ['REJECTED', 'CLARIFICATION_REQUIRED'].includes(String(app.status));
       const payload = app.application_payload || app.form_data || null;
       return c.json({
@@ -1881,6 +1555,7 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
   app.post('/vendor/setup/update-completion', async (c) => {
     return toHonoResponse(c, new UpdateSetupCompletionHandler(), createHandlerContext(c));
   });
+
   app.post('/vendor/setup/go-live', async (c) => {
     return toHonoResponse(c, new GoLiveHandler(), createHandlerContext(c));
   });

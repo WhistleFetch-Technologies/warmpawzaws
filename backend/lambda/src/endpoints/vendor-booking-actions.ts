@@ -22,6 +22,38 @@ import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
 
 /**
+ * Get commission rate for a vendor from their tier configuration
+ * @param vendorId - The vendor ID
+ * @returns Commission rate as a percentage (e.g., 20 for 20%)
+ */
+async function getVendorCommissionRate(vendorId: string): Promise<number> {
+  try {
+    const tierResult = await query(
+      `SELECT vt.commission_rate
+       FROM vendors v
+       LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+         AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+       WHERE v.id = $1
+       LIMIT 1`,
+      [vendorId]
+    );
+
+    const commissionRate = tierResult.rows?.[0]?.commission_rate;
+    
+    // If commission_rate is null/undefined, fallback to 15%
+    if (commissionRate != null && !isNaN(Number(commissionRate))) {
+      return Number(commissionRate);
+    }
+    
+    console.warn(`⚠️ [COMMISSION] No tier found for vendor ${vendorId}, using default 15%`);
+    return 15; // Default fallback
+  } catch (error: any) {
+    console.error(`❌ [COMMISSION] Error getting commission rate for vendor ${vendorId}:`, error);
+    return 15; // Default fallback on error
+  }
+}
+
+/**
  * Helper function to get the correct OTP for a booking based on action and service type
  * @param booking - The booking object
  * @param bookingId - The booking ID
@@ -203,7 +235,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         
         // ✅ Create vendor_earnings for tele consultation (regardless of payment status — handles COD/pending)
         try {
-          const commissionRate = 15; // 15% default
+          const commissionRate = await getVendorCommissionRate(booking.vendor_id);
           const totalAmount = parseFloat(booking.total_amount || '0');
           const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
           const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
@@ -298,7 +330,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
       try {
-        const commissionRate = 15; // 15% default
+        const commissionRate = await getVendorCommissionRate(booking.vendor_id);
         const totalAmount = parseFloat(booking.total_amount || '0');
         const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
         const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;

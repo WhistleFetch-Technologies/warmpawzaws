@@ -1447,41 +1447,34 @@ async function createSettlementRecord(orderId: string, orderType: 'pharmacy' | '
     const order = orders.rows[0];
     const vendorId = orderType === 'pharmacy' ? order.pharmacy_id : order.vendor_id;
 
-    // ✅ FIX: Get vendor with tier-based commission
-    // Priority: 1. Commission tier rate, 2. Vendor custom rate, 3. Default tier rate
+    // ✅ FIX: Get vendor with tier-based commission from vendor_tiers table
+    // Priority: 1. vendor_tiers commission_rate, 2. Vendor custom rate, 3. Default 15%
     const vendors = await query(
       `SELECT v.*, 
               v.commission_rate as vendor_commission_rate,
-              ct.default_commission_rate as tier_default_rate,
-              ct.pharmacy_commission_rate as tier_pharmacy_rate,
-              ct.ecommerce_commission_rate as tier_ecommerce_rate,
-              ct.tier_name,
-              ct.tier_level
+              vt.commission_rate as tier_commission_rate,
+              vt.tier_name
        FROM vendors v 
-       LEFT JOIN commission_tiers ct ON v.commission_tier_id = ct.id
+       LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+         AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
        WHERE v.id = $1`,
       [vendorId]
     );
 
     const vendor = vendors.rows[0];
     
-    // Determine commission rate based on tier and order type
+    // Determine commission rate based on tier
     let commissionRate: number;
     
-    if (orderType === 'pharmacy' && vendor?.tier_pharmacy_rate) {
-      // Use tier-specific pharmacy commission rate
-      commissionRate = parseFloat(vendor.tier_pharmacy_rate);
-    } else if (orderType === 'meal' && vendor?.tier_ecommerce_rate) {
-      // Use tier-specific ecommerce rate for meals
-      commissionRate = parseFloat(vendor.tier_ecommerce_rate);
-    } else if (vendor?.tier_default_rate) {
-      // Use tier's default commission rate
-      commissionRate = parseFloat(vendor.tier_default_rate);
-    } else if (vendor?.vendor_commission_rate) {
+    if (vendor?.tier_commission_rate != null && !isNaN(Number(vendor.tier_commission_rate))) {
+      // Use tier's commission rate from vendor_tiers
+      commissionRate = Number(vendor.tier_commission_rate);
+    } else if (vendor?.vendor_commission_rate != null && !isNaN(Number(vendor.vendor_commission_rate))) {
       // Use vendor's custom commission rate
-      commissionRate = parseFloat(vendor.vendor_commission_rate);
+      commissionRate = Number(vendor.vendor_commission_rate);
     } else {
       // Fallback to platform default
+      console.warn(`⚠️ [PHARMACY-ORDERS] No tier found for vendor ${vendorId}, using default 15%`);
       commissionRate = 15.0; // 15% default
     }
 

@@ -36,7 +36,7 @@ class GetCustomerHandler extends BaseHandler {
 
     // ✅ SQL: Get customer
     const customers = await select('customers', { id: customerId });
-    
+
     if (customers.length === 0) {
       return this.error('Customer not found', 404);
     }
@@ -55,7 +55,7 @@ class GetCustomerByPhoneHandler extends BaseHandler {
 
     // ✅ SQL: Get customer by phone
     const customers = await select('customers', { phone });
-    
+
     if (customers.length === 0) {
       return this.error('Customer not found', 404);
     }
@@ -109,7 +109,7 @@ class GetCustomerPetsHandler extends BaseHandler {
 class CreateCustomerHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-
+    console.log('body', body);
     // Validate required fields
     if (!body.phone && !body.email) {
       return this.error('Phone or email is required', 400);
@@ -120,9 +120,9 @@ class CreateCustomerHandler extends BaseHandler {
       if (body.phone) {
         const existing = await select('customers', { phone: body.phone });
         if (existing.length > 0) {
-          return this.success({ 
-            customer: existing[0], 
-            message: 'Customer already exists' 
+          return this.success({
+            customer: existing[0],
+            message: 'Customer already exists'
           });
         }
       }
@@ -151,9 +151,9 @@ class CreateCustomerHandler extends BaseHandler {
       if (error.message?.includes('duplicate') || error.code === '23505') {
         const existing = await select('customers', { phone: body.phone });
         if (existing.length > 0) {
-          return this.success({ 
-            customer: existing[0], 
-            message: 'Customer already exists' 
+          return this.success({
+            customer: existing[0],
+            message: 'Customer already exists'
           });
         }
       }

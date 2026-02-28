@@ -16,6 +16,7 @@ const UAT_CREDENTIALS = {
 
 // Helper function to check UAT mode from runtime config
 // ✅ FIX: Also check hostname to NEVER allow UAT mode on production hostnames
+// ✅ FIX: Defensive check to prevent hydration mismatches
 function isUatMode(): boolean {
   if (typeof window === 'undefined') {
     // Server-side: check if production mode is explicitly set
@@ -26,26 +27,40 @@ function isUatMode(): boolean {
   }
   
   // ✅ FIX: Check production hostname FIRST - NEVER return true on production hostnames
-  const hostname = window.location.hostname || '';
-  const isProductionHostname = hostname.includes('cloudfront.net') || 
-                               hostname.includes('warmpawz.com');
+  const hostname = window.location?.hostname || '';
+  const isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+  const isProductionHostname = (
+    hostname === 'admin.warmpawz.com' ||
+    hostname === 'vendor.warmpawz.com' ||
+    hostname === 'customer.warmpawz.com' ||
+    hostname === 'warmpawz.com' ||
+    hostname === 'www.warmpawz.com' ||
+    hostname === 'dbr09zyoq9akb.cloudfront.net' ||
+    hostname === 'd1y5ywletev82x.cloudfront.net' ||
+    hostname === 'dg69gqp2frh39.cloudfront.net'
+  );
   const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
   
-  if (isProductionHostname && !isLocalhost) {
-    return false; // NEVER UAT mode on production hostnames
+  // NEVER UAT mode on production hostnames (unless it's a dev subdomain)
+  if (isProductionHostname && !isDevSubdomain && !isLocalhost) {
+    return false;
   }
   
-  // Client-side: Check production mode flag
+  // Client-side: Check production mode flag FIRST (set by inline scripts)
   if ((window as any).__WARMPAWZ_PROD_MODE__ === true) {
     return false;
   }
   
-  // Check runtime config (for deployed static builds)
-  const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
-  if (runtimeConfig) {
-    if (runtimeConfig.uatMode === false) return false;
-    if (runtimeConfig.uatMode === true) return true;
-    if (runtimeConfig.environment === 'production') return false;
+  // Check runtime config (for deployed static builds) - defensive check
+  try {
+    const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
+    if (runtimeConfig) {
+      if (runtimeConfig.uatMode === false) return false;
+      if (runtimeConfig.uatMode === true) return true;
+      if (runtimeConfig.environment === 'production') return false;
+    }
+  } catch (e) {
+    // Silently fail if config not ready yet (prevents hydration errors)
   }
   
   // Fallback to build-time env vars (only if not in production)

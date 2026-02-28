@@ -57,15 +57,30 @@ export function BookingCompletionScreen({
     }
   };
 
+  // Helper function to check if booking is tele consultation
+  const isTeleConsultationBooking = (booking: any): boolean => {
+    if (!booking) return false;
+    return booking.service_type === 'tele' || 
+           booking.service_type === 'video_consultation' ||
+           booking.service_style === 'tele' ||
+           booking.serviceType === 'tele' ||
+           booking.serviceType === 'video_consultation';
+  };
+
   const handleComplete = async () => {
-    if (!otp.trim()) {
+    // ✅ FIX: Check if tele consultation - skip OTP validation
+    const isTeleConsultation = isTeleConsultationBooking(booking);
+
+    if (!isTeleConsultation && !otp.trim()) {
       Alert.alert('Error', 'Please enter the OTP');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await VendorBookingActionsApi.completeBooking(vendorId, bookingId, otp);
+      // ✅ FIX: Send empty OTP for tele consultations, actual OTP for others
+      const otpToSend = isTeleConsultation ? '' : otp;
+      const response = await VendorBookingActionsApi.completeBooking(vendorId, bookingId, otpToSend);
       
       if (response.success) {
         Alert.alert('Success', 'Booking completed successfully!', [
@@ -89,7 +104,9 @@ export function BookingCompletionScreen({
     }
   };
 
-  const requiresOTP = booking?.metadata?.requiresOTP !== false;
+  // ✅ FIX: Check if this is a tele consultation - no OTP required
+  const isTeleConsultation = isTeleConsultationBooking(booking);
+  const requiresOTP = !isTeleConsultation && (booking?.metadata?.requiresOTP !== false);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -139,10 +156,14 @@ export function BookingCompletionScreen({
         ) : (
           <View style={styles.noOtpSection}>
             <Text style={styles.noOtpText}>
-              This booking does not require OTP verification.
+              {isTeleConsultation 
+                ? 'Tele consultation - No OTP required'
+                : 'This booking does not require OTP verification.'}
             </Text>
             <Text style={styles.noOtpSubtext}>
-              You can complete it directly.
+              {isTeleConsultation
+                ? 'You can complete it directly after the consultation.'
+                : 'You can complete it directly.'}
             </Text>
           </View>
         )}

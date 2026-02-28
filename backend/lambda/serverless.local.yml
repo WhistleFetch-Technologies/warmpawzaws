@@ -33,7 +33,7 @@ provider:
     DB_NAME: ${env:DB_NAME, 'warmpawz'}
     DB_USER: ${env:DB_USER, 'postgres'}
     DB_PASSWORD: ${env:DB_PASSWORD, 'postgres'}
-    DB_SSL: ${env:DB_SSL, 'true'}
+    DB_SSL: ${env:DB_SSL, 'false'}
     
     # Cognito Configuration (use test values)
     COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, 'ap-south-1_TEST123'}

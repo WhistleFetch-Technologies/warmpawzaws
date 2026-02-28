@@ -306,7 +306,10 @@ export function VendorDashboard({
             if (dashboardRes.bookings && dashboardRes.bookings.length > 0) {
               console.log(`✅ [DASHBOARD] Loaded ${dashboardRes.bookings.length} bookings from dashboard`);
               // Transform API response to match ScheduleItem interface
-              const transformedBookings: ScheduleItem[] = dashboardRes.bookings.map((b: any) => ({
+              // ✅ FIX: Filter out completed bookings from main dashboard view
+              const transformedBookings: ScheduleItem[] = dashboardRes.bookings
+                .filter((b: any) => b.status !== 'completed')
+                .map((b: any) => ({
                 id: b.id || b.booking_id,
                 bookingId: b.id || b.booking_id,
                 time: b.booking_time ? formatBookingTime(b.booking_time) : 'N/A',
@@ -338,7 +341,10 @@ export function VendorDashboard({
         criticalParsing.push(
           Promise.resolve().then(() => {
             const scheduleBookings = (scheduleRes.bookings || scheduleRes.schedule || []) as any[];
-            const mapped: ScheduleItem[] = scheduleBookings.map((b: any) => ({
+            // ✅ FIX: Filter out completed bookings from main dashboard view
+            const mapped: ScheduleItem[] = scheduleBookings
+              .filter((b: any) => b.status !== 'completed')
+              .map((b: any) => ({
               id: b.id || b.booking_id,
               bookingId: b.id || b.booking_id,
               time: b.booking_time ? formatBookingTime(b.booking_time) : 'N/A',

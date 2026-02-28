@@ -63,13 +63,30 @@ export default function RootLayout({
               // This prevents any UAT mode from leaking in production
               (function() {
                 var hostname = window.location.hostname || '';
-                var isProductionHostname = hostname.includes('cloudfront.net') || 
-                                          hostname.includes('warmpawz.com') ||
-                                          hostname.includes('admin.warmpawz.com');
                 var isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
                 
-                // If we're on a production hostname, FORCE production mode
-                if (isProductionHostname && !isLocalhost) {
+                // Check if it's a dev subdomain (dev.admin.warmpawz.com, dev.vendor.warmpawz.com, etc.)
+                var isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+                
+                // Production hostnames: exact production domains (not dev subdomains)
+                // - admin.warmpawz.com (not dev.admin.warmpawz.com)
+                // - vendor.warmpawz.com (not dev.vendor.warmpawz.com)
+                // - customer.warmpawz.com (not dev.customer.warmpawz.com)
+                // - warmpawz.com, www.warmpawz.com
+                // - Production CloudFront: dbr09zyoq9akb.cloudfront.net (admin prod)
+                var isProductionHostname = (
+                  hostname === 'admin.warmpawz.com' ||
+                  hostname === 'vendor.warmpawz.com' ||
+                  hostname === 'customer.warmpawz.com' ||
+                  hostname === 'warmpawz.com' ||
+                  hostname === 'www.warmpawz.com' ||
+                  hostname === 'dbr09zyoq9akb.cloudfront.net' ||
+                  hostname === 'd1y5ywletev82x.cloudfront.net' ||
+                  hostname === 'dg69gqp2frh39.cloudfront.net'
+                );
+                
+                // If we're on a production hostname (and NOT a dev subdomain), FORCE production mode
+                if (isProductionHostname && !isDevSubdomain && !isLocalhost) {
                   window.__WARMPAWZ_PROD_MODE__ = true;
                 }
               })();
@@ -77,7 +94,7 @@ export default function RootLayout({
               // Inline fallback config (ensures API URL is always available)
               // Only set if not already configured (production mode sets it above)
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                // ✅ FIX: If production hostname detected, set prod config immediately
+                // ✅ FIX: If production hostname detected (and NOT dev subdomain), set prod config immediately
                 if (window.__WARMPAWZ_PROD_MODE__) {
                   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
                     apiBaseUrl: 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com',
@@ -85,7 +102,8 @@ export default function RootLayout({
                     environment: 'production'
                   };
                 } else {
-                  window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
+                  // Dev mode: UAT enabled, API URL will be set by runtime-config.js
+                  window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true, environment: 'development' };
                 }
               }
               (function() {
@@ -97,10 +115,16 @@ export default function RootLayout({
                   script.onload = function() { 
                     console.log('Runtime config loaded');
                     // Ensure production mode is preserved after runtime-config loads
+                    // Only override if we're actually in production mode (not dev subdomain)
                     if (window.__WARMPAWZ_PROD_MODE__ && window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                      window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
-                      window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
-                      window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+                      var hostname = window.location.hostname || '';
+                      var isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+                      // Only force production config if NOT a dev subdomain
+                      if (!isDevSubdomain) {
+                        window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
+                        window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
+                        window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+                      }
                     }
                   };
                   script.onerror = function() {
@@ -114,12 +138,25 @@ export default function RootLayout({
               (function() {
                 // ✅ FIX: Check BOTH __WARMPAWZ_PROD_MODE__ AND hostname
                 var hostname = window.location.hostname || '';
-                var isProductionHostname = hostname.includes('cloudfront.net') || 
-                                          hostname.includes('warmpawz.com');
                 var isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
                 
+                // Check if it's a dev subdomain (dev.admin.warmpawz.com, dev.vendor.warmpawz.com, etc.)
+                var isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+                
+                // Production hostnames: exact production domains (not dev subdomains)
+                var isProductionHostname = (
+                  hostname === 'admin.warmpawz.com' ||
+                  hostname === 'vendor.warmpawz.com' ||
+                  hostname === 'customer.warmpawz.com' ||
+                  hostname === 'warmpawz.com' ||
+                  hostname === 'www.warmpawz.com' ||
+                  hostname === 'dbr09zyoq9akb.cloudfront.net' ||
+                  hostname === 'd1y5ywletev82x.cloudfront.net' ||
+                  hostname === 'dg69gqp2frh39.cloudfront.net'
+                );
+                
                 // CRITICAL: NEVER auto-login in production mode (check multiple signals)
-                if (window.__WARMPAWZ_PROD_MODE__ === true || (isProductionHostname && !isLocalhost)) {
+                if (window.__WARMPAWZ_PROD_MODE__ === true || (isProductionHostname && !isDevSubdomain && !isLocalhost)) {
                   console.log('[Production Mode] Auto-login disabled - user must login');
                   return;
                 }
@@ -136,8 +173,8 @@ export default function RootLayout({
                   return;
                 }
                 
-                // Only auto-login if UAT mode is explicitly enabled and on localhost
-                var isUatMode = config.uatMode === true && isLocalhost;
+                // Auto-login if UAT mode is enabled (for dev subdomains or localhost)
+                var isUatMode = config.uatMode === true && (isDevSubdomain || isLocalhost);
                 
                 if (isUatMode && typeof localStorage !== 'undefined') {
                   var token = localStorage.getItem('adminAuthToken');

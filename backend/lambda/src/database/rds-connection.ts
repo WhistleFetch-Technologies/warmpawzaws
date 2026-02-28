@@ -140,8 +140,16 @@ export async function getRdsPool(): Promise<Pool> {
       console.error('[DB] Unexpected error on idle client', err);
     });
     
-    // ✅ FIX: Monitor pool size to detect connection exhaustion
-    pool.on('connect', () => {
+    // ✅ FIX: Set search_path to public on each new connection and monitor pool size
+    pool.on('connect', async (client) => {
+      try {
+        // Set search_path to ensure tables in public schema are found
+        await client.query('SET search_path = public, "$user"');
+        console.log('[DB] Set search_path to public on new connection');
+      } catch (error) {
+        console.error('[DB] Failed to set search_path:', error);
+        // Don't throw - connection can still work, just log the error
+      }
       console.log(`[DB] Pool: ${pool?.totalCount || 0} total, ${pool?.idleCount || 0} idle, ${pool?.waitingCount || 0} waiting`);
     });
     

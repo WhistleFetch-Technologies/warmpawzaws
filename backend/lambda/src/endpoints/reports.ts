@@ -526,14 +526,17 @@ export function registerReportEndpoints(app: Hono) {
       
       const revenueData = await query(`
         SELECT 
-          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
-          COALESCE(SUM(total_amount), 0) as revenue,
+          TO_CHAR(DATE_TRUNC('month', b.created_at), 'Mon YYYY') as month,
+          COALESCE(SUM(b.total_amount), 0) as revenue,
           COUNT(*) as bookings,
-          COALESCE(SUM(total_amount) * 0.15, 0) as commission
-        FROM bookings
-        WHERE created_at >= NOW() - INTERVAL '12 months'
-        GROUP BY DATE_TRUNC('month', created_at)
-        ORDER BY DATE_TRUNC('month', created_at) DESC
+          COALESCE(SUM(b.total_amount * COALESCE(vt.commission_rate, 15) / 100.0), 0) as commission
+        FROM bookings b
+        LEFT JOIN vendors v ON v.id = b.vendor_id
+        LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+          AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+        WHERE b.created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', b.created_at)
+        ORDER BY DATE_TRUNC('month', b.created_at) DESC
         LIMIT 12
       `).catch(() => ({ rows: [] }));
 

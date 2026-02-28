@@ -3571,16 +3571,21 @@ export function registerStaffEndpoints(app: Hono) {
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
 
-      // Get completed bookings
+      // Get completed bookings with vendor tier commission rate
       const completedBookings = await query(
         `SELECT 
           b.id,
           b.booking_date,
           b.total_amount,
           b.service_style,
-          s.name as service_name
+          b.vendor_id,
+          s.name as service_name,
+          COALESCE(vt.commission_rate, 15) / 100.0 as commission_rate
          FROM bookings b
          INNER JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendors v ON v.id = b.vendor_id
+         LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+           AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
          WHERE b.staff_id = $1
            AND b.status = 'completed'
            AND b.booking_date >= $2
@@ -3589,7 +3594,6 @@ export function registerStaffEndpoints(app: Hono) {
       );
 
       // Calculate earnings (after platform commission)
-      const platformCommissionRate = 0.15; // 15%
       const gstOnCommission = 0.18; // 18% GST on commission
 
       let totalRevenue = 0;
@@ -3599,9 +3603,10 @@ export function registerStaffEndpoints(app: Hono) {
 
       completedBookings.rows.forEach((booking: any) => {
         const revenue = parseFloat(booking.total_amount) || 0;
+        const commissionRate = parseFloat(booking.commission_rate) || 0.15; // Default to 15% if not found
         totalRevenue += revenue;
         
-        const commission = revenue * platformCommissionRate;
+        const commission = revenue * commissionRate;
         const gst = commission * gstOnCommission;
         const earnings = revenue - commission - gst;
         
@@ -3610,18 +3615,25 @@ export function registerStaffEndpoints(app: Hono) {
         totalEarnings += earnings;
       });
 
-      // Get pending bookings (not yet settled)
+      // Get pending bookings (not yet settled) with commission rates
       const pendingBookings = await query(
-        `SELECT COALESCE(SUM(total_amount), 0) as pending_amount
-         FROM bookings
-         WHERE staff_id = $1
-           AND status = 'completed'
-           AND settlement_status IS NULL
-           AND booking_date >= $2`,
+        `SELECT 
+          COALESCE(SUM(b.total_amount), 0) as pending_amount,
+          COALESCE(AVG(COALESCE(vt.commission_rate, 15) / 100.0), 0.15) as avg_commission_rate
+         FROM bookings b
+         LEFT JOIN vendors v ON v.id = b.vendor_id
+         LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+           AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+         WHERE b.staff_id = $1
+           AND b.status = 'completed'
+           AND b.settlement_status IS NULL
+           AND b.booking_date >= $2`,
         [staffId, startDate.toISOString().split('T')[0]]
       );
 
-      const pendingEarnings = parseFloat(pendingBookings.rows[0]?.pending_amount || '0') * (1 - platformCommissionRate - (platformCommissionRate * gstOnCommission));
+      const pendingAmount = parseFloat(pendingBookings.rows[0]?.pending_amount || '0');
+      const avgCommissionRate = parseFloat(pendingBookings.rows[0]?.avg_commission_rate || '0.15');
+      const pendingEarnings = pendingAmount * (1 - avgCommissionRate - (avgCommissionRate * gstOnCommission));
 
       // Get last settlement (from settlements table if staff_id is tracked)
       let lastSettlement: any = { rows: [] };

@@ -970,13 +970,16 @@ export function VendorBookingManagement({
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>
                 </div>
-              ) : bookings.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  No appointments scheduled
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {bookings.map((booking) => (
+              ) : (() => {
+                // ✅ FIX: Filter out completed bookings from main dashboard view
+                const activeBookings = bookings.filter(b => b.status !== 'completed');
+                return activeBookings.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    No appointments scheduled
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {activeBookings.map((booking) => (
                     <div 
                       key={booking.id} 
                       className="border border-gray-200 rounded-xl p-3 cursor-pointer hover:shadow-lg hover:border-[#FF8C42] transition-all"
@@ -1176,9 +1179,10 @@ export function VendorBookingManagement({
                         </a>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Client Consultation Section */}
