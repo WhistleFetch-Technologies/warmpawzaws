@@ -13,7 +13,7 @@
     "test": "jest",
     "test:local": "./test-local.sh",
     "test:sentry": "node scripts/test-sentry.js",
-    "start:local": "dotenv -e .env.local -- npx serverless offline --config serverless.local.yml",
+    "start:local": "npm run build:bundle && dotenv -e .env.local -- npx serverless offline --config serverless.local.yml",
     "lint": "eslint src --ext .ts",
     "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')) fs.rmSync('dist',{recursive:true,force:true}); if(fs.existsSync('api-handler.zip')) fs.unlinkSync('api-handler.zip')\""
   },

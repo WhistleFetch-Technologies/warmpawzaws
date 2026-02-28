@@ -107520,7 +107520,13 @@ async function getRdsPool() {
     pool.on("error", (err) => {
       console.error("[DB] Unexpected error on idle client", err);
     });
-    pool.on("connect", () => {
+    pool.on("connect", async (client2) => {
+      try {
+        await client2.query('SET search_path = public, "$user"');
+        console.log("[DB] Set search_path to public on new connection");
+      } catch (error) {
+        console.error("[DB] Failed to set search_path:", error);
+      }
       console.log(`[DB] Pool: ${pool?.totalCount || 0} total, ${pool?.idleCount || 0} idle, ${pool?.waitingCount || 0} waiting`);
     });
     if (true) {
@@ -112314,281 +112320,6 @@ var init_jwt_verification = __esm({
   }
 });
 
-// src/utils/sms-service.ts
-var sms_service_exports = {};
-__export(sms_service_exports, {
-  default: () => sms_service_default,
-  sendOTP: () => sendOTP,
-  sendSMS: () => sendSMS
-});
-function normalizePhone(phone) {
-  const raw2 = String(phone || "").trim();
-  const digits = raw2.replace(/\D/g, "");
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.startsWith("91") && digits.length === 12) return `+${digits}`;
-  if (raw2.startsWith("+")) return raw2;
-  return digits ? `+${digits}` : raw2;
-}
-async function loadSnsSettings() {
-  const envSender = process.env.SMS_SENDER_ID || process.env.SNS_SMS_SENDER_ID || "";
-  const envEntity = process.env.SMS_ENTITY_ID || process.env.SNS_SMS_ENTITY_ID || "";
-  const envTemplate = process.env.SMS_TEMPLATE_ID || process.env.SNS_SMS_TEMPLATE_ID || "";
-  if (envSender || envEntity || envTemplate) {
-    return {
-      senderId: envSender || JIO_DLT_DEFAULTS.senderId,
-      entityId: envEntity || JIO_DLT_DEFAULTS.entityId,
-      templateId: envTemplate || void 0
-    };
-  }
-  try {
-    const rows = await query(
-      `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1`
-    );
-    const raw2 = rows.rows?.[0]?.setting_value;
-    const setting = raw2 == null ? null : typeof raw2 === "string" ? (() => {
-      try {
-        return JSON.parse(raw2);
-      } catch {
-        return null;
-      }
-    })() : raw2;
-    const sns = setting?.sns || {};
-    const creds = setting?.credentials || {};
-    const senderId = sns?.smsOriginationNumber || JIO_DLT_DEFAULTS.senderId;
-    const entityId = sns?.entityId || JIO_DLT_DEFAULTS.entityId;
-    const templateId = sns?.templateId;
-    const region = sns?.region || process.env.AWS_REGION || "ap-south-1";
-    const accessKeyId = creds?.accessKeyId;
-    const secretAccessKey = creds?.secretAccessKey;
-    const credentials = sns?.enabled && accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : void 0;
-    if (credentials) {
-      console.log("[SMS] Using DB credentials for SNS (Option A)");
-    } else {
-      console.log("[SMS] No DB credentials; using Lambda role for SNS");
-    }
-    return { senderId, entityId, templateId, credentials, region };
-  } catch (e) {
-    console.warn("[SMS] loadSnsSettings failed:", e?.message);
-  }
-  return {
-    senderId: JIO_DLT_DEFAULTS.senderId,
-    entityId: JIO_DLT_DEFAULTS.entityId,
-    templateId: void 0
-  };
-}
-function buildSmsAttributesFromSettings(type, settings, overrides) {
-  const attrs = {
-    "AWS.SNS.SMS.SMSType": {
-      DataType: "String",
-      StringValue: type === "promotional" ? "Promotional" : "Transactional"
-    }
-  };
-  const senderId = overrides?.senderId ?? settings.senderId;
-  const entityId = overrides?.entityId ?? settings.entityId;
-  const templateId = overrides?.templateId ?? settings.templateId;
-  if (senderId) {
-    attrs["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: String(senderId).trim() };
-  }
-  if (entityId) {
-    attrs["AWS.MM.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
-  }
-  if (templateId) {
-    attrs["AWS.MM.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
-  }
-  return attrs;
-}
-async function sendSMS(options) {
-  const { to, message: message2, type = "transactional", templateId, entityId, senderId } = options;
-  const phone = normalizePhone(to);
-  const settings = await loadSnsSettings();
-  const attrs = buildSmsAttributesFromSettings(type, settings, { templateId, entityId, senderId });
-  try {
-    const region = settings.region || process.env.AWS_REGION || "ap-south-1";
-    const snsClient4 = settings.credentials ? new import_client_sns.SNSClient({ region, credentials: settings.credentials }) : new import_client_sns.SNSClient({ region });
-    const result = await snsClient4.send(
-      new import_client_sns.PublishCommand({
-        PhoneNumber: phone,
-        Message: message2,
-        MessageAttributes: attrs
-      })
-    );
-    return { success: true, messageId: result?.MessageId };
-  } catch (err) {
-    console.error("[SMS] SNS send failed:", err?.message || err);
-    if (err?.Code) console.error("[SMS] SNS Code:", err.Code);
-    if (err?.$metadata?.httpStatusCode) console.error("[SMS] HTTP status:", err.$metadata.httpStatusCode);
-    return { success: false };
-  }
-}
-async function sendOTP(phone, otp) {
-  const templateId = process.env.SMS_OTP_TEMPLATE_ID;
-  return sendSMS({
-    to: phone,
-    message: `Your Warmpawz verification OTP is ${otp}. Valid for 10 minutes.`,
-    type: "otp",
-    ...templateId ? { templateId } : {}
-  });
-}
-var import_client_sns, JIO_DLT_DEFAULTS, sms_service_default;
-var init_sms_service = __esm({
-  "src/utils/sms-service.ts"() {
-    "use strict";
-    import_client_sns = require("@aws-sdk/client-sns");
-    init_rds_connection();
-    JIO_DLT_DEFAULTS = {
-      senderId: "WARMPZ",
-      entityId: "1201176605406673276"
-    };
-    sms_service_default = { sendSMS, sendOTP };
-  }
-});
-
-// src/utils/cognito-client.ts
-var cognito_client_exports = {};
-__export(cognito_client_exports, {
-  authenticateCognitoUser: () => authenticateCognitoUser,
-  getOrCreateCognitoUser: () => getOrCreateCognitoUser,
-  verifyCognitoToken: () => verifyCognitoToken3
-});
-async function getOrCreateCognitoUser(phone, email, userType = "customer") {
-  const username = `phone_${phone}`;
-  try {
-    const getUserResponse = await cognitoClient.send(
-      new import_client_cognito_identity_provider.AdminGetUserCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: username
-      })
-    );
-    const attributes = {};
-    getUserResponse.UserAttributes?.forEach((attr) => {
-      if (attr.Name && attr.Value) {
-        attributes[attr.Name] = attr.Value;
-      }
-    });
-    return {
-      username,
-      sub: attributes["sub"] || "",
-      phone: attributes["phone_number"] || phone,
-      email: attributes["email"],
-      attributes
-    };
-  } catch (error) {
-    if (error.name === "UserNotFoundException") {
-      return await createCognitoUser(phone, email, userType);
-    }
-    throw error;
-  }
-}
-async function createCognitoUser(phone, email, userType = "customer") {
-  const username = `phone_${phone}`;
-  const tempPassword = generateTemporaryPassword();
-  const createResponse = await cognitoClient.send(
-    new import_client_cognito_identity_provider.AdminCreateUserCommand({
-      UserPoolId: USER_POOL_ID,
-      Username: username,
-      TemporaryPassword: tempPassword,
-      UserAttributes: [
-        { Name: "phone_number", Value: phone },
-        { Name: "phone_number_verified", Value: "true" },
-        ...email ? [{ Name: "email", Value: email }, { Name: "email_verified", Value: "false" }] : [],
-        { Name: "custom:user_type", Value: userType }
-      ],
-      MessageAction: "SUPPRESS"
-      // Don't send email/SMS from Cognito
-    })
-  );
-  const permanentPassword = generatePermanentPassword(phone);
-  await cognitoClient.send(
-    new import_client_cognito_identity_provider.AdminSetUserPasswordCommand({
-      UserPoolId: USER_POOL_ID,
-      Username: username,
-      Password: permanentPassword,
-      Permanent: true
-    })
-  );
-  const sub = createResponse.User?.Attributes?.find((attr) => attr.Name === "sub")?.Value || "";
-  return {
-    username,
-    sub,
-    phone,
-    email,
-    attributes: {
-      sub,
-      phone_number: phone,
-      ...email && { email },
-      "custom:user_type": userType
-    }
-  };
-}
-async function authenticateCognitoUser(phone) {
-  const username = `phone_${phone}`;
-  const password = generatePermanentPassword(phone);
-  const authResponse = await cognitoClient.send(
-    new import_client_cognito_identity_provider.AdminInitiateAuthCommand({
-      UserPoolId: USER_POOL_ID,
-      ClientId: CLIENT_ID,
-      AuthFlow: import_client_cognito_identity_provider.AuthFlowType.ADMIN_NO_SRP_AUTH,
-      AuthParameters: {
-        USERNAME: username,
-        PASSWORD: password
-      }
-    })
-  );
-  if (!authResponse.AuthenticationResult) {
-    throw new Error("Authentication failed");
-  }
-  return {
-    accessToken: authResponse.AuthenticationResult.AccessToken || "",
-    idToken: authResponse.AuthenticationResult.IdToken || "",
-    refreshToken: authResponse.AuthenticationResult.RefreshToken || "",
-    expiresIn: authResponse.AuthenticationResult.ExpiresIn || 3600
-  };
-}
-function generateTemporaryPassword() {
-  const length = 16;
-  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    password += charset.charAt(Math.floor(Math.random() * charset.length));
-  }
-  return password;
-}
-function generatePermanentPassword(phone) {
-  const crypto16 = require("crypto");
-  const secret = process.env.COGNITO_PASSWORD_SECRET || "warmpawz-default-secret-change-me";
-  const hmac = crypto16.createHmac("sha256", secret).update(phone).digest("hex");
-  return `Wp${hmac.substring(0, 12)}!@`;
-}
-async function verifyCognitoToken3(token) {
-  try {
-    const payload = JSON.parse(
-      Buffer.from(token.split(".")[1], "base64").toString()
-    );
-    return {
-      username: payload["cognito:username"] || "",
-      sub: payload.sub || "",
-      phone: payload.phone_number || "",
-      email: payload.email,
-      attributes: payload
-    };
-  } catch (error) {
-    console.error("Token verification failed:", error);
-    return null;
-  }
-}
-var import_client_cognito_identity_provider, cognitoClient, USER_POOL_ID, CLIENT_ID;
-var init_cognito_client = __esm({
-  "src/utils/cognito-client.ts"() {
-    "use strict";
-    import_client_cognito_identity_provider = require("@aws-sdk/client-cognito-identity-provider");
-    cognitoClient = new import_client_cognito_identity_provider.CognitoIdentityProviderClient({
-      region: process.env.AWS_REGION || "ap-south-1"
-    });
-    USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || "";
-    CLIENT_ID = process.env.COGNITO_CLIENT_ID || "";
-  }
-});
-
 // ../../packages/api-contracts/node_modules/zod/v3/helpers/util.cjs
 var require_util9 = __commonJS({
   "../../packages/api-contracts/node_modules/zod/v3/helpers/util.cjs"(exports2) {
@@ -116761,533 +116492,243 @@ var require_zod = __commonJS({
   }
 });
 
-// ../../packages/api-contracts/dist/auth.js
-var require_auth = __commonJS({
-  "../../packages/api-contracts/dist/auth.js"(exports2) {
+// ../../packages/api-contracts/dist/vendors.js
+var require_vendors = __commonJS({
+  "../../packages/api-contracts/dist/vendors.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.AuthResponseSchema = exports2.UserSchema = exports2.AuthTokenSchema = exports2.RefreshTokenRequestSchema = exports2.AdminLoginRequestSchema = exports2.VerifyOtpRequestSchema = exports2.SendOtpRequestSchema = void 0;
+    exports2.VendorListResponseSchema = exports2.GetVendorResponseSchema = exports2.SubmitApplicationResponseSchema = exports2.VendorRoleSchema = exports2.VendorOnboardingApplicationSchema = exports2.VendorSchema = exports2.UpdateVendorProfileRequestSchema = exports2.AdminReviewApplicationRequestSchema = exports2.SelectVendorTypeRequestSchema = exports2.SelectVendorRoleRequestSchema = exports2.SubmitVendorApplicationRequestSchema = void 0;
     var zod_1 = require_zod();
-    exports2.SendOtpRequestSchema = zod_1.z.object({
+    exports2.SubmitVendorApplicationRequestSchema = zod_1.z.object({
+      // ✅ FIX: More lenient phone validation - accepts 10-15 digits with optional + prefix
+      // Handles: 9876543210, +919876543210, 919876543210, etc.
+      phone: zod_1.z.string().min(10, "Phone must be at least 10 digits").max(16, "Phone too long").transform((p) => p.replace(/\D/g, "")),
+      // Remove non-digits for storage
+      application_payload: zod_1.z.record(zod_1.z.unknown()),
+      // Dynamic based on role
+      // ✅ FIX: Make documents more flexible - URL can be empty or missing during submission
+      uploaded_documents: zod_1.z.array(zod_1.z.object({
+        type: zod_1.z.string(),
+        url: zod_1.z.string().optional().default(""),
+        // URL is optional during submission
+        name: zod_1.z.string().optional().default("")
+      })).optional().default([])
+    });
+    exports2.SelectVendorRoleRequestSchema = zod_1.z.object({
       phone: zod_1.z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
-      role: zod_1.z.enum(["customer", "vendor", "admin"]).optional()
+      role_id: zod_1.z.string().uuid("Invalid role ID format")
     });
-    exports2.VerifyOtpRequestSchema = zod_1.z.object({
+    exports2.SelectVendorTypeRequestSchema = zod_1.z.object({
       phone: zod_1.z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
-      otp: zod_1.z.string().length(6, "OTP must be 6 digits"),
-      role: zod_1.z.enum(["customer", "vendor", "admin"]).optional()
+      vendor_type: zod_1.z.enum(["solo", "business"], {
+        errorMap: () => ({ message: "Vendor type must be solo or business" })
+      })
     });
-    exports2.AdminLoginRequestSchema = zod_1.z.object({
-      email: zod_1.z.string().email("Invalid email format"),
-      password: zod_1.z.string().min(8, "Password must be at least 8 characters")
+    exports2.AdminReviewApplicationRequestSchema = zod_1.z.object({
+      action: zod_1.z.enum(["APPROVE", "REQUEST_CLARIFICATION", "REJECT"], {
+        errorMap: () => ({ message: "Action must be APPROVE, REQUEST_CLARIFICATION, or REJECT" })
+      }),
+      admin_id: zod_1.z.string().min(1, "Admin ID is required"),
+      // Allow non-UUID (e.g. "admin") for compatibility
+      comments: zod_1.z.string().max(2e3, "Comments too long").optional(),
+      rejection_reason: zod_1.z.string().max(500, "Rejection reason too long").optional()
     });
-    exports2.RefreshTokenRequestSchema = zod_1.z.object({
-      refresh_token: zod_1.z.string().min(1, "Refresh token is required")
+    exports2.UpdateVendorProfileRequestSchema = zod_1.z.object({
+      business_name: zod_1.z.string().min(1, "Business name required").max(200, "Business name too long").optional(),
+      owner_name: zod_1.z.string().min(1, "Owner name required").max(100, "Owner name too long").optional(),
+      email: zod_1.z.string().email("Invalid email format").optional(),
+      address: zod_1.z.string().max(500, "Address too long").optional(),
+      city: zod_1.z.string().max(100, "City name too long").optional(),
+      state: zod_1.z.string().max(100, "State name too long").optional(),
+      pincode: zod_1.z.string().regex(/^\d{6}$/, "Invalid pincode format").optional(),
+      latitude: zod_1.z.number().min(-90).max(90).optional(),
+      longitude: zod_1.z.number().min(-180).max(180).optional(),
+      description: zod_1.z.string().max(2e3, "Description too long").optional(),
+      logo_url: zod_1.z.string().url("Invalid logo URL").optional(),
+      cover_image_url: zod_1.z.string().url("Invalid cover image URL").optional()
     });
-    exports2.AuthTokenSchema = zod_1.z.object({
-      access_token: zod_1.z.string(),
-      refresh_token: zod_1.z.string(),
-      expires_in: zod_1.z.number(),
-      token_type: zod_1.z.literal("Bearer")
-    });
-    exports2.UserSchema = zod_1.z.object({
+    exports2.VendorSchema = zod_1.z.object({
       id: zod_1.z.string().uuid(),
-      phone: zod_1.z.string().optional(),
-      email: zod_1.z.string().email().optional(),
-      name: zod_1.z.string().optional(),
-      role: zod_1.z.enum(["customer", "vendor", "admin", "staff"]),
-      is_active: zod_1.z.boolean(),
-      created_at: zod_1.z.string().datetime()
+      phone: zod_1.z.string(),
+      email: zod_1.z.string().nullable(),
+      business_name: zod_1.z.string(),
+      owner_name: zod_1.z.string(),
+      role_id: zod_1.z.string().uuid().nullable(),
+      vendor_type: zod_1.z.enum(["solo", "business"]),
+      status: zod_1.z.enum(["pending", "approved", "rejected", "active", "inactive", "suspended"]),
+      tier: zod_1.z.string(),
+      address: zod_1.z.string().nullable(),
+      city: zod_1.z.string().nullable(),
+      state: zod_1.z.string().nullable(),
+      pincode: zod_1.z.string().nullable(),
+      latitude: zod_1.z.number().nullable(),
+      longitude: zod_1.z.number().nullable(),
+      description: zod_1.z.string().nullable(),
+      logo_url: zod_1.z.string().nullable(),
+      cover_image_url: zod_1.z.string().nullable(),
+      onboarding_status: zod_1.z.string(),
+      createdAt: zod_1.z.string().datetime(),
+      updatedAt: zod_1.z.string().datetime()
     });
-    exports2.AuthResponseSchema = zod_1.z.object({
+    exports2.VendorOnboardingApplicationSchema = zod_1.z.object({
+      id: zod_1.z.string().uuid(),
+      vendor_identity_id: zod_1.z.string().uuid(),
+      role_id: zod_1.z.string().uuid(),
+      vendor_type: zod_1.z.enum(["solo", "business"]),
+      status: zod_1.z.enum(["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "CLARIFICATION_REQUIRED", "ACTIVATED"]),
+      application_payload: zod_1.z.record(zod_1.z.unknown()),
+      uploaded_documents: zod_1.z.array(zod_1.z.unknown()),
+      form_version: zod_1.z.string(),
+      admin_comments: zod_1.z.string().nullable(),
+      rejection_reason: zod_1.z.string().nullable(),
+      reviewed_by: zod_1.z.string().uuid().nullable(),
+      reviewed_at: zod_1.z.string().datetime().nullable(),
+      submitted_at: zod_1.z.string().datetime().nullable(),
+      createdAt: zod_1.z.string().datetime(),
+      updatedAt: zod_1.z.string().datetime()
+    });
+    exports2.VendorRoleSchema = zod_1.z.object({
+      id: zod_1.z.string().uuid(),
+      name: zod_1.z.string(),
+      display_name: zod_1.z.string(),
+      description: zod_1.z.string().nullable(),
+      is_active: zod_1.z.boolean(),
+      config: zod_1.z.record(zod_1.z.unknown()).optional(),
+      capabilities: zod_1.z.array(zod_1.z.string()).optional()
+    });
+    exports2.SubmitApplicationResponseSchema = zod_1.z.object({
       success: zod_1.z.literal(true),
       data: zod_1.z.object({
-        token: exports2.AuthTokenSchema,
-        user: exports2.UserSchema
+        message: zod_1.z.string(),
+        applicationId: zod_1.z.string().uuid(),
+        nextStep: zod_1.z.string()
+      })
+    });
+    exports2.GetVendorResponseSchema = zod_1.z.object({
+      success: zod_1.z.literal(true),
+      data: zod_1.z.object({
+        vendor: exports2.VendorSchema
+      })
+    });
+    exports2.VendorListResponseSchema = zod_1.z.object({
+      success: zod_1.z.literal(true),
+      data: zod_1.z.object({
+        vendors: zod_1.z.array(exports2.VendorSchema),
+        total: zod_1.z.number(),
+        page: zod_1.z.number().optional(),
+        limit: zod_1.z.number().optional()
       })
     });
   }
 });
 
-// src/utils/customer-state.ts
-var customer_state_exports = {};
-__export(customer_state_exports, {
-  createOrUpdateCustomerIdentity: () => createOrUpdateCustomerIdentity,
-  getCustomerState: () => getCustomerState,
-  getCustomerStateForAuth: () => getCustomerStateForAuth,
-  isNewCustomer: () => isNewCustomer,
-  isOnboardingComplete: () => isOnboardingComplete,
-  updateCustomerOnboardingStatus: () => updateCustomerOnboardingStatus,
-  updateProfileCompletion: () => updateProfileCompletion
+// src/utils/extract-profile-photo.ts
+var extract_profile_photo_exports = {};
+__export(extract_profile_photo_exports, {
+  extractPincodeFromPayload: () => extractPincodeFromPayload,
+  extractProfilePhotoFromApplication: () => extractProfilePhotoFromApplication
 });
-async function getCustomerState(customerId) {
-  try {
-    const customers = await select("customers", { id: customerId });
-    if (customers.length === 0) {
-      return null;
-    }
-    const customer = customers[0];
-    let identity = null;
-    if (customer.customer_identity_id) {
-      const identities = await select("customer_identity", { id: customer.customer_identity_id });
-      identity = identities[0] || null;
-    }
-    return {
-      status: customer.status || "new",
-      onboarding_status: customer.onboarding_status || identity?.onboarding_status || "INIT",
-      profile_completed: customer.profile_completed || false,
-      current_step: identity?.current_step || null
-    };
-  } catch (error) {
-    console.error("Error getting customer state:", error);
-    return null;
-  }
-}
-async function createOrUpdateCustomerIdentity(phone, customerId, email) {
-  try {
-    const existing = await select("customer_identity", { phone });
-    if (existing.length > 0) {
-      const identity = existing[0];
-      if (!identity.customer_id && customerId) {
-        await update("customer_identity", { id: identity.id }, {
-          customer_id: customerId,
-          updated_at: (/* @__PURE__ */ new Date()).toISOString()
-        });
+function extractPincodeFromPayload(payload = {}) {
+  const pincodeFields = ["pin", "pincode", "pinCode", "postalCode", "postal_code", "zip", "zipCode"];
+  const placeholderValues = ["000000", "0000000", "00000000", "123456", "000000", "", "0000000", "00000000"];
+  for (const field of pincodeFields) {
+    if (payload[field] && typeof payload[field] === "string") {
+      const trimmed = payload[field].trim();
+      if (trimmed && !placeholderValues.includes(trimmed) && /^\d{6}$/.test(trimmed)) {
+        console.log(`\u{1F4CD} [ExtractPincode] \u2705 Found valid pincode in field '${field}': '${trimmed}'`);
+        return trimmed;
+      } else if (trimmed) {
+        console.log(`\u{1F4CD} [ExtractPincode] \u26A0\uFE0F Found pincode in field '${field}' but it's a placeholder: '${trimmed}'`);
       }
-      return identity.id;
     }
-    const onboardingStatus = customerId ? "PHONE_VERIFIED" : "INIT";
-    const newIdentities = await insert("customer_identity", {
-      phone,
-      email,
-      customer_id: customerId || null,
-      onboarding_status: onboardingStatus,
-      current_step: customerId ? "profile" : null
+  }
+  if (payload.address && typeof payload.address === "string") {
+    console.log(`\u{1F4CD} [ExtractPincode] Checking address for pincode: '${payload.address.substring(0, 100)}...'`);
+    const patterns = [
+      /\b(\d{6})\b/,
+      // Standalone 6-digit number
+      /[,\s](\d{6})[,\s]/,
+      // 6-digit with commas/spaces
+      /-(\d{6})-/,
+      // 6-digit with dashes
+      /\((\d{6})\)/
+      // 6-digit in parentheses
+    ];
+    for (const pattern of patterns) {
+      const match2 = payload.address.match(pattern);
+      if (match2 && match2[1] && !placeholderValues.includes(match2[1])) {
+        console.log(`\u{1F4CD} [ExtractPincode] \u2705 Extracted pincode from address using pattern: '${match2[1]}'`);
+        return match2[1];
+      }
+    }
+  }
+  if (payload.city && typeof payload.city === "string") {
+    const cityMatch = payload.city.match(/\b(\d{6})\b/);
+    if (cityMatch && cityMatch[1] && !placeholderValues.includes(cityMatch[1])) {
+      console.log(`\u{1F4CD} [ExtractPincode] \u2705 Extracted pincode from city: '${cityMatch[1]}'`);
+      return cityMatch[1];
+    }
+  }
+  console.log(`\u{1F4CD} [ExtractPincode] \u26A0\uFE0F No valid pincode found in payload, address, or city`);
+  return "";
+}
+function extractProfilePhotoFromApplication(application, payload = {}) {
+  let profilePhotoUrl = null;
+  const uploadedDocuments = application?.uploaded_documents || [];
+  let parsedDocuments = uploadedDocuments;
+  if (typeof uploadedDocuments === "string") {
+    try {
+      parsedDocuments = JSON.parse(uploadedDocuments);
+    } catch (e) {
+      console.warn("[ExtractProfilePhoto] Failed to parse uploaded_documents JSON:", e);
+      parsedDocuments = [];
+    }
+  }
+  if (Array.isArray(parsedDocuments) && parsedDocuments.length > 0) {
+    const profilePhotoDoc = parsedDocuments.find((doc) => {
+      const typeMatch = doc.type === "profilePhoto" || doc.type === "profile_photo";
+      const nameMatch = doc.name === "profilePhoto" || doc.name === "profile_photo";
+      const fuzzyMatch = doc.name && doc.name.toLowerCase().includes("profile") && doc.name.toLowerCase().includes("photo");
+      return typeMatch || nameMatch || fuzzyMatch;
     });
-    return newIdentities[0].id;
-  } catch (error) {
-    console.error("Error creating customer identity:", error);
-    throw error;
+    if (profilePhotoDoc && profilePhotoDoc.url) {
+      const photoUrl = profilePhotoDoc.url;
+      if (photoUrl.includes("amazonaws.com")) {
+        try {
+          const urlObj = new URL(photoUrl);
+          profilePhotoUrl = urlObj.pathname.substring(1).split("?")[0];
+        } catch (e) {
+          const match2 = photoUrl.match(/([a-f0-9-]+\/[^?]+)/) || photoUrl.match(/vendors\/[^?]+/);
+          profilePhotoUrl = match2 ? match2[1] || match2[0] : photoUrl;
+        }
+      } else {
+        profilePhotoUrl = photoUrl;
+      }
+      console.log(`\u{1F4F8} [ExtractProfilePhoto] \u2705 Extracted from uploaded_documents: ${profilePhotoUrl}`);
+      return profilePhotoUrl;
+    }
   }
-}
-async function updateCustomerOnboardingStatus(customerId, newStatus, currentStep) {
-  try {
-    await update("customers", { id: customerId }, {
-      onboarding_status: newStatus,
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    const customers = await select("customers", { id: customerId });
-    const customer = customers[0];
-    if (customer.customer_identity_id) {
-      const updateData = {
-        onboarding_status: newStatus,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      if (currentStep) {
-        updateData.current_step = currentStep;
+  if (!profilePhotoUrl && payload?.profilePhoto) {
+    const photoUrl = payload.profilePhoto;
+    if (photoUrl.includes("amazonaws.com")) {
+      try {
+        const urlObj = new URL(photoUrl);
+        profilePhotoUrl = urlObj.pathname.substring(1).split("?")[0];
+      } catch (e) {
+        const match2 = photoUrl.match(/([a-f0-9-]+\/[^?]+)/) || photoUrl.match(/vendors\/[^?]+/);
+        profilePhotoUrl = match2 ? match2[1] || match2[0] : photoUrl;
       }
-      await update("customer_identity", { id: customer.customer_identity_id }, updateData);
+    } else {
+      profilePhotoUrl = photoUrl;
     }
-    console.log(`[Customer State] Updated onboarding_status to ${newStatus} for customer ${customerId}`);
-  } catch (error) {
-    console.error("Error updating customer onboarding status:", error);
-    throw error;
+    console.log(`\u{1F4F8} [ExtractProfilePhoto] \u2705 Extracted from application_payload: ${profilePhotoUrl}`);
+    return profilePhotoUrl;
   }
+  return null;
 }
-async function isNewCustomer(customerId) {
-  const state = await getCustomerState(customerId);
-  if (!state) return true;
-  return state.onboarding_status === "INIT" || state.onboarding_status === "PHONE_VERIFIED" || state.status === "new";
-}
-async function isOnboardingComplete(customerId) {
-  const state = await getCustomerState(customerId);
-  if (!state) return false;
-  return state.onboarding_status === "COMPLETED";
-}
-async function updateProfileCompletion(customerId, completionData) {
-  try {
-    let completion = await select("customer_profile_completion", { customer_id: customerId });
-    if (completion.length === 0) {
-      completion = await insert("customer_profile_completion", {
-        customer_id: customerId,
-        basic_info_completed: false,
-        address_completed: false,
-        pet_profile_completed: false,
-        preferences_completed: false,
-        is_profile_complete: false
-      });
-    }
-    const record = completion[0];
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const updateData = { updated_at: now };
-    if (completionData.basic_info !== void 0) {
-      updateData.basic_info_completed = completionData.basic_info;
-      if (completionData.basic_info) {
-        updateData.basic_info_completed_at = now;
-      }
-    }
-    if (completionData.address !== void 0) {
-      updateData.address_completed = completionData.address;
-      if (completionData.address) {
-        updateData.address_completed_at = now;
-      }
-    }
-    if (completionData.pet_profile !== void 0) {
-      updateData.pet_profile_completed = completionData.pet_profile;
-      if (completionData.pet_profile) {
-        updateData.pet_profile_completed_at = now;
-      }
-    }
-    if (completionData.preferences !== void 0) {
-      updateData.preferences_completed = completionData.preferences;
-      if (completionData.preferences) {
-        updateData.preferences_completed_at = now;
-      }
-    }
-    const allComplete = (updateData.basic_info_completed ?? record.basic_info_completed) && (updateData.address_completed ?? record.address_completed) && (updateData.pet_profile_completed ?? record.pet_profile_completed) && (updateData.preferences_completed ?? record.preferences_completed);
-    if (allComplete && !record.is_profile_complete) {
-      updateData.is_profile_complete = true;
-      updateData.profile_completed_at = now;
-      await update("customers", { id: customerId }, {
-        profile_completed: true,
-        profile_completed_at: now,
-        onboarding_status: "COMPLETED",
-        status: "active",
-        updated_at: now
-      });
-    }
-    await update("customer_profile_completion", { customer_id: customerId }, updateData);
-    console.log(`[Customer State] Updated profile completion for customer ${customerId}`);
-  } catch (error) {
-    console.error("Error updating profile completion:", error);
-    throw error;
-  }
-}
-async function getCustomerStateForAuth(customerId) {
-  const state = await getCustomerState(customerId);
-  if (!state) return "new";
-  if (state.onboarding_status === "COMPLETED" && state.status === "active") {
-    return "existing";
-  }
-  return "new";
-}
-var init_customer_state = __esm({
-  "src/utils/customer-state.ts"() {
+var init_extract_profile_photo = __esm({
+  "src/utils/extract-profile-photo.ts"() {
     "use strict";
-    init_rds_connection();
-  }
-});
-
-// src/lib/services/loyalty-rules-init-service.ts
-var loyalty_rules_init_service_exports = {};
-__export(loyalty_rules_init_service_exports, {
-  LoyaltyRulesInitService: () => LoyaltyRulesInitService,
-  loyaltyRulesInitService: () => loyaltyRulesInitService
-});
-var LoyaltyRulesInitService, loyaltyRulesInitService;
-var init_loyalty_rules_init_service = __esm({
-  "src/lib/services/loyalty-rules-init-service.ts"() {
-    "use strict";
-    init_rds_connection();
-    LoyaltyRulesInitService = class _LoyaltyRulesInitService {
-      static {
-        this.tableExistsCache = null;
-      }
-      /**
-       * Check if loyalty_action_rules table exists
-       */
-      async checkTableExists() {
-        if (_LoyaltyRulesInitService.tableExistsCache !== null) {
-          return _LoyaltyRulesInitService.tableExistsCache;
-        }
-        try {
-          const result = await query(
-            `SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = 'loyalty_action_rules'
-        ) as exists`
-          );
-          const exists = result.rows[0]?.exists === true;
-          _LoyaltyRulesInitService.tableExistsCache = exists;
-          return exists;
-        } catch (error) {
-          console.error("[LOYALTY_INIT] Error checking table existence:", error);
-          _LoyaltyRulesInitService.tableExistsCache = false;
-          return false;
-        }
-      }
-      /**
-       * Create loyalty_action_rules table if it doesn't exist
-       */
-      async ensureTableExists() {
-        const exists = await this.checkTableExists();
-        if (exists) {
-          return true;
-        }
-        try {
-          console.log("[LOYALTY_INIT] Creating loyalty_action_rules table...");
-          await query(`
-        CREATE TABLE IF NOT EXISTS loyalty_action_rules (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          action_name TEXT NOT NULL UNIQUE,
-          action_category TEXT NOT NULL CHECK (action_category IN ('loyalty', 'referral_rewards')),
-          user_type TEXT NOT NULL CHECK (user_type IN ('customer', 'vendor', 'both')),
-          
-          -- Point Calculation
-          points_type TEXT NOT NULL CHECK (points_type IN ('fixed', 'percentage', 'per_amount')),
-          points_value NUMERIC(10, 2) NOT NULL,
-          base_amount NUMERIC(10, 2),
-          min_amount NUMERIC(10, 2),
-          max_points_per_transaction INTEGER,
-          
-          -- Frequency/Limits
-          frequency_type TEXT CHECK (frequency_type IN ('one_time', 'recurring', 'unlimited', 'monthly_limit', 'yearly_limit')),
-          frequency_limit INTEGER,
-          frequency_period TEXT CHECK (frequency_period IN ('day', 'week', 'month', 'year')),
-          
-          -- Conditions
-          conditions JSONB DEFAULT '{}'::jsonb,
-          multiplier_conditions JSONB DEFAULT '{}'::jsonb,
-          
-          -- Status
-          is_active BOOLEAN DEFAULT true,
-          priority INTEGER DEFAULT 100,
-          
-          -- Metadata
-          description TEXT,
-          notes TEXT,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-      `);
-          await query(`
-        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_action_name ON loyalty_action_rules(action_name)
-      `);
-          await query(`
-        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_category ON loyalty_action_rules(action_category)
-      `);
-          await query(`
-        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_user_type ON loyalty_action_rules(user_type)
-      `);
-          await query(`
-        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_active ON loyalty_action_rules(is_active) WHERE is_active = true
-      `);
-          await query(`
-        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_priority ON loyalty_action_rules(priority DESC) WHERE is_active = true
-      `);
-          _LoyaltyRulesInitService.tableExistsCache = true;
-          console.log("[LOYALTY_INIT] \u2705 loyalty_action_rules table created successfully");
-          return true;
-        } catch (error) {
-          console.error("[LOYALTY_INIT] \u274C Error creating table:", error);
-          return false;
-        }
-      }
-      /**
-       * Check if a specific rule exists
-       */
-      async checkRuleExists(actionName) {
-        try {
-          const rules = await select("loyalty_action_rules", { action_name: actionName });
-          return rules.length > 0;
-        } catch (error) {
-          return false;
-        }
-      }
-      /**
-       * Ensure referral_signup rule exists with 500 points
-       */
-      async ensureReferralSignupRule() {
-        try {
-          const tableExists2 = await this.ensureTableExists();
-          if (!tableExists2) {
-            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
-            return false;
-          }
-          const ruleExists = await this.checkRuleExists("referral_signup");
-          if (ruleExists) {
-            try {
-              await query(
-                `UPDATE loyalty_action_rules 
-             SET points_value = 500,
-                 action_category = 'referral_rewards',
-                 user_type = 'customer',
-                 points_type = 'fixed',
-                 frequency_type = 'one_time',
-                 description = 'Sign up with referral code',
-                 is_active = true,
-                 priority = 50,
-                 updated_at = NOW()
-             WHERE action_name = 'referral_signup'`
-              );
-              console.log("[LOYALTY_INIT] \u2705 Updated referral_signup rule to 500 points");
-            } catch (updateError) {
-              console.error("[LOYALTY_INIT] Error updating referral_signup rule:", updateError);
-            }
-            return true;
-          }
-          console.log("[LOYALTY_INIT] Creating referral_signup rule with 500 points...");
-          await insert("loyalty_action_rules", {
-            action_name: "referral_signup",
-            action_category: "referral_rewards",
-            user_type: "customer",
-            points_type: "fixed",
-            points_value: 500,
-            base_amount: null,
-            frequency_type: "one_time",
-            description: "Sign up with referral code",
-            is_active: true,
-            priority: 50,
-            notes: "Awarded to new users who sign up with a referral code"
-          });
-          console.log("[LOYALTY_INIT] \u2705 Created referral_signup rule with 500 points");
-          return true;
-        } catch (error) {
-          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
-            console.log("[LOYALTY_INIT] referral_signup rule already exists");
-            return true;
-          }
-          console.error("[LOYALTY_INIT] \u274C Error ensuring referral_signup rule:", error);
-          return false;
-        }
-      }
-      /**
-       * Ensure refer_friend rule exists (for referrer rewards)
-       */
-      async ensureReferFriendRule() {
-        try {
-          const tableExists2 = await this.ensureTableExists();
-          if (!tableExists2) {
-            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
-            return false;
-          }
-          const ruleExists = await this.checkRuleExists("refer_friend");
-          if (ruleExists) {
-            try {
-              await query(
-                `UPDATE loyalty_action_rules 
-             SET points_value = 500,
-                 action_category = 'referral_rewards',
-                 user_type = 'customer',
-                 points_type = 'fixed',
-                 frequency_type = 'recurring',
-                 description = 'Refer a friend who joins',
-                 is_active = true,
-                 priority = 50,
-                 updated_at = NOW()
-             WHERE action_name = 'refer_friend'`
-              );
-              console.log("[LOYALTY_INIT] \u2705 Updated refer_friend rule to 500 points");
-            } catch (updateError) {
-              console.error("[LOYALTY_INIT] Error updating refer_friend rule:", updateError);
-            }
-            return true;
-          }
-          console.log("[LOYALTY_INIT] Creating refer_friend rule with 500 points...");
-          await insert("loyalty_action_rules", {
-            action_name: "refer_friend",
-            action_category: "referral_rewards",
-            user_type: "customer",
-            points_type: "fixed",
-            points_value: 500,
-            base_amount: null,
-            frequency_type: "recurring",
-            description: "Refer a friend who joins",
-            is_active: true,
-            priority: 50,
-            notes: "Awarded when someone signs up using your referral code"
-          });
-          console.log("[LOYALTY_INIT] \u2705 Created refer_friend rule");
-          return true;
-        } catch (error) {
-          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
-            console.log("[LOYALTY_INIT] refer_friend rule already exists");
-            return true;
-          }
-          console.error("[LOYALTY_INIT] \u274C Error ensuring refer_friend rule:", error);
-          return false;
-        }
-      }
-      /**
-       * Ensure vendor_refer_friend rule exists
-       */
-      async ensureVendorReferFriendRule() {
-        try {
-          const tableExists2 = await this.ensureTableExists();
-          if (!tableExists2) {
-            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
-            return false;
-          }
-          const ruleExists = await this.checkRuleExists("vendor_refer_friend");
-          if (ruleExists) {
-            try {
-              await query(
-                `UPDATE loyalty_action_rules 
-             SET points_value = 500,
-                 action_category = 'referral_rewards',
-                 user_type = 'vendor',
-                 points_type = 'fixed',
-                 frequency_type = 'recurring',
-                 description = 'Refer a friend who joins',
-                 is_active = true,
-                 priority = 50,
-                 updated_at = NOW()
-             WHERE action_name = 'vendor_refer_friend'`
-              );
-              console.log("[LOYALTY_INIT] \u2705 Updated vendor_refer_friend rule to 500 points");
-            } catch (updateError) {
-              console.error("[LOYALTY_INIT] Error updating vendor_refer_friend rule:", updateError);
-            }
-            return true;
-          }
-          console.log("[LOYALTY_INIT] Creating vendor_refer_friend rule with 500 points...");
-          await insert("loyalty_action_rules", {
-            action_name: "vendor_refer_friend",
-            action_category: "referral_rewards",
-            user_type: "vendor",
-            points_type: "fixed",
-            points_value: 500,
-            base_amount: null,
-            frequency_type: "recurring",
-            description: "Refer a friend who joins",
-            is_active: true,
-            priority: 50,
-            notes: "Friend must Onboard 1 End User and complete 1 booking"
-          });
-          console.log("[LOYALTY_INIT] \u2705 Created vendor_refer_friend rule with 500 points");
-          return true;
-        } catch (error) {
-          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
-            console.log("[LOYALTY_INIT] vendor_refer_friend rule already exists");
-            return true;
-          }
-          console.error("[LOYALTY_INIT] \u274C Error ensuring vendor_refer_friend rule:", error);
-          return false;
-        }
-      }
-      /**
-       * Initialize all required referral rules
-       */
-      async initializeReferralRules() {
-        const referralSignup = await this.ensureReferralSignupRule();
-        const referFriend = await this.ensureReferFriendRule();
-        return {
-          referralSignup,
-          referFriend
-        };
-      }
-      /**
-       * Initialize all vendor referral rules
-       */
-      async initializeVendorReferralRules() {
-        const vendorReferFriend = await this.ensureVendorReferFriendRule();
-        return {
-          vendorReferFriend
-        };
-      }
-    };
-    loyaltyRulesInitService = new LoyaltyRulesInitService();
   }
 });
 
@@ -118248,6 +117689,319 @@ var init_loyalty_points_service = __esm({
   }
 });
 
+// src/lib/services/loyalty-rules-init-service.ts
+var loyalty_rules_init_service_exports = {};
+__export(loyalty_rules_init_service_exports, {
+  LoyaltyRulesInitService: () => LoyaltyRulesInitService,
+  loyaltyRulesInitService: () => loyaltyRulesInitService
+});
+var LoyaltyRulesInitService, loyaltyRulesInitService;
+var init_loyalty_rules_init_service = __esm({
+  "src/lib/services/loyalty-rules-init-service.ts"() {
+    "use strict";
+    init_rds_connection();
+    LoyaltyRulesInitService = class _LoyaltyRulesInitService {
+      static {
+        this.tableExistsCache = null;
+      }
+      /**
+       * Check if loyalty_action_rules table exists
+       */
+      async checkTableExists() {
+        if (_LoyaltyRulesInitService.tableExistsCache !== null) {
+          return _LoyaltyRulesInitService.tableExistsCache;
+        }
+        try {
+          const result = await query(
+            `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'loyalty_action_rules'
+        ) as exists`
+          );
+          const exists = result.rows[0]?.exists === true;
+          _LoyaltyRulesInitService.tableExistsCache = exists;
+          return exists;
+        } catch (error) {
+          console.error("[LOYALTY_INIT] Error checking table existence:", error);
+          _LoyaltyRulesInitService.tableExistsCache = false;
+          return false;
+        }
+      }
+      /**
+       * Create loyalty_action_rules table if it doesn't exist
+       */
+      async ensureTableExists() {
+        const exists = await this.checkTableExists();
+        if (exists) {
+          return true;
+        }
+        try {
+          console.log("[LOYALTY_INIT] Creating loyalty_action_rules table...");
+          await query(`
+        CREATE TABLE IF NOT EXISTS loyalty_action_rules (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          action_name TEXT NOT NULL UNIQUE,
+          action_category TEXT NOT NULL CHECK (action_category IN ('loyalty', 'referral_rewards')),
+          user_type TEXT NOT NULL CHECK (user_type IN ('customer', 'vendor', 'both')),
+          
+          -- Point Calculation
+          points_type TEXT NOT NULL CHECK (points_type IN ('fixed', 'percentage', 'per_amount')),
+          points_value NUMERIC(10, 2) NOT NULL,
+          base_amount NUMERIC(10, 2),
+          min_amount NUMERIC(10, 2),
+          max_points_per_transaction INTEGER,
+          
+          -- Frequency/Limits
+          frequency_type TEXT CHECK (frequency_type IN ('one_time', 'recurring', 'unlimited', 'monthly_limit', 'yearly_limit')),
+          frequency_limit INTEGER,
+          frequency_period TEXT CHECK (frequency_period IN ('day', 'week', 'month', 'year')),
+          
+          -- Conditions
+          conditions JSONB DEFAULT '{}'::jsonb,
+          multiplier_conditions JSONB DEFAULT '{}'::jsonb,
+          
+          -- Status
+          is_active BOOLEAN DEFAULT true,
+          priority INTEGER DEFAULT 100,
+          
+          -- Metadata
+          description TEXT,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_action_name ON loyalty_action_rules(action_name)
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_category ON loyalty_action_rules(action_category)
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_user_type ON loyalty_action_rules(user_type)
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_active ON loyalty_action_rules(is_active) WHERE is_active = true
+      `);
+          await query(`
+        CREATE INDEX IF NOT EXISTS idx_loyalty_action_rules_priority ON loyalty_action_rules(priority DESC) WHERE is_active = true
+      `);
+          _LoyaltyRulesInitService.tableExistsCache = true;
+          console.log("[LOYALTY_INIT] \u2705 loyalty_action_rules table created successfully");
+          return true;
+        } catch (error) {
+          console.error("[LOYALTY_INIT] \u274C Error creating table:", error);
+          return false;
+        }
+      }
+      /**
+       * Check if a specific rule exists
+       */
+      async checkRuleExists(actionName) {
+        try {
+          const rules = await select("loyalty_action_rules", { action_name: actionName });
+          return rules.length > 0;
+        } catch (error) {
+          return false;
+        }
+      }
+      /**
+       * Ensure referral_signup rule exists with 500 points
+       */
+      async ensureReferralSignupRule() {
+        try {
+          const tableExists2 = await this.ensureTableExists();
+          if (!tableExists2) {
+            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
+            return false;
+          }
+          const ruleExists = await this.checkRuleExists("referral_signup");
+          if (ruleExists) {
+            try {
+              await query(
+                `UPDATE loyalty_action_rules 
+             SET points_value = 500,
+                 action_category = 'referral_rewards',
+                 user_type = 'customer',
+                 points_type = 'fixed',
+                 frequency_type = 'one_time',
+                 description = 'Sign up with referral code',
+                 is_active = true,
+                 priority = 50,
+                 updated_at = NOW()
+             WHERE action_name = 'referral_signup'`
+              );
+              console.log("[LOYALTY_INIT] \u2705 Updated referral_signup rule to 500 points");
+            } catch (updateError) {
+              console.error("[LOYALTY_INIT] Error updating referral_signup rule:", updateError);
+            }
+            return true;
+          }
+          console.log("[LOYALTY_INIT] Creating referral_signup rule with 500 points...");
+          await insert("loyalty_action_rules", {
+            action_name: "referral_signup",
+            action_category: "referral_rewards",
+            user_type: "customer",
+            points_type: "fixed",
+            points_value: 500,
+            base_amount: null,
+            frequency_type: "one_time",
+            description: "Sign up with referral code",
+            is_active: true,
+            priority: 50,
+            notes: "Awarded to new users who sign up with a referral code"
+          });
+          console.log("[LOYALTY_INIT] \u2705 Created referral_signup rule with 500 points");
+          return true;
+        } catch (error) {
+          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+            console.log("[LOYALTY_INIT] referral_signup rule already exists");
+            return true;
+          }
+          console.error("[LOYALTY_INIT] \u274C Error ensuring referral_signup rule:", error);
+          return false;
+        }
+      }
+      /**
+       * Ensure refer_friend rule exists (for referrer rewards)
+       */
+      async ensureReferFriendRule() {
+        try {
+          const tableExists2 = await this.ensureTableExists();
+          if (!tableExists2) {
+            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
+            return false;
+          }
+          const ruleExists = await this.checkRuleExists("refer_friend");
+          if (ruleExists) {
+            try {
+              await query(
+                `UPDATE loyalty_action_rules 
+             SET points_value = 500,
+                 action_category = 'referral_rewards',
+                 user_type = 'customer',
+                 points_type = 'fixed',
+                 frequency_type = 'recurring',
+                 description = 'Refer a friend who joins',
+                 is_active = true,
+                 priority = 50,
+                 updated_at = NOW()
+             WHERE action_name = 'refer_friend'`
+              );
+              console.log("[LOYALTY_INIT] \u2705 Updated refer_friend rule to 500 points");
+            } catch (updateError) {
+              console.error("[LOYALTY_INIT] Error updating refer_friend rule:", updateError);
+            }
+            return true;
+          }
+          console.log("[LOYALTY_INIT] Creating refer_friend rule with 500 points...");
+          await insert("loyalty_action_rules", {
+            action_name: "refer_friend",
+            action_category: "referral_rewards",
+            user_type: "customer",
+            points_type: "fixed",
+            points_value: 500,
+            base_amount: null,
+            frequency_type: "recurring",
+            description: "Refer a friend who joins",
+            is_active: true,
+            priority: 50,
+            notes: "Awarded when someone signs up using your referral code"
+          });
+          console.log("[LOYALTY_INIT] \u2705 Created refer_friend rule");
+          return true;
+        } catch (error) {
+          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+            console.log("[LOYALTY_INIT] refer_friend rule already exists");
+            return true;
+          }
+          console.error("[LOYALTY_INIT] \u274C Error ensuring refer_friend rule:", error);
+          return false;
+        }
+      }
+      /**
+       * Ensure vendor_refer_friend rule exists
+       */
+      async ensureVendorReferFriendRule() {
+        try {
+          const tableExists2 = await this.ensureTableExists();
+          if (!tableExists2) {
+            console.error("[LOYALTY_INIT] Cannot create rule: table does not exist");
+            return false;
+          }
+          const ruleExists = await this.checkRuleExists("vendor_refer_friend");
+          if (ruleExists) {
+            try {
+              await query(
+                `UPDATE loyalty_action_rules 
+             SET points_value = 500,
+                 action_category = 'referral_rewards',
+                 user_type = 'vendor',
+                 points_type = 'fixed',
+                 frequency_type = 'recurring',
+                 description = 'Refer a friend who joins',
+                 is_active = true,
+                 priority = 50,
+                 updated_at = NOW()
+             WHERE action_name = 'vendor_refer_friend'`
+              );
+              console.log("[LOYALTY_INIT] \u2705 Updated vendor_refer_friend rule to 500 points");
+            } catch (updateError) {
+              console.error("[LOYALTY_INIT] Error updating vendor_refer_friend rule:", updateError);
+            }
+            return true;
+          }
+          console.log("[LOYALTY_INIT] Creating vendor_refer_friend rule with 500 points...");
+          await insert("loyalty_action_rules", {
+            action_name: "vendor_refer_friend",
+            action_category: "referral_rewards",
+            user_type: "vendor",
+            points_type: "fixed",
+            points_value: 500,
+            base_amount: null,
+            frequency_type: "recurring",
+            description: "Refer a friend who joins",
+            is_active: true,
+            priority: 50,
+            notes: "Friend must Onboard 1 End User and complete 1 booking"
+          });
+          console.log("[LOYALTY_INIT] \u2705 Created vendor_refer_friend rule with 500 points");
+          return true;
+        } catch (error) {
+          if (error.message?.includes("unique") || error.message?.includes("duplicate")) {
+            console.log("[LOYALTY_INIT] vendor_refer_friend rule already exists");
+            return true;
+          }
+          console.error("[LOYALTY_INIT] \u274C Error ensuring vendor_refer_friend rule:", error);
+          return false;
+        }
+      }
+      /**
+       * Initialize all required referral rules
+       */
+      async initializeReferralRules() {
+        const referralSignup = await this.ensureReferralSignupRule();
+        const referFriend = await this.ensureReferFriendRule();
+        return {
+          referralSignup,
+          referFriend
+        };
+      }
+      /**
+       * Initialize all vendor referral rules
+       */
+      async initializeVendorReferralRules() {
+        const vendorReferFriend = await this.ensureVendorReferFriendRule();
+        return {
+          vendorReferFriend
+        };
+      }
+    };
+    loyaltyRulesInitService = new LoyaltyRulesInitService();
+  }
+});
+
 // src/lib/services/referral-service.ts
 var referral_service_exports = {};
 __export(referral_service_exports, {
@@ -118540,246 +118294,6 @@ var init_referral_service = __esm({
     init_rds_connection();
     init_loyalty_points_service();
     init_loyalty_rules_init_service();
-  }
-});
-
-// ../../packages/api-contracts/dist/vendors.js
-var require_vendors = __commonJS({
-  "../../packages/api-contracts/dist/vendors.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.VendorListResponseSchema = exports2.GetVendorResponseSchema = exports2.SubmitApplicationResponseSchema = exports2.VendorRoleSchema = exports2.VendorOnboardingApplicationSchema = exports2.VendorSchema = exports2.UpdateVendorProfileRequestSchema = exports2.AdminReviewApplicationRequestSchema = exports2.SelectVendorTypeRequestSchema = exports2.SelectVendorRoleRequestSchema = exports2.SubmitVendorApplicationRequestSchema = void 0;
-    var zod_1 = require_zod();
-    exports2.SubmitVendorApplicationRequestSchema = zod_1.z.object({
-      // ✅ FIX: More lenient phone validation - accepts 10-15 digits with optional + prefix
-      // Handles: 9876543210, +919876543210, 919876543210, etc.
-      phone: zod_1.z.string().min(10, "Phone must be at least 10 digits").max(16, "Phone too long").transform((p) => p.replace(/\D/g, "")),
-      // Remove non-digits for storage
-      application_payload: zod_1.z.record(zod_1.z.unknown()),
-      // Dynamic based on role
-      // ✅ FIX: Make documents more flexible - URL can be empty or missing during submission
-      uploaded_documents: zod_1.z.array(zod_1.z.object({
-        type: zod_1.z.string(),
-        url: zod_1.z.string().optional().default(""),
-        // URL is optional during submission
-        name: zod_1.z.string().optional().default("")
-      })).optional().default([])
-    });
-    exports2.SelectVendorRoleRequestSchema = zod_1.z.object({
-      phone: zod_1.z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
-      role_id: zod_1.z.string().uuid("Invalid role ID format")
-    });
-    exports2.SelectVendorTypeRequestSchema = zod_1.z.object({
-      phone: zod_1.z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
-      vendor_type: zod_1.z.enum(["solo", "business"], {
-        errorMap: () => ({ message: "Vendor type must be solo or business" })
-      })
-    });
-    exports2.AdminReviewApplicationRequestSchema = zod_1.z.object({
-      action: zod_1.z.enum(["APPROVE", "REQUEST_CLARIFICATION", "REJECT"], {
-        errorMap: () => ({ message: "Action must be APPROVE, REQUEST_CLARIFICATION, or REJECT" })
-      }),
-      admin_id: zod_1.z.string().min(1, "Admin ID is required"),
-      // Allow non-UUID (e.g. "admin") for compatibility
-      comments: zod_1.z.string().max(2e3, "Comments too long").optional(),
-      rejection_reason: zod_1.z.string().max(500, "Rejection reason too long").optional()
-    });
-    exports2.UpdateVendorProfileRequestSchema = zod_1.z.object({
-      business_name: zod_1.z.string().min(1, "Business name required").max(200, "Business name too long").optional(),
-      owner_name: zod_1.z.string().min(1, "Owner name required").max(100, "Owner name too long").optional(),
-      email: zod_1.z.string().email("Invalid email format").optional(),
-      address: zod_1.z.string().max(500, "Address too long").optional(),
-      city: zod_1.z.string().max(100, "City name too long").optional(),
-      state: zod_1.z.string().max(100, "State name too long").optional(),
-      pincode: zod_1.z.string().regex(/^\d{6}$/, "Invalid pincode format").optional(),
-      latitude: zod_1.z.number().min(-90).max(90).optional(),
-      longitude: zod_1.z.number().min(-180).max(180).optional(),
-      description: zod_1.z.string().max(2e3, "Description too long").optional(),
-      logo_url: zod_1.z.string().url("Invalid logo URL").optional(),
-      cover_image_url: zod_1.z.string().url("Invalid cover image URL").optional()
-    });
-    exports2.VendorSchema = zod_1.z.object({
-      id: zod_1.z.string().uuid(),
-      phone: zod_1.z.string(),
-      email: zod_1.z.string().nullable(),
-      business_name: zod_1.z.string(),
-      owner_name: zod_1.z.string(),
-      role_id: zod_1.z.string().uuid().nullable(),
-      vendor_type: zod_1.z.enum(["solo", "business"]),
-      status: zod_1.z.enum(["pending", "approved", "rejected", "active", "inactive", "suspended"]),
-      tier: zod_1.z.string(),
-      address: zod_1.z.string().nullable(),
-      city: zod_1.z.string().nullable(),
-      state: zod_1.z.string().nullable(),
-      pincode: zod_1.z.string().nullable(),
-      latitude: zod_1.z.number().nullable(),
-      longitude: zod_1.z.number().nullable(),
-      description: zod_1.z.string().nullable(),
-      logo_url: zod_1.z.string().nullable(),
-      cover_image_url: zod_1.z.string().nullable(),
-      onboarding_status: zod_1.z.string(),
-      createdAt: zod_1.z.string().datetime(),
-      updatedAt: zod_1.z.string().datetime()
-    });
-    exports2.VendorOnboardingApplicationSchema = zod_1.z.object({
-      id: zod_1.z.string().uuid(),
-      vendor_identity_id: zod_1.z.string().uuid(),
-      role_id: zod_1.z.string().uuid(),
-      vendor_type: zod_1.z.enum(["solo", "business"]),
-      status: zod_1.z.enum(["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "CLARIFICATION_REQUIRED", "ACTIVATED"]),
-      application_payload: zod_1.z.record(zod_1.z.unknown()),
-      uploaded_documents: zod_1.z.array(zod_1.z.unknown()),
-      form_version: zod_1.z.string(),
-      admin_comments: zod_1.z.string().nullable(),
-      rejection_reason: zod_1.z.string().nullable(),
-      reviewed_by: zod_1.z.string().uuid().nullable(),
-      reviewed_at: zod_1.z.string().datetime().nullable(),
-      submitted_at: zod_1.z.string().datetime().nullable(),
-      createdAt: zod_1.z.string().datetime(),
-      updatedAt: zod_1.z.string().datetime()
-    });
-    exports2.VendorRoleSchema = zod_1.z.object({
-      id: zod_1.z.string().uuid(),
-      name: zod_1.z.string(),
-      display_name: zod_1.z.string(),
-      description: zod_1.z.string().nullable(),
-      is_active: zod_1.z.boolean(),
-      config: zod_1.z.record(zod_1.z.unknown()).optional(),
-      capabilities: zod_1.z.array(zod_1.z.string()).optional()
-    });
-    exports2.SubmitApplicationResponseSchema = zod_1.z.object({
-      success: zod_1.z.literal(true),
-      data: zod_1.z.object({
-        message: zod_1.z.string(),
-        applicationId: zod_1.z.string().uuid(),
-        nextStep: zod_1.z.string()
-      })
-    });
-    exports2.GetVendorResponseSchema = zod_1.z.object({
-      success: zod_1.z.literal(true),
-      data: zod_1.z.object({
-        vendor: exports2.VendorSchema
-      })
-    });
-    exports2.VendorListResponseSchema = zod_1.z.object({
-      success: zod_1.z.literal(true),
-      data: zod_1.z.object({
-        vendors: zod_1.z.array(exports2.VendorSchema),
-        total: zod_1.z.number(),
-        page: zod_1.z.number().optional(),
-        limit: zod_1.z.number().optional()
-      })
-    });
-  }
-});
-
-// src/utils/extract-profile-photo.ts
-var extract_profile_photo_exports = {};
-__export(extract_profile_photo_exports, {
-  extractPincodeFromPayload: () => extractPincodeFromPayload,
-  extractProfilePhotoFromApplication: () => extractProfilePhotoFromApplication
-});
-function extractPincodeFromPayload(payload = {}) {
-  const pincodeFields = ["pin", "pincode", "pinCode", "postalCode", "postal_code", "zip", "zipCode"];
-  const placeholderValues = ["000000", "0000000", "00000000", "123456", "000000", "", "0000000", "00000000"];
-  for (const field of pincodeFields) {
-    if (payload[field] && typeof payload[field] === "string") {
-      const trimmed = payload[field].trim();
-      if (trimmed && !placeholderValues.includes(trimmed) && /^\d{6}$/.test(trimmed)) {
-        console.log(`\u{1F4CD} [ExtractPincode] \u2705 Found valid pincode in field '${field}': '${trimmed}'`);
-        return trimmed;
-      } else if (trimmed) {
-        console.log(`\u{1F4CD} [ExtractPincode] \u26A0\uFE0F Found pincode in field '${field}' but it's a placeholder: '${trimmed}'`);
-      }
-    }
-  }
-  if (payload.address && typeof payload.address === "string") {
-    console.log(`\u{1F4CD} [ExtractPincode] Checking address for pincode: '${payload.address.substring(0, 100)}...'`);
-    const patterns = [
-      /\b(\d{6})\b/,
-      // Standalone 6-digit number
-      /[,\s](\d{6})[,\s]/,
-      // 6-digit with commas/spaces
-      /-(\d{6})-/,
-      // 6-digit with dashes
-      /\((\d{6})\)/
-      // 6-digit in parentheses
-    ];
-    for (const pattern of patterns) {
-      const match2 = payload.address.match(pattern);
-      if (match2 && match2[1] && !placeholderValues.includes(match2[1])) {
-        console.log(`\u{1F4CD} [ExtractPincode] \u2705 Extracted pincode from address using pattern: '${match2[1]}'`);
-        return match2[1];
-      }
-    }
-  }
-  if (payload.city && typeof payload.city === "string") {
-    const cityMatch = payload.city.match(/\b(\d{6})\b/);
-    if (cityMatch && cityMatch[1] && !placeholderValues.includes(cityMatch[1])) {
-      console.log(`\u{1F4CD} [ExtractPincode] \u2705 Extracted pincode from city: '${cityMatch[1]}'`);
-      return cityMatch[1];
-    }
-  }
-  console.log(`\u{1F4CD} [ExtractPincode] \u26A0\uFE0F No valid pincode found in payload, address, or city`);
-  return "";
-}
-function extractProfilePhotoFromApplication(application, payload = {}) {
-  let profilePhotoUrl = null;
-  const uploadedDocuments = application?.uploaded_documents || [];
-  let parsedDocuments = uploadedDocuments;
-  if (typeof uploadedDocuments === "string") {
-    try {
-      parsedDocuments = JSON.parse(uploadedDocuments);
-    } catch (e) {
-      console.warn("[ExtractProfilePhoto] Failed to parse uploaded_documents JSON:", e);
-      parsedDocuments = [];
-    }
-  }
-  if (Array.isArray(parsedDocuments) && parsedDocuments.length > 0) {
-    const profilePhotoDoc = parsedDocuments.find((doc) => {
-      const typeMatch = doc.type === "profilePhoto" || doc.type === "profile_photo";
-      const nameMatch = doc.name === "profilePhoto" || doc.name === "profile_photo";
-      const fuzzyMatch = doc.name && doc.name.toLowerCase().includes("profile") && doc.name.toLowerCase().includes("photo");
-      return typeMatch || nameMatch || fuzzyMatch;
-    });
-    if (profilePhotoDoc && profilePhotoDoc.url) {
-      const photoUrl = profilePhotoDoc.url;
-      if (photoUrl.includes("amazonaws.com")) {
-        try {
-          const urlObj = new URL(photoUrl);
-          profilePhotoUrl = urlObj.pathname.substring(1).split("?")[0];
-        } catch (e) {
-          const match2 = photoUrl.match(/([a-f0-9-]+\/[^?]+)/) || photoUrl.match(/vendors\/[^?]+/);
-          profilePhotoUrl = match2 ? match2[1] || match2[0] : photoUrl;
-        }
-      } else {
-        profilePhotoUrl = photoUrl;
-      }
-      console.log(`\u{1F4F8} [ExtractProfilePhoto] \u2705 Extracted from uploaded_documents: ${profilePhotoUrl}`);
-      return profilePhotoUrl;
-    }
-  }
-  if (!profilePhotoUrl && payload?.profilePhoto) {
-    const photoUrl = payload.profilePhoto;
-    if (photoUrl.includes("amazonaws.com")) {
-      try {
-        const urlObj = new URL(photoUrl);
-        profilePhotoUrl = urlObj.pathname.substring(1).split("?")[0];
-      } catch (e) {
-        const match2 = photoUrl.match(/([a-f0-9-]+\/[^?]+)/) || photoUrl.match(/vendors\/[^?]+/);
-        profilePhotoUrl = match2 ? match2[1] || match2[0] : photoUrl;
-      }
-    } else {
-      profilePhotoUrl = photoUrl;
-    }
-    console.log(`\u{1F4F8} [ExtractProfilePhoto] \u2705 Extracted from application_payload: ${profilePhotoUrl}`);
-    return profilePhotoUrl;
-  }
-  return null;
-}
-var init_extract_profile_photo = __esm({
-  "src/utils/extract-profile-photo.ts"() {
-    "use strict";
   }
 });
 
@@ -120292,7 +119806,7 @@ async function publishBookingCreated(message2) {
   }
   const envelope = createEventEnvelope("BOOKING_CREATED", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: TOPIC_ARNS.bookingCreatedTopic,
       Message: JSON.stringify(envelope),
       Subject: "Booking Created",
@@ -120314,7 +119828,7 @@ async function publishBookingStatusUpdated(message2) {
   }
   const envelope = createEventEnvelope("BOOKING_STATUS_UPDATED", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: topicArn,
       Message: JSON.stringify(envelope),
       Subject: `Booking Status: ${message2.oldStatus} \u2192 ${message2.newStatus}`,
@@ -120336,7 +119850,7 @@ async function publishPaymentCreated(message2) {
   }
   const envelope = createEventEnvelope("PAYMENT_CREATED", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: topicArn,
       Message: JSON.stringify(envelope),
       Subject: "Payment Created",
@@ -120356,7 +119870,7 @@ async function publishPaymentProcessed(message2) {
   }
   const envelope = createEventEnvelope("PAYMENT_PROCESSED", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: TOPIC_ARNS.paymentProcessedTopic,
       Message: JSON.stringify(envelope),
       Subject: "Payment Processed",
@@ -120376,7 +119890,7 @@ async function publishVendorApproved(message2) {
   }
   const envelope = createEventEnvelope("VENDOR_APPROVED", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: TOPIC_ARNS.vendorApprovedTopic,
       Message: JSON.stringify(envelope),
       Subject: "Vendor Approved",
@@ -120396,7 +119910,7 @@ async function publishSettlementCreated(message2) {
   }
   const envelope = createEventEnvelope("SETTLEMENT_CREATED", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: topicArn,
       Message: JSON.stringify(envelope),
       Subject: "Settlement Created",
@@ -120416,7 +119930,7 @@ async function publishNotification(message2) {
   }
   const envelope = createEventEnvelope("NOTIFICATION", message2, message2.requestId);
   await snsClient.send(
-    new import_client_sns2.PublishCommand({
+    new import_client_sns.PublishCommand({
       TopicArn: TOPIC_ARNS.notificationTopic,
       Message: JSON.stringify(envelope),
       Subject: message2.title,
@@ -120430,13 +119944,13 @@ async function publishNotification(message2) {
     })
   );
 }
-var import_client_sns2, import_crypto10, snsClient, TOPIC_ARNS;
+var import_client_sns, import_crypto10, snsClient, TOPIC_ARNS;
 var init_sns_client = __esm({
   "src/utils/sns-client.ts"() {
     "use strict";
-    import_client_sns2 = require("@aws-sdk/client-sns");
+    import_client_sns = require("@aws-sdk/client-sns");
     import_crypto10 = require("crypto");
-    snsClient = new import_client_sns2.SNSClient({
+    snsClient = new import_client_sns.SNSClient({
       region: process.env.AWS_REGION || "ap-south-1"
     });
     TOPIC_ARNS = {
@@ -120448,6 +119962,135 @@ var init_sns_client = __esm({
       notificationTopic: process.env.NOTIFICATION_TOPIC_ARN,
       settlementTopic: process.env.SETTLEMENT_TOPIC_ARN
     };
+  }
+});
+
+// src/utils/sms-service.ts
+var sms_service_exports = {};
+__export(sms_service_exports, {
+  default: () => sms_service_default,
+  sendOTP: () => sendOTP,
+  sendSMS: () => sendSMS
+});
+function normalizePhone(phone) {
+  const raw2 = String(phone || "").trim();
+  const digits = raw2.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith("91") && digits.length === 12) return `+${digits}`;
+  if (raw2.startsWith("+")) return raw2;
+  return digits ? `+${digits}` : raw2;
+}
+async function loadSnsSettings() {
+  const envSender = process.env.SMS_SENDER_ID || process.env.SNS_SMS_SENDER_ID || "";
+  const envEntity = process.env.SMS_ENTITY_ID || process.env.SNS_SMS_ENTITY_ID || "";
+  const envTemplate = process.env.SMS_TEMPLATE_ID || process.env.SNS_SMS_TEMPLATE_ID || "";
+  if (envSender || envEntity || envTemplate) {
+    return {
+      senderId: envSender || JIO_DLT_DEFAULTS.senderId,
+      entityId: envEntity || JIO_DLT_DEFAULTS.entityId,
+      templateId: envTemplate || void 0
+    };
+  }
+  try {
+    const rows = await query(
+      `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1`
+    );
+    const raw2 = rows.rows?.[0]?.setting_value;
+    const setting = raw2 == null ? null : typeof raw2 === "string" ? (() => {
+      try {
+        return JSON.parse(raw2);
+      } catch {
+        return null;
+      }
+    })() : raw2;
+    const sns = setting?.sns || {};
+    const creds = setting?.credentials || {};
+    const senderId = sns?.smsOriginationNumber || JIO_DLT_DEFAULTS.senderId;
+    const entityId = sns?.entityId || JIO_DLT_DEFAULTS.entityId;
+    const templateId = sns?.templateId;
+    const region = sns?.region || process.env.AWS_REGION || "ap-south-1";
+    const accessKeyId = creds?.accessKeyId;
+    const secretAccessKey = creds?.secretAccessKey;
+    const credentials = sns?.enabled && accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : void 0;
+    if (credentials) {
+      console.log("[SMS] Using DB credentials for SNS (Option A)");
+    } else {
+      console.log("[SMS] No DB credentials; using Lambda role for SNS");
+    }
+    return { senderId, entityId, templateId, credentials, region };
+  } catch (e) {
+    console.warn("[SMS] loadSnsSettings failed:", e?.message);
+  }
+  return {
+    senderId: JIO_DLT_DEFAULTS.senderId,
+    entityId: JIO_DLT_DEFAULTS.entityId,
+    templateId: void 0
+  };
+}
+function buildSmsAttributesFromSettings(type, settings, overrides) {
+  const attrs = {
+    "AWS.SNS.SMS.SMSType": {
+      DataType: "String",
+      StringValue: type === "promotional" ? "Promotional" : "Transactional"
+    }
+  };
+  const senderId = overrides?.senderId ?? settings.senderId;
+  const entityId = overrides?.entityId ?? settings.entityId;
+  const templateId = overrides?.templateId ?? settings.templateId;
+  if (senderId) {
+    attrs["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: String(senderId).trim() };
+  }
+  if (entityId) {
+    attrs["AWS.MM.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
+  }
+  if (templateId) {
+    attrs["AWS.MM.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
+  }
+  return attrs;
+}
+async function sendSMS(options) {
+  const { to, message: message2, type = "transactional", templateId, entityId, senderId } = options;
+  const phone = normalizePhone(to);
+  const settings = await loadSnsSettings();
+  const attrs = buildSmsAttributesFromSettings(type, settings, { templateId, entityId, senderId });
+  try {
+    const region = settings.region || process.env.AWS_REGION || "ap-south-1";
+    const snsClient4 = settings.credentials ? new import_client_sns2.SNSClient({ region, credentials: settings.credentials }) : new import_client_sns2.SNSClient({ region });
+    const result = await snsClient4.send(
+      new import_client_sns2.PublishCommand({
+        PhoneNumber: phone,
+        Message: message2,
+        MessageAttributes: attrs
+      })
+    );
+    return { success: true, messageId: result?.MessageId };
+  } catch (err) {
+    console.error("[SMS] SNS send failed:", err?.message || err);
+    if (err?.Code) console.error("[SMS] SNS Code:", err.Code);
+    if (err?.$metadata?.httpStatusCode) console.error("[SMS] HTTP status:", err.$metadata.httpStatusCode);
+    return { success: false };
+  }
+}
+async function sendOTP(phone, otp) {
+  const templateId = process.env.SMS_OTP_TEMPLATE_ID;
+  return sendSMS({
+    to: phone,
+    message: `Your Warmpawz verification OTP is ${otp}. Valid for 10 minutes.`,
+    type: "otp",
+    ...templateId ? { templateId } : {}
+  });
+}
+var import_client_sns2, JIO_DLT_DEFAULTS, sms_service_default;
+var init_sms_service = __esm({
+  "src/utils/sms-service.ts"() {
+    "use strict";
+    import_client_sns2 = require("@aws-sdk/client-sns");
+    init_rds_connection();
+    JIO_DLT_DEFAULTS = {
+      senderId: "WARMPZ",
+      entityId: "1201176605406673276"
+    };
+    sms_service_default = { sendSMS, sendOTP };
   }
 });
 
@@ -121596,6 +121239,175 @@ var require_customers = __commonJS({
         pets: zod_1.z.array(exports2.PetSchema)
       })
     });
+  }
+});
+
+// src/utils/customer-state.ts
+var customer_state_exports = {};
+__export(customer_state_exports, {
+  createOrUpdateCustomerIdentity: () => createOrUpdateCustomerIdentity,
+  getCustomerState: () => getCustomerState,
+  getCustomerStateForAuth: () => getCustomerStateForAuth,
+  isNewCustomer: () => isNewCustomer,
+  isOnboardingComplete: () => isOnboardingComplete,
+  updateCustomerOnboardingStatus: () => updateCustomerOnboardingStatus,
+  updateProfileCompletion: () => updateProfileCompletion
+});
+async function getCustomerState(customerId) {
+  try {
+    const customers = await select("customers", { id: customerId });
+    if (customers.length === 0) {
+      return null;
+    }
+    const customer = customers[0];
+    let identity = null;
+    if (customer.customer_identity_id) {
+      const identities = await select("customer_identity", { id: customer.customer_identity_id });
+      identity = identities[0] || null;
+    }
+    return {
+      status: customer.status || "new",
+      onboarding_status: customer.onboarding_status || identity?.onboarding_status || "INIT",
+      profile_completed: customer.profile_completed || false,
+      current_step: identity?.current_step || null
+    };
+  } catch (error) {
+    console.error("Error getting customer state:", error);
+    return null;
+  }
+}
+async function createOrUpdateCustomerIdentity(phone, customerId, email) {
+  try {
+    const existing = await select("customer_identity", { phone });
+    if (existing.length > 0) {
+      const identity = existing[0];
+      if (!identity.customer_id && customerId) {
+        await update("customer_identity", { id: identity.id }, {
+          customer_id: customerId,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      return identity.id;
+    }
+    const onboardingStatus = customerId ? "PHONE_VERIFIED" : "INIT";
+    const newIdentities = await insert("customer_identity", {
+      phone,
+      email,
+      customer_id: customerId || null,
+      onboarding_status: onboardingStatus,
+      current_step: customerId ? "profile" : null
+    });
+    return newIdentities[0].id;
+  } catch (error) {
+    console.error("Error creating customer identity:", error);
+    throw error;
+  }
+}
+async function updateCustomerOnboardingStatus(customerId, newStatus, currentStep) {
+  try {
+    await update("customers", { id: customerId }, {
+      onboarding_status: newStatus,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    const customers = await select("customers", { id: customerId });
+    const customer = customers[0];
+    if (customer.customer_identity_id) {
+      const updateData = {
+        onboarding_status: newStatus,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (currentStep) {
+        updateData.current_step = currentStep;
+      }
+      await update("customer_identity", { id: customer.customer_identity_id }, updateData);
+    }
+    console.log(`[Customer State] Updated onboarding_status to ${newStatus} for customer ${customerId}`);
+  } catch (error) {
+    console.error("Error updating customer onboarding status:", error);
+    throw error;
+  }
+}
+async function isNewCustomer(customerId) {
+  const state = await getCustomerState(customerId);
+  if (!state) return true;
+  return state.onboarding_status === "INIT" || state.onboarding_status === "PHONE_VERIFIED" || state.status === "new";
+}
+async function isOnboardingComplete(customerId) {
+  const state = await getCustomerState(customerId);
+  if (!state) return false;
+  return state.onboarding_status === "COMPLETED";
+}
+async function updateProfileCompletion(customerId, completionData) {
+  try {
+    let completion = await select("customer_profile_completion", { customer_id: customerId });
+    if (completion.length === 0) {
+      completion = await insert("customer_profile_completion", {
+        customer_id: customerId,
+        basic_info_completed: false,
+        address_completed: false,
+        pet_profile_completed: false,
+        preferences_completed: false,
+        is_profile_complete: false
+      });
+    }
+    const record = completion[0];
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const updateData = { updated_at: now };
+    if (completionData.basic_info !== void 0) {
+      updateData.basic_info_completed = completionData.basic_info;
+      if (completionData.basic_info) {
+        updateData.basic_info_completed_at = now;
+      }
+    }
+    if (completionData.address !== void 0) {
+      updateData.address_completed = completionData.address;
+      if (completionData.address) {
+        updateData.address_completed_at = now;
+      }
+    }
+    if (completionData.pet_profile !== void 0) {
+      updateData.pet_profile_completed = completionData.pet_profile;
+      if (completionData.pet_profile) {
+        updateData.pet_profile_completed_at = now;
+      }
+    }
+    if (completionData.preferences !== void 0) {
+      updateData.preferences_completed = completionData.preferences;
+      if (completionData.preferences) {
+        updateData.preferences_completed_at = now;
+      }
+    }
+    const allComplete = (updateData.basic_info_completed ?? record.basic_info_completed) && (updateData.address_completed ?? record.address_completed) && (updateData.pet_profile_completed ?? record.pet_profile_completed) && (updateData.preferences_completed ?? record.preferences_completed);
+    if (allComplete && !record.is_profile_complete) {
+      updateData.is_profile_complete = true;
+      updateData.profile_completed_at = now;
+      await update("customers", { id: customerId }, {
+        profile_completed: true,
+        profile_completed_at: now,
+        onboarding_status: "COMPLETED",
+        status: "active",
+        updated_at: now
+      });
+    }
+    await update("customer_profile_completion", { customer_id: customerId }, updateData);
+    console.log(`[Customer State] Updated profile completion for customer ${customerId}`);
+  } catch (error) {
+    console.error("Error updating profile completion:", error);
+    throw error;
+  }
+}
+async function getCustomerStateForAuth(customerId) {
+  const state = await getCustomerState(customerId);
+  if (!state) return "new";
+  if (state.onboarding_status === "COMPLETED" && state.status === "active") {
+    return "existing";
+  }
+  return "new";
+}
+var init_customer_state = __esm({
+  "src/utils/customer-state.ts"() {
+    "use strict";
+    init_rds_connection();
   }
 });
 
@@ -123510,8 +123322,8 @@ function registerAdminEndpoints(app3) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    const event = createApiGatewayEvent7(c.req);
-    const context = createLambdaContext8();
+    const event = createApiGatewayEvent6(c.req);
+    const context = createLambdaContext7();
     const result = await statsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -123520,9 +123332,9 @@ function registerAdminEndpoints(app3) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    const event = createApiGatewayEvent7(c.req);
+    const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext8();
+    const context = createLambdaContext7();
     const result = await approveHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -123531,9 +123343,9 @@ function registerAdminEndpoints(app3) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    const event = createApiGatewayEvent7(c.req);
+    const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext8();
+    const context = createLambdaContext7();
     const result = await rejectHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -123591,8 +123403,8 @@ function registerAdminEndpoints(app3) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    const event = createApiGatewayEvent7(c.req);
-    const context = createLambdaContext8();
+    const event = createApiGatewayEvent6(c.req);
+    const context = createLambdaContext7();
     const result = await listHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -123601,8 +123413,8 @@ function registerAdminEndpoints(app3) {
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    const event = createApiGatewayEvent7(c.req);
-    const context = createLambdaContext8();
+    const event = createApiGatewayEvent6(c.req);
+    const context = createLambdaContext7();
     const result = await listHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -124335,7 +124147,7 @@ function registerAdminEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent7(req) {
+function createApiGatewayEvent6(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -124348,7 +124160,7 @@ function createApiGatewayEvent7(req) {
     }
   };
 }
-function createLambdaContext8() {
+function createLambdaContext7() {
   return {
     requestId: (0, import_crypto19.randomUUID)(),
     functionName: "admin-handler",
@@ -125851,7 +125663,7 @@ function registerRazorpayEndpoints(app3) {
         const requestBody = await c.req.json().catch(() => ({}));
         console.log("\u{1F4E5} [RAZORPAY-CREATE-ORDER] Raw request body from Hono:", JSON.stringify(requestBody));
         const event = createApiGatewayEventWithBody5(c.req, requestBody);
-        const context = createLambdaContext12();
+        const context = createLambdaContext11();
         const result = await createOrderHandler.execute(event, context);
         let responseBody;
         try {
@@ -125891,28 +125703,28 @@ function registerRazorpayEndpoints(app3) {
   app3.post("/razorpay/verify-payment", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
+    const context = createLambdaContext11();
     const result = await verifyHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/razorpay/webhook", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
+    const context = createLambdaContext11();
     const result = await webhookHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/razorpay/marketplace/settlement", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
+    const context = createLambdaContext11();
     const result = await settlementHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/razorpay/refund", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
+    const context = createLambdaContext11();
     const result = await refundHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -126087,7 +125899,7 @@ function createApiGatewayEventWithBody5(req, parsedBody) {
     }
   };
 }
-function createLambdaContext12() {
+function createLambdaContext11() {
   return {
     requestId: (0, import_crypto23.randomUUID)(),
     functionName: "razorpay-handler",
@@ -128432,6 +128244,54 @@ var require_common6 = __commonJS({
   }
 });
 
+// ../../packages/api-contracts/dist/auth.js
+var require_auth = __commonJS({
+  "../../packages/api-contracts/dist/auth.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.AuthResponseSchema = exports2.UserSchema = exports2.AuthTokenSchema = exports2.RefreshTokenRequestSchema = exports2.AdminLoginRequestSchema = exports2.VerifyOtpRequestSchema = exports2.SendOtpRequestSchema = void 0;
+    var zod_1 = require_zod();
+    exports2.SendOtpRequestSchema = zod_1.z.object({
+      phone: zod_1.z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
+      role: zod_1.z.enum(["customer", "vendor", "admin"]).optional()
+    });
+    exports2.VerifyOtpRequestSchema = zod_1.z.object({
+      phone: zod_1.z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
+      otp: zod_1.z.string().length(6, "OTP must be 6 digits"),
+      role: zod_1.z.enum(["customer", "vendor", "admin"]).optional()
+    });
+    exports2.AdminLoginRequestSchema = zod_1.z.object({
+      email: zod_1.z.string().email("Invalid email format"),
+      password: zod_1.z.string().min(8, "Password must be at least 8 characters")
+    });
+    exports2.RefreshTokenRequestSchema = zod_1.z.object({
+      refresh_token: zod_1.z.string().min(1, "Refresh token is required")
+    });
+    exports2.AuthTokenSchema = zod_1.z.object({
+      access_token: zod_1.z.string(),
+      refresh_token: zod_1.z.string(),
+      expires_in: zod_1.z.number(),
+      token_type: zod_1.z.literal("Bearer")
+    });
+    exports2.UserSchema = zod_1.z.object({
+      id: zod_1.z.string().uuid(),
+      phone: zod_1.z.string().optional(),
+      email: zod_1.z.string().email().optional(),
+      name: zod_1.z.string().optional(),
+      role: zod_1.z.enum(["customer", "vendor", "admin", "staff"]),
+      is_active: zod_1.z.boolean(),
+      created_at: zod_1.z.string().datetime()
+    });
+    exports2.AuthResponseSchema = zod_1.z.object({
+      success: zod_1.z.literal(true),
+      data: zod_1.z.object({
+        token: exports2.AuthTokenSchema,
+        user: exports2.UserSchema
+      })
+    });
+  }
+});
+
 // ../../packages/api-contracts/dist/discovery.js
 var require_discovery = __commonJS({
   "../../packages/api-contracts/dist/discovery.js"(exports2) {
@@ -128483,6 +128343,152 @@ var require_dist5 = __commonJS({
     __exportStar(require_customers(), exports2);
     __exportStar(require_payments(), exports2);
     __exportStar(require_discovery(), exports2);
+  }
+});
+
+// src/utils/cognito-client.ts
+var cognito_client_exports = {};
+__export(cognito_client_exports, {
+  authenticateCognitoUser: () => authenticateCognitoUser,
+  getOrCreateCognitoUser: () => getOrCreateCognitoUser,
+  verifyCognitoToken: () => verifyCognitoToken3
+});
+async function getOrCreateCognitoUser(phone, email, userType = "customer") {
+  const username = `phone_${phone}`;
+  try {
+    const getUserResponse = await cognitoClient.send(
+      new import_client_cognito_identity_provider.AdminGetUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: username
+      })
+    );
+    const attributes = {};
+    getUserResponse.UserAttributes?.forEach((attr) => {
+      if (attr.Name && attr.Value) {
+        attributes[attr.Name] = attr.Value;
+      }
+    });
+    return {
+      username,
+      sub: attributes["sub"] || "",
+      phone: attributes["phone_number"] || phone,
+      email: attributes["email"],
+      attributes
+    };
+  } catch (error) {
+    if (error.name === "UserNotFoundException") {
+      return await createCognitoUser(phone, email, userType);
+    }
+    throw error;
+  }
+}
+async function createCognitoUser(phone, email, userType = "customer") {
+  const username = `phone_${phone}`;
+  const tempPassword = generateTemporaryPassword();
+  const createResponse = await cognitoClient.send(
+    new import_client_cognito_identity_provider.AdminCreateUserCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      TemporaryPassword: tempPassword,
+      UserAttributes: [
+        { Name: "phone_number", Value: phone },
+        { Name: "phone_number_verified", Value: "true" },
+        ...email ? [{ Name: "email", Value: email }, { Name: "email_verified", Value: "false" }] : [],
+        { Name: "custom:user_type", Value: userType }
+      ],
+      MessageAction: "SUPPRESS"
+      // Don't send email/SMS from Cognito
+    })
+  );
+  const permanentPassword = generatePermanentPassword(phone);
+  await cognitoClient.send(
+    new import_client_cognito_identity_provider.AdminSetUserPasswordCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: username,
+      Password: permanentPassword,
+      Permanent: true
+    })
+  );
+  const sub = createResponse.User?.Attributes?.find((attr) => attr.Name === "sub")?.Value || "";
+  return {
+    username,
+    sub,
+    phone,
+    email,
+    attributes: {
+      sub,
+      phone_number: phone,
+      ...email && { email },
+      "custom:user_type": userType
+    }
+  };
+}
+async function authenticateCognitoUser(phone) {
+  const username = `phone_${phone}`;
+  const password = generatePermanentPassword(phone);
+  const authResponse = await cognitoClient.send(
+    new import_client_cognito_identity_provider.AdminInitiateAuthCommand({
+      UserPoolId: USER_POOL_ID,
+      ClientId: CLIENT_ID,
+      AuthFlow: import_client_cognito_identity_provider.AuthFlowType.ADMIN_NO_SRP_AUTH,
+      AuthParameters: {
+        USERNAME: username,
+        PASSWORD: password
+      }
+    })
+  );
+  if (!authResponse.AuthenticationResult) {
+    throw new Error("Authentication failed");
+  }
+  return {
+    accessToken: authResponse.AuthenticationResult.AccessToken || "",
+    idToken: authResponse.AuthenticationResult.IdToken || "",
+    refreshToken: authResponse.AuthenticationResult.RefreshToken || "",
+    expiresIn: authResponse.AuthenticationResult.ExpiresIn || 3600
+  };
+}
+function generateTemporaryPassword() {
+  const length = 16;
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+}
+function generatePermanentPassword(phone) {
+  const crypto16 = require("crypto");
+  const secret = process.env.COGNITO_PASSWORD_SECRET || "warmpawz-default-secret-change-me";
+  const hmac = crypto16.createHmac("sha256", secret).update(phone).digest("hex");
+  return `Wp${hmac.substring(0, 12)}!@`;
+}
+async function verifyCognitoToken3(token) {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1], "base64").toString()
+    );
+    return {
+      username: payload["cognito:username"] || "",
+      sub: payload.sub || "",
+      phone: payload.phone_number || "",
+      email: payload.email,
+      attributes: payload
+    };
+  } catch (error) {
+    console.error("Token verification failed:", error);
+    return null;
+  }
+}
+var import_client_cognito_identity_provider, cognitoClient, USER_POOL_ID, CLIENT_ID;
+var init_cognito_client = __esm({
+  "src/utils/cognito-client.ts"() {
+    "use strict";
+    import_client_cognito_identity_provider = require("@aws-sdk/client-cognito-identity-provider");
+    cognitoClient = new import_client_cognito_identity_provider.CognitoIdentityProviderClient({
+      region: process.env.AWS_REGION || "ap-south-1"
+    });
+    USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || "";
+    CLIENT_ID = process.env.COGNITO_CLIENT_ID || "";
   }
 });
 
@@ -131212,9 +131218,8 @@ function slidingWindowRateLimit(config) {
   };
 }
 
-// src/endpoints/auth-enhanced.ts
-init_sms_service();
-init_rds_connection();
+// src/endpoints/vendor-onboarding-enhanced.ts
+var import_crypto9 = require("crypto");
 
 // src/handler/base-handler-enhanced.ts
 init_jwt_verification();
@@ -131475,991 +131480,24 @@ var BaseHandlerEnhanced = class {
   }
 };
 
-// src/endpoints/auth-enhanced.ts
-init_cognito_client();
-var import_auth = __toESM(require_auth());
-var JIO_LOGIN_OTP_TEMPLATE_ID = "1207177028377787269";
-function normalizePhoneForOtp(phone) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length >= 10) {
-    const last10 = digits.slice(-10);
-    if (/^[6-9]\d{9}$/.test(last10)) return last10;
-  }
-  return digits || phone;
-}
-async function createOtp(phone, code, purpose = "login") {
-  const canonicalPhone = normalizePhoneForOtp(phone);
-  const expiresAt = /* @__PURE__ */ new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + 5);
-  await insert("otp_tokens", {
-    phone: canonicalPhone,
-    code,
-    purpose,
-    expires_at: expiresAt,
-    is_used: false
-  });
-}
-async function verifyOtp(phone, code) {
-  const canonicalPhone = normalizePhoneForOtp(phone);
-  const phonesToTry = [canonicalPhone];
-  const alt = phone.replace(/\D/g, "").slice(-10);
-  if (alt && alt !== canonicalPhone) phonesToTry.push(alt);
-  if (phone !== canonicalPhone && phone !== alt) phonesToTry.push(phone);
-  for (const p of phonesToTry) {
-    const records = await select("otp_tokens", {
-      phone: p,
-      code,
-      is_used: false
-    });
-    if (records.length === 0) continue;
-    const record = records[0];
-    if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) return false;
-    await query(
-      "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
-      [record.id]
-    );
-    return true;
-  }
-  return false;
-}
-async function sendSmsViaSns(phone, message2) {
-  const result = await sendSMS({
-    to: phone,
-    message: message2,
-    type: "otp",
-    templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
-    senderId: "WARMPZ"
-  });
-  if (!result.success) {
-    console.error("[SMS] SNS send failed");
-  }
-  return result.success === true;
-}
-var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context) {
-    const body = this.parseBody(context.event);
-    const validationResult = import_auth.SendOtpRequestSchema.safeParse(body);
-    if (!validationResult.success) {
-      return this.error(
-        "Validation failed",
-        400,
-        "VALIDATION_ERROR",
-        { errors: validationResult.error.errors },
-        context.requestId
-      );
-    }
-    const { phone } = validationResult.data;
-    const normalizedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-    const handlerStartTime = Date.now();
-    try {
-      const isUATMode2 = process.env.UAT_MODE === "true";
-      const otpCode = isUATMode2 ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
-      if (isUATMode2) {
-        console.log(`[AUTH] UAT Mode: Using fixed OTP 123456 for ${phone}`);
-      } else {
-        console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
-      }
-      const otpStoreStartTime = Date.now();
-      try {
-        const createOtpPromise = createOtp(phone, otpCode, body.role || "login");
-        const otpTimeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("OTP storage timeout after 3 seconds")), 3e3);
-        });
-        await Promise.race([createOtpPromise, otpTimeoutPromise]);
-        const otpStoreDuration = Date.now() - otpStoreStartTime;
-        console.log(`[AUTH] OTP stored in ${otpStoreDuration}ms`);
-      } catch (dbError) {
-        const otpStoreDuration = Date.now() - otpStoreStartTime;
-        console.error(`[AUTH] Database error creating OTP after ${otpStoreDuration}ms:`, dbError?.message || dbError);
-        if (!isUATMode2) {
-          throw dbError;
-        }
-        console.warn("[AUTH] UAT Mode: Continuing despite database error - OTP will still work");
-      }
-      if (!isUATMode2) {
-        const message2 = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
-        console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
-        const smsResult = await Promise.race([
-          sendSmsViaSns(normalizedPhone, message2),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("SMS send timeout 2.5s")), 2500))
-        ]).catch((err) => {
-          console.warn("[AUTH] SMS send failed:", err?.message || err);
-          if (err?.Code) console.warn("[AUTH] SNS Code:", err.Code);
-          return false;
-        });
-        if (smsResult) {
-          console.log("[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)");
-        }
-      } else {
-        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
-      }
-      const handlerDuration = Date.now() - handlerStartTime;
-      console.log(`[AUTH] Send OTP handler completed in ${handlerDuration}ms`);
-      return this.success({
-        success: true,
-        data: {
-          message: "OTP sent successfully"
-          // Don't send OTP in response for security
-        },
-        meta: {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          requestId: context.requestId,
-          version: "v1"
-        }
-      }, context.requestId);
-    } catch (error) {
-      console.error("[AUTH] Error sending OTP:", error);
-      console.error("[AUTH] Error stack:", error.stack);
-      return this.error(
-        "Failed to send OTP",
-        500,
-        "INTERNAL_ERROR",
-        {
-          details: error.message,
-          stack: true ? error.stack : void 0
-        },
-        context.requestId
-      );
-    }
-  }
-};
-var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context) {
-    const body = this.parseBody(context.event);
-    const validationResult = import_auth.VerifyOtpRequestSchema.safeParse(body);
-    if (!validationResult.success) {
-      return this.error(
-        "Validation failed",
-        400,
-        "VALIDATION_ERROR",
-        { errors: validationResult.error.errors },
-        context.requestId
-      );
-    }
-    const { phone, otp } = validationResult.data;
-    let referralCode = body?.referralCode || body?.pendingReferralCode || void 0;
-    if (!referralCode && context.event?.body) {
-      try {
-        const rawBody = typeof context.event.body === "string" ? JSON.parse(context.event.body) : context.event.body;
-        referralCode = rawBody?.referralCode || rawBody?.pendingReferralCode || void 0;
-      } catch (e) {
-      }
-    }
-    if (!referralCode) {
-      try {
-        const parsedBody = this.parseBody(context.event);
-        referralCode = parsedBody?.referralCode || parsedBody?.pendingReferralCode || void 0;
-      } catch (e) {
-      }
-    }
-    console.log(`[AUTH] \u{1F4DD} Referral code extraction check:`);
-    console.log(`[AUTH] \u{1F4DD} Body type: ${typeof body}, Body keys: ${body ? Object.keys(body).join(", ") : "null"}`);
-    console.log(`[AUTH] \u{1F4DD} Event body type: ${typeof context.event?.body}`);
-    console.log(`[AUTH] \u{1F4DD} Extracted referralCode: ${referralCode || "NOT FOUND"}`);
-    if (referralCode) {
-      console.log(`[AUTH] \u2705 Referral code found: ${referralCode}`);
-    } else {
-      console.log(`[AUTH] \u26A0\uFE0F No referral code found in request`);
-      if (body) {
-        console.log(`[AUTH] \u{1F4DD} Full body: ${JSON.stringify(body).substring(0, 500)}`);
-        console.log(`[AUTH] \u{1F4DD} body.referralCode: ${body?.referralCode || "NOT FOUND"}`);
-        console.log(`[AUTH] \u{1F4DD} body.pendingReferralCode: ${body?.pendingReferralCode || "NOT FOUND"}`);
-      }
-      if (context.event?.body) {
-        const bodyStr = typeof context.event.body === "string" ? context.event.body : JSON.stringify(context.event.body);
-        console.log(`[AUTH] \u{1F4DD} Event body (first 500 chars): ${bodyStr.substring(0, 500)}`);
-        try {
-          const parsed = typeof context.event.body === "string" ? JSON.parse(context.event.body) : context.event.body;
-          console.log(`[AUTH] \u{1F4DD} Parsed event body keys: ${Object.keys(parsed).join(", ")}`);
-          console.log(`[AUTH] \u{1F4DD} Parsed event body.referralCode: ${parsed?.referralCode || "NOT FOUND"}`);
-          console.log(`[AUTH] \u{1F4DD} Parsed event body.pendingReferralCode: ${parsed?.pendingReferralCode || "NOT FOUND"}`);
-        } catch (e) {
-          console.log(`[AUTH] \u{1F4DD} Could not parse event body for referral code check`);
-        }
-      }
-    }
-    const isUATMode2 = process.env.UAT_MODE === "true";
-    try {
-      let isValid = false;
-      if (isUATMode2 && otp === "123456") {
-        console.log(`[AUTH] UAT Mode: Accepting fixed OTP 123456 for ${phone} (database check skipped)`);
-        isValid = true;
-        Promise.race([
-          (async () => {
-            try {
-              const records = await select("otp_tokens", {
-                phone,
-                is_used: false
-              });
-              if (records.length > 0) {
-                await query(
-                  "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
-                  [records[0].id]
-                );
-              }
-            } catch (e) {
-              console.warn("[AUTH] UAT Mode: Could not mark existing OTP as used:", e);
-            }
-          })(),
-          new Promise((resolve) => setTimeout(resolve, 2e3))
-          // 2 second timeout
-        ]).catch((e) => {
-          console.warn("[AUTH] UAT Mode: OTP cleanup timeout or error:", e);
-        });
-      } else {
-        console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
-        const OTP_VERIFY_TIMEOUT_MS = 1e4;
-        try {
-          const verifyOtpPromise = verifyOtp(phone, otp);
-          const verifyOtpTimeout = new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("OTP verification timeout after 10 seconds")), OTP_VERIFY_TIMEOUT_MS)
-          );
-          isValid = await Promise.race([verifyOtpPromise, verifyOtpTimeout]);
-          if (isValid) {
-            console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
-          } else {
-            console.log(`[AUTH] Production Mode: OTP verification failed for ${phone}`);
-          }
-        } catch (verifyError) {
-          console.error(`[AUTH] Production Mode: OTP verification error for ${phone}:`, verifyError?.message || verifyError);
-          if (verifyError?.message?.includes("timeout")) {
-            return this.error(
-              "Service temporarily unavailable. Please try again.",
-              503,
-              "SERVICE_UNAVAILABLE",
-              { details: "OTP verification timeout" },
-              context.requestId
-            );
-          }
-          console.warn(`[AUTH] Production Mode: Database error during OTP verification, treating as invalid OTP`);
-          isValid = false;
-        }
-      }
-      if (!isValid) {
-        return this.error("Invalid or expired OTP", 401, "UNAUTHORIZED", void 0, context.requestId);
-      }
-      const phoneDigits = phone.replace(/\D/g, "");
-      const normalizedPhone = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits.length === 9 ? "0" + phoneDigits : phoneDigits;
-      let role = body.role || "customer";
-      let userId;
-      let userData;
-      if (role === "customer") {
-        let customers = [];
-        try {
-          const customerQueryPromise = select("customers", { phone });
-          const customerQueryTimeout = new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Customer query timeout")), 5e3)
-          );
-          customers = await Promise.race([customerQueryPromise, customerQueryTimeout]);
-        } catch (customerQueryError) {
-          console.warn("[AUTH] Customer query timed out or failed, treating as new customer:", customerQueryError.message);
-          customers = [];
-        }
-        let isNewCustomer2 = false;
-        if (customers.length > 0) {
-          userId = customers[0].id;
-          userData = customers[0];
-          try {
-            const updatePromise = update("customers", { id: userId }, {
-              last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
-            const updateTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Update timeout")), 5e3)
-            );
-            await Promise.race([updatePromise, updateTimeout]);
-            console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
-          } catch (updateError) {
-            console.warn("[AUTH] Could not update customer last_login_at:", updateError.message);
-          }
-          let identityId;
-          try {
-            const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
-            const identityPromise = createOrUpdateCustomerIdentity2(phone, userId);
-            const identityTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
-            );
-            identityId = await Promise.race([identityPromise, identityTimeout]);
-          } catch (identityError) {
-            console.warn("[AUTH] Could not create/update customer identity:", identityError.message);
-          }
-          if (identityId && !userData.customer_identity_id) {
-            try {
-              const linkPromise = update("customers", { id: userId }, { customer_identity_id: identityId });
-              const linkTimeout = new Promise(
-                (_, reject) => setTimeout(() => reject(new Error("Link timeout")), 5e3)
-              );
-              await Promise.race([linkPromise, linkTimeout]);
-            } catch (linkError) {
-              console.warn("[AUTH] Could not link customer identity:", linkError.message);
-            }
-          }
-        } else {
-          isNewCustomer2 = true;
-          if (referralCode) {
-            try {
-              const { loyaltyRulesInitService: loyaltyRulesInitService2 } = await Promise.resolve().then(() => (init_loyalty_rules_init_service(), loyalty_rules_init_service_exports));
-              await loyaltyRulesInitService2.ensureReferralSignupRule();
-            } catch (initError) {
-              console.warn("[AUTH] Could not initialize loyalty rules:", initError.message);
-            }
-          }
-          let identityId;
-          try {
-            const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
-            const identityPromise = createOrUpdateCustomerIdentity2(phone, void 0);
-            const identityTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
-            );
-            identityId = await Promise.race([identityPromise, identityTimeout]);
-          } catch (identityError) {
-            console.warn("[AUTH] Could not create customer identity, continuing without it:", identityError.message);
-          }
-          let newCustomers = [];
-          try {
-            const insertPromise = insert("customers", {
-              phone,
-              full_name: `Customer ${phone.slice(-4)}`,
-              // Temporary name until profile is completed
-              is_active: true,
-              status: "new",
-              onboarding_status: "PHONE_VERIFIED",
-              profile_completed: false,
-              customer_identity_id: identityId,
-              last_login_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
-            const insertTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Customer insert timeout")), 5e3)
-            );
-            newCustomers = await Promise.race([insertPromise, insertTimeout]);
-            userId = newCustomers[0].id;
-            userData = newCustomers[0];
-          } catch (insertError) {
-            console.error("[AUTH] Failed to create customer record:", insertError.message);
-            userId = `temp_customer_${phone}_${Date.now()}`;
-            userData = {
-              id: userId,
-              phone,
-              is_active: true,
-              status: "new",
-              onboarding_status: "PHONE_VERIFIED",
-              profile_completed: false
-            };
-            console.warn("[AUTH] Using temporary customer ID due to insert failure");
-          }
-          if (identityId && userId && !userId.startsWith("temp_")) {
-            try {
-              const linkPromise = update("customer_identity", { id: identityId }, { customer_id: userId });
-              const linkTimeout = new Promise(
-                (_, reject) => setTimeout(() => reject(new Error("Link timeout")), 5e3)
-              );
-              await Promise.race([linkPromise, linkTimeout]);
-            } catch (linkError) {
-              console.warn("[AUTH] Could not link customer identity:", linkError.message);
-            }
-          }
-          console.log(`[AUTH] \u{1F50D} Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith("temp_")}`);
-          if (referralCode && userId && !userId.startsWith("temp_")) {
-            try {
-              const { processReferralSignup: processReferralSignup2 } = await Promise.resolve().then(() => (init_referral_service(), referral_service_exports));
-              const normalizedCode = String(referralCode).trim().toUpperCase();
-              console.log(`[AUTH] \u{1F381} Processing referral code: ${normalizedCode} for customer: ${userId}`);
-              console.log(`[AUTH] \u{1F381} Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
-              const startTime = Date.now();
-              const referralResult = await processReferralSignup2({
-                customerId: userId,
-                referralCode: normalizedCode
-              });
-              const duration = Date.now() - startTime;
-              console.log(`[AUTH] \u{1F381} processReferralSignup completed in ${duration}ms`);
-              console.log(`[AUTH] \u{1F381} Result: ${JSON.stringify(referralResult)}`);
-              if (referralResult.success) {
-                console.log(`[AUTH] \u2705 Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
-              } else {
-                console.warn(`[AUTH] \u26A0\uFE0F Referral code processing failed: ${referralResult.error}`);
-                console.warn(`[AUTH] \u26A0\uFE0F Full error details: ${JSON.stringify(referralResult)}`);
-              }
-            } catch (refError) {
-              console.error("[AUTH] \u274C Error processing referral code during signup:", refError);
-              console.error("[AUTH] \u274C Error message:", refError.message);
-              console.error("[AUTH] \u274C Error stack:", refError.stack);
-            }
-          } else {
-            if (referralCode) {
-              console.warn(`[AUTH] \u26A0\uFE0F Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith("temp_")}`);
-            } else {
-              console.log(`[AUTH] \u2139\uFE0F No referral code provided in request`);
-            }
-          }
-          try {
-            const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
-            await loyaltyPointsService2.awardPoints({
-              customerId: userId,
-              actionName: "signup",
-              referenceType: "signup",
-              referenceId: userId,
-              description: "Welcome bonus for signing up"
-            });
-          } catch (loyaltyError) {
-            console.error("Error awarding signup bonus:", loyaltyError);
-          }
-        }
-      } else if (role === "vendor") {
-        let vendorIdentity = [];
-        let vendors = [];
-        try {
-          const vendorQueriesPromise = Promise.all([
-            select("vendor_identity", { phone }),
-            select("vendors", { phone })
-          ]);
-          const vendorQueriesTimeout = new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Vendor queries timeout")), 5e3)
-          );
-          [vendorIdentity, vendors] = await Promise.race([
-            vendorQueriesPromise,
-            vendorQueriesTimeout
-          ]);
-        } catch (vendorQueryError) {
-          console.warn("[AUTH] Vendor queries timed out or failed, continuing with minimal data:", vendorQueryError.message);
-          vendorIdentity = [];
-          vendors = [];
-        }
-        if (vendors.length > 0) {
-          userId = vendors[0].id;
-          userData = vendors[0];
-          if (vendorIdentity.length > 0) {
-            userData.onboarding_status = vendorIdentity[0].onboarding_status;
-            userData.vendor_identity_id = vendorIdentity[0].id;
-          }
-          try {
-            const updatePromise = update("vendors", { id: userId }, {
-              last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
-            const updateTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Update timeout")), 5e3)
-            );
-            await Promise.race([updatePromise, updateTimeout]);
-            console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
-          } catch (updateError) {
-            console.warn("[AUTH] Could not update vendor last_login_at:", updateError.message);
-          }
-        } else if (vendorIdentity.length > 0) {
-          const identity = vendorIdentity[0];
-          if (identity.vendor_id) {
-            let vendorsByVendorId = [];
-            try {
-              const vendorByIdPromise = select("vendors", { id: identity.vendor_id });
-              const vendorByIdTimeout = new Promise(
-                (_, reject) => setTimeout(() => reject(new Error("Vendor by ID query timeout")), 5e3)
-              );
-              vendorsByVendorId = await Promise.race([vendorByIdPromise, vendorByIdTimeout]);
-            } catch (vendorByIdError) {
-              console.warn("[AUTH] Could not fetch vendor by ID:", vendorByIdError.message);
-              vendorsByVendorId = [];
-            }
-            if (vendorsByVendorId.length > 0) {
-              userId = vendorsByVendorId[0].id;
-              userData = vendorsByVendorId[0];
-              userData.onboarding_status = identity.onboarding_status;
-              userData.vendor_identity_id = identity.id;
-              console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
-            } else {
-              userId = identity.id;
-              userData = {
-                id: identity.id,
-                phone,
-                is_active: false,
-                onboarding_status: identity.onboarding_status,
-                vendor_identity_id: identity.id,
-                created_at: identity.created_at
-              };
-              console.log(`[AUTH] vendor_identity.vendor_id points to missing vendor, using identity ID: ${userId}`);
-            }
-          } else {
-            userId = identity.id;
-            userData = {
-              id: identity.id,
-              phone,
-              is_active: false,
-              onboarding_status: identity.onboarding_status,
-              vendor_identity_id: identity.id,
-              created_at: identity.created_at
-            };
-            console.log(`[AUTH] Vendor identity found for ${phone} with status: ${userData.onboarding_status} (not approved yet)`);
-          }
-        } else {
-          userId = `temp_vendor_${phone}_${Date.now()}`;
-          userData = {
-            id: userId,
-            phone,
-            is_active: false,
-            onboarding_status: "INIT",
-            created_at: (/* @__PURE__ */ new Date()).toISOString()
-          };
-          console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
-          if (referralCode && normalizedPhone) {
-            try {
-              console.log(`[AUTH] Processing vendor referral code: ${referralCode} for phone: ${normalizedPhone}`);
-              const normalizedCode = referralCode.trim().toUpperCase();
-              let referralRecords = await query(
-                `SELECT * FROM vendor_referrals 
-                 WHERE referral_code = $1 AND referred_phone = $2 
-                 ORDER BY created_at DESC LIMIT 1`,
-                [normalizedCode, normalizedPhone]
-              );
-              let referralRecord = referralRecords.rows[0];
-              if (!referralRecord) {
-                const codeRecords = await query(
-                  `SELECT * FROM vendor_referrals 
-                   WHERE referral_code = $1 
-                   ORDER BY created_at DESC LIMIT 1`,
-                  [normalizedCode]
-                );
-                if (codeRecords.rows.length > 0) {
-                  const newReferral = await insert("vendor_referrals", {
-                    referrer_vendor_id: codeRecords.rows[0].referrer_vendor_id,
-                    referred_phone: normalizedPhone,
-                    referral_code: normalizedCode,
-                    status: "pending",
-                    created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-                  });
-                  referralRecord = newReferral[0];
-                  console.log(`[AUTH] Created new vendor referral record for phone: ${normalizedPhone}`);
-                }
-              }
-              if (referralRecord) {
-                console.log(`[AUTH] \u2705 Vendor referral record found/created: ${referralRecord.id}`);
-                console.log(`[AUTH] Referrer vendor ID: ${referralRecord.referrer_vendor_id}`);
-                if (vendorIdentity.length > 0) {
-                  const identity = vendorIdentity[0];
-                  const metadata = identity.metadata || {};
-                  metadata.referral_code_id = referralRecord.id;
-                  metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
-                  metadata.referral_code = normalizedCode;
-                  try {
-                    await update("vendor_identity", { id: identity.id }, {
-                      metadata,
-                      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-                    });
-                    console.log(`[AUTH] \u2705 Stored vendor referral metadata in vendor_identity`);
-                  } catch (metaError) {
-                    console.error(`[AUTH] Error storing referral metadata: ${metaError.message}`);
-                  }
-                }
-              } else {
-                console.log(`[AUTH] \u26A0\uFE0F No vendor referral record found for code: ${normalizedCode}`);
-              }
-            } catch (refError) {
-              console.error("[AUTH] \u274C Error processing vendor referral code:", refError.message);
-              console.error("[AUTH] Error stack:", refError.stack);
-            }
-          }
-        }
-      } else if (role === "admin") {
-        try {
-          const admins = await select("admins", { phone });
-          if (admins.length > 0) {
-            userId = admins[0].id;
-            userData = admins[0];
-            try {
-              await update("admins", { id: userId }, {
-                last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              console.log(`[AUTH] Updated last_login_at for admin ${userId}`);
-            } catch (updateErr) {
-              console.warn(`[AUTH] Could not update admin last_login_at:`, updateErr);
-            }
-          } else {
-            if (isUATMode2) {
-              console.log(`[AUTH] UAT Mode: Admin ${phone} not in database, allowing login`);
-              userId = `uat_admin_${phone}`;
-              userData = {
-                id: userId,
-                phone,
-                email: `${phone}@warmpawz.app`,
-                name: "UAT Admin",
-                role: "admin",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString()
-              };
-            } else {
-              return this.error("Admin not found", 404, "NOT_FOUND", void 0, context.requestId);
-            }
-          }
-        } catch (dbError) {
-          if (isUATMode2 && (dbError.message?.includes("does not exist") || dbError.message?.includes("relation") || dbError.code === "42P01")) {
-            console.log(`[AUTH] UAT Mode: admins table not found, allowing admin login for ${phone}`);
-            userId = `uat_admin_${phone}`;
-            userData = {
-              id: userId,
-              phone,
-              email: `${phone}@warmpawz.app`,
-              name: "UAT Admin",
-              role: "admin",
-              is_active: true,
-              created_at: (/* @__PURE__ */ new Date()).toISOString()
-            };
-          } else {
-            console.error("[AUTH] Error querying admins table:", dbError);
-            return this.error("Admin authentication failed", 500, "INTERNAL_ERROR", { details: dbError.message }, context.requestId);
-          }
-        }
-      } else {
-        return this.error("Invalid role", 400, "VALIDATION_ERROR", void 0, context.requestId);
-      }
-      let cognitoTokens;
-      if (isUATMode2) {
-        console.log(`[AUTH] UAT Mode: Generating JWT tokens for ${phone} (role: ${role})`);
-        const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-        cognitoTokens = await generateUATJWTToken2({
-          userId,
-          phone,
-          role,
-          expiresIn: 24 * 60 * 60
-          // 24 hours so session persists after OTP redirect
-        });
-        console.log("[AUTH] UAT Mode: Generated JWT tokens with 24h expiry");
-      } else {
-        const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || process.env.COGNITO_VENDOR_POOL_ID || process.env.COGNITO_CUSTOMER_POOL_ID || "";
-        if (!cognitoUserPoolId) {
-          console.warn(`[AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
-          const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-          cognitoTokens = await generateUATJWTToken2({
-            userId,
-            phone,
-            role,
-            expiresIn: 24 * 60 * 60
-            // 24 hours
-          });
-          console.log("[AUTH] Production Mode: Generated JWT tokens (Cognito fallback)");
-        } else {
-          try {
-            console.log(`[AUTH] Production Mode: Authenticating with Cognito for ${phone} (role: ${role})`);
-            const COGNITO_TIMEOUT_MS = 8e3;
-            const cognitoAuthPromise = (async () => {
-              const cognitoUser = await getOrCreateCognitoUser(phone, void 0, role);
-              const tokens = await authenticateCognitoUser(phone);
-              return tokens;
-            })();
-            const cognitoTimeout = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error("Cognito authentication timeout after 8 seconds")), COGNITO_TIMEOUT_MS)
-            );
-            cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
-            console.log("[AUTH] Production Mode: Cognito authentication successful");
-          } catch (cognitoError) {
-            console.error("[AUTH] Production Mode: Cognito authentication failed:", cognitoError);
-            console.warn(`[AUTH] Production Mode: Cognito failed, falling back to JWT tokens`);
-            try {
-              const { generateUATJWTToken: generateUATJWTToken2 } = await Promise.resolve().then(() => (init_jwt_generator(), jwt_generator_exports));
-              cognitoTokens = await generateUATJWTToken2({
-                userId,
-                phone,
-                role,
-                expiresIn: 24 * 60 * 60
-                // 24 hours
-              });
-              console.log("[AUTH] Production Mode: Generated JWT tokens (Cognito fallback after error)");
-            } catch (jwtError) {
-              console.error("[AUTH] Production Mode: JWT fallback also failed:", jwtError);
-              return this.error(
-                "Authentication service temporarily unavailable. Please try again.",
-                503,
-                "SERVICE_UNAVAILABLE",
-                { details: "Authentication service error" },
-                context.requestId
-              );
-            }
-          }
-        }
-      }
-      let isNewUser = false;
-      if (role === "customer") {
-        const { getCustomerStateForAuth: getCustomerStateForAuth2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
-        const customerState = await getCustomerStateForAuth2(userId);
-        isNewUser = customerState === "new";
-      } else if (role === "vendor") {
-        isNewUser = userId.startsWith("temp_vendor_") || !userData.id || !userData.created_at || userData.onboarding_status && ["INIT", "ROLE_PENDING"].includes(userData.onboarding_status);
-      }
-      return this.success({
-        success: true,
-        data: {
-          token: {
-            access_token: cognitoTokens.accessToken,
-            refresh_token: cognitoTokens.refreshToken,
-            expires_in: cognitoTokens.expiresIn,
-            token_type: "Bearer"
-          },
-          user: {
-            id: userId,
-            phone,
-            role,
-            is_active: userData.is_active !== false,
-            created_at: userData.created_at || (/* @__PURE__ */ new Date()).toISOString()
-          },
-          state: isNewUser ? "new" : "existing",
-          profile: role === "customer" ? {
-            id: userId,
-            phone,
-            full_name: userData.full_name || null,
-            email: userData.email || null
-          } : role === "vendor" ? {
-            id: userId.startsWith("temp_vendor_") ? null : userId,
-            phone,
-            business_name: userData.business_name || null,
-            status: userData.status || "pending",
-            onboarding_status: userData.onboarding_status || "INIT"
-          } : void 0
-        },
-        meta: {
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          requestId: context.requestId,
-          version: "v1"
-        }
-      }, context.requestId);
-    } catch (error) {
-      console.error("Error verifying OTP:", error);
-      return this.error(
-        "Failed to verify OTP",
-        500,
-        "INTERNAL_ERROR",
-        { details: error.message },
-        context.requestId
-      );
-    }
-  }
-};
-function registerAuthEndpointsEnhanced(app3) {
-  const sendOtpHandler = new SendOtpHandlerEnhanced();
-  const verifyOtpHandler = new VerifyOtpHandlerEnhanced();
-  app3.post("/auth/send-otp", async (c) => {
-    try {
-      const event = await createApiGatewayEvent(c);
-      const context = createLambdaContext();
-      const result = await sendOtpHandler.execute(event, context);
-      const body = JSON.parse(result.body);
-      return c.json(body, result.statusCode);
-    } catch (error) {
-      console.error("[AUTH] Error in send-otp handler:", error);
-      return c.json({ error: error.message || "Internal Server Error" }, 500);
-    }
-  });
-  app3.post("/auth/otp/send", async (c) => {
-    try {
-      const event = await createApiGatewayEvent(c);
-      const context = createLambdaContext();
-      const result = await sendOtpHandler.execute(event, context);
-      const body = JSON.parse(result.body);
-      return c.json(body, result.statusCode);
-    } catch (error) {
-      console.error("[AUTH] Error in otp/send handler:", error);
-      return c.json({ error: error.message || "Internal Server Error" }, 500);
-    }
-  });
-  app3.post("/auth/verify-otp", async (c) => {
-    const startTime = Date.now();
-    const TIMEOUT_MS = 25e3;
-    try {
-      const parseBodyWithTimeout = async () => {
-        return Promise.race([
-          c.req.json(),
-          new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Request body parsing timeout")), 5e3)
-          )
-        ]);
-      };
-      let event;
-      try {
-        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
-      } catch (parseError) {
-        console.error("[AUTH] Error parsing request body:", parseError);
-        return c.json({
-          message: "Invalid request format",
-          error: parseError.message || "Request parsing failed"
-        }, 400);
-      }
-      const context = createLambdaContext();
-      const handlerPromise = verifyOtpHandler.execute(event, context);
-      const timeoutPromise = new Promise(
-        (_, reject) => setTimeout(() => reject(new Error("Handler execution timeout")), TIMEOUT_MS)
-      );
-      const result = await Promise.race([handlerPromise, timeoutPromise]);
-      if (!result || !result.body) {
-        throw new Error("Handler returned invalid response");
-      }
-      const body = JSON.parse(result.body);
-      const elapsed = Date.now() - startTime;
-      console.log(`[AUTH] verify-otp completed in ${elapsed}ms`);
-      return c.json(body, result.statusCode);
-    } catch (error) {
-      const elapsed = Date.now() - startTime;
-      console.error(`[AUTH] Error in verify-otp handler (${elapsed}ms):`, error);
-      console.error("[AUTH] Error stack:", error?.stack);
-      const statusCode = error?.message?.includes("timeout") ? 503 : 500;
-      const errorMessage = error?.message || "Internal Server Error";
-      return c.json({
-        message: statusCode === 503 ? "Service Unavailable" : "Internal Server Error",
-        error: errorMessage
-      }, statusCode);
-    }
-  });
-  app3.post("/auth/otp/verify", async (c) => {
-    const startTime = Date.now();
-    const TIMEOUT_MS = 25e3;
-    try {
-      const parseBodyWithTimeout = async () => {
-        return Promise.race([
-          c.req.json(),
-          new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Request body parsing timeout")), 5e3)
-          )
-        ]);
-      };
-      let event;
-      try {
-        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
-      } catch (parseError) {
-        console.error("[AUTH] Error parsing request body:", parseError);
-        return c.json({
-          message: "Invalid request format",
-          error: parseError.message || "Request parsing failed"
-        }, 400);
-      }
-      const context = createLambdaContext();
-      const handlerPromise = verifyOtpHandler.execute(event, context);
-      const timeoutPromise = new Promise(
-        (_, reject) => setTimeout(() => reject(new Error("Handler execution timeout")), TIMEOUT_MS)
-      );
-      const result = await Promise.race([handlerPromise, timeoutPromise]);
-      if (!result || !result.body) {
-        throw new Error("Handler returned invalid response");
-      }
-      const body = JSON.parse(result.body);
-      const elapsed = Date.now() - startTime;
-      console.log(`[AUTH] otp/verify completed in ${elapsed}ms`);
-      return c.json(body, result.statusCode);
-    } catch (error) {
-      const elapsed = Date.now() - startTime;
-      console.error(`[AUTH] Error in otp/verify handler (${elapsed}ms):`, error);
-      console.error("[AUTH] Error stack:", error?.stack);
-      const statusCode = error?.message?.includes("timeout") ? 503 : 500;
-      const errorMessage = error?.message || "Internal Server Error";
-      return c.json({
-        message: statusCode === 503 ? "Service Unavailable" : "Internal Server Error",
-        error: errorMessage
-      }, statusCode);
-    }
-  });
-}
-async function createApiGatewayEvent(c, bodyParser) {
-  let body = {};
-  try {
-    if (bodyParser) {
-      body = await bodyParser();
-    } else {
-      body = await Promise.race([
-        c.req.json(),
-        new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Body parsing timeout")), 5e3)
-        )
-      ]);
-    }
-    if (body?.referralCode || body?.pendingReferralCode) {
-      console.log(`[AUTH] \u2705 Referral code found in parsed body: ${body.referralCode || body.pendingReferralCode}`);
-    }
-  } catch (error) {
-    console.warn("[AUTH] Error parsing request body, using empty object:", error?.message);
-    body = {};
-  }
-  const headers = {};
-  try {
-    if (c.req.raw && c.req.raw.headers) {
-      const rawHeaders = c.req.raw.headers;
-      for (const key in rawHeaders) {
-        const value = rawHeaders[key];
-        if (value) {
-          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
-        }
-      }
-    } else {
-      const contentType = c.req.header("content-type");
-      const authorization = c.req.header("authorization");
-      if (contentType) headers["content-type"] = contentType;
-      if (authorization) headers["authorization"] = authorization;
-    }
-  } catch (e) {
-    console.warn("[AUTH] Error processing headers:", e);
-  }
-  const url = new URL(c.req.url);
-  const bodyString = body && Object.keys(body).length > 0 ? JSON.stringify(body) : void 0;
-  if (body?.referralCode || body?.pendingReferralCode) {
-    console.log(`[AUTH] \u2705 Body stringified with referral code: ${bodyString?.substring(0, 200)}`);
-  }
-  return {
-    rawPath: url.pathname,
-    rawQueryString: url.search.substring(1),
-    // Remove leading '?'
-    body: bodyString,
-    isBase64Encoded: false,
-    requestContext: {
-      http: {
-        method: c.req.method || "POST",
-        path: url.pathname
-      },
-      requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
-    },
-    headers
-  };
-}
-function createLambdaContext() {
-  return {
-    awsRequestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-    requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
-  };
-}
-
 // src/endpoints/vendor-onboarding-enhanced.ts
-var import_crypto9 = require("crypto");
 init_rds_connection();
 var import_vendors = __toESM(require_vendors());
 var GetOnboardingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const phone = context.event.queryStringParameters?.phone;
     const requestId = context.requestId;
+    console.log("[GetOnboardingStatusHandlerEnhanced] Handler called");
+    console.log("[GetOnboardingStatusHandlerEnhanced] Phone from query params:", phone);
+    console.log("[GetOnboardingStatusHandlerEnhanced] Request ID:", requestId);
     if (!phone) {
+      console.log("[GetOnboardingStatusHandlerEnhanced] Missing phone parameter");
       return this.error("Phone number is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
     const phoneDigits = phone.replace(/\D/g, "");
     const normalizedPhone = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits.length === 9 ? "0" + phoneDigits : phoneDigits;
     const isUATMode2 = process.env.UAT_MODE === "true";
     try {
-      let isStaff = false;
-      let staffInfo = null;
-      try {
-        const staffQuery = await query(`
-          SELECT s.id, s.name, s.vendor_id, s.phone, s.role, s.is_active
-          FROM staff s
-          WHERE s.phone = $1 OR s.phone = $2
-          LIMIT 1
-        `, [phone, normalizedPhone]);
-        if (staffQuery.rows && staffQuery.rows.length > 0) {
-          const staff = staffQuery.rows[0];
-          if (staff.vendor_id && staff.is_active !== false) {
-            isStaff = true;
-            staffInfo = {
-              staff_id: staff.id,
-              staff_name: staff.name,
-              staff_role: staff.role,
-              vendor_id: staff.vendor_id
-            };
-            console.log(`[ONBOARDING STATUS] Phone ${phone} belongs to staff member ${staff.id}`);
-          }
-        }
-      } catch (staffError) {
-        console.warn("[ONBOARDING STATUS] Error checking staff:", staffError.message);
-      }
       let identity = await select("vendor_identity", { phone });
       if (identity.length === 0 && phone !== normalizedPhone) {
         identity = await select("vendor_identity", { phone: normalizedPhone });
@@ -132467,35 +131505,12 @@ var GetOnboardingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
       if (identity.length === 0) {
         const newIdentityData = {
           phone: normalizedPhone,
-          onboarding_status: isStaff ? "ACTIVATED" : "INIT",
-          metadata: isStaff ? { staff_id: staffInfo?.staff_id, created_via: "staff_onboarding_status" } : {}
+          onboarding_status: "INIT",
+          metadata: {}
         };
-        if (isStaff && staffInfo) {
-          newIdentityData.vendor_id = staffInfo.vendor_id;
-          newIdentityData.user_type = "staff";
-        }
         const newIdentity = await insert("vendor_identity", newIdentityData);
         identity = newIdentity;
-        console.log(`[ONBOARDING STATUS] Created vendor_identity for ${normalizedPhone} with status: ${newIdentityData.onboarding_status}`);
-      } else if (isStaff) {
-        const existingIdentity = identity[0];
-        if (existingIdentity.onboarding_status !== "ACTIVATED") {
-          console.log(`[ONBOARDING STATUS] Updating staff vendor_identity to ACTIVATED (was: ${existingIdentity.onboarding_status})`);
-          await update("vendor_identity", { id: existingIdentity.id }, {
-            onboarding_status: "ACTIVATED",
-            vendor_id: staffInfo?.vendor_id || existingIdentity.vendor_id,
-            user_type: "staff",
-            metadata: {
-              ...existingIdentity.metadata,
-              staff_id: staffInfo?.staff_id,
-              updated_via: "staff_onboarding_status"
-            },
-            updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          });
-          existingIdentity.onboarding_status = "ACTIVATED";
-          existingIdentity.user_type = "staff";
-          existingIdentity.vendor_id = staffInfo?.vendor_id || existingIdentity.vendor_id;
-        }
+        console.log(`[ONBOARDING STATUS] Created vendor_identity for ${normalizedPhone} with status: INIT`);
       }
       const vendorIdentity = identity[0];
       let application = null;
@@ -132517,14 +131532,16 @@ var GetOnboardingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
         identity: vendorIdentity,
         application,
         role,
-        nextStep: this.getNextStep(vendorIdentity.onboarding_status),
-        is_staff: isStaff,
-        staff_info: staffInfo
+        nextStep: this.getNextStep(vendorIdentity.onboarding_status)
       }, requestId);
     } catch (error) {
-      console.error("Error getting onboarding status:", error);
+      console.error("[GetOnboardingStatusHandlerEnhanced] Error caught in catch block");
+      console.error("[GetOnboardingStatusHandlerEnhanced] Error message:", error?.message);
+      console.error("[GetOnboardingStatusHandlerEnhanced] Error stack:", error?.stack);
+      console.error("[GetOnboardingStatusHandlerEnhanced] Error code:", error?.code);
+      console.error("[GetOnboardingStatusHandlerEnhanced] Full error:", error);
       if (error.message?.includes("does not exist") || error.message?.includes("relation") || error.message?.includes("ECONNREFUSED") || error.message?.includes("timeout")) {
-        console.warn("[ONBOARDING] DB Error - returning default INIT status for phone:", phone);
+        console.warn("[GetOnboardingStatusHandlerEnhanced] DB Error - returning default INIT status for phone:", phone);
         return this.success({
           identity: {
             phone,
@@ -133383,16 +132400,23 @@ function registerVendorOnboardingEndpointsEnhanced(app3) {
   const submitHandler = new SubmitApplicationHandlerEnhanced();
   const reviewHandler = new AdminReviewApplicationHandlerEnhanced();
   app3.get("/vendor/onboarding/status", async (c) => {
-    const event = createApiGatewayEvent2(c.req);
-    const context = createLambdaContext2();
+    const phone = c.req.query("phone");
+    console.log("[ENDPOINT-ENHANCED] /vendor/onboarding/status called");
+    console.log("[ENDPOINT-ENHANCED] Phone parameter:", phone);
+    console.log("[ENDPOINT-ENHANCED] Request URL:", c.req.url);
+    console.log("[ENDPOINT-ENHANCED] Request method:", c.req.method);
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    console.log("[ENDPOINT-ENHANCED] Calling statusHandler.execute()");
     const result = await statusHandler.execute(event, context);
+    console.log("[ENDPOINT-ENHANCED] Handler returned status:", result.statusCode);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.get("/vendor/onboarding/roles", async (c) => {
     try {
-      const event = createApiGatewayEvent2(c.req);
-      const context = createLambdaContext2();
+      const event = createApiGatewayEvent(c.req);
+      const context = createLambdaContext();
       const result = await rolesHandler.execute(event, context);
       const body = JSON.parse(result.body);
       if (body.success === false || result.statusCode >= 400) {
@@ -133414,28 +132438,28 @@ function registerVendorOnboardingEndpointsEnhanced(app3) {
   });
   app3.post("/vendor/onboarding/select-role", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
-    const context = createLambdaContext2();
+    const context = createLambdaContext();
     const result = await selectRoleHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/vendor/onboarding/select-vendor-type", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
-    const context = createLambdaContext2();
+    const context = createLambdaContext();
     const result = await selectVendorTypeHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.get("/vendor/onboarding/form-schema", async (c) => {
-    const event = createApiGatewayEvent2(c.req);
-    const context = createLambdaContext2();
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
     const result = await formSchemaHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/vendor/onboarding/submit-application", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
-    const context = createLambdaContext2();
+    const context = createLambdaContext();
     const result = await submitHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -133443,7 +132467,7 @@ function registerVendorOnboardingEndpointsEnhanced(app3) {
   app3.post("/admin/vendor/onboarding/:applicationId/review", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
     event.pathParameters = { applicationId: c.req.param("applicationId") };
-    const context = createLambdaContext2();
+    const context = createLambdaContext();
     const result = await reviewHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -133890,7 +132914,7 @@ function registerVendorOnboardingEndpointsEnhanced(app3) {
     }
   });
 }
-function createApiGatewayEvent2(req) {
+function createApiGatewayEvent(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -133936,7 +132960,7 @@ async function createApiGatewayEventWithBody(c) {
     }
   };
 }
-function createLambdaContext2() {
+function createLambdaContext() {
   return {
     requestId: (0, import_crypto9.randomUUID)(),
     functionName: "vendor-onboarding-handler",
@@ -137569,7 +136593,7 @@ function registerBookingEndpointsEnhanced(app3) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext2();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -137607,7 +136631,7 @@ function registerBookingEndpointsEnhanced(app3) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext2();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -137645,7 +136669,7 @@ function registerBookingEndpointsEnhanced(app3) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext2();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -137683,7 +136707,7 @@ function registerBookingEndpointsEnhanced(app3) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext2();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -137693,40 +136717,40 @@ function registerBookingEndpointsEnhanced(app3) {
     }
   });
   app3.get("/bookings/:bookingId", async (c) => {
-    const event = await createApiGatewayEvent3(c);
+    const event = await createApiGatewayEvent2(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext2();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.get("/customer/bookings/:bookingId", async (c) => {
-    const event = await createApiGatewayEvent3(c);
+    const event = await createApiGatewayEvent2(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext2();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.get("/bookings/:bookingId/history", async (c) => {
-    const event = await createApiGatewayEvent3(c);
+    const event = await createApiGatewayEvent2(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext2();
     const result = await historyHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.put("/bookings/:bookingId/status", async (c) => {
-    const event = await createApiGatewayEvent3(c);
+    const event = await createApiGatewayEvent2(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext2();
     const result = await updateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/customer/bookings/refund-preview", async (c) => {
-    const event = await createApiGatewayEvent3(c);
-    const context = createLambdaContext3();
+    const event = await createApiGatewayEvent2(c);
+    const context = createLambdaContext2();
     const result = await refundPreviewHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -137820,17 +136844,17 @@ function registerBookingEndpointsEnhanced(app3) {
     }
   });
   app3.post("/bookings/:bookingId/cancel", async (c) => {
-    const event = await createApiGatewayEvent3(c);
+    const event = await createApiGatewayEvent2(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext2();
     const result = await cancelHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/bookings/:bookingId/reschedule", async (c) => {
-    const event = await createApiGatewayEvent3(c);
+    const event = await createApiGatewayEvent2(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext2();
     const result = await rescheduleHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -137881,10 +136905,10 @@ async function createApiGatewayEventWithBody2(c) {
     isBase64Encoded: false
   };
 }
-async function createApiGatewayEvent3(c) {
+async function createApiGatewayEvent2(c) {
   return createApiGatewayEventWithBody2(c);
 }
-function createLambdaContext3() {
+function createLambdaContext2() {
   return {
     requestId: (0, import_crypto11.randomUUID)(),
     functionName: "booking-handler",
@@ -138873,7 +137897,7 @@ function registerPaymentEndpointsEnhanced(app3) {
       const requestBody = await c.req.json().catch(() => ({}));
       console.log("\u{1F4E5} [PAYMENT-CREATE] Raw request body from Hono:", JSON.stringify(requestBody));
       const event = createApiGatewayEventWithBody3(c.req, requestBody);
-      const context = createLambdaContext4();
+      const context = createLambdaContext3();
       const result = await createHandler.execute(event, context);
       let body;
       try {
@@ -138913,7 +137937,7 @@ function registerPaymentEndpointsEnhanced(app3) {
   app3.post("/payments/create-order", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody3(c.req, requestBody);
-    const context = createLambdaContext4();
+    const context = createLambdaContext3();
     const result = await createHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -138921,7 +137945,7 @@ function registerPaymentEndpointsEnhanced(app3) {
   app3.post("/payments/razorpay/webhook", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEventWithBody3(c.req, requestBody);
-    const context = createLambdaContext4();
+    const context = createLambdaContext3();
     const result = await webhookHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -138929,7 +137953,7 @@ function registerPaymentEndpointsEnhanced(app3) {
   app3.get("/payments/:paymentId", async (c) => {
     const event = createApiGatewayEventWithBody3(c.req, null);
     event.pathParameters = { paymentId: c.req.param("paymentId") };
-    const context = createLambdaContext4();
+    const context = createLambdaContext3();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -138979,7 +138003,7 @@ function createApiGatewayEventWithBody3(req, parsedBody) {
     }
   };
 }
-function createLambdaContext4() {
+function createLambdaContext3() {
   return {
     requestId: (0, import_crypto13.randomUUID)(),
     functionName: "payment-handler",
@@ -139393,9 +138417,9 @@ function registerCustomerEndpointsEnhanced(app3) {
           error: { code: "MISSING_PHONE", message: "phone parameter is required" }
         }, 400);
       }
-      const event = createApiGatewayEvent4(c.req);
+      const event = createApiGatewayEvent3(c.req);
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context = createLambdaContext5();
+      const context = createLambdaContext4();
       try {
         const result = await getByPhoneHandler.execute(event, context);
         const body = JSON.parse(result.body);
@@ -139560,41 +138584,41 @@ function registerCustomerEndpointsEnhanced(app3) {
     }
   });
   app3.get("/customer/:customerId", async (c) => {
-    const event = createApiGatewayEvent4(c.req);
+    const event = createApiGatewayEvent3(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext4();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.put("/customer/:customerId", async (c) => {
-    const event = createApiGatewayEvent4(c.req);
+    const event = createApiGatewayEvent3(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext4();
     const result = await updateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.delete("/customer/:customerId", async (c) => {
-    const event = createApiGatewayEvent4(c.req);
+    const event = createApiGatewayEvent3(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext4();
     const result = await deactivateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.get("/customer/:customerId/pets", async (c) => {
-    const event = createApiGatewayEvent4(c.req);
+    const event = createApiGatewayEvent3(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext4();
     const result = await getPetsHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/customer/:customerId/pets", async (c) => {
-    const event = createApiGatewayEvent4(c.req);
+    const event = createApiGatewayEvent3(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext4();
     const result = await addPetHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -140613,7 +139637,7 @@ function registerCustomerEndpointsEnhanced(app3) {
     }
   });
 }
-function createApiGatewayEvent4(req) {
+function createApiGatewayEvent3(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -140626,7 +139650,7 @@ function createApiGatewayEvent4(req) {
     }
   };
 }
-function createLambdaContext5() {
+function createLambdaContext4() {
   return {
     requestId: (0, import_crypto14.randomUUID)(),
     functionName: "customer-handler",
@@ -141453,8 +140477,8 @@ function registerRoleEndpoints(app3) {
   const deleteRoleHandler = new DeleteRoleHandler();
   const getCapabilitiesHandler = new GetCapabilitiesHandler();
   app3.get("/config/roles", async (c) => {
-    const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const event = createApiGatewayEvent4(c.req);
+    const context = createLambdaContext5();
     const result = await getRolesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -141589,52 +140613,52 @@ function registerRoleEndpoints(app3) {
     }
   });
   app3.get("/config/roles/:roleId", async (c) => {
-    const event = createApiGatewayEvent5(c.req);
+    const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext6();
+    const context = createLambdaContext5();
     const result = await getRoleByIdHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/roles", async (c) => {
-    const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const event = createApiGatewayEvent4(c.req);
+    const context = createLambdaContext5();
     const result = await getRolesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/roles", async (c) => {
-    const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const event = createApiGatewayEvent4(c.req);
+    const context = createLambdaContext5();
     const result = await getRolesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/capabilities", async (c) => {
-    const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const event = createApiGatewayEvent4(c.req);
+    const context = createLambdaContext5();
     const result = await getCapabilitiesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/roles", async (c) => {
     const event = await createApiGatewayEventWithBody4(c);
-    const context = createLambdaContext6();
+    const context = createLambdaContext5();
     const result = await createRoleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/roles/:roleId", async (c) => {
     const event = await createApiGatewayEventWithBody4(c);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext6();
+    const context = createLambdaContext5();
     const result = await updateRoleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/admin/roles/:roleId", async (c) => {
-    const event = createApiGatewayEvent5(c.req);
+    const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext6();
+    const context = createLambdaContext5();
     const result = await deleteRoleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent5(req) {
+function createApiGatewayEvent4(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -141661,7 +140685,7 @@ async function createApiGatewayEventWithBody4(c) {
     }
   };
 }
-function createLambdaContext6() {
+function createLambdaContext5() {
   return {
     requestId: (0, import_crypto15.randomUUID)(),
     functionName: "role-handler",
@@ -144293,9 +143317,9 @@ function registerVendorDashboardEndpoints(app3) {
     if (!vendorId) {
       return c.json({ error: "Vendor authentication required" }, 401);
     }
-    const event = createApiGatewayEvent6(c.req);
+    const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { vendorId };
-    const context = createLambdaContext7();
+    const context = createLambdaContext6();
     const result = await dashboardHandler.execute(event, context);
     const body = result.body ? JSON.parse(result.body) : result;
     const statusCode = result.statusCode || 200;
@@ -144533,21 +143557,21 @@ function registerVendorDashboardEndpoints(app3) {
     }
   });
   app3.get("/vendor/dashboard/:vendorId", async (c) => {
-    const event = createApiGatewayEvent6(c.req);
+    const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext7();
+    const context = createLambdaContext6();
     const result = await dashboardHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/stats/:vendorId", async (c) => {
-    const event = createApiGatewayEvent6(c.req);
+    const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext7();
+    const context = createLambdaContext6();
     const result = await statsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent6(req) {
+function createApiGatewayEvent5(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -144560,7 +143584,7 @@ function createApiGatewayEvent6(req) {
     }
   };
 }
-function createLambdaContext7() {
+function createLambdaContext6() {
   return {
     requestId: (0, import_crypto16.randomUUID)(),
     functionName: "vendor-dashboard-handler",
@@ -146454,9 +145478,9 @@ function registerVideoCallEndpoints(app3) {
   const joinHandler = new JoinMeetingHandler();
   const endHandler = new EndMeetingHandler();
   app3.get("/video-call/:bookingId/attendees", async (c) => {
-    const event = createApiGatewayEvent8(c.req);
+    const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext9();
+    const context = createLambdaContext8();
     const result = await getAttendeesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -146528,49 +145552,49 @@ function registerVideoCallEndpoints(app3) {
   });
   app3.post("/video-call/create-meeting", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent8(c.req, body);
-    const context = createLambdaContext9();
+    const event = createApiGatewayEvent7(c.req, body);
+    const context = createLambdaContext8();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/join", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent8(c.req, body);
-    const context = createLambdaContext9();
+    const event = createApiGatewayEvent7(c.req, body);
+    const context = createLambdaContext8();
     const result = await joinHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/end", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent8(c.req, body);
+    const event = createApiGatewayEvent7(c.req, body);
     event.pathParameters = { bookingId: c.req.param("bookingId") || body.bookingId || body.booking_id };
-    const context = createLambdaContext9();
+    const context = createLambdaContext8();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/video-call/:bookingId", async (c) => {
-    const event = createApiGatewayEvent8(c.req);
+    const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext9();
+    const context = createLambdaContext8();
     const result = await getInfoHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/create", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent8(c.req, body);
-    const context = createLambdaContext9();
+    const event = createApiGatewayEvent7(c.req, body);
+    const context = createLambdaContext8();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/:bookingId/end", async (c) => {
-    const event = createApiGatewayEvent8(c.req);
+    const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext9();
+    const context = createLambdaContext8();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent8(req, body) {
+function createApiGatewayEvent7(req, body) {
   const pathParams = typeof req?.param === "function" ? req.param() : {};
   return {
     httpMethod: req.method,
@@ -146584,7 +145608,7 @@ function createApiGatewayEvent8(req, body) {
     }
   };
 }
-function createLambdaContext9() {
+function createLambdaContext8() {
   return {
     requestId: (0, import_crypto20.randomUUID)(),
     functionName: "video-call-handler",
@@ -146720,26 +145744,26 @@ function registerPackageSessionEndpoints(app3) {
   const completeHandler = new CompleteSessionHandler();
   const progressHandler = new GetSessionProgressHandler();
   app3.post("/package-sessions/start", async (c) => {
-    const event = createApiGatewayEvent9(c.req);
-    const context = createLambdaContext10();
+    const event = createApiGatewayEvent8(c.req);
+    const context = createLambdaContext9();
     const result = await startHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/package-sessions/complete", async (c) => {
-    const event = createApiGatewayEvent9(c.req);
-    const context = createLambdaContext10();
+    const event = createApiGatewayEvent8(c.req);
+    const context = createLambdaContext9();
     const result = await completeHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/package-sessions/:bookingId/progress", async (c) => {
-    const event = createApiGatewayEvent9(c.req);
+    const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext10();
+    const context = createLambdaContext9();
     const result = await progressHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent9(req) {
+function createApiGatewayEvent8(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -146752,7 +145776,7 @@ function createApiGatewayEvent9(req) {
     }
   };
 }
-function createLambdaContext10() {
+function createLambdaContext9() {
   return {
     requestId: (0, import_crypto21.randomUUID)(),
     functionName: "package-session-handler",
@@ -146974,13 +145998,13 @@ var UniversalSearchHandler = class extends BaseHandler {
 function registerSearchEndpoints(app3) {
   const searchHandler = new UniversalSearchHandler();
   app3.get("/search", async (c) => {
-    const event = createApiGatewayEvent10(c.req);
-    const context = createLambdaContext11();
+    const event = createApiGatewayEvent9(c.req);
+    const context = createLambdaContext10();
     const result = await searchHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent10(req) {
+function createApiGatewayEvent9(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -146993,7 +146017,7 @@ function createApiGatewayEvent10(req) {
     }
   };
 }
-function createLambdaContext11() {
+function createLambdaContext10() {
   return {
     requestId: (0, import_crypto22.randomUUID)(),
     functionName: "search-handler",
@@ -147859,59 +146883,59 @@ function registerWalletEndpoints(app3) {
   const getTransactionsHandler = new GetWalletTransactionsHandler();
   const getTransactionsByPhoneHandler = new GetTransactionsByPhoneHandler();
   app3.get("/customer/wallet", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
-    const context = createLambdaContext13();
+    const event = createApiGatewayEvent10(c.req);
+    const context = createLambdaContext12();
     const result = await getWalletByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/customer/wallet/transactions", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
-    const context = createLambdaContext13();
+    const event = createApiGatewayEvent10(c.req);
+    const context = createLambdaContext12();
     const result = await getTransactionsByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/customer/wallet/add-funds", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
-    const context = createLambdaContext13();
+    const event = createApiGatewayEvent10(c.req);
+    const context = createLambdaContext12();
     const result = await addFundsByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/customer/wallet/use", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
-    const context = createLambdaContext13();
+    const event = createApiGatewayEvent10(c.req);
+    const context = createLambdaContext12();
     const result = await useWalletByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/wallet/:customerId", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
+    const event = createApiGatewayEvent10(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext13();
+    const context = createLambdaContext12();
     const result = await getWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/wallet/:customerId/credit", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
+    const event = createApiGatewayEvent10(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext13();
+    const context = createLambdaContext12();
     const result = await creditWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/wallet/:customerId/debit", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
+    const event = createApiGatewayEvent10(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext13();
+    const context = createLambdaContext12();
     const result = await debitWalletHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/wallet/:customerId/transactions", async (c) => {
-    const event = createApiGatewayEvent11(c.req);
+    const event = createApiGatewayEvent10(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext13();
+    const context = createLambdaContext12();
     const result = await getTransactionsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent11(req) {
+function createApiGatewayEvent10(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -147924,7 +146948,7 @@ function createApiGatewayEvent11(req) {
     }
   };
 }
-function createLambdaContext13() {
+function createLambdaContext12() {
   return {
     requestId: (0, import_crypto24.randomUUID)(),
     functionName: "wallet-handler",
@@ -152656,25 +151680,25 @@ function registerAdminGovernanceEndpoints(app3) {
   const invalidateCacheHandler = new InvalidateCacheHandler();
   const statusHandler = new GovernanceStatusHandler();
   app3.post("/admin/governance/propagate", async (c) => {
-    const event = await createApiGatewayEvent12(c);
-    const context = createLambdaContext14();
+    const event = await createApiGatewayEvent11(c);
+    const context = createLambdaContext13();
     const result = await propagateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/governance/invalidate-cache", async (c) => {
-    const event = await createApiGatewayEvent12(c);
-    const context = createLambdaContext14();
+    const event = await createApiGatewayEvent11(c);
+    const context = createLambdaContext13();
     const result = await invalidateCacheHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/governance/status", async (c) => {
-    const event = await createApiGatewayEvent12(c);
-    const context = createLambdaContext14();
+    const event = await createApiGatewayEvent11(c);
+    const context = createLambdaContext13();
     const result = await statusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-async function createApiGatewayEvent12(c) {
+async function createApiGatewayEvent11(c) {
   const body = await c.req.text().catch(() => "{}");
   return {
     httpMethod: c.req.method,
@@ -152689,7 +151713,7 @@ async function createApiGatewayEvent12(c) {
     }
   };
 }
-function createLambdaContext14() {
+function createLambdaContext13() {
   return {
     requestId: (0, import_crypto25.randomUUID)(),
     functionName: "admin-governance-handler",
@@ -183325,14 +182349,17 @@ function registerReportEndpoints(app3) {
       const period = c.req.query("period") || "monthly";
       const revenueData = await query(`
         SELECT 
-          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
-          COALESCE(SUM(total_amount), 0) as revenue,
+          TO_CHAR(DATE_TRUNC('month', b.created_at), 'Mon YYYY') as month,
+          COALESCE(SUM(b.total_amount), 0) as revenue,
           COUNT(*) as bookings,
-          COALESCE(SUM(total_amount) * 0.15, 0) as commission
-        FROM bookings
-        WHERE created_at >= NOW() - INTERVAL '12 months'
-        GROUP BY DATE_TRUNC('month', created_at)
-        ORDER BY DATE_TRUNC('month', created_at) DESC
+          COALESCE(SUM(b.total_amount * COALESCE(vt.commission_rate, 15) / 100.0), 0) as commission
+        FROM bookings b
+        LEFT JOIN vendors v ON v.id = b.vendor_id
+        LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+          AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+        WHERE b.created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', b.created_at)
+        ORDER BY DATE_TRUNC('month', b.created_at) DESC
         LIMIT 12
       `).catch(() => ({ rows: [] }));
       return c.json({
@@ -183969,13 +182996,13 @@ var ChangePasswordHandler = class extends BaseHandler {
 function registerCustomerPasswordEndpoints(app3) {
   const changePasswordHandler = new ChangePasswordHandler();
   app3.post("/customer/change-password", async (c) => {
-    const event = createApiGatewayEvent13(c.req);
-    const context = createLambdaContext15();
+    const event = createApiGatewayEvent12(c.req);
+    const context = createLambdaContext14();
     const result = await changePasswordHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent13(req) {
+function createApiGatewayEvent12(req) {
   return {
     pathParameters: {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -183990,7 +183017,7 @@ function createApiGatewayEvent13(req) {
     }
   };
 }
-function createLambdaContext15() {
+function createLambdaContext14() {
   return {};
 }
 
@@ -191446,6 +190473,28 @@ function registerAppointmentReminderEndpoints(app3) {
 // src/endpoints/vendor-booking-actions.ts
 init_rds_connection();
 init_vendor_resolve();
+async function getVendorCommissionRate(vendorId) {
+  try {
+    const tierResult = await query(
+      `SELECT vt.commission_rate
+       FROM vendors v
+       LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+         AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+       WHERE v.id = $1
+       LIMIT 1`,
+      [vendorId]
+    );
+    const commissionRate = tierResult.rows?.[0]?.commission_rate;
+    if (commissionRate != null && !isNaN(Number(commissionRate))) {
+      return Number(commissionRate);
+    }
+    console.warn(`\u26A0\uFE0F [COMMISSION] No tier found for vendor ${vendorId}, using default 15%`);
+    return 15;
+  } catch (error) {
+    console.error(`\u274C [COMMISSION] Error getting commission rate for vendor ${vendorId}:`, error);
+    return 15;
+  }
+}
 async function getExpectedOTPForBooking(booking, bookingId2, action = "complete") {
   let isWalkerService = false;
   let expectedOTP = "";
@@ -191562,7 +190611,7 @@ function registerVendorBookingActionsEndpoints(app3) {
         );
         console.log(`\u2705 [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
         try {
-          const commissionRate = 15;
+          const commissionRate = await getVendorCommissionRate(booking.vendor_id);
           const totalAmount = parseFloat(booking.total_amount || "0");
           const commissionAmount = Math.round(totalAmount * commissionRate / 100 * 100) / 100;
           const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
@@ -191637,7 +190686,7 @@ function registerVendorBookingActionsEndpoints(app3) {
       );
       console.log(`\u2705 [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
       try {
-        const commissionRate = 15;
+        const commissionRate = await getVendorCommissionRate(booking.vendor_id);
         const totalAmount = parseFloat(booking.total_amount || "0");
         const commissionAmount = Math.round(totalAmount * commissionRate / 100 * 100) / 100;
         const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
@@ -194654,25 +193703,25 @@ function registerCommuteTimeEndpoints(app3) {
   const calculateMultipleHandler = new CalculateMultipleCommuteTimesHandler();
   const staffETAHandler = new CalculateStaffETAHandler();
   app3.post("/commute-time/calculate", async (c) => {
-    const event = await createApiGatewayEvent14(c);
-    const context = createLambdaContext16();
+    const event = await createApiGatewayEvent13(c);
+    const context = createLambdaContext15();
     const result = await calculateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/commute-time/calculate-multiple", async (c) => {
-    const event = await createApiGatewayEvent14(c);
-    const context = createLambdaContext16();
+    const event = await createApiGatewayEvent13(c);
+    const context = createLambdaContext15();
     const result = await calculateMultipleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/commute-time/staff-eta", async (c) => {
-    const event = await createApiGatewayEvent14(c);
-    const context = createLambdaContext16();
+    const event = await createApiGatewayEvent13(c);
+    const context = createLambdaContext15();
     const result = await staffETAHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-async function createApiGatewayEvent14(c) {
+async function createApiGatewayEvent13(c) {
   const body = await c.req.json().catch(() => ({}));
   return {
     httpMethod: c.req.method,
@@ -194686,7 +193735,7 @@ async function createApiGatewayEvent14(c) {
     }
   };
 }
-function createLambdaContext16() {
+function createLambdaContext15() {
   return {
     requestId: (0, import_crypto30.randomUUID)(),
     functionName: "commute-time-handler",
@@ -194960,39 +194009,39 @@ function registerBookingDetailsEnhancedEndpoints(app3) {
   const medicalRecordsHandler = new GetBookingMedicalRecordsHandler();
   const chatHandler = new GetBookingChatHandler();
   app3.get("/bookings/:bookingId/enhanced", async (c) => {
-    const event = createApiGatewayEvent15(c.req);
+    const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
     event.queryStringParameters = {
       actorId: c.req.query("actorId") || void 0,
       actorRole: c.req.query("actorRole") || "customer"
     };
-    const context = createLambdaContext17();
+    const context = createLambdaContext16();
     const result = await enhancedHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/bookings/:bookingId/prescriptions", async (c) => {
-    const event = createApiGatewayEvent15(c.req);
+    const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext17();
+    const context = createLambdaContext16();
     const result = await prescriptionsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/bookings/:bookingId/medical-records", async (c) => {
-    const event = createApiGatewayEvent15(c.req);
+    const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext17();
+    const context = createLambdaContext16();
     const result = await medicalRecordsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/bookings/:bookingId/chat", async (c) => {
-    const event = createApiGatewayEvent15(c.req);
+    const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext17();
+    const context = createLambdaContext16();
     const result = await chatHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent15(req) {
+function createApiGatewayEvent14(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -195005,7 +194054,7 @@ function createApiGatewayEvent15(req) {
     }
   };
 }
-function createLambdaContext17() {
+function createLambdaContext16() {
   return {
     requestId: (0, import_crypto31.randomUUID)(),
     functionName: "booking-details-enhanced-handler",
@@ -195644,51 +194693,51 @@ function registerRazorpaySettlementEndpoints(app3) {
   const getVendorSettlementsHandler = new GetVendorSettlementsHandler();
   const autoSettlementHandler = new AutoSettlementHandler();
   app3.post("/razorpay/linked-account/create", async (c) => {
-    const event = await createApiGatewayEvent16(c);
-    const context = createLambdaContext18();
+    const event = await createApiGatewayEvent15(c);
+    const context = createLambdaContext17();
     const result = await createAccountHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/razorpay/linked-account/bank", async (c) => {
-    const event = await createApiGatewayEvent16(c);
-    const context = createLambdaContext18();
+    const event = await createApiGatewayEvent15(c);
+    const context = createLambdaContext17();
     const result = await addBankHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/razorpay/linked-account/verify-bank", async (c) => {
-    const event = await createApiGatewayEvent16(c);
-    const context = createLambdaContext18();
+    const event = await createApiGatewayEvent15(c);
+    const context = createLambdaContext17();
     const result = await verifyBankHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/settlements/process", async (c) => {
-    const event = await createApiGatewayEvent16(c);
-    const context = createLambdaContext18();
+    const event = await createApiGatewayEvent15(c);
+    const context = createLambdaContext17();
     const result = await processSettlementHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/settlements/:settlementId", async (c) => {
-    const event = await createApiGatewayEvent16(c);
+    const event = await createApiGatewayEvent15(c);
     event.pathParameters = { settlementId: c.req.param("settlementId") };
-    const context = createLambdaContext18();
+    const context = createLambdaContext17();
     const result = await getSettlementStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/settlements", async (c) => {
-    const event = await createApiGatewayEvent16(c);
+    const event = await createApiGatewayEvent15(c);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext18();
+    const context = createLambdaContext17();
     const result = await getVendorSettlementsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/settlements/auto-process", async (c) => {
-    const event = await createApiGatewayEvent16(c);
-    const context = createLambdaContext18();
+    const event = await createApiGatewayEvent15(c);
+    const context = createLambdaContext17();
     const result = await autoSettlementHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-async function createApiGatewayEvent16(c) {
+async function createApiGatewayEvent15(c) {
   const body = await c.req.text().catch(() => "{}");
   return {
     httpMethod: c.req.method,
@@ -195700,7 +194749,7 @@ async function createApiGatewayEvent16(c) {
     requestContext: { requestId: (0, import_crypto32.randomUUID)() }
   };
 }
-function createLambdaContext18() {
+function createLambdaContext17() {
   return {
     requestId: (0, import_crypto32.randomUUID)(),
     functionName: "razorpay-settlement-handler",
@@ -195932,7 +194981,7 @@ function registerRefundPolicyEngineEndpoints(app3) {
           requestId: (0, import_crypto33.randomUUID)()
         }
       };
-      const context = createLambdaContext19();
+      const context = createLambdaContext18();
       const result = await calculateHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -195941,22 +194990,22 @@ function registerRefundPolicyEngineEndpoints(app3) {
     }
   });
   app3.get("/admin/refund-rules", async (c) => {
-    const event = createApiGatewayEvent17(c.req);
+    const event = createApiGatewayEvent16(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context = createLambdaContext19();
+    const context = createLambdaContext18();
     const result = await getRulesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/refund-rules", async (c) => {
-    const event = createApiGatewayEvent17(c.req);
-    const context = createLambdaContext19();
+    const event = createApiGatewayEvent16(c.req);
+    const context = createLambdaContext18();
     const result = await createRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/refund-rules/:ruleId", async (c) => {
-    const event = createApiGatewayEvent17(c.req);
+    const event = createApiGatewayEvent16(c.req);
     event.pathParameters = { ruleId: c.req.param("ruleId") };
-    const context = createLambdaContext19();
+    const context = createLambdaContext18();
     const result = await updateRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -196069,7 +195118,7 @@ function registerRefundPolicyEngineEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent17(req) {
+function createApiGatewayEvent16(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -196082,7 +195131,7 @@ function createApiGatewayEvent17(req) {
     }
   };
 }
-function createLambdaContext19() {
+function createLambdaContext18() {
   return {
     requestId: (0, import_crypto33.randomUUID)(),
     functionName: "refund-policy-engine",
@@ -196556,20 +195605,20 @@ function registerAdminGovernanceEnhancedEndpoints(app3) {
   const updateBannerHandler = new UpdateBannerHandler();
   const deleteBannerHandler = new DeleteBannerHandler();
   app3.post("/admin/capabilities/refresh", async (c) => {
-    const event = createApiGatewayEvent18(c.req);
-    const context = createLambdaContext20();
+    const event = createApiGatewayEvent17(c.req);
+    const context = createLambdaContext19();
     const result = await refreshCapabilitiesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/service-catalog/sync", async (c) => {
-    const event = createApiGatewayEvent18(c.req);
-    const context = createLambdaContext20();
+    const event = createApiGatewayEvent17(c.req);
+    const context = createLambdaContext19();
     const result = await syncCatalogHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/tiers/apply-commissions", async (c) => {
-    const event = createApiGatewayEvent18(c.req);
-    const context = createLambdaContext20();
+    const event = createApiGatewayEvent17(c.req);
+    const context = createLambdaContext19();
     const result = await applyTierHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -196610,9 +195659,9 @@ function registerAdminGovernanceEnhancedEndpoints(app3) {
   });
   app3.get("/admin/banners", async (c) => {
     try {
-      const event = createApiGatewayEvent18(c.req);
+      const event = createApiGatewayEvent17(c.req);
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context = createLambdaContext20();
+      const context = createLambdaContext19();
       const result = await getBannersHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -196625,25 +195674,25 @@ function registerAdminGovernanceEnhancedEndpoints(app3) {
   });
   app3.post("/admin/banners", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent18(c.req);
+    const event = createApiGatewayEvent17(c.req);
     event.body = JSON.stringify(body);
-    const context = createLambdaContext20();
+    const context = createLambdaContext19();
     const result = await createBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/banners/:id", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent18(c.req);
+    const event = createApiGatewayEvent17(c.req);
     event.body = JSON.stringify(body);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext20();
+    const context = createLambdaContext19();
     const result = await updateBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/admin/banners/:id", async (c) => {
-    const event = createApiGatewayEvent18(c.req);
+    const event = createApiGatewayEvent17(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext20();
+    const context = createLambdaContext19();
     const result = await deleteBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -196806,7 +195855,7 @@ function registerAdminGovernanceEnhancedEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent18(req) {
+function createApiGatewayEvent17(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -196819,7 +195868,7 @@ function createApiGatewayEvent18(req) {
     }
   };
 }
-function createLambdaContext20() {
+function createLambdaContext19() {
   return {
     requestId: (0, import_crypto34.randomUUID)(),
     functionName: "admin-governance-enhanced",
@@ -197533,176 +196582,176 @@ var SendRenewalNoticeHandler = class extends BaseHandler {
 function registerAdminAdvancedEndpoints(app3) {
   app3.get("/admin/catalog/vendor-types", async (c) => {
     const handler2 = new GetVendorTypesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/catalog/service-styles", async (c) => {
     const handler2 = new GetServiceStylesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/catalog/services/:serviceId/regional-availability", async (c) => {
     const handler2 = new GetRegionalAvailabilityHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/catalog/services/:serviceId/regional-availability", async (c) => {
     const handler2 = new UpdateRegionalAvailabilityHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/catalog/services/:serviceId/regional-pricing", async (c) => {
     const handler2 = new GetRegionalPricingHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/catalog/services/:serviceId/regional-pricing", async (c) => {
     const handler2 = new UpdateRegionalPricingHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/catalog/regional-packages", async (c) => {
     const handler2 = new GetRegionalPackagesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/regions/:regionId/packages", async (c) => {
     const handler2 = new CreateRegionalPackageHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { regionId: c.req.param("regionId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/platform/settings", async (c) => {
     const handler2 = new GetPlatformSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/platform/settings", async (c) => {
     const handler2 = new UpdatePlatformSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/regions/:regionId/catalog", async (c) => {
     const handler2 = new GetRegionalCatalogHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { regionId: c.req.param("regionId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/integrated-services", async (c) => {
     const handler2 = new GetIntegratedServicesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/integrated-services", async (c) => {
     const handler2 = new CreateIntegratedServiceHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/integrated-services/:id/status", async (c) => {
     const handler2 = new UpdateIntegratedServiceStatusHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/problem-category-mappings", async (c) => {
     const handler2 = new GetProblemCategoryMappingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/problem-category-mappings", async (c) => {
     const handler2 = new CreateProblemCategoryMappingHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rescheduling-policies", async (c) => {
     const handler2 = new GetReschedulingPoliciesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/rescheduling-policies", async (c) => {
     const handler2 = new CreateReschedulingPolicyHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rbac/stats", async (c) => {
     const handler2 = new GetRBACStatsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rbac/roles", async (c) => {
     const handler2 = new GetRolesHandler2();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rbac/users", async (c) => {
     const handler2 = new GetRBACUsersHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rbac/permissions", async (c) => {
     const handler2 = new GetPermissionsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rbac/policies", async (c) => {
     const handler2 = new GetPoliciesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/roles", async (c) => {
     const handler2 = new CreateRoleHandler2();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -197746,208 +196795,208 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.delete("/admin/rbac/roles/:roleId", async (c) => {
     const handler2 = new DeleteRoleHandler2();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/role-migrations", async (c) => {
     const handler2 = new GetRoleMigrationsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/role-migrations", async (c) => {
     const handler2 = new CreateRoleMigrationHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendor-settings", async (c) => {
     const handler2 = new GetVendorSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/vendor-settings", async (c) => {
     const handler2 = new UpdateVendorSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/enterprise-settings", async (c) => {
     const handler2 = new GetEnterpriseSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/enterprise-settings", async (c) => {
     const handler2 = new UpdateEnterpriseSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/support/tickets", async (c) => {
     const handler2 = new GetSupportTicketsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/support/tickets", async (c) => {
     const handler2 = new CreateSupportTicketHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/support/vendor-requests", async (c) => {
     const handler2 = new GetVendorSupportRequestsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/operations/stats", async (c) => {
     const handler2 = new GetOperationsStatsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/content", async (c) => {
     const handler2 = new GetContentItemsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/content", async (c) => {
     const handler2 = new CreateContentItemHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/notification-templates", async (c) => {
     const handler2 = new GetNotificationTemplatesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/notification-templates", async (c) => {
     const handler2 = new CreateNotificationTemplateHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/payment-disputes", async (c) => {
     const handler2 = new GetPaymentDisputesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/payment-disputes/:id/resolve", async (c) => {
     const handler2 = new ResolvePaymentDisputeHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/rate-changes", async (c) => {
     const handler2 = new GetRateChangesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/rate-changes/:id/approve", async (c) => {
     const handler2 = new ApproveRateChangeHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/rate-changes/:id/reject", async (c) => {
     const handler2 = new RejectRateChangeHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/transactions/monitoring", async (c) => {
     const handler2 = new GetTransactionMonitoringHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/applications/export", async (c) => {
     const handler2 = new ExportApplicationsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/settings/booking-rules", async (c) => {
     const handler2 = new GetBookingRulesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/settings/booking-rules", async (c) => {
     const handler2 = new CreateBookingRuleHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/settings/schedule", async (c) => {
     const handler2 = new GetScheduleSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/settings/schedule", async (c) => {
     const handler2 = new UpdateScheduleSettingsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/onboarding/steps", async (c) => {
     const handler2 = new GetOnboardingStepsHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/onboarding/steps", async (c) => {
     const handler2 = new CreateOnboardingStepHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/pets/intelligence", async (c) => {
     const handler2 = new GetPetIntelligenceHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -198354,32 +197403,32 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/profile/:adminId", async (c) => {
     const handler2 = new GetAdminProfileHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { adminId: c.req.param("adminId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/profile/:adminId", async (c) => {
     const handler2 = new UpdateAdminProfileHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { adminId: c.req.param("adminId") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/renewal-notices", async (c) => {
     const handler2 = new GetRenewalNoticesHandler();
-    const event = createApiGatewayEvent19(c.req);
-    const context = createLambdaContext21();
+    const event = createApiGatewayEvent18(c.req);
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/renewal-notices/:id/send", async (c) => {
     const handler2 = new SendRenewalNoticeHandler();
-    const event = createApiGatewayEvent19(c.req);
+    const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext21();
+    const context = createLambdaContext20();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -205075,7 +204124,7 @@ function registerAdminAdvancedEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent19(req) {
+function createApiGatewayEvent18(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -205088,7 +204137,7 @@ function createApiGatewayEvent19(req) {
     }
   };
 }
-function createLambdaContext21() {
+function createLambdaContext20() {
   return {
     requestId: (0, import_crypto35.randomUUID)(),
     functionName: "admin-advanced-handler",
@@ -205652,98 +204701,98 @@ var GetStaffStatsHandler = class extends BaseHandler {
 function registerVendorSetupEndpoints(app3) {
   app3.get("/vendor/:vendorId/setup-status", async (c) => {
     const handler2 = new GetVendorSetupStatusHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/:vendorId/setup/complete", async (c) => {
     const handler2 = new CompleteVendorSetupHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/availability", async (c) => {
     const handler2 = new GetVendorAvailabilityHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/vendor/:vendorId/availability", async (c) => {
     const handler2 = new UpdateVendorAvailabilityHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/services/available", async (c) => {
     const handler2 = new GetAvailableServicesHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/:vendorId/services/select", async (c) => {
     const handler2 = new SelectVendorServicesHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/services/config", async (c) => {
     const handler2 = new GetServiceConfigsHandler();
-    const event = createApiGatewayEvent20(c.req);
-    const context = createLambdaContext22();
+    const event = createApiGatewayEvent19(c.req);
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/services/configure", async (c) => {
     const handler2 = new ConfigureVendorServicesHandler();
-    const event = createApiGatewayEvent20(c.req);
-    const context = createLambdaContext22();
+    const event = createApiGatewayEvent19(c.req);
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/status/:vendorId", async (c) => {
     const handler2 = new GetVendorStatusHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/solo-info", async (c) => {
     const handler2 = new GetSoloProviderInfoHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/center/stats", async (c) => {
     const handler2 = new GetCenterStatsHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/staff/:staffId/stats", async (c) => {
     const handler2 = new GetStaffStatsHandler();
-    const event = createApiGatewayEvent20(c.req);
+    const event = createApiGatewayEvent19(c.req);
     event.pathParameters = {
       vendorId: c.req.param("vendorId"),
       staffId: c.req.param("staffId")
     };
-    const context = createLambdaContext22();
+    const context = createLambdaContext21();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -206081,7 +205130,7 @@ function registerVendorSetupEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent20(req) {
+function createApiGatewayEvent19(req) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -206094,7 +205143,7 @@ function createApiGatewayEvent20(req) {
     }
   };
 }
-function createLambdaContext22() {
+function createLambdaContext21() {
   return {
     requestId: (0, import_crypto36.randomUUID)(),
     functionName: "vendor-setup-handler",
@@ -206780,59 +205829,59 @@ function registerCustomerAppointmentsEndpoints(app3) {
   const rescheduleHandler = new RescheduleAppointmentHandler();
   const cancelHandler = new CancelAppointmentHandler();
   app3.get("/customer/appointments", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
-    const context = createLambdaContext23();
+    const event = createApiGatewayEvent20(c.req);
+    const context = createLambdaContext22();
     const result = await getAppointmentsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/customer/appointments/:id", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
-    const context = createLambdaContext23();
+    const event = createApiGatewayEvent20(c.req);
+    const context = createLambdaContext22();
     const result = await getDetailsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/customer/appointments/:id/reschedule", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
-    const context = createLambdaContext23();
+    const event = createApiGatewayEvent20(c.req);
+    const context = createLambdaContext22();
     const result = await rescheduleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/customer/appointments/:id/cancel", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
-    const context = createLambdaContext23();
+    const event = createApiGatewayEvent20(c.req);
+    const context = createLambdaContext22();
     const result = await cancelHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/appointment/:appointmentId", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
+    const event = createApiGatewayEvent20(c.req);
     event.pathParameters = { id: c.req.param("appointmentId") };
-    const context = createLambdaContext23();
+    const context = createLambdaContext22();
     const result = await getDetailsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/appointment/:appointmentId/cancel", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
+    const event = createApiGatewayEvent20(c.req);
     event.pathParameters = { id: c.req.param("appointmentId") };
-    const context = createLambdaContext23();
+    const context = createLambdaContext22();
     const result = await cancelHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/appointment/:appointmentId/reschedule", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
+    const event = createApiGatewayEvent20(c.req);
     event.pathParameters = { id: c.req.param("appointmentId") };
-    const context = createLambdaContext23();
+    const context = createLambdaContext22();
     const result = await rescheduleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/appointment/customer/:customerId", async (c) => {
-    const event = createApiGatewayEvent21(c.req);
+    const event = createApiGatewayEvent20(c.req);
     event.queryStringParameters = { status: c.req.query("status") || "all" };
-    const context = createLambdaContext23();
+    const context = createLambdaContext22();
     const result = await getAppointmentsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent21(req) {
+function createApiGatewayEvent20(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -206847,7 +205896,7 @@ function createApiGatewayEvent21(req) {
     }
   };
 }
-function createLambdaContext23() {
+function createLambdaContext22() {
   return {};
 }
 
@@ -207359,25 +206408,25 @@ function registerCustomerOrdersEndpoints(app3) {
     }
   });
   app3.get("/customer/orders", async (c) => {
-    const event = createApiGatewayEvent22(c.req);
-    const context = createLambdaContext24();
+    const event = createApiGatewayEvent21(c.req);
+    const context = createLambdaContext23();
     const result = await getOrdersHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/customer/orders/:id", async (c) => {
-    const event = createApiGatewayEvent22(c.req);
-    const context = createLambdaContext24();
+    const event = createApiGatewayEvent21(c.req);
+    const context = createLambdaContext23();
     const result = await getDetailsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/customer/orders/:id/invoice", async (c) => {
-    const event = createApiGatewayEvent22(c.req);
-    const context = createLambdaContext24();
+    const event = createApiGatewayEvent21(c.req);
+    const context = createLambdaContext23();
     const result = await getInvoiceHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent22(req) {
+function createApiGatewayEvent21(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -207392,7 +206441,7 @@ function createApiGatewayEvent22(req) {
     }
   };
 }
-function createLambdaContext24() {
+function createLambdaContext23() {
   return {};
 }
 
@@ -208100,29 +207149,29 @@ function registerVendorAnalyticsEndpoints(app3) {
   const productHandler = new GetProductPerformanceHandler();
   const staffPerformanceHandler = new GetStaffPerformanceHandler();
   app3.get("/vendor/analytics/dashboard", async (c) => {
-    const event = createApiGatewayEvent23(c.req);
-    const context = createLambdaContext25();
+    const event = createApiGatewayEvent22(c.req);
+    const context = createLambdaContext24();
     const result = await dashboardHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/analytics/revenue", async (c) => {
-    const event = createApiGatewayEvent23(c.req);
-    const context = createLambdaContext25();
+    const event = createApiGatewayEvent22(c.req);
+    const context = createLambdaContext24();
     const result = await revenueHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/analytics/bookings", async (c) => {
-    const event = createApiGatewayEvent23(c.req);
-    const context = createLambdaContext25();
+    const event = createApiGatewayEvent22(c.req);
+    const context = createLambdaContext24();
     const result = await bookingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/analytics/sales", async (c) => {
     try {
-      const event = createApiGatewayEvent23(c.req);
+      const event = createApiGatewayEvent22(c.req);
       event.pathParameters = { vendorId: c.req.param("vendorId") };
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context = createLambdaContext25();
+      const context = createLambdaContext24();
       const result = await salesHandler.execute(event, context);
       const body = result.body ? JSON.parse(result.body) : result;
       const statusCode = result.statusCode || 200;
@@ -208150,27 +207199,27 @@ function registerVendorAnalyticsEndpoints(app3) {
     }
   });
   app3.get("/vendor/:vendorId/analytics/products", async (c) => {
-    const event = createApiGatewayEvent23(c.req);
+    const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context = createLambdaContext25();
+    const context = createLambdaContext24();
     const result = await productHandler.execute(event, context);
     const body = result.body ? JSON.parse(result.body) : result;
     const statusCode = result.statusCode || 200;
     return c.json(body, statusCode);
   });
   app3.get("/vendor/:vendorId/staff-performance", async (c) => {
-    const event = createApiGatewayEvent23(c.req);
+    const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context = createLambdaContext25();
+    const context = createLambdaContext24();
     const result = await staffPerformanceHandler.execute(event, context);
     const body = result.body ? JSON.parse(result.body) : result;
     const statusCode = result.statusCode || 200;
     return c.json(body, statusCode);
   });
 }
-function createApiGatewayEvent23(req) {
+function createApiGatewayEvent22(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -208185,7 +207234,7 @@ function createApiGatewayEvent23(req) {
     }
   };
 }
-function createLambdaContext25() {
+function createLambdaContext24() {
   return {};
 }
 
@@ -208404,31 +207453,31 @@ function registerPetCafeEndpoints(app3) {
   const createTableHandler = new CreateTableHandler();
   const updateTableHandler = new UpdateTableHandler();
   app3.get("/vendor/:id/tables", async (c) => {
-    const event = createApiGatewayEvent24(c.req);
-    const context = createLambdaContext26();
+    const event = createApiGatewayEvent23(c.req);
+    const context = createLambdaContext25();
     const result = await getTablesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:id/tables/availability", async (c) => {
-    const event = createApiGatewayEvent24(c.req);
-    const context = createLambdaContext26();
+    const event = createApiGatewayEvent23(c.req);
+    const context = createLambdaContext25();
     const result = await getAvailabilityHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/:id/tables", async (c) => {
-    const event = createApiGatewayEvent24(c.req);
-    const context = createLambdaContext26();
+    const event = createApiGatewayEvent23(c.req);
+    const context = createLambdaContext25();
     const result = await createTableHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/vendor/:id/tables/:tableId", async (c) => {
-    const event = createApiGatewayEvent24(c.req);
-    const context = createLambdaContext26();
+    const event = createApiGatewayEvent23(c.req);
+    const context = createLambdaContext25();
     const result = await updateTableHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent24(req) {
+function createApiGatewayEvent23(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -208443,7 +207492,7 @@ function createApiGatewayEvent24(req) {
     }
   };
 }
-function createLambdaContext26() {
+function createLambdaContext25() {
   return {};
 }
 
@@ -208587,19 +207636,19 @@ function registerVendorRadarEndpoints(app3) {
   const getHandler = new GetRadarDistanceHandler();
   const updateHandler = new UpdateRadarDistanceHandler();
   app3.get("/vendor/:id/radar-distance", async (c) => {
-    const event = createApiGatewayEvent25(c.req);
-    const context = createLambdaContext27();
+    const event = createApiGatewayEvent24(c.req);
+    const context = createLambdaContext26();
     const result = await getHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/vendor/:id/radar-distance", async (c) => {
-    const event = createApiGatewayEvent25(c.req);
-    const context = createLambdaContext27();
+    const event = createApiGatewayEvent24(c.req);
+    const context = createLambdaContext26();
     const result = await updateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent25(req) {
+function createApiGatewayEvent24(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -208614,7 +207663,7 @@ function createApiGatewayEvent25(req) {
     }
   };
 }
-function createLambdaContext27() {
+function createLambdaContext26() {
   return {};
 }
 
@@ -208971,31 +208020,31 @@ function registerPetResortEndpoints(app3) {
     }
   });
   app3.get("/vendor/:id/rooms", async (c) => {
-    const event = createApiGatewayEvent26(c.req);
-    const context = createLambdaContext28();
+    const event = createApiGatewayEvent25(c.req);
+    const context = createLambdaContext27();
     const result = await getRoomsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:id/rooms/availability", async (c) => {
-    const event = createApiGatewayEvent26(c.req);
-    const context = createLambdaContext28();
+    const event = createApiGatewayEvent25(c.req);
+    const context = createLambdaContext27();
     const result = await getAvailabilityHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/:id/rooms", async (c) => {
-    const event = createApiGatewayEvent26(c.req);
-    const context = createLambdaContext28();
+    const event = createApiGatewayEvent25(c.req);
+    const context = createLambdaContext27();
     const result = await createRoomHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/vendor/:id/rooms/:roomId", async (c) => {
-    const event = createApiGatewayEvent26(c.req);
-    const context = createLambdaContext28();
+    const event = createApiGatewayEvent25(c.req);
+    const context = createLambdaContext27();
     const result = await updateRoomHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent26(req) {
+function createApiGatewayEvent25(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -209010,7 +208059,7 @@ function createApiGatewayEvent26(req) {
     }
   };
 }
-function createLambdaContext28() {
+function createLambdaContext27() {
   return {};
 }
 function calculateDistance4(lat1, lon1, lat2, lon2) {
@@ -209363,37 +208412,37 @@ function registerPetHolidaysEndpoints(app3) {
   const createPackageHandler = new CreateHolidayPackageHandler();
   const bookHolidayHandler = new BookHolidayHandler();
   app3.get("/holidays/packages", async (c) => {
-    const event = createApiGatewayEvent27(c.req);
-    const context = createLambdaContext29();
+    const event = createApiGatewayEvent26(c.req);
+    const context = createLambdaContext28();
     const result = await getPackagesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/holidays/packages/:id", async (c) => {
-    const event = createApiGatewayEvent27(c.req);
-    const context = createLambdaContext29();
+    const event = createApiGatewayEvent26(c.req);
+    const context = createLambdaContext28();
     const result = await getDetailsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:id/holiday-packages", async (c) => {
-    const event = createApiGatewayEvent27(c.req);
-    const context = createLambdaContext29();
+    const event = createApiGatewayEvent26(c.req);
+    const context = createLambdaContext28();
     const result = await getVendorPackagesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/:id/holiday-packages", async (c) => {
-    const event = createApiGatewayEvent27(c.req);
-    const context = createLambdaContext29();
+    const event = createApiGatewayEvent26(c.req);
+    const context = createLambdaContext28();
     const result = await createPackageHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/holidays/bookings", async (c) => {
-    const event = createApiGatewayEvent27(c.req);
-    const context = createLambdaContext29();
+    const event = createApiGatewayEvent26(c.req);
+    const context = createLambdaContext28();
     const result = await bookHolidayHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent27(req) {
+function createApiGatewayEvent26(req) {
   return {
     pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
     queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
@@ -209408,7 +208457,7 @@ function createApiGatewayEvent27(req) {
     }
   };
 }
-function createLambdaContext29() {
+function createLambdaContext28() {
   return {};
 }
 
@@ -209816,7 +208865,7 @@ function registerTaxManagementEndpoints(app3) {
   const updateTaxRuleHandler = new UpdateTaxRuleHandler();
   const deleteTaxRuleHandler = new DeleteTaxRuleHandler();
   app3.get("/admin/tax-rules", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     try {
       const query12 = c.req.query();
       event.queryStringParameters = query12 ? Object.fromEntries(Object.entries(query12)) : {};
@@ -209824,38 +208873,38 @@ function registerTaxManagementEndpoints(app3) {
       console.warn("[TAX-MGMT] Error extracting query params, using empty object:", error);
       event.queryStringParameters = {};
     }
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await getTaxRulesHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.get("/admin/tax-rules/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await getTaxRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.post("/admin/tax-rules", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
-    const context = createLambdaContext30();
+    const event = createApiGatewayEvent27(c.req);
+    const context = createLambdaContext29();
     const result = await createTaxRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.put("/admin/tax-rules/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await updateTaxRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.delete("/admin/tax-rules/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await deleteTaxRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
@@ -209865,7 +208914,7 @@ function registerTaxManagementEndpoints(app3) {
   const updateHSNCodeHandler = new UpdateHSNCodeHandler();
   const deleteHSNCodeHandler = new DeleteHSNCodeHandler();
   app3.get("/admin/hsn-codes", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     try {
       const query12 = c.req.query();
       event.queryStringParameters = query12 ? Object.fromEntries(Object.entries(query12)) : {};
@@ -209873,30 +208922,30 @@ function registerTaxManagementEndpoints(app3) {
       console.warn("[TAX-MGMT] Error extracting query params, using empty object:", error);
       event.queryStringParameters = {};
     }
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await getHSNCodesHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.post("/admin/hsn-codes", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
-    const context = createLambdaContext30();
+    const event = createApiGatewayEvent27(c.req);
+    const context = createLambdaContext29();
     const result = await createHSNCodeHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.put("/admin/hsn-codes/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await updateHSNCodeHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.delete("/admin/hsn-codes/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await deleteHSNCodeHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
@@ -209906,32 +208955,32 @@ function registerTaxManagementEndpoints(app3) {
   const updateTaxCategoryHandler = new UpdateTaxCategoryHandler();
   const deleteTaxCategoryHandler = new DeleteTaxCategoryHandler();
   app3.get("/admin/tax-categories", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await getTaxCategoriesHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.post("/admin/tax-categories", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
-    const context = createLambdaContext30();
+    const event = createApiGatewayEvent27(c.req);
+    const context = createLambdaContext29();
     const result = await createTaxCategoryHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.put("/admin/tax-categories/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await updateTaxCategoryHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.delete("/admin/tax-categories/:id", async (c) => {
-    const event = createApiGatewayEvent28(c.req);
+    const event = createApiGatewayEvent27(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext30();
+    const context = createLambdaContext29();
     const result = await deleteTaxCategoryHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
@@ -210146,7 +209195,7 @@ function registerTaxManagementEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent28(req) {
+function createApiGatewayEvent27(req) {
   const headers = req?.headers != null && typeof req.headers.entries === "function" ? Object.fromEntries(req.headers.entries()) : req?.headers != null && typeof req.headers === "object" && !Array.isArray(req.headers) ? req.headers : {};
   return {
     httpMethod: req?.method ?? "GET",
@@ -210158,7 +209207,7 @@ function createApiGatewayEvent28(req) {
     isBase64Encoded: false
   };
 }
-function createLambdaContext30() {
+function createLambdaContext29() {
   return {
     functionName: "tax-management",
     functionVersion: "$LATEST",
@@ -210499,7 +209548,7 @@ var DeleteLogisticsRuleHandler = class extends BaseHandlerEnhanced {
     }
   }
 };
-function createApiGatewayEvent29(req) {
+function createApiGatewayEvent28(req) {
   return {
     httpMethod: req.method,
     path: req.url.split("?")[0],
@@ -210510,7 +209559,7 @@ function createApiGatewayEvent29(req) {
     isBase64Encoded: false
   };
 }
-function createLambdaContext31() {
+function createLambdaContext30() {
   return {
     awsRequestId: (0, import_crypto38.randomUUID)(),
     functionName: "logistics-management",
@@ -210536,83 +209585,83 @@ function registerLogisticsManagementEndpoints(app3) {
     return { body, statusCode };
   };
   app3.get("/admin/logistics-partners", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await getLogisticsPartnersHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.get("/admin/logistics-partners/:id", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await getLogisticsPartnerHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.post("/admin/logistics-partners", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await createLogisticsPartnerHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.put("/admin/logistics-partners/:id", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await updateLogisticsPartnerHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.delete("/admin/logistics-partners/:id", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await deleteLogisticsPartnerHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.get("/admin/logistics-rules", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await getLogisticsRulesHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.get("/admin/logistics-rules/:id", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await getLogisticsRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.post("/admin/logistics-rules", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await createLogisticsRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.put("/admin/logistics-rules/:id", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await updateLogisticsRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
   });
   app3.delete("/admin/logistics-rules/:id", async (c) => {
-    const event = createApiGatewayEvent29(c.req);
+    const event = createApiGatewayEvent28(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext31();
+    const context = createLambdaContext30();
     const result = await deleteLogisticsRuleHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
     return c.json(body, statusCode);
@@ -210957,7 +210006,7 @@ var DeletePaymentGatewayHandler = class extends BaseHandler {
     }
   }
 };
-function createApiGatewayEvent30(req) {
+function createApiGatewayEvent29(req) {
   return {
     httpMethod: req.method,
     path: req.url.split("?")[0],
@@ -210968,7 +210017,7 @@ function createApiGatewayEvent30(req) {
     isBase64Encoded: false
   };
 }
-function createLambdaContext32() {
+function createLambdaContext31() {
   return {
     awsRequestId: (0, import_crypto39.randomUUID)(),
     functionName: "payment-gateway-management",
@@ -210986,9 +210035,9 @@ function registerPaymentGatewayManagementEndpoints(app3) {
   app3.get("/admin/payment-gateways", async (c) => {
     try {
       console.log("[Payment Gateways] Route handler called, path:", c.req.path);
-      const event = createApiGatewayEvent30(c.req);
+      const event = createApiGatewayEvent29(c.req);
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context = createLambdaContext32();
+      const context = createLambdaContext31();
       console.log("[Payment Gateways] Executing handler");
       const result = await Promise.resolve(getPaymentGatewaysHandler.execute(event, context)).catch((err) => {
         console.error("[Payment Gateways] Handler execution .catch() - error:", err?.message, "type:", typeof err);
@@ -211034,31 +210083,31 @@ function registerPaymentGatewayManagementEndpoints(app3) {
     }
   });
   app3.get("/admin/payment-gateways/:id", async (c) => {
-    const event = createApiGatewayEvent30(c.req);
+    const event = createApiGatewayEvent29(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext32();
+    const context = createLambdaContext31();
     const result = await getPaymentGatewayHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/payment-gateways", async (c) => {
-    const event = createApiGatewayEvent30(c.req);
+    const event = createApiGatewayEvent29(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext32();
+    const context = createLambdaContext31();
     const result = await createPaymentGatewayHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/payment-gateways/:id", async (c) => {
-    const event = createApiGatewayEvent30(c.req);
+    const event = createApiGatewayEvent29(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext32();
+    const context = createLambdaContext31();
     const result = await updatePaymentGatewayHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/admin/payment-gateways/:id", async (c) => {
-    const event = createApiGatewayEvent30(c.req);
+    const event = createApiGatewayEvent29(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext32();
+    const context = createLambdaContext31();
     const result = await deletePaymentGatewayHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -211281,7 +210330,7 @@ var DeleteLoyaltyActionRuleHandler = class extends BaseHandler {
     }
   }
 };
-function createApiGatewayEvent31(req) {
+function createApiGatewayEvent30(req) {
   const headers = {};
   if (req.headers && req.headers.entries) {
     try {
@@ -211304,7 +210353,7 @@ function createApiGatewayEvent31(req) {
     isBase64Encoded: false
   };
 }
-function createLambdaContext33() {
+function createLambdaContext32() {
   return {
     functionName: "loyalty-action-rules-management",
     functionVersion: "$LATEST",
@@ -211318,43 +210367,43 @@ function registerLoyaltyActionRulesManagementEndpoints(app3) {
   const updateRuleHandler = new UpdateLoyaltyActionRuleHandler();
   const deleteRuleHandler = new DeleteLoyaltyActionRuleHandler();
   app3.get("/admin/loyalty-action-rules", async (c) => {
-    const event = createApiGatewayEvent31(c.req);
+    const event = createApiGatewayEvent30(c.req);
     try {
       const query12 = c.req.query();
       event.queryStringParameters = query12 ? Object.fromEntries(Object.entries(query12)) : {};
     } catch (e) {
       event.queryStringParameters = {};
     }
-    const context = createLambdaContext33();
+    const context = createLambdaContext32();
     const result = await getRulesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/loyalty-action-rules/:id", async (c) => {
-    const event = createApiGatewayEvent31(c.req);
+    const event = createApiGatewayEvent30(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext33();
+    const context = createLambdaContext32();
     const result = await getRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/loyalty-action-rules", async (c) => {
-    const event = createApiGatewayEvent31(c.req);
+    const event = createApiGatewayEvent30(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext33();
+    const context = createLambdaContext32();
     const result = await createRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/loyalty-action-rules/:id", async (c) => {
-    const event = createApiGatewayEvent31(c.req);
+    const event = createApiGatewayEvent30(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext33();
+    const context = createLambdaContext32();
     const result = await updateRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/admin/loyalty-action-rules/:id", async (c) => {
-    const event = createApiGatewayEvent31(c.req);
+    const event = createApiGatewayEvent30(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext33();
+    const context = createLambdaContext32();
     const result = await deleteRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -211612,7 +210661,7 @@ var RecalculateCustomerSegmentsHandler = class extends BaseHandler {
     }
   }
 };
-function createApiGatewayEvent32(req) {
+function createApiGatewayEvent31(req) {
   const headers = {};
   if (req.headers && req.headers.entries) {
     try {
@@ -211635,7 +210684,7 @@ function createApiGatewayEvent32(req) {
     isBase64Encoded: false
   };
 }
-function createLambdaContext34() {
+function createLambdaContext33() {
   return {
     functionName: "loyalty-segments-management",
     functionVersion: "$LATEST",
@@ -211651,57 +210700,57 @@ function registerLoyaltySegmentsManagementEndpoints(app3) {
   const getCustomerSegmentsHandler = new GetCustomerSegmentsHandler();
   const recalculateCustomerSegmentsHandler = new RecalculateCustomerSegmentsHandler();
   app3.get("/admin/loyalty-segments", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     try {
       const query12 = c.req.query();
       event.queryStringParameters = query12 ? Object.fromEntries(Object.entries(query12)) : {};
     } catch (e) {
       event.queryStringParameters = {};
     }
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await getSegmentsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/loyalty-segments/:id", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await getSegmentHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/loyalty-segments", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await createSegmentHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/loyalty-segments/:id", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await updateSegmentHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/admin/loyalty-segments/:id", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await deleteSegmentHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/customers/:customerId/segments", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await getCustomerSegmentsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/customers/:customerId/segments/recalculate", async (c) => {
-    const event = createApiGatewayEvent32(c.req);
+    const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext34();
+    const context = createLambdaContext33();
     const result = await recalculateCustomerSegmentsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -215532,34 +214581,34 @@ function registerLocationSharingEndpoints(app3) {
   const getHandler = new GetSharedLocationHandler();
   app3.post("/location/start-sharing", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent33(c.req, body);
-    const context = createLambdaContext35();
+    const event = createApiGatewayEvent32(c.req, body);
+    const context = createLambdaContext34();
     const result = await startHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/location/update", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent33(c.req, body);
-    const context = createLambdaContext35();
+    const event = createApiGatewayEvent32(c.req, body);
+    const context = createLambdaContext34();
     const result = await updateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/location/stop-sharing", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEvent33(c.req, body);
-    const context = createLambdaContext35();
+    const event = createApiGatewayEvent32(c.req, body);
+    const context = createLambdaContext34();
     const result = await stopHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/location/:bookingId", async (c) => {
-    const event = createApiGatewayEvent33(c.req);
+    const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext35();
+    const context = createLambdaContext34();
     const result = await getHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent33(req, body) {
+function createApiGatewayEvent32(req, body) {
   const headers = {};
   try {
     if (req.raw && req.raw.headers && typeof req.raw.headers.entries === "function") {
@@ -215586,7 +214635,7 @@ function createApiGatewayEvent33(req, body) {
     }
   };
 }
-function createLambdaContext35() {
+function createLambdaContext34() {
   return {
     awsRequestId: `req-${Date.now()}`,
     functionName: "warmpawz-api",
@@ -215727,24 +214776,24 @@ function registerVendorSecurityEndpoints(app3) {
   const disable2FAHandler = new Disable2FAHandler();
   const getSettingsHandler = new GetSecuritySettingsHandler();
   app3.post("/vendor/:vendorId/security/enable-2fa", async (c) => {
-    const event = createApiGatewayEvent34(c.req);
+    const event = createApiGatewayEvent33(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext36();
+    const context = createLambdaContext35();
     const result = await enable2FAHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/:vendorId/security/disable-2fa", async (c) => {
-    const event = createApiGatewayEvent34(c.req);
+    const event = createApiGatewayEvent33(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext36();
+    const context = createLambdaContext35();
     const result = await disable2FAHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/:vendorId/security", async (c) => {
     try {
-      const event = createApiGatewayEvent34(c.req);
+      const event = createApiGatewayEvent33(c.req);
       event.pathParameters = { vendorId: c.req.param("vendorId") };
-      const context = createLambdaContext36();
+      const context = createLambdaContext35();
       const result = await getSettingsHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -215761,7 +214810,7 @@ function registerVendorSecurityEndpoints(app3) {
     }
   });
 }
-function createApiGatewayEvent34(req) {
+function createApiGatewayEvent33(req) {
   const headers = {};
   try {
     if (req.raw && req.raw.headers && typeof req.raw.headers.entries === "function") {
@@ -215788,7 +214837,7 @@ function createApiGatewayEvent34(req) {
     }
   };
 }
-function createLambdaContext36() {
+function createLambdaContext35() {
   return {
     awsRequestId: `req-${Date.now()}`,
     functionName: "warmpawz-api",
@@ -215980,54 +215029,54 @@ function registerVendorDistancePricingEndpoints(app3) {
   const deleteHandler = new DeleteDistancePricingRuleHandler();
   const toggleHandler = new ToggleDistancePricingRuleHandler();
   app3.get("/vendor/distance-pricing/:vendorId", async (c) => {
-    const event = createApiGatewayEvent35(c.req);
+    const event = createApiGatewayEvent34(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext37();
+    const context = createLambdaContext36();
     const result = await getHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/vendor/distance-pricing/:vendorId", async (c) => {
-    const event = createApiGatewayEvent35(c.req);
+    const event = createApiGatewayEvent34(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.body = await c.req.json();
-    const context = createLambdaContext37();
+    const context = createLambdaContext36();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/vendor/distance-pricing/:vendorId/:ruleId", async (c) => {
-    const event = createApiGatewayEvent35(c.req);
+    const event = createApiGatewayEvent34(c.req);
     event.pathParameters = {
       vendorId: c.req.param("vendorId"),
       ruleId: c.req.param("ruleId")
     };
     event.body = await c.req.json();
-    const context = createLambdaContext37();
+    const context = createLambdaContext36();
     const result = await updateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/vendor/distance-pricing/:vendorId/:ruleId", async (c) => {
-    const event = createApiGatewayEvent35(c.req);
+    const event = createApiGatewayEvent34(c.req);
     event.pathParameters = {
       vendorId: c.req.param("vendorId"),
       ruleId: c.req.param("ruleId")
     };
-    const context = createLambdaContext37();
+    const context = createLambdaContext36();
     const result = await deleteHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/vendor/distance-pricing/:vendorId/:ruleId/toggle", async (c) => {
-    const event = createApiGatewayEvent35(c.req);
+    const event = createApiGatewayEvent34(c.req);
     event.pathParameters = {
       vendorId: c.req.param("vendorId"),
       ruleId: c.req.param("ruleId")
     };
     event.body = await c.req.json();
-    const context = createLambdaContext37();
+    const context = createLambdaContext36();
     const result = await toggleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent35(req) {
+function createApiGatewayEvent34(req) {
   return {
     pathParameters: {},
     queryStringParameters: {},
@@ -216036,7 +215085,7 @@ function createApiGatewayEvent35(req) {
     requestContext: {}
   };
 }
-function createLambdaContext37() {
+function createLambdaContext36() {
   return {};
 }
 
@@ -216181,7 +215230,7 @@ function registerSchedulingPolicyEndpoints(app3) {
 init_base_handler();
 init_rds_connection();
 var crypto15 = __toESM(require("crypto"));
-function createApiGatewayEvent36(req) {
+function createApiGatewayEvent35(req) {
   let headers = {};
   try {
     if (req.raw && req.raw.headers && typeof req.raw.headers.entries === "function") {
@@ -216230,7 +215279,7 @@ function createApiGatewayEventWithBody6(req, parsedBody) {
     }
   };
 }
-function createLambdaContext38() {
+function createLambdaContext37() {
   return {
     awsRequestId: `req-${Date.now()}`,
     functionName: "warmpawz-api-handler"
@@ -218858,22 +217907,22 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/analytics/overview", async (c) => {
     const handler2 = new GetAnalyticsOverviewHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/analytics/vendors", async (c) => {
     const handler2 = new GetAnalyticsVendorsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/analytics/customers", async (c) => {
     const handler2 = new GetAnalyticsCustomersHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -218883,7 +217932,7 @@ function registerAdminComprehensiveEndpoints(app3) {
       console.log("[ADMIN AUTH] Request body:", JSON.stringify(requestBody));
       const handler2 = new AdminLoginHandler();
       const event = createApiGatewayEventWithBody6(c.req, requestBody);
-      const context = createLambdaContext38();
+      const context = createLambdaContext37();
       const result = await handler2.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -218894,8 +217943,8 @@ function registerAdminComprehensiveEndpoints(app3) {
   app3.get("/admin/auth/me", async (c) => {
     try {
       const handler2 = new GetCurrentAdminHandler();
-      const event = createApiGatewayEvent36(c.req);
-      const context = createLambdaContext38();
+      const event = createApiGatewayEvent35(c.req);
+      const context = createLambdaContext37();
       const result = await handler2.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -218906,8 +217955,8 @@ function registerAdminComprehensiveEndpoints(app3) {
   app3.get("/me", async (c) => {
     try {
       const handler2 = new GetCurrentAdminHandler();
-      const event = createApiGatewayEvent36(c.req);
-      const context = createLambdaContext38();
+      const event = createApiGatewayEvent35(c.req);
+      const context = createLambdaContext37();
       const result = await handler2.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -218917,8 +217966,8 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.post("/admin/auth/signup", async (c) => {
     const handler2 = new AdminSignupHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219126,44 +218175,44 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/vendors/:vendorId/details", async (c) => {
     const handler2 = new GetVendorDetailsHandler();
-    const event = createApiGatewayEvent36(c.req);
+    const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext38();
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/vendors/:vendorId/deactivate", async (c) => {
     const handler2 = new DeactivateVendorHandler();
-    const event = createApiGatewayEvent36(c.req);
+    const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.body = await c.req.text();
-    const context = createLambdaContext38();
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/vendors/:vendorId/reactivate", async (c) => {
     const handler2 = new ReactivateVendorHandler();
-    const event = createApiGatewayEvent36(c.req);
+    const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.body = await c.req.text();
-    const context = createLambdaContext38();
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendors/:vendorId/activity", async (c) => {
     const handler2 = new GetVendorActivityHistoryHandler();
-    const event = createApiGatewayEvent36(c.req);
+    const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url).searchParams);
-    const context = createLambdaContext38();
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendors/:vendorId/documents", async (c) => {
     const handler2 = new GetVendorDocumentsHandler();
-    const event = createApiGatewayEvent36(c.req);
+    const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext38();
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219196,36 +218245,36 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/vendors/clarification-requests", async (c) => {
     const handler2 = new GetVendorClarificationRequestsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendors/compliance-issues", async (c) => {
     const handler2 = new GetVendorComplianceIssuesHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendors/deactivation-requests", async (c) => {
     const handler2 = new GetVendorDeactivationRequestsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendors/reverification-requests", async (c) => {
     const handler2 = new GetVendorReverificationRequestsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/vendors/create", async (c) => {
     const handler2 = new CreateVendorHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219290,57 +218339,57 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/settlements/stats", async (c) => {
     const handler2 = new GetSettlementStatsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/support/stats", async (c) => {
     const handler2 = new GetSupportStatsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/support/chat-sessions", async (c) => {
     const handler2 = new GetSupportChatSessionsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/support/vendor-tickets", async (c) => {
     const handler2 = new GetVendorTicketsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/transactions", async (c) => {
     const handler2 = new GetTransactionsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/transactions/stats", async (c) => {
     const handler2 = new GetTransactionStatsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/transactions/export", async (c) => {
     const handler2 = new ExportTransactionsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/tiers", async (c) => {
     const handler2 = new GetTiersHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219388,8 +218437,8 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/users", async (c) => {
     const handler2 = new GetUsersHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219423,15 +218472,15 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/vendor-settings-rules", async (c) => {
     const handler2 = new GetVendorSettingsRulesHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/vendor-settings/payment-rules", async (c) => {
     const handler2 = new GetVendorPaymentRulesHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219481,8 +218530,8 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/vendor-settings/refund-tiers", async (c) => {
     const handler2 = new GetVendorRefundTiersHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219583,15 +218632,15 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/tax/flexible/configuration", async (c) => {
     const handler2 = new GetTaxFlexibleConfigurationHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/tax/flexible/rules", async (c) => {
     const handler2 = new GetTaxFlexibleRulesHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -219804,29 +218853,29 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   app3.get("/admin/vendor-roles", async (c) => {
     const handler2 = new GetVendorRolesHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/settings/general", async (c) => {
     const handler2 = new GetGeneralSettingsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/settings/general", async (c) => {
     const handler2 = new UpdateGeneralSettingsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/settings/general", async (c) => {
     const handler2 = new UpdateGeneralSettingsHandler();
-    const event = createApiGatewayEvent36(c.req);
-    const context = createLambdaContext38();
+    const event = createApiGatewayEvent35(c.req);
+    const context = createLambdaContext37();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -220112,6 +219161,178 @@ function registerAdminComprehensiveEndpoints(app3) {
           active_agents: "0"
         }
       });
+    }
+  });
+  app3.post("/admin/run-pending-migrations", async (c) => {
+    const results = [];
+    try {
+      console.log("[ADMIN] Running ALL pending migrations...");
+      try {
+        const tableCheck = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'vendor_referrals'
+          ) as table_exists
+        `);
+        if (tableCheck.rows[0]?.table_exists) {
+          results.push({ migration: "558_vendor_referrals", status: "skipped", message: "Table already exists" });
+        } else {
+          await query(`
+            CREATE TABLE IF NOT EXISTS vendor_referrals (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              referrer_vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+              referred_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL,
+              referred_phone TEXT NOT NULL,
+              referral_code TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'approved', 'expired')),
+              applied_at TIMESTAMPTZ,
+              approved_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ DEFAULT NOW(),
+              updated_at TIMESTAMPTZ DEFAULT NOW(),
+              UNIQUE(referrer_vendor_id, referred_phone)
+            )
+          `);
+          await query(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referrer_vendor_id ON vendor_referrals(referrer_vendor_id)`);
+          await query(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referred_vendor_id ON vendor_referrals(referred_vendor_id)`);
+          await query(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referral_code ON vendor_referrals(referral_code)`);
+          await query(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referred_phone ON vendor_referrals(referred_phone)`);
+          await query(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_status ON vendor_referrals(status)`);
+          results.push({ migration: "558_vendor_referrals", status: "completed", message: "Table and indexes created" });
+        }
+      } catch (err) {
+        results.push({ migration: "558_vendor_referrals", status: "error", message: err.message });
+      }
+      try {
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'availability_configured') THEN
+              ALTER TABLE vendors ADD COLUMN availability_configured BOOLEAN DEFAULT false;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'services_configured') THEN
+              ALTER TABLE vendors ADD COLUMN services_configured BOOLEAN DEFAULT false;
+            END IF;
+          END $$
+        `);
+        await query(`CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON vendors(availability_configured) WHERE availability_configured = false`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`);
+        results.push({ migration: "605_availability_configured", status: "completed", message: "Columns and indexes created/verified" });
+      } catch (err) {
+        results.push({ migration: "605_availability_configured", status: "error", message: err.message });
+      }
+      try {
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') THEN
+              ALTER TABLE vendors ADD COLUMN service_radius NUMERIC(5, 2);
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') THEN
+              ALTER TABLE vendors ADD COLUMN emergency_contact JSONB DEFAULT NULL;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') THEN
+              ALTER TABLE vendors ADD COLUMN max_dogs_per_walk INTEGER;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') THEN
+              ALTER TABLE vendors ADD COLUMN walk_durations TEXT[] DEFAULT ARRAY[]::TEXT[];
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') THEN
+              ALTER TABLE vendors ADD COLUMN other_config JSONB DEFAULT '{}'::jsonb;
+            END IF;
+          END $$
+        `);
+        await query(`CREATE INDEX IF NOT EXISTS idx_vendors_service_radius ON vendors(service_radius) WHERE service_radius IS NOT NULL`);
+        results.push({ migration: "071_vendor_settings_columns", status: "completed", message: "All settings columns verified/created" });
+      } catch (err) {
+        results.push({ migration: "071_vendor_settings_columns", status: "error", message: err.message });
+      }
+      try {
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'setup_completed') THEN
+              ALTER TABLE vendors ADD COLUMN setup_completed BOOLEAN DEFAULT false;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'profile_photo_url') THEN
+              ALTER TABLE vendors ADD COLUMN profile_photo_url TEXT;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'qualifications') THEN
+              ALTER TABLE vendors ADD COLUMN qualifications TEXT;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_area') THEN
+              ALTER TABLE vendors ADD COLUMN service_area TEXT;
+            END IF;
+          END $$
+        `);
+        await query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'description') THEN
+              ALTER TABLE vendors ADD COLUMN description TEXT;
+            END IF;
+          END $$
+        `);
+        results.push({ migration: "528_profile_fields", status: "completed", message: "Profile columns verified/created" });
+      } catch (err) {
+        results.push({ migration: "528_profile_fields", status: "error", message: err.message });
+      }
+      const verifyResult = await query(`
+        SELECT column_name, data_type, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendors'
+        ORDER BY ordinal_position
+      `);
+      const vendorReferralsCheck = await query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables 
+          WHERE table_schema = 'public' AND table_name = 'vendor_referrals'
+        ) as exists
+      `);
+      return c.json({
+        success: true,
+        message: "All migrations completed",
+        results,
+        verification: {
+          vendor_columns: verifyResult.rows.map((r) => r.column_name),
+          vendor_referrals_table_exists: vendorReferralsCheck.rows[0]?.exists || false,
+          total_vendor_columns: verifyResult.rows.length
+        }
+      });
+    } catch (error) {
+      console.error("[ADMIN] Migrations failed:", error);
+      return c.json({
+        success: false,
+        error: error.message,
+        results
+      }, 500);
     }
   });
 }
@@ -225628,27 +224849,22 @@ async function createSettlementRecord(orderId, orderType) {
     const vendors = await query(
       `SELECT v.*, 
               v.commission_rate as vendor_commission_rate,
-              ct.default_commission_rate as tier_default_rate,
-              ct.pharmacy_commission_rate as tier_pharmacy_rate,
-              ct.ecommerce_commission_rate as tier_ecommerce_rate,
-              ct.tier_name,
-              ct.tier_level
+              vt.commission_rate as tier_commission_rate,
+              vt.tier_name
        FROM vendors v 
-       LEFT JOIN commission_tiers ct ON v.commission_tier_id = ct.id
+       LEFT JOIN vendor_tiers vt ON vt.is_active = true 
+         AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
        WHERE v.id = $1`,
       [vendorId]
     );
     const vendor = vendors.rows[0];
     let commissionRate;
-    if (orderType === "pharmacy" && vendor?.tier_pharmacy_rate) {
-      commissionRate = parseFloat(vendor.tier_pharmacy_rate);
-    } else if (orderType === "meal" && vendor?.tier_ecommerce_rate) {
-      commissionRate = parseFloat(vendor.tier_ecommerce_rate);
-    } else if (vendor?.tier_default_rate) {
-      commissionRate = parseFloat(vendor.tier_default_rate);
-    } else if (vendor?.vendor_commission_rate) {
-      commissionRate = parseFloat(vendor.vendor_commission_rate);
+    if (vendor?.tier_commission_rate != null && !isNaN(Number(vendor.tier_commission_rate))) {
+      commissionRate = Number(vendor.tier_commission_rate);
+    } else if (vendor?.vendor_commission_rate != null && !isNaN(Number(vendor.vendor_commission_rate))) {
+      commissionRate = Number(vendor.vendor_commission_rate);
     } else {
+      console.warn(`\u26A0\uFE0F [PHARMACY-ORDERS] No tier found for vendor ${vendorId}, using default 15%`);
       commissionRate = 15;
     }
     const orderAmount = parseFloat(order.total_amount);
@@ -242434,6 +241650,941 @@ app.get("/public/policies", async (c) => {
 });
 var platform_policies_default = app;
 
+// src/endpoints/Auth/auth-enhanced.ts
+init_sms_service();
+init_rds_connection();
+init_cognito_client();
+var import_auth = __toESM(require_auth());
+init_customer_state();
+init_jwt_generator();
+init_loyalty_rules_init_service();
+init_referral_service();
+init_loyalty_points_service();
+var JIO_LOGIN_OTP_TEMPLATE_ID = "1207177028377787269";
+function normalizePhoneForOtp(phone) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length >= 10) {
+    const last10 = digits.slice(-10);
+    if (/^[6-9]\d{9}$/.test(last10)) return last10;
+  }
+  return digits || phone;
+}
+async function createOtp(phone, code, purpose = "login") {
+  const canonicalPhone = normalizePhoneForOtp(phone);
+  const expiresAt = /* @__PURE__ */ new Date();
+  expiresAt.setMinutes(expiresAt.getMinutes() + 5);
+  await insert("otp_tokens", {
+    phone: canonicalPhone,
+    code,
+    purpose,
+    expires_at: expiresAt,
+    is_used: false
+  });
+}
+async function verifyOtp(phone, code) {
+  const canonicalPhone = normalizePhoneForOtp(phone);
+  const phonesToTry = [canonicalPhone];
+  const alt = phone.replace(/\D/g, "").slice(-10);
+  if (alt && alt !== canonicalPhone) phonesToTry.push(alt);
+  if (phone !== canonicalPhone && phone !== alt) phonesToTry.push(phone);
+  for (const p of phonesToTry) {
+    const records = await select("otp_tokens", {
+      phone: p,
+      code,
+      is_used: false
+    });
+    if (records.length === 0) continue;
+    const record = records[0];
+    if (new Date(record.expires_at) < /* @__PURE__ */ new Date()) return false;
+    await query(
+      "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
+      [record.id]
+    );
+    return true;
+  }
+  return false;
+}
+async function sendSmsViaSns(phone, message2) {
+  const result = await sendSMS({
+    to: phone,
+    message: message2,
+    type: "otp",
+    templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+    senderId: "WARMPZ"
+  });
+  if (!result.success) {
+    console.error("[SMS] SNS send failed");
+  }
+  return result.success === true;
+}
+var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
+  async handle(context) {
+    const body = this.parseBody(context.event);
+    const validationResult = import_auth.SendOtpRequestSchema.safeParse(body);
+    if (!validationResult.success) {
+      return this.error(
+        "Validation failed",
+        400,
+        "VALIDATION_ERROR",
+        { errors: validationResult.error.errors },
+        context.requestId
+      );
+    }
+    const { phone } = validationResult.data;
+    const normalizedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
+    const handlerStartTime = Date.now();
+    try {
+      const isUATMode2 = process.env.UAT_MODE === "true";
+      const otpCode = isUATMode2 ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
+      if (isUATMode2) {
+        console.log(`[AUTH] UAT Mode: Using fixed OTP 123456 for ${phone}`);
+      } else {
+        console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
+      }
+      const otpStoreStartTime = Date.now();
+      try {
+        const createOtpPromise = createOtp(phone, otpCode, body.role || "login");
+        const otpTimeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("OTP storage timeout after 3 seconds")), 3e3);
+        });
+        await Promise.race([createOtpPromise, otpTimeoutPromise]);
+        const otpStoreDuration = Date.now() - otpStoreStartTime;
+        console.log(`[AUTH] OTP stored in ${otpStoreDuration}ms`);
+      } catch (dbError) {
+        const otpStoreDuration = Date.now() - otpStoreStartTime;
+        console.error(`[AUTH] Database error creating OTP after ${otpStoreDuration}ms:`, dbError?.message || dbError);
+        if (!isUATMode2) {
+          throw dbError;
+        }
+        console.warn("[AUTH] UAT Mode: Continuing despite database error - OTP will still work");
+      }
+      if (!isUATMode2) {
+        const message2 = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
+        console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
+        const smsResult = await Promise.race([
+          sendSmsViaSns(normalizedPhone, message2),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("SMS send timeout 2.5s")), 2500))
+        ]).catch((err) => {
+          console.warn("[AUTH] SMS send failed:", err?.message || err);
+          if (err?.Code) console.warn("[AUTH] SNS Code:", err.Code);
+          return false;
+        });
+        if (smsResult) {
+          console.log("[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)");
+        }
+      } else {
+        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
+      }
+      const handlerDuration = Date.now() - handlerStartTime;
+      console.log(`[AUTH] Send OTP handler completed in ${handlerDuration}ms`);
+      return this.success({
+        success: true,
+        data: {
+          message: "OTP sent successfully"
+          // Don't send OTP in response for security
+        },
+        meta: {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          requestId: context.requestId,
+          version: "v1"
+        }
+      }, context.requestId);
+    } catch (error) {
+      console.error("[AUTH] Error sending OTP:", error);
+      console.error("[AUTH] Error stack:", error.stack);
+      return this.error(
+        "Failed to send OTP",
+        500,
+        "INTERNAL_ERROR",
+        {
+          details: error.message,
+          stack: true ? error.stack : void 0
+        },
+        context.requestId
+      );
+    }
+  }
+};
+var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
+  async handle(context) {
+    console.log(`[AUTH] \u{1F4DD} VerifyOtpHandlerEnhanced handle called`);
+    const body = this.parseBody(context.event);
+    const validationResult = import_auth.VerifyOtpRequestSchema.safeParse(body);
+    if (!validationResult.success) {
+      return this.error(
+        "Validation failed",
+        400,
+        "VALIDATION_ERROR",
+        { errors: validationResult.error.errors },
+        context.requestId
+      );
+    }
+    const { phone, otp } = validationResult.data;
+    console.log(`[AUTH] \u{1F4DD} Phone: ${phone}, OTP: ${otp}`);
+    let referralCode = body?.referralCode || body?.pendingReferralCode || void 0;
+    if (!referralCode && context.event?.body) {
+      try {
+        const rawBody = typeof context.event.body === "string" ? JSON.parse(context.event.body) : context.event.body;
+        referralCode = rawBody?.referralCode || rawBody?.pendingReferralCode || void 0;
+      } catch (e) {
+      }
+    }
+    if (!referralCode) {
+      try {
+        const parsedBody = this.parseBody(context.event);
+        referralCode = parsedBody?.referralCode || parsedBody?.pendingReferralCode || void 0;
+      } catch (e) {
+      }
+    }
+    if (referralCode) {
+      console.log(`[AUTH] \u2705 Referral code found: ${referralCode}`);
+    } else {
+      console.log(`[AUTH] \u26A0\uFE0F No referral code found in request`);
+      if (body) {
+        console.log(`[AUTH] \u{1F4DD} Full body: ${JSON.stringify(body).substring(0, 500)}`);
+        console.log(`[AUTH] \u{1F4DD} body.referralCode: ${body?.referralCode || "NOT FOUND"}`);
+        console.log(`[AUTH] \u{1F4DD} body.pendingReferralCode: ${body?.pendingReferralCode || "NOT FOUND"}`);
+      }
+      if (context.event?.body) {
+        const bodyStr = typeof context.event.body === "string" ? context.event.body : JSON.stringify(context.event.body);
+        console.log(`[AUTH] \u{1F4DD} Event body (first 500 chars): ${bodyStr.substring(0, 500)}`);
+        try {
+          const parsed = typeof context.event.body === "string" ? JSON.parse(context.event.body) : context.event.body;
+          console.log(`[AUTH] \u{1F4DD} Parsed event body keys: ${Object.keys(parsed).join(", ")}`);
+          console.log(`[AUTH] \u{1F4DD} Parsed event body.referralCode: ${parsed?.referralCode || "NOT FOUND"}`);
+          console.log(`[AUTH] \u{1F4DD} Parsed event body.pendingReferralCode: ${parsed?.pendingReferralCode || "NOT FOUND"}`);
+        } catch (e) {
+          console.log(`[AUTH] \u{1F4DD} Could not parse event body for referral code check`);
+        }
+      }
+    }
+    const isUATMode2 = process.env.UAT_MODE === "true";
+    try {
+      let isValid = false;
+      if (isUATMode2 && otp === "123456") {
+        isValid = true;
+        Promise.race([
+          (async () => {
+            try {
+              const records = await select("otp_tokens", {
+                phone,
+                is_used: false
+              });
+              if (records.length > 0) {
+                await query(
+                  "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
+                  [records[0].id]
+                );
+              }
+            } catch (e) {
+              console.warn("[AUTH] UAT Mode: Could not mark existing OTP as used:", e);
+            }
+          })(),
+          new Promise((resolve) => setTimeout(resolve, 2e3))
+          // 2 second timeout
+        ]).catch((e) => {
+          console.warn("[AUTH] UAT Mode: OTP cleanup timeout or error:", e);
+        });
+      } else {
+        const OTP_VERIFY_TIMEOUT_MS = 1e4;
+        try {
+          const verifyOtpPromise = verifyOtp(phone, otp);
+          const verifyOtpTimeout = new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("OTP verification timeout after 10 seconds")), OTP_VERIFY_TIMEOUT_MS)
+          );
+          isValid = await Promise.race([verifyOtpPromise, verifyOtpTimeout]);
+          if (isValid) {
+            console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
+          } else {
+            console.log(`[AUTH] Production Mode: OTP verification failed for ${phone}`);
+          }
+        } catch (verifyError) {
+          console.error(`[AUTH] Production Mode: OTP verification error for ${phone}:`, verifyError?.message || verifyError);
+          if (verifyError?.message?.includes("timeout")) {
+            return this.error(
+              "Service temporarily unavailable. Please try again.",
+              503,
+              "SERVICE_UNAVAILABLE",
+              { details: "OTP verification timeout" },
+              context.requestId
+            );
+          }
+          console.warn(`[AUTH] Production Mode: Database error during OTP verification, treating as invalid OTP`);
+          isValid = false;
+        }
+      }
+      if (!isValid) {
+        return this.error("Invalid or expired OTP", 401, "UNAUTHORIZED", void 0, context.requestId);
+      }
+      const phoneDigits = phone.replace(/\D/g, "");
+      const normalizedPhone = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits.length === 9 ? "0" + phoneDigits : phoneDigits;
+      let role = body.role || "customer";
+      let userId;
+      let userData;
+      if (role === "customer") {
+        let customers = [];
+        try {
+          const customerQueryPromise = select("customers", { phone });
+          const customerQueryTimeout = new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Customer query timeout")), 5e3)
+          );
+          customers = await Promise.race([customerQueryPromise, customerQueryTimeout]);
+        } catch (customerQueryError) {
+          console.warn("[AUTH] Customer query timed out or failed, treating as new customer:", customerQueryError.message);
+          customers = [];
+        }
+        let isNewCustomer2 = false;
+        if (customers.length > 0) {
+          userId = customers[0].id;
+          userData = customers[0];
+          try {
+            const updatePromise = update("customers", { id: userId }, {
+              last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const updateTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Update timeout")), 5e3)
+            );
+            await Promise.race([updatePromise, updateTimeout]);
+            console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
+          } catch (updateError) {
+            console.warn("[AUTH] Could not update customer last_login_at:", updateError.message);
+          }
+          let identityId;
+          try {
+            const identityPromise = createOrUpdateCustomerIdentity(phone, userId);
+            const identityTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
+            );
+            identityId = await Promise.race([identityPromise, identityTimeout]);
+          } catch (identityError) {
+            console.warn("[AUTH] Could not create/update customer identity:", identityError.message);
+          }
+          if (identityId && !userData.customer_identity_id) {
+            try {
+              const linkPromise = update("customers", { id: userId }, { customer_identity_id: identityId });
+              const linkTimeout = new Promise(
+                (_, reject) => setTimeout(() => reject(new Error("Link timeout")), 5e3)
+              );
+              await Promise.race([linkPromise, linkTimeout]);
+            } catch (linkError) {
+              console.warn("[AUTH] Could not link customer identity:", linkError.message);
+            }
+          }
+        } else {
+          isNewCustomer2 = true;
+          if (referralCode) {
+            try {
+              await loyaltyRulesInitService.ensureReferralSignupRule();
+            } catch (initError) {
+              console.warn("[AUTH] Could not initialize loyalty rules:", initError.message);
+            }
+          }
+          let identityId;
+          try {
+            const identityPromise = createOrUpdateCustomerIdentity(phone, void 0);
+            const identityTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
+            );
+            identityId = await Promise.race([identityPromise, identityTimeout]);
+          } catch (identityError) {
+            console.warn("[AUTH] Could not create customer identity, continuing without it:", identityError.message);
+          }
+          let newCustomers = [];
+          try {
+            const insertPromise = insert("customers", {
+              phone,
+              full_name: `Customer ${phone.slice(-4)}`,
+              // Temporary name until profile is completed
+              is_active: true,
+              status: "new",
+              onboarding_status: "PHONE_VERIFIED",
+              profile_completed: false,
+              customer_identity_id: identityId,
+              last_login_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const insertTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Customer insert timeout")), 5e3)
+            );
+            newCustomers = await Promise.race([insertPromise, insertTimeout]);
+            userId = newCustomers[0].id;
+            userData = newCustomers[0];
+          } catch (insertError) {
+            console.error("[AUTH] Failed to create customer record:", insertError.message);
+            userId = `temp_customer_${phone}_${Date.now()}`;
+            userData = {
+              id: userId,
+              phone,
+              is_active: true,
+              status: "new",
+              onboarding_status: "PHONE_VERIFIED",
+              profile_completed: false
+            };
+            console.warn("[AUTH] Using temporary customer ID due to insert failure");
+          }
+          if (identityId && userId && !userId.startsWith("temp_")) {
+            try {
+              const linkPromise = update("customer_identity", { id: identityId }, { customer_id: userId });
+              const linkTimeout = new Promise(
+                (_, reject) => setTimeout(() => reject(new Error("Link timeout")), 5e3)
+              );
+              await Promise.race([linkPromise, linkTimeout]);
+            } catch (linkError) {
+              console.warn("[AUTH] Could not link customer identity:", linkError.message);
+            }
+          }
+          console.log(`[AUTH] \u{1F50D} Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith("temp_")}`);
+          if (referralCode && userId && !userId.startsWith("temp_")) {
+            try {
+              const normalizedCode = String(referralCode).trim().toUpperCase();
+              console.log(`[AUTH] \u{1F381} Processing referral code: ${normalizedCode} for customer: ${userId}`);
+              console.log(`[AUTH] \u{1F381} Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
+              const startTime = Date.now();
+              const referralResult = await processReferralSignup({
+                customerId: userId,
+                referralCode: normalizedCode
+              });
+              const duration = Date.now() - startTime;
+              console.log(`[AUTH] \u{1F381} processReferralSignup completed in ${duration}ms`);
+              console.log(`[AUTH] \u{1F381} Result: ${JSON.stringify(referralResult)}`);
+              if (referralResult.success) {
+                console.log(`[AUTH] \u2705 Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
+              } else {
+                console.warn(`[AUTH] \u26A0\uFE0F Referral code processing failed: ${referralResult.error}`);
+                console.warn(`[AUTH] \u26A0\uFE0F Full error details: ${JSON.stringify(referralResult)}`);
+              }
+            } catch (refError) {
+              console.error("[AUTH] \u274C Error processing referral code during signup:", refError);
+              console.error("[AUTH] \u274C Error message:", refError.message);
+              console.error("[AUTH] \u274C Error stack:", refError.stack);
+            }
+          } else {
+            if (referralCode) {
+              console.warn(`[AUTH] \u26A0\uFE0F Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith("temp_")}`);
+            } else {
+              console.log(`[AUTH] \u2139\uFE0F No referral code provided in request`);
+            }
+          }
+          try {
+            await loyaltyPointsService.awardPoints({
+              customerId: userId,
+              actionName: "signup",
+              referenceType: "signup",
+              referenceId: userId,
+              description: "Welcome bonus for signing up"
+            });
+          } catch (loyaltyError) {
+            console.error("Error awarding signup bonus:", loyaltyError);
+          }
+        }
+      } else if (role === "vendor") {
+        let vendorIdentity = [];
+        let vendors = [];
+        try {
+          const vendorQueriesPromise = Promise.all([
+            select("vendor_identity", { phone }),
+            select("vendors", { phone })
+          ]);
+          const vendorQueriesTimeout = new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Vendor queries timeout")), 5e3)
+          );
+          [vendorIdentity, vendors] = await Promise.race([
+            vendorQueriesPromise,
+            vendorQueriesTimeout
+          ]);
+        } catch (vendorQueryError) {
+          console.warn("[AUTH] Vendor queries timed out or failed, continuing with minimal data:", vendorQueryError.message);
+          vendorIdentity = [];
+          vendors = [];
+        }
+        if (vendors.length > 0) {
+          userId = vendors[0].id;
+          userData = vendors[0];
+          if (vendorIdentity.length > 0) {
+            userData.onboarding_status = vendorIdentity[0].onboarding_status;
+            userData.vendor_identity_id = vendorIdentity[0].id;
+          }
+          try {
+            const updatePromise = update("vendors", { id: userId }, {
+              last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const updateTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Update timeout")), 5e3)
+            );
+            await Promise.race([updatePromise, updateTimeout]);
+            console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
+          } catch (updateError) {
+            console.warn("[AUTH] Could not update vendor last_login_at:", updateError.message);
+          }
+        } else if (vendorIdentity.length > 0) {
+          const identity = vendorIdentity[0];
+          if (identity.vendor_id) {
+            let vendorsByVendorId = [];
+            try {
+              const vendorByIdPromise = select("vendors", { id: identity.vendor_id });
+              const vendorByIdTimeout = new Promise(
+                (_, reject) => setTimeout(() => reject(new Error("Vendor by ID query timeout")), 5e3)
+              );
+              vendorsByVendorId = await Promise.race([vendorByIdPromise, vendorByIdTimeout]);
+            } catch (vendorByIdError) {
+              console.warn("[AUTH] Could not fetch vendor by ID:", vendorByIdError.message);
+              vendorsByVendorId = [];
+            }
+            if (vendorsByVendorId.length > 0) {
+              userId = vendorsByVendorId[0].id;
+              userData = vendorsByVendorId[0];
+              userData.onboarding_status = identity.onboarding_status;
+              userData.vendor_identity_id = identity.id;
+              console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
+            } else {
+              userId = identity.id;
+              userData = {
+                id: identity.id,
+                phone,
+                is_active: false,
+                onboarding_status: identity.onboarding_status,
+                vendor_identity_id: identity.id,
+                created_at: identity.created_at
+              };
+              console.log(`[AUTH] vendor_identity.vendor_id points to missing vendor, using identity ID: ${userId}`);
+            }
+          } else {
+            userId = identity.id;
+            userData = {
+              id: identity.id,
+              phone,
+              is_active: false,
+              onboarding_status: identity.onboarding_status,
+              vendor_identity_id: identity.id,
+              created_at: identity.created_at
+            };
+            console.log(`[AUTH] Vendor identity found for ${phone} with status: ${userData.onboarding_status} (not approved yet)`);
+          }
+        } else {
+          userId = `temp_vendor_${phone}_${Date.now()}`;
+          userData = {
+            id: userId,
+            phone,
+            is_active: false,
+            onboarding_status: "INIT",
+            created_at: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
+          if (referralCode && normalizedPhone) {
+            try {
+              console.log(`[AUTH] Processing vendor referral code: ${referralCode} for phone: ${normalizedPhone}`);
+              const normalizedCode = referralCode.trim().toUpperCase();
+              let referralRecords = await query(
+                `SELECT * FROM vendor_referrals 
+                 WHERE referral_code = $1 AND referred_phone = $2 
+                 ORDER BY created_at DESC LIMIT 1`,
+                [normalizedCode, normalizedPhone]
+              );
+              let referralRecord = referralRecords.rows[0];
+              if (!referralRecord) {
+                const codeRecords = await query(
+                  `SELECT * FROM vendor_referrals 
+                   WHERE referral_code = $1 
+                   ORDER BY created_at DESC LIMIT 1`,
+                  [normalizedCode]
+                );
+                if (codeRecords.rows.length > 0) {
+                  const newReferral = await insert("vendor_referrals", {
+                    referrer_vendor_id: codeRecords.rows[0].referrer_vendor_id,
+                    referred_phone: normalizedPhone,
+                    referral_code: normalizedCode,
+                    status: "pending",
+                    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+                  });
+                  referralRecord = newReferral[0];
+                  console.log(`[AUTH] Created new vendor referral record for phone: ${normalizedPhone}`);
+                }
+              }
+              if (referralRecord) {
+                console.log(`[AUTH] \u2705 Vendor referral record found/created: ${referralRecord.id}`);
+                console.log(`[AUTH] Referrer vendor ID: ${referralRecord.referrer_vendor_id}`);
+                if (vendorIdentity.length > 0) {
+                  const identity = vendorIdentity[0];
+                  const metadata = identity.metadata || {};
+                  metadata.referral_code_id = referralRecord.id;
+                  metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
+                  metadata.referral_code = normalizedCode;
+                  try {
+                    await update("vendor_identity", { id: identity.id }, {
+                      metadata,
+                      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+                    });
+                    console.log(`[AUTH] \u2705 Stored vendor referral metadata in vendor_identity`);
+                  } catch (metaError) {
+                    console.error(`[AUTH] Error storing referral metadata: ${metaError.message}`);
+                  }
+                }
+              } else {
+                console.log(`[AUTH] \u26A0\uFE0F No vendor referral record found for code: ${normalizedCode}`);
+              }
+            } catch (refError) {
+              console.error("[AUTH] \u274C Error processing vendor referral code:", refError.message);
+              console.error("[AUTH] Error stack:", refError.stack);
+            }
+          }
+        }
+      } else if (role === "admin") {
+        try {
+          const admins = await select("admins", { phone });
+          if (admins.length > 0) {
+            userId = admins[0].id;
+            userData = admins[0];
+            try {
+              await update("admins", { id: userId }, {
+                last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              console.log(`[AUTH] Updated last_login_at for admin ${userId}`);
+            } catch (updateErr) {
+              console.warn(`[AUTH] Could not update admin last_login_at:`, updateErr);
+            }
+          } else {
+            if (isUATMode2) {
+              console.log(`[AUTH] UAT Mode: Admin ${phone} not in database, allowing login`);
+              userId = `uat_admin_${phone}`;
+              userData = {
+                id: userId,
+                phone,
+                email: `${phone}@warmpawz.app`,
+                name: "UAT Admin",
+                role: "admin",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString()
+              };
+            } else {
+              return this.error("Admin not found", 404, "NOT_FOUND", void 0, context.requestId);
+            }
+          }
+        } catch (dbError) {
+          if (isUATMode2 && (dbError.message?.includes("does not exist") || dbError.message?.includes("relation") || dbError.code === "42P01")) {
+            console.log(`[AUTH] UAT Mode: admins table not found, allowing admin login for ${phone}`);
+            userId = `uat_admin_${phone}`;
+            userData = {
+              id: userId,
+              phone,
+              email: `${phone}@warmpawz.app`,
+              name: "UAT Admin",
+              role: "admin",
+              is_active: true,
+              created_at: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          } else {
+            console.error("[AUTH] Error querying admins table:", dbError);
+            return this.error("Admin authentication failed", 500, "INTERNAL_ERROR", { details: dbError.message }, context.requestId);
+          }
+        }
+      } else {
+        return this.error("Invalid role", 400, "VALIDATION_ERROR", void 0, context.requestId);
+      }
+      let cognitoTokens;
+      if (isUATMode2) {
+        cognitoTokens = await generateUATJWTToken({
+          userId,
+          phone,
+          role,
+          expiresIn: 24 * 60 * 60
+        });
+        console.log("[AUTH] UAT Mode: Generated JWT tokens with 24h expiry");
+      } else {
+        const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || process.env.COGNITO_VENDOR_POOL_ID || process.env.COGNITO_CUSTOMER_POOL_ID || "";
+        if (!cognitoUserPoolId) {
+          console.warn(`[AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
+          cognitoTokens = await generateUATJWTToken({
+            userId,
+            phone,
+            role,
+            expiresIn: 24 * 60 * 60
+            // 24 hours
+          });
+          console.log("[AUTH] Production Mode: Generated JWT tokens (Cognito fallback)");
+        } else {
+          try {
+            const COGNITO_TIMEOUT_MS = 8e3;
+            const cognitoAuthPromise = (async () => {
+              const cognitoUser = await getOrCreateCognitoUser(phone, void 0, role);
+              const tokens = await authenticateCognitoUser(phone);
+              return tokens;
+            })();
+            const cognitoTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Cognito authentication timeout after 8 seconds")), COGNITO_TIMEOUT_MS)
+            );
+            cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
+          } catch (cognitoError) {
+            console.error("[AUTH] Production Mode: Cognito authentication failed:", cognitoError);
+            console.warn(`[AUTH] Production Mode: Cognito failed, falling back to JWT tokens`);
+            try {
+              cognitoTokens = await generateUATJWTToken({
+                userId,
+                phone,
+                role,
+                expiresIn: 24 * 60 * 60
+                // 24 hours
+              });
+              console.log("[AUTH] Production Mode: Generated JWT tokens (Cognito fallback after error)");
+            } catch (jwtError) {
+              console.error("[AUTH] Production Mode: JWT fallback also failed:", jwtError);
+              return this.error(
+                "Authentication service temporarily unavailable. Please try again.",
+                503,
+                "SERVICE_UNAVAILABLE",
+                { details: "Authentication service error" },
+                context.requestId
+              );
+            }
+          }
+        }
+      }
+      let isNewUser = false;
+      if (role === "customer") {
+        const customerState = await getCustomerStateForAuth(userId);
+        isNewUser = customerState === "new";
+      } else if (role === "vendor") {
+        isNewUser = userId.startsWith("temp_vendor_") || !userData.id || !userData.created_at || userData.onboarding_status && ["INIT", "ROLE_PENDING"].includes(userData.onboarding_status);
+      }
+      return this.success({
+        success: true,
+        data: {
+          token: {
+            access_token: cognitoTokens.accessToken,
+            refresh_token: cognitoTokens.refreshToken,
+            expires_in: cognitoTokens.expiresIn,
+            token_type: "Bearer"
+          },
+          user: {
+            id: userId,
+            phone,
+            role,
+            is_active: userData.is_active !== false,
+            created_at: userData.created_at || (/* @__PURE__ */ new Date()).toISOString()
+          },
+          state: isNewUser ? "new" : "existing",
+          profile: role === "customer" ? {
+            id: userId,
+            phone,
+            full_name: userData.full_name || null,
+            email: userData.email || null
+          } : role === "vendor" ? {
+            id: userId.startsWith("temp_vendor_") ? null : userId,
+            phone,
+            business_name: userData.business_name || null,
+            status: userData.status || "pending",
+            onboarding_status: userData.onboarding_status || "INIT"
+          } : void 0
+        },
+        meta: {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          requestId: context.requestId,
+          version: "v1"
+        }
+      }, context.requestId);
+    } catch (error) {
+      console.error("Error verifying OTP:", error);
+      return this.error(
+        "Failed to verify OTP",
+        500,
+        "INTERNAL_ERROR",
+        { details: error.message },
+        context.requestId
+      );
+    }
+  }
+};
+function registerAuthEndpointsEnhanced(app3) {
+  const sendOtpHandler = new SendOtpHandlerEnhanced();
+  const verifyOtpHandler = new VerifyOtpHandlerEnhanced();
+  app3.post("/auth/send-otp", async (c) => {
+    try {
+      const event = await createApiGatewayEvent36(c);
+      const context = createLambdaContext38();
+      const result = await sendOtpHandler.execute(event, context);
+      const body = JSON.parse(result.body);
+      return c.json(body, result.statusCode);
+    } catch (error) {
+      console.error("[AUTH] Error in send-otp handler:", error);
+      return c.json({ error: error.message || "Internal Server Error" }, 500);
+    }
+  });
+  app3.post("/auth/otp/send", async (c) => {
+    try {
+      const event = await createApiGatewayEvent36(c);
+      const context = createLambdaContext38();
+      const result = await sendOtpHandler.execute(event, context);
+      const body = JSON.parse(result.body);
+      return c.json(body, result.statusCode);
+    } catch (error) {
+      console.error("[AUTH] Error in otp/send handler:", error);
+      return c.json({ error: error.message || "Internal Server Error" }, 500);
+    }
+  });
+  app3.post("/auth/verify-otp", async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25e3;
+    try {
+      const parseBodyWithTimeout = async () => {
+        return Promise.race([
+          c.req.json(),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Request body parsing timeout")), 5e3)
+          )
+        ]);
+      };
+      let event;
+      try {
+        event = await createApiGatewayEvent36(c, parseBodyWithTimeout);
+      } catch (parseError) {
+        console.error("[AUTH] Error parsing request body:", parseError);
+        return c.json({
+          message: "Invalid request format",
+          error: parseError.message || "Request parsing failed"
+        }, 400);
+      }
+      const context = createLambdaContext38();
+      const handlerPromise = verifyOtpHandler.execute(event, context);
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Handler execution timeout")), TIMEOUT_MS)
+      );
+      const result = await Promise.race([handlerPromise, timeoutPromise]);
+      if (!result || !result.body) {
+        throw new Error("Handler returned invalid response");
+      }
+      const body = JSON.parse(result.body);
+      const elapsed = Date.now() - startTime;
+      console.log(`[AUTH] verify-otp completed in ${elapsed}ms`);
+      return c.json(body, result.statusCode);
+    } catch (error) {
+      const elapsed = Date.now() - startTime;
+      console.error(`[AUTH] Error in verify-otp handler (${elapsed}ms):`, error);
+      console.error("[AUTH] Error stack:", error?.stack);
+      const statusCode = error?.message?.includes("timeout") ? 503 : 500;
+      const errorMessage = error?.message || "Internal Server Error";
+      return c.json({
+        message: statusCode === 503 ? "Service Unavailable" : "Internal Server Error",
+        error: errorMessage
+      }, statusCode);
+    }
+  });
+  app3.post("/auth/otp/verify", async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25e3;
+    try {
+      const parseBodyWithTimeout = async () => {
+        return Promise.race([
+          c.req.json(),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Request body parsing timeout")), 5e3)
+          )
+        ]);
+      };
+      let event;
+      try {
+        event = await createApiGatewayEvent36(c, parseBodyWithTimeout);
+      } catch (parseError) {
+        console.error("[AUTH] Error parsing request body:", parseError);
+        return c.json({
+          message: "Invalid request format",
+          error: parseError.message || "Request parsing failed"
+        }, 400);
+      }
+      const context = createLambdaContext38();
+      const handlerPromise = verifyOtpHandler.execute(event, context);
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Handler execution timeout")), TIMEOUT_MS)
+      );
+      const result = await Promise.race([handlerPromise, timeoutPromise]);
+      if (!result || !result.body) {
+        throw new Error("Handler returned invalid response");
+      }
+      const body = JSON.parse(result.body);
+      const elapsed = Date.now() - startTime;
+      console.log(`[AUTH] otp/verify completed in ${elapsed}ms`);
+      return c.json(body, result.statusCode);
+    } catch (error) {
+      const elapsed = Date.now() - startTime;
+      console.error(`[AUTH] Error in otp/verify handler (${elapsed}ms):`, error);
+      console.error("[AUTH] Error stack:", error?.stack);
+      const statusCode = error?.message?.includes("timeout") ? 503 : 500;
+      const errorMessage = error?.message || "Internal Server Error";
+      return c.json({
+        message: statusCode === 503 ? "Service Unavailable" : "Internal Server Error",
+        error: errorMessage
+      }, statusCode);
+    }
+  });
+}
+async function createApiGatewayEvent36(c, bodyParser) {
+  let body = {};
+  try {
+    if (bodyParser) {
+      body = await bodyParser();
+    } else {
+      body = await Promise.race([
+        c.req.json(),
+        new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Body parsing timeout")), 5e3)
+        )
+      ]);
+    }
+    if (body?.referralCode || body?.pendingReferralCode) {
+      console.log(`[AUTH] \u2705 Referral code found in parsed body: ${body.referralCode || body.pendingReferralCode}`);
+    }
+  } catch (error) {
+    console.warn("[AUTH] Error parsing request body, using empty object:", error?.message);
+    body = {};
+  }
+  const headers = {};
+  try {
+    if (c.req.raw && c.req.raw.headers) {
+      const rawHeaders = c.req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else {
+      const contentType = c.req.header("content-type");
+      const authorization = c.req.header("authorization");
+      if (contentType) headers["content-type"] = contentType;
+      if (authorization) headers["authorization"] = authorization;
+    }
+  } catch (e) {
+    console.warn("[AUTH] Error processing headers:", e);
+  }
+  const url = new URL(c.req.url);
+  const bodyString = body && Object.keys(body).length > 0 ? JSON.stringify(body) : void 0;
+  if (body?.referralCode || body?.pendingReferralCode) {
+    console.log(`[AUTH] \u2705 Body stringified with referral code: ${bodyString?.substring(0, 200)}`);
+  }
+  return {
+    rawPath: url.pathname,
+    rawQueryString: url.search.substring(1),
+    // Remove leading '?'
+    body: bodyString,
+    isBase64Encoded: false,
+    requestContext: {
+      http: {
+        method: c.req.method || "POST",
+        path: url.pathname
+      },
+      requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
+    },
+    headers
+  };
+}
+function createLambdaContext38() {
+  return {
+    awsRequestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
+  };
+}
+
 // src/handler/index.ts
 var app2 = new Hono2();
 var getAllowedOriginsList = () => {
@@ -242519,6 +242670,72 @@ app2.use("*", async (c, next) => {
   await next();
 });
 app2.use("*", authAuditLog());
+app2.post("/system/run-pending-migrations", async (c) => {
+  const { query: dbQuery } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+  const results = [];
+  try {
+    try {
+      const tableCheck = await dbQuery(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_referrals') as table_exists`);
+      if (tableCheck.rows[0]?.table_exists) {
+        results.push({ migration: "558_vendor_referrals", status: "skipped", message: "Table already exists" });
+      } else {
+        await dbQuery(`CREATE TABLE IF NOT EXISTS vendor_referrals (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), referrer_vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE, referred_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL, referred_phone TEXT NOT NULL, referral_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'approved', 'expired')), applied_at TIMESTAMPTZ, approved_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(referrer_vendor_id, referred_phone))`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referrer_vendor_id ON vendor_referrals(referrer_vendor_id)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referred_vendor_id ON vendor_referrals(referred_vendor_id)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referral_code ON vendor_referrals(referral_code)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referred_phone ON vendor_referrals(referred_phone)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_status ON vendor_referrals(status)`);
+        results.push({ migration: "558_vendor_referrals", status: "completed", message: "Table and indexes created" });
+      }
+    } catch (err) {
+      results.push({ migration: "558_vendor_referrals", status: "error", message: err.message });
+    }
+    try {
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'availability_configured') THEN ALTER TABLE vendors ADD COLUMN availability_configured BOOLEAN DEFAULT false; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'services_configured') THEN ALTER TABLE vendors ADD COLUMN services_configured BOOLEAN DEFAULT false; END IF; END $$`);
+      await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON vendors(availability_configured) WHERE availability_configured = false`);
+      await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`);
+      results.push({ migration: "605_availability_configured", status: "completed", message: "Columns and indexes created/verified" });
+    } catch (err) {
+      results.push({ migration: "605_availability_configured", status: "error", message: err.message });
+    }
+    try {
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') THEN ALTER TABLE vendors ADD COLUMN service_radius NUMERIC(5, 2); END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') THEN ALTER TABLE vendors ADD COLUMN emergency_contact JSONB DEFAULT NULL; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') THEN ALTER TABLE vendors ADD COLUMN max_dogs_per_walk INTEGER; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') THEN ALTER TABLE vendors ADD COLUMN walk_durations TEXT[] DEFAULT ARRAY[]::TEXT[]; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') THEN ALTER TABLE vendors ADD COLUMN other_config JSONB DEFAULT '{}'::jsonb; END IF; END $$`);
+      await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_service_radius ON vendors(service_radius) WHERE service_radius IS NOT NULL`);
+      results.push({ migration: "071_vendor_settings_columns", status: "completed" });
+    } catch (err) {
+      results.push({ migration: "071_vendor_settings_columns", status: "error", message: err.message });
+    }
+    try {
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'setup_completed') THEN ALTER TABLE vendors ADD COLUMN setup_completed BOOLEAN DEFAULT false; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'profile_photo_url') THEN ALTER TABLE vendors ADD COLUMN profile_photo_url TEXT; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'qualifications') THEN ALTER TABLE vendors ADD COLUMN qualifications TEXT; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_area') THEN ALTER TABLE vendors ADD COLUMN service_area TEXT; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'description') THEN ALTER TABLE vendors ADD COLUMN description TEXT; END IF; END $$`);
+      results.push({ migration: "528_profile_fields", status: "completed" });
+    } catch (err) {
+      results.push({ migration: "528_profile_fields", status: "error", message: err.message });
+    }
+    const verifyResult = await dbQuery(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendors' ORDER BY ordinal_position`);
+    const referralsCheck = await dbQuery(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_referrals') as exists`);
+    return c.json({
+      success: true,
+      message: "All migrations completed",
+      results,
+      verification: {
+        vendor_columns: verifyResult.rows.map((r) => r.column_name),
+        vendor_referrals_table_exists: referralsCheck.rows[0]?.exists || false,
+        total_vendor_columns: verifyResult.rows.length
+      }
+    });
+  } catch (error) {
+    return c.json({ success: false, error: error.message, results }, 500);
+  }
+});
 app2.use("/admin/*", requireAdmin());
 app2.use("/auth/*", rateLimitAuth());
 app2.use("/otp/*", slidingWindowRateLimit({ windowMs: 6e4, maxRequests: 5, keyPrefix: "otp" }));

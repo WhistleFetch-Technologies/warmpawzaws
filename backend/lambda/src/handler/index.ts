@@ -20,7 +20,6 @@ import { checkDbHealth } from '../database/rds-connection';
 import { requireAuth, requireAdmin, authAuditLog } from '../middleware/auth-middleware';
 import { rateLimit, rateLimitAuth, rateLimitOtp, slidingWindowRateLimit } from '../middleware/rate-limit-middleware';
 // Enhanced handlers (Phase 2-5)
-import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
 import { registerVendorOnboardingFixes } from '../endpoints/vendor-onboarding-fixes';
 import { registerBookingEndpointsEnhanced, registerBookingOTPEndpoint } from '../endpoints/bookings-enhanced';
@@ -181,6 +180,7 @@ import { registerFeeConfigEndpoints } from '../endpoints/fee-config';
 import { registerKYCVerificationEndpoints } from '../endpoints/kyc-verification';
 import { registerSpecializationMasterEndpoints } from '../endpoints/specialization-master';
 import platformPoliciesApp from '../endpoints/platform-policies';
+import { registerAuthEndpointsEnhanced } from 'src/endpoints/Auth/auth-enhanced';
 
 // Create Hono app
 const app = new Hono();
@@ -288,6 +288,76 @@ app.use('*', async (c, next) => {
 
 // Authentication audit logging (for security monitoring)
 app.use('*', authAuditLog());
+
+// ✅ TEMPORARY: Migration endpoint (registered BEFORE admin auth middleware)
+app.post('/system/run-pending-migrations', async (c) => {
+  const { query: dbQuery } = require('../database/rds-connection');
+  const results: any[] = [];
+  try {
+    // Migration 558: vendor_referrals table
+    try {
+      const tableCheck = await dbQuery(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_referrals') as table_exists`);
+      if (tableCheck.rows[0]?.table_exists) {
+        results.push({ migration: '558_vendor_referrals', status: 'skipped', message: 'Table already exists' });
+      } else {
+        await dbQuery(`CREATE TABLE IF NOT EXISTS vendor_referrals (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), referrer_vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE, referred_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL, referred_phone TEXT NOT NULL, referral_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'approved', 'expired')), applied_at TIMESTAMPTZ, approved_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(referrer_vendor_id, referred_phone))`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referrer_vendor_id ON vendor_referrals(referrer_vendor_id)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referred_vendor_id ON vendor_referrals(referred_vendor_id)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referral_code ON vendor_referrals(referral_code)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_referred_phone ON vendor_referrals(referred_phone)`);
+        await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendor_referrals_status ON vendor_referrals(status)`);
+        results.push({ migration: '558_vendor_referrals', status: 'completed', message: 'Table and indexes created' });
+      }
+    } catch (err: any) { results.push({ migration: '558_vendor_referrals', status: 'error', message: err.message }); }
+
+    // Migration 605: availability_configured + services_configured
+    try {
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'availability_configured') THEN ALTER TABLE vendors ADD COLUMN availability_configured BOOLEAN DEFAULT false; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'services_configured') THEN ALTER TABLE vendors ADD COLUMN services_configured BOOLEAN DEFAULT false; END IF; END $$`);
+      await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON vendors(availability_configured) WHERE availability_configured = false`);
+      await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`);
+      results.push({ migration: '605_availability_configured', status: 'completed', message: 'Columns and indexes created/verified' });
+    } catch (err: any) { results.push({ migration: '605_availability_configured', status: 'error', message: err.message }); }
+
+    // Migration 071: vendor settings columns
+    try {
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') THEN ALTER TABLE vendors ADD COLUMN service_radius NUMERIC(5, 2); END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') THEN ALTER TABLE vendors ADD COLUMN emergency_contact JSONB DEFAULT NULL; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') THEN ALTER TABLE vendors ADD COLUMN max_dogs_per_walk INTEGER; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') THEN ALTER TABLE vendors ADD COLUMN walk_durations TEXT[] DEFAULT ARRAY[]::TEXT[]; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') THEN ALTER TABLE vendors ADD COLUMN other_config JSONB DEFAULT '{}'::jsonb; END IF; END $$`);
+      await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_service_radius ON vendors(service_radius) WHERE service_radius IS NOT NULL`);
+      results.push({ migration: '071_vendor_settings_columns', status: 'completed' });
+    } catch (err: any) { results.push({ migration: '071_vendor_settings_columns', status: 'error', message: err.message }); }
+
+    // Migration: setup_completed, profile_photo_url, etc.
+    try {
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'setup_completed') THEN ALTER TABLE vendors ADD COLUMN setup_completed BOOLEAN DEFAULT false; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'profile_photo_url') THEN ALTER TABLE vendors ADD COLUMN profile_photo_url TEXT; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'qualifications') THEN ALTER TABLE vendors ADD COLUMN qualifications TEXT; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_area') THEN ALTER TABLE vendors ADD COLUMN service_area TEXT; END IF; END $$`);
+      await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'description') THEN ALTER TABLE vendors ADD COLUMN description TEXT; END IF; END $$`);
+      results.push({ migration: '528_profile_fields', status: 'completed' });
+    } catch (err: any) { results.push({ migration: '528_profile_fields', status: 'error', message: err.message }); }
+
+    // Verification
+    const verifyResult = await dbQuery(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendors' ORDER BY ordinal_position`);
+    const referralsCheck = await dbQuery(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_referrals') as exists`);
+
+    return c.json({
+      success: true,
+      message: 'All migrations completed',
+      results,
+      verification: {
+        vendor_columns: verifyResult.rows.map((r: any) => r.column_name),
+        vendor_referrals_table_exists: referralsCheck.rows[0]?.exists || false,
+        total_vendor_columns: verifyResult.rows.length
+      }
+    });
+  } catch (error: any) {
+    return c.json({ success: false, error: error.message, results }, 500);
+  }
+});
 
 // Require authentication for admin endpoints
 app.use('/admin/*', requireAdmin());

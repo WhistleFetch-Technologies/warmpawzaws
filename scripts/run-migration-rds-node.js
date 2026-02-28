@@ -44,7 +44,12 @@ async function runMigration() {
   }
   
   const cluster = clusterInfo.DBClusters[0];
-  const endpoint = cluster.Endpoint;
+  // ✅ FIX: Use RDS Proxy endpoint for production to avoid connection timeout
+  let endpoint = cluster.Endpoint;
+  if (ENVIRONMENT === 'prod') {
+    endpoint = 'warmpawz-prod-proxy.proxy-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com';
+    console.log('   ℹ️  Using RDS Proxy endpoint for production');
+  }
   const port = cluster.Port || '5432';
   const dbName = cluster.DatabaseName || 'warmpawz';
   const username = cluster.MasterUsername || 'warmpawz_admin';
@@ -95,7 +100,9 @@ async function runMigration() {
       ssl: {
         rejectUnauthorized: false
       },
-      connectionTimeoutMillis: 10000,
+      connectionTimeoutMillis: 30000, // ✅ Increased timeout for RDS Proxy
+      idleTimeoutMillis: 30000,
+      max: 1, // Single connection for migration
     });
 
     // Test connection
@@ -130,6 +137,7 @@ async function runMigration() {
     const migrationBasename = path.basename(migrationPath);
     const is524 = migrationBasename.includes('524') && (sql.includes('specialization_ids') && sql.includes('service_catalog'));
     const is553 = migrationBasename.includes('553') && sql.includes('package_snapshot');
+    const is605 = migrationBasename.includes('605') && sql.includes('availability_configured');
 
     if (is553) {
       console.log('🔍 Verifying migration 553: package_purchases.package_snapshot...');
@@ -170,6 +178,37 @@ async function runMigration() {
         throw new Error('Verification failed: index idx_service_catalog_specialization_ids not found');
       }
       console.log(`   ✅ Index: ${idxRes.rows[0].indexname}`);
+    } else if (is605) {
+      console.log('🔍 Verifying migration 605: vendors.availability_configured...');
+      const colRes = await pool.query(`
+        SELECT column_name, data_type, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'availability_configured'
+      `);
+      if (colRes.rows.length === 0) {
+        throw new Error('Verification failed: column vendors.availability_configured not found');
+      }
+      console.log(`   ✅ Column: ${colRes.rows[0].column_name} (${colRes.rows[0].data_type}, default: ${colRes.rows[0].column_default})`);
+      
+      // Check for services_configured column as well
+      const servicesColRes = await pool.query(`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'services_configured'
+      `);
+      if (servicesColRes.rows.length > 0) {
+        console.log(`   ✅ Column: ${servicesColRes.rows[0].column_name} (${servicesColRes.rows[0].data_type})`);
+      }
+      
+      // Check indexes
+      const idxRes = await pool.query(`
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'vendors' 
+        AND (indexname = 'idx_vendors_availability_configured' OR indexname = 'idx_vendors_approved_not_availability')
+      `);
+      if (idxRes.rows.length > 0) {
+        idxRes.rows.forEach(row => console.log(`   ✅ Index: ${row.indexname}`));
+      }
     } else {
       console.log('🔍 Verifying created tables...');
       const result = await pool.query(`

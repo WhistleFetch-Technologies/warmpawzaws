@@ -70,7 +70,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
         </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-3">You're Approved!</h1>
         <p className="text-gray-700 text-base mb-8">
-          Welcome to WARMPAWS. Your account is approved and ready to go.
+          Welcome to WARMPAWZ. Your account is approved and ready to go.
         </p>
         <Button
           onClick={handleGetStarted}
