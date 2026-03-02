@@ -22,6 +22,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        {/* ✅ FIX: Inject NEXT_PUBLIC_API_BASE_URL for ALL environments (local dev + production) */}
+        {prodApiUrl && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.__NEXT_PUBLIC_API_BASE_URL__ = "${prodApiUrl}";
+              `,
+            }}
+          />
+        )}
         {/* Inject production config if running in prod mode */}
         {isProd && prodApiUrl && (
           <script

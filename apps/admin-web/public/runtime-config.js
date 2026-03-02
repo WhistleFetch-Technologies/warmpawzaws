@@ -1,18 +1,20 @@
 // Runtime Configuration for Warmpawz Admin Portal
-// apiBaseUrl: MUST be set at build/deploy via NEXT_PUBLIC_API_BASE_URL or inject. No hardcoded URLs.
-// Official Admin app URL: set ADMIN_URL / see config/urls.json cloudfront.admin
 
 (function () {
-  // CRITICAL: Production mode detection - if production mode is set, NEVER use UAT mode or dev API gateway
-  const isProductionMode = window.__WARMPAWZ_PROD_MODE__ === true;
-  
+  const defaultUatMode = true;
+
   // If config is already set (e.g., by layout.tsx for production mode), preserve it
   if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+    // ✅ FIX: If NEXT_PUBLIC_API_BASE_URL is set (local dev), use it instead
+    if (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) {
+      window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = window.__NEXT_PUBLIC_API_BASE_URL__;
+      console.log('🔧 Runtime config loaded (local dev - using NEXT_PUBLIC_API_BASE_URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+      return;
+    }
     // If production mode flag is set, FORCE uatMode to false and prod API gateway
-    if (isProductionMode) {
+    if (window.__WARMPAWZ_PROD_MODE__) {
       window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
       window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
-      // CRITICAL: Production MUST use prod API gateway, NEVER dev
       window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
       console.log('🔧 Runtime config loaded (PROD - locked):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     } else {
@@ -20,62 +22,66 @@
     }
     return;
   }
-  
-  // If production mode flag is set, don't override with UAT mode
-  if (isProductionMode) {
-    window.__WARMPAWZ_RUNTIME_CONFIG__ = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
-    window.__WARMPAWZ_RUNTIME_CONFIG__.uatMode = false;
-    window.__WARMPAWZ_RUNTIME_CONFIG__.environment = 'production';
-    // CRITICAL: Production MUST use prod API gateway, NEVER dev
-    window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
-    console.log('🔧 Runtime config set (PRODUCTION - locked to prod API):', window.__WARMPAWZ_RUNTIME_CONFIG__);
-    return;
-  }
-  
-  // Determine environment (only for non-production mode)
+
+  // Determine environment based on hostname
   function isProduction() {
-    // Check hostname (production CloudFront domains)
     if (typeof window !== 'undefined' && window.location) {
       const hostname = window.location.hostname;
-      if (hostname.includes('cloudfront.net') || 
-          hostname.includes('warmpawz.com') ||
-          hostname.includes('admin.warmpawz.com')) {
+
+      // Production domains (exact match, not dev subdomains)
+      if (hostname === 'admin.warmpawz.com' ||
+          hostname === 'vendor.warmpawz.com' ||
+          hostname === 'customer.warmpawz.com' ||
+          hostname === 'warmpawz.com' ||
+          hostname === 'www.warmpawz.com' ||
+          hostname.includes('cloudfront.net')) {
         return true;
       }
+
+      // Dev subdomains
+      if (hostname.startsWith('dev.') && hostname.includes('warmpawz.com')) {
+        return false;
+      }
+
+      // Localhost
       if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
         return false;
       }
     }
-    // Default to production for safety
     return true;
   }
-  
+
   // Get API Gateway URL based on environment
-  // CRITICAL: Production MUST use prod API gateway, NEVER dev
   function getApiGatewayUrl() {
-    const isProd = isProduction();
-    if (isProd) {
-      // Production: ALWAYS use prod API gateway
-      return 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
-    }
-    // Development: use dev API gateway
-    return 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    return isProduction()
+      ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
+      : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   }
-  
-  // Injected at build/deploy as __API_BASE_URL__ or set NEXT_PUBLIC_API_BASE_URL in env
-  const apiBaseUrl = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || 
+
+  // ✅ FIX: Priority: window.__NEXT_PUBLIC_API_BASE_URL__ → __API_BASE_URL__ → getApiGatewayUrl()
+  const apiBaseUrl = (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) ||
+                     (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') ||
                      getApiGatewayUrl();
 
-  const environment = isProduction() ? 'production' : 'development';
-  // CRITICAL: Only enable UAT mode if NOT in production
-  const defaultUatMode = environment !== 'production';
+  const hostname = typeof window !== 'undefined' && window.location ? window.location.hostname : '';
+  const isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+  const isProdHostname = hostname === 'admin.warmpawz.com' ||
+                         hostname === 'vendor.warmpawz.com' ||
+                         hostname === 'customer.warmpawz.com' ||
+                         hostname === 'warmpawz.com' ||
+                         hostname === 'www.warmpawz.com' ||
+                         hostname.includes('cloudfront.net');
+
+  const environment = (isProdHostname && !isDevSubdomain) ? 'production' : 'development';
+
+  // UAT mode: true for dev/local, false for production
+  const uatMode = (isProdHostname && !isDevSubdomain) ? false : defaultUatMode;
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: apiBaseUrl,
-    uatMode: defaultUatMode,
+    uatMode: uatMode,
     environment: environment
   };
 
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-

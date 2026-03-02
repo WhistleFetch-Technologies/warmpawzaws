@@ -35,7 +35,7 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
     }
   };
 
-  //we need to rate a seprate endpoiny to deal with top vendors
+  //we need to crate a seprate endpoiny to deal with top vendors
   const fetchNutritionists = async () => {
     try {
       setLoading(true);

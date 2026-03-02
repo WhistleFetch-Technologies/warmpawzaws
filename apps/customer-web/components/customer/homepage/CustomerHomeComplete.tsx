@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { 
-  Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock, 
-  Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users, 
+import {
+  Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock,
+  Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
   Phone, Video, Building2, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree, Pill,
   Navigation, AlertCircle, FlaskConical
@@ -12,19 +12,22 @@ import {
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
-import { EnhancedSearchBar } from './EnhancedSearchBar';
-import { ProblemGridNavigation } from './ProblemGridNavigation';
-import { ForYouSection } from './ForYouSection';
-import { ServicesByProblem } from './ServicesByProblem';
-import { TrendingProblems } from './TrendingProblems';
-import { WalletIcon } from './WalletIcon';
-import { EnhancedAddPetModal } from './EnhancedAddPetModal';
+import { EnhancedSearchBar } from '../EnhancedSearchBar';
+import { ProblemGridNavigation } from '../ProblemGridNavigation';
+import { ForYouSection } from '../ForYouSection';
+import { ServicesByProblem } from '../ServicesByProblem';
+import { TrendingProblems } from '../TrendingProblems';
+import { WalletIcon } from '../WalletIcon';
+import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, UtensilsCrossed, Package as PackageIcon, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
 import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 // Re-export type for VendorOnTheWayPopup
-import type { TrackingStatus } from './VendorOnTheWayPopup';
+import type { TrackingStatus } from '../VendorOnTheWayPopup';
+import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
+import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
+import { adoptionOptions, serviceBaseOnpincode } from './constants/helpers';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -34,94 +37,61 @@ import type { TrackingStatus } from './VendorOnTheWayPopup';
 
 // AI Chatbot - only shown when user opens chat
 const AIChatbotWidget = dynamic(
-  () => import('./AIChatbotWidget').then(mod => ({ default: mod.AIChatbotWidget })),
+  () => import('../AIChatbotWidget').then(mod => ({ default: mod.AIChatbotWidget })),
   { ssr: false }
 );
 
 // Live tracking widget - only shown during active GPS tracking
 const LiveTrackingWidget = dynamic(
-  () => import('./tracking/LiveTrackingWidget').then(mod => ({ default: mod.LiveTrackingWidget })),
+  () => import('../tracking/LiveTrackingWidget').then(mod => ({ default: mod.LiveTrackingWidget })),
   { ssr: false }
 );
 
 // Rating popup - only shown after completed bookings
 const RatingReviewPopup = dynamic(
-  () => import('./RatingReviewPopup').then(mod => ({ default: mod.RatingReviewPopup })),
+  () => import('../RatingReviewPopup').then(mod => ({ default: mod.RatingReviewPopup })),
   { ssr: false }
 );
 
 // Vendor on the way popup - only shown during active delivery/service
 const VendorOnTheWayPopup = dynamic(
-  () => import('./VendorOnTheWayPopup').then(mod => ({ default: mod.VendorOnTheWayPopup })),
+  () => import('../VendorOnTheWayPopup').then(mod => ({ default: mod.VendorOnTheWayPopup })),
   { ssr: false }
 );
 
 // Appointment tracker - only shown when appointments exist
 const UnifiedAppointmentTracker = dynamic(
-  () => import('./booking/UnifiedAppointmentTracker').then(mod => ({ default: mod.UnifiedAppointmentTracker })),
+  () => import('../booking/UnifiedAppointmentTracker').then(mod => ({ default: mod.UnifiedAppointmentTracker })),
   { ssr: false }
 );
 
 // Tele consultation reminder - only shown 5 min before call
 const TeleConsultationReminderNotification = dynamic(
-  () => import('./TeleConsultationReminderNotification').then(mod => ({ default: mod.TeleConsultationReminderNotification })),
+  () => import('../TeleConsultationReminderNotification').then(mod => ({ default: mod.TeleConsultationReminderNotification })),
   { ssr: false }
 );
 
 // Chat interface from notification - only shown when opening chat from notification
 const ChatInterfaceFromNotification = dynamic(
-  () => import('./ChatInterfaceFromNotification').then(mod => ({ default: mod.ChatInterfaceFromNotification })),
+  () => import('../ChatInterfaceFromNotification').then(mod => ({ default: mod.ChatInterfaceFromNotification })),
   { ssr: false }
 );
 
 // Order tracking widget - only shown during active order tracking
 const OrderTrackingWidget = dynamic(
-  () => import('./OrderTrackingWidget').then(mod => ({ default: mod.OrderTrackingWidget })),
+  () => import('../OrderTrackingWidget').then(mod => ({ default: mod.OrderTrackingWidget })),
   { ssr: false }
 );
 
 // Tele call notification - WhatsApp-like incoming call UI
 const TeleCallNotification = dynamic(
-  () => import('./TeleCallNotification').then(mod => ({ default: mod.TeleCallNotification })),
+  () => import('../TeleCallNotification').then(mod => ({ default: mod.TeleCallNotification })),
   { ssr: false }
 );
 
-interface Pet {
-  id: string;
-  name: string;
-  type: string;
-  breed: string;
-  age: number | string;
-  weight?: number | string;
-  lastCheckup?: string;
-  mood?: string;
-  image?: string;
-  color?: string;
-  photo?: string;
-}
 
-interface UserData {
-  name: string;
-  phone: string;
-  pets: Pet[];
-  journeyType?: string;
-}
 
-interface CustomerHomeCompleteProps {
-  phone: string;
-  refreshKey?: number;
-  onNavigate?: (screen: string, data?: any) => void;
-  onProfileClick?: () => void;
-  onSidebarOpen?: () => void;
-  onPetClick?: (petId: string) => void;
-  onAddPet?: () => void;
-  onViewBooking?: (bookingId: string, petId?: string) => void;
-  onOpenMenu?: () => void;
-  onOpenCategoryMapper?: () => void;
-  hideHeaderFooter?: boolean; // ✅ NEW: Option to hide header/footer when using standardized layout
-}
-
-export function CustomerHomeComplete({ 
+export function CustomerHomeComplete({
   phone,
   onNavigate,
   onProfileClick,
@@ -151,18 +121,18 @@ export function CustomerHomeComplete({
   const { itemCount } = useCart();
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
   const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
-  
+
   // Dynamic service data from API (replacing hardcoded mock data)
   const [groomingServices, setGroomingServices] = useState<any[]>([]);
   const [vetServicesData, setVetServicesData] = useState<any[]>([]);
   const [hotDeals, setHotDeals] = useState<any[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [activeBookings, setActiveBookings] = useState<any[]>([]); // For "Attention" section
-  
+
   // ✅ Live Tracking & Review State
   const [showTrackingWidget, setShowTrackingWidget] = useState<string | null>(null); // bookingId to track
   const [trackingBooking, setTrackingBooking] = useState<any | null>(null);
-  
+
   // ✅ NEW: Vendor On The Way popup state
   const [vendorOnTheWay, setVendorOnTheWay] = useState<{
     bookingId: string;
@@ -189,7 +159,7 @@ export function CustomerHomeComplete({
     staffName?: string;
   } | null>(null);
   const [customerId, setCustomerId] = useState<string>('');
-  
+
   // ✅ FIX GAP-6.2: 5-minute notification state
   const [upcomingCall, setUpcomingCall] = useState<{
     id: string;
@@ -201,7 +171,7 @@ export function CustomerHomeComplete({
     minutesUntil: number;
     meetingId?: string;
   } | null>(null);
-  
+
   // ✅ CRITICAL FIX: Incoming/Outgoing call notification state (WhatsApp-like)
   const [incomingCall, setIncomingCall] = useState<{
     bookingId: string;
@@ -223,10 +193,10 @@ export function CustomerHomeComplete({
     vendorName: string;
     vendorPhoto?: string;
   } | null>(null);
-  
+
   // ✅ FIX GAP-8.4: Active order tracking state
   const [activeOrderTracking, setActiveOrderTracking] = useState<any | null>(null);
-  
+
   // Dynamic content from CMS
   const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
@@ -235,8 +205,8 @@ export function CustomerHomeComplete({
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
 
   // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
-  const { 
-    activeSessions: gpsActiveSessions, 
+  const {
+    activeSessions: gpsActiveSessions,
     hasActiveTracking: hasGpsTracking,
     refresh: refreshGpsTracking,
   } = useActiveGpsTracking(phone, {
@@ -298,38 +268,7 @@ export function CustomerHomeComplete({
 
   // Define quickServices constant (fallback when API has no categories)
   // Labels aligned with canonical names: Trainer, Behaviorist, Emergency care, Ambulance, Lab Test, Diagnostics
-  const quickServices = [
-    // PRIMARY SERVICES
-    { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'vet' },
-    { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
-    { icon: ShoppingBag, label: 'Pet Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
-    { icon: GraduationCap, label: 'Trainer', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
-    
-    // HEALTHCARE SERVICES
-    { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' },
-    { icon: FlaskConical, label: 'Lab Test', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' },
-    
-    // CARE SERVICES
-    { icon: Dog, label: 'Dog Walker', color: 'bg-green-100 text-green-600', screen: 'walker', categoryId: 'walker' },
-    { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding', categoryId: 'boarding' },
-    { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption', categoryId: 'adoption' },
-    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
-    { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes', categoryId: 'cafes' },
-    
-    // SPECIALIZED SERVICES - NEW
-    { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography', categoryId: 'photography' },
-    { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance', categoryId: 'insurance' },
-    { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder', categoryId: 'breeder' },
-    { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance', categoryId: 'ambulance' },
-    
-    // WELLNESS & BEHAVIORAL
-    { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' },
-    { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' },
-    { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation', categoryId: 'relocation' },
-    { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort', categoryId: 'resort' },
-    { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday', categoryId: 'holiday' },
-    { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset', categoryId: 'sunset' },
-  ];
+
 
   // Canonical display names: avoid duplicate-sounding labels (Trainer vs Training, Lab Test vs Diagnostics, etc.)
   const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
@@ -378,19 +317,19 @@ export function CustomerHomeComplete({
   if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
   if (!hasBehaviorist) sourceQuickServices = [...sourceQuickServices, { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' }];
 
-  // ✅ FIX: Deduplicate services by screen and apply label overrides
+  // Deduplicate services by screen and apply label overrides
   const seenScreens = new Set<string>();
   const deduplicatedServices = sourceQuickServices
     .map((service: any) => {
       const screen = service.screen || service.categoryId || '';
       const categoryId = (service.categoryId || service.screen || '').toLowerCase();
-      
+
       // Apply label override
-      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(key => 
+      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(key =>
         categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
       );
       const label = overrideKey ? SERVICE_LABEL_OVERRIDE[overrideKey] : service.label;
-      
+
       return { ...service, label, screen };
     })
     .filter((service: any) => {
@@ -401,7 +340,7 @@ export function CustomerHomeComplete({
       seenScreens.add(screen);
       return true; // Keep first occurrence
     });
-  
+
   sourceQuickServices = deduplicatedServices;
 
   useEffect(() => {
@@ -480,14 +419,14 @@ export function CustomerHomeComplete({
   const loadServicesFromAPI = async () => {
     try {
       setServicesLoading(true);
-      
+
       // Use Promise.allSettled to handle failures gracefully
       const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
         apiClient.get<any>('/customer/discover-services?category=grooming'),
         apiClient.get<any>('/customer/discover-services?category=vet'),
         apiClient.get<any>('/products?featured=true&limit=3'),
       ]);
-      
+
       // Handle grooming services
       if (groomingResult.status === 'fulfilled') {
         const groomingResp = groomingResult.value;
@@ -510,7 +449,7 @@ export function CustomerHomeComplete({
           console.warn('Failed to load grooming services:', error.message);
         }
       }
-      
+
       // Handle vet services
       if (vetResult.status === 'fulfilled') {
         const vetResp = vetResult.value;
@@ -533,7 +472,7 @@ export function CustomerHomeComplete({
           console.warn('Failed to load vet services:', error.message);
         }
       }
-      
+
       // Handle products/deals
       if (productsResult.status === 'fulfilled') {
         const productsResp = productsResult.value;
@@ -566,195 +505,139 @@ export function CustomerHomeComplete({
 
   // Load service launch config - controls service visibility based on GEOGRAPHY
   // Services can be: hidden, coming_soon, beta, or launched per state/city
+  // IMPORTANT: Always start with all services visible (use dynamic categories when available)
+  // Service launch config should only RESTRICT services based on geography
+  // Get customer's location from profile (city and state)
   useEffect(() => {
     const loadServiceLaunchConfig = async () => {
       try {
-        // IMPORTANT: Always start with all services visible (use dynamic categories when available)
-        // Service launch config should only RESTRICT services based on geography
+
         setFilteredQuickServices(sourceQuickServices);
-        
-        // Get customer's location from profile (city and state)
+
         const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null);
         const profile = profileResponse as any;
-        
+
         let customerCity = '';
         let customerState = '';
-        
-        if (profile && (profile.success || profile.profile)) {
-          const profileData = profile.profile || profile;
-          
-          // Try multiple sources for city
-          customerCity = profileData.city 
-            || profileData.address?.city 
-            || profileData.addresses?.[0]?.city
-            || profileData.default_address?.city
-            || '';
-          
-          // Try multiple sources for state
-          customerState = profileData.state 
-            || profileData.address?.state 
-            || profileData.addresses?.[0]?.state
-            || profileData.default_address?.state
-            || '';
-          
-          // Get pincode for fallback inference
-          const pincode = profileData.pincode 
-            || profileData.address?.pincode 
-            || profileData.addresses?.[0]?.pincode
-            || '';
-          
-          // Infer city/state from Indian pincodes if not available
-          if ((!customerCity || !customerState) && pincode) {
-            const pincodePrefix = pincode.toString().substring(0, 3);
-            // Bangalore pincodes: 560xxx
-            if (pincodePrefix === '560') {
-              if (!customerCity) customerCity = 'Bangalore';
-              if (!customerState) customerState = 'Karnataka';
-            }
-            // Mumbai pincodes: 400xxx
-            else if (pincodePrefix === '400') {
-              if (!customerCity) customerCity = 'Mumbai';
-              if (!customerState) customerState = 'Maharashtra';
-            }
-            // Delhi pincodes: 110xxx
-            else if (pincodePrefix === '110') {
-              if (!customerCity) customerCity = 'New Delhi';
-              if (!customerState) customerState = 'Delhi';
-            }
-            // Chennai pincodes: 600xxx
-            else if (pincodePrefix === '600') {
-              if (!customerCity) customerCity = 'Chennai';
-              if (!customerState) customerState = 'Tamil Nadu';
-            }
-            // Hyderabad pincodes: 500xxx
-            else if (pincodePrefix === '500') {
-              if (!customerCity) customerCity = 'Hyderabad';
-              if (!customerState) customerState = 'Telangana';
-            }
-            // Pune pincodes: 411xxx
-            else if (pincodePrefix === '411') {
-              if (!customerCity) customerCity = 'Pune';
-              if (!customerState) customerState = 'Maharashtra';
-            }
-          }
-          
-          // Log for debugging
-          console.log('[ServiceLaunchConfig] Customer location from profile:', { 
-            city: customerCity, 
-            state: customerState,
-            pincode: pincode,
-            profileKeys: Object.keys(profileData),
-          });
-        }
+
+        serviceBaseOnpincode(profile, customerCity, customerState, profile?.pincode || '');
 
         // Fetch service launch config based on customer's location
         const params = new URLSearchParams();
         if (customerState) params.append('state', customerState);
         if (customerCity) params.append('city', customerCity);
-        
-        console.log('[ServiceLaunchConfig] Fetching with params:', params.toString());
-        
+
+
         const configResponse = await apiClient.get(`/config/service-launch/customer?${params.toString()}`).catch(() => null);
-        
+
         if (configResponse && (configResponse as any).success) {
           const { services, buttons } = configResponse as any;
-          
+
           // Store config for reference (using buttons for backward compatibility)
           if (buttons) {
             setDashboardConfig({ buttons });
           }
-          
-          // Map service IDs to screen names
-          const serviceScreenMap: Record<string, string[]> = {
-            'vet': ['vet'],
-            'veterinary': ['vet'],
-            'grooming': ['grooming'],
-            'training': ['training'],
-            'walker': ['walker'],
-            'walking': ['walker'],
-            'boarding': ['boarding'],
-            'adoption': ['adoption'],
-            'mating': ['mating-dating-hub'],
-            'cafes': ['cafes'],
-            'photography': ['photography'],
-            'insurance': ['insurance'],
-            'breeder': ['breeder'],
-            'ambulance': ['ambulance'],
-            'emergency': ['ambulance'],
-            'nutritionist': ['nutritionist'],
-            'wellness': ['nutritionist'],
-            'relocation': ['relocation'],
-            'resort': ['resort'],
-            'holiday': ['holiday'],
-            'sunset': ['sunset'],
-            'shop': ['shop'],
-            'pharmacy': ['shop'],
-            'diagnostic': ['vet'],
-            'diagnostics': ['vet'],
-          };
-          
-          // Build sets: block by categoryId so "Nutritionist" and "Wellness & Nutrition" can be toggled independently
-          const blockedCategoryIds = new Set<string>();
-          const comingSoonCategoryIds = new Set<string>();
-          const blockedServiceIds = new Set<string>();
-          const comingSoonServiceIds = new Set<string>();
-          
-          if (services) {
-            (services.hidden || []).forEach((svc: any) => {
-              const svcId = (svc.serviceId || '').toLowerCase();
-              blockedCategoryIds.add(svcId);
-              for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                if (svcId.includes(key) || key.includes(svcId)) {
-                  screens.forEach(screen => blockedServiceIds.add(screen));
-                }
+
+
+          if (services && (services.visible || []).length > 0) {
+            // ✅ PRIMARY PATH: Use services.visible as the source of truth.
+            // Look up each visible serviceId in BOTH the catalog tiles AND the static
+            // quickServices fallback — so services missing from the catalog (e.g. vet,
+            // walker, nutritionist) are still shown when the backend marks them visible.
+            const comingSoonIds = new Set<string>(
+              (services.comingSoon || []).map((s: any) => (s.serviceId || '').toLowerCase())
+            );
+
+            // Pool: catalog tiles first (richer icon/label data), then static fallback
+            const allTilePool = [...sourceQuickServices, ...quickServices];
+            const seenScreens = new Set<string>();
+            const resultTiles: any[] = [];
+            for (const visibleSvc of (services.visible || [])) {
+              const svcId = (visibleSvc.serviceId || '').toLowerCase();
+
+              // Match tile by comparing svcId against both categoryId and screen
+              const matchingTile = allTilePool.find((tile: any) => {
+                const catId = (tile.categoryId || '').toLowerCase();
+                const tileScreen = (tile.screen || '').toLowerCase();
+                return catId === svcId || tileScreen === svcId;
+              });
+
+              if (matchingTile && !seenScreens.has(matchingTile.screen)) {
+                seenScreens.add(matchingTile.screen);
+                resultTiles.push({
+                  ...matchingTile,
+                  isComingSoon: comingSoonIds.has(svcId),
+                });
               }
-            });
-            (services.comingSoon || []).forEach((svc: any) => {
-              const svcId = (svc.serviceId || '').toLowerCase();
-              comingSoonCategoryIds.add(svcId);
-              for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                if (svcId.includes(key) || key.includes(svcId)) {
-                  screens.forEach(screen => comingSoonServiceIds.add(screen));
-                }
-              }
-            });
-          }
-          
-          if (buttons && Array.isArray(buttons)) {
-            buttons.forEach((btn: any) => {
-              const btnId = (btn.id || '').toLowerCase();
-              if (btn.enabled === false) {
-                blockedCategoryIds.add(btnId);
+            }
+
+            console.log('[ServiceFilter] visible tiles resolved:', resultTiles.map((t: any) => t.screen));
+            setFilteredQuickServices(resultTiles.length > 0 ? resultTiles : sourceQuickServices);
+
+          } else {
+            // FALLBACK PATH: No visible list — use hidden list as block list (backward compat)
+            const blockedCategoryIds = new Set<string>();
+            const comingSoonCategoryIds = new Set<string>();
+            const blockedServiceIds = new Set<string>();
+            const comingSoonServiceIds = new Set<string>();
+
+            if (services) {
+              (services.hidden || []).forEach((svc: any) => {
+                const svcId = (svc.serviceId || '').toLowerCase();
+                blockedCategoryIds.add(svcId);
                 for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                  if (btnId.includes(key) || key.includes(btnId)) {
+                  if (svcId.includes(key) || key.includes(svcId)) {
                     screens.forEach(screen => blockedServiceIds.add(screen));
                   }
                 }
-              } else if (btn.launchPhase === 'coming_soon') {
-                comingSoonCategoryIds.add(btnId);
+              });
+              (services.comingSoon || []).forEach((svc: any) => {
+                const svcId = (svc.serviceId || '').toLowerCase();
+                comingSoonCategoryIds.add(svcId);
                 for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                  if (btnId.includes(key) || key.includes(btnId)) {
+                  if (svcId.includes(key) || key.includes(svcId)) {
                     screens.forEach(screen => comingSoonServiceIds.add(screen));
                   }
                 }
-              }
-            });
-          }
-          
-          if (blockedCategoryIds.size > 0 || comingSoonCategoryIds.size > 0 || blockedServiceIds.size > 0 || comingSoonServiceIds.size > 0) {
-            const filtered = sourceQuickServices.filter((service: any) => {
-              const catId = (service.categoryId || '').toLowerCase();
-              if (catId) return !blockedCategoryIds.has(catId);
-              return !blockedServiceIds.has(service.screen);
-            });
-            const withComingSoon = filtered.map((service: any) => ({
-              ...service,
-              isComingSoon: (service.categoryId && comingSoonCategoryIds.has((service.categoryId || '').toLowerCase())) || comingSoonServiceIds.has(service.screen),
-            }));
-            setFilteredQuickServices(withComingSoon.length > 0 ? withComingSoon : sourceQuickServices);
+              });
+            }
+
+            if (buttons && Array.isArray(buttons)) {
+              buttons.forEach((btn: any) => {
+                const btnId = (btn.id || '').toLowerCase();
+                if (btn.enabled === false) {
+                  blockedCategoryIds.add(btnId);
+                  for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                    if (btnId.includes(key) || key.includes(btnId)) {
+                      screens.forEach(screen => blockedServiceIds.add(screen));
+                    }
+                  }
+                } else if (btn.launchPhase === 'coming_soon') {
+                  comingSoonCategoryIds.add(btnId);
+                  for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                    if (btnId.includes(key) || key.includes(btnId)) {
+                      screens.forEach(screen => comingSoonServiceIds.add(screen));
+                    }
+                  }
+                }
+              });
+            }
+
+            if (blockedCategoryIds.size > 0 || comingSoonCategoryIds.size > 0 || blockedServiceIds.size > 0 || comingSoonServiceIds.size > 0) {
+              const filtered = sourceQuickServices.filter((service: any) => {
+                const catId = (service.categoryId || '').toLowerCase();
+                const screen = (service.screen || '').toLowerCase();
+                return !blockedCategoryIds.has(catId) && !blockedCategoryIds.has(screen) && !blockedServiceIds.has(screen);
+              });
+              const withComingSoon = filtered.map((service: any) => ({
+                ...service,
+                isComingSoon: comingSoonCategoryIds.has((service.categoryId || '').toLowerCase()) || comingSoonServiceIds.has(service.screen),
+              }));
+              setFilteredQuickServices(withComingSoon.length > 0 ? withComingSoon : sourceQuickServices);
+            }
           }
         }
-        
+
         // Fallback: Try legacy role-based config if new endpoint fails
         // This ensures backward compatibility during migration
         if (!configResponse || !(configResponse as any).success) {
@@ -766,7 +649,7 @@ export function CustomerHomeComplete({
         // Keep all services visible on error (already set at start)
       }
     };
-    
+
     if (phone) {
       loadServiceLaunchConfig();
     } else {
@@ -788,7 +671,7 @@ export function CustomerHomeComplete({
       // ✅ Set customerId early so incoming-call poll uses UUID (backend matches recipient_id to UUID)
       apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).then((r) => {
         if (r?.customer?.id) setCustomerId(r.customer.id);
-      }).catch(() => {});
+      }).catch(() => { });
       loadActiveBookings();
       checkPendingReviews(); // ✅ Check for pending reviews on load
       checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
@@ -813,27 +696,27 @@ export function CustomerHomeComplete({
       // Rule 1: Include vendor_on_way so customer sees "track provider" when vendor has started travel
       const response = await apiClient.get<any>(`/customer/bookings?phone=${encodeURIComponent(phone)}&status=in_progress,vendor_on_way`);
       const bookings = response.bookings || response.data || [];
-      
+
       // Filter bookings that have tracking enabled (home services)
       // Rule 1: Include vendor_on_way (set by backend when vendor clicks Start Travel); when vendor_on_way, tracking is active
-      const bookingsWithTracking = bookings.filter((booking: any) => 
-        booking.serviceStyle === 'at_home' && 
+      const bookingsWithTracking = bookings.filter((booking: any) =>
+        booking.serviceStyle === 'at_home' &&
         (booking.status === 'in_progress' || booking.status === 'active' || booking.status === 'on_way' || booking.status === 'in_transit' || booking.status === 'vendor_on_way') &&
         (booking.trackingEnabled || booking.tracking_enabled || booking.status === 'vendor_on_way')
       );
-      
+
       setActiveBookings(bookingsWithTracking);
-      
+
       // ✅ Auto-show popup if vendor is on the way (fallback when GPS hook doesn't have data)
       // GPS hook is primary source, this is fallback for bookings API data
       if (!hasGpsTracking && !vendorOnTheWay) {
-        const onWayBooking = bookingsWithTracking.find((b: any) => 
-          b.status === 'on_way' || 
+        const onWayBooking = bookingsWithTracking.find((b: any) =>
+          b.status === 'on_way' ||
           b.status === 'in_transit' ||
           b.status === 'vendor_on_way' ||
-          b.tracking_status === 'on_way' || 
+          b.tracking_status === 'on_way' ||
           b.tracking_status === 'in_transit' ||
-          b.trackingStatus === 'on_way' || 
+          b.trackingStatus === 'on_way' ||
           b.vendorStatus === 'traveling'
         );
         if (onWayBooking) {
@@ -862,14 +745,14 @@ export function CustomerHomeComplete({
       setActiveBookings([]);
     }
   };
-  
+
   // ✅ Check for joinable tele calls: from 5 min before until appointment completed (includeLive=true)
   const checkUpcomingCalls = async () => {
     try {
       const response = await apiClient.get<any>(
         `/customer/${phone}/bookings/upcoming-calls?minutes=5&includeLive=true`
       );
-      
+
       if (response.success && response.bookings && response.bookings.length > 0) {
         const nextCall = response.bookings[0];
         const scheduledAt = new Date(nextCall.scheduledAt || nextCall.bookingDate);
@@ -903,27 +786,27 @@ export function CustomerHomeComplete({
   // ✅ CRITICAL FIX: Check for incoming call notifications (instant tele)
   const checkIncomingCalls = async () => {
     if (!customerId && !phone) return;
-    
+
     try {
       // Check for unread call notifications
       // ✅ CRITICAL FIX: Use correct query parameters (userId and userType, not userType and type)
       const notificationsResponse = await apiClient.get<any>(
         `/notifications?userId=${customerId || phone}&userType=customer&isRead=false`
       );
-      
+
       if (notificationsResponse.success && notificationsResponse.notifications?.length > 0) {
         // Filter for tele_call_incoming type
-        const callNotifications = notificationsResponse.notifications.filter((n: any) => 
+        const callNotifications = notificationsResponse.notifications.filter((n: any) =>
           (n.notification_type === 'tele_call_incoming' || n.type === 'tele_call_incoming') && !n.is_read
         );
-        
+
         if (callNotifications.length === 0) return;
-        
+
         const callNotification = callNotifications[0];
-        const notificationData = typeof callNotification.data === 'string' 
-          ? JSON.parse(callNotification.data) 
+        const notificationData = typeof callNotification.data === 'string'
+          ? JSON.parse(callNotification.data)
           : callNotification.data || {};
-        
+
         if (notificationData.booking_id && notificationData.call_type === 'incoming') {
           // Show incoming call immediately from notification data (don't block on GET /bookings 404)
           const baseIncoming = {
@@ -963,14 +846,14 @@ export function CustomerHomeComplete({
             // Keep base incoming call; UI already shows Accept/Reject
           }
 
-          await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
+          await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => { });
         }
       }
     } catch (error) {
       console.error('Error checking incoming calls:', error);
     }
   };
-  
+
   // ✅ FIX GAP-8.4 + ChunkLoadError resilience: Check for active order tracking
   // Call pharmacy and meals APIs separately so a failing meals/active (e.g. 404/HTML) does not break the screen
   const checkActiveOrderTracking = async () => {
@@ -1005,7 +888,7 @@ export function CustomerHomeComplete({
       setActiveOrderTracking(null);
     }
   };
-  
+
   // ✅ Check for pending reviews on completed bookings
   const checkPendingReviews = async () => {
     try {
@@ -1014,7 +897,7 @@ export function CustomerHomeComplete({
       const custId = customerRes.customer?.id;
       if (custId) {
         setCustomerId(custId);
-        
+
         // Check for pending review
         const reviewRes = await apiClient.get<any>(`/reviews/pending/${custId}`);
         if (reviewRes.hasPending && reviewRes.booking) {
@@ -1038,7 +921,7 @@ export function CustomerHomeComplete({
   const loadUserData = async () => {
     try {
       setLoading(true);
-      
+
       // Load profile and pets in parallel using phone-based endpoints with better error handling
       const [profileResult, petsResult] = await Promise.allSettled([
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`),
@@ -1057,7 +940,7 @@ export function CustomerHomeComplete({
             journeyType: profile.journeyType || ''
           }));
           setUserProfilePhoto(profile.photo || profile.profile_photo_url || '');
-          
+
           // Profile already includes pets if available
           if (profile.pets && Array.isArray(profile.pets) && profile.pets.length > 0) {
             setUserData(prev => ({
@@ -1106,7 +989,7 @@ export function CustomerHomeComplete({
           } else if (petsResp.success && Array.isArray(petsResp.data)) {
             pets = petsResp.data;
           }
-          
+
           if (pets.length > 0) {
             setUserData(prev => ({
               ...prev,
@@ -1158,7 +1041,7 @@ export function CustomerHomeComplete({
       alert('Please enter a pet name');
       return;
     }
-    
+
     setSavingPet(true);
     try {
       const response = await apiClient.post('/customer/pets', {
@@ -1171,7 +1054,7 @@ export function CustomerHomeComplete({
           gender: newPetData.gender,
         }]
       });
-      
+
       if (response) {
         // Reload user data to get the new pet
         await loadUserData();
@@ -1198,71 +1081,23 @@ export function CustomerHomeComplete({
   }
 
   // Use dynamic banners if available, otherwise use defaults
-  const defaultBanners = [
-    {
-      id: 'default-1',
-      title: "Get 50% OFF",
-      subtitle: "First Grooming Session",
-      gradientFrom: "#FF8C42",
-      gradientTo: "#FF6B35",
-      Icon: Scissors,
-      ctaText: "Claim Now",
-      ctaLink: "grooming"
-    },
-    {
-      id: 'default-2',
-      title: "Free Health Checkup",
-      subtitle: "Book Vet Appointment Today",
-      gradientFrom: "#4CAF50",
-      gradientTo: "#2E7D32",
-      Icon: Stethoscope,
-      ctaText: "Book Now",
-      ctaLink: "vet"
-    },
-    {
-      id: 'default-3',
-      title: "Premium Pet Food",
-      subtitle: "20% OFF on First Order",
-      gradientFrom: "#FF6B9D",
-      gradientTo: "#C44569",
-      Icon: Bone,
-      ctaText: "Shop Now",
-      ctaLink: "shop"
-    }
-  ];
-  
-  const banners = dynamicBanners.length > 0 
+
+
+  const banners = dynamicBanners.length > 0
     ? dynamicBanners.map((b: any) => ({
-        id: b.id,
-        title: b.title,
-        subtitle: b.subtitle,
-        gradientFrom: b.gradientFrom || "#FF8C42",
-        gradientTo: b.gradientTo || "#FF6B35",
-        Icon: Scissors, // Default icon - could map based on ctaLink
-        ctaText: b.ctaText || "Learn More",
-        ctaLink: b.ctaLink || ""
-      }))
+      id: b.id,
+      title: b.title,
+      subtitle: b.subtitle,
+      gradientFrom: b.gradientFrom || "#FF8C42",
+      gradientTo: b.gradientTo || "#FF6B35",
+      Icon: Scissors, // Default icon - could map based on ctaLink
+      ctaText: b.ctaText || "Learn More",
+      ctaLink: b.ctaLink || ""
+    }))
     : defaultBanners;
 
 
-  // Fallback defaults if API returns no data
-  const defaultGroomingServices = [
-    { title: 'At Home Grooming', price: '₹999', rating: 4.8, Icon: HomeIcon, description: 'Professional grooming at your doorstep' },
-    { title: 'Salon Appointment', price: '₹799', rating: 4.9, Icon: Scissors, description: 'Premium salon experience' },
-    { title: 'Spa Package', price: '₹1499', rating: 5.0, Icon: Sparkles, description: 'Complete spa & wellness' },
-  ];
 
-  const defaultVetServices = [
-    { title: 'Vet at Home', price: '₹599', Icon: HomeIcon, description: 'Doctor visits you', type: 'visit' },
-    { title: 'Tele Consulting', price: '₹299', Icon: Phone, description: 'Video consultation', type: 'video' },
-    { title: 'Clinic Appointment', price: '₹399', Icon: Building2, description: 'Visit nearby clinic', type: 'clinic' },
-  ];
-
-  const defaultHotDeals = [
-    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', Icon: Bone, rating: 4.7 },
-    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', Icon: PackageIcon, rating: 4.5 },
-    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', Icon: MapPin, rating: 4.9 },
-  ];
 
   // Use API data or fallback to defaults
   const displayGroomingServices = groomingServices.length > 0 ? groomingServices : defaultGroomingServices;
@@ -1275,38 +1110,18 @@ export function CustomerHomeComplete({
     title: a.title,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
-    Icon: a.category === 'Nutrition' ? UtensilsCrossed 
-      : a.category === 'Insurance' ? Shield 
-      : a.category === 'Health' ? Heart
-      : Dog,
+    Icon: a.category === 'Nutrition' ? UtensilsCrossed
+      : a.category === 'Insurance' ? Shield
+        : a.category === 'Health' ? Heart
+          : Dog,
     url: a.url,
     content: a.content,
     description: a.description
   }));
 
-  const adoptionOptions = [
-    {
-      title: 'Adopt from NGOs',
-      description: 'Give a home to rescued pets',
-      Icon: Heart,
-      count: `${adoptionStats.adoptablePets}+ pets`
-    },
-    {
-      title: 'Certified Breeders',
-      description: 'Ethical & verified breeders',
-      Icon: Star,
-      count: `${adoptionStats.certifiedBreeders}+ breeders`
-    },
-    {
-      title: 'Pet Rehoming',
-      description: 'Find loving owners',
-      Icon: HomeIcon,
-      count: `${adoptionStats.rehomingListings}+ listings`
-    },
-  ];
 
-  const containerClassName = hideHeaderFooter 
-    ? 'min-h-screen bg-gray-50' 
+  const containerClassName = hideHeaderFooter
+    ? 'min-h-screen bg-gray-50'
     : 'min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto';
 
   return (
@@ -1314,127 +1129,126 @@ export function CustomerHomeComplete({
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pt-4 pb-4">
-        {/* Top Row - User Info & Actions */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => onProfileClick && onProfileClick()}
-              className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
-            >
-              {userProfilePhoto ? (
-                <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
-                  {userData.name.charAt(0).toUpperCase()}
-                </div>
-              )}
-            </button>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
-                <span className="text-base" role="img" aria-label="wave">👋</span>
-              </div>
-              <p className="text-white/65 text-xs font-normal tracking-wide">Explore WarmPawz Services</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {/* Wallet Icon - Gold coin style with balance */}
-            <WalletIcon
-              customerPhone={phone}
-              onClick={() => onNavigate && onNavigate('wallet')}
-              size="sm"
-              showBalance={true}
-            />
-            <button 
-              onClick={() => onNavigate && onNavigate('cart')}
-              className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
-            >
-              <ShoppingCart className="w-[18px] h-[18px] text-white" />
-              {itemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-[18px] h-[18px] flex items-center justify-center font-bold shadow-sm">
-                  {itemCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => onNavigate?.('wishlist')}
-              className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
-              aria-label="Wishlist"
-            >
-              <Heart className="w-[18px] h-[18px] text-white" />
-            </button>
-          </div>
-        </div>
-
-        {/* Pet Selector - Compact horizontal layout */}
-        {userData.pets.length > 0 ? (
-          <div className="flex items-center gap-3">
-            <span className="text-white/90 text-[11px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
-            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide flex-1">
-              {userData.pets.map((pet) => (
-                <div key={pet.id} className="relative flex-shrink-0">
-                  <button
-                    onClick={() => setSelectedPet(pet)}
-                    className="flex flex-col items-center gap-1"
-                  >
-                    <div 
-                      className={`w-11 h-11 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${
-                        selectedPet?.id === pet.id
-                          ? 'ring-2 ring-white bg-white shadow-md scale-105'
-                          : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
-                      }`}
-                    >
-                      {pet.photo || pet.image ? (
-                        <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
-                      ) : (
-                        pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
-                      )}
-                    </div>
-                    <span className={`text-[10px] font-semibold max-w-[44px] truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
-                      {pet.name}
-                    </span>
-                  </button>
-                  
-                  {/* Edit/View Button - Only show for selected pet */}
-                  {selectedPet?.id === pet.id && (
-                    <button
-                      onClick={() => onPetClick && onPetClick(pet.id)}
-                      className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
-                      title="View/Edit Pet Profile"
-                    >
-                      <ChevronRight className="w-2.5 h-2.5 text-white" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              
-              {/* Add Pet Button */}
+          {/* Top Row - User Info & Actions */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
               <button
-                onClick={handleAddPet}
-                className="flex-shrink-0 flex flex-col items-center gap-1"
+                onClick={() => onProfileClick && onProfileClick()}
+                className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
               >
-                <div className="w-11 h-11 bg-white/15 backdrop-blur-sm rounded-full flex items-center justify-center border-[1.5px] border-white/50 border-dashed hover:bg-white/25 transition-colors">
-                  <Plus className="w-4 h-4 text-white" />
+                {userProfilePhoto ? (
+                  <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
+                    {userData.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </button>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-1">
+                  <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
+                  <span className="text-base" role="img" aria-label="wave">👋</span>
                 </div>
-                <span className="text-[10px] text-white/80 font-semibold">Add</span>
+                <p className="text-white/65 text-xs font-normal tracking-wide">Explore WarmPawz Services</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {/* Wallet Icon - Gold coin style with balance */}
+              <WalletIcon
+                customerPhone={phone}
+                onClick={() => onNavigate && onNavigate('wallet')}
+                size="sm"
+                showBalance={true}
+              />
+              <button
+                onClick={() => onNavigate && onNavigate('cart')}
+                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
+              >
+                <ShoppingCart className="w-[18px] h-[18px] text-white" />
+                {itemCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-[18px] h-[18px] flex items-center justify-center font-bold shadow-sm">
+                    {itemCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => onNavigate?.('wishlist')}
+                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                aria-label="Wishlist"
+              >
+                <Heart className="w-[18px] h-[18px] text-white" />
               </button>
             </div>
           </div>
-        ) : (
-          <button
-            onClick={handleAddPet}
-            className="w-full bg-white/15 backdrop-blur-sm rounded-xl py-2.5 px-3 border border-white/35 border-dashed flex items-center gap-2.5 hover:bg-white/25 transition-colors"
-          >
-            <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center">
-              <Heart className="w-4 h-4 text-white" />
+
+          {/* Pet Selector - Compact horizontal layout */}
+          {userData.pets.length > 0 ? (
+            <div className="flex items-center gap-3">
+              <span className="text-white/90 text-[11px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
+              <div className="flex gap-2.5 overflow-x-auto scrollbar-hide flex-1">
+                {userData.pets.map((pet) => (
+                  <div key={pet.id} className="relative flex-shrink-0">
+                    <button
+                      onClick={() => setSelectedPet(pet)}
+                      className="flex flex-col items-center gap-1"
+                    >
+                      <div
+                        className={`w-11 h-11 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${selectedPet?.id === pet.id
+                          ? 'ring-2 ring-white bg-white shadow-md scale-105'
+                          : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
+                          }`}
+                      >
+                        {pet.photo || pet.image ? (
+                          <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                        ) : (
+                          pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-semibold max-w-[44px] truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
+                        {pet.name}
+                      </span>
+                    </button>
+
+                    {/* Edit/View Button - Only show for selected pet */}
+                    {selectedPet?.id === pet.id && (
+                      <button
+                        onClick={() => onPetClick && onPetClick(pet.id)}
+                        className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
+                        title="View/Edit Pet Profile"
+                      >
+                        <ChevronRight className="w-2.5 h-2.5 text-white" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {/* Add Pet Button */}
+                <button
+                  onClick={handleAddPet}
+                  className="flex-shrink-0 flex flex-col items-center gap-1"
+                >
+                  <div className="w-11 h-11 bg-white/15 backdrop-blur-sm rounded-full flex items-center justify-center border-[1.5px] border-white/50 border-dashed hover:bg-white/25 transition-colors">
+                    <Plus className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-[10px] text-white/80 font-semibold">Add</span>
+                </button>
+              </div>
             </div>
-            <div className="text-left flex-1">
-              <p className="text-white text-sm font-semibold tracking-tight">Add Your Pet</p>
-              <p className="text-white/60 text-[11px] font-normal">Unlock personalized services</p>
-            </div>
-            <Plus className="w-4 h-4 text-white/80" />
-          </button>
-        )}
+          ) : (
+            <button
+              onClick={handleAddPet}
+              className="w-full bg-white/15 backdrop-blur-sm rounded-xl py-2.5 px-3 border border-white/35 border-dashed flex items-center gap-2.5 hover:bg-white/25 transition-colors"
+            >
+              <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center">
+                <Heart className="w-4 h-4 text-white" />
+              </div>
+              <div className="text-left flex-1">
+                <p className="text-white text-sm font-semibold tracking-tight">Add Your Pet</p>
+                <p className="text-white/60 text-[11px] font-normal">Unlock personalized services</p>
+              </div>
+              <Plus className="w-4 h-4 text-white/80" />
+            </button>
+          )}
         </div>
       )}
 
@@ -1453,7 +1267,7 @@ export function CustomerHomeComplete({
                   <p className="text-sm text-gray-600">Provider is on the way</p>
                 </div>
               </div>
-              
+
               {activeBookings.map((booking: any) => (
                 <div key={booking.id} className="bg-white rounded-xl p-4 mb-2 last:mb-0">
                   <div className="flex items-center justify-between mb-2">
@@ -1505,35 +1319,7 @@ export function CustomerHomeComplete({
                 return;
               }
               if (result.type === 'service' || result.category) {
-                const serviceNavigationMap: Record<string, string> = {
-                  'veterinary': 'vet',
-                  'vet': 'vet',
-                  'grooming': 'grooming',
-                  'boarding': 'boarding',
-                  'training': 'training',
-                  'walking': 'walker',
-                  'walker': 'walker',
-                  'nutrition': 'nutritionist',
-                  'nutritionist': 'nutritionist',
-                  'behavioral': 'behaviorist',
-                  'behaviorist': 'behaviorist',
-                  'cafe': 'cafes',
-                  'cafes': 'cafes',
-                  'adoption': 'adoption',
-                  'breeder': 'breeder',
-                  'ambulance': 'ambulance',
-                  'insurance': 'insurance',
-                  'pharmacy': 'pharmacy',
-                  'diagnostics': 'lab-diagnostics',
-                  'lab-diagnostics': 'lab-diagnostics',
-                  'lab': 'lab-diagnostics',
-                  'photography': 'photography',
-                  'relocation': 'relocation',
-                  'resort': 'resort',
-                  'holiday': 'holiday',
-                  'sunset': 'sunset',
-                  'mating': 'mating-dating-hub'
-                };
+
                 const category = result.category || result.data?.serviceType || result.data?.category || '';
                 const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
                 onNavigate?.(targetScreen);
@@ -1551,7 +1337,7 @@ export function CustomerHomeComplete({
         <div className="mb-4 w-full overflow-hidden">
           <div className="px-4 flex items-center justify-between mb-2">
             <h2 className="text-gray-900 text-sm font-semibold">What&apos;s your pet needs?</h2>
-            <button 
+            <button
               onClick={() => onNavigate?.('problem_grid')}
               className="text-[11px] text-[#FF8C42] font-medium"
             >
@@ -1560,8 +1346,8 @@ export function CustomerHomeComplete({
           </div>
           <ProblemGridNavigation
             onProblemSelect={(problemId, problem) => {
-              onNavigate?.('services_by_problem', { 
-                problemId, 
+              onNavigate?.('services_by_problem', {
+                problemId,
                 problemTitle: problem?.title || (problem as any)?.name || 'Service',
                 roleId: (problem as any)?.roleId || (problem as any)?.vendorType,
                 problem: problem,
@@ -1578,23 +1364,22 @@ export function CustomerHomeComplete({
             {banners.map((banner, index) => (
               <div
                 key={banner.id || index}
-                className={`absolute inset-0 transition-opacity duration-500 ${
-                  currentBanner === index ? 'opacity-100' : 'opacity-0'
-                }`}
+                className={`absolute inset-0 transition-opacity duration-500 ${currentBanner === index ? 'opacity-100' : 'opacity-0'
+                  }`}
                 style={{ background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)` }}
               >
                 <div className="h-full flex items-center justify-between px-4">
                   <div>
                     <h2 className="text-white text-base font-bold mb-0.5">{banner.title}</h2>
                     <p className="text-white/90 text-xs mb-2">{banner.subtitle}</p>
-                    <button 
+                    <button
                       className="bg-white text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-medium"
                       onClick={() => {
                         // Track banner click
                         if (banner.id) {
                           apiClient.post(`/banners/${banner.id}/click`, {
                             source: 'home_carousel'
-                          }).catch(() => {}); // Silent fail for tracking
+                          }).catch(() => { }); // Silent fail for tracking
                         }
                         // Navigate
                         banner.ctaLink && onNavigate?.(banner.ctaLink);
@@ -1614,9 +1399,8 @@ export function CustomerHomeComplete({
               {banners.map((banner, index) => (
                 <div
                   key={banner.id || index}
-                  className={`h-1.5 rounded-full transition-all ${
-                    currentBanner === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
-                  }`}
+                  className={`h-1.5 rounded-full transition-all ${currentBanner === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
+                    }`}
                 />
               ))}
             </div>
@@ -1631,7 +1415,7 @@ export function CustomerHomeComplete({
               <h2 className="text-gray-900 text-sm font-semibold">Shop</h2>
             </div>
             <div className="flex-1 h-px bg-gray-100"></div>
-            <button 
+            <button
               onClick={() => onNavigate?.('shop')}
               className="text-xs text-[#FF8C42] font-medium"
             >
@@ -1707,8 +1491,8 @@ export function CustomerHomeComplete({
             {displayGroomingServices.map((service: any, index) => {
               const ServiceIcon = service.Icon || getServiceStyleIcon(service.serviceStyle);
               return (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => onNavigate?.('grooming')}
                 >
@@ -1725,7 +1509,7 @@ export function CustomerHomeComplete({
                   <p className="text-xs text-gray-600 mb-3">{service.description}</p>
                   <div className="flex items-center justify-between">
                     <span className="text-[#FF8C42] font-medium">{service.price}</span>
-                    <button 
+                    <button
                       className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium hover:bg-[#FF7A2E] transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1748,14 +1532,14 @@ export function CustomerHomeComplete({
               <Stethoscope className="w-5 h-5 text-blue-600" />
               <h2 className="text-black font-semibold">Veterinary Care</h2>
             </div>
-            <button 
+            <button
               onClick={() => onNavigate?.('vet')}
               className="text-xs text-blue-600 font-medium flex items-center gap-1"
             >
               View All <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          
+
           <div className="px-6 grid grid-cols-3 gap-3" data-testid="vet-services-grid" style={{ pointerEvents: 'auto' }}>
             <button
               type="button"
@@ -1841,33 +1625,33 @@ export function CustomerHomeComplete({
                 <div key={index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
                   <div className="h-32 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center relative">
                     <DealIcon className="w-12 h-12 text-pink-500" />
-                  {deal.discount && (
-                    <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
-                      {deal.discount}
+                    {deal.discount && (
+                      <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                        {deal.discount}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-1 line-clamp-2">{deal.title}</h3>
+                    <div className="flex items-center gap-1 mb-2">
+                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                      <span className="text-xs text-gray-600">{deal.rating}</span>
                     </div>
-                  )}
-                </div>
-                <div className="p-3">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-1 line-clamp-2">{deal.title}</h3>
-                  <div className="flex items-center gap-1 mb-2">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs text-gray-600">{deal.rating}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#FF8C42] font-bold text-sm">{deal.price}</span>
+                      <span className="text-gray-400 line-through text-xs">{deal.originalPrice}</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate?.('shop');
+                      }}
+                      className="w-full bg-[#FF8C42] text-white py-2 rounded-lg text-xs font-medium mt-2"
+                    >
+                      Add to Cart
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#FF8C42] font-bold text-sm">{deal.price}</span>
-                    <span className="text-gray-400 line-through text-xs">{deal.originalPrice}</span>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onNavigate?.('shop');
-                    }}
-                    className="w-full bg-[#FF8C42] text-white py-2 rounded-lg text-xs font-medium mt-2"
-                  >
-                    Add to Cart
-                  </button>
                 </div>
-              </div>
               );
             })}
           </div>
@@ -1897,10 +1681,10 @@ export function CustomerHomeComplete({
                     <span className="text-xs line-through text-white/70">₹3,999</span>
                     <div className="text-2xl font-bold">₹2,499</div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => {
                       // ✅ FIX: Navigate directly to vet booking flow with package filter
-                      onNavigate?.('vet-booking', { 
+                      onNavigate?.('vet-booking', {
                         packageId: 'complete-health-package',
                         serviceName: 'Complete Health Package',
                         filter: 'packages'
@@ -1983,25 +1767,25 @@ export function CustomerHomeComplete({
             ])).map((announcement: any) => {
               const isEmergency = announcement.announcementType === 'emergency';
               const isPremium = announcement.announcementType === 'premium';
-              const bgGradient = isEmergency 
-                ? 'from-red-50 to-orange-50 border-red-100' 
-                : isPremium 
-                ? 'from-purple-50 to-indigo-50 border-purple-100'
-                : 'from-orange-50 to-pink-50 border-orange-100';
-              const iconGradient = isEmergency 
-                ? 'from-red-500 to-orange-500' 
-                : isPremium 
-                ? 'from-purple-500 to-indigo-500'
-                : 'from-[#FF8C42] to-[#FF6B35]';
-              const badgeColor = announcement.badgeColor === 'red' ? 'bg-red-500' 
-                : announcement.badgeColor === 'purple' ? 'bg-purple-500' 
-                : announcement.badgeColor === 'blue' ? 'bg-blue-500' 
-                : 'bg-green-500';
+              const bgGradient = isEmergency
+                ? 'from-red-50 to-orange-50 border-red-100'
+                : isPremium
+                  ? 'from-purple-50 to-indigo-50 border-purple-100'
+                  : 'from-orange-50 to-pink-50 border-orange-100';
+              const iconGradient = isEmergency
+                ? 'from-red-500 to-orange-500'
+                : isPremium
+                  ? 'from-purple-500 to-indigo-500'
+                  : 'from-[#FF8C42] to-[#FF6B35]';
+              const badgeColor = announcement.badgeColor === 'red' ? 'bg-red-500'
+                : announcement.badgeColor === 'purple' ? 'bg-purple-500'
+                  : announcement.badgeColor === 'blue' ? 'bg-blue-500'
+                    : 'bg-green-500';
               const IconComponent = isEmergency ? Phone : isPremium ? Star : Bot;
 
               return (
-                <div 
-                  key={announcement.id} 
+                <div
+                  key={announcement.id}
                   className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4`}
                   onClick={() => !isEmergency && announcement.ctaLink && onNavigate?.(announcement.ctaLink)}
                 >
@@ -2026,7 +1810,7 @@ export function CustomerHomeComplete({
                       onClick={(e) => {
                         e.stopPropagation();
                         onNavigate?.(announcement.ctaLink || 'ambulance');
-                      }} 
+                      }}
                       className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
                     >
                       {announcement.ctaText}
@@ -2110,7 +1894,7 @@ export function CustomerHomeComplete({
             <p className="text-xs text-gray-600">Find your perfect companion</p>
           </div>
           <div className="px-6 space-y-3">
-            {adoptionOptions.map((option, index) => (
+            {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, certifiedBreeders: adoptionStats.certifiedBreeders, rehomingListings: adoptionStats.rehomingListings }).map((option, index) => (
               <div key={index} className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-4 border border-red-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
@@ -2328,44 +2112,44 @@ export function CustomerHomeComplete({
       {/* Fixed Bottom Navigation - Hide when Add Pet modal is open to prevent overlap */}
       {!hideHeaderFooter && !showAddPetModal && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-40">
-        <div className="flex items-center justify-around">
-          <button className="flex flex-col items-center gap-1">
-            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
-            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
-          </button>
-          <button 
-            onClick={() => onNavigate && onNavigate('cart')}
-            className="flex flex-col items-center gap-1 relative"
-          >
-            <div className="relative">
-              <ShoppingCart className="w-6 h-6 text-gray-400" />
-              {itemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </div>
-            <span className="text-xs text-gray-400">Cart</span>
-          </button>
-          <button 
-            onClick={() => onNavigate && onNavigate('my-bookings')}
-            className="flex flex-col items-center gap-1"
-          >
-            <Calendar className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Bookings</span>
-          </button>
-          <button 
-            onClick={() => onProfileClick && onProfileClick()}
-            className="flex flex-col items-center gap-1"
-          >
-            <User className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Profile</span>
-          </button>
-        </div>
-        {/* Home Indicator */}
-        <div className="flex justify-center mt-2">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
-        </div>
+          <div className="flex items-center justify-around">
+            <button className="flex flex-col items-center gap-1">
+              <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+              <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+            </button>
+            <button
+              onClick={() => onNavigate && onNavigate('cart')}
+              className="flex flex-col items-center gap-1 relative"
+            >
+              <div className="relative">
+                <ShoppingCart className="w-6 h-6 text-gray-400" />
+                {itemCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {itemCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-xs text-gray-400">Cart</span>
+            </button>
+            <button
+              onClick={() => onNavigate && onNavigate('my-bookings')}
+              className="flex flex-col items-center gap-1"
+            >
+              <Calendar className="w-6 h-6 text-gray-400" />
+              <span className="text-xs text-gray-400">Bookings</span>
+            </button>
+            <button
+              onClick={() => onProfileClick && onProfileClick()}
+              className="flex flex-col items-center gap-1"
+            >
+              <User className="w-6 h-6 text-gray-400" />
+              <span className="text-xs text-gray-400">Profile</span>
+            </button>
+          </div>
+          {/* Home Indicator */}
+          <div className="flex justify-center mt-2">
+            <div className="w-32 h-1 bg-black rounded-full"></div>
+          </div>
         </div>
       )}
 

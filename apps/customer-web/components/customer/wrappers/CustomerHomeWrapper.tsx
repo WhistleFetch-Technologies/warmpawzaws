@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { CustomerHomeComplete as CustomerHome } from '../CustomerHomeComplete';
+import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
 import { CustomerPetProfile } from '../CustomerPetProfile';
@@ -104,11 +104,11 @@ import { IntegratedServicesHub } from '../../IntegratedServicesHub';
 import { ProblemGridSelector } from '../ProblemGridSelector';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter } from '../ProblemGridFlowRouter';
-import { NutritionistServicesLanding } from '../nutrition/landingPage/NutritionistServicesLanding';
-import { MealPlansList } from '../nutrition/landingPage/mealplans/MealPlansList';
+import { MealPlansList } from '../nutrition/MealPlansList';
 import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
-import { NutritionistTeleRouter } from '../nutritionist/NutritionistTeleRouter';
-import { NutritionistBookingRouter } from '../nutritionist/NutritionistBookingRouter';
+import { NutritionistTeleRouter } from '../nutrition/NutritionistTeleRouter';
+import { NutritionistBookingRouter } from '../nutrition/NutritionistBookingRouter';
+import { DietConsultationVendors } from '../nutrition/DietConsultationVendors';
 import { OrderTrackingScreen } from '../tracking/OrderTrackingScreen';
 import { DiagnosticsServicesLanding } from '../DiagnosticsServicesLanding';
 import { DiagnosticsReportViewer, SampleCollectionTracker } from '../diagnostics';
@@ -119,6 +119,7 @@ import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
 import { StandardizedHeader } from '../shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
 import { TrackingPageClient } from '@/app/tracking/[bookingId]/TrackingPageClient'; // ✅ GPS Live Tracking
 import dynamic from 'next/dynamic';
+import { NutritionistServicesLanding } from '../nutrition/NutritionistServicesLanding';
 
 // ✅ Dynamically import video call component to avoid SSR issues with Chime SDK
 // Use default import since ChimeVideoCall is exported as default
@@ -240,6 +241,7 @@ type ScreenType =
   | 'meal-order-tracking'
   | 'nutritionist-tele'
   | 'nutritionist-booking'
+  | 'diet-consultation-services'
   | 'pharmacy_order_flow'
   | 'pharmacy_order_status'
   | 'behaviorist'
@@ -1406,6 +1408,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
               setCurrentScreen('nutrition-meal-plans');
+            } else if (screen === 'diet-consultation-services') {
+              setPreviousScreen('nutritionist');
+              setCurrentScreen('diet-consultation-services');
             } else if (screen === 'nutritionist-tele') {
               setPreviousScreen('nutritionist');
               setCurrentScreen('nutritionist-tele');
@@ -1426,6 +1431,39 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             } else if (screen === 'problem_selected') {
               setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Nutrition', roleId: 'pet_nutritionist' });
               setCurrentScreen('problem_grid_flow');
+            } else {
+              handleBack();
+            }
+          }} 
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'diet-consultation-services') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <DietConsultationVendors 
+          phone={phone} 
+          onBack={() => setCurrentScreen('nutritionist')} 
+          onNavigate={(screen, data) => {
+            if (screen === 'nutritionist-booking') {
+              setPreviousScreen('diet-consultation-services');
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ 
+                vendorId: data?.vendorId, 
+                serviceId: data?.serviceId,
+                serviceType: data?.serviceType || 'pet_nutritionist',
+                serviceName: data?.serviceName,
+                price: data?.price,
+                duration: data?.duration
+              });
+              setCurrentScreen('nutritionist-booking');
+            } else if (screen === 'pets') {
+              setCurrentScreen('pets');
             } else {
               handleBack();
             }

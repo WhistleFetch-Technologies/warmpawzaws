@@ -12,6 +12,10 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
+  const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+  const prodApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
   return (
     <html lang="en">
       <head>
@@ -54,16 +58,32 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* Runtime config: Placeholder - MUST be replaced at deploy time by deploy script.
-            The deploy script (deploy-to-s3.js or manual AWS CLI deploy) replaces the content
-            of this script tag with the correct apiBaseUrl, uatMode, and environment values.
-            DO NOT hardcode dev/prod values here - they get baked into the static HTML at build time. */}
-        <script
-          id="runtime-config-inline"
-          dangerouslySetInnerHTML={{
-            __html: `window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: false, environment: '' };`,
-          }}
-        />
+        {/* ✅ FIX: Inject NEXT_PUBLIC_API_BASE_URL for ALL environments (local dev + production) */}
+        {prodApiUrl && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.__NEXT_PUBLIC_API_BASE_URL__ = "${prodApiUrl}";
+              `,
+            }}
+          />
+        )}
+        {/* Inject production config if running in prod mode */}
+        {isProd && prodApiUrl && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+                  apiBaseUrl: "${prodApiUrl}",
+                  environment: "production",
+                  uatMode: false
+                };
+              `,
+            }}
+          />
+        )}
+        {/* Runtime config injected at deploy-time (static hosting safe). */}
+        <script src="/runtime-config.js" />
         {/* Error handler for chunk load errors */}
         <script
           dangerouslySetInnerHTML={{

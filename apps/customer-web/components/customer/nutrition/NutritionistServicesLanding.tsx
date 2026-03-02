@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { PromotionBanner } from '../../shared/PromotionBanner';
-import { NUTRITIONIST_NEEDS } from '../../ProblemGridSection';
-import { useProblemGridByRole } from '../../useProblemGridByRole';
-import { ServiceDashboardHeader } from '../../shared/ServiceDashboardHeader';
+import { useProblemGridByRole } from '../useProblemGridByRole';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { PromotionBanner } from '../shared/PromotionBanner';
+import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
+import { serviceTypes } from './constants';
+
 
 interface NutritionistServicesLandingProps {
   phone: string;
@@ -55,12 +57,12 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const nutritionistList = data.vendors || data.services || [];
       setNutritionists(nutritionistList);
-      
+
       setStats({
         activeNutritionists: nutritionistList.length || 45,
         consultations: '1.5K+',
-        rating: nutritionistList.length > 0 
-          ? Number(nutritionistList.reduce((acc: number, n: any) => acc + Number(n.rating || 4.9), 0) / nutritionistList.length).toFixed(1) 
+        rating: nutritionistList.length > 0
+          ? Number(nutritionistList.reduce((acc: number, n: any) => acc + Number(n.rating || 4.9), 0) / nutritionistList.length).toFixed(1)
           : '4.9'
       });
     } catch (error) {
@@ -79,11 +81,11 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       onNavigate?.('pets', { action: 'add' });
       return;
     }
-    
+
     try {
-      onNavigate?.('nutritionist-booking', { 
-        vendorId: nutritionist.id || nutritionist.vendorId, 
-        serviceId: 'pet_nutritionist' 
+      onNavigate?.('nutritionist-booking', {
+        vendorId: nutritionist.id || nutritionist.vendorId,
+        serviceId: 'pet_nutritionist'
       });
     } catch (err: any) {
       console.error('Navigation error:', err);
@@ -92,17 +94,10 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   };
 
   const handleBookNow = (data?: any) => {
-    // ✅ FIX: Validate pet context before navigation
-    if (!hasPets || pets.length === 0) {
-      toast.error('Please add a pet first before booking nutrition services');
-      onNavigate?.('pets', { action: 'add' });
-      return;
-    }
-    
+    // Navigate to diet consultation services page (shows all services from all vendors)
     try {
-      onNavigate?.('nutritionist-booking', { 
-        serviceId: 'pet_nutritionist',
-        ...data 
+      onNavigate?.('diet-consultation-services', {
+        serviceType: data?.serviceType || 'Diet Consultation'
       });
     } catch (err: any) {
       console.error('Navigation error:', err);
@@ -110,12 +105,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
   };
 
-  const serviceTypes = [
-    { icon: UtensilsCrossed, label: 'Diet Consultation', color: 'bg-green-100 text-green-600', desc: 'Personalized meal plans' },
-    { icon: Calendar, label: 'Meal Plans', color: 'bg-yellow-100 text-yellow-600', desc: 'Monthly subscriptions' },
-    { icon: Heart, label: 'Weight Management', color: 'bg-pink-100 text-pink-600', desc: 'Healthy weight goals' },
-    { icon: Apple, label: 'Allergy Management', color: 'bg-orange-100 text-orange-600', desc: 'Specialized diets' }
-  ];
+
 
   if (loading) {
     return (
@@ -188,7 +178,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       {/* Main Content - White Card with Top Radius */}
       <div className="bg-white max-w-md mx-auto px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
-          
+
           {/* Promotion Banner */}
           <PromotionBanner service="nutrition" maxPromotions={3} />
 
@@ -201,7 +191,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                 </div>
                 <h2 className="text-lg font-semibold text-slate-900">Consult by Need</h2>
               </div>
-              <button 
+              <button
                 onClick={() => onNavigate?.('problem_grid')}
                 className="text-sm text-[#FF8C42] font-medium hover:text-[#FF7029] transition-colors"
               >
@@ -225,8 +215,8 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                   >
                     <div className={`
                       w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
-                      ${isViewAll 
-                        ? 'bg-orange-50 border-orange-100 text-orange-700 hover:bg-orange-100' 
+                      ${isViewAll
+                        ? 'bg-orange-50 border-orange-100 text-orange-700 hover:bg-orange-100'
                         : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                       }
                     `}>
@@ -305,14 +295,14 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">Expert Nutritionists</h2>
-              <button 
+              <button
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
                 onClick={() => handleBookNow()}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            
+
             <div className="space-y-3">
               {nutritionists.length === 0 ? (
                 <Card className="p-8 text-center">
@@ -322,13 +312,13 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                 </Card>
               ) : (
                 (nutritionists.slice(0, 5).map((nutritionist: any, index) => (
-                  <div 
+                  <div
                     key={index}
                     className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
                     onClick={() => handleNutritionistSelect(nutritionist)}
                   >
                     <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                       {nutritionist.businessName ? nutritionist.businessName.charAt(0) : nutritionist.name ? nutritionist.name.charAt(0) : 'N'}
+                      {nutritionist.businessName ? nutritionist.businessName.charAt(0) : nutritionist.name ? nutritionist.name.charAt(0) : 'N'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{nutritionist.businessName || nutritionist.name || `Nutritionist ${index}`}</h3>
@@ -342,7 +332,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                       </div>
                     </div>
                     <div className="text-right">
-                       <ChevronRight className="w-5 h-5 text-gray-400" />
+                      <ChevronRight className="w-5 h-5 text-gray-400" />
                     </div>
                   </div>
                 )))

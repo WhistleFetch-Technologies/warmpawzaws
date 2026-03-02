@@ -50,7 +50,7 @@ import { registerSpecializedServiceFlows } from '../endpoints/specialized-servic
 import { registerAdminGovernanceEndpoints } from '../endpoints/admin-governance';
 // Staff decommissioned: solo providers discovered via discover-services for at_home/tele
 // import { registerStaffEndpoints } from '../endpoints/staff';
-import { registerServiceDiscoveryEndpoints } from '../endpoints/service-discovery';
+import { registerServiceDiscoveryEndpoints } from '../endpoints/customer/service-discovery.customer';
 import { registerReviewEndpoints } from '../endpoints/reviews';
 import { registerNotificationEndpoints } from '../endpoints/notifications';
 import { registerFollowupRescheduleEndpoints } from '../endpoints/followup-reschedule';
@@ -98,7 +98,7 @@ import { registerOrderManagementEndpoints } from '../endpoints/order-management'
 import { registerEnhancedOtpEndpoints } from '../endpoints/otp-enhanced';
 import { registerSmsNotificationEndpoints } from '../endpoints/sms-notifications';
 import { registerVendorProfileEndpoints } from '../endpoints/vendor-profile';
-import { registerCustomerProfileEndpoints } from '../endpoints/customer-profile';
+import { registerCustomerProfileEndpoints } from '../endpoints/customer/customer-profile.customer';
 import { registerSystemHealthEndpoints } from '../endpoints/system-health';
 import { registerVendorSettingsEndpoints } from '../endpoints/vendor-settings';
 import { registerVendorPoliciesEndpoints } from '../endpoints/vendor-policies';

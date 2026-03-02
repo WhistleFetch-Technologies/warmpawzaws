@@ -16,10 +16,10 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, query, insert } from '../database/rds-connection';
+import { select, update, query, insert } from '../../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
+import { isValidUUID } from '../../types/entities';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
@@ -48,7 +48,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
     try {
       const identifier = c.req.param('identifier');
       console.log('[profile/unified] Request received for identifier:', identifier);
-      
+
       if (!identifier) {
         console.error('[profile/unified] No identifier provided');
         return c.json({ error: 'Identifier is required' }, 400);
@@ -214,9 +214,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       console.error('[profile/unified] Error stack:', error?.stack);
       console.error('[profile/unified] Error name:', error?.name);
       // Return 200 with degraded response instead of 500
-      return c.json({ 
-        success: true, 
-        profile: null, 
+      return c.json({
+        success: true,
+        profile: null,
         _degraded: true,
         error: error?.message || 'Unknown error'
       }, 200);
@@ -236,20 +236,56 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
+      // Lines 239-264: Replace with this
       let customers: any[];
       try {
-        customers = await select('customers', { phone: cleanPhone });
+        // Get customer profile
+        const customerResult = await query(
+          `SELECT * FROM customers WHERE phone = $1`,
+          [cleanPhone]
+        );
+        customers = customerResult.rows;
+
+        if (customers.length === 0) {
+          return c.json({ error: 'Customer not found' }, 404);
+        }
+
+        // Get addresses for this customer
+        const addressesResult = await query(
+          `SELECT 
+      id,
+      address_type as label,
+      full_name as name,
+      phone,
+      address_line1 as "addressLine1",
+      address_line2 as "addressLine2",
+      city,
+      state,
+      pincode,
+      landmark,
+      coordinates,
+      flat_no as "flatNo",
+      house_no as "houseNo",
+      floor,
+      street_name as "streetName",
+      apartment_name as "apartmentName",
+      is_default as "isDefault",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    FROM customer_addresses
+    WHERE customer_id = $1
+    ORDER BY is_default DESC, created_at DESC`,
+          [customers[0].id]
+        );
+
+        customers[0].addresses = addressesResult.rows;
       } catch (error: any) {
         console.error('[profile] Error fetching customer by phone:', error);
         return c.json({ success: true, profile: null, _degraded: true }, 200);
       }
 
-      if (customers.length === 0) {
-        return c.json({ error: 'Customer not found' }, 404);
-      }
-
       const customer = customers[0];
-      
+
       // Get pets for this customer with error handling
       let pets: any[] = [];
       try {
@@ -258,7 +294,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         console.warn('Error fetching pets (using empty):', error.message);
         // Continue with empty pets array
       }
-      
+
       return c.json({
         success: true,
         profile: {
@@ -267,9 +303,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           name: customer.full_name,
           email: customer.email,
           address: customer.address,
-          pincode: customer.pincode,
-          city: customer.city,
-          state: customer.state,
+          pincode: customer.addresses[0].pincode,
+          city: customer.addresses[0].city,
+          state: customer.addresses[0].state,
           photo: customer.profile_photo_url,
           status: customer.status,
           onboarding_status: customer.onboarding_status,
@@ -288,7 +324,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('[profile] Error fetching customer profile by query:', error);
       console.error('[profile] Error stack:', error?.stack);
-      
+
       // Return 200 with degraded so customer home loads (non-critical for query param profile)
       return c.json({ success: true, profile: null, _degraded: true });
     }
@@ -358,12 +394,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   app.post("/customer/profile", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      
+
       // Handle nested profile structure from frontend
       // Frontend sends: { phone, profile: { firstName, lastName, ... }, journeyType }
       // Backend expects: { firstName, lastName, ... }
       const rawProfilePayload = body.profile || body;
-      
+
       // Clean the payload - remove empty strings for optional URL fields (photo)
       // and remove extra fields (phone) that aren't in the schema
       const profilePayload: Record<string, any> = {};
@@ -375,9 +411,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (rawProfilePayload.photo && rawProfilePayload.photo.startsWith('http')) {
         profilePayload.photo = rawProfilePayload.photo;
       }
-      
+
       console.log('[PROFILE] Cleaned payload:', profilePayload);
-      
+
       // Validate request with Zod schema
       const validationResult = UpdateCustomerProfileRequestSchema.safeParse(profilePayload);
       if (!validationResult.success) {
@@ -393,9 +429,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           },
         }, 400);
       }
-      
+
       const profileData = validationResult.data;
-      
+
       // ✅ Validate email format (RFC-compliant)
       if (profileData.email) {
         const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
@@ -413,7 +449,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           }, 400);
         }
       }
-      
+
       // Get phone from body (required for POST endpoint)
       // Note: phone is not part of the validated schema, it comes from body directly
       const phone = body.phone || (body.profile as any)?.phone;
@@ -422,7 +458,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
-      
+
       // ✅ Validate phone number - must be exactly 10 digits
       if (cleanPhone.length !== 10 || !/^\d{10}$/.test(cleanPhone)) {
         return c.json({
@@ -437,21 +473,21 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           },
         }, 400);
       }
-      
+
       let customerId = await resolveCustomerId(cleanPhone);
-      
+
       if (!customerId) {
         // Customer doesn't exist - create it (for UAT mode or when OTP verification didn't create customer)
         try {
           // Create customer identity first (same pattern as OTP verification)
-          const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
+          const { createOrUpdateCustomerIdentity } = await import('../../utils/customer-state');
           const identityId = await createOrUpdateCustomerIdentity(cleanPhone, undefined);
-          
+
           // Create customer record with all required fields (matching OTP verification pattern)
-          const fullName = profileData.firstName && profileData.lastName 
+          const fullName = profileData.firstName && profileData.lastName
             ? `${profileData.firstName} ${profileData.lastName}`.trim()
             : `Customer ${cleanPhone.slice(-4)}`;
-          
+
           const newCustomer = await insert('customers', {
             phone: cleanPhone,
             full_name: fullName,
@@ -463,9 +499,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             customer_identity_id: identityId,
             // Don't set created_at/updated_at - let database defaults handle it
           });
-          
+
           customerId = newCustomer[0].id;
-          
+
           console.log(`[PROFILE] Created new customer ${customerId} for phone ${cleanPhone}`);
         } catch (createError: any) {
           console.error('[PROFILE] Error creating customer:', createError);
@@ -474,7 +510,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             stack: createError.stack,
             phone: cleanPhone
           });
-          return c.json({ 
+          return c.json({
             error: 'Failed to create customer. Please try again.',
             code: 'CUSTOMER_CREATION_FAILED',
             details: process.env.NODE_ENV === 'development' ? createError.message : undefined
@@ -498,8 +534,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         updateData.profile_photo_url = profileData.photo;
       }
 
-      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../utils/customer-state');
-      
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../utils/customer-state');
+
       const completionUpdates: any = {};
       if (profileData.firstName || profileData.lastName || profileData.email) {
         completionUpdates.basic_info = true;
@@ -536,10 +572,10 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (Object.keys(completionUpdates).length > 0 && customerId) {
         try {
           await updateProfileCompletion(customerId as string, completionUpdates);
-          
+
           const customers = await select('customers', { id: customerId });
           const customer = customers[0];
-          
+
           if (customer.onboarding_status === 'PHONE_VERIFIED' && completionUpdates.basic_info) {
             await updateCustomerOnboardingStatus(customerId as string, 'PROFILE_PENDING', 'profile');
           }
@@ -555,16 +591,16 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating customer profile:', error);
-      
+
       // Check if error is about missing preferences column
       if (error.message && error.message.includes('column "preferences"')) {
         console.error('[PROFILE] Preferences column does not exist. Run migration 139_add_customers_preferences_column.sql');
-        return c.json({ 
+        return c.json({
           error: 'Database schema mismatch. Please run migration 139_add_customers_preferences_column.sql',
-          details: error.message 
+          details: error.message
         }, 500);
       }
-      
+
       return c.json({ error: error.message }, 500);
     }
   });
@@ -576,10 +612,10 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   app.put("/customer/profile/:identifier", async (c) => {
     try {
       const { identifier } = c.req.param();
-      
+
       // Parse body from Hono request
       const body = await c.req.json().catch(() => ({}));
-      
+
       // Validate request with Zod schema
       const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
       if (!validationResult.success) {
@@ -594,7 +630,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           },
         }, 400);
       }
-      
+
       const profileData = validationResult.data;
 
       // ✅ Validate email format (RFC-compliant)
@@ -637,8 +673,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       // Update profile completion status
-      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../utils/customer-state');
-      
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../utils/customer-state');
+
       const completionUpdates: any = {};
       if (profileData.firstName || profileData.lastName || profileData.email) {
         completionUpdates.basic_info = true;
@@ -676,11 +712,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (Object.keys(completionUpdates).length > 0) {
         try {
           await updateProfileCompletion(customerId, completionUpdates);
-          
+
           // Check if we should update onboarding status
           const customers = await select('customers', { id: customerId });
           const customer = customers[0];
-          
+
           if (customer.onboarding_status === 'PHONE_VERIFIED' && completionUpdates.basic_info) {
             await updateCustomerOnboardingStatus(customerId, 'PROFILE_PENDING', 'profile');
           }
@@ -776,7 +812,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
 
       const cleanPhone = normalizePhone(phone);
       const customers = await select('customers', { phone: cleanPhone });
-      
+
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found', customer: null }, 404);
       }
@@ -813,7 +849,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   app.get("/customer/:customerId/search-history", async (c) => {
     try {
       const customerId = c.req.param('customerId');
-      
+
       // Check if customer exists
       const customer = await resolveCustomerId(customerId);
       if (!customer) {
@@ -883,7 +919,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   app.get("/customer/search-suggestions", async (c) => {
     try {
       const customerId = c.req.query('customerId');
-      
+
       // Get popular services/products as suggestions
       const suggestions = [
         { type: 'service', text: 'Vet Consultation', icon: '🏥' },
@@ -913,7 +949,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   app.delete("/customer/:customerId/search-history", async (c) => {
     try {
       const customerId = c.req.param('customerId');
-      
+
       const customer = await resolveCustomerId(customerId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);

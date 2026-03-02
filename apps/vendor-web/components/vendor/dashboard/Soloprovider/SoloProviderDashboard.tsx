@@ -51,9 +51,7 @@ import {
   Radio,
   icons
 } from 'lucide-react';
-
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
-
 import { toast } from 'sonner';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
 import { VendorNotificationModal } from '../../VendorNotificationModal';
@@ -74,9 +72,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
-  // Solo providers don't have at_center - only at_home and tele
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<'all' | 'home' | 'tele'>('all');
-
   const [stats, setStats] = useState<Dashboardstats>({
     appointments: 0,
     consultations: 0,

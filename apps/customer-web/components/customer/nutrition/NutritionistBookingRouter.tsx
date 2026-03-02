@@ -7,58 +7,38 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
+import { defaultServiceTypeOptions } from './constants';
 
-interface NutritionistBookingRouterProps {
-  phone: string;
-  vendorId?: string;
-  nutritionist?: any;
-  selectedService?: string;
-  serviceType?: string;
-  serviceId?: string;
-  serviceName?: string;
-  serviceStyle?: string;
-  price?: number;
-  duration?: number;
-  onBack: () => void;
-  onNavigate: (screen: string, data?: any) => void;
-  onViewBooking?: (bookingId: string) => void;
-}
+
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
 
-interface TimeSlot {
-  time: string;
-  available: boolean;
-}
 
-interface Pet {
-  id: string;
-  name: string;
-  species: string;
-  breed: string;
-}
 
-export function NutritionistBookingRouter({ 
-  phone, 
+export function NutritionistBookingRouter({
+  phone,
   vendorId,
-  nutritionist, 
-  selectedService, 
+  nutritionist,
+  selectedService,
   serviceType,
   serviceId,
   serviceName,
   serviceStyle,
   price,
   duration,
-  onBack, 
-  onNavigate, 
-  onViewBooking 
+  onBack,
+  onNavigate,
+  onViewBooking
 }: NutritionistBookingRouterProps) {
+  console.log('NutritionistBookingRouter--------------------->', phone, vendorId, nutritionist, selectedService, serviceType, serviceId, serviceName, serviceStyle, price, duration, onBack, onNavigate, onViewBooking);
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // This preserves the service-style context when coming from service listing
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
-  
+
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
@@ -82,6 +62,7 @@ export function NutritionistBookingRouter({
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
+  const [showPaymentPage, setShowPaymentPage] = useState(false);
   // ✅ FIX: Initialize selectedVendorService with passed service data if available
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
     serviceId ? {
@@ -93,48 +74,42 @@ export function NutritionistBookingRouter({
       serviceStyle: serviceStyle || serviceType
     } : null
   );
-  
+
   // Package awareness state
   const [activePackage, setActivePackage] = useState<any>(null);
   const [showPackageModal, setShowPackageModal] = useState(false);
   const [usePackageSession, setUsePackageSession] = useState(false);
   const [showPackageOffer, setShowPackageOffer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
-  
+
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
-  // Default nutritionist service type options (used when no specific services loaded)
-  const defaultServiceTypeOptions = [
-    { id: 'diet_consultation', name: 'Diet Consultation', icon: UtensilsCrossed, price: 999, duration: 45, desc: 'Personalized meal plans', color: 'green' },
-    { id: 'meal_plans', name: 'Meal Plans', icon: Calendar, price: 1999, duration: 60, desc: 'Monthly subscriptions', color: 'yellow' },
-    { id: 'weight_management', name: 'Weight Management', icon: Heart, price: 1499, duration: 50, desc: 'Healthy weight goals', color: 'pink' },
-    { id: 'allergy_management', name: 'Allergy Management', icon: Apple, price: 1299, duration: 40, desc: 'Specialized diets', color: 'orange' },
-  ];
 
-  // Get actual services for current style, or fall back to defaults
-  const getServicesForStyle = (style: string) => {
-    const styleServices = vendorServices.filter(s => s.serviceStyle === style || s.service_style === style);
-    if (styleServices.length > 0) {
-      return styleServices.map(s => ({
+
+  // Map vendor services to display format (API already filters by style via query param)
+  const mapVendorServices = () => {
+    // Services are already filtered by serviceStyle on the backend
+    return vendorServices.map(s => {
+      const style = s.serviceStyle || s.service_style || selectedServiceType;
+      return {
         id: s.id || s.serviceId,
         serviceId: s.serviceId || s.service_id,
         name: s.serviceName || s.service_name || s.name,
         price: s.price || 0,
-        duration: s.duration || 30,
-        desc: s.description || '',
+        duration: s.duration || s.durationMinutes || 30,
+        desc: s.description || s.shortDescription || '',
         serviceStyle: style,
         icon: style === 'tele' ? Video : style === 'at_home' ? Home : Building2,
         color: style === 'tele' ? 'blue' : style === 'at_home' ? 'green' : 'purple',
-      }));
-    }
-    return [];
+      };
+    });
   };
 
-  // Use actual services or fallback to service type selection
-  const serviceOptions = vendorServices.length > 0 
-    ? getServicesForStyle(selectedServiceType) 
+  // Use actual vendor services or fallback to defaults (only when API hasn't loaded yet)
+  const serviceOptions = vendorServices.length > 0
+    ? mapVendorServices()
     : defaultServiceTypeOptions;
 
   const generateDates = () => {
@@ -172,7 +147,7 @@ export function NutritionistBookingRouter({
 
   const loadTimeSlots = async (date: string) => {
     if (!effectiveVendorId) return;
-    
+
     try {
       setLoadingSlots(true);
       const response = await apiClient.get(
@@ -209,15 +184,18 @@ export function NutritionistBookingRouter({
     if (effectiveVendorId) {
       loadVendorServices();
     }
-  }, [phone, effectiveVendorId]);
+  }, [phone, effectiveVendorId, selectedServiceType]);
 
   const loadVendorServices = async () => {
     if (!effectiveVendorId) return;
-    
+
     try {
       setLoading(true);
-      // Use vendor endpoint for nutritionist services
-      const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services?category=nutrition`) as any;
+      // Fetch vendor services filtered by serviceStyle only (no category filter — vendor was
+      // already resolved from the nutritionist listing, so all their tele services are relevant)
+      const serviceStyleParam = selectedServiceType ? `?serviceStyle=${selectedServiceType}` : '';
+      const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services${serviceStyleParam}`) as any;
+      console.log('servicesResponse--------------------->', servicesResponse);
       if (servicesResponse.success && servicesResponse.services) {
         setVendorServices(servicesResponse.services);
         console.log('✅ Loaded vendor services:', servicesResponse.services.length);
@@ -244,7 +222,7 @@ export function NutritionistBookingRouter({
           breed: p.breed,
         })));
       }
-      
+
       // Load customer addresses from API
       try {
         const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
@@ -271,7 +249,7 @@ export function NutritionistBookingRouter({
       setAddresses([]);
     }
   };
-  
+
   // Refresh pets after adding new one
   const refreshPets = async () => {
     try {
@@ -293,7 +271,7 @@ export function NutritionistBookingRouter({
       console.error('Error refreshing pets:', err);
     }
   };
-  
+
   // Refresh addresses after adding new one
   const refreshAddresses = async () => {
     try {
@@ -316,7 +294,7 @@ export function NutritionistBookingRouter({
   // Check for active packages when customer and vendor are known
   const checkForActivePackages = async () => {
     if (!customerId || !effectiveVendorId) return;
-    
+
     try {
       const response = await apiClient.get<any>(
         `/packages/check-for-booking?customerId=${customerId}&vendorId=${effectiveVendorId}${selectedServiceType ? `&serviceType=${selectedServiceType}` : ''}`
@@ -342,7 +320,7 @@ export function NutritionistBookingRouter({
   // Handle using a package session
   const handleUsePackageSession = async () => {
     if (!activePackage) return;
-    
+
     setUsePackageSession(true);
     setShowPackageModal(false);
     toast.success('Using package session - No payment required!');
@@ -360,13 +338,13 @@ export function NutritionistBookingRouter({
   const handleNext = () => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
-    
+
     // ✅ FIX: Skip address for tele and at_center (customer goes to clinic)
     if (step === 'pet' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
       setStep('payment');
       return;
     }
-    
+
     if (currentIdx < steps.length - 1) {
       setStep(steps[currentIdx + 1]);
     }
@@ -375,13 +353,13 @@ export function NutritionistBookingRouter({
   const handleBack = () => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
-    
+
     // ✅ FIX: Handle back from payment for tele and at_center (both skip address)
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
       setStep('pet');
       return;
     }
-    
+
     if (currentIdx > 0) {
       setStep(steps[currentIdx - 1]);
     } else {
@@ -392,8 +370,9 @@ export function NutritionistBookingRouter({
   const handleConfirmBooking = async () => {
     setProcessing(true);
     try {
-      const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
-      
+      // Use selectedVendorService (user's selection) or fall back
+      const bookedService = selectedVendorService || serviceOptions.find(s => s.id === selectedServiceType);
+
       // If using package session, create session instead of booking
       if (usePackageSession && activePackage) {
         try {
@@ -405,7 +384,7 @@ export function NutritionistBookingRouter({
             location: selectedAddress,
             notes,
           };
-          
+
           const response = await apiClient.post('/package-sessions', sessionData) as any;
           setBookingId(response.session?.id || response.id || 'PS-' + Date.now());
           toast.success('Package session scheduled successfully!');
@@ -419,8 +398,8 @@ export function NutritionistBookingRouter({
       } else {
         // Regular booking: CreateBookingRequestSchema expects camelCase (customerId, vendorId, serviceId UUID, bookingDate, bookingTime, serviceType)
         const vendorIdValue = effectiveVendorId || '';
-        const opt = selectedServiceOption as { serviceId?: string; service_id?: string } | undefined;
-        const serviceIdValue = opt?.service_id ?? opt?.serviceId ?? serviceId ?? selectedServiceOption?.id ?? '';
+        const opt = bookedService as { serviceId?: string; service_id?: string } | undefined;
+        const serviceIdValue = opt?.service_id ?? opt?.serviceId ?? serviceId ?? bookedService?.id ?? '';
         if (!vendorIdValue || !serviceIdValue) {
           toast.error('Missing vendor or service. Please go back and select a service.');
           setProcessing(false);
@@ -440,11 +419,11 @@ export function NutritionistBookingRouter({
           bookingDate: selectedDate,
           bookingTime: selectedTime,
           serviceType: serviceTypeEnum,
-          amount: usePackageSession ? 0 : (selectedServiceOption?.price ?? 0),
+          amount: usePackageSession ? 0 : (bookedService?.price ?? 0),
           petId: selectedPet?.id || undefined,
           petName: selectedPet?.name,
           notes: notes || undefined,
-          serviceName: selectedServiceOption?.name,
+          serviceName: bookedService?.name,
           customerPhone: phone,
           ...(selectedServiceType === 'at_home' && selectedAddress && {
             address: [selectedAddress.addressLine1, selectedAddress.city, selectedAddress.state, selectedAddress.pincode].filter(Boolean).join(', '),
@@ -466,7 +445,7 @@ export function NutritionistBookingRouter({
           return; // Don't proceed to confirmation on error
         }
       }
-      
+
       setStep('confirmation');
     } catch (error) {
       console.error('Error creating booking:', error);
@@ -476,7 +455,8 @@ export function NutritionistBookingRouter({
     }
   };
 
-  const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
+  // Use selectedVendorService if available (real vendor service), otherwise try matching by style
+  const selectedServiceOption = selectedVendorService || serviceOptions.find(s => s.id === selectedServiceType);
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const dashboardStats = [
@@ -499,15 +479,15 @@ export function NutritionistBookingRouter({
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
-    
-    const stepLabels = selectedServiceType === 'tele' 
+
+    const stepLabels = selectedServiceType === 'tele'
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
       : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
       service: 0, datetime: 1, pet: 2, address: 3, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
     };
     const currentIdx = currentStepMap[step];
-    
+
     return stepLabels.map((label, idx) => ({
       label,
       isCompleted: idx < currentIdx,
@@ -517,8 +497,8 @@ export function NutritionistBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
-      {step !== 'payment' && (
+      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step or showing payment page */}
+      {step !== 'payment' && !showPaymentPage && (
         <ServiceDashboardHeader
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
@@ -531,7 +511,7 @@ export function NutritionistBookingRouter({
           headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
         />
       )}
-      
+
       {/* Content */}
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
@@ -539,55 +519,67 @@ export function NutritionistBookingRouter({
         {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Select Consultation Type</h2>
-            <div className="space-y-3">
-              {serviceOptions.map((service) => {
-                const Icon = service.icon;
-                const isSelected = selectedServiceType === service.id;
-                return (
-                  <button
-                    key={service.id}
-                    onClick={() => setSelectedServiceType(service.id)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all ${
-                      isSelected 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                        service.color === 'blue' ? 'bg-blue-100 text-blue-600' :
-                        service.color === 'green' ? 'bg-orange-100 text-[#FF8C42]' :
-                        'bg-purple-100 text-purple-600'
-                      }`}>
-                        <Icon className="w-7 h-7" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                        <p className="text-sm text-gray-500">{service.desc}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Clock className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-sm text-gray-500">{service.duration} mins</span>
+            <h2 className="text-lg font-bold text-gray-900">Select Service</h2>
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto mb-2"></div>
+                  <p className="text-sm text-gray-500">Loading vendor services...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {serviceOptions.map((service) => {
+                    const Icon = service.icon;
+                    const isSelected = selectedVendorService?.id === service.id || selectedVendorService?.serviceId === service.id;
+                    return (
+                      <button
+                        key={service.id}
+                        onClick={() => {
+                          setSelectedVendorService(service);
+                          setSelectedServiceType((service as any).serviceStyle || selectedServiceType);
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 transition-all ${isSelected
+                          ? 'border-[#FF8C42] bg-orange-50'
+                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                          }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${service.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                            service.color === 'green' ? 'bg-orange-100 text-[#FF8C42]' :
+                              'bg-purple-100 text-purple-600'
+                            }`}>
+                            <Icon className="w-7 h-7" />
+                          </div>
+                          <div className="flex-1 text-left">
+                            <h3 className="font-semibold text-gray-900">{service.name}</h3>
+                            <p className="text-sm text-gray-500">{service.desc}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Clock className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-sm text-gray-500">{service.duration} mins</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                            {isSelected && (
+                              <CheckCircle2 className="w-6 h-6 text-[#FF8C42] mt-1 ml-auto" />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
-                        {isSelected && (
-                          <CheckCircle2 className="w-6 h-6 text-[#FF8C42] mt-1 ml-auto" />
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
-              disabled={!selectedServiceType}
-            >
-              Continue
-            </Button>
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  onClick={handleNext}
+                  className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
+                  disabled={!selectedVendorService}
+                >
+                  Continue
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -601,11 +593,10 @@ export function NutritionistBookingRouter({
                   <button
                     key={d.date}
                     onClick={() => setSelectedDate(d.date)}
-                    className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                      selectedDate === d.date 
-                        ? 'bg-[#FF8C42] text-white' 
-                        : 'bg-white border border-gray-200 hover:border-orange-300'
-                    }`}
+                    className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${selectedDate === d.date
+                      ? 'bg-[#FF8C42] text-white'
+                      : 'bg-white border border-gray-200 hover:border-orange-300'
+                      }`}
                   >
                     <p className="text-xs opacity-75">{d.day}</p>
                     <p className="text-xl font-bold">{d.dayNum}</p>
@@ -637,13 +628,12 @@ export function NutritionistBookingRouter({
                         key={slot.time}
                         onClick={() => slot.available && setSelectedTime(slot.time)}
                         disabled={!slot.available}
-                        className={`p-3 rounded-xl text-center transition-all ${
-                          selectedTime === slot.time 
-                            ? 'bg-[#FF8C42] text-white' 
-                            : slot.available
-                              ? 'bg-white border border-gray-200 hover:border-orange-300'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
+                        className={`p-3 rounded-xl text-center transition-all ${selectedTime === slot.time
+                          ? 'bg-[#FF8C42] text-white'
+                          : slot.available
+                            ? 'bg-white border border-gray-200 hover:border-orange-300'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          }`}
                       >
                         {slot.time}
                       </button>
@@ -653,8 +643,8 @@ export function NutritionistBookingRouter({
               </div>
             )}
 
-            <Button 
-              onClick={handleNext} 
+            <Button
+              onClick={handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedDate || !selectedTime}
             >
@@ -676,29 +666,28 @@ export function NutritionistBookingRouter({
                 Add Pet
               </button>
             </div>
-            
+
             {/* Required notice */}
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-sm text-amber-800">
                 🐾 A pet profile is required for this service to provide the best care.
               </p>
             </div>
-            
+
             <div className="space-y-3">
               {pets.length > 0 ? (
                 pets.map((pet) => (
                   <button
                     key={pet.id}
                     onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                    }`}
+                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${selectedPet?.id === pet.id
+                      ? 'border-[#FF8C42] bg-orange-50'
+                      : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                      }`}
                   >
                     <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center text-2xl">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' : 
-                       pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
+                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' :
+                        pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
                     </div>
                     <div className="flex-1 text-left">
                       <h3 className="font-semibold text-gray-900">{pet.name}</h3>
@@ -723,8 +712,8 @@ export function NutritionistBookingRouter({
                 </div>
               )}
             </div>
-            <Button 
-              onClick={handleNext} 
+            <Button
+              onClick={handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedPet}
             >
@@ -750,7 +739,7 @@ export function NutritionistBookingRouter({
                 </button>
               )}
             </div>
-            
+
             {/* Required notice for home services */}
             {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -759,7 +748,7 @@ export function NutritionistBookingRouter({
                 </p>
               </div>
             )}
-            
+
             <div className="space-y-3">
               {(selectedServiceType === 'at_home' || selectedServiceType === 'home') ? (
                 addresses.length > 0 ? (
@@ -767,16 +756,15 @@ export function NutritionistBookingRouter({
                     <button
                       key={addr.id}
                       onClick={() => setSelectedAddress(addr)}
-                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                        selectedAddress?.id === addr.id 
-                          ? 'border-[#FF8C42] bg-orange-50' 
-                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                      }`}
+                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${selectedAddress?.id === addr.id
+                        ? 'border-[#FF8C42] bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                        }`}
                     >
                       <div className="flex items-start gap-3">
                         <span className="text-lg">
-                          {(addr.label || '').toLowerCase() === 'home' ? '🏠' : 
-                           (addr.label || '').toLowerCase() === 'work' ? '🏢' : '📍'}
+                          {(addr.label || '').toLowerCase() === 'home' ? '🏠' :
+                            (addr.label || '').toLowerCase() === 'work' ? '🏢' : '📍'}
                         </span>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
@@ -820,7 +808,7 @@ export function NutritionistBookingRouter({
                 </div>
               )}
             </div>
-            
+
             {/* Confirm selected address */}
             {selectedServiceType === 'at_home' && selectedAddress && addresses.length > 0 && (
               <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
@@ -829,12 +817,12 @@ export function NutritionistBookingRouter({
                 </p>
               </div>
             )}
-            
-            <Button 
+
+            <Button
               onClick={() => {
                 if (selectedServiceType === 'at_center') setSelectedAddress({ id: 'clinic' });
                 handleNext();
-              }} 
+              }}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={selectedServiceType === 'at_home' && !selectedAddress}
             >
@@ -843,22 +831,21 @@ export function NutritionistBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary */}
-        {step === 'payment' && (
+        {/* Payment Summary - Show summary first, then UniversalPaymentPage */}
+        {step === 'payment' && !showPaymentPage && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
-            
+
             <div className="bg-white rounded-xl p-4 space-y-4">
               {/* Service */}
               <div className="flex items-center gap-3 pb-4 border-b">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                  selectedServiceType === 'tele' ? 'bg-blue-100 text-blue-600' :
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedServiceType === 'tele' ? 'bg-blue-100 text-blue-600' :
                   selectedServiceType === 'at_home' ? 'bg-orange-100 text-[#FF8C42]' :
-                  'bg-purple-100 text-purple-600'
-                }`}>
+                    'bg-purple-100 text-purple-600'
+                  }`}>
                   {selectedServiceType === 'tele' ? <Video className="w-6 h-6" /> :
-                   selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                   <Building2 className="w-6 h-6" />}
+                    selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
+                      <Building2 className="w-6 h-6" />}
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
@@ -910,15 +897,99 @@ export function NutritionistBookingRouter({
               </div>
             </div>
 
-            <Button 
-              onClick={handleConfirmBooking} 
+            <Button
+              onClick={() => {
+                // If using package session, use the old flow (no payment needed)
+                if (usePackageSession && activePackage) {
+                  handleConfirmBooking();
+                  return;
+                }
+                // For regular bookings, show UniversalPaymentPage
+                // Ensure we have selectedVendorService before showing payment
+                if (!selectedVendorService && selectedServiceOption) {
+                  setSelectedVendorService(selectedServiceOption);
+                }
+                setShowPaymentPage(true);
+              }}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={processing}
             >
-              {processing ? 'Processing...' : `Pay ₹${selectedServiceOption?.price}`}
+              {usePackageSession ? 'Confirm Booking' : 'Continue to Payment'}
             </Button>
           </div>
         )}
+
+        {/* Universal Payment Page */}
+        {step === 'payment' && showPaymentPage && selectedVendorService && selectedPet && selectedDate && selectedTime && (() => {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          let finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId;
+
+          // If not a UUID, try to find it from vendorServices
+          if (!finalServiceId || !uuidRegex.test(finalServiceId)) {
+            const foundService = vendorServices.find((s: any) =>
+              String(s.id) === String(selectedVendorService.id) ||
+              s.id === selectedVendorService.id ||
+              (s.serviceId || s.service_id) === finalServiceId
+            );
+            if (foundService && (foundService.serviceId || foundService.service_id)) {
+              finalServiceId = foundService.serviceId || foundService.service_id;
+              console.log('✅ Resolved to UUID:', finalServiceId);
+            } else {
+              console.error('❌ Could not resolve serviceId to UUID:', selectedVendorService);
+            }
+          }
+
+          // Only render if we have a valid UUID
+          if (finalServiceId && uuidRegex.test(finalServiceId)) {
+            const displayVendorName = nutritionist?.businessName || nutritionist?.name || 'Nutritionist';
+
+            return (
+              <UniversalPaymentPage
+                type="booking"
+                vendorId={vendorId || ''}
+                vendorName={displayVendorName}
+                serviceId={finalServiceId}
+                serviceName={selectedVendorService.name || selectedServiceOption?.name || 'Diet Consultation'}
+                serviceDescription={`${selectedVendorService.name || 'Diet Consultation'} for ${selectedPet.name}`}
+                serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+                bookingDate={selectedDate}
+                bookingTime={selectedTime}
+                petId={selectedPet.id}
+                petName={selectedPet.name}
+                petBreed={selectedPet.breed}
+                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
+                address={selectedServiceType === 'at_home' && selectedAddress ? {
+                  id: selectedAddress.id,
+                  label: selectedAddress.label,
+                  addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
+                  city: selectedAddress.city,
+                  pincode: selectedAddress.pincode,
+                  state: selectedAddress.state,
+                } : undefined}
+                baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
+                duration={selectedVendorService.duration || selectedServiceOption?.duration || 30}
+                customerPhone={phone}
+                customerId={customerId || undefined}
+                flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
+                onBack={() => setShowPaymentPage(false)}
+                onSuccess={(bookingId) => {
+                  setBookingId(bookingId);
+                  setShowPaymentPage(false);
+                  setStep('confirmation');
+                }}
+              />
+            );
+          }
+
+
+          return (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-red-600 font-medium">Error: Invalid service ID</p>
+              <p className="text-red-500 text-sm mt-1">Please go back and select the service again.</p>
+              <Button onClick={() => setShowPaymentPage(false)} className="mt-3">Go Back</Button>
+            </div>
+          );
+        })()}
 
         {/* Confirmation */}
         {step === 'confirmation' && (
@@ -928,7 +999,7 @@ export function NutritionistBookingRouter({
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
             <p className="text-gray-500 mb-6">Your appointment has been scheduled successfully</p>
-            
+
             <div className="bg-white rounded-xl p-4 mb-6 text-left">
               <div className="text-center mb-4">
                 <p className="text-sm text-gray-500">Booking ID</p>
@@ -966,7 +1037,7 @@ export function NutritionistBookingRouter({
                     <p className="text-sm text-purple-600">Get up to 30% off with health packages</p>
                   </div>
                 </div>
-                <Button 
+                <Button
                   variant="outline"
                   className="w-full border-purple-200 text-purple-700 hover:bg-purple-50"
                   onClick={() => setShowPackageOffer(true)}
@@ -985,7 +1056,7 @@ export function NutritionistBookingRouter({
                     ✕
                   </button>
                 </div>
-                
+
                 <div className="space-y-3">
                   {/* Package options */}
                   <div className="border rounded-lg p-3 hover:border-orange-300 cursor-pointer transition-colors" onClick={() => onNavigate('purchase-package', { vendorId: vendorId, packageType: 'nutrition-5' })}>
@@ -1003,7 +1074,7 @@ export function NutritionistBookingRouter({
                       <span className="px-2 py-0.5 bg-orange-100 text-[#FF7A35] text-xs rounded-full">Save 10%</span>
                     </div>
                   </div>
-                  
+
                   <div className="border rounded-lg p-3 hover:border-orange-300 cursor-pointer transition-colors" onClick={() => onNavigate('purchase-package', { vendorId: vendorId, packageType: 'nutrition-10' })}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -1025,13 +1096,13 @@ export function NutritionistBookingRouter({
             )}
 
             <div className="space-y-3">
-              <Button 
+              <Button
                 onClick={() => onViewBooking?.(bookingId || '')}
                 className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               >
                 View Booking Details
               </Button>
-              <Button 
+              <Button
                 onClick={onBack}
                 variant="outline"
                 className="w-full"
@@ -1055,7 +1126,7 @@ export function NutritionistBookingRouter({
                   <p className="text-sm text-gray-500">You have sessions available</p>
                 </div>
               </div>
-              
+
               <div className="bg-gray-50 rounded-xl p-4 mb-6">
                 <h3 className="font-semibold mb-2">{activePackage.packageName}</h3>
                 <div className="space-y-2 text-sm">
@@ -1073,15 +1144,15 @@ export function NutritionistBookingRouter({
                   )}
                 </div>
               </div>
-              
+
               <div className="space-y-3">
-                <Button 
+                <Button
                   onClick={handleUsePackageSession}
                   className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
                 >
                   Use Package Session (Free)
                 </Button>
-                <Button 
+                <Button
                   onClick={handleBookNew}
                   variant="outline"
                   className="w-full"
@@ -1092,7 +1163,7 @@ export function NutritionistBookingRouter({
             </div>
           </div>
         )}
-        
+
         {/* Add Pet Modal - Enhanced with Photo & Vaccinations */}
         <EnhancedAddPetModal
           phone={phone}
@@ -1103,7 +1174,7 @@ export function NutritionistBookingRouter({
             setShowAddPetModal(false);
           }}
         />
-        
+
         {/* Add Address Modal */}
         {showAddAddressModal && (
           <AddAddressModalInline
@@ -1125,7 +1196,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string>('');
-  
+
   const [petData, setPetData] = useState({
     id: `pet_${Date.now()}`,
     name: '',
@@ -1159,7 +1230,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
       toast.error('Please fill in all required fields (Name, Type, Breed, Age)');
       return;
     }
-    
+
     setLoading(true);
     try {
       // Get existing pets
@@ -1172,14 +1243,14 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
       } else if (getPetsData.pets?.pets && Array.isArray(getPetsData.pets.pets)) {
         existingPets = getPetsData.pets.pets;
       }
-      
+
       const updatedPets = [...existingPets, petData];
-      
+
       await apiClient.post('/customer/pets', {
         phone: phone,
         pets: updatedPets
       });
-      
+
       toast.success(`${petData.name} added successfully! 🐾`);
       onSuccess();
     } catch (error) {
@@ -1192,7 +1263,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={onClose}>
-      <div 
+      <div
         className="bg-white rounded-t-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1205,11 +1276,11 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
             </button>
           </div>
         </div>
-        
+
         <div className="p-5 space-y-4">
           {/* Photo Upload */}
           <div className="flex flex-col items-center">
-            <div 
+            <div
               onClick={() => fileInputRef.current?.click()}
               className="w-20 h-20 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:opacity-80 border-4 border-white shadow-lg"
             >
@@ -1244,9 +1315,8 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
                   key={type}
                   type="button"
                   onClick={() => setPetData({ ...petData, type })}
-                  className={`py-2.5 px-3 border-2 rounded-xl transition font-medium text-sm ${
-                    petData.type === type ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]' : 'border-gray-200 text-gray-700'
-                  }`}
+                  className={`py-2.5 px-3 border-2 rounded-xl transition font-medium text-sm ${petData.type === type ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]' : 'border-gray-200 text-gray-700'
+                    }`}
                 >
                   {type === 'Dog' ? '🐕' : type === 'Cat' ? '🐈' : '🐾'} {type}
                 </button>
@@ -1344,7 +1414,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
 function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; onClose: () => void; onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
-  
+
   const [formData, setFormData] = useState({
     id: `addr_${Date.now()}`,
     label: 'Home',
@@ -1374,7 +1444,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
       async (position) => {
         const { latitude, longitude } = position.coords;
         setFormData(prev => ({ ...prev, latitude, longitude }));
-        
+
         // Try reverse geocoding
         try {
           const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -1449,7 +1519,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
       toast.error('Please fill in required fields (Name, Address, City, State, Pincode)');
       return;
     }
-    
+
     setLoading(true);
     try {
       // Get existing addresses
@@ -1460,12 +1530,12 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
       } else if (Array.isArray(getAddressData.addresses)) {
         existingAddresses = getAddressData.addresses;
       }
-      
+
       // If this is default, unset other defaults
       if (formData.isDefault) {
         existingAddresses = existingAddresses.map((a: any) => ({ ...a, isDefault: false }));
       }
-      
+
       // ✅ FIX B5: Send address in the correct format expected by the API
       // The API expects individual fields, not an addresses array
       await apiClient.post('/customer/addresses', {
@@ -1482,7 +1552,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
         isDefault: formData.isDefault || (existingAddresses.length === 0),
         label: formData.label || 'home'
       });
-      
+
       toast.success('Address added successfully! 📍');
       onSuccess();
     } catch (error: any) {
@@ -1502,7 +1572,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={onClose}>
-      <div 
+      <div
         className="bg-white rounded-t-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1515,7 +1585,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
             </button>
           </div>
         </div>
-        
+
         <div className="p-5 space-y-4">
           {/* Detect Location Button */}
           <button

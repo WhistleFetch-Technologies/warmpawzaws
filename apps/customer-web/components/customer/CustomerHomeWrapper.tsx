@@ -23,7 +23,7 @@ const LoadingSpinner = () => (
 // ============================================================================
 // CRITICAL PATH COMPONENTS - Loaded immediately (needed for home screen)
 // ============================================================================
-import { CustomerHomeComplete as CustomerHome } from './CustomerHomeComplete';
+import { CustomerHomeComplete as CustomerHome } from './homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from './UserAccountSidebar';
 import { NotAvailable } from './NotAvailable';
 
@@ -70,7 +70,7 @@ const PharmacyServicesLanding = dynamic(() => import('./PharmacyServicesLanding'
 const PhotographyServicesLanding = dynamic(() => import('./PhotographyServicesLanding').then(mod => ({ default: mod.PhotographyServicesLanding })), { loading: LoadingSpinner });
 const BreederServicesLanding = dynamic(() => import('./BreederServicesLanding').then(mod => ({ default: mod.BreederServicesLanding })), { loading: LoadingSpinner });
 const AmbulanceServicesLanding = dynamic(() => import('./AmbulanceServicesLanding').then(mod => ({ default: mod.AmbulanceServicesLanding })), { loading: LoadingSpinner });
-const NutritionistServicesLanding = dynamic(() => import('./nutrition/landingPage/NutritionistServicesLanding').then(mod => ({ default: mod.NutritionistServicesLanding })), { loading: LoadingSpinner });
+const NutritionistServicesLanding = dynamic(() => import('./nutrition/NutritionistServicesLanding').then(mod => ({ default: mod.NutritionistServicesLanding })), { loading: LoadingSpinner });
 const RelocationServicesLanding = dynamic(() => import('./RelocationServicesLanding').then(mod => ({ default: mod.RelocationServicesLanding })), { loading: LoadingSpinner });
 const ResortServicesLanding = dynamic(() => import('./ResortServicesLanding').then(mod => ({ default: mod.ResortServicesLanding })), { loading: LoadingSpinner });
 const PetHolidayServicesLanding = dynamic(() => import('./PetHolidayServicesLanding').then(mod => ({ default: mod.PetHolidayServicesLanding })), { loading: LoadingSpinner });

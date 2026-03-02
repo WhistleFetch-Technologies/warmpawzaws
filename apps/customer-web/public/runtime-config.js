@@ -7,22 +7,39 @@
   
   // If config is already set (e.g., by layout.tsx for production mode), use it
   if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+    // ✅ FIX: If NEXT_PUBLIC_API_BASE_URL is injected (local dev), use it instead
+    if (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) {
+      window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = window.__NEXT_PUBLIC_API_BASE_URL__;
+      console.log('🔧 Runtime config loaded (local dev - using NEXT_PUBLIC_API_BASE_URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+      return;
+    }
     console.log('🔧 Runtime config loaded (pre-configured):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
   }
   
-  // Determine environment
+  // Determine environment based on hostname
   function isProduction() {
-    // Check hostname (production CloudFront domains)
     if (typeof window !== 'undefined' && window.location) {
       const hostname = window.location.hostname;
-      if (hostname.includes('cloudfront.net') || 
-          hostname.includes('warmpawz.com') ||
-          hostname.includes('customer.warmpawz.com')) {
+      
+      // Production domains (exact match, not dev subdomains)
+      if (hostname === 'customer.warmpawz.com' ||
+          hostname === 'vendor.warmpawz.com' ||
+          hostname === 'admin.warmpawz.com' ||
+          hostname === 'warmpawz.com' ||
+          hostname === 'www.warmpawz.com' ||
+          hostname.includes('cloudfront.net')) {
         return true;
       }
+      
+      // Dev subdomains (dev.customer.warmpawz.com, dev.vendor.warmpawz.com, etc.)
+      if (hostname.startsWith('dev.') && hostname.includes('warmpawz.com')) {
+        return false; // Dev environment
+      }
+      
+      // Localhost
       if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
-        return false;
+        return false; // Dev environment
       }
     }
     // Default to production for safety
@@ -36,28 +53,27 @@
       : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   }
   
-  // Next.js injects NEXT_PUBLIC_* vars - check multiple sources
-  let apiBaseUrl = '';
-  
-  // 1. Check for build-time injected variable (via webpack DefinePlugin)
-  if (typeof __API_BASE_URL__ !== 'undefined' && __API_BASE_URL__) {
-    apiBaseUrl = __API_BASE_URL__;
-  }
-  // 2. Check window.__NEXT_DATA__.env (Next.js injected env vars)
-  else if (typeof window !== 'undefined' && window.__NEXT_DATA__?.env?.NEXT_PUBLIC_API_BASE_URL) {
-    apiBaseUrl = window.__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  // 3. Check if it's set as a global (Next.js sometimes exposes it this way)
-  else if (typeof window !== 'undefined' && window.process?.env?.NEXT_PUBLIC_API_BASE_URL) {
-    apiBaseUrl = window.process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  // 4. Fallback: Use environment-aware API Gateway selection
-  else {
-    apiBaseUrl = getApiGatewayUrl();
-  }
+  // ✅ FIX: Priority: window.__NEXT_PUBLIC_API_BASE_URL__ → __API_BASE_URL__ → getApiGatewayUrl()
+  // If NEXT_PUBLIC_API_BASE_URL is set (from npm script), use it
+  // Otherwise, use hostname-based detection for deployed environments
+  const apiBaseUrl = (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) ||
+                     (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') ||
+                     getApiGatewayUrl();
 
-  const environment = isProduction() ? 'production' : 'development';
-  const uatMode = window.__WARMPAWZ_PROD_MODE__ ? false : defaultUatMode; // Respect prod mode flag
+  // Determine environment: check if it's production hostname or dev subdomain
+  const hostname = typeof window !== 'undefined' && window.location ? window.location.hostname : '';
+  const isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+  const isProdHostname = hostname === 'customer.warmpawz.com' || 
+                         hostname === 'vendor.warmpawz.com' || 
+                         hostname === 'admin.warmpawz.com' ||
+                         hostname === 'warmpawz.com' ||
+                         hostname === 'www.warmpawz.com' ||
+                         hostname.includes('cloudfront.net');
+  
+  const environment = (isProdHostname && !isDevSubdomain) ? 'production' : 'development';
+  
+  // UAT mode: true for dev/local, false for production
+  const uatMode = (isProdHostname && !isDevSubdomain) ? false : defaultUatMode;
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: apiBaseUrl,

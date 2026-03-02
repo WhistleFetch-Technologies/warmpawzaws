@@ -35,6 +35,16 @@ export default function RootLayout({
           fontFamily: 'var(--font-sans, Inter, system-ui, sans-serif)',
         }}
       >
+        {/* ✅ FIX: Inject NEXT_PUBLIC_API_BASE_URL for ALL environments (local dev + production) */}
+        {prodApiUrl && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.__NEXT_PUBLIC_API_BASE_URL__ = "${prodApiUrl}";
+              `,
+            }}
+          />
+        )}
         {/* Production config must be set first, before any other scripts */}
         {isProd && prodApiUrl && (
           <script

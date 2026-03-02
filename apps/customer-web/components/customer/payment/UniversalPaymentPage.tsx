@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight, 
+import {
+  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
   Clock, Calendar, User, Plus, Smartphone, Building2,
   Home, Video, Gift, Sparkles, AlertCircle, Loader2
@@ -28,7 +28,7 @@ interface UniversalPaymentPageProps {
   bookingId?: string;
   orderId?: string;
   type: 'booking' | 'order';
-  
+
   // Service/Product details
   serviceId?: string;
   productId?: string;
@@ -37,23 +37,23 @@ interface UniversalPaymentPageProps {
   serviceDescription?: string;
   serviceStyle?: 'at_home' | 'at_center' | 'at_vendor' | 'tele' | 'ecom' | 'hybrid' | 'product';
   category?: string; // For promotions/spotlights
-  
+
   // Vendor/Seller
   vendorId: string;
   vendorName: string;
   vendorAddress?: string; // ✅ NEW: Vendor/clinic address for at_center services
   staffName?: string; // ✅ NEW: Staff name for at_home services
   staffPhoto?: string; // ✅ NEW: Staff photo for at_home services
-  
+
   // Schedule (for bookings)
   bookingDate?: string;
   bookingTime?: string;
-  
+
   // Pet (for bookings)
   petId?: string;
   petName?: string;
   petBreed?: string;
-  
+
   // Address (for home services/orders)
   addressId?: string;
   address?: {
@@ -65,20 +65,20 @@ interface UniversalPaymentPageProps {
     state?: string;
   };
   showAddressSelection?: boolean; // Show address selector on top
-  
+
   // Pricing
   baseAmount: number;
   duration?: number;
   quantity?: number;
   selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
-  
+
   // Customer
   customerPhone: string;
   customerId?: string;
 
   /** For instant tele: payment-first, then create booking via instant-after-payment. No booking before payment. */
   flowType?: 'tele-scheduled' | 'tele-instant';
-  
+
   // Navigation
   onBack: () => void;
   onSuccess: (bookingId: string, orderId?: string, otpCode?: string, meta?: { isInstantTele?: boolean }) => void;
@@ -242,7 +242,7 @@ export function UniversalPaymentPage({
   baseAmount,
   duration,
   quantity = 1,
-  selectedServices, // ✅ FIX: Add missing prop destructuring
+  selectedServices,
   customerPhone,
   customerId,
   flowType,
@@ -260,17 +260,17 @@ export function UniversalPaymentPage({
   const [addresses, setAddresses] = useState<any[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<any>(address);
   const [showAddressModal, setShowAddressModal] = useState(false);
-  
+
   // ✅ CRITICAL: Resolved serviceId (UUID) - resolved early to avoid issues
   const [resolvedServiceId, setResolvedServiceId] = useState<string | undefined>(serviceId);
   const [serviceIdResolving, setServiceIdResolving] = useState(false);
-  
+
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(null);
   const [showCouponInput, setShowCouponInput] = useState(false);
-  
+
   // Promotions & Offers
   const [promotions, setPromotions] = useState<PromotionOffer[]>([]);
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
@@ -278,7 +278,7 @@ export function UniversalPaymentPage({
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
-  
+
   // Tax state
   const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>({
     subtotal: baseAmount,
@@ -303,7 +303,6 @@ export function UniversalPaymentPage({
   // Policy acceptance state
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [policyAccepted, setPolicyAccepted] = useState(false);
-  
   // ✅ NEW: Subscription coverage state
   const [subscriptionCovered, setSubscriptionCovered] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
@@ -318,16 +317,16 @@ export function UniversalPaymentPage({
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
   }, [customerPhone, baseAmount, category, serviceStyle]);
-  
+
   // ✅ NEW: Check if customer has active subscription that covers this booking
   useEffect(() => {
     const checkSubscriptionCoverage = async () => {
       if (type !== 'booking' || !customerId || !vendorId) {
         return;
       }
-      
+
       setCheckingSubscription(true);
-      
+
       try {
         const coverageRes = await apiClient.post<any>('/subscriptions/check-coverage', {
           customerId: customerId || customerPhone,
@@ -336,12 +335,12 @@ export function UniversalPaymentPage({
           serviceStyle,
           category,
         });
-        
+
         if (coverageRes.success && coverageRes.covered) {
           console.log('✅ [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
           setSubscriptionCovered(true);
           setActiveSubscription(coverageRes.subscription);
-          
+
           // If subscription covers this booking, set amount to 0
           // The payment will be processed as a subscription booking
         }
@@ -355,7 +354,7 @@ export function UniversalPaymentPage({
         setCheckingSubscription(false);
       }
     };
-    
+
     checkSubscriptionCoverage();
   }, [type, customerId, vendorId, resolvedServiceId, serviceId, serviceStyle, category, customerPhone]);
 
@@ -373,7 +372,7 @@ export function UniversalPaymentPage({
       }
 
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      
+
       // If already a UUID, no need to resolve
       if (uuidRegex.test(serviceId)) {
         setResolvedServiceId(serviceId);
@@ -392,15 +391,15 @@ export function UniversalPaymentPage({
           `/vendor/services/${vendorId}`,
           `/vendor-services?vendorId=${vendorId}`
         ];
-        
+
         for (const endpoint of endpoints) {
           try {
             vendorServicesRes = await apiClient.get<any>(endpoint);
             // Check if response has services in any format
-            if (vendorServicesRes?.allServices || 
-                vendorServicesRes?.services || 
-                vendorServicesRes?.data?.services || 
-                Array.isArray(vendorServicesRes)) {
+            if (vendorServicesRes?.allServices ||
+              vendorServicesRes?.services ||
+              vendorServicesRes?.data?.services ||
+              Array.isArray(vendorServicesRes)) {
               console.log(`✅ [SERVICE-RESOLUTION] Found services from endpoint: ${endpoint}`);
               break;
             }
@@ -409,11 +408,11 @@ export function UniversalPaymentPage({
             continue; // Try next endpoint
           }
         }
-        
+
         if (vendorServicesRes) {
           // ✅ CRITICAL: Handle different API response formats
           let services: any[] = [];
-          
+
           // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
           if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
             services = vendorServicesRes.allServices;
@@ -421,7 +420,7 @@ export function UniversalPaymentPage({
           // Format 2: { services: { at_home: { services: [...] }, ... } }
           else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
             // Flatten servicesByStyle object
-            services = Object.values(vendorServicesRes.services).flatMap((style: any) => 
+            services = Object.values(vendorServicesRes.services).flatMap((style: any) =>
               (style?.services && Array.isArray(style.services)) ? style.services : []
             );
           }
@@ -437,30 +436,30 @@ export function UniversalPaymentPage({
           else if (Array.isArray(vendorServicesRes)) {
             services = vendorServicesRes;
           }
-          
+
           console.log('📦 [SERVICE-RESOLUTION-EARLY] Extracted services:', {
             count: services.length,
             sample: services[0],
             responseKeys: Object.keys(vendorServicesRes),
           });
-          
+
           // Ensure services is an array before calling .find()
           if (!Array.isArray(services)) {
             console.error('❌ [SERVICE-RESOLUTION-EARLY] Services is not an array:', typeof services, services);
             // Don't throw - will be caught during payment
             return;
           }
-          
+
           // Look for service with matching numeric ID
-          const matchingService = services.find((s: any) => 
-            s.id === serviceId || 
+          const matchingService = services.find((s: any) =>
+            s.id === serviceId ||
             s.serviceId === serviceId ||
             s.service_id === serviceId ||
             String(s.id) === String(serviceId) ||
             String(s.serviceId) === String(serviceId) ||
             String(s.service_id) === String(serviceId)
           );
-          
+
           if (matchingService) {
             // Use service_id (UUID) from the vendor service
             const resolved = matchingService.service_id || matchingService.serviceId;
@@ -507,13 +506,13 @@ export function UniversalPaymentPage({
         reject(new Error('Window is not available'));
         return;
       }
-      
+
       // If already loaded, resolve immediately
       if (window.Razorpay) {
         resolve();
         return;
       }
-      
+
       // Check if script is already being loaded
       const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
       if (existingScript) {
@@ -530,12 +529,12 @@ export function UniversalPaymentPage({
         });
         return;
       }
-      
+
       // Create and load new script
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
-      
+
       script.onload = () => {
         // Wait a bit for Razorpay to initialize
         setTimeout(() => {
@@ -546,11 +545,11 @@ export function UniversalPaymentPage({
           }
         }, 100);
       };
-      
+
       script.onerror = () => {
         reject(new Error('Failed to load Razorpay script'));
       };
-      
+
       document.body.appendChild(script);
     });
   };
@@ -560,7 +559,7 @@ export function UniversalPaymentPage({
       const data = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
       const addressList = data.addresses || [];
       setAddresses(addressList);
-      
+
       if (address) {
         // Find matching address or use provided
         const matched = addressList.find((a: any) => a.id === address.id || a.id === addressId);
@@ -575,10 +574,11 @@ export function UniversalPaymentPage({
     }
   };
 
+  //wallet and payment methods
   const loadPaymentData = async () => {
     try {
       setLoading(true);
-      
+
       // Load wallet balance
       try {
         const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
@@ -588,7 +588,7 @@ export function UniversalPaymentPage({
       } catch (e) {
         console.log('No wallet found');
       }
-      
+
       // Load saved payment methods
       try {
         const methodsRes = await apiClient.get<any>(`/customer/payment-methods?phone=${encodeURIComponent(customerPhone)}`);
@@ -602,7 +602,7 @@ export function UniversalPaymentPage({
       } catch (e) {
         console.log('No saved payment methods');
       }
-      
+
     } catch (error) {
       console.error('Error loading payment data:', error);
     } finally {
@@ -658,7 +658,7 @@ export function UniversalPaymentPage({
       const offersRes = await apiClient.get<any>(
         `/razorpay/offers?amount=${baseAmount}`
       );
-      
+
       if (offersRes.success && offersRes.offers) {
         setRazorpayOffers(offersRes.offers);
       }
@@ -673,14 +673,14 @@ export function UniversalPaymentPage({
       const feesRes = await apiClient.get<any>(
         `/config/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
       );
-      
+
       if (feesRes.success) {
         const platformFee = feesRes.platformFee || 0;
         const convenienceFee = feesRes.convenienceFee || 0;
         // Delivery fee is usually calculated separately by logistics
         const deliveryFee = serviceStyle === 'at_home' || type === 'order' ? (feesRes.deliveryFee || 0) : 0;
         const packagingFee = type === 'order' ? (feesRes.packagingFee || 0) : 0;
-        
+
         console.log('[FEES] Loaded fee configuration:', {
           platformFee,
           convenienceFee,
@@ -688,7 +688,7 @@ export function UniversalPaymentPage({
           packagingFee,
           breakdown: feesRes.breakdown,
         });
-        
+
         setPlatformFees({
           platformFee,
           convenienceFee,
@@ -750,15 +750,15 @@ export function UniversalPaymentPage({
     maxDiscount?: number
   ): number => {
     if (minAmount && amount < minAmount) return 0;
-    
-    let discount = type === 'percentage' 
-      ? (amount * value) / 100 
+
+    let discount = type === 'percentage'
+      ? (amount * value) / 100
       : value;
-    
+
     if (maxDiscount && discount > maxDiscount) {
       discount = maxDiscount;
     }
-    
+
     return Math.min(discount, amount);
   };
 
@@ -780,13 +780,13 @@ export function UniversalPaymentPage({
         customerId,
         customerPhone,
       });
-      
+
       if (taxRes.success) {
         const cgst = taxRes.totalCGST || 0;
         const sgst = taxRes.totalSGST || 0;
         const igst = taxRes.totalIGST || 0;
         const totalTax = taxRes.totalTax || cgst + sgst + igst;
-        
+
         setTaxBreakdown({
           subtotal: baseAmount,
           cgst,
@@ -822,7 +822,7 @@ export function UniversalPaymentPage({
       toast.error('Please enter a coupon code');
       return;
     }
-    
+
     setCouponLoading(true);
     try {
       // First try the unified promotion validation (includes vendor promotions)
@@ -833,7 +833,7 @@ export function UniversalPaymentPage({
         bookingAmount: type === 'booking' ? taxBreakdown.total : undefined,
         orderType: type === 'booking' ? 'service' : 'product'
       });
-      
+
       if (promoRes.valid) {
         const discountAmount = promoRes.discount_amount || calculateDiscountAmount(
           promoRes.promotion?.discount_type,
@@ -842,7 +842,7 @@ export function UniversalPaymentPage({
           promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
           promoRes.promotion?.max_discount_amount
         );
-        
+
         setAppliedCoupon({
           valid: true,
           code: couponCode.toUpperCase(),
@@ -857,12 +857,12 @@ export function UniversalPaymentPage({
         setShowCouponInput(false);
         return;
       }
-      
+
       // Fallback to legacy coupon validation
       const res = await apiClient.get<any>(
         `/coupons/validate/${couponCode.toUpperCase()}?amount=${taxBreakdown.total}`
       );
-      
+
       if (res.valid) {
         const discountAmount = calculateDiscountAmount(
           res.coupon.discount_type,
@@ -871,7 +871,7 @@ export function UniversalPaymentPage({
           res.coupon.min_amount,
           res.coupon.max_discount
         );
-        
+
         setAppliedCoupon({
           valid: true,
           code: couponCode.toUpperCase(),
@@ -924,16 +924,16 @@ export function UniversalPaymentPage({
   const promotionDiscount = appliedPromotion?.discountAmount || 0;
   const couponDiscount = appliedCoupon?.discountAmount || 0;
   const razorpayOfferDiscount = selectedRazorpayOffer?.discountValue || 0;
-  
+
   // Apply discounts to subtotal (before tax for some, after tax for others - following standard practice)
   const subtotalAfterDiscounts = Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
-  
+
   // Recalculate tax on discounted amount if needed (or keep original tax - business logic)
   const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
   const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
-  
+
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, totalAfterDiscounts - razorpayOfferDiscount) : 0;
-  
+
   // ✅ NEW: If subscription covers this booking, final amount is 0
   const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
@@ -950,9 +950,9 @@ export function UniversalPaymentPage({
       toast.error('Please select a delivery address');
       return;
     }
-    
+
     setProcessing(true);
-    
+
     try {
       let bookingCreationDeferred = false;
       let deferredBookingPayload: Record<string, unknown> | null = null;
@@ -990,11 +990,11 @@ export function UniversalPaymentPage({
         // This MUST happen synchronously here to ensure we have the UUID
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         let finalServiceId = resolvedServiceId || serviceId;
-        
+
         // If not a UUID, resolve it NOW (synchronously)
         if (!uuidRegex.test(finalServiceId)) {
           console.log(`🔄 Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
-          
+
           try {
             // Try multiple endpoints to get vendor services
             let vendorServicesRes: any = null;
@@ -1003,15 +1003,15 @@ export function UniversalPaymentPage({
               `/vendor/services/${vendorId}`,
               `/vendor-services?vendorId=${vendorId}`
             ];
-            
+
             for (const endpoint of endpoints) {
               try {
                 vendorServicesRes = await apiClient.get<any>(endpoint);
                 // Check if response has services in any format
-                if (vendorServicesRes?.allServices || 
-                    vendorServicesRes?.services || 
-                    vendorServicesRes?.data?.services || 
-                    Array.isArray(vendorServicesRes)) {
+                if (vendorServicesRes?.allServices ||
+                  vendorServicesRes?.services ||
+                  vendorServicesRes?.data?.services ||
+                  Array.isArray(vendorServicesRes)) {
                   console.log(`✅ [SERVICE-RESOLUTION-SYNC] Found services from endpoint: ${endpoint}`);
                   break;
                 }
@@ -1020,11 +1020,11 @@ export function UniversalPaymentPage({
                 continue; // Try next endpoint
               }
             }
-            
+
             if (vendorServicesRes) {
               // ✅ CRITICAL: Handle different API response formats
               let services: any[] = [];
-              
+
               // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
               if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
                 services = vendorServicesRes.allServices;
@@ -1032,7 +1032,7 @@ export function UniversalPaymentPage({
               // Format 2: { services: { at_home: { services: [...] }, ... } }
               else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
                 // Flatten servicesByStyle object
-                services = Object.values(vendorServicesRes.services).flatMap((style: any) => 
+                services = Object.values(vendorServicesRes.services).flatMap((style: any) =>
                   (style?.services && Array.isArray(style.services)) ? style.services : []
                 );
               }
@@ -1048,29 +1048,29 @@ export function UniversalPaymentPage({
               else if (Array.isArray(vendorServicesRes)) {
                 services = vendorServicesRes;
               }
-              
+
               console.log('📦 [SERVICE-RESOLUTION] Extracted services:', {
                 count: services.length,
                 sample: services[0],
                 responseKeys: Object.keys(vendorServicesRes),
               });
-              
+
               // Ensure services is an array before calling .find()
               if (!Array.isArray(services)) {
                 console.error('❌ [SERVICE-RESOLUTION] Services is not an array:', typeof services, services);
                 throw new Error('Invalid services response format from API');
               }
-              
+
               // Look for service with matching numeric ID
-              const matchingService = services.find((s: any) => 
-                String(s.id) === String(finalServiceId) || 
+              const matchingService = services.find((s: any) =>
+                String(s.id) === String(finalServiceId) ||
                 String(s.serviceId) === String(finalServiceId) ||
                 String(s.service_id) === String(finalServiceId) ||
                 s.id === finalServiceId ||
                 s.serviceId === finalServiceId ||
                 s.service_id === finalServiceId
               );
-              
+
               if (matchingService) {
                 // Use service_id (UUID) from the vendor service
                 const resolved = matchingService.service_id || matchingService.serviceId;
@@ -1101,7 +1101,7 @@ export function UniversalPaymentPage({
             return;
           }
         }
-        
+
         // Final validation - MUST be UUID at this point
         if (!uuidRegex.test(finalServiceId)) {
           toast.error(
@@ -1169,7 +1169,7 @@ export function UniversalPaymentPage({
         // ✅ NEW: Check if subscription covers this booking
         if (subscriptionCovered && activeSubscription) {
           console.log('📋 Creating subscription-covered booking (0 payment)...');
-          
+
           try {
             const subscriptionBookingRes = await apiClient.post<any>('/subscriptions/create-booking', {
               subscriptionId: activeSubscription.id,
@@ -1185,7 +1185,7 @@ export function UniversalPaymentPage({
               customerPhone,
               address: selectedAddress?.addressLine1 || address?.addressLine1,
             });
-            
+
             if (subscriptionBookingRes.success && subscriptionBookingRes.booking) {
               toast.success('Booking confirmed with your subscription!');
               onSuccess(
@@ -1201,7 +1201,7 @@ export function UniversalPaymentPage({
             setSubscriptionCovered(false);
           }
         }
-        
+
         // Create booking with correct API format
         // ✅ CRITICAL: CreateBookingRequestSchema requires customerId (UUID). Resolve from customerPhone if missing.
         let resolvedCustomerId = customerId;
@@ -1223,9 +1223,9 @@ export function UniversalPaymentPage({
           setProcessing(false);
           return;
         }
-        
+
         let bookingRes: any;
-        
+
         // Get customer name from profile
         let customerNameValue = '';
         try {
@@ -1237,7 +1237,7 @@ export function UniversalPaymentPage({
         } catch (e) {
           console.log('Could not fetch customer name for booking');
         }
-        
+
         // ✅ finalServiceId is already resolved and validated above
 
         // Normalize bookingTime to HH:MM or HH:MM:SS (backend schema expects this)
@@ -1262,15 +1262,15 @@ export function UniversalPaymentPage({
           address: addressValue, // ✅ Optional string
           notes: '', // ✅ Optional string
           // ✅ NEW: Pass selected services for multi-service bookings
-          selectedServices: selectedServices && selectedServices.length > 0 
+          selectedServices: selectedServices && selectedServices.length > 0
             ? selectedServices.map(s => ({
-                id: s.id || s.serviceId,
-                serviceId: s.service_id || s.serviceId || s.id,
-                name: s.name || s.serviceName,
-                price: Number(s.price) || Number(s.custom_price) || 0,
-                duration: Number(s.duration) || Number(s.duration_minutes) || 30,
-                quantity: Number(s.quantity) || 1,
-              }))
+              id: s.id || s.serviceId,
+              serviceId: s.service_id || s.serviceId || s.id,
+              name: s.name || s.serviceName,
+              price: Number(s.price) || Number(s.custom_price) || 0,
+              duration: Number(s.duration) || Number(s.duration_minutes) || 30,
+              quantity: Number(s.quantity) || 1,
+            }))
             : undefined,
         };
         // ✅ at_home: pass city, state, pincode, latitude, longitude for commute and backend (CreateBookingRequestSchema)
@@ -1282,22 +1282,22 @@ export function UniversalPaymentPage({
         // ✅ CRITICAL FIX: Pass addressId so backend can store address_id in booking
         // This allows vendor-side to look up detailed address fields (flat, house, floor, building)
         if (addressIdForBooking) bookingPayload.addressId = addressIdForBooking;
-        
+
         console.log('📋 Creating booking with validated payload:', {
           ...bookingPayload,
           originalServiceId: serviceId, // Log original
           resolvedServiceId: finalServiceId, // Log resolved UUID
         });
-        
+
         // ✅ Payment policy aware: attempt booking creation (may be blocked if upfront payment required)
         // Try all possible booking creation endpoints
         const endpoints = [
           '/bookings/create',
-          '/booking/create', 
+          '/booking/create',
           '/customer/booking/create',
           '/customer/bookings/create'
         ];
-        
+
         let lastError: any = null;
         let paymentRequiredError: any = null;
         for (const endpoint of endpoints) {
@@ -1308,11 +1308,11 @@ export function UniversalPaymentPage({
             break; // Success, exit loop
           } catch (error: any) {
             lastError = error;
-            const is404 = error?.statusCode === 404 || 
-                         error?.status === 404 || 
-                         error?.response?.status === 404 ||
-                         (error?.message && error.message.includes('404'));
-            
+            const is404 = error?.statusCode === 404 ||
+              error?.status === 404 ||
+              error?.response?.status === 404 ||
+              (error?.message && error.message.includes('404'));
+
             if (is404) {
               console.warn(`⚠️ ${endpoint} returned 404, trying next endpoint...`);
               continue; // Try next endpoint
@@ -1371,39 +1371,39 @@ export function UniversalPaymentPage({
           bookingCreationDeferred = true;
           deferredBookingPayload = bookingPayload;
         }
-        
+
         // If we exhausted all endpoints, throw the last error
         if (!bookingRes && !bookingCreationDeferred) {
           console.error('❌ All booking creation endpoints failed');
           throw lastError || new Error('All booking creation endpoints returned 404. Lambda may need redeployment.');
         }
-        
+
         // P2: Treat 200-with-error as failure (resilient parsing)
         if (bookingRes?.error || bookingRes?.success === false) {
           const errMsg = typeof bookingRes?.error === 'string' ? bookingRes.error : (bookingRes?.error?.message ?? bookingRes?.error ?? 'Booking creation failed');
           throw new Error(errMsg);
         }
-        
+
         // Forensic: extract booking ID from any response shape (wrapped, idempotency, double-wrapped, deep)
         const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'Initial booking create');
-        
+
         console.log('📋 Booking creation response:', {
           fullResponse: bookingRes,
           extractedBookingId: bookingIdValue,
           hasData: !!bookingRes?.data,
           dataKeys: bookingRes?.data ? Object.keys(bookingRes.data) : [],
         });
-        
+
         if (!bookingIdValue && !bookingCreationDeferred) {
           console.error('❌ No booking ID in response:', bookingRes);
           throw new Error('Failed to create booking: No booking ID returned');
         }
-        
+
         if (bookingIdValue && !UUID_REGEX.test(bookingIdValue)) {
           console.error('❌ Invalid bookingId format from API:', bookingIdValue);
           throw new Error('Invalid booking ID format received from server');
         }
-        
+
         if (bookingIdValue) {
           currentBookingId = bookingIdValue;
           console.log('✅ Booking ID set:', currentBookingId);
@@ -1421,31 +1421,31 @@ export function UniversalPaymentPage({
           taxAmount: taxBreakdown.totalTax,
           total: taxBreakdown.total,
         });
-        
+
         if (!orderRes.orderId && !orderRes.id) {
           throw new Error('Failed to create order');
         }
         currentOrderId = orderRes.orderId || orderRes.id;
       }
-      
+
       // Step 2: Create payment record (only when booking already exists)
       // ✅ If booking creation is deferred, skip payment record creation here
       if (type === 'order' && !currentOrderId) {
         console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
         // For orders, proceed directly to Razorpay
       }
-      
+
       // ✅ For bookings, only create payment record if booking already exists
       if (type === 'booking' && (!currentBookingId || bookingCreationDeferred)) {
         console.log('ℹ️ Booking creation deferred; payment record will be created by Razorpay order flow.');
       }
-      
+
       const paymentPayload: any = {
         amount: taxBreakdown.total, // ✅ Required: positive number
         paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // ✅ Optional enum
         bookingId: currentBookingId, // ✅ Required UUID (booking should already exist)
       };
-      
+
       // ✅ Optional fields (not in schema but backend may handle)
       if (customerId) {
         paymentPayload.customerId = customerId; // ✅ Optional UUID
@@ -1453,13 +1453,13 @@ export function UniversalPaymentPage({
       if (vendorId) {
         paymentPayload.vendorId = vendorId; // ✅ Optional UUID
       }
-      
+
       // ✅ Wallet fields (extracted from raw body by backend)
       if (useWallet) {
         paymentPayload.useWallet = useWallet;
         paymentPayload.walletAmount = walletAmount || 0;
       }
-      
+
       // ✅ Additional fields (not in schema, but backend may handle from raw body)
       // These are sent but not validated by schema
       if (appliedCoupon?.code) {
@@ -1474,9 +1474,9 @@ export function UniversalPaymentPage({
         paymentPayload.razorpayOfferId = selectedRazorpayOffer.id;
         paymentPayload.razorpayOfferDiscount = razorpayOfferDiscount || 0;
       }
-      
+
       console.log('📤 Creating payment with payload:', paymentPayload);
-      
+
       // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
       let paymentRes: any = null;
       if (type === 'booking' && currentBookingId && !bookingCreationDeferred) {
@@ -1486,13 +1486,13 @@ export function UniversalPaymentPage({
           console.error('❌ Invalid bookingId format:', currentBookingId);
           throw new Error('Invalid booking ID format. Please try again.');
         }
-        
+
         // ✅ Validate amount is a non-negative number (0 allowed for full wallet payment)
         if (paymentPayload.amount == null || paymentPayload.amount < 0 || isNaN(paymentPayload.amount)) {
           console.error('❌ Invalid amount:', paymentPayload.amount);
           throw new Error('Invalid payment amount. Please try again.');
         }
-        
+
         // ✅ Validate paymentMethod is one of the allowed values
         const allowedMethods = ['razorpay', 'wallet', 'cash', 'card', 'upi', 'netbanking'];
         if (paymentPayload.paymentMethod && !allowedMethods.includes(paymentPayload.paymentMethod)) {
@@ -1500,7 +1500,7 @@ export function UniversalPaymentPage({
           // Default to razorpay if invalid
           paymentPayload.paymentMethod = 'razorpay';
         }
-        
+
         // ✅ Validate customerId and vendorId are UUIDs if provided
         if (paymentPayload.customerId && !uuidRegex.test(paymentPayload.customerId)) {
           console.warn('⚠️ Invalid customerId format, removing from payload:', paymentPayload.customerId);
@@ -1510,7 +1510,7 @@ export function UniversalPaymentPage({
           console.warn('⚠️ Invalid vendorId format, removing from payload:', paymentPayload.vendorId);
           delete paymentPayload.vendorId;
         }
-        
+
         console.log('📤 Creating payment with validated payload:', {
           bookingId: paymentPayload.bookingId,
           amount: paymentPayload.amount,
@@ -1523,7 +1523,7 @@ export function UniversalPaymentPage({
           hasPromotion: !!paymentPayload.promotionId,
         });
         console.log('📤 Full payment payload (for debugging):', JSON.stringify(paymentPayload, null, 2));
-        
+
         try {
           paymentRes = await apiClient.post<any>('/payments/create', paymentPayload);
         } catch (paymentError: any) {
@@ -1534,7 +1534,7 @@ export function UniversalPaymentPage({
           console.error('❌ Error status:', paymentError?.statusCode || paymentError?.status);
           console.error('❌ Raw response:', paymentError?.rawResponse);
           console.error('❌ Request payload that failed:', paymentPayload);
-          
+
           // Log full error object for debugging
           if (paymentError) {
             console.error('❌ Full error object:', {
@@ -1548,12 +1548,12 @@ export function UniversalPaymentPage({
               stack: paymentError.stack
             });
           }
-          
+
           // Extract validation errors from backend
           // Check multiple possible locations for error data
           const errorData = paymentError?.responseData || paymentError?.response || paymentError?.data || {};
           let errorMessage = 'Failed to create payment';
-          
+
           // Check for validation errors in different formats
           if (errorData?.error?.details?.errors && Array.isArray(errorData.error.details.errors)) {
             // Format: { success: false, error: { code: 'VALIDATION_ERROR', details: { errors: [...] } } }
@@ -1594,7 +1594,7 @@ export function UniversalPaymentPage({
             // Fallback to ApiError message
             errorMessage = paymentError.message;
           }
-          
+
           toast.error(errorMessage);
           setProcessing(false);
           return;
@@ -1607,7 +1607,7 @@ export function UniversalPaymentPage({
           razorpayOrderId: null,
         };
       }
-      
+
       // If fully paid with wallet
       if (paymentRes.status === 'completed' || finalAmount === 0) {
         // If booking creation was deferred (payment policy), create booking now
@@ -1637,7 +1637,7 @@ export function UniversalPaymentPage({
             amount: bookingCreationDeferred ? (requiredUpfrontAmount ?? finalAmount) : taxBreakdown.total,
           });
         }
-        
+
         if (appliedPromotion) {
           await apiClient.post('/promotions/apply', {
             promotionId: appliedPromotion.id,
@@ -1647,17 +1647,17 @@ export function UniversalPaymentPage({
             amount: bookingCreationDeferred ? (requiredUpfrontAmount ?? finalAmount) : taxBreakdown.total,
           });
         }
-        
+
         // Generate OTP for eligible bookings
-        const otpCode = type === 'booking' && serviceStyle !== 'tele' 
-          ? await generateBookingOTP(currentBookingId || '', customerId) 
+        const otpCode = type === 'booking' && serviceStyle !== 'tele'
+          ? await generateBookingOTP(currentBookingId || '', customerId)
           : undefined;
-        
+
         toast.success(type === 'booking' ? 'Booking confirmed!' : 'Order confirmed!');
         onSuccess(currentBookingId || '', currentOrderId, otpCode);
         return;
       }
-      
+
       // Step 3: Create Razorpay order
       // ✅ FIX: Use longer timeout (45s) for payment operations
       console.log('🔄 [PAYMENT] Creating Razorpay order...', {
@@ -1669,7 +1669,7 @@ export function UniversalPaymentPage({
       const amountToCharge = bookingCreationDeferred
         ? (requiredUpfrontAmount ?? finalAmount)
         : finalAmount;
-      
+
       let orderRes: any;
       try {
         orderRes = await apiClient.post<any>('/razorpay/create-order', {
@@ -1694,45 +1694,45 @@ export function UniversalPaymentPage({
         const errorMsg = orderError.responseData?.error || orderError.response?.error || orderError.message || 'Failed to create payment order';
         throw new Error(`Failed to create payment order: ${errorMsg}`);
       }
-      
+
       console.log('✅ [PAYMENT] Razorpay order response (raw):', JSON.stringify(orderRes, null, 2));
       console.log('✅ [PAYMENT] Response type:', typeof orderRes);
       console.log('✅ [PAYMENT] Response keys:', orderRes ? Object.keys(orderRes) : 'null/undefined');
-      
+
       // ✅ FIX: Handle ALL possible response structures
       // Backend returns: { orderId, keyId, amount, currency } directly via this.success()
       // But could also be wrapped in: { success: true, data: { ... } } or { data: { ... } }
       // Or error response: { error: "..." } or { success: false, error: "..." }
-      
+
       // Check for error response first
       if (orderRes?.error || (orderRes?.success === false)) {
-        const errorMsg = typeof orderRes.error === 'string' 
-          ? orderRes.error 
+        const errorMsg = typeof orderRes.error === 'string'
+          ? orderRes.error
           : orderRes.error?.message || 'Failed to create payment order';
         console.error('❌ [PAYMENT] Error in response:', errorMsg);
         throw new Error(errorMsg);
       }
-      
+
       // Extract orderId from all possible locations
-      const razorpayOrderId: string = 
+      const razorpayOrderId: string =
         orderRes?.orderId ||           // Direct: { orderId: "..." }
         orderRes?.data?.orderId ||     // Wrapped: { data: { orderId: "..." } }
         orderRes?.success?.data?.orderId || // Double wrapped: { success: { data: { orderId: "..." } } }
         orderRes?.razorpay_order_id || // Alternative field name
         orderRes?.id;                  // Fallback to id
-      
-      const keyId: string | undefined = 
-        orderRes?.keyId || 
-        orderRes?.data?.keyId || 
+
+      const keyId: string | undefined =
+        orderRes?.keyId ||
+        orderRes?.data?.keyId ||
         orderRes?.success?.data?.keyId ||
         process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-      
-      const orderAmount: number | undefined = 
-        orderRes?.amount || 
-        orderRes?.data?.amount || 
+
+      const orderAmount: number | undefined =
+        orderRes?.amount ||
+        orderRes?.data?.amount ||
         orderRes?.success?.data?.amount;
-      
-      console.log('🔍 [PAYMENT] Extracted values:', { 
+
+      console.log('🔍 [PAYMENT] Extracted values:', {
         razorpayOrderId: razorpayOrderId ? `${razorpayOrderId.substring(0, 20)}...` : 'MISSING',
         keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
         orderAmount,
@@ -1740,7 +1740,7 @@ export function UniversalPaymentPage({
         hasSuccess: !!orderRes?.success,
         responseKeys: orderRes ? Object.keys(orderRes) : []
       });
-      
+
       if (!razorpayOrderId) {
         console.error('❌ [PAYMENT] No orderId found in response. Full response structure:', {
           response: orderRes,
@@ -1754,14 +1754,14 @@ export function UniversalPaymentPage({
         });
         throw new Error('Failed to create payment order: No order ID received from server. Please check the response structure.');
       }
-      
+
       if (!keyId) {
         console.error('❌ [PAYMENT] No keyId in response and NEXT_PUBLIC_RAZORPAY_KEY not set');
         throw new Error('Payment gateway configuration error: Razorpay key not found');
       }
-      
+
       console.log('✅ [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
-      
+
       // ✅ FIX: Wait for Razorpay script to load before opening checkout
       if (typeof window !== 'undefined' && !window.Razorpay) {
         console.log('⏳ [PAYMENT] Waiting for Razorpay script to load...');
@@ -1773,7 +1773,7 @@ export function UniversalPaymentPage({
           throw new Error('Payment gateway script failed to load. Please refresh the page and try again.');
         }
       }
-      
+
       // Step 4: Open Razorpay checkout
       const options = {
         key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
@@ -1797,7 +1797,7 @@ export function UniversalPaymentPage({
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
-            
+
             console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
 
             // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
@@ -1842,7 +1842,7 @@ export function UniversalPaymentPage({
               currentBookingId = bookingIdValue;
               bookingCreationDeferred = false;
             }
-            
+
             // ✅ Step 2: Apply coupon if used
             if (appliedCoupon) {
               try {
@@ -1859,7 +1859,7 @@ export function UniversalPaymentPage({
                 // Don't block payment success if coupon fails
               }
             }
-            
+
             // ✅ Step 3: Apply promotion if used
             if (appliedPromotion) {
               try {
@@ -1876,7 +1876,7 @@ export function UniversalPaymentPage({
                 // Don't block payment success if promotion fails
               }
             }
-            
+
             // ✅ Step 4: Generate OTP for eligible bookings
             let otpCode: string | undefined = undefined;
             if (type === 'booking' && serviceStyle !== 'tele') {
@@ -1888,7 +1888,7 @@ export function UniversalPaymentPage({
                 // Don't block payment success if OTP fails
               }
             }
-            
+
             // ✅ Step 5: Success - booking is now confirmed
             console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
             toast.success('Payment successful! Booking confirmed.');
@@ -1915,19 +1915,19 @@ export function UniversalPaymentPage({
           },
         },
       };
-      
+
       // ✅ FIX: Double-check Razorpay is available before opening
       if (!window.Razorpay) {
         console.error('❌ [PAYMENT] Razorpay not available after script load');
         throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
       }
-      
+
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,
         amount: amountToCharge,
         keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing'
       });
-      
+
       try {
         const razorpay = new window.Razorpay(options);
         razorpay.open();
@@ -1936,18 +1936,18 @@ export function UniversalPaymentPage({
         console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
         throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
       }
-      
+
     } catch (error: any) {
       console.error('❌ Payment error:', error);
       console.error('❌ Error response:', error?.response);
       console.error('❌ Error data:', error?.response?.data);
       console.error('❌ Error status:', error?.status);
       console.error('❌ Error message:', error?.message);
-      
+
       // Extract detailed error message
       const errorData = error?.response?.data || error?.data;
       let errorMessage = error.message || 'Payment failed';
-      
+
       if (errorData?.data?.errors && Array.isArray(errorData.data.errors)) {
         const validationErrors = errorData.data.errors.map((e: any) => {
           const path = e.path?.join('.') || e.path || 'unknown';
@@ -1965,7 +1965,7 @@ export function UniversalPaymentPage({
       } else if (errorData?.error || errorData?.message) {
         errorMessage = errorData.error || errorData.message;
       }
-      
+
       toast.error(errorMessage);
       setProcessing(false);
     }
@@ -1976,22 +1976,21 @@ export function UniversalPaymentPage({
     if (serviceStyle === 'tele' || serviceStyle === 'ecom') {
       return undefined;
     }
-    
+
     try {
       const otpRes = await apiClient.post<any>('/bookings/generate-otp', {
         bookingId,
         serviceStyle,
         customerId: customerIdParam || customerId || undefined,
       });
-      
+
       if (otpRes.success && otpRes.otp) {
         return otpRes.otp;
       }
     } catch (error) {
       console.error('Error generating OTP:', error);
     }
-    
-    // Generate a fallback 4-digit OTP
+
     return Math.floor(1000 + Math.random() * 9000).toString();
   };
 
@@ -2008,19 +2007,19 @@ export function UniversalPaymentPage({
     ? selectedServices
     : null;
   const firstServiceFromArray = effectiveSelectedServices?.[0];
-  
-  const displayName = serviceName || productName 
-    || firstServiceFromArray?.name || firstServiceFromArray?.serviceName 
+
+  const displayName = serviceName || productName
+    || firstServiceFromArray?.name || firstServiceFromArray?.serviceName
     || 'Service';
   const displayDescription = serviceDescription || firstServiceFromArray?.description || '';
-  const displayAmount = Number(baseAmount) || (effectiveSelectedServices 
+  const displayAmount = Number(baseAmount) || (effectiveSelectedServices
     ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
     : 0);
-  const displayDuration = (duration != null && (typeof duration !== 'string' || duration !== '')) 
-    ? Number(duration) 
-    : (effectiveSelectedServices 
-        ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
-        : firstServiceFromArray?.duration);
+  const displayDuration = (duration != null && (typeof duration !== 'string' || duration !== ''))
+    ? Number(duration)
+    : (effectiveSelectedServices
+      ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
+      : firstServiceFromArray?.duration);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-48">
@@ -2054,7 +2053,7 @@ export function UniversalPaymentPage({
                 Change
               </button>
             </div>
-            
+
             {selectedAddress ? (
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
                 <p className="font-medium text-gray-900">{selectedAddress.label || 'Home'}</p>
@@ -2079,7 +2078,7 @@ export function UniversalPaymentPage({
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             {type === 'booking' ? 'Booking Summary' : 'Order Summary'}
           </h2>
-          
+
           {/* Multi-service or single service display */}
           {effectiveSelectedServices && effectiveSelectedServices.length > 0 ? (
             <div className="space-y-3 pb-4 border-b border-gray-100">
@@ -2090,11 +2089,10 @@ export function UniversalPaymentPage({
                 const svcStyle = svc.serviceStyle || svc.service_style || serviceStyle;
                 return (
                   <div key={svc.id || svc.serviceId || idx} className="flex items-start gap-4">
-                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
-                      svcStyle === 'tele' ? 'bg-blue-100' :
-                      svcStyle === 'at_home' ? 'bg-green-100' : 
-                      svcStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
-                    }`}>
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${svcStyle === 'tele' ? 'bg-blue-100' :
+                      svcStyle === 'at_home' ? 'bg-green-100' :
+                        svcStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
+                      }`}>
                       {svcStyle === 'tele' ? '📱' : svcStyle === 'at_home' ? '🏠' : svcStyle === 'at_center' ? '🏥' : '🛒'}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -2119,11 +2117,10 @@ export function UniversalPaymentPage({
             </div>
           ) : (
             <div className="flex items-start gap-4 pb-4 border-b border-gray-100">
-              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
-                serviceStyle === 'tele' ? 'bg-blue-100' :
-                serviceStyle === 'at_home' ? 'bg-green-100' : 
-                serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
-              }`}>
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${serviceStyle === 'tele' ? 'bg-blue-100' :
+                serviceStyle === 'at_home' ? 'bg-green-100' :
+                  serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
+                }`}>
                 {serviceStyle === 'tele' ? '📱' : serviceStyle === 'at_home' ? '🏠' : serviceStyle === 'at_center' ? '🏥' : '🛒'}
               </div>
               <div className="flex-1 min-w-0">
@@ -2144,7 +2141,7 @@ export function UniversalPaymentPage({
               <p className="font-bold text-[#FF8C42]">{formatPriceWithSymbol(displayAmount)}</p>
             </div>
           )}
-          
+
           {/* Schedule (for bookings) */}
           {type === 'booking' && (bookingDate || bookingTime) && (
             <div className="flex items-center gap-3 py-3 border-b border-gray-100">
@@ -2152,15 +2149,15 @@ export function UniversalPaymentPage({
               <div className="flex-1">
                 <p className="text-sm text-gray-500">Schedule</p>
                 <p className="font-medium">
-                  {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', { 
-                    weekday: 'short', day: 'numeric', month: 'short' 
+                  {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', {
+                    weekday: 'short', day: 'numeric', month: 'short'
                   })}
                   {bookingTime && ` at ${bookingTime}`}
                 </p>
               </div>
             </div>
           )}
-          
+
           {/* Pet (for bookings) */}
           {type === 'booking' && petName && (
             <div className="flex items-center gap-3 py-3 border-b border-gray-100">
@@ -2171,7 +2168,7 @@ export function UniversalPaymentPage({
               </div>
             </div>
           )}
-          
+
           {/* Address (for home services/orders) */}
           {((serviceStyle === 'at_home' && type === 'booking') || type === 'order') && selectedAddress && (
             <div className="flex items-center gap-3 py-3">
@@ -2194,17 +2191,16 @@ export function UniversalPaymentPage({
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               <h2 className="font-semibold text-gray-900">Available Offers</h2>
             </div>
-            
+
             <div className="space-y-2">
               {promotions.map((promo) => (
                 <button
                   key={promo.id}
                   onClick={() => applyPromotion(promo)}
-                  className={`w-full text-left p-3 rounded-xl border-2 transition ${
-                    appliedPromotion?.id === promo.id
-                      ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200 hover:border-[#FF8C42]'
-                  }`}
+                  className={`w-full text-left p-3 rounded-xl border-2 transition ${appliedPromotion?.id === promo.id
+                    ? 'border-green-500 bg-green-50'
+                    : 'border-gray-200 hover:border-[#FF8C42]'
+                    }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -2237,7 +2233,7 @@ export function UniversalPaymentPage({
               <h2 className="font-semibold text-gray-900">Coupons & Discounts</h2>
             </div>
           </div>
-          
+
           {appliedCoupon ? (
             <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
               <div className="flex items-center gap-2">
@@ -2269,7 +2265,7 @@ export function UniversalPaymentPage({
                   {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
                 </Button>
               </div>
-              <button 
+              <button
                 onClick={() => setShowCouponInput(false)}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
@@ -2294,17 +2290,16 @@ export function UniversalPaymentPage({
               <Gift className="w-5 h-5 text-blue-500" />
               <h2 className="font-semibold text-gray-900">Payment Offers</h2>
             </div>
-            
+
             <div className="space-y-2">
               {razorpayOffers.map((offer) => (
                 <button
                   key={offer.id}
                   onClick={() => applyRazorpayOffer(offer)}
-                  className={`w-full text-left p-3 rounded-xl border-2 transition ${
-                    selectedRazorpayOffer?.id === offer.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-blue-300'
-                  }`}
+                  className={`w-full text-left p-3 rounded-xl border-2 transition ${selectedRazorpayOffer?.id === offer.id
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-blue-300'
+                    }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -2331,14 +2326,12 @@ export function UniversalPaymentPage({
           <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <button
               onClick={() => setUseWallet(!useWallet)}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${
-                useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
-              }`}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+                }`}
             >
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  useWallet ? 'bg-green-100' : 'bg-orange-100'
-                }`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${useWallet ? 'bg-green-100' : 'bg-orange-100'
+                  }`}>
                   <Wallet className={`w-5 h-5 ${useWallet ? 'text-green-600' : 'text-[#FF8C42]'}`} />
                 </div>
                 <div className="text-left">
@@ -2349,9 +2342,8 @@ export function UniversalPaymentPage({
                   </p>
                 </div>
               </div>
-              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                useWallet ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300'
-              }`}>
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${useWallet ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300'
+                }`}>
                 {useWallet && <CheckCircle2 className="w-4 h-4" />}
               </div>
             </button>
@@ -2367,13 +2359,13 @@ export function UniversalPaymentPage({
         {/* Price Breakdown */}
         <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
-          
+
           <div className="space-y-3">
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
               <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
             </div>
-            
+
             {/* ✅ FIX: Vendor Discount - Applied directly by vendor at service level */}
             {appliedPromotion && (
               <div className="flex justify-between text-green-600">
@@ -2384,7 +2376,7 @@ export function UniversalPaymentPage({
                 <span className="font-medium">-₹{promotionDiscount.toFixed(2)}</span>
               </div>
             )}
-            
+
             {/* ✅ FIX: Platform Coupon - Applied at checkout level by platform */}
             {appliedCoupon && (
               <div className="flex justify-between text-blue-600">
@@ -2395,7 +2387,7 @@ export function UniversalPaymentPage({
                 <span className="font-medium">-₹{couponDiscount.toFixed(2)}</span>
               </div>
             )}
-            
+
             {/* GST Breakdown */}
             {taxBreakdown.isInterState ? (
               <div className="flex justify-between text-gray-600">
@@ -2421,7 +2413,7 @@ export function UniversalPaymentPage({
                 </div>
               </>
             )}
-            
+
             {/* ✅ FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
             {appliedPromotion && promotionDiscount > 0 && (
               <div className="flex justify-between text-blue-600">
@@ -2432,7 +2424,7 @@ export function UniversalPaymentPage({
                 <span>-₹{promotionDiscount.toFixed(2)}</span>
               </div>
             )}
-            
+
             {/* Platform Fees */}
             {platformFees.platformFee > 0 && (
               <div className="flex justify-between text-gray-600">
@@ -2443,7 +2435,7 @@ export function UniversalPaymentPage({
                 <span>₹{platformFees.platformFee.toFixed(2)}</span>
               </div>
             )}
-            
+
             {platformFees.convenienceFee > 0 && (
               <div className="flex justify-between text-gray-600">
                 <span className="flex items-center gap-1">
@@ -2453,7 +2445,7 @@ export function UniversalPaymentPage({
                 <span>₹{platformFees.convenienceFee.toFixed(2)}</span>
               </div>
             )}
-            
+
             {platformFees.deliveryFee > 0 && (
               <div className="flex justify-between text-gray-600">
                 <span className="flex items-center gap-1">
@@ -2462,7 +2454,7 @@ export function UniversalPaymentPage({
                 <span>₹{platformFees.deliveryFee.toFixed(2)}</span>
               </div>
             )}
-            
+
             {platformFees.packagingFee > 0 && (
               <div className="flex justify-between text-gray-600">
                 <span className="flex items-center gap-1">
@@ -2482,7 +2474,7 @@ export function UniversalPaymentPage({
                 <span>-₹{razorpayOfferDiscount.toFixed(2)}</span>
               </div>
             )}
-            
+
             {/* Wallet */}
             {useWallet && walletAmount > 0 && (
               <div className="flex justify-between text-green-600">
@@ -2493,7 +2485,7 @@ export function UniversalPaymentPage({
                 <span>-₹{walletAmount.toFixed(2)}</span>
               </div>
             )}
-            
+
             <div className="border-t border-gray-200 pt-3 mt-3">
               <div className="flex justify-between text-lg font-bold">
                 <span className="text-gray-900">Total Amount</span>
@@ -2539,15 +2531,14 @@ export function UniversalPaymentPage({
                 Add New
               </button>
             </div>
-            
+
             <div className="space-y-3">
               {savedMethods.map((method) => (
                 <button
                   key={method.id}
                   onClick={() => setSelectedMethod(method.id)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${
-                    selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
-                  }`}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
@@ -2561,11 +2552,11 @@ export function UniversalPaymentPage({
                     </div>
                     <div className="text-left">
                       <p className="font-medium text-gray-900">
-                        {method.type === 'card' 
+                        {method.type === 'card'
                           ? `${method.brand || 'Card'} •••• ${method.last4}`
                           : method.type === 'upi'
-                          ? method.upiId
-                          : method.bankName}
+                            ? method.upiId
+                            : method.bankName}
                       </p>
                       {method.isDefault && (
                         <span className="text-xs text-[#FF8C42]">Default</span>
@@ -2585,9 +2576,8 @@ export function UniversalPaymentPage({
         <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <button
             onClick={() => setSelectedMethod('razorpay')}
-            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${
-              selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
-            }`}
+            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+              }`}
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -2602,7 +2592,7 @@ export function UniversalPaymentPage({
               <CheckCircle2 className="w-5 h-5 text-[#FF8C42]" />
             )}
           </button>
-          
+
           {selectedMethod === 'razorpay' && (
             <button
               onClick={() => setShowAddPaymentModal(true)}
@@ -2622,8 +2612,8 @@ export function UniversalPaymentPage({
               <div>
                 <p className="font-medium text-blue-900">Booking OTP</p>
                 <p className="text-sm text-blue-700">
-                  After payment, you'll receive a 4-digit OTP. Share this with the service provider 
-                  {serviceStyle === 'at_home' ? ' when they arrive at your location' : ' at the clinic'} 
+                  After payment, you'll receive a 4-digit OTP. Share this with the service provider
+                  {serviceStyle === 'at_home' ? ' when they arrive at your location' : ' at the clinic'}
                   to start the service. This OTP completes the booking and releases payment to the provider.
                 </p>
               </div>
@@ -2678,11 +2668,10 @@ export function UniversalPaymentPage({
                     setSelectedAddress(addr);
                     setShowAddressModal(false);
                   }}
-                  className={`w-full text-left p-4 rounded-xl border-2 transition ${
-                    selectedAddress?.id === addr.id
-                      ? 'border-[#FF8C42] bg-orange-50'
-                      : 'border-gray-200 hover:border-[#FF8C42]'
-                  }`}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition ${selectedAddress?.id === addr.id
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 hover:border-[#FF8C42]'
+                    }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
