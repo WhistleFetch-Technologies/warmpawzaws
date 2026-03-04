@@ -39,7 +39,7 @@ import { registerVendorDashboardEndpoints } from '../endpoints/vendor-dashboard'
 import { registerCustomerEndpoints } from '../endpoints/customer';
 import { registerGpsTrackingEndpoints } from '../endpoints/gps-tracking';
 import { registerAdminEndpoints } from '../endpoints/admin';
-import { registerVideoCallEndpoints } from '../endpoints/video-call';
+import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
 import { registerPackageSessionEndpoints } from '../endpoints/package-sessions';
 import { registerSearchEndpoints } from '../endpoints/search';
 import { registerRazorpayEndpoints } from '../endpoints/razorpay';
@@ -50,7 +50,6 @@ import { registerSpecializedServiceFlows } from '../endpoints/specialized-servic
 import { registerAdminGovernanceEndpoints } from '../endpoints/admin-governance';
 // Staff decommissioned: solo providers discovered via discover-services for at_home/tele
 // import { registerStaffEndpoints } from '../endpoints/staff';
-import { registerServiceDiscoveryEndpoints } from '../endpoints/customer/service-discovery.customer';
 import { registerReviewEndpoints } from '../endpoints/reviews';
 import { registerNotificationEndpoints } from '../endpoints/notifications';
 import { registerFollowupRescheduleEndpoints } from '../endpoints/followup-reschedule';
@@ -97,8 +96,7 @@ import { registerReturnsEndpoints } from '../endpoints/returns';
 import { registerOrderManagementEndpoints } from '../endpoints/order-management';
 import { registerEnhancedOtpEndpoints } from '../endpoints/otp-enhanced';
 import { registerSmsNotificationEndpoints } from '../endpoints/sms-notifications';
-import { registerVendorProfileEndpoints } from '../endpoints/vendor-profile';
-import { registerCustomerProfileEndpoints } from '../endpoints/customer/customer-profile.customer';
+import { registerVendorProfileEndpoints } from '../endpoints/vendor/endpoints/vendor-profile.vendor';
 import { registerSystemHealthEndpoints } from '../endpoints/system-health';
 import { registerVendorSettingsEndpoints } from '../endpoints/vendor-settings';
 import { registerVendorPoliciesEndpoints } from '../endpoints/vendor-policies';
@@ -123,7 +121,6 @@ import { registerVendorSetupEndpoints } from '../endpoints/vendor-setup';
 import { registerConfigPoliciesEndpoints } from '../endpoints/config-policies';
 import { registerCustomerAppointmentsEndpoints } from '../endpoints/customer-appointments';
 import { registerCustomerOrdersEndpoints } from '../endpoints/customer-orders';
-import { registerVendorAnalyticsEndpoints } from '../endpoints/vendor-analytics';
 import { registerPetCafeEndpoints } from '../endpoints/pet-cafe';
 import { registerVendorRadarEndpoints } from '../endpoints/vendor-radar';
 import { registerPetResortEndpoints } from '../endpoints/pet-resort';
@@ -158,8 +155,9 @@ import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor-bank-accounts';
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
 import { registerDeliveryOtpEndpoints } from '../endpoints/delivery-otp';
-import { registerInstantTeleQueueEndpoints } from '../endpoints/instant-tele-queue';
-import { registerInstantTeleV2Endpoints } from '../endpoints/instant-tele-v2';
+import { registerInstantTeleQueueEndpoints } from '../endpoints/teleCommunication/endpoints/instant-tele-queue.teleconsultation';
+import { registerInstantTeleV2Endpoints } from '../endpoints/teleCommunication/endpoints/instant-tele-v2.teleconsultation';
+import { registerInstantTeleV3Endpoints } from '../endpoints/teleCommunication/endpoints/instant-tele-v3.teleconsultation';
 import { registerRoomsEndpoints } from '../endpoints/rooms';
 import { registerVendorLiveStatusEndpoints } from '../endpoints/vendor-live-status';
 import { registerDiagnosticsReportEndpoints } from '../endpoints/diagnostics-reports';
@@ -181,6 +179,9 @@ import { registerKYCVerificationEndpoints } from '../endpoints/kyc-verification'
 import { registerSpecializationMasterEndpoints } from '../endpoints/specialization-master';
 import platformPoliciesApp from '../endpoints/platform-policies';
 import { registerAuthEndpointsEnhanced } from 'src/endpoints/Auth/auth-enhanced';
+import { registerServiceDiscoveryEndpoints } from 'src/endpoints/customer/customerEndpoint/service-discovery.customer';
+import { registerCustomerProfileEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-profile.customer';
+import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor-analytics';
 
 // Create Hono app
 const app = new Hono();
@@ -480,6 +481,7 @@ registerAdminGovernanceEndpoints(app);
 // registerStaffEndpoints(app); // Staff decommissioned – solo discovery for at_home/tele
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue (legacy queue/staff)
 registerInstantTeleV2Endpoints(app); // Instant tele V2: vet-only, va2 availability, payment-first, no queue
+registerInstantTeleV3Endpoints(app); // Instant tele V3: vendor-accept-first, SSE streams, payment after acceptance
 registerRoomsEndpoints(app); // Consultation rooms management (Phase 1.1)
 registerReviewEndpoints(app);
 registerTrackingEndpoints(app);

@@ -1,19 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Video, Clock, Zap, Calendar, ChevronRight,
-  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus, Stethoscope, Search
+  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus, Stethoscope, Search,
+  PhoneOff, Loader2, XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 
 // ============================================================================
 // TYPES
@@ -74,13 +76,15 @@ interface TeleConsultationRouterProps {
   onNavigate: (screen: string, data?: any) => void;
 }
 
-type FlowStep = 
+type FlowStep =
   | 'mode-selection'      // Choose Scheduled vs Instant
   | 'provider-list'       // For Scheduled: list of providers
   | 'provider-profile'    // For Scheduled: provider profile + services
   | 'instant-vendor-list' // For Instant: available-now vets (from va2)
   | 'instant-service'     // For Instant: select service (vendor's tele services)
   | 'instant-pet'         // For Instant: select pet
+  | 'instant-calling'     // For Instant V3: "Calling vendor..." screen with SSE
+  | 'instant-queue'       // For Instant: waiting in queue for provider to accept (legacy)
   | 'payment'             // Payment page (instant: payment first, then booking)
   | 'confirmation';       // Booking confirmed
 
@@ -220,10 +224,10 @@ function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: Instant
   const [search, setSearch] = useState('');
   const filtered = search.trim()
     ? vendors.filter(
-        (v) =>
-          v.vendorName?.toLowerCase().includes(search.toLowerCase()) ||
-          v.city?.toLowerCase().includes(search.toLowerCase())
-      )
+      (v) =>
+        v.vendorName?.toLowerCase().includes(search.toLowerCase()) ||
+        v.city?.toLowerCase().includes(search.toLowerCase())
+    )
     : vendors;
 
   const dashboardStats = [
@@ -338,7 +342,7 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
       />
-      
+
       {/* Main Content */}
       <div className="px-4 pt-4 pb-8">
 
@@ -428,7 +432,7 @@ function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPe
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
       />
-      
+
       {/* Main Content */}
       <div className="px-4 pt-4 pb-8">
 
@@ -470,7 +474,7 @@ function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPe
                   <p className="text-xs text-slate-500">{pet.breed || pet.type}</p>
                 </button>
               ))}
-              
+
               {/* Add Pet Card */}
               <button
                 className="p-4 rounded-2xl text-center transition-all border-dashed border-2 border-slate-200 hover:border-[#FF8C42] hover:shadow-md flex flex-col items-center justify-center"
@@ -490,6 +494,216 @@ function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPe
 }
 
 // ============================================================================
+// INSTANT V3: CALLING VENDOR SCREEN (SSE-driven)
+// ============================================================================
+
+interface CallingVendorScreenProps {
+  bookingId: string;
+  vendorName: string;
+  serviceName: string;
+  servicePrice: number;
+  onVendorAccepted: (bookingId: string, totalAmount: number) => void;
+  onVendorRejected: () => void;
+  onTimeout: () => void;
+  onCancel: () => void;
+}
+
+function CallingVendorScreen({
+  bookingId,
+  vendorName,
+  serviceName,
+  servicePrice,
+  onVendorAccepted,
+  onVendorRejected,
+  onTimeout,
+  onCancel,
+}: CallingVendorScreenProps) {
+  const [status, setStatus] = useState<'calling' | 'accepted' | 'rejected' | 'timeout' | 'error'>('calling');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    // Start elapsed timer
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+
+    // Set up SSE stream
+    const apiBase = getApiBaseUrl();
+    const sseUrl = `${apiBase}/customer/tele/instant-stream/${bookingId}`;
+
+    try {
+      const eventSource = new EventSource(sseUrl);
+      eventSourceRef.current = eventSource;
+
+      eventSource.addEventListener('vendor_accepted', (event: MessageEvent) => {
+        try {
+          console.log('[CallingVendor] ✅ vendor_accepted event received:', event.data);
+          const data = JSON.parse(event.data);
+          console.log('[CallingVendor] Parsed data:', data);
+          setStatus('accepted');
+          toast.success(`${vendorName} accepted your call!`);
+          console.log('[CallingVendor] Calling onVendorAccepted with:', { bookingId: data.bookingId || bookingId, totalAmount: Number(data.totalAmount) || servicePrice });
+          onVendorAccepted(data.bookingId || bookingId, Number(data.totalAmount) || servicePrice);
+        } catch (e) {
+          console.error('[CallingVendor] Parse error:', e);
+        }
+      });
+
+      eventSource.addEventListener('vendor_rejected', (_event: MessageEvent) => {
+        setStatus('rejected');
+        toast.error(`${vendorName} is currently unavailable.`);
+        onVendorRejected();
+      });
+
+      eventSource.addEventListener('timeout', (_event: MessageEvent) => {
+        setStatus('timeout');
+        toast.error('Vendor did not respond in time.');
+        onTimeout();
+      });
+
+      eventSource.addEventListener('ended', (_event: MessageEvent) => {
+        setStatus('timeout');
+        onTimeout();
+      });
+
+      eventSource.addEventListener('payment_confirmed', (event: MessageEvent) => {
+        // This can happen if payment was somehow confirmed quickly
+        try {
+          const data = JSON.parse(event.data);
+          console.log('[CallingVendor] Payment confirmed via SSE:', data);
+        } catch (_) { /* ignore */ }
+      });
+
+      eventSource.onerror = () => {
+        console.warn('[CallingVendor] SSE connection error');
+      };
+    } catch (err) {
+      console.error('[CallingVendor] SSE setup error:', err);
+    }
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [bookingId]);
+
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+      <ServiceDashboardHeader
+        serviceName="Calling..."
+        serviceSubtitle={`${vendorName} - ${serviceName}`}
+        serviceIcon={Phone}
+        iconColor="text-white"
+        stats={[
+          { value: `₹${servicePrice}`, label: 'Price' },
+          { value: formatTime(elapsedSeconds), label: 'Elapsed' },
+        ]}
+        onBack={onCancel}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
+
+      <div className="px-4 pt-8 pb-8 flex flex-col items-center">
+        {status === 'calling' && (
+          <>
+            {/* Pulsing call animation */}
+            <div className="relative mb-8">
+              <div className="absolute inset-0 w-32 h-32 rounded-full bg-green-400/30 animate-ping" />
+              <div className="absolute inset-2 w-28 h-28 rounded-full bg-green-400/20 animate-pulse" />
+              <div className="relative w-32 h-32 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg">
+                <Phone className="w-12 h-12 text-white animate-bounce" />
+              </div>
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Calling {vendorName}...</h2>
+            <p className="text-gray-500 text-sm mb-1">Waiting for the vet to accept your call</p>
+            <p className="text-gray-400 text-xs mb-8">{formatTime(elapsedSeconds)}</p>
+
+            {/* Service info */}
+            <Card className="w-full p-4 mb-6 bg-white border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">{serviceName}</p>
+                  <p className="text-sm text-gray-500">Video Consultation</p>
+                </div>
+                <p className="font-bold text-lg text-[#FF8C42]">₹{servicePrice}</p>
+              </div>
+            </Card>
+
+            {/* Cancel button */}
+            <Button
+              variant="outline"
+              onClick={onCancel}
+              className="w-full border-red-200 text-red-600 hover:bg-red-50"
+            >
+              <PhoneOff className="w-4 h-4 mr-2" />
+              Cancel Call
+            </Button>
+          </>
+        )}
+
+        {status === 'rejected' && (
+          <div className="text-center">
+            <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-10 h-10 text-red-500" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Call Declined</h2>
+            <p className="text-gray-500 text-sm mb-6">
+              {vendorName} is currently unavailable. Please try another vet.
+            </p>
+            <Button onClick={onVendorRejected} className="bg-[#FF8C42] hover:bg-[#FF7029]">
+              Try Another Vet
+            </Button>
+          </div>
+        )}
+
+        {status === 'timeout' && (
+          <div className="text-center">
+            <div className="w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+              <Clock className="w-10 h-10 text-amber-500" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">No Response</h2>
+            <p className="text-gray-500 text-sm mb-6">
+              The vet did not respond in time. Please try another vet.
+            </p>
+            <Button onClick={onTimeout} className="bg-[#FF8C42] hover:bg-[#FF7029]">
+              Try Another Vet
+            </Button>
+          </div>
+        )}
+
+        {status === 'accepted' && (
+          <div className="text-center">
+            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Call Accepted!</h2>
+            <p className="text-gray-500 text-sm">
+              Redirecting to payment...
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -500,13 +714,16 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
 
-  // Instant flow (available-now → vendor → service → pet → payment)
+  // Instant flow (available-now → vendor → service → pet → calling → payment)
   const [availableNowVendors, setAvailableNowVendors] = useState<AvailableNowVendor[]>([]);
   const [loadingAvailableNow, setLoadingAvailableNow] = useState(false);
   const [selectedInstantVendor, setSelectedInstantVendor] = useState<AvailableNowVendor | null>(null);
   const [vendorTeleServices, setVendorTeleServices] = useState<PlatformService[]>([]);
   const [loadingVendorServices, setLoadingVendorServices] = useState(false);
-  
+
+  // V3 calling state
+  const [callingBookingId, setCallingBookingId] = useState<string | null>(null);
+
   // Data (scheduled path / legacy)
   const [platformServices, setPlatformServices] = useState<PlatformService[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
@@ -551,7 +768,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
       const response = await apiClient.get(
         '/customer/services/platform?roleId=vet&serviceStyle=tele'
       ) as any;
-      
+
       if (response.success && response.services) {
         setPlatformServices(response.services);
       } else {
@@ -658,11 +875,79 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     setStep('instant-pet');
   };
 
-  const handleSelectPet = (pet: Pet) => {
+  const handleSelectPet = async (pet: Pet) => {
     setSelectedPet(pet);
     if (selectedInstantVendor && selectedService && customerId) {
+      // V3 flow: call instant-request, then show calling screen
+      try {
+        const res = await apiClient.post<any>('/customer/tele/instant-request', {
+          customerId,
+          vendorId: selectedInstantVendor.vendorId,
+          petId: pet.id,
+          serviceId: selectedService.serviceId,
+          serviceName: selectedService.name,
+          amount: selectedService.price,
+        });
+        if (res?.success && res?.bookingId) {
+          setCallingBookingId(res.bookingId);
+          setStep('instant-calling');
+        } else {
+          toast.error(res?.error || 'Failed to send request to vendor');
+        }
+      } catch (err: any) {
+        console.error('[TeleRouter] instant-request error:', err);
+        toast.error(err?.message || 'Failed to connect. Please try again.');
+      }
+      return;
+    }
+    if (!customerId) toast.error('Customer ID not found. Please try again.');
+  };
+
+  // V3: Called when vendor accepts via SSE → navigate to payment
+  const handleVendorAccepted = (bookingId: string, totalAmount: number) => {
+    console.log('[TeleConsultationRouter] handleVendorAccepted called:', { bookingId, totalAmount, selectedInstantVendor: !!selectedInstantVendor, selectedService: !!selectedService, selectedPet: !!selectedPet, customerId: !!customerId });
+    if (selectedInstantVendor && selectedService && selectedPet && customerId) {
+      const paymentData = {
+        flowType: 'tele-queue-accepted',
+        bookingId, // Existing booking with pending_payment status
+        vendorId: selectedInstantVendor.vendorId,
+        vendorName: selectedInstantVendor.vendorName,
+        serviceId: selectedService.serviceId,
+        serviceName: selectedService.name,
+        totalAmount: totalAmount || selectedService.price,
+        totalDuration: selectedService.duration,
+        services: [{ serviceId: selectedService.serviceId, name: selectedService.name, price: selectedService.price, duration: selectedService.duration }],
+        petId: selectedPet.id,
+        petName: selectedPet.name,
+        customerId,
+        category: 'vet',
+        serviceType: 'tele',
+      };
+      console.log('[TeleConsultationRouter] Navigating to payment with data:', paymentData);
+      onNavigate('payment', paymentData);
+    } else {
+      console.error('[TeleConsultationRouter] ❌ Missing required data for payment navigation:', {
+        selectedInstantVendor: !!selectedInstantVendor,
+        selectedService: !!selectedService,
+        selectedPet: !!selectedPet,
+        customerId: !!customerId,
+      });
+    }
+  };
+
+  // V3: Called when vendor rejects or timeout
+  const handleVendorRejectedOrTimeout = () => {
+    setCallingBookingId(null);
+    setStep('instant-vendor-list');
+  };
+
+  // Legacy: Called when provider accepts from the queue - navigate to payment
+  const handleQueueAccepted = (bookingId: string, meetingId?: string) => {
+    if (selectedInstantVendor && selectedService && selectedPet && customerId) {
       onNavigate('payment', {
-        flowType: 'tele-instant',
+        flowType: 'tele-queue-accepted',
+        bookingId,
+        meetingId,
         vendorId: selectedInstantVendor.vendorId,
         vendorName: selectedInstantVendor.vendorName,
         serviceId: selectedService.serviceId,
@@ -670,15 +955,13 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         totalAmount: selectedService.price,
         totalDuration: selectedService.duration,
         services: [{ serviceId: selectedService.serviceId, name: selectedService.name, price: selectedService.price, duration: selectedService.duration }],
-        petId: pet.id,
-        petName: pet.name,
+        petId: selectedPet.id,
+        petName: selectedPet.name,
         customerId,
         category: 'vet',
         serviceType: 'tele',
       });
-      return;
     }
-    if (!customerId) toast.error('Customer ID not found. Please try again.');
   };
 
   const handleProceedToPayment = (bookingData: any) => {
@@ -723,6 +1006,15 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
       case 'instant-pet':
         setSelectedService(null);
         setStep('instant-service');
+        break;
+      case 'instant-calling':
+        setCallingBookingId(null);
+        setSelectedPet(null);
+        setStep('instant-pet');
+        break;
+      case 'instant-queue':
+        setSelectedPet(null);
+        setStep('instant-pet');
         break;
       default:
         onBack();
@@ -808,6 +1100,69 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
           onAddPet={handleAddPet}
           onBack={handleBack}
         />
+      );
+
+    case 'instant-calling':
+      if (!selectedInstantVendor || !selectedService || !callingBookingId) {
+        setStep('instant-pet');
+        return null;
+      }
+      return (
+        <CallingVendorScreen
+          bookingId={callingBookingId}
+          vendorName={selectedInstantVendor.vendorName}
+          serviceName={selectedService.name}
+          servicePrice={selectedService.price}
+          onVendorAccepted={handleVendorAccepted}
+          onVendorRejected={handleVendorRejectedOrTimeout}
+          onTimeout={handleVendorRejectedOrTimeout}
+          onCancel={handleBack}
+        />
+      );
+
+    case 'instant-queue':
+      if (!selectedInstantVendor || !selectedService || !selectedPet || !customerId) {
+        setStep('instant-pet');
+        return null;
+      }
+      return (
+        <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+          <ServiceDashboardHeader
+            serviceName="Waiting in Queue"
+            serviceSubtitle={`${selectedInstantVendor.vendorName} - ${selectedService.name}`}
+            serviceIcon={Clock}
+            iconColor="text-white"
+            stats={[
+              { value: `₹${selectedService.price}`, label: 'Price' },
+              { value: `${selectedService.duration}m`, label: 'Duration' },
+            ]}
+            onBack={handleBack}
+            showBackButton={true}
+            headerColor="bg-[#FF8C42]"
+          />
+          <div className="px-4 pt-4 pb-8">
+            <InstantTeleQueue
+              customerId={customerId}
+              petId={selectedPet.id}
+              roleId="vet"
+              category="vet"
+              serviceId={selectedService.serviceId}
+              preSelectedVendor={{
+                vendorId: selectedInstantVendor.vendorId,
+                vendorName: selectedInstantVendor.vendorName,
+                serviceId: selectedService.serviceId,
+                serviceName: selectedService.name,
+                servicePrice: selectedService.price,
+                serviceDuration: selectedService.duration,
+              }}
+              onBack={handleBack}
+              onQueueJoined={(queueId) => {
+                console.log('[TeleRouter] Joined queue:', queueId);
+              }}
+              onAccepted={handleQueueAccepted}
+            />
+          </div>
+        </div>
       );
 
     default:

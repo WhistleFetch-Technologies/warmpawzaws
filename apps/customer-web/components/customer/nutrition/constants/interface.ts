@@ -59,3 +59,11 @@ export interface DietConsultationVendorsProps {
 }
 
 
+
+export interface NutritionistServicesLandingProps {
+    phone: string;
+    onBack: () => void;
+    onNavigate?: (screen: string, data?: any) => void;
+}
+
+

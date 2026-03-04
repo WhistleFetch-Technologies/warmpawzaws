@@ -22,7 +22,7 @@ import { Hono } from 'hono';
 import { select, update, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { resolveVendorById } from './vendor-profile';
+import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
 
 // Fallback when vendor_tiers is empty (legacy)
 const TIER_CONFIG_FALLBACK: Record<string, { commission: number; minBookings: number; minRevenue: number; monthlyFee: number; yearlyFee: number }> = {

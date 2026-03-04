@@ -23,3 +23,6 @@ export const CATEGORY_ROLES: Record<string, string[]> = {
     diagnostics: ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
     'lab-diagnostics': ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
 };
+
+
+export const VET_ROLE_NAMES = ['veterinarian', 'vet', 'veterinary', 'vet_solo', 'vet_clinic', 'pet_clinic'];

@@ -144,53 +144,89 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             
             // ✅ CRITICAL FIX: Fetch profile in background to update vendorId if needed
             // This ensures we get the correct vendors table ID (not vendor_identity ID)
-            if (storedVendorId) {
-              apiClient.get<any>(`/vendor/${storedVendorId}/profile`)
-                .then((profileResponse) => {
-                  const profileData = profileResponse?.data || profileResponse;
-                  if (profileData?.success && profileData?.vendor) {
-                    const profileVendor = profileData.vendor;
-                    const correctVendorId = profileVendor.id || storedVendorId;
-                    
-                    // ✅ CRITICAL FIX: ALWAYS merge profile data to get roleId and capabilities
-                    // Preserve address and vendorConfiguration from localStorage when profile returns null/undefined
-                    // (on reload, profile API can omit these and overwriting would hide address + flip to solo UI)
-                    const updatedVendor = { 
-                      ...vendor, 
-                      ...profileVendor,
-                      id: correctVendorId,
-                      roleId: profileVendor.role_id ?? profileVendor.roleId ?? vendor.roleId,
-                      role_id: profileVendor.role_id ?? profileVendor.roleId ?? vendor.role_id,
-                      roleName: profileVendor.roleName ?? profileVendor.role_name ?? vendor.roleName ?? vendor.role_name,
-                      role_name: profileVendor.role_name ?? profileVendor.roleName ?? vendor.role_name ?? vendor.roleName,
-                      isActive: true,
-                      status: 'active',
-                      // Preserve from localStorage when profile omits or nulls (prevents reload bug)
-                      address: (profileVendor.address != null && profileVendor.address !== '') ? profileVendor.address : (vendor.address ?? profileVendor.address),
-                      vendorConfiguration: (profileVendor.vendorConfiguration ?? profileVendor.vendor_configuration) ?? (vendor.vendorConfiguration ?? vendor.vendor_configuration),
-                    };
-                    
-                    console.log('✅ [VendorApp] FAST PATH: Merging profile data with roleId:', updatedVendor.roleId || updatedVendor.role_id);
-                    
-                    // Update localStorage
+            // Use /vendor/profile (no ID param) to get vendor by phone from JWT
+             apiClient.get<any>('/vendor/profile')
+               .then((profileResponse) => {
+                 const profileData = profileResponse?.data || profileResponse;
+                 
+                 // ✅ BIG LOGGING: Show full payload during OTP login
+                 console.log('═══════════════════════════════════════════════════════════');
+                 console.log('═══════════════════════════════════════════════════════════');
+                 console.log('═══════════════════════════════════════════════════════════');
+                 console.log('🔍🔍🔍 VENDOR PROFILE PAYLOAD - OTP LOGIN (FAST PATH) 🔍🔍🔍');
+                 console.log('═══════════════════════════════════════════════════════════');
+                 console.log('═══════════════════════════════════════════════════════════');
+                 console.log('═══════════════════════════════════════════════════════════');
+                 console.log('');
+                 console.log('📦 FULL PROFILE RESPONSE:');
+                 console.log(JSON.stringify(profileResponse, null, 2));
+                 console.log('');
+                 console.log('📦 PROFILE DATA:');
+                 console.log(JSON.stringify(profileData, null, 2));
+                 console.log('');
+                 
+                 if (profileData?.success && profileData?.vendor) {
+                   const profileVendor = profileData.vendor;
+                   const correctVendorId = profileVendor.id; // ✅ Always use vendors.id from profile
+                   
+                   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                   console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', correctVendorId);
+                   console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', correctVendorId);
+                   console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', correctVendorId);
+                   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                   console.log('');
+                   console.log('📋 STORED VENDOR ID (localStorage):', storedVendorId);
+                   console.log('📋 PROFILE VENDOR OBJECT:');
+                   console.log(JSON.stringify(profileVendor, null, 2));
+                   console.log('');
+                   console.log('═══════════════════════════════════════════════════════════');
+                   console.log('═══════════════════════════════════════════════════════════');
+                   console.log('═══════════════════════════════════════════════════════════');
+                  
+                  // ✅ CRITICAL: If vendorId changed, update localStorage immediately
+                  if (correctVendorId && correctVendorId !== storedVendorId) {
+                    console.log(`✅ [VendorApp] FAST PATH: Updating vendorId from ${storedVendorId} to ${correctVendorId}`);
                     localStorage.setItem('vendorId', correctVendorId);
-                    localStorage.setItem('vendorData', JSON.stringify(updatedVendor));
-                    
-                    // Update roleId in localStorage
-                    const roleId = profileVendor.role_id || profileVendor.roleId;
-                    if (roleId) {
-                      localStorage.setItem('vendorRole', roleId);
-                      console.log('✅ [VendorApp] FAST PATH: Updated vendorRole to', roleId);
-                    }
-                    
-                    // ✅ CRITICAL: Update state to trigger re-render with roleId
-                    setVendorData(updatedVendor);
                   }
-                })
-                .catch((err) => {
-                  console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile for ID update:', err);
-                });
-            }
+                  
+                  // ✅ CRITICAL FIX: ALWAYS merge profile data to get roleId and capabilities
+                  // Preserve address and vendorConfiguration from localStorage when profile returns null/undefined
+                  // (on reload, profile API can omit these and overwriting would hide address + flip to solo UI)
+                  const updatedVendor = { 
+                    ...vendor, 
+                    ...profileVendor,
+                    id: correctVendorId, // ✅ Always use correct vendors.id
+                    roleId: profileVendor.role_id ?? profileVendor.roleId ?? vendor.roleId,
+                    role_id: profileVendor.role_id ?? profileVendor.roleId ?? vendor.role_id,
+                    roleName: profileVendor.roleName ?? profileVendor.role_name ?? vendor.roleName ?? vendor.role_name,
+                    role_name: profileVendor.role_name ?? profileVendor.roleName ?? vendor.role_name ?? vendor.roleName,
+                    isActive: true,
+                    status: 'active',
+                    // Preserve from localStorage when profile omits or nulls (prevents reload bug)
+                    address: (profileVendor.address != null && profileVendor.address !== '') ? profileVendor.address : (vendor.address ?? profileVendor.address),
+                    vendorConfiguration: (profileVendor.vendorConfiguration ?? profileVendor.vendor_configuration) ?? (vendor.vendorConfiguration ?? vendor.vendor_configuration),
+                  };
+                  
+                  console.log('✅ [VendorApp] FAST PATH: Merging profile data with roleId:', updatedVendor.roleId || updatedVendor.role_id);
+                  
+                  // Update localStorage with correct vendorId
+                  localStorage.setItem('vendorId', correctVendorId);
+                  localStorage.setItem('vendorData', JSON.stringify(updatedVendor));
+                  
+                  // Update roleId in localStorage
+                  const roleId = profileVendor.role_id || profileVendor.roleId;
+                  if (roleId) {
+                    localStorage.setItem('vendorRole', roleId);
+                    console.log('✅ [VendorApp] FAST PATH: Updated vendorRole to', roleId);
+                  }
+                  
+                  // ✅ CRITICAL: Update state to trigger re-render with roleId
+                  setVendorData(updatedVendor);
+                }
+              })
+              .catch((err) => {
+                console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile for ID update:', err);
+              });
           } catch (e) {
             console.warn('⚠️ [VendorApp] Could not parse stored vendor data');
           }
@@ -238,26 +274,62 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         }
         
         // ✅ FIX: For APPROVED/ACTIVATED vendors, fetch vendor profile to get correct vendor.id
+        // ALWAYS use /vendor/profile to get the correct vendors.id (not vendor_identity.id)
         let vendorId = identity.vendor_id || identity.id;
         let vendorRecordExists = false;
         if ((onboardingStatus === 'APPROVED' || onboardingStatus === 'ACTIVATED')) {
           try {
-            console.log('📊 [VendorApp] Fetching vendor profile to get correct vendor ID...');
-            const profileResponse = await apiClient.get<any>('/vendor/profile');
-            // ✅ FIX: Check response structure (could be response.data or response directly)
-            const profileData = profileResponse?.data || profileResponse;
-            if (profileData?.vendor?.id) {
-              // Check if vendor ID is different from identity ID (means vendor record exists in vendors table)
-              if (profileData.vendor.id !== identity.id) {
-                vendorId = profileData.vendor.id;
-                vendorRecordExists = true;
-                console.log('✅ [VendorApp] Got vendor ID from vendors table:', vendorId);
-              } else {
-                // Vendor ID same as identity ID means vendor record doesn't exist yet
-                vendorId = identity.id;
-                vendorRecordExists = false;
-                console.log('⚠️ [VendorApp] Vendor record does not exist in vendors table yet. Using identity ID:', vendorId);
+             console.log('📊 [VendorApp] Fetching vendor profile to get correct vendor ID...');
+             const profileResponse = await apiClient.get<any>('/vendor/profile');
+             
+             // ✅ BIG LOGGING: Show full payload during initial login
+             console.log('═══════════════════════════════════════════════════════════');
+             console.log('═══════════════════════════════════════════════════════════');
+             console.log('═══════════════════════════════════════════════════════════');
+             console.log('🔍🔍🔍 VENDOR PROFILE PAYLOAD - INITIAL LOGIN 🔍🔍🔍');
+             console.log('═══════════════════════════════════════════════════════════');
+             console.log('═══════════════════════════════════════════════════════════');
+             console.log('═══════════════════════════════════════════════════════════');
+             console.log('');
+             console.log('📦 FULL PROFILE RESPONSE:');
+             console.log(JSON.stringify(profileResponse, null, 2));
+             console.log('');
+             
+             // ✅ FIX: Check response structure (could be response.data or response directly)
+             const profileData = profileResponse?.data || profileResponse;
+             console.log('📦 PROFILE DATA:');
+             console.log(JSON.stringify(profileData, null, 2));
+             console.log('');
+             
+             if (profileData?.vendor?.id) {
+               // ✅ CRITICAL: Always use vendors.id from profile (this is the correct ID for API calls)
+               // The profile endpoint returns the vendors table ID, not vendor_identity.id
+               vendorId = profileData.vendor.id;
+               vendorRecordExists = true;
+               
+               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+               console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', vendorId);
+               console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', vendorId);
+               console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', vendorId);
+               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+               console.log('');
+               console.log('📋 IDENTITY ID (vendor_identity.id):', identity.id);
+               console.log('📋 IDENTITY vendor_id:', identity.vendor_id);
+               console.log('📋 PROFILE VENDOR OBJECT:');
+               console.log(JSON.stringify(profileData.vendor, null, 2));
+               console.log('');
+               console.log('✅ [VendorApp] Got vendor ID from vendors table:', vendorId, '(identity.id was:', identity.id, ')');
+               console.log('');
+               console.log('═══════════════════════════════════════════════════════════');
+               console.log('═══════════════════════════════════════════════════════════');
+               console.log('═══════════════════════════════════════════════════════════');
+              
+              // ✅ CRITICAL: If vendorId is different from identity.id, update localStorage immediately
+              if (vendorId !== identity.id) {
+                console.log(`✅ [VendorApp] Vendor ID differs from identity ID. Updating localStorage from ${identity.id} to ${vendorId}`);
+                localStorage.setItem('vendorId', vendorId);
               }
+              
               // Merge profile data with identity data
               Object.assign(identity, { vendor_id: vendorId });
             } else {
@@ -392,11 +464,29 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           setStatus('new');
         }
         
-        // Store vendor data
-        setVendorData(vendorData);
-        localStorage.setItem('vendorData', JSON.stringify(vendorData));
-        localStorage.setItem('vendorApplicationStatus', onboardingStatus);
-        localStorage.setItem('vendorId', vendorData.id || identity.id);
+         // Store vendor data
+         setVendorData(vendorData);
+         
+         // ✅ BIG LOGGING: Log vendorData before storing
+         console.log('═══════════════════════════════════════════════════════════');
+         console.log('═══════════════════════════════════════════════════════════');
+         console.log('🔍🔍🔍 STORING VENDOR DATA TO LOCALSTORAGE 🔍🔍🔍');
+         console.log('═══════════════════════════════════════════════════════════');
+         console.log('═══════════════════════════════════════════════════════════');
+         console.log('');
+         console.log('🆔 VENDOR ID BEING STORED:', vendorData.id || identity.id);
+         console.log('🆔 VENDOR ID BEING STORED:', vendorData.id || identity.id);
+         console.log('🆔 VENDOR ID BEING STORED:', vendorData.id || identity.id);
+         console.log('');
+         console.log('📦 FULL VENDOR DATA BEING STORED:');
+         console.log(JSON.stringify(vendorData, null, 2));
+         console.log('');
+         console.log('═══════════════════════════════════════════════════════════');
+         console.log('═══════════════════════════════════════════════════════════');
+         
+         localStorage.setItem('vendorData', JSON.stringify(vendorData));
+         localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+         localStorage.setItem('vendorId', vendorData.id || identity.id);
         const bizName = (vendorData as any).business_name || (vendorData as any).businessName || '';
         if (bizName) {
           localStorage.setItem('vendorName', bizName);
@@ -692,7 +782,25 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         }
       >
         <VendorLandingPage
-          vendorId={vendorData?.id || session.vendorId || ''}
+          vendorId={(() => {
+            const finalVendorId = vendorData?.id || session.vendorId || '';
+            // ✅ BIG LOGGING: Log vendorId being passed to VendorLandingPage
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log('🔍🔍🔍 PASSING VENDOR DATA TO VENDOR LANDING PAGE 🔍🔍🔍');
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log('');
+            console.log('🆔 VENDOR ID:', finalVendorId);
+            console.log('🆔 VENDOR ID:', finalVendorId);
+            console.log('🆔 VENDOR ID:', finalVendorId);
+            console.log('');
+            console.log('📦 VENDOR DATA:', JSON.stringify(vendorData, null, 2));
+            console.log('');
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log('═══════════════════════════════════════════════════════════');
+            return finalVendorId;
+          })()}
           phone={session.phone}
           initialVendorData={vendorData}
           vendorType={vendorData?.vendorType}

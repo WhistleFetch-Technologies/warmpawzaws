@@ -21,7 +21,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../utils/entity-extractor';
 import { isValidUUID, normalizeVendorService } from '../types/entities';
-import { resolveVendorById } from './vendor-profile';
+import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
 
 /**
  * Map role IDs/names to service catalog applicable_roles (must match service-catalog.ts)

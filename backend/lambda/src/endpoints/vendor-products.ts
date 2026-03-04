@@ -20,7 +20,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { resolveVendorById } from './vendor-profile';
+import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({

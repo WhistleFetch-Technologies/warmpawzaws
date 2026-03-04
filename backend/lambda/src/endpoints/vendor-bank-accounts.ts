@@ -14,7 +14,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
-import { resolveVendorById } from './vendor-profile';
+import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
 
 export function registerVendorBankAccountEndpoints(app: Hono) {
 

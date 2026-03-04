@@ -39,8 +39,9 @@ import { VendorServiceManagementComplete } from './VendorServiceManagementComple
 import { VendorConsultationScreen } from './VendorConsultationScreen';
 import { VendorBookingManagement } from './VendorBookingManagement';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
+import { TeleQueueManagement } from './TeleQueueManagement';
 import { FacilityManagement } from './FacilityManagement';
-import { ProfileManager } from './CenterProfileManager'; // ✅ RENAMED: CenterProfileManager -> ProfileManager
+import { ProfileManager } from './vendorProfileManager/ProfileManagerCenter'; // ✅ RENAMED: CenterProfileManager -> ProfileManager
 import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager'; // ✅ NEW: Advanced Availability System
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
@@ -158,6 +159,7 @@ export function VendorLandingPage({
   const [showServiceManagement, setShowServiceManagement] = useState(false);
   const [showBookingManagement, setShowBookingManagement] = useState(false);
   const [showTeleConsultation, setShowTeleConsultation] = useState(false);
+  const [showTeleQueue, setShowTeleQueue] = useState(false);
   // ✅ REMOVED: showScheduleManagement - Using only AdvancedAvailabilityManager as standard
   // const [showScheduleManagement, setShowScheduleManagement] = useState(false);
   const [showAdvancedAvailability, setShowAdvancedAvailability] = useState(false); // ✅ STANDARD: Advanced Availability Manager
@@ -219,6 +221,7 @@ export function VendorLandingPage({
     serviceName?: string;
     petName?: string;
     isInstant?: boolean;
+    isInstantV3?: boolean;
   } | null>(null);
 
   // Rule 4: Large on-screen notification for new appointment/order
@@ -247,8 +250,8 @@ export function VendorLandingPage({
       if (type === 'new_booking' || type === 'new_order') {
         setNewBookingAlert(notification);
       }
-      // ✅ Tele video call notifications (incoming / customer waiting)
-      if (type === 'tele_call_incoming' || type === 'tele_customer_waiting') {
+      // ✅ Tele video call notifications (incoming / customer waiting / instant v3)
+      if (type === 'tele_call_incoming' || type === 'tele_customer_waiting' || type === 'tele_instant_incoming') {
         void (async () => {
           try {
             const rawData = notification.data || notification.payload || {};
@@ -261,6 +264,7 @@ export function VendorLandingPage({
               '';
             if (!bookingId) return;
             const meetingId = data?.meetingId || data?.meeting_id;
+            const isInstantV3 = type === 'tele_instant_incoming' || data?.call_type === 'incoming_instant';
             const callType = (data?.callType || data?.call_type || (type === 'tele_customer_waiting' ? 'customer_waiting' : 'incoming')) as
               | 'incoming'
               | 'customer_waiting';
@@ -268,33 +272,38 @@ export function VendorLandingPage({
             // Avoid re-showing the same call if already visible
             if (incomingCall?.bookingId === bookingId && incomingCall?.callType === callType) return;
 
-            let customer = { id: '', name: 'Customer', phone: undefined as string | undefined, photo: undefined as string | undefined };
-            let serviceName: string | undefined;
-            let petName: string | undefined;
-            try {
-              const bookingRes = await apiClient.get<any>(`/bookings/${bookingId}?vendorId=${encodeURIComponent(vendorId)}`);
-              const booking = bookingRes?.booking || bookingRes;
-              customer = {
-                id: booking?.customer_id || booking?.customerId || '',
-                name: booking?.customer_name || booking?.customerName || 'Customer',
-                phone: booking?.customer_phone || booking?.customerPhone,
-                photo: booking?.customer_photo || booking?.customerPhoto,
-              };
-              serviceName = booking?.service_name || booking?.serviceName;
-              petName = booking?.pet_name || booking?.petName;
-            } catch (err) {
-              // Fallback to generic customer if booking lookup fails
-              console.warn('[VENDOR-LANDING] Could not load booking for call notification:', err);
+            let customer = { id: data?.customer_id || '', name: data?.customer_name || 'Customer', phone: undefined as string | undefined, photo: undefined as string | undefined };
+            let serviceName: string | undefined = data?.service_name;
+            let petName: string | undefined = data?.pet_name;
+
+            // Try to enrich from booking endpoint (for v2 flow or if v3 data is sparse)
+            if (!serviceName || !customer.name || customer.name === 'Customer') {
+              try {
+                const bookingRes = await apiClient.get<any>(`/bookings/${bookingId}?vendorId=${encodeURIComponent(vendorId)}`);
+                const booking = bookingRes?.booking || bookingRes;
+                customer = {
+                  id: booking?.customer_id || booking?.customerId || customer.id,
+                  name: booking?.customer_name || booking?.customerName || customer.name,
+                  phone: booking?.customer_phone || booking?.customerPhone,
+                  photo: booking?.customer_photo || booking?.customerPhoto,
+                };
+                serviceName = serviceName || booking?.service_name || booking?.serviceName;
+                petName = petName || booking?.pet_name || booking?.petName;
+              } catch (err) {
+                // Fallback to notification data if booking lookup fails
+                console.warn('[VENDOR-LANDING] Could not load booking for call notification:', err);
+              }
             }
 
             setIncomingCall({
               bookingId,
               meetingId,
-              callType,
+              callType: isInstantV3 ? 'incoming' : callType,
               customer,
               serviceName,
               petName,
               isInstant: true,
+              isInstantV3,
             });
           } catch (err) {
             console.warn('[VENDOR-LANDING] Failed to parse tele call notification:', err);
@@ -402,8 +411,8 @@ export function VendorLandingPage({
         );
         
         if (response.success && response.notifications?.length > 0) {
-          // Filter for tele_call_incoming and tele_customer_waiting (backend returns notification_type, is_read)
-          const callTypes = ['tele_call_incoming', 'tele_customer_waiting'];
+          // Filter for tele_call_incoming, tele_customer_waiting, and tele_instant_incoming (backend returns notification_type, is_read)
+          const callTypes = ['tele_call_incoming', 'tele_customer_waiting', 'tele_instant_incoming'];
           const callNotifications = response.notifications.filter((n: any) => 
             callTypes.includes(n.notification_type || n.type) && !n.is_read
           );
@@ -415,7 +424,9 @@ export function VendorLandingPage({
             ? JSON.parse(callNotification.data) 
             : callNotification.data || {};
           
-          const isIncoming = notificationData.call_type === 'incoming';
+          const notificationType = callNotification.notification_type || callNotification.type;
+          const isInstantV3 = notificationType === 'tele_instant_incoming' || notificationData.call_type === 'incoming_instant';
+          const isIncoming = notificationData.call_type === 'incoming' || isInstantV3;
           const isCustomerWaiting = notificationData.call_type === 'customer_waiting';
           if (notificationData.booking_id && (isIncoming || isCustomerWaiting)) {
             // Show incoming call immediately from notification data (don't block on GET /bookings 404)
@@ -424,39 +435,41 @@ export function VendorLandingPage({
               meetingId: notificationData.meeting_id,
               callType: isCustomerWaiting ? 'customer_waiting' as const : 'incoming' as const,
               customer: {
-                id: '',
-                name: 'Customer',
+                id: notificationData.customer_id || '',
+                name: notificationData.customer_name || 'Customer',
                 photo: undefined as string | undefined,
                 phone: undefined as string | undefined,
               },
-              serviceName: undefined as string | undefined,
-              petName: undefined as string | undefined,
-              isInstant: false,
+              serviceName: notificationData.service_name as string | undefined,
+              petName: notificationData.pet_name as string | undefined,
+              isInstant: isInstantV3,
+              isInstantV3,
             };
             setIncomingCall(baseIncoming);
 
             // Enrich with booking details if GET /bookings succeeds (pass vendorId for backend auth)
-            try {
-              const bookingResponse = await apiClient.get<any>(
-                `/bookings/${notificationData.booking_id}?vendorId=${encodeURIComponent(vendorId)}`
-              );
-              if (bookingResponse?.success && bookingResponse?.booking) {
-                const booking = bookingResponse.booking;
-                setIncomingCall({
-                  ...baseIncoming,
-                  customer: {
-                    id: booking.customer_id || '',
-                    name: booking.customer_name || 'Customer',
-                    photo: booking.customer_photo,
-                    phone: booking.customer_phone,
-                  },
-                  serviceName: booking.service_name,
-                  petName: booking.pet_name,
-                  isInstant: booking.service_type === 'instant_tele',
-                });
+            if (!isInstantV3 || !notificationData.customer_name) {
+              try {
+                const bookingResponse = await apiClient.get<any>(
+                  `/bookings/${notificationData.booking_id}?vendorId=${encodeURIComponent(vendorId)}`
+                );
+                if (bookingResponse?.success && bookingResponse?.booking) {
+                  const booking = bookingResponse.booking;
+                  setIncomingCall({
+                    ...baseIncoming,
+                    customer: {
+                      id: booking.customer_id || baseIncoming.customer.id,
+                      name: booking.customer_name || baseIncoming.customer.name,
+                      photo: booking.customer_photo,
+                      phone: booking.customer_phone,
+                    },
+                    serviceName: baseIncoming.serviceName || booking.service_name,
+                    petName: baseIncoming.petName || booking.pet_name,
+                  });
+                }
+              } catch (_) {
+                // Keep base incoming call; UI already shows Accept/Reject
               }
-            } catch (_) {
-              // Keep base incoming call; UI already shows Accept/Reject
             }
 
             await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
@@ -1141,6 +1154,20 @@ export function VendorLandingPage({
         );
       }
       
+      // Show tele queue management screen if requested
+      if (showTeleQueue) {
+        return (
+          <TeleQueueManagement
+            vendorId={vendorId}
+            onBack={() => setShowTeleQueue(false)}
+            onCustomerAccepted={(bookingId, meetingId) => {
+              toast.success('Customer accepted! Waiting for payment...');
+              // Optionally navigate to booking details or refresh
+            }}
+          />
+        );
+      }
+      
       // Show facility management screen if requested
       if (showFacilityManagement) {
         return (
@@ -1674,6 +1701,7 @@ export function VendorLandingPage({
               onNavigateToServiceManagement={() => setShowServiceManagement(true)}
               onNavigateToBookingManagement={() => setShowBookingManagement(true)}
               onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
+              onNavigateToTeleQueue={() => setShowTeleQueue(true)}
               onNavigateToScheduleManagement={() => setShowAdvancedAvailability(true)}
               onNavigateToAdvancedAvailability={() => setShowAdvancedAvailability(true)}
               onNavigateToProfile={() => setShowProfile(true)}
@@ -1755,16 +1783,49 @@ export function VendorLandingPage({
               meetingId={incomingCall.meetingId}
               serviceName={incomingCall.serviceName}
               petName={incomingCall.petName}
-              onAccept={(bookingId, meetingId) => {
-                const params = new URLSearchParams();
-                params.set('bookingId', bookingId);
-                if (meetingId) params.set('meetingId', meetingId);
-                if (vendorId) params.set('vendorId', vendorId);
-                const query = params.toString();
-                router.push(`/video${query ? `?${query}` : ''}`);
+              onAccept={async (bookingId, meetingId) => {
+                if (incomingCall?.isInstantV3) {
+                  // V3 flow: call accept endpoint first, then navigate with waitingForPayment flag
+                  try {
+                    const res = await apiClient.post<any>(`/vendor/tele/instant-accept/${bookingId}`);
+                    if (res?.success) {
+                      toast.success('Call accepted! Waiting for customer payment...');
+                      const params = new URLSearchParams();
+                      params.set('bookingId', bookingId);
+                      if (res.sessionId) params.set('sessionId', res.sessionId);
+                      if (vendorId) params.set('vendorId', vendorId);
+                      params.set('waitingForPayment', 'true');
+                      router.push(`/video?${params.toString()}`);
+                    } else {
+                      toast.error(res?.error || 'Failed to accept call');
+                    }
+                  } catch (err: any) {
+                    console.error('[VENDOR-LANDING] instant-accept error:', err);
+                    toast.error(err?.message || 'Failed to accept call');
+                  }
+                } else {
+                  // Legacy flow: navigate directly to video
+                  const params = new URLSearchParams();
+                  params.set('bookingId', bookingId);
+                  if (meetingId) params.set('meetingId', meetingId);
+                  if (vendorId) params.set('vendorId', vendorId);
+                  const query = params.toString();
+                  router.push(`/video${query ? `?${query}` : ''}`);
+                }
                 setIncomingCall(null);
               }}
-              onReject={() => { setIncomingCall(null); toast.info('Call declined'); }}
+              onReject={async () => {
+                if (incomingCall?.isInstantV3) {
+                  // V3 flow: call reject endpoint
+                  try {
+                    await apiClient.post<any>(`/vendor/tele/instant-reject/${incomingCall.bookingId}`);
+                  } catch (err) {
+                    console.warn('[VENDOR-LANDING] instant-reject error:', err);
+                  }
+                }
+                setIncomingCall(null);
+                toast.info('Call declined');
+              }}
               onDismiss={() => setIncomingCall(null)}
             />
           )}

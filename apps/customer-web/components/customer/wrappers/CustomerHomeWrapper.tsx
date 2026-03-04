@@ -992,6 +992,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     return (
       <UniversalPaymentPage
         type="booking"
+        bookingId={bookingData.bookingId}
         vendorId={bookingData.vendorId || bookingData.provider?.id || ''}
         vendorName={bookingData.provider?.name || bookingData.vendorName || 'Service Provider'}
         serviceId={bookingData.serviceId || firstService?.serviceId || firstService?.service_id || firstService?.id}
@@ -1016,7 +1017,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           if (bookingData.category === 'nutritionist') {
             setCurrentScreen(previousScreen || 'nutritionist-tele');
             setPreviousScreen(null);
-          } else if (bookingData.flowType === 'tele-scheduled' || bookingData.flowType === 'tele-instant') {
+          } else if (bookingData.flowType === 'tele-scheduled' || bookingData.flowType === 'tele-instant' || bookingData.flowType === 'tele-queue-accepted') {
             setCurrentScreen('vet-tele-consultation');
           } else if (bookingData.flowType === 'home-visit') {
             setCurrentScreen('vet-home-visit');
@@ -1041,41 +1042,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       />
     );
   }
-  // ✅ Instant tele: connecting screen (after payment) → then join video call
+  // ✅ Instant tele: connecting screen (after payment) → auto-join video call after 3s
   if (currentScreen === 'instant-connecting' && instantConnectingBookingId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 max-w-md mx-auto">
-        <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-8 w-full text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Booking confirmed!</h1>
-          <p className="text-gray-600 mb-6">Connecting to vet now. They will join shortly.</p>
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => {
+      <InstantConnectingScreen
+        bookingId={instantConnectingBookingId}
+        onJoinVideoCall={() => {
+          localStorage.removeItem('activeTeleQueueId');
                 setVideoCallData({ bookingId: instantConnectingBookingId });
                 setInstantConnectingBookingId(null);
                 setCurrentScreen('video-call');
               }}
-              className="w-full py-3 px-4 bg-[#FF8C42] hover:bg-[#e67a35] text-white font-medium rounded-xl transition-colors"
-            >
-              Join video call
-            </button>
-            <button
-              onClick={() => {
-                setInstantConnectingBookingId(null);
-                setCurrentScreen('vet-tele-consultation');
-              }}
-              className="w-full py-2 text-gray-500 text-sm"
-            >
-              Back to tele consultation
-            </button>
-          </div>
-        </div>
-      </div>
+      />
     );
   }
   // ✅ FIX: Grooming Service with Frame UI (ServiceDashboardHeader)
@@ -2233,4 +2211,33 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }
 
   return <NotAvailable onBack={handleBack} />;
+}
+
+/** Small component with proper useEffect for auto-redirect */
+function InstantConnectingScreen({ bookingId, onJoinVideoCall }: { bookingId: string; onJoinVideoCall: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onJoinVideoCall, 3000);
+    return () => clearTimeout(timer);
+  }, [bookingId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 max-w-md mx-auto">
+      <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-8 w-full text-center">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6 animate-pulse">
+          <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h1 className="text-xl font-semibold text-gray-900 mb-2">Payment Confirmed!</h1>
+        <p className="text-gray-600 mb-2">Connecting to vet now...</p>
+        <p className="text-sm text-gray-400 mb-6">You'll be redirected to the video call automatically.</p>
+        <button
+          onClick={onJoinVideoCall}
+          className="w-full py-3 px-4 bg-[#FF8C42] hover:bg-[#e67a35] text-white font-medium rounded-xl transition-colors"
+        >
+          Join video call now
+        </button>
+      </div>
+    </div>
+  );
 }

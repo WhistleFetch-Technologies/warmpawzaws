@@ -9,15 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Video, Clock, Users, AlertCircle, CheckCircle2, X, User, Dog, Phone, ArrowLeft } from 'lucide-react';
 
 interface Provider {
-  staffId?: string;
-  providerId?: string; // ✅ FIX: Support both staff and vendor providers
+  providerId?: string;
   vendorId?: string;
-  providerType?: 'staff' | 'vendor';
   name: string;
   photo?: string;
   role: string;
-  experienceYears?: number;
-  qualifications?: string;
   businessName?: string;
   rating?: string;
   reviewCount: number;
@@ -43,13 +39,24 @@ interface QueueStatus {
     price: number;
     durationMinutes: number;
   };
-  staff: {
+  provider?: {
     id: string;
     name: string;
     photo?: string;
   };
   bookingId?: string;
   meetingId?: string;
+  bookingStatus?: string;         // 'pending_payment' | 'confirmed' | 'cancelled' | null
+  bookingPaymentStatus?: string;  // 'pending' | 'paid' | null
+}
+
+interface PreSelectedVendor {
+  vendorId: string;
+  vendorName: string;
+  serviceId: string;
+  serviceName: string;
+  servicePrice: number;
+  serviceDuration: number;
 }
 
 interface InstantTeleQueueProps {
@@ -61,6 +68,7 @@ interface InstantTeleQueueProps {
   problemId?: string; // ✅ NEW: Filter by problem/concern
   availableInMinutes?: number; // ✅ NEW: Filter by availability (default: 5 min)
   showHorizontalScroll?: boolean; // ✅ NEW: Show providers in horizontal scroll
+  preSelectedVendor?: PreSelectedVendor; // ✅ NEW: Auto-join queue for this vendor (skip provider picker)
   onBack?: () => void; // ✅ NEW: Back button handler
   onQueueJoined?: (queueId: string) => void;
   onAccepted?: (bookingId: string, meetingId?: string) => void;
@@ -75,6 +83,7 @@ export function InstantTeleQueue({
   problemId,
   availableInMinutes = 5,
   showHorizontalScroll = false,
+  preSelectedVendor,
   onBack,
   onQueueJoined,
   onAccepted,
@@ -89,22 +98,46 @@ export function InstantTeleQueue({
   const [notes, setNotes] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(serviceId || null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showProviderList, setShowProviderList] = useState(true);
 
-  useEffect(() => {
-    loadAvailableProviders();
+  // Auto-join queue when preSelectedVendor is provided
+  const autoJoinedRef = useRef(false);
+  const acceptedHandledRef = useRef(false); // prevent double-firing onAccepted
 
-    // Check if user has active queue entry
-    // This would be loaded from a persisted state or API
+  useEffect(() => {
+    // Reset accepted flag on mount
+    acceptedHandledRef.current = false;
+
+    // Check if user has active queue entry first
     const activeQueueId = localStorage.getItem('activeTeleQueueId');
     if (activeQueueId) {
       loadQueueStatus(activeQueueId);
+      return () => {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+        }
+        stopPolling();
+      };
+    }
+
+    if (preSelectedVendor && !autoJoinedRef.current) {
+      // Auto-join: skip provider list, join queue immediately
+      autoJoinedRef.current = true;
+      setLoading(false);
+      setShowProviderList(false);
+      joinQueueForVendor(preSelectedVendor);
+    } else if (!preSelectedVendor) {
+      loadAvailableProviders();
+    } else {
+      setLoading(false);
     }
 
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
+      stopPolling();
     };
   }, [roleId, category, serviceId]);
 
@@ -141,20 +174,126 @@ export function InstantTeleQueue({
   const loadQueueStatus = async (queueId: string) => {
     try {
       const response = await apiClient.get<any>(`/customer/tele/queue-status/${queueId}`);
-      if (response.success) {
-        setQueueStatus(response.queueEntry);
-        setShowProviderList(false);
-        
-        // If accepted, notify parent
-        if (response.queueEntry.status === 'accepted' && response.queueEntry.bookingId) {
-          onAccepted?.(response.queueEntry.bookingId, response.queueEntry.meetingId);
+      if (response.success && response.queueEntry) {
+        const entry = response.queueEntry;
+
+        // Handle terminal / stale states — clear localStorage and let user start fresh
+        if (['expired', 'cancelled', 'skipped', 'provider_offline'].includes(entry.status)) {
+          console.log('[TeleQueue] Stale queue entry detected:', entry.status);
+          localStorage.removeItem('activeTeleQueueId');
+          setQueueStatus(null);
+          setShowProviderList(true);
+          setLoading(false);
+          return;
         }
-        
-        // Set up SSE stream for real-time updates
+
+        // If accepted, check the actual booking status
+        if (entry.status === 'accepted' && entry.bookingId) {
+          // Booking already confirmed+paid → go straight to video call
+          if (entry.bookingStatus === 'confirmed' && entry.bookingPaymentStatus === 'paid') {
+            console.log('[TeleQueue] Booking already confirmed — skipping payment, going to video call');
+            localStorage.removeItem('activeTeleQueueId');
+            toast.success('Your booking is confirmed! Joining video call...');
+            onAccepted?.(entry.bookingId, entry.meetingId);
+            return;
+          }
+
+          // Booking is pending_payment — let user retry payment
+          if (entry.bookingStatus === 'pending_payment') {
+            setQueueStatus(entry);
+            setShowProviderList(false);
+            setLoading(false);
+            onAccepted?.(entry.bookingId, entry.meetingId);
+            return;
+          }
+
+          // Booking doesn't exist or has an unexpected status — stale entry, reset
+          if (!entry.bookingStatus) {
+            console.log('[TeleQueue] Accepted queue but booking gone — clearing');
+            localStorage.removeItem('activeTeleQueueId');
+            setQueueStatus(null);
+            setShowProviderList(true);
+            setLoading(false);
+            toast.info('Previous queue entry expired. Please join the queue again.');
+            return;
+          }
+        }
+
+        // Normal waiting state
+        setQueueStatus(entry);
+        setShowProviderList(false);
         setupQueueStream(queueId);
+      } else {
+        // Queue entry not found — clear localStorage
+        console.log('[TeleQueue] Queue entry not found, clearing localStorage');
+        localStorage.removeItem('activeTeleQueueId');
+        setQueueStatus(null);
+        setShowProviderList(true);
+        setLoading(false);
       }
     } catch (error: any) {
       console.error('Error loading queue status:', error);
+      // On error (e.g. 404), clear the stale queue ID
+      localStorage.removeItem('activeTeleQueueId');
+      setQueueStatus(null);
+      setShowProviderList(true);
+      setLoading(false);
+    }
+  };
+
+  // ✅ Handle acceptance (shared by SSE and fallback polling)
+  const handleAcceptance = (bookingId: string, meetingId?: string) => {
+    if (acceptedHandledRef.current) return; // prevent double-firing
+    acceptedHandledRef.current = true;
+    console.log('[TeleQueue] ✅ ACCEPTED! bookingId:', bookingId, 'meetingId:', meetingId);
+    toast.success('Your consultation has been accepted! Complete payment to start...');
+    setQueueStatus(prev => prev ? { ...prev, status: 'accepted', bookingId, meetingId } : null);
+    // Stop polling and SSE — leave localStorage so loadQueueStatus can resume if user returns
+    stopPolling();
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    onAccepted?.(bookingId, meetingId);
+  };
+
+  // ✅ Fallback polling - polls REST endpoint every 4 seconds as safety net
+  const startFallbackPolling = (queueId: string) => {
+    stopPolling();
+    console.log('[TeleQueue] Starting fallback polling for queueId:', queueId);
+    pollIntervalRef.current = setInterval(async () => {
+      if (acceptedHandledRef.current) {
+        stopPolling();
+        return;
+      }
+      try {
+        const response = await apiClient.get<any>(`/customer/tele/queue-status/${queueId}`);
+        if (response.success && response.queueEntry) {
+          const entry = response.queueEntry;
+          // Update UI with latest data
+          setQueueStatus(entry);
+
+          if (entry.status === 'accepted' && entry.bookingId) {
+            console.log('[TeleQueue] Fallback poll detected acceptance!');
+            handleAcceptance(entry.bookingId, entry.meetingId);
+          } else if (['expired', 'cancelled', 'skipped', 'provider_offline'].includes(entry.status)) {
+            toast.error(entry.status === 'expired' ? 'Queue entry expired. Please try again.' : 'Queue entry ended.');
+            setQueueStatus(null);
+            localStorage.removeItem('activeTeleQueueId');
+            setShowProviderList(true);
+            stopPolling();
+          }
+        }
+      } catch (error) {
+        console.warn('[TeleQueue] Fallback poll error (will retry):', error);
+      }
+    }, 4000);
+  };
+
+  const stopPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
     }
   };
 
@@ -162,6 +301,9 @@ export function InstantTeleQueue({
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
+
+    // ✅ Always start fallback polling alongside SSE
+    startFallbackPolling(queueId);
 
     const apiBase = getApiBaseUrl();
     const sseUrl = `${apiBase}/customer/tele/queue-stream/${queueId}`;
@@ -179,6 +321,10 @@ export function InstantTeleQueue({
           const data = JSON.parse(event.data);
           if (data.queueEntry) {
             setQueueStatus(data.queueEntry);
+            // Check if this update contains acceptance
+            if (data.queueEntry.status === 'accepted' && data.queueEntry.bookingId) {
+              handleAcceptance(data.queueEntry.bookingId, data.queueEntry.meetingId);
+            }
           }
         } catch (error) {
           console.error('[TeleQueue] Failed to parse queue update:', error);
@@ -188,16 +334,7 @@ export function InstantTeleQueue({
       eventSource.addEventListener('accepted', (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
-          toast.success('Your consultation has been accepted! Preparing video call...');
-          setQueueStatus(prev => prev ? { ...prev, status: 'accepted', bookingId: data.bookingId } : null);
-          onAccepted?.(data.bookingId, data.meetingId);
-          
-          // Close stream after acceptance
-          setTimeout(() => {
-            if (eventSourceRef.current) {
-              eventSourceRef.current.close();
-            }
-          }, 2000);
+          handleAcceptance(data.bookingId, data.meetingId);
         } catch (error) {
           console.error('[TeleQueue] Failed to parse acceptance:', error);
         }
@@ -210,16 +347,106 @@ export function InstantTeleQueue({
           setQueueStatus(null);
           localStorage.removeItem('activeTeleQueueId');
           setShowProviderList(true);
+          stopPolling();
         } catch (error) {
           console.error('[TeleQueue] Failed to parse ended event:', error);
         }
       });
 
       eventSource.onerror = (error) => {
-        console.error('[TeleQueue] SSE error:', error);
+        console.error('[TeleQueue] SSE error - fallback polling is active:', error);
+        // SSE failed but fallback polling will keep working
+        // Try to reconnect SSE after 5 seconds
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+        if (!acceptedHandledRef.current) {
+          setTimeout(() => {
+            if (!acceptedHandledRef.current) {
+              console.log('[TeleQueue] Attempting SSE reconnection...');
+              setupQueueStreamSSEOnly(queueId);
+            }
+          }, 5000);
+        }
       };
     } catch (error) {
-      console.error('[TeleQueue] Failed to create SSE connection:', error);
+      console.error('[TeleQueue] Failed to create SSE connection - relying on fallback polling:', error);
+    }
+  };
+
+  // SSE-only reconnection (doesn't restart polling)
+  const setupQueueStreamSSEOnly = (queueId: string) => {
+    if (acceptedHandledRef.current) return;
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+    const apiBase = getApiBaseUrl();
+    const sseUrl = `${apiBase}/customer/tele/queue-stream/${queueId}`;
+    try {
+      const eventSource = new EventSource(sseUrl);
+      eventSourceRef.current = eventSource;
+      eventSource.addEventListener('accepted', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleAcceptance(data.bookingId, data.meetingId);
+        } catch (e) { /* fallback polling will catch it */ }
+      });
+      eventSource.addEventListener('queue_update', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.queueEntry) {
+            setQueueStatus(data.queueEntry);
+            if (data.queueEntry.status === 'accepted' && data.queueEntry.bookingId) {
+              handleAcceptance(data.queueEntry.bookingId, data.queueEntry.meetingId);
+            }
+          }
+        } catch (e) { /* fallback polling will catch it */ }
+      });
+      eventSource.onerror = () => {
+        eventSource.close();
+        eventSourceRef.current = null;
+      };
+    } catch (e) {
+      console.warn('[TeleQueue] SSE reconnection failed:', e);
+    }
+  };
+
+  // Auto-join queue for a pre-selected vendor (vendor-only flow, no provider picker)
+  const joinQueueForVendor = async (vendor: PreSelectedVendor) => {
+    setJoiningQueue(true);
+    try {
+      const response = await apiClient.post<any>('/customer/tele/join-queue', {
+        customerId,
+        vendorId: vendor.vendorId, // Direct vendorId param
+        petId,
+        serviceId: vendor.serviceId,
+        symptoms: symptoms.trim() || undefined,
+        urgency,
+        notes: notes.trim() || undefined,
+      });
+
+      if (response.success) {
+        if (response.alreadyInQueue) {
+          toast.info('You are already in queue for this provider');
+          loadQueueStatus(response.queueEntry.id);
+        } else {
+          toast.success(response.message || 'You have joined the queue!');
+          localStorage.setItem('activeTeleQueueId', response.queueEntry.id);
+          loadQueueStatus(response.queueEntry.id);
+          onQueueJoined?.(response.queueEntry.id);
+        }
+      } else {
+        throw new Error(response.error || 'Failed to join queue');
+      }
+    } catch (error: any) {
+      console.error('Error joining queue for vendor:', error);
+      toast.error(error.message || 'Failed to join queue');
+      // Show provider list as fallback
+      setShowProviderList(true);
+      loadAvailableProviders();
+    } finally {
+      setJoiningQueue(false);
     }
   };
 
@@ -231,12 +458,9 @@ export function InstantTeleQueue({
 
     setJoiningQueue(true);
     try {
-      // ✅ FIX: Use providerId or staffId depending on provider type
-      const staffIdValue = provider.providerId || provider.staffId;
-      
       const response = await apiClient.post<any>('/customer/tele/join-queue', {
         customerId,
-        staffId: staffIdValue,
+        vendorId: provider.vendorId || provider.providerId,
         petId,
         serviceId: selectedServiceId,
         symptoms: symptoms.trim() || undefined,
@@ -317,7 +541,7 @@ export function InstantTeleQueue({
                   Waiting in Queue
                 </h3>
                 <p className="text-sm text-gray-500">
-                  {queueStatus.staff.name} - {queueStatus.service.name}
+                  {queueStatus.provider?.name || preSelectedVendor?.vendorName || 'Provider'} - {queueStatus.service?.name || preSelectedVendor?.serviceName || 'Consultation'}
                 </p>
               </div>
             </div>
@@ -374,16 +598,39 @@ export function InstantTeleQueue({
                 Consultation Accepted!
               </h4>
               <p className="text-sm text-green-700 mb-4">
-                {queueStatus.staff.name} has accepted your request. Preparing video call...
+                {queueStatus.provider?.name || preSelectedVendor?.vendorName || 'Provider'} has accepted your request.
+                {preSelectedVendor ? ' Complete payment to start the video call.' : ' Preparing video call...'}
               </p>
               {queueStatus.bookingId && (
-                <Button
-                  onClick={() => onAccepted?.(queueStatus.bookingId!, queueStatus.meetingId)}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  <Video className="w-4 h-4 mr-2" />
-                  Start Video Call
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    onClick={() => onAccepted?.(queueStatus.bookingId!, queueStatus.meetingId)}
+                    className="bg-green-600 hover:bg-green-700 text-white w-full"
+                  >
+                    {preSelectedVendor ? (
+                      <>Complete Payment</>
+                    ) : (
+                      <><Video className="w-4 h-4 mr-2" />Start Video Call</>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      localStorage.removeItem('activeTeleQueueId');
+                      acceptedHandledRef.current = false;
+                      setQueueStatus(null);
+                      setShowProviderList(true);
+                      stopPolling();
+                      if (eventSourceRef.current) {
+                        eventSourceRef.current.close();
+                        eventSourceRef.current = null;
+                      }
+                    }}
+                    variant="outline"
+                    className="text-gray-600 w-full"
+                  >
+                    Start Fresh
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -431,6 +678,21 @@ export function InstantTeleQueue({
               </Button>
             </div>
           )}
+        </div>
+      </Card>
+    );
+  }
+
+  // Show joining state for pre-selected vendor (auto-join in progress)
+  if (preSelectedVendor && joiningQueue && !queueStatus) {
+    return (
+      <Card className="p-6">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto" />
+          <h3 className="text-lg font-semibold text-gray-900">Joining Queue...</h3>
+          <p className="text-sm text-gray-500">
+            Connecting you with {preSelectedVendor.vendorName}
+          </p>
         </div>
       </Card>
     );
@@ -498,12 +760,12 @@ export function InstantTeleQueue({
             
             <div className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1">
               {providers.map((provider) => {
-                const isProviderSelected = selectedProvider?.staffId === provider.staffId || 
-                                           selectedProvider?.providerId === (provider as any).providerId;
+                const isProviderSelected = selectedProvider?.vendorId === provider.vendorId || 
+                                           selectedProvider?.providerId === provider.providerId;
                 
                 return (
                   <div
-                    key={provider.staffId || (provider as any).providerId}
+                    key={provider.vendorId || provider.providerId}
                     className={`flex-shrink-0 w-40 rounded-2xl border-2 overflow-hidden transition-all cursor-pointer ${
                       isProviderSelected
                         ? 'border-[#FF8C42] bg-orange-50 shadow-lg'
@@ -605,12 +867,12 @@ export function InstantTeleQueue({
             </p>
             
             {providers.map((provider) => {
-              const isProviderSelected = selectedProvider?.staffId === provider.staffId || 
-                                         selectedProvider?.providerId === (provider as any).providerId;
+              const isProviderSelected = selectedProvider?.vendorId === provider.vendorId || 
+                                         selectedProvider?.providerId === provider.providerId;
               
               return (
                 <div
-                  key={provider.staffId || (provider as any).providerId}
+                  key={provider.vendorId || provider.providerId}
                   className={`rounded-2xl border-2 overflow-hidden transition-all cursor-pointer ${
                     isProviderSelected
                       ? 'border-[#FF8C42] bg-orange-50 shadow-lg'
@@ -700,7 +962,7 @@ export function InstantTeleQueue({
                                   : 'bg-gray-100 text-gray-700 hover:bg-orange-100 hover:text-[#FF8C42]'
                               }`}
                             >
-                              {service.name} - ₹{service.price.toFixed(2)}
+                              {service.name} - ₹{(Number(service.price) || 0).toFixed(2)}
                             </button>
                           );
                         })}

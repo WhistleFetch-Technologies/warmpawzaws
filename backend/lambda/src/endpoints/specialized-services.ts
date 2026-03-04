@@ -21,7 +21,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor-profile';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendor-profile.vendor';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -1903,7 +1903,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         debug.directQueryCount = parseInt(directTest.rows[0]?.count || '0', 10);
 
         // Test 2: Get allVendorIds and test with array
-        const { getVendorIdsForAvailabilityLookup } = await import('./vendor-profile');
+        const { getVendorIdsForAvailabilityLookup } = await import('./vendor/endpoints/vendor-profile.vendor');
         const allVendorIds = await getVendorIdsForAvailabilityLookup(vendor.id);
         // Ensure vendor.id is in the array
         const finalVendorIds = [vendor.id, ...allVendorIds.filter(id => id !== vendor.id)];

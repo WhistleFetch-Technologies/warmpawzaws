@@ -17,14 +17,14 @@
  */
 
 import { Hono } from 'hono';
-import { select, query, insert } from '../../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
-import { isValidUUID } from '../../types/entities';
-import { getDiscoveryRules } from '../../lib/rule-engine';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../vendor-profile';
-import { taxCalculationService } from '../../lib/services/tax-calculation-service';
-import { discountCalculationService } from '../../lib/services/discount-calculation-service';
-import { CATEGORY_ROLES } from './constants';
+import { select, query, insert } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
+import { getDiscoveryRules } from '../../../lib/rule-engine';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../vendor/endpoints/vendor-profile.vendor';
+import { taxCalculationService } from '../../../lib/services/tax-calculation-service';
+import { discountCalculationService } from '../../../lib/services/discount-calculation-service';
+import { CATEGORY_ROLES } from '../constants';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -4748,7 +4748,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // If column doesn't exist, we'll use a raw SQL query to add it first
         try {
           // Check if metadata column exists
-          const { query } = await import('../../database/rds-connection');
+          const { query } = await import('../../../database/rds-connection');
           const columnCheck = await query(
             `SELECT column_name FROM information_schema.columns 
              WHERE table_name = 'vendors' AND column_name = 'metadata'`
@@ -4783,7 +4783,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       updateData.updated_at = new Date().toISOString();
 
       // Update vendor record with facility information (use resolved vendor id)
-      const { update } = await import('../../database/rds-connection');
+      const { update } = await import('../../../database/rds-connection');
       const updated = await update('vendors', { id: actualVendorId }, updateData);
 
       if (updated.length === 0) {
@@ -4903,7 +4903,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
 
-      const { update } = await import('../../database/rds-connection');
+      const { update } = await import('../../../database/rds-connection');
       await update('vendors', { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: new Date().toISOString(),

@@ -98,6 +98,7 @@ export function VendorDashboard({
   onNavigateToServiceManagement,
   onNavigateToBookingManagement,
   onNavigateToTeleConsultation,
+  onNavigateToTeleQueue,
   onNavigateToScheduleManagement, // ⚠️ DEPRECATED: Routes to Advanced Availability
   onNavigateToAdvancedAvailability, // ✅ STANDARD: Navigate to Advanced Availability Manager
   onNavigateToProfile, // ✅ RENAMED: Navigate to Profile Manager (works for both center and solo)
@@ -215,6 +216,33 @@ export function VendorDashboard({
 
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
 
+  // ✅ BIG LOGGING: Log vendorData when VendorDashboard loads
+  useEffect(() => {
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('🔍🔍🔍 VENDOR DASHBOARD - VENDOR DATA PAYLOAD 🔍🔍🔍');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('');
+    console.log('🆔 VENDOR ID:', vendorData?.id || vendorId);
+    console.log('🆔 VENDOR ID:', vendorData?.id || vendorId);
+    console.log('🆔 VENDOR ID:', vendorData?.id || vendorId);
+    console.log('');
+    console.log('📦 FULL VENDOR DATA:');
+    console.log(JSON.stringify(vendorData, null, 2));
+    console.log('');
+    console.log('📋 VENDOR ID FROM PROPS:', vendorId);
+    console.log('📋 VENDOR DATA ID:', vendorData?.id);
+    console.log('📋 VENDOR DATA PHONE:', vendorData?.phone);
+    console.log('📋 VENDOR DATA BUSINESS NAME:', vendorData?.businessName || vendorData?.business_name);
+    console.log('📋 VENDOR DATA ROLE ID:', vendorData?.roleId || vendorData?.role_id);
+    console.log('');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════');
+  }, [vendorData, vendorId]);
 
   // for solo provider, return the solo provider dashboard
   if (isSoloProvider) {
@@ -791,6 +819,18 @@ export function VendorDashboard({
               >
                 <Activity className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Service Management</span>
+              </button>
+            )}
+
+            {/* ✅ Tele Queue Management - For vendors with tele capability */}
+            {!isPharmacy && capabilities.tele && onNavigateToTeleQueue && (
+              <button
+                onClick={onNavigateToTeleQueue}
+                className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center relative"
+              >
+                <Users className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Tele Queue</span>
+                <span className="text-[10px] text-gray-500 mt-1">View waiting customers</span>
               </button>
             )}
 

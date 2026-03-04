@@ -15,12 +15,12 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, insert, query } from '../database/rds-connection';
-import { getSnsClient } from '../utils/sns-client';
+import { select, update, insert, query } from '../../../database/rds-connection';
+import { getSnsClient } from '../../../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
-import { getEffectiveCapabilities } from '../utils/capability-filter';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
+import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -277,7 +277,7 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
   const newVendorId = identity.vendor_id || identity.id;
   console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
   console.log(`[PROFILE] Extracted values - pincode: ${(() => {
-    const { extractPincodeFromPayload } = require('../utils/extract-profile-photo');
+    const { extractPincodeFromPayload } = require('../../../utils/extract-profile-photo');
     return extractPincodeFromPayload(payload);
   })()}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
   
@@ -295,7 +295,7 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     state: payload.state || 'Not specified',
     pincode: (() => {
       // ✅ FIX: Use enhanced pincode extraction
-      const { extractPincodeFromPayload } = require('../utils/extract-profile-photo');
+      const { extractPincodeFromPayload } = require('../../../utils/extract-profile-photo');
       return extractPincodeFromPayload(payload);
     })(),
     profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
@@ -351,12 +351,22 @@ export function registerVendorProfileEndpoints(app: Hono) {
       let vendor = null;
       let identityData = null;
 
+      // ✅ BIG LOGGING: Log what we're searching for
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('🔍 [PROFILE-GET] SEARCHING FOR VENDOR');
+      console.log('📱 Phone from JWT:', phone);
+      console.log('🆔 VendorId from JWT:', vendorIdFromAuth);
+      console.log('═══════════════════════════════════════════════════════════');
+
       // Try to find vendor by vendorId first (userId from JWT might be vendor ID)
       if (vendorIdFromAuth && !vendorIdFromAuth.startsWith('temp_')) {
         try {
           const vendors = await select('vendors', { id: vendorIdFromAuth });
           if (vendors.length > 0) {
             vendor = vendors[0];
+            console.log(`✅ [PROFILE-GET] Found vendor by vendorId: ${vendor.id}`);
+          } else {
+            console.log(`⚠️ [PROFILE-GET] No vendor found with ID: ${vendorIdFromAuth}`);
           }
         } catch (e) {
           console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
@@ -364,11 +374,53 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
 
       // If not found by vendorId, try by phone directly on vendors table
+      // ✅ FIX: Use normalized phone matching (remove spaces, +, country codes)
       if (!vendor && phone) {
         try {
-          const vendorsByPhone = await select('vendors', { phone });
+          // Normalize phone for matching (remove all non-digits, then remove leading 91 if present)
+          const normalizedPhone = normalizePhoneForLookup(phone);
+          const phoneWithoutCountryCode = normalizedPhone?.replace(/^91/, '') || phone;
+          
+          console.log(`[PROFILE-GET] Phone normalization: original=${phone}, normalized=${normalizedPhone}, withoutCountryCode=${phoneWithoutCountryCode}`);
+          
+          // First try exact match with original phone
+          let vendorsByPhone = await select('vendors', { phone });
+          console.log(`[PROFILE-GET] Exact match result: ${vendorsByPhone.length} vendors found`);
+          
+          // If not found, try normalized phone
+          if (vendorsByPhone.length === 0 && normalizedPhone) {
+            vendorsByPhone = await select('vendors', { phone: normalizedPhone });
+            console.log(`[PROFILE-GET] Normalized match result: ${vendorsByPhone.length} vendors found`);
+          }
+          
+          // If still not found, try without country code
+          if (vendorsByPhone.length === 0 && phoneWithoutCountryCode && phoneWithoutCountryCode !== phone) {
+            vendorsByPhone = await select('vendors', { phone: phoneWithoutCountryCode });
+            console.log(`[PROFILE-GET] Without country code match result: ${vendorsByPhone.length} vendors found`);
+          }
+          
+          // If still not found, try SQL query with normalized matching
+          if (vendorsByPhone.length === 0) {
+            const phoneQuery = await query(
+              `SELECT * FROM vendors 
+               WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = $1
+                  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = $2
+                  OR phone = $3
+                  OR phone = $4
+               LIMIT 1`,
+              [normalizedPhone || '', phoneWithoutCountryCode || '', phone, normalizedPhone || phone]
+            );
+            if (phoneQuery.rows && phoneQuery.rows.length > 0) {
+              vendorsByPhone = phoneQuery.rows;
+              console.log(`✅ [PROFILE-GET] Found vendor using SQL normalized query: ${vendorsByPhone[0].id}`);
+            }
+          }
+          
           if (vendorsByPhone.length > 0) {
             vendor = vendorsByPhone[0];
+            console.log(`✅✅✅ [PROFILE-GET] FOUND VENDOR BY PHONE: ${vendor.id} (phone in DB: ${vendor.phone}) ✅✅✅`);
+          } else {
+            console.log(`⚠️ [PROFILE-GET] No vendor found for phone: ${phone} (tried: ${phone}, ${normalizedPhone}, ${phoneWithoutCountryCode})`);
           }
         } catch (e) {
           console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
@@ -417,12 +469,15 @@ export function registerVendorProfileEndpoints(app: Hono) {
         if (identityData) {
           const identityStatus = identityData.onboarding_status || 'INIT';
           const isApproved = identityStatus === 'APPROVED' || identityStatus === 'ACTIVATED';
-          // Approved vendors must see dashboard (isActive/status=active) even before vendors row exists
+          // ⚠️ WARNING: Returning identity.id instead of vendors.id - this is WRONG for approved vendors
+          console.log(`⚠️⚠️⚠️ [PROFILE-GET] WARNING: No vendor found, returning identity.id: ${identityData.id} ⚠️⚠️⚠️`);
           console.log(`📝 [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}, isApproved: ${isApproved}`);
+          console.log(`📝 [PROFILE-GET] Phone searched: ${phone}`);
+          console.log(`📝 [PROFILE-GET] This should NOT happen for APPROVED vendors - vendor record should exist!`);
           return c.json({
             success: true,
             vendor: {
-              id: identityData.id,
+              id: identityData.id, // ⚠️ WRONG ID - this is vendor_identity.id, not vendors.id
               phone: phone,
               status: isApproved ? 'active' : identityStatus.toLowerCase(),
               isActive: isApproved,
@@ -441,6 +496,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
           message: 'No vendor profile found'
         });
       }
+      
+      // ✅ CRITICAL: Log the vendor ID we're returning
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
+      console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
+      console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
+      console.log('═══════════════════════════════════════════════════════════');
 
       // Get application data (vendor_onboarding_applications uses vendor_identity_id)
       let applicationData = null;
@@ -521,6 +583,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           applicationStatus: applicationData?.status,
           createdAt: vendor.created_at,
           profilePhotoUrl: profilePhotoUrl, // ✅ Include regenerated photo URL
+          availableForInstantTele: vendor.available_for_instant_tele ?? false, // ✅ Include instant tele availability
         }
       });
     } catch (error: any) {
@@ -631,6 +694,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         roleId: 'role_id',
         createdAt: 'created_at',
         updatedAt: 'updated_at',
+        availableForInstantTele: 'available_for_instant_tele', // ✅ Added for instant tele toggle
       };
 
       const updates: any = {};
@@ -673,7 +737,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
         'business_name', 'owner_name', 'phone', 'email', 'address', 'city', 'state', 'pincode',
         'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
         'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
-        'experience_years', 'qualifications', 'service_area', 'specializations' // ✅ Added for solo provider profile
+        'experience_years', 'qualifications', 'service_area', 'specializations', // ✅ Added for solo provider profile
+        'available_for_instant_tele' // ✅ Added for instant tele availability toggle
       ];
 
       const updateData: any = {};
@@ -688,6 +753,26 @@ export function registerVendorProfileEndpoints(app: Hono) {
       const skippedFields = Object.keys(updates).filter(k => !existingColumns.has(k) && safeColumns.includes(k));
       if (skippedFields.length > 0) {
         console.log(`⚠️ [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(', ')}`);
+      }
+
+      // ✅ DEBUG: Log what's in updateData
+      console.log(`📊 [PROFILE-UPDATE] updateData keys:`, Object.keys(updateData));
+      console.log(`📊 [PROFILE-UPDATE] updateData:`, updateData);
+      console.log(`📊 [PROFILE-UPDATE] existingColumns has available_for_instant_tele:`, existingColumns.has('available_for_instant_tele'));
+      console.log(`📊 [PROFILE-UPDATE] safeColumns includes available_for_instant_tele:`, safeColumns.includes('available_for_instant_tele'));
+
+      // ✅ FIX: If updateData is empty, return a helpful error
+      if (Object.keys(updateData).length === 0) {
+        console.error(`❌ [PROFILE-UPDATE] No valid fields to update. Updates received:`, updates);
+        console.error(`❌ [PROFILE-UPDATE] Existing columns:`, Array.from(existingColumns).sort());
+        return c.json({ 
+          error: 'No fields to update. At least one field must be provided.',
+          details: {
+            receivedFields: Object.keys(updates),
+            validFields: safeColumns.filter(col => existingColumns.has(col)),
+            skippedFields: skippedFields
+          }
+        }, 400);
       }
 
       // If critical fields changed and vendor was approved, require re-approval
@@ -1325,7 +1410,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }, 400);
       }
 
-      const { validateBankAccountStrict } = await import('./razorpay');
+      const { validateBankAccountStrict } = await import('../../razorpay');
       const result = await validateBankAccountStrict(accountNumber, ifscCode, accountHolderName);
 
       if (result.error) {

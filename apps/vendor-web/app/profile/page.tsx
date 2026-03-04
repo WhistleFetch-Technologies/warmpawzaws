@@ -6,8 +6,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { ProfessionalProfileManager } from '@/components/vendor/ProfessionalProfileManager';
-import { ProfileManager as CenterProfileManager } from '@/components/vendor/CenterProfileManager';
+import { ProfessionalProfileManager } from '@/components/vendor/vendorProfileManager/ProfessionalProfileManagerSolo';
+import { ProfileManager as CenterProfileManager } from '@/components/vendor/vendorProfileManager/ProfileManagerCenter';
 import { isSoloVendor } from '@/lib/vendor-utils';
 
 interface VendorProfile {

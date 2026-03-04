@@ -10,60 +10,13 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
 import { isSoloVendor, isCenterRole, getVendorRoleName } from '@/lib/vendor-utils';
-import { SpecializationSelector } from './SpecializationSelector';
+import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
-import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager';
+import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
+import { CenterProfile, DAYS, ProfileManagerProps } from './constants/interface';
 
 // ✅ RENAMED: CenterProfileManager -> ProfileManager (generic naming)
 // Export both names for backward compatibility
-interface ProfileManagerProps {
-  vendorId: string;
-  vendorData?: any;
-  onBack: () => void;
-}
-
-// Alias for backward compatibility
-type CenterProfileManagerProps = ProfileManagerProps;
-
-interface CenterProfile {
-  // Basic Info
-  centerName: string;
-  description: string;
-  address: string;
-  city: string;
-  state: string;
-  pincode: string;
-  
-  // Operating Hours - Day by Day
-  operatingHours: {
-    [key: string]: {
-      isOpen: boolean;
-      open: string;
-      close: string;
-    };
-  };
-  
-  // Amenities
-  amenities: string[];
-  customAmenities: string[];
-  
-  // Specializations (Problem Grid)
-  specializations: string[];
-  
-  // Photos
-  photos: string[];
-  
-  // Emergency Services
-  emergencyServices: {
-    ambulance: boolean;
-    ambulanceAvailable247: boolean;
-    consultationAvailable247: boolean;
-    diagnosticsAvailable247: boolean;
-  };
-}
-
-const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 // ✅ Main export with generic name
 export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
@@ -119,6 +72,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
 
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
+  const [availableForInstantTele, setAvailableForInstantTele] = useState<boolean>(false);
 
   // Using apiClient instead of API_BASE - use local roleId state
   const availableAmenities = getAmenitiesForVendorType(roleId);
@@ -147,10 +101,12 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       // ✅ FIX: If roleId is not available, fetch it from vendor profile
       // IMPORTANT: Use roleName (the actual role name like 'veterinary_clinic') not roleId (which is a UUID)
       let fetchedRoleId: string | undefined = undefined;
+      let vendorProfileData: any = null;
       if (!roleId) {
         try {
           console.log('[CENTER-PROFILE] roleId not available, fetching from profile...');
-          const profileData = await apiClient.get('/vendor/profile') as any;
+          vendorProfileData = await apiClient.get('/vendor/profile') as any;
+          const profileData = vendorProfileData;
           
           // ✅ FIX: Prefer roleName over roleId (roleId is UUID, roleName is actual name like 'veterinary_clinic')
           // ⚠️ CRITICAL: DO NOT use vendorType/vendor_type - they are 'business'/'solo'/'center' NOT role names
@@ -174,6 +130,22 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         } catch (e) {
           console.warn('[CENTER-PROFILE] Failed to fetch vendor profile for roleId:', e);
         }
+      } else {
+        // If roleId is already available, still fetch vendor profile for availableForInstantTele
+        try {
+          vendorProfileData = await apiClient.get('/vendor/profile') as any;
+        } catch (e) {
+          console.warn('[CENTER-PROFILE] Failed to fetch vendor profile:', e);
+        }
+      }
+
+      // ✅ Load availableForInstantTele from vendor profile
+      if (vendorProfileData?.vendor) {
+        const instantTeleValue = vendorProfileData.vendor.availableForInstantTele ?? 
+                                 vendorProfileData.vendor.available_for_instant_tele ?? 
+                                 false;
+        setAvailableForInstantTele(instantTeleValue);
+        console.log('[CENTER-PROFILE] Loaded availableForInstantTele:', instantTeleValue);
       }
       
       // ✅ FIX: Load facility data using correct endpoint
@@ -338,6 +310,23 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       } catch (availError) {
         console.warn('⚠️ Availability save (redundant) failed - continuing:', availError);
         // Continue - we already saved in facility data above
+      }
+
+      // 4. Save availableForInstantTele to vendor profile
+      try {
+        const vendorProfileRes = await apiClient.put(`/vendor/${vendorId}/profile`, {
+          availableForInstantTele: availableForInstantTele
+        }) as any;
+
+        if (vendorProfileRes && vendorProfileRes.error) {
+          console.warn('⚠️ Failed to save availableForInstantTele:', vendorProfileRes.error);
+          // Non-critical, but log it
+        } else {
+          console.log('✅ availableForInstantTele saved:', availableForInstantTele);
+        }
+      } catch (vendorProfileError) {
+        console.warn('⚠️ Failed to save availableForInstantTele - continuing:', vendorProfileError);
+        // Continue - not critical for facility save
       }
 
       toast.success('✅ Center profile saved successfully!');
@@ -707,6 +696,42 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
                   />
                 </label>
               )}
+            </div>
+
+            {/* Instant Tele Availability Toggle */}
+            <div className="bg-white rounded-2xl border shadow-sm p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="font-bold text-gray-900">Instant Tele Consultation</h2>
+                  <p className="text-sm text-gray-500">Enable instant tele consultation availability</p>
+                </div>
+              </div>
+              <div className={`p-4 rounded-xl border-2 transition-all ${availableForInstantTele ? 'border-blue-200 bg-blue-50/50' : 'border-gray-100 bg-gray-50/50'}`}>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <button 
+                    type="button" 
+                    onClick={() => setAvailableForInstantTele(!availableForInstantTele)} 
+                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                      availableForInstantTele 
+                        ? 'bg-blue-500 border-blue-500' 
+                        : 'bg-white border-gray-300'
+                    }`}
+                  >
+                    {availableForInstantTele && <Check className="w-4 h-4 text-white" />}
+                  </button>
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900">Available for Instant Tele</span>
+                    <p className="text-xs text-gray-500">
+                      {availableForInstantTele 
+                        ? 'Customers can book instant tele consultations with you' 
+                        : 'Instant tele consultations are disabled'}
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
 
             {/* Emergency Services - for vet centers */}

@@ -76,8 +76,12 @@ interface UniversalPaymentPageProps {
   customerPhone: string;
   customerId?: string;
 
-  /** For instant tele: payment-first, then create booking via instant-after-payment. No booking before payment. */
-  flowType?: 'tele-scheduled' | 'tele-instant';
+  /** 
+   * tele-scheduled: normal scheduled tele booking
+   * tele-instant: payment-first, then create booking via instant-after-payment (no queue)
+   * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
+   */
+  flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted';
 
   // Navigation
   onBack: () => void;
@@ -966,6 +970,10 @@ export function UniversalPaymentPage({
       if (type === 'booking' && flowType === 'tele-instant') {
         currentBookingId = undefined;
         // Skip booking creation below; Razorpay handler will call instant-after-payment
+      } else if (type === 'booking' && flowType === 'tele-queue-accepted') {
+        // Queue-accepted flow: booking already exists with pending_payment status
+        // Use the existing bookingId - skip booking creation, go straight to payment
+        console.log('[PAYMENT] Queue-accepted flow: using existing bookingId:', currentBookingId);
       } else if (type === 'booking' && !currentBookingId) {
         // Validate required fields
         if (!customerId) {
@@ -1822,6 +1830,23 @@ export function UniversalPaymentPage({
               toast.success('Payment successful! Connecting to vet...');
               setProcessing(false);
               onSuccess(bid, response.razorpay_order_id, undefined, { isInstantTele: true });
+              return;
+            }
+
+            // ✅ Queue-accepted tele: booking already exists, confirm payment and update status
+            if (type === 'booking' && flowType === 'tele-queue-accepted' && currentBookingId) {
+              const confirmRes = await apiClient.post<any>('/customer/tele/confirm-payment', {
+                bookingId: currentBookingId,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              });
+              if (!confirmRes?.success) {
+                throw new Error(confirmRes?.error || 'Payment confirmation failed');
+              }
+              toast.success('Payment successful! Connecting to vet...');
+              setProcessing(false);
+              onSuccess(currentBookingId, response.razorpay_order_id, undefined, { isInstantTele: true });
               return;
             }
 

@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
-import { InstantTeleQueue } from '../InstantTeleQueue';
+import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 
 // ============================================================================
 // TYPES

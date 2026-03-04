@@ -11,19 +11,16 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { PromotionBanner } from '../shared/PromotionBanner';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes } from './constants';
+import { NutritionistServicesLandingProps } from './constants/interface';
 
 
-interface NutritionistServicesLandingProps {
-  phone: string;
-  onBack: () => void;
-  onNavigate?: (screen: string, data?: any) => void;
-}
 
 /**
  * ✅ FIX: Added pet context validation to prevent crashes (NUT-CUST-001)
  * Nutrition services require a pet to be selected before booking
  */
 export function NutritionistServicesLanding({ phone, onBack, onNavigate }: NutritionistServicesLandingProps) {
+  //---------------------------states----------------------------------//
   const nutritionistNeeds = useProblemGridByRole('nutritionist');
   const [loading, setLoading] = useState(true);
   const [nutritionists, setNutritionists] = useState<any[]>([]);
@@ -32,11 +29,13 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   const [hasPets, setHasPets] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  //---------------------------useEffect----------------------------------//
   useEffect(() => {
     loadPets();
     loadNutritionists();
   }, []);
 
+  //---------------------------fucntions----------------------------------//
   const loadPets = async () => {
     try {
       const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
@@ -105,8 +104,19 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
   };
 
+  //---------------------------Basics----------------------------------//
+  const dashboardStats = stats ? [
+    { value: `${stats.activeNutritionists}+`, label: 'Experts' },
+    { value: stats.consultations, label: 'Consultations' },
+    { value: `*${stats.rating}`, label: 'Rating' }
+  ] : [
+    { value: '45+', label: 'Experts' },
+    { value: '1.5K+', label: 'Consultations' },
+    { value: '*4.9', label: 'Rating' }
+  ];
 
 
+  //---------------------------render----------------------------------//
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
@@ -118,7 +128,6 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     );
   }
 
-  // ✅ FIX: Show error state if pets failed to load
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
@@ -150,17 +159,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     );
   }
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.activeNutritionists}+`, label: 'Experts' },
-    { value: stats.consultations, label: 'Consultations' },
-    { value: `*${stats.rating}`, label: 'Rating' }
-  ] : [
-    { value: '45+', label: 'Experts' },
-    { value: '1.5K+', label: 'Consultations' },
-    { value: '*4.9', label: 'Rating' }
-  ];
-
+  //---------------------------main render----------------------------------//
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}

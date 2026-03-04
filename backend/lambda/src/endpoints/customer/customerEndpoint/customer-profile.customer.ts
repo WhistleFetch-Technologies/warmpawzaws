@@ -16,10 +16,10 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, query, insert } from '../../database/rds-connection';
+import { select, update, query, insert } from '../../../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
-import { isValidUUID } from '../../types/entities';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
@@ -480,7 +480,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         // Customer doesn't exist - create it (for UAT mode or when OTP verification didn't create customer)
         try {
           // Create customer identity first (same pattern as OTP verification)
-          const { createOrUpdateCustomerIdentity } = await import('../../utils/customer-state');
+          const { createOrUpdateCustomerIdentity } = await import('../../../utils/customer-state');
           const identityId = await createOrUpdateCustomerIdentity(cleanPhone, undefined);
 
           // Create customer record with all required fields (matching OTP verification pattern)
@@ -534,7 +534,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         updateData.profile_photo_url = profileData.photo;
       }
 
-      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../utils/customer-state');
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../../utils/customer-state');
 
       const completionUpdates: any = {};
       if (profileData.firstName || profileData.lastName || profileData.email) {
@@ -673,7 +673,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       // Update profile completion status
-      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../utils/customer-state');
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../../utils/customer-state');
 
       const completionUpdates: any = {};
       if (profileData.firstName || profileData.lastName || profileData.email) {

@@ -17,7 +17,7 @@
 
 import { Hono } from 'hono';
 import { select, query, insert, update } from '../database/rds-connection';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor-profile';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendor-profile.vendor';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';

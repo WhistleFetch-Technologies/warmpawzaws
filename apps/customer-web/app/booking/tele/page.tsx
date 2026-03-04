@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { InstantTeleQueue } from '@/components/customer/InstantTeleQueue';
+import { InstantTeleQueue } from '@/components/customer/InstantTele/InstantTeleQueue';
 import { apiClient } from '@/lib/api-client';
 
 function TeleConsultationContent() {
