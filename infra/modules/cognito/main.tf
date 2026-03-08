@@ -1,5 +1,9 @@
 # Cognito Module - User authentication and authorization
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Cognito User Pool
 resource "aws_cognito_user_pool" "main" {
   name = "warmpawz-${var.environment}-users"
@@ -123,7 +127,8 @@ resource "aws_cognito_user_pool" "main" {
   }
 
   lifecycle {
-    prevent_destroy = false # Set to true after first deployment in prod
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 

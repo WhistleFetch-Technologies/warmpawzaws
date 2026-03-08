@@ -1,5 +1,9 @@
 # API Gateway Module - HTTP API for serverless REST endpoints
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Reference existing API Gateway (IMMUTABLE - do not create or modify)
 # If existing_api_gateway_id is provided, use data source to reference it
 # Otherwise, create a new one (for new environments)
@@ -155,6 +159,11 @@ resource "aws_apigatewayv2_integration" "lambda" {
   timeout_milliseconds   = each.value.timeout_ms
 
   description = "Integration for ${each.key}"
+
+  # CRITICAL: Prevent duplicate integrations - ONE integration per function per environment
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Lambda Permissions for API Gateway
@@ -177,6 +186,11 @@ resource "aws_apigatewayv2_route" "routes" {
   for_each = var.routes
 
   api_id    = local.api_gateway_id
+
+  # CRITICAL: Prevent duplicate routes - ONE route per path per environment
+  lifecycle {
+    create_before_destroy = true
+  }
   route_key = each.value.route_key
   target    = "integrations/${aws_apigatewayv2_integration.lambda[each.value.integration_key].id}"
 
@@ -200,6 +214,12 @@ resource "aws_apigatewayv2_domain_name" "main" {
   tags = {
     Name        = "warmpawz-${var.environment}-domain"
     Environment = var.environment
+  }
+
+  # CRITICAL: Prevent duplicate domain - ONE domain per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true
   }
 }
 

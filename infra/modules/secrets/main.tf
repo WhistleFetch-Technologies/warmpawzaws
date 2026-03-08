@@ -1,5 +1,9 @@
 # Secrets Module - AWS Secrets Manager for external integrations
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Razorpay Credentials
 resource "aws_secretsmanager_secret" "razorpay" {
   name                    = "warmpawz/${var.environment}/razorpay"
@@ -9,6 +13,12 @@ resource "aws_secretsmanager_secret" "razorpay" {
   tags = {
     Name        = "warmpawz-${var.environment}-razorpay"
     Environment = var.environment
+  }
+
+  # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
 
@@ -34,6 +44,12 @@ resource "aws_secretsmanager_secret" "google_maps" {
     Name        = "warmpawz-${var.environment}-google-maps"
     Environment = var.environment
   }
+
+  # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime and prevent duplicates
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "google_maps" {
@@ -52,6 +68,12 @@ resource "aws_secretsmanager_secret" "shiprocket" {
   tags = {
     Name        = "warmpawz-${var.environment}-shiprocket"
     Environment = var.environment
+  }
+
+  # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
 

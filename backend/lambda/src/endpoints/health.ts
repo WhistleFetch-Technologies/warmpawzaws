@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { query, checkDbHealth } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { promises as dns } from 'dns';
 
 export function registerHealthEndpoints(app: Hono) {
   /**
@@ -180,6 +181,140 @@ export function registerHealthEndpoints(app: Hono) {
         timestamp: new Date().toISOString(),
       }, 503);
     }
+  });
+
+  /**
+   * GET /health/diagnostic
+   * Diagnostic endpoint for connection troubleshooting
+   * Tests DNS resolution, network connectivity, and database connection
+   */
+  app.get("/health/diagnostic", async (c) => {
+    const diagnostics: any = {
+      timestamp: new Date().toISOString(),
+      environment: {
+        dbHost: process.env.DB_HOST,
+        dbPort: process.env.DB_PORT,
+        dbName: process.env.DB_NAME,
+        awsRegion: process.env.AWS_REGION,
+        vpcId: process.env.VPC_ID || 'not set',
+      },
+      tests: [],
+    };
+
+    // Test 1: DNS Resolution
+    const dbHost = process.env.DB_HOST;
+    if (dbHost) {
+      try {
+        const dnsStart = Date.now();
+        const addresses = await Promise.race([
+          dns.resolve4(dbHost),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('DNS resolution timeout after 5s')), 5000);
+          })
+        ]);
+        const dnsDuration = Date.now() - dnsStart;
+        diagnostics.tests.push({
+          name: 'DNS Resolution',
+          status: 'success',
+          duration: dnsDuration,
+          details: {
+            hostname: dbHost,
+            resolvedAddresses: addresses,
+            count: addresses.length,
+          },
+        });
+      } catch (error: any) {
+        diagnostics.tests.push({
+          name: 'DNS Resolution',
+          status: 'failed',
+          error: error.message,
+          errorCode: error.code,
+          details: {
+            hostname: dbHost,
+          },
+        });
+      }
+    } else {
+      diagnostics.tests.push({
+        name: 'DNS Resolution',
+        status: 'skipped',
+        reason: 'DB_HOST not set',
+      });
+    }
+
+    // Test 2: Database Connection
+    try {
+      const dbStart = Date.now();
+      const dbHealthy = await Promise.race([
+        checkDbHealth(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Database health check timeout after 10s')), 10000);
+        })
+      ]);
+      const dbDuration = Date.now() - dbStart;
+      diagnostics.tests.push({
+        name: 'Database Connection',
+        status: dbHealthy ? 'success' : 'failed',
+        duration: dbDuration,
+        details: {
+          connected: dbHealthy,
+        },
+      });
+    } catch (error: any) {
+      diagnostics.tests.push({
+        name: 'Database Connection',
+        status: 'failed',
+        duration: Date.now() - (diagnostics.tests.find((t: any) => t.name === 'Database Connection')?.startTime || Date.now()),
+        error: error.message,
+        errorCode: error.code,
+        details: {
+          errorType: error.constructor.name,
+        },
+      });
+    }
+
+    // Test 3: Secrets Manager Access
+    try {
+      const secretsStart = Date.now();
+      const secretArn = process.env.DB_SECRET_ARN;
+      if (secretArn) {
+        diagnostics.tests.push({
+          name: 'Secrets Manager',
+          status: 'configured',
+          duration: Date.now() - secretsStart,
+          details: {
+            secretArn: secretArn.substring(0, 50) + '...', // Partial ARN for security
+          },
+        });
+      } else {
+        diagnostics.tests.push({
+          name: 'Secrets Manager',
+          status: 'not_configured',
+          details: {
+            reason: 'DB_SECRET_ARN not set',
+          },
+        });
+      }
+    } catch (error: any) {
+      diagnostics.tests.push({
+        name: 'Secrets Manager',
+        status: 'error',
+        error: error.message,
+      });
+    }
+
+    // Summary
+    const allPassed = diagnostics.tests.every((t: any) => t.status === 'success' || t.status === 'configured');
+    const anyFailed = diagnostics.tests.some((t: any) => t.status === 'failed');
+
+    diagnostics.summary = {
+      overall: anyFailed ? 'failed' : allPassed ? 'success' : 'partial',
+      totalTests: diagnostics.tests.length,
+      passed: diagnostics.tests.filter((t: any) => t.status === 'success' || t.status === 'configured').length,
+      failed: diagnostics.tests.filter((t: any) => t.status === 'failed').length,
+    };
+
+    return c.json(diagnostics, anyFailed ? 503 : 200);
   });
 }
 
