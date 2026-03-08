@@ -136,3 +136,52 @@ archive/
 
 # Admin config export (may contain secrets; do not commit)
 scripts/admin-config/export/
+
+# =============================================================================
+# SCREENSHOTS & IMAGES IN ROOT
+# =============================================================================
+/*.png
+
+# =============================================================================
+# BACKUP / DUPLICATE DIRECTORIES - DO NOT COMMIT
+# =============================================================================
+Admin UI/
+backend_modified/
+complexProblemFix/
+copmplexProblmeFix/
+wi/
+reports/
+test-data/
+misc/
+docs/
+db/
+
+# =============================================================================
+# BUILD BACKUP DIRECTORIES
+# =============================================================================
+dist_backup/
+
+# =============================================================================
+# RUNTIME ARTIFACTS
+# =============================================================================
+$null
+**/undefined/
+
+# =============================================================================
+# CDK COMPILED OUTPUT (keep .ts source, ignore compiled output)
+# =============================================================================
+infrastructure/cdk/bin/*.js
+infrastructure/cdk/bin/*.d.ts
+infrastructure/cdk/bin/*.js.map
+infrastructure/cdk/bin/*.d.ts.map
+infrastructure/cdk/lib/**/*.js
+infrastructure/cdk/lib/**/*.d.ts.map
+infrastructure/cdk/lib/**/*.js.map
+infrastructure/cdk/cdk-outputs.json
+infrastructure/cdk/cdk.context.json
+
+# =============================================================================
+# TERRAFORM SENSITIVE / GENERATED
+# =============================================================================
+*.tfvars
+tfplan
