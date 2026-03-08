@@ -1,1 +1,0 @@
-   SELECT * FROM customers WHERE phone is = "9022336112";
