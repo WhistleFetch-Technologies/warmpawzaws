@@ -22,6 +22,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Video, Clock, MapPin, Phone, MessageSquare, 
   ChevronUp, ChevronDown, X, Navigation, User,
@@ -69,6 +70,7 @@ export function UnifiedAppointmentTracker({
   onNavigate,
   className = '',
 }: UnifiedAppointmentTrackerProps) {
+  const router = useRouter();
   const [items, setItems] = useState<AppointmentItem[]>([]);
   const [isMinimized, setIsMinimized] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -413,11 +415,17 @@ export function UnifiedAppointmentTracker({
                         } else if (onNavigate) {
                           onNavigate('video-call', { bookingId: item.bookingId, meetingId: item.meetingId });
                         } else {
-                          const params = new URLSearchParams();
-                          params.set('bookingId', item.bookingId);
-                          if (customerPhone) params.set('phone', customerPhone);
-                          const qs = params.toString();
-                          window.location.href = `/video${qs ? `?${qs}` : ''}`;
+                          // ✅ FIX: Use router.push with path format for CloudFront compatibility
+                          // Path format /video/[bookingId] works with CloudFront rewrite rules
+                          // This enables client-side navigation without full page refresh
+                          const queryParams = new URLSearchParams();
+                          if (customerPhone) {
+                            queryParams.set('customerId', customerPhone);
+                            queryParams.set('phone', customerPhone);
+                          }
+                          const queryString = queryParams.toString();
+                          const videoUrl = `/video/${item.bookingId}${queryString ? `?${queryString}` : ''}`;
+                          router.push(videoUrl);
                         }
                       }}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs"

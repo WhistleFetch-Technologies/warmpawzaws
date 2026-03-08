@@ -1,8 +1,9 @@
 import VideoPageClientWrapper from './VideoPageClientWrapper';
 
 // Required for static export - must be in server component (no 'use client')
+// Uses 'placeholder' to match CloudFront rewrite rule: /video/[uuid] → /video/placeholder.html
 export async function generateStaticParams() {
-  return [{ bookingId: ['_'] }];
+  return [{ bookingId: ['placeholder'] }];
 }
 
 export const dynamicParams = true;

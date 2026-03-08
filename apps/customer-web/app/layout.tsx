@@ -58,8 +58,10 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* ✅ FIX: Inject NEXT_PUBLIC_API_BASE_URL for ALL environments (local dev + production) */}
-        {prodApiUrl && (
+        {/* Inject build-time API URL ONLY when NEXT_PUBLIC_ENVIRONMENT=production.
+            Without this guard, .env.local values (often dev URLs) get baked into
+            the static HTML and override the deploy-time runtime-config.js. */}
+        {isProd && prodApiUrl && (
           <script
             dangerouslySetInnerHTML={{
               __html: `

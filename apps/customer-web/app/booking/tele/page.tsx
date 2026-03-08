@@ -135,12 +135,17 @@ function TeleConsultationContent() {
             console.log('Joined queue:', queueId);
           }}
           onAccepted={(bookingId, meetingId) => {
-            const params = new URLSearchParams();
-            params.set('bookingId', bookingId);
-            if (meetingId) params.set('meetingId', meetingId);
-            if (customerId) params.set('customerId', customerId);
-            const qs = params.toString();
-            router.push(`/video${qs ? `?${qs}` : ''}`);
+            // ✅ FIX: Use router.push with path format for CloudFront compatibility
+            const queryParams = new URLSearchParams();
+            if (meetingId) {
+              queryParams.set('meetingId', meetingId);
+            }
+            if (customerId) {
+              queryParams.set('customerId', customerId);
+            }
+            const queryString = queryParams.toString();
+            const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
+            router.push(videoUrl);
           }}
         />
       </div>

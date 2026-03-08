@@ -20,7 +20,8 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     typeof window !== 'undefined'
       ? new URLSearchParams(window.location.search).get('bookingId')
       : null;
-  const normalizeBookingId = (value?: string | null) => (value && value !== '_' ? value : '');
+  const normalizeBookingId = (value?: string | null) =>
+    value && value !== '_' && value !== 'placeholder' ? value : '';
   const bookingId =
     normalizeBookingId(bookingIdProp) ||
     normalizeBookingId(bookingIdFromPath) ||

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
   Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock,
@@ -108,6 +109,7 @@ export function CustomerHomeComplete({
   refreshKey = 0,
   hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
+  const router = useRouter();
   const [userData, setUserData] = useState<UserData>({
     name: 'User',
     phone: '',
@@ -523,26 +525,73 @@ export function CustomerHomeComplete({
   // Services can be: hidden, coming_soon, beta, or launched per state/city
   // IMPORTANT: Always start with all services visible (use dynamic categories when available)
   // Service launch config should only RESTRICT services based on geography
-  // Get customer's location from profile (city and state)
+  // Get customer's location from default address (most accurate) or profile fallback
   useEffect(() => {
     const loadServiceLaunchConfig = async () => {
       try {
-
         setFilteredQuickServices(sourceQuickServices);
-
-        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null);
-        const profile = profileResponse as any;
 
         let customerCity = '';
         let customerState = '';
 
-        serviceBaseOnpincode(profile, customerCity, customerState, profile?.pincode || '');
+        // ✅ PRIORITY 1: Fetch default address for accurate location detection
+        // Default address is the most reliable source for customer's current location
+        try {
+          const addressesResponse = (await apiClient
+            .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+            .catch(() => null)) as any;
+          
+          const addresses = addressesResponse?.addresses || [];
+          
+          // Use default address first, then fall back to first address
+          const defaultAddress = addresses.find((a: any) => a.isDefault) || addresses[0];
+          
+          if (defaultAddress) {
+            customerCity = defaultAddress.city || '';
+            customerState = defaultAddress.state || '';
+            
+            console.log('[ServiceLaunchConfig] Using default address location:', {
+              city: customerCity,
+              state: customerState,
+              addressId: defaultAddress.id,
+            });
+          }
+        } catch (error) {
+          console.warn('[ServiceLaunchConfig] Could not fetch addresses for location detection:', error);
+        }
+
+        // ✅ PRIORITY 2: Fall back to profile data if no address found
+        if (!customerCity || !customerState) {
+          try {
+            const profileResponse = await apiClient
+              .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
+              .catch(() => null);
+            
+            const profile = profileResponse as any;
+            const profileLocation = serviceBaseOnpincode(profile, profile?.pincode || '');
+            
+            if (profileLocation.city) customerCity = profileLocation.city;
+            if (profileLocation.state) customerState = profileLocation.state;
+            
+            console.log('[ServiceLaunchConfig] Using profile location fallback:', {
+              city: customerCity,
+              state: customerState,
+            });
+          } catch (error) {
+            console.warn('[ServiceLaunchConfig] Could not fetch profile for location detection:', error);
+          }
+        }
 
         // Fetch service launch config based on customer's location
         const params = new URLSearchParams();
         if (customerState) params.append('state', customerState);
         if (customerCity) params.append('city', customerCity);
 
+        console.log('[ServiceLaunchConfig] Fetching config with location:', {
+          state: customerState || '(none)',
+          city: customerCity || '(none)',
+          params: params.toString(),
+        });
 
         const configResponse = await apiClient.get(`/config/service-launch/customer?${params.toString()}`).catch(() => null);
 
@@ -2250,11 +2299,15 @@ export function CustomerHomeComplete({
           if (onNavigate) {
             onNavigate('video-call', { bookingId, meetingId });
           } else {
-            const params = new URLSearchParams();
-            params.set('bookingId', bookingId);
-            if (phone) params.set('phone', phone);
-            const qs = params.toString();
-            window.location.href = `/video${qs ? `?${qs}` : ''}`;
+            // ✅ FIX: Use router.push with path format for CloudFront compatibility
+            const queryParams = new URLSearchParams();
+            if (phone) {
+              queryParams.set('customerId', phone);
+              queryParams.set('phone', phone);
+            }
+            const queryString = queryParams.toString();
+            const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
+            router.push(videoUrl);
           }
         }}
         onOpenChat={async (bookingId) => {
@@ -2297,11 +2350,15 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId, meetingId });
             } else {
-              const params = new URLSearchParams();
-              params.set('bookingId', bookingId);
-              if (phone) params.set('phone', phone);
-              const qs = params.toString();
-              window.location.href = `/video${qs ? `?${qs}` : ''}`;
+              // ✅ FIX: Use router.push with path format for CloudFront compatibility
+              const queryParams = new URLSearchParams();
+              if (phone) {
+                queryParams.set('customerId', phone);
+                queryParams.set('phone', phone);
+              }
+              const queryString = queryParams.toString();
+              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
+              router.push(videoUrl);
             }
           }}
           onCall={(vendorPhone) => {
@@ -2372,11 +2429,15 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId, meetingId });
             } else {
-              const params = new URLSearchParams();
-              params.set('bookingId', bookingId);
-              if (phone) params.set('phone', phone);
-              const qs = params.toString();
-              window.location.href = `/video${qs ? `?${qs}` : ''}`;
+              // ✅ FIX: Use router.push with path format for CloudFront compatibility
+              const queryParams = new URLSearchParams();
+              if (phone) {
+                queryParams.set('customerId', phone);
+                queryParams.set('phone', phone);
+              }
+              const queryString = queryParams.toString();
+              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
+              router.push(videoUrl);
             }
             setUpcomingCall(null);
           }}
@@ -2398,12 +2459,18 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId, meetingId });
             } else {
-              const params = new URLSearchParams();
-              params.set('bookingId', bookingId);
-              if (phone) params.set('phone', phone);
-              if (meetingId) params.set('meetingId', meetingId);
-              const qs = params.toString();
-              window.location.href = `/video${qs ? `?${qs}` : ''}`;
+              // ✅ FIX: Use router.push with path format for CloudFront compatibility
+              const queryParams = new URLSearchParams();
+              if (phone) {
+                queryParams.set('customerId', phone);
+                queryParams.set('phone', phone);
+              }
+              if (meetingId) {
+                queryParams.set('meetingId', meetingId);
+              }
+              const queryString = queryParams.toString();
+              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
+              router.push(videoUrl);
             }
             setIncomingCall(null);
           }}
@@ -2426,11 +2493,15 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId });
             } else {
-              const params = new URLSearchParams();
-              params.set('bookingId', bookingId);
-              if (phone) params.set('phone', phone);
-              const qs = params.toString();
-              window.location.href = `/video${qs ? `?${qs}` : ''}`;
+              // ✅ FIX: Use router.push with path format for CloudFront compatibility
+              const queryParams = new URLSearchParams();
+              if (phone) {
+                queryParams.set('customerId', phone);
+                queryParams.set('phone', phone);
+              }
+              const queryString = queryParams.toString();
+              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
+              router.push(videoUrl);
             }
             setChatFromNotification(null);
           }}

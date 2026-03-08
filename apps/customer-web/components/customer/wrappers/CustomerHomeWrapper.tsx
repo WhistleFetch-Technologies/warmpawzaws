@@ -915,13 +915,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         onNavigate={(screen, data) => {
           // Handle navigation from TeleConsultationRouter
           if (screen === 'video-call') {
-            // Navigate to video call page (include phone for deep-link/reload support)
+            // ✅ FIX: Navigate to video call page using router.push with path format
+            // Path format /video/[bookingId] works with CloudFront rewrite rules
             if (typeof window !== 'undefined' && data?.bookingId) {
-              const params = new URLSearchParams();
-              params.set('bookingId', data.bookingId);
-              if (phone) params.set('phone', phone);
-              const qs = params.toString();
-              window.location.href = `/video${qs ? `?${qs}` : ''}`;
+              const queryParams = new URLSearchParams();
+              if (phone) {
+                queryParams.set('customerId', phone);
+                queryParams.set('phone', phone);
+              }
+              if (data?.meetingId) {
+                queryParams.set('meetingId', data.meetingId);
+              }
+              const queryString = queryParams.toString();
+              const videoUrl = `/video/${data.bookingId}${queryString ? `?${queryString}` : ''}`;
+              router.push(videoUrl);
             }
           } else if (screen === 'add-pet') {
             setCurrentScreen('add-pet');

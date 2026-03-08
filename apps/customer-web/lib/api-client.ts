@@ -81,35 +81,77 @@ function getApiGatewayUrl(): string {
  */
 export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
+  // Check if running on localhost
+  const isLocalhost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || 
+     window.location.hostname === '127.0.0.1' ||
+     window.location.hostname.includes('localhost'));
+  
   // Next.js injects NEXT_PUBLIC_* env vars at build time - check multiple sources
   let raw = '';
   
-  // 1. Check runtime config first (set by runtime-config.js)
-  if (cfg.apiBaseUrl) {
-    raw = cfg.apiBaseUrl;
-  }
-  // 2. Check window.__NEXT_DATA__.env (Next.js injected env vars)
-  else if (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.env?.NEXT_PUBLIC_API_BASE_URL) {
-    raw = (window as any).__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  // 3. Check process.env (available at build time, might be available in some contexts)
-  else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    raw = process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  // 4. Fallback: Use environment-aware API Gateway selection
-  else {
-    raw = getApiGatewayUrl();
+  // When running on localhost, prioritize environment variables over runtime config
+  if (isLocalhost) {
+    // 1. Check window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx)
+    if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
+      raw = (window as any).__NEXT_PUBLIC_API_BASE_URL__;
+    }
+    // 2. Check window.__NEXT_DATA__.env (Next.js injected env vars)
+    else if (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.env?.NEXT_PUBLIC_API_BASE_URL) {
+      raw = (window as any).__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL;
+    }
+    // 3. Check process.env (available at build time)
+    else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+      raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+    }
+    // 4. Default to localhost:3000 for local development (no fallback to AWS)
+    else {
+      raw = 'http://localhost:3000';
+    }
+  } else {
+    // When NOT on localhost (deployed environments like CloudFront):
+    // Runtime config (runtime-config.js) is injected at DEPLOY TIME and is the
+    // authoritative source. Build-time env vars from .env.local may contain
+    // dev/staging URLs that should NOT override the deploy-time config.
+    //
+    // Priority order:
+    // 1. runtime-config.js (deploy-time, always correct for the environment)
+    // 2. Build-time env vars (fallback only if runtime config is missing)
+    // 3. Environment-aware API Gateway selection (last resort)
+    if (cfg.apiBaseUrl) {
+      raw = cfg.apiBaseUrl;
+    }
+    // Fallback: build-time env vars (used by prod:customer, prod:vendor locally)
+    else if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
+      raw = (window as any).__NEXT_PUBLIC_API_BASE_URL__;
+    }
+    else if (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.env?.NEXT_PUBLIC_API_BASE_URL) {
+      raw = (window as any).__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL;
+    }
+    else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+      raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+    }
+    // Last resort: environment-aware API Gateway selection
+    else {
+      raw = getApiGatewayUrl();
+    }
   }
   
   const result = (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
   
   // Debug log in UAT mode
   if (typeof window !== 'undefined' && isUatMode()) {
-    if (!result || result === 'http://localhost:3000') {
-      console.warn('⚠️ [UAT] API Base URL is invalid. Using environment-based fallback:', getApiGatewayUrl());
+    if (isLocalhost && !result) {
+      console.warn('⚠️ [UAT] API Base URL is invalid for localhost. Expected http://localhost:3000');
     }
   }
   
+  // For localhost, return the result directly (no fallback to AWS)
+  if (isLocalhost) {
+    return result || 'http://localhost:3000';
+  }
+  
+  // For non-localhost, use fallback to API Gateway
   return result || getApiGatewayUrl();
 }
 

@@ -533,57 +533,128 @@ function CallingVendorScreen({
     const apiBase = getApiBaseUrl();
     const sseUrl = `${apiBase}/customer/tele/instant-stream/${bookingId}`;
 
+    console.log('[CallingVendor] 🔌 Setting up SSE connection');
+    console.log('[CallingVendor] 📍 API Base URL:', apiBase);
+    console.log('[CallingVendor] 🔗 SSE URL:', sseUrl);
+    console.log('[CallingVendor] 📋 Booking ID:', bookingId);
+
     try {
       const eventSource = new EventSource(sseUrl);
       eventSourceRef.current = eventSource;
 
+      // Log connection state changes
+      eventSource.onopen = () => {
+        console.log('[CallingVendor] ✅ SSE connection opened successfully');
+        console.log('[CallingVendor] SSE readyState:', eventSource.readyState, '(1=OPEN)');
+      };
+
+      // Listen to all messages for debugging
+      eventSource.onmessage = (event: MessageEvent) => {
+        console.log('[CallingVendor] 📨 SSE message received (no event type):', {
+          data: event.data,
+          type: event.type,
+          origin: event.origin,
+        });
+      };
+
+      // Listen for vendor_accepted event
       eventSource.addEventListener('vendor_accepted', (event: MessageEvent) => {
         try {
-          console.log('[CallingVendor] ✅ vendor_accepted event received:', event.data);
+          console.log('[CallingVendor] ✅ vendor_accepted event received!');
+          console.log('[CallingVendor] Event details:', {
+            data: event.data,
+            type: event.type,
+            origin: event.origin,
+          });
+
           const data = JSON.parse(event.data);
           console.log('[CallingVendor] Parsed data:', data);
+          
           setStatus('accepted');
           toast.success(`${vendorName} accepted your call!`);
-          console.log('[CallingVendor] Calling onVendorAccepted with:', { bookingId: data.bookingId || bookingId, totalAmount: Number(data.totalAmount) || servicePrice });
-          onVendorAccepted(data.bookingId || bookingId, Number(data.totalAmount) || servicePrice);
+          
+          const finalBookingId = data.bookingId || bookingId;
+          const finalAmount = Number(data.totalAmount) || servicePrice;
+          
+          console.log('[CallingVendor] Calling onVendorAccepted with:', {
+            bookingId: finalBookingId,
+            totalAmount: finalAmount,
+          });
+          
+          onVendorAccepted(finalBookingId, finalAmount);
         } catch (e) {
-          console.error('[CallingVendor] Parse error:', e);
+          console.error('[CallingVendor] ❌ Parse error in vendor_accepted:', e);
+          console.error('[CallingVendor] Raw event data:', event.data);
         }
       });
 
-      eventSource.addEventListener('vendor_rejected', (_event: MessageEvent) => {
+      // Listen for vendor_rejected event
+      eventSource.addEventListener('vendor_rejected', (event: MessageEvent) => {
+        console.log('[CallingVendor] ❌ vendor_rejected event received:', event.data);
         setStatus('rejected');
         toast.error(`${vendorName} is currently unavailable.`);
         onVendorRejected();
       });
 
-      eventSource.addEventListener('timeout', (_event: MessageEvent) => {
+      // Listen for timeout event
+      eventSource.addEventListener('timeout', (event: MessageEvent) => {
+        console.log('[CallingVendor] ⏱️ timeout event received:', event.data);
         setStatus('timeout');
         toast.error('Vendor did not respond in time.');
         onTimeout();
       });
 
-      eventSource.addEventListener('ended', (_event: MessageEvent) => {
+      // Listen for ended event
+      eventSource.addEventListener('ended', (event: MessageEvent) => {
+        console.log('[CallingVendor] 🔚 ended event received:', event.data);
         setStatus('timeout');
         onTimeout();
       });
 
+      // Listen for payment_confirmed event
       eventSource.addEventListener('payment_confirmed', (event: MessageEvent) => {
-        // This can happen if payment was somehow confirmed quickly
         try {
           const data = JSON.parse(event.data);
-          console.log('[CallingVendor] Payment confirmed via SSE:', data);
-        } catch (_) { /* ignore */ }
+          console.log('[CallingVendor] 💳 Payment confirmed via SSE:', data);
+        } catch (e) {
+          console.warn('[CallingVendor] Failed to parse payment_confirmed event:', e);
+        }
       });
 
-      eventSource.onerror = () => {
-        console.warn('[CallingVendor] SSE connection error');
+      // Listen for connection event
+      eventSource.addEventListener('connection', (event: MessageEvent) => {
+        console.log('[CallingVendor] 🔌 SSE connection event:', event.data);
+      });
+
+      // Listen for heartbeat event
+      eventSource.addEventListener('heartbeat', (event: MessageEvent) => {
+        // Log heartbeat occasionally to confirm connection is alive
+        if (elapsedSeconds % 30 === 0) {
+          console.log('[CallingVendor] 💓 SSE heartbeat received');
+        }
+      });
+
+      // Enhanced error handling
+      eventSource.onerror = (error) => {
+        console.warn('[CallingVendor] ⚠️ SSE connection error:', error);
+        console.warn('[CallingVendor] SSE readyState:', eventSource.readyState, {
+          0: 'CONNECTING',
+          1: 'OPEN',
+          2: 'CLOSED',
+        }[eventSource.readyState]);
+        
+        // If connection is closed, log it but don't take action
+        // The stream should automatically reconnect
+        if (eventSource.readyState === EventSource.CLOSED) {
+          console.warn('[CallingVendor] SSE connection closed. Stream may reconnect automatically.');
+        }
       };
     } catch (err) {
-      console.error('[CallingVendor] SSE setup error:', err);
+      console.error('[CallingVendor] ❌ SSE setup error:', err);
     }
 
     return () => {
+      console.log('[CallingVendor] 🧹 Cleaning up SSE connection');
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -593,7 +664,7 @@ function CallingVendorScreen({
         timerRef.current = null;
       }
     };
-  }, [bookingId]);
+  }, [bookingId, vendorName, servicePrice, onVendorAccepted, onVendorRejected, onTimeout]);
 
 
   const formatTime = (seconds: number) => {

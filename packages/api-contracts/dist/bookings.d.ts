@@ -73,7 +73,6 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     customerPhone: z.ZodOptional<z.ZodString>;
     customerName: z.ZodOptional<z.ZodString>;
     petName: z.ZodOptional<z.ZodString>;
-    /** When provided and valid, booking uses package credit: totalAmount=0, payment_status=completed, no payment step */
     packagePurchaseId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     serviceId: string;

@@ -1,76 +1,96 @@
 import { Heart, HomeIcon, Star } from "lucide-react";
 
-export const serviceBaseOnpincode = (profile: any, customerCity: string, customerState: string, pincode: string) => {
-    if ((!customerCity || !customerState) && pincode) {
-        if (profile && (profile.success || profile.profile)) {
-            const profileData = profile.profile || profile;
+/**
+ * Extract city and state from customer profile data
+ * Tries multiple sources: profile fields, address fields, and pincode inference
+ * 
+ * @param profile - Customer profile object (may have .profile or .success wrapper)
+ * @param pincode - Optional pincode string for inference fallback
+ * @returns Object with city and state strings
+ */
+export const serviceBaseOnpincode = (
+  profile: any,
+  pincode: string = ''
+): { city: string; state: string } => {
+  let customerCity = '';
+  let customerState = '';
 
-            // Try multiple sources for city
-            customerCity = profileData.city
-                || profileData.address?.city
-                || profileData.addresses?.[0]?.city
-                || profileData.default_address?.city
-                || '';
+  if (!profile) {
+    return { city: customerCity, state: customerState };
+  }
 
-            // Try multiple sources for state
-            customerState = profileData.state
-                || profileData.address?.state
-                || profileData.addresses?.[0]?.state
-                || profileData.default_address?.state
-                || '';
+  const profileData = profile.profile || profile;
 
-            // Get pincode for fallback inference
-            const pincode = profileData.pincode
-                || profileData.address?.pincode
-                || profileData.addresses?.[0]?.pincode
-                || '';
+  // Try multiple sources for city
+  customerCity =
+    profileData.city ||
+    profileData.address?.city ||
+    profileData.addresses?.[0]?.city ||
+    profileData.default_address?.city ||
+    '';
 
-            // Infer city/state from Indian pincodes if not available
-            if ((!customerCity || !customerState) && pincode) {
-                const pincodePrefix = pincode.toString().substring(0, 3);
-                // Bangalore pincodes: 560xxx
-                if (pincodePrefix === '560') {
-                    if (!customerCity) customerCity = 'Bangalore';
-                    if (!customerState) customerState = 'Karnataka';
-                }
-                // Mumbai pincodes: 400xxx
-                else if (pincodePrefix === '400') {
-                    if (!customerCity) customerCity = 'Mumbai';
-                    if (!customerState) customerState = 'Maharashtra';
-                }
-                // Delhi pincodes: 110xxx
-                else if (pincodePrefix === '110') {
-                    if (!customerCity) customerCity = 'New Delhi';
-                    if (!customerState) customerState = 'Delhi';
-                }
-                // Chennai pincodes: 600xxx
-                else if (pincodePrefix === '600') {
-                    if (!customerCity) customerCity = 'Chennai';
-                    if (!customerState) customerState = 'Tamil Nadu';
-                }
-                // Hyderabad pincodes: 500xxx
-                else if (pincodePrefix === '500') {
-                    if (!customerCity) customerCity = 'Hyderabad';
-                    if (!customerState) customerState = 'Telangana';
-                }
-                // Pune pincodes: 411xxx
-                else if (pincodePrefix === '411') {
-                    if (!customerCity) customerCity = 'Pune';
-                    if (!customerState) customerState = 'Maharashtra';
-                }
-            }
+  // Try multiple sources for state
+  customerState =
+    profileData.state ||
+    profileData.address?.state ||
+    profileData.addresses?.[0]?.state ||
+    profileData.default_address?.state ||
+    '';
 
+  // Get pincode for fallback inference
+  const profilePincode =
+    profileData.pincode ||
+    profileData.address?.pincode ||
+    profileData.addresses?.[0]?.pincode ||
+    pincode ||
+    '';
 
-            // Log for debugging
-            console.log('[ServiceLaunchConfig] Customer location from profile:', {
-                city: customerCity,
-                state: customerState,
-                pincode: pincode,
-                profileKeys: Object.keys(profileData),
-            });
-        }
+  // Infer city/state from Indian pincodes if not available
+  if ((!customerCity || !customerState) && profilePincode) {
+    const pincodePrefix = profilePincode.toString().substring(0, 3);
+    
+    // Bangalore pincodes: 560xxx
+    if (pincodePrefix === '560') {
+      if (!customerCity) customerCity = 'Bangalore';
+      if (!customerState) customerState = 'Karnataka';
     }
-}
+    // Mumbai pincodes: 400xxx
+    else if (pincodePrefix === '400') {
+      if (!customerCity) customerCity = 'Mumbai';
+      if (!customerState) customerState = 'Maharashtra';
+    }
+    // Delhi pincodes: 110xxx
+    else if (pincodePrefix === '110') {
+      if (!customerCity) customerCity = 'New Delhi';
+      if (!customerState) customerState = 'Delhi';
+    }
+    // Chennai pincodes: 600xxx
+    else if (pincodePrefix === '600') {
+      if (!customerCity) customerCity = 'Chennai';
+      if (!customerState) customerState = 'Tamil Nadu';
+    }
+    // Hyderabad pincodes: 500xxx
+    else if (pincodePrefix === '500') {
+      if (!customerCity) customerCity = 'Hyderabad';
+      if (!customerState) customerState = 'Telangana';
+    }
+    // Pune pincodes: 411xxx
+    else if (pincodePrefix === '411') {
+      if (!customerCity) customerCity = 'Pune';
+      if (!customerState) customerState = 'Maharashtra';
+    }
+  }
+
+  // Log for debugging
+  console.log('[ServiceLaunchConfig] Customer location from profile:', {
+    city: customerCity,
+    state: customerState,
+    pincode: profilePincode,
+    profileKeys: Object.keys(profileData),
+  });
+
+  return { city: customerCity, state: customerState };
+};
 
 
 export const adoptionOptions = (adoptionStats: { adoptablePets: string | number, certifiedBreeders: string | number, rehomingListings: string | number }) => {

@@ -25,7 +25,7 @@ import { isValidUUID } from '../../../types/entities';
 import { randomUUID } from 'crypto';
 import { ensureVideoCallSessionsTable } from '../repository/repository.telecommunication';
 import { getMediaRegion, isWithinVideoCallWindow, vidcorId, calculateVendorEarnings } from '../constants/helpers';
-import { BookingStatus, isTeleServices, UserType } from 'src/endpoints/constants';
+import { BookingStatus, BookingPaymentStatus, isTeleServices, UserType } from 'src/endpoints/constants';
 import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../../../aws/aws-Chime-service';
 import { pushNotificationService } from '../../../aws/aws-sns-notification-service';
 
@@ -369,14 +369,32 @@ class JoinMeetingHandler extends BaseHandler {
         return this.error('Booking not found', 404);
       }
 
-      //update the booking status to in_progress
-      const bookingUpdate = await update('bookings', { id: bookingId }, { status: BookingStatus.IN_PROGRESS });
-      if (!bookingUpdate) {
-        return this.error('Failed to update booking status', 500);
-      }
-      vidlog('join', 'booking-status-updated', { bookingId, status: BookingStatus.IN_PROGRESS }, cid);
-
       const booking = bookings[0] as any;
+
+      // ✅ CRITICAL FIX: Don't change status to IN_PROGRESS for instant tele consultations
+      // that are CONFIRMED but payment is still PENDING.
+      // The status should remain CONFIRMED until payment is completed.
+      const isInstantTelePendingPayment = 
+        booking.is_instant_tele === true &&
+        booking.status === BookingStatus.CONFIRMED &&
+        booking.payment_status === BookingPaymentStatus.PENDING;
+
+      // Only update to IN_PROGRESS if it's NOT an instant tele with pending payment
+      if (!isInstantTelePendingPayment) {
+        //update the booking status to in_progress
+        const bookingUpdate = await update('bookings', { id: bookingId }, { status: BookingStatus.IN_PROGRESS });
+        if (!bookingUpdate) {
+          return this.error('Failed to update booking status', 500);
+        }
+        vidlog('join', 'booking-status-updated', { bookingId, status: BookingStatus.IN_PROGRESS }, cid);
+      } else {
+        vidlog('join', 'booking-status-skipped', { 
+          bookingId, 
+          reason: 'instant_tele_pending_payment',
+          currentStatus: booking.status,
+          paymentStatus: booking.payment_status
+        }, cid);
+      }
       const windowCheck = isWithinVideoCallWindow(booking);
       if (!windowCheck.allowed) {
         return this.error(windowCheck.reason || 'Video call is not allowed for this appointment at this time.', 400);
@@ -1231,7 +1249,6 @@ export function registerVideoCallEndpoints(app: Hono) {
           c.full_name as customer_name
         FROM video_call_sessions vcs
         JOIN bookings b ON vcs.booking_id = b.id 
-        AND b.status = $2
         LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN services svc ON b.service_id = svc.id
         LEFT JOIN pets p ON b.pet_id = p.id
@@ -1251,7 +1268,7 @@ export function registerVideoCallEndpoints(app: Hono) {
           CASE WHEN vcs.status IN ('active', 'waiting') THEN 0 ELSE 1 END,
           vcs.started_at DESC
         LIMIT 5
-      `, [vendorId, BookingStatus.IN_PROGRESS]);
+      `, [vendorId]);
 
       const sessions = (activeSessions as any).rows || [];
 

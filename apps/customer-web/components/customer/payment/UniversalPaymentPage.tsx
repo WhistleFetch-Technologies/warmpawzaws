@@ -10,11 +10,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
+// 1. Update imports (around line 13)
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 
 // Razorpay type declaration
 declare global {
@@ -283,7 +284,6 @@ export function UniversalPaymentPage({
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
 
-  // Tax state
   const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>({
     subtotal: baseAmount,
     cgst: 0,
@@ -295,7 +295,6 @@ export function UniversalPaymentPage({
     isInterState: false,
   });
 
-  // Platform fees state
   const [platformFees, setPlatformFees] = useState<PlatformFees>({
     platformFee: 0,
     convenienceFee: 0,
@@ -303,11 +302,8 @@ export function UniversalPaymentPage({
     packagingFee: 0,
     total: 0,
   });
-
-  // Policy acceptance state
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [policyAccepted, setPolicyAccepted] = useState(false);
-  // ✅ NEW: Subscription coverage state
   const [subscriptionCovered, setSubscriptionCovered] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
@@ -322,7 +318,7 @@ export function UniversalPaymentPage({
     loadPaymentAndRefundPolicies();
   }, [customerPhone, baseAmount, category, serviceStyle]);
 
-  // ✅ NEW: Check if customer has active subscription that covers this booking
+  // Check if customer has active subscription that covers this booking
   useEffect(() => {
     const checkSubscriptionCoverage = async () => {
       if (type !== 'booking' || !customerId || !vendorId) {
@@ -368,7 +364,7 @@ export function UniversalPaymentPage({
     }
   }, [showAddressSelection, customerPhone]);
 
-  // ✅ CRITICAL: Resolve serviceId early (before payment flow)
+  //  Resolve serviceId early (before payment flow)
   useEffect(() => {
     const resolveServiceId = async () => {
       if (!serviceId || !vendorId || type !== 'booking') {
@@ -491,7 +487,7 @@ export function UniversalPaymentPage({
     resolveServiceId();
   }, [serviceId, vendorId, type]);
 
-  // ✅ FIX: Pre-load Razorpay script on component mount so it's ready when user clicks payment
+  //  Pre-load Razorpay script on component mount so it's ready when user clicks payment
   useEffect(() => {
     if (typeof window !== 'undefined' && !window.Razorpay) {
       console.log('🔄 [RAZORPAY] Pre-loading Razorpay script on component mount...');
@@ -503,6 +499,85 @@ export function UniversalPaymentPage({
       console.log('✅ [RAZORPAY] Razorpay script already loaded');
     }
   }, []); // Only run once on mount
+
+  //sse to fallback from the payment page if th evendor cancelled the call
+  // In UniversalPaymentPage.tsx
+
+
+
+  // 2. Add SSE listener useEffect (add after the subscription check useEffect, around line 363)
+  useEffect(() => {
+    // Only listen for vendor cancellation if this is an instant tele booking with a bookingId
+    if (!bookingId || flowType !== 'tele-queue-accepted' || type !== 'booking') {
+      return;
+    }
+
+    const apiBase = getApiBaseUrl();
+    const sseUrl = `${apiBase}/customer/tele/instant-stream/${bookingId}`;
+
+    console.log('[UniversalPaymentPage] 🔌 Setting up SSE to monitor vendor cancellation');
+
+    const eventSource = new EventSource(sseUrl);
+
+    // Listen for ended event (vendor cancels after accepting)
+    eventSource.addEventListener('ended', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[UniversalPaymentPage] ❌ Booking ended/cancelled:', data);
+
+        // Show error toast
+        toast.error(data.message || 'This consultation has been cancelled. Please try another vet.');
+
+        // Close SSE connection
+        eventSource.close();
+
+        // ✅ CRITICAL: Immediately rollback to previous page
+        onBack();
+      } catch (e) {
+        console.error('[UniversalPaymentPage] Failed to parse ended event:', e);
+        // Still rollback even if parsing fails
+        eventSource.close();
+        onBack();
+      }
+    });
+
+    // Listen for vendor_rejected event (vendor cancels)
+    eventSource.addEventListener('vendor_rejected', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[UniversalPaymentPage] ❌ Vendor rejected/cancelled:', data);
+
+        toast.error(data.message || 'Vendor has cancelled this consultation. Please try another vet.');
+
+        eventSource.close();
+        onBack();
+      } catch (e) {
+        console.error('[UniversalPaymentPage] Failed to parse vendor_rejected event:', e);
+        eventSource.close();
+        onBack();
+      }
+    });
+
+    // Listen for connection event (for debugging)
+    eventSource.addEventListener('connection', (event: MessageEvent) => {
+      console.log('[UniversalPaymentPage] 🔌 SSE connection established');
+    });
+
+    eventSource.onerror = (error) => {
+      console.warn('[UniversalPaymentPage] SSE error:', error);
+      // Don't close on error - let it reconnect
+      // Only close if connection is actually closed
+      if (eventSource.readyState === EventSource.CLOSED) {
+        console.log('[UniversalPaymentPage] SSE connection closed');
+      }
+    };
+
+    return () => {
+      console.log('[UniversalPaymentPage] 🧹 Cleaning up SSE connection');
+      eventSource.close();
+    };
+  }, [bookingId, flowType, type, onBack]);
+
 
   const loadRazorpayScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {

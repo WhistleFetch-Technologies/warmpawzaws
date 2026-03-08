@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -20,6 +21,7 @@ export function AppointmentDetailsView({
   onReschedule,
   onCancel
 }: AppointmentDetailsViewProps) {
+  const router = useRouter();
   const [appointment, setAppointment] = useState<any>(null);
   const [vendor, setVendor] = useState<any>(null);
   const [staff, setStaff] = useState<any>(null);
@@ -294,11 +296,14 @@ export function AppointmentDetailsView({
             {appointment.serviceStyle === 'tele' && (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
               <Button
                 onClick={() => {
-                  const params = new URLSearchParams();
-                  params.set('bookingId', appointmentId);
-                  if (customerId) params.set('customerId', customerId);
-                  const qs = params.toString();
-                  window.location.href = `/video${qs ? `?${qs}` : ''}`;
+                  // ✅ FIX: Use router.push with path format for CloudFront compatibility
+                  const queryParams = new URLSearchParams();
+                  if (customerId) {
+                    queryParams.set('customerId', customerId);
+                  }
+                  const queryString = queryParams.toString();
+                  const videoUrl = `/video/${appointmentId}${queryString ? `?${queryString}` : ''}`;
+                  router.push(videoUrl);
                 }}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white"
               >

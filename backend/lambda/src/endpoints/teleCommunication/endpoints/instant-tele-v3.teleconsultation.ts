@@ -27,8 +27,54 @@ import { instantTeleRequestSchema } from 'src/zodContracts/teleCommunication.con
 import type { z } from 'zod';
 import { BookingStatus, BookingPaymentStatus, PaymentTransactionStatus, InstantTeleEventType } from 'src/endpoints/constants';
 import { processInstantTeleRejectionRefund } from 'src/utils/payments/refund-service';
+
 // Timeout for vendor to respond (seconds)
 const VENDOR_RESPONSE_TIMEOUT_SECONDS = 60 * 60;
+
+/**
+ * Helper function to determine allowed CORS origin for SSE requests
+ * Matches the logic from handler/index.ts to ensure consistency
+ */
+const getAllowedCorsOrigin = (origin: string | null | undefined): string => {
+  // Get allowed origins from environment variable
+  const allowedOriginsEnv = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Default origins for local development
+  const defaultOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:3002',
+    'http://localhost:3003',
+  ];
+
+  const allowedOrigins = allowedOriginsEnv.length > 0 ? allowedOriginsEnv : defaultOrigins;
+  const defaultOrigin = allowedOrigins[0] || '*';
+
+  if (!origin) {
+    return defaultOrigin;
+  }
+
+  // Normalize for comparison
+  const normalizedOrigin = origin.toLowerCase();
+  const normalizedAllowed = allowedOrigins.map(o => o.toLowerCase());
+
+  // Check exact match
+  if (normalizedAllowed.includes(normalizedOrigin)) {
+    return origin;
+  }
+
+  // Allow any CloudFront origin (for flexibility in dev/prod)
+  if (normalizedOrigin.includes('cloudfront.net')) {
+    return origin;
+  }
+
+  // Allow localhost for development
+  if (normalizedOrigin.includes('localhost')) {
+    return origin;
+  }
+
+  return defaultOrigin;
+};
 
 export function registerInstantTeleV3Endpoints(app: Hono) {
 
@@ -528,9 +574,9 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         try {
           await query(
             `UPDATE video_call_sessions 
-             SET status = 'cancelled', updated_at = NOW()
+             SET status = $2, updated_at = NOW()
              WHERE booking_id = $1 AND status = 'waiting'`,
-            [bookingId]
+            [bookingId, BookingStatus.CANCELLED]
           );
         } catch (e) {
           console.warn('[instant-v3] Failed to update video_call_sessions:', e);
@@ -611,10 +657,21 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
     const bookingId = c.req.param('bookingId');
     if (!bookingId) return c.json({ error: 'Booking ID is required' }, 400);
 
+    // Get origin from request headers
+    const origin = c.req.header('origin') || c.req.header('Origin') || '';
+    const allowedOrigin = getAllowedCorsOrigin(origin);
+
+    // Set SSE-specific headers
     c.header('Content-Type', 'text/event-stream');
     c.header('Cache-Control', 'no-cache');
     c.header('Connection', 'keep-alive');
     c.header('X-Accel-Buffering', 'no');
+
+    // Set CORS headers for SSE (critical for CloudFront deployments)
+    c.header('Access-Control-Allow-Origin', allowedOrigin);
+    c.header('Access-Control-Allow-Credentials', 'true');
+    c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Cache-Control');
 
     return streamSSE(c, async (stream) => {
       let isActive = true;
@@ -837,22 +894,24 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
               setTimeout(() => cleanup(), 5000);
             }
 
-            // Expired or cancelled
-            if ([BookingStatus.EXPIRED, BookingStatus.CANCELLED].includes(booking.status)) {
-              await stream.writeSSE({
-                data: JSON.stringify({
-                  type: InstantTeleEventType.ENDED,
-                  reason: booking.status,
-                  message: booking.status === 'expired'
-                    ? 'Booking expired. Please try again.'
-                    : 'Booking was cancelled.',
-                  bookingId,
-                  timestamp: new Date().toISOString(),
-                }),
-                event: InstantTeleEventType.ENDED,
-              });
-              cleanup();
-            }
+
+          }
+
+          // Expired or cancelled
+          if ([BookingStatus.EXPIRED, BookingStatus.CANCELLED].includes(booking.status)) {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: InstantTeleEventType.ENDED,
+                reason: booking.status,
+                message: booking.status === 'expired'
+                  ? 'Booking expired. Please try again.'
+                  : 'Booking was cancelled.',
+                bookingId,
+                timestamp: new Date().toISOString(),
+              }),
+              event: InstantTeleEventType.ENDED,
+            });
+            cleanup();
           }
         } catch (err: any) {
           console.error('[instant-v3] SSE poll error:', err);
