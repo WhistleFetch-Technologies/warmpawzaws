@@ -204,7 +204,7 @@ export function ServiceCatalogTab() {
   if (loading) {
     return <div className="p-0 text-center text-gray-500">Loading services...</div>;
   }
-
+console.log('services------------------------>', services);
   return (
     <div className="bg-white p-6 rounded-lg">
       <div className="flex items-center justify-between mb-6 bg-white pb-4 border-b border-gray-300">

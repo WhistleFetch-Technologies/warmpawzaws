@@ -11,7 +11,7 @@
  */
 
 import { query, select, insert, update } from '../database/rds-connection';
-import { getSecretJson } from './secrets-manager';
+import { getSecretJson } from './aws/secrets-manager';
 
 // ============================================================================
 // TYPES

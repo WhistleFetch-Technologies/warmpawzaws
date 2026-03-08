@@ -1410,7 +1410,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }, 400);
       }
 
-      const { validateBankAccountStrict } = await import('../../razorpay');
+      const { validateBankAccountStrict } = await import('../../razorpay/endpoints/razorpay.razorpay');
       const result = await validateBankAccountStrict(accountNumber, ifscCode, accountHolderName);
 
       if (result.error) {

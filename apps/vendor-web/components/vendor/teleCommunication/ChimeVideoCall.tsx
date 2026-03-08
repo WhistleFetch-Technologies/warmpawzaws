@@ -37,6 +37,8 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { AttendeeStatus, CallStatus, ChatDataMessage, ChatMessage, ChimeAttendeeData, ChimeMeetingData, ChimeVideoCallProps, TypingDataMessage } from './constants/interface';
 import { CALL_ENDED_TOPIC, CHAT_TOPIC, MESSAGE_LIFETIME_MS, TYPING_TOPIC } from './constants';
+import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
+import { TeleTracker } from './TeleTracker';
 
 
 
@@ -125,9 +127,10 @@ export function ChimeVideoCall({
   const chimeSDKRef = useRef<any>(null);
   const myAttendeeIdRef = useRef<string | null>(null);
   const disconnectingRef = useRef(false);
+  const disconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   {/* Remote audio blocked*/ }
   const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
-
+  const [vendorId, setVendorId] = useState<string | null>(null);
 
 
   //---------------------------helper functions------------------------------//
@@ -174,6 +177,11 @@ export function ChimeVideoCall({
 
   {/* Cleanup*/ }
   const cleanup = () => {
+
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
     if (callTimerRef.current) {
       clearInterval(callTimerRef.current);
     }
@@ -556,26 +564,39 @@ export function ChimeVideoCall({
 
     // Attendee presence - Chime SDK 3.x expects single callback (attendeeId, present), not object
     const attendeePresenceCallback = (attendeeId: string, present: boolean) => {
-      // Ignore content attendees (screen share) and ourselves
       if (attendeeId.includes('#content') || attendeeId === myAttendeeIdRef.current) return;
 
       if (present) {
         console.log('Attendee joined:', attendeeId);
-        addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} joined the call`);
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current);
+          disconnectTimerRef.current = null;
+        }
+        addChatMessage('system', 'System', `${customerName} joined the call`);
+        setAttendeeStatus(prev => ({
+          ...prev,
+          customerJoined: true,
+        }));
       } else {
         console.log('Attendee left:', attendeeId);
         setAttendeeStatus(prev => ({
           ...prev,
-          customerJoined: participantType === 'vendor' ? false : prev.customerJoined,
-          vendorJoined: participantType === 'customer' ? false : prev.vendorJoined,
+          customerJoined: false,
         }));
-        addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} left the call`);
-        // Other participant left - disconnect us too
-        if (!disconnectingRef.current) {
-          disconnectingRef.current = true;
-          endedByOtherRef.current = true;
-          setEndedByOther(true);
-          endCall(false);
+        addChatMessage('system', 'System', `${customerName} left the call`);
+
+        if (!disconnectingRef.current && !disconnectTimerRef.current) {
+          addChatMessage('system', 'System', 'Waiting for customer to rejoin...');
+
+          disconnectTimerRef.current = setTimeout(() => {
+            if (!disconnectingRef.current) {
+              disconnectingRef.current = true;
+              endedByOtherRef.current = true;
+              setEndedByOther(true);
+              endCall(false);
+            }
+            disconnectTimerRef.current = null;
+          }, 60000);
         }
       }
     };
@@ -1223,7 +1244,30 @@ export function ChimeVideoCall({
       setUnreadCount(0);
     }
   }, [showChat]);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedVendorId =
+        localStorage.getItem('vendorId') ||
+        localStorage.getItem('vendor_id') ||
+        sessionStorage.getItem('vendorId') ||
+        sessionStorage.getItem('vendor_id') ||
+        null;
+      if (storedVendorId) {
+        setVendorId(storedVendorId);
+      }
+    }
+  }, []);
+  
+  //--------------------------------created-hooks----------------------------------//
 
+  const {
+    activeSessions: activeVideoCalls,
+    hasActiveCall: hasActiveVideoCall,
+    joinCall: joinVideoCall,
+  } = useActiveVideoCallForVendor(vendorId, {
+    enabled: !!vendorId,
+    pollingIntervalMs: 10000,
+  });
 
 
 
@@ -1421,7 +1465,7 @@ export function ChimeVideoCall({
     );
   }
 
-    // Active call
+  // Active call
   return (
     <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl relative">
       {/* Header */}
@@ -1724,7 +1768,24 @@ export function ChimeVideoCall({
           </div>
         </div>
       )}
-
+      {hasActiveVideoCall && (
+        <TeleTracker
+          hasActiveCall={hasActiveVideoCall}
+          activeVideoCalls={activeVideoCalls.map(session => ({
+            sessionId: session.sessionId,
+            bookingId: session.bookingId,
+            customerName: session.customerName || 'Customer',
+            serviceName: session.serviceName,
+            petName: session.petName,
+          }))}
+          joinCall={(call) => {
+            const session = activeVideoCalls.find(s => s.bookingId === call.bookingId);
+            if (session) {
+              joinVideoCall(session);
+            }
+          }}
+        />
+      )}
       {/* Settings Panel */}
       {showSettings && (
         <div className="absolute inset-0 z-50 bg-slate-900/80 backdrop-blur flex items-center justify-center p-4">

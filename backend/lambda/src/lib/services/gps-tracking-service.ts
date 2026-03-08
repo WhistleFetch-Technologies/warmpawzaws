@@ -16,7 +16,7 @@
  */
 
 import { query, insert, update, select } from '../../database/rds-connection';
-import { sendVendorOnWay, sendEventNotification } from './push-notification-service';
+import { sendVendorOnWay, sendEventNotification } from '../../aws/aws-sns-notification-service';
 
 // ============================================================================
 // CONFIGURATION
@@ -36,7 +36,7 @@ async function getGoogleMapsApiKey(): Promise<string> {
     return '';
   }
   try {
-    const { getSecret, getSecretJson } = await import('../../utils/secrets-manager');
+    const { getSecret, getSecretJson } = await import('../../utils/aws/secrets-manager');
     const json = await getSecretJson('google-maps');
     const jsonKey = json?.apiKey || json?.api_key || json?.key;
     if (jsonKey) {

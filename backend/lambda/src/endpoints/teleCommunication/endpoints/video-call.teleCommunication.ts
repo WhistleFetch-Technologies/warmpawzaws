@@ -19,15 +19,15 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update } from '../../../database/rds-connection';
-import { ChimeSDKMeetingsClient, CreateMeetingCommand, CreateAttendeeCommand, GetMeetingCommand } from '@aws-sdk/client-chime-sdk-meetings';
+import { ChimeSDKMeetingsClient, CreateMeetingCommand, CreateAttendeeCommand, GetMeetingCommand, ListAttendeesCommand } from '@aws-sdk/client-chime-sdk-meetings';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { randomUUID } from 'crypto';
 import { ensureVideoCallSessionsTable } from '../repository/repository.telecommunication';
 import { getMediaRegion, isWithinVideoCallWindow, vidcorId, calculateVendorEarnings } from '../constants/helpers';
-import { isTeleServices, UserType } from 'src/endpoints/constants';
-import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../AWS chime/awsChimefunction.telecomunication';
-import { pushNotificationService } from '../../../lib/services/push-notification-service';
+import { BookingStatus, isTeleServices, UserType } from 'src/endpoints/constants';
+import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../../../aws/aws-Chime-service';
+import { pushNotificationService } from '../../../aws/aws-sns-notification-service';
 
 
 
@@ -154,7 +154,7 @@ class CreateMeetingHandler extends BaseHandler {
             await withChimeRetry(
               () => chimeClient.send(new GetMeetingCommand({ MeetingId: activeSession.meeting_id })),
               { correlationId: cid }
-            )
+            ) as { Meeting?: any }
           ).Meeting;
         } catch (getMeetingErr: any) {
           vidlog('create-meeting', 'existing-meeting-expired', {
@@ -331,7 +331,7 @@ class JoinMeetingHandler extends BaseHandler {
     const cid = vidcorId();
     vidlog('join', 'start', { bookingId, participantId: userId, participantType: userType }, cid);
 
-    // ✅ Set vendor unavailable for instant tele when they join a call
+    //  Set vendor unavailable for instant tele when they join a call
     let vendorIdForCleanup: string | null = null;
     const ensureVendorUnavailable = async (vendorId: string, reason: string = 'error-recovery') => {
       try {
@@ -368,6 +368,14 @@ class JoinMeetingHandler extends BaseHandler {
       if (bookings.length === 0) {
         return this.error('Booking not found', 404);
       }
+
+      //update the booking status to in_progress
+      const bookingUpdate = await update('bookings', { id: bookingId }, { status: BookingStatus.IN_PROGRESS });
+      if (!bookingUpdate) {
+        return this.error('Failed to update booking status', 500);
+      }
+      vidlog('join', 'booking-status-updated', { bookingId, status: BookingStatus.IN_PROGRESS }, cid);
+
       const booking = bookings[0] as any;
       const windowCheck = isWithinVideoCallWindow(booking);
       if (!windowCheck.allowed) {
@@ -470,7 +478,7 @@ class JoinMeetingHandler extends BaseHandler {
             await withChimeRetry(
               () => chimeClient.send(new GetMeetingCommand({ MeetingId: raceActiveSession.meeting_id })),
               { correlationId: cid }
-            )
+            ) as { Meeting?: any }
           ).Meeting;
           if (!meetingInfo?.MediaPlacement) {
             return this.error('Meeting data invalid', 500);
@@ -597,7 +605,7 @@ class JoinMeetingHandler extends BaseHandler {
                 })
               ),
             { correlationId: cid }
-          )
+          ) as { Meeting?: any }
         ).Meeting;
       } catch (getMeetingError: any) {
         // Meeting expired or deleted in Chime – create a new meeting and let user join
@@ -730,9 +738,7 @@ class JoinMeetingHandler extends BaseHandler {
   }
 }
 
-/**
- * GET /video-call/:bookingId/attendees - Return who has joined (for waiting room UI)
- */
+
 class GetAttendeesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const bookingId = context.event.pathParameters?.bookingId;
@@ -780,7 +786,6 @@ class GetAttendeesHandler extends BaseHandler {
 
 class EndMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-console.log('context-----------------------------dddddddddddddddddddd.');
     // Get booking ID from path parameters
     const bookingId = context.event.pathParameters?.bookingId;
     if (!bookingId) {
@@ -815,6 +820,8 @@ console.log('context-----------------------------dddddddddddddddddddd.');
 
       // Update booking with video call end info
       await update('bookings', { id: bookingId }, {
+        status: BookingStatus.COMPLETED,
+        completed_at: endedAt.toISOString(),
         video_call_ended_at: endedAt.toISOString(),
         video_call_duration: duration,
       });
@@ -831,7 +838,7 @@ console.log('context-----------------------------dddddddddddddddddddd.');
 
         if (bookingResult.rows.length > 0) {
           const booking = bookingResult.rows[0] as any;
-
+          console.log('[END-MEETING] Booking', booking);
           // Check if this is an instant-tele booking using the new field
           if (booking.is_instant_tele && booking.vendor_id) {
 
@@ -845,20 +852,20 @@ console.log('context-----------------------------dddddddddddddddddddd.');
                LIMIT 1`,
               [booking.vendor_id]
             );
-            console.log('tierResult', tierResult);
+
+            console.log('[END-MEETING] Vendor tier result', tierResult);
             const commissionRate = tierResult.rows?.[0]?.commission_rate;
             const finalCommissionRate = (commissionRate != null && !isNaN(Number(commissionRate)))
               ? Number(commissionRate)
               : 15;
 
-            // Calculate vendor earnings using helper function
+            // Calculate vendor earnings
             const totalAmount = parseFloat(booking.total_amount || '0');
             const { commissionAmount, vendorAmount } = calculateVendorEarnings(
               finalCommissionRate,
               totalAmount
             );
-            console.log('commissionAmount', commissionAmount);  
-            console.log('vendorAmount', vendorAmount);
+
             // Check if vendor_earnings record already exists for this booking
             const existingEarnings = await query(
               `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
@@ -932,6 +939,38 @@ console.log('context-----------------------------dddddddddddddddddddd.');
 }
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Check if vendor is actually present in Chime meeting using Chime API
+ * This verifies actual attendance, not just database records
+ */
+async function isVendorInChimeMeeting(meetingId: string, vendorAttendeeId: string | null): Promise<boolean> {
+  if (!meetingId || !vendorAttendeeId) {
+    return false;
+  }
+
+  try {
+    const chimeClient = new ChimeSDKMeetingsClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+    });
+
+    const attendeesResponse = await chimeClient.send(
+      new ListAttendeesCommand({
+        MeetingId: meetingId,
+      })
+    );
+
+    const attendees = attendeesResponse.Attendees || [];
+    return attendees.some((attendee: any) => attendee.AttendeeId === vendorAttendeeId);
+  } catch (chimeError: any) {
+    console.warn(`[isVendorInChimeMeeting] Failed to check Chime attendees for meeting ${meetingId}:`, chimeError?.message);
+    return false;
+  }
+}
+
+// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -1001,7 +1040,7 @@ export function registerVideoCallEndpoints(app: Hono) {
         }
       }
       try {
-        const { pushNotificationService } = await import('../../../lib/services/push-notification-service');
+        const { pushNotificationService } = await import('../../../aws/aws-sns-notification-service');
         await pushNotificationService.sendEventNotification({
           eventType: 'tele_call_incoming',
           recipientId: targetId,
@@ -1067,6 +1106,185 @@ export function registerVideoCallEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+
+  app.get('/video-call/customer/:customerId/active', async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      if (!customerId) {
+        return c.json({ error: 'customerId is required' }, 400);
+      }
+
+
+      const activeSessions = await query(`
+        SELECT 
+          vcs.id as session_id,
+          vcs.booking_id,
+          vcs.meeting_id,
+          vcs.status,
+          vcs.started_at,
+          vcs.customer_attendee_id,
+          vcs.vendor_attendee_id,
+          vcs.customer_join_token,
+          vcs.vendor_join_token,
+          b.customer_id,
+          b.vendor_id,
+          b.service_type,
+          b.booking_date,
+          b.booking_time,
+          b.status as booking_status,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          v.owner_name as vendor_owner_name,
+          svc.name as service_name,
+          p.name as pet_name,
+          c.phone as customer_phone,
+          c.full_name as customer_name
+        FROM video_call_sessions vcs
+        JOIN bookings b ON vcs.booking_id = b.id
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        LEFT JOIN services svc ON b.service_id = svc.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN customers c ON b.customer_id = c.id
+        WHERE b.customer_id = $1
+          AND (
+            -- Active or waiting sessions
+            (vcs.status IN ('active', 'waiting') AND b.status != 'completed')
+            OR
+            -- Recently ended sessions (within last 15 minutes) - allows rejoin after page refresh
+            (vcs.status = 'completed' 
+             AND vcs.ended_at IS NOT NULL 
+             AND vcs.ended_at > (NOW() - INTERVAL '15 minutes')
+             AND b.status != 'completed')
+          )
+        ORDER BY 
+          CASE WHEN vcs.status IN ('active', 'waiting') THEN 0 ELSE 1 END,
+          vcs.started_at DESC
+        LIMIT 5
+      `, [customerId]);
+
+
+      const sessions = (activeSessions as any).rows || [];
+
+      return c.json({
+        success: true,
+        sessions: sessions.map((s: any) => ({
+          sessionId: s.session_id,
+          bookingId: s.booking_id,
+          meetingId: s.meeting_id,
+          customerId: s.customer_id,
+          vendorId: s.vendor_id,
+          customerPhone: s.customer_phone,
+          status: s.status,
+          startedAt: s.started_at,
+          vendorName: s.vendor_name || s.vendor_owner_name || 'Service Provider',
+          vendorPhone: s.vendor_phone,
+          serviceName: s.service_name || 'Tele Consultation',
+          petName: s.pet_name,
+          customerName: s.customer_name,
+          bookingDate: s.booking_date,
+          bookingTime: s.booking_time,
+          bookingStatus: s.booking_status,
+          hasExistingAttendee: !!(s.customer_attendee_id && s.customer_join_token),
+          meetingExists: !!s.meeting_id,
+        })),
+        hasActiveCall: sessions.length > 0,
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching active video calls:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  })
+
+  app.get('/video-call/vendor/:vendorId/active', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId) {
+        return c.json({ error: 'vendorId is required' }, 400);
+      }
+
+      const activeSessions = await query(`
+        SELECT 
+          vcs.id as session_id,
+          vcs.booking_id,
+          vcs.meeting_id,
+          vcs.status,
+          vcs.started_at,
+          vcs.customer_attendee_id,
+          vcs.vendor_attendee_id,
+          vcs.customer_join_token,
+          vcs.vendor_join_token,
+          b.customer_id,
+          b.vendor_id,
+          b.service_type,
+          b.booking_date,
+          b.booking_time,
+          b.status as booking_status,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          v.owner_name as vendor_owner_name,
+          svc.name as service_name,
+          p.name as pet_name,
+          c.phone as customer_phone,
+          c.full_name as customer_name
+        FROM video_call_sessions vcs
+        JOIN bookings b ON vcs.booking_id = b.id 
+        AND b.status = $2
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        LEFT JOIN services svc ON b.service_id = svc.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN customers c ON b.customer_id = c.id
+        WHERE b.vendor_id = $1
+          AND (
+            -- Active or waiting sessions
+            (vcs.status IN ('active', 'waiting') AND b.status != 'completed')
+            OR
+            -- Recently ended sessions (within last 15 minutes) - allows rejoin after page refresh
+            (vcs.status = 'completed' 
+             AND vcs.ended_at IS NOT NULL 
+             AND vcs.ended_at > (NOW() - INTERVAL '15 minutes')
+             AND b.status != 'completed')
+          )
+        ORDER BY 
+          CASE WHEN vcs.status IN ('active', 'waiting') THEN 0 ELSE 1 END,
+          vcs.started_at DESC
+        LIMIT 5
+      `, [vendorId, BookingStatus.IN_PROGRESS]);
+
+      const sessions = (activeSessions as any).rows || [];
+
+      return c.json({
+        success: true,
+        sessions: sessions.map((s: any) => ({
+          sessionId: s.session_id,
+          bookingId: s.booking_id,
+          meetingId: s.meeting_id,
+          customerId: s.customer_id,
+          vendorId: s.vendor_id,
+          customerPhone: s.customer_phone,
+          status: s.status,
+          startedAt: s.started_at,
+          vendorName: s.vendor_name || s.vendor_owner_name || 'Service Provider',
+          vendorPhone: s.vendor_phone,
+          serviceName: s.service_name || 'Tele Consultation',
+          petName: s.pet_name,
+          customerName: s.customer_name,
+          bookingDate: s.booking_date,
+          bookingTime: s.booking_time,
+          bookingStatus: s.booking_status,
+          hasExistingAttendee: !!(s.vendor_attendee_id && s.vendor_join_token),
+          meetingExists: !!s.meeting_id,
+          vendorJoined: !!(s.vendor_attendee_id && s.vendor_join_token),
+          customerJoined: !!(s.customer_attendee_id && s.customer_join_token),
+        })),
+        hasActiveCall: sessions.length > 0,
+      });
+    } catch (error: any) {
+      console.error('Error fetching active video calls for vendor:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
   });
 }
 

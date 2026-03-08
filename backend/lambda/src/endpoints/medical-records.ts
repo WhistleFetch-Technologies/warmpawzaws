@@ -558,7 +558,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
       // Send notification to customer
       try {
-        const { sendEventNotification } = await import('../lib/services/push-notification-service');
+        const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
         
         // Get pet name
         const pets = await select('pets', { id: petId });
@@ -652,7 +652,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
       // Notify customer
       try {
-        const { sendEventNotification } = await import('../lib/services/push-notification-service');
+        const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
         
         const pets = await select('pets', { id: petId });
         const petName = pets[0]?.name || 'your pet';
@@ -683,7 +683,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
             const prescribingVendorId = originalBooking.vendor_id;
             const prescribingStaffId = originalBooking.staff_id;
 
-            const { sendEventNotification } = await import('../lib/services/push-notification-service');
+            const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
             
             const pets = await select('pets', { id: petId });
             const petName = pets[0]?.name || 'patient';

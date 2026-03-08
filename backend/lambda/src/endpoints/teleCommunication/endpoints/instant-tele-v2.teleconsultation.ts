@@ -16,9 +16,10 @@
 import { Hono } from 'hono';
 import { createHmac } from 'crypto';
 import { query, insert, update, select } from '../../../database/rds-connection';
-import { getRazorpayConfig } from '../../../utils/razorpay-client';
+import { getRazorpayConfig } from '../../../utils/payments/razorpay-client';
 import { VET_ROLE_NAMES } from '../../customer/constants';
-import { regeneratePresignedUrl } from 'src/endpoints/constants/helperFunctions.constants';
+import { regeneratePresignedUrl } from 'src/endpoints/constants/helper';
+import { BookingStatus } from 'src/endpoints/constants';
 
 
 export function registerInstantTeleV2Endpoints(app: Hono) {
@@ -312,8 +313,8 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
       }
       const booking = bookingResult.rows[0];
 
-      // Idempotent: if booking is already confirmed+paid, return success
-      if (booking.status === 'confirmed' && booking.payment_status === 'paid') {
+      // Idempotent: if booking is already confirmed+paid or completed+paid, return success
+      if ((booking.status === 'confirmed' || booking.status === 'completed') && booking.payment_status === 'paid') {
         const meetRes = await query(`SELECT meeting_id, id FROM video_call_sessions WHERE booking_id = $1 LIMIT 1`, [bookingId]);
         return c.json({
           success: true,
@@ -324,8 +325,16 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
         });
       }
 
-      if (booking.status !== 'pending_payment') {
-        return c.json({ success: false, error: `Booking is in "${booking.status}" status, expected "pending_payment"` }, 400);
+      // Accept v3 bookings: status='confirmed' with payment_status='pending' and is_instant_tele=true
+      const isV3Booking = booking.status === 'confirmed' && booking.payment_status === 'pending' && booking.is_instant_tele === true;
+      // Accept v2 bookings: status='pending_payment'
+      const isV2Booking = booking.status === 'pending_payment';
+
+      if (!isV2Booking && !isV3Booking) {
+        return c.json({
+          success: false,
+          error: `Booking is in "${booking.status}" status with payment_status "${booking.payment_status}". Expected "pending_payment" status or "confirmed" status with pending payment for instant tele bookings.`
+        }, 400);
       }
 
       // 3. Find or create payment record (self-contained — no dependency on verify-payment)
@@ -376,18 +385,16 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
         }
       }
 
-      // 4. Update booking to confirmed + paid
-      // ✅ FIX: update(table, FILTERS, DATA) — filters first, then data
+      // 4. Update booking to confirmed/completed + paid
+
       await update('bookings', { id: bookingId }, {
-        status: 'confirmed',
+        status: BookingStatus.CONFIRMED,
         payment_status: 'paid',
         updated_at: new Date(),
-        // Store Razorpay order/payment IDs in notes for reference (append to existing notes)
         notes: booking.notes
           ? `${booking.notes}\n[Razorpay: ${razorpay_order_id}/${razorpay_payment_id}]`
           : `[Razorpay: ${razorpay_order_id}/${razorpay_payment_id}]`,
       });
-      console.log(`[confirm-payment] ✅ Booking ${bookingId} updated to confirmed/paid`);
 
       // 5. Get meeting ID
       const meetingResult = await query(`SELECT meeting_id, id FROM video_call_sessions WHERE booking_id = $1 LIMIT 1`, [bookingId]);

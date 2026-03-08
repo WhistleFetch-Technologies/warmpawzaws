@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ChimeVideoCall } from '@/components/customer/booking/ChimeVideoCall';
+import { ChimeVideoCall } from '@/components/teleCommunication/ChimeVideoCall';
 
 interface VideoPageClientProps {
   bookingId?: string;
@@ -68,6 +68,11 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     void loadBookingData();
   }, [bookingId]);
 
+  /**
+   * Loads booking data from the API.
+   * Also extracts customerId from booking data as a fallback if localStorage is empty.
+   * This handles cases where localStorage is cleared on deployed environments after refresh.
+   */
   const loadBookingData = async () => {
     if (!bookingId) {
       setLoading(false);
@@ -77,12 +82,41 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
       setLoading(true);
       setError(null);
       
-      // Load booking details to get vendor name and service info
+      // Load booking details to get vendor name, service info, and customer ID
       const response = await apiClient.get<any>(`/customer/bookings/${bookingId}`);
       const booking = response.booking || response;
       
       if (booking) {
         setBookingData(booking);
+        
+        // Extract customerId from booking data as fallback for deployed environments
+        // Check if we already have participantId from localStorage/query params
+        // If not, extract it from booking data to ensure we can join the call
+        setParticipantId((currentParticipantId) => {
+          // If we already have a participantId, keep it
+          if (currentParticipantId) {
+            return currentParticipantId;
+          }
+          
+          // Try customer_id first (UUID)
+          if (booking.customer_id) {
+            localStorage.setItem('customerId', booking.customer_id);
+            console.log('[VideoPageClient] Extracted customerId from booking data');
+            return booking.customer_id;
+          }
+          
+          // Fallback to customer_phone if customer_id not available
+          if (booking.customer_phone) {
+            const phone = booking.customer_phone;
+            localStorage.setItem('customerPhone', phone);
+            localStorage.setItem('phone', phone);
+            console.log('[VideoPageClient] Extracted customerPhone from booking data');
+            return phone;
+          }
+          
+          // No customer info found in booking
+          return currentParticipantId;
+        });
       } else {
         setError('Booking not found');
       }
@@ -141,8 +175,8 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         serviceName={bookingData?.serviceName || 'Tele Consultation'}
         onEndCall={(duration) => {
           console.log('Call ended, duration:', duration);
-          // Optionally navigate back or show completion screen
-          router.push(`/bookings/${bookingId}`);
+          // Navigate back to homepage after call ends
+          router.push('/');
         }}
       />
     );

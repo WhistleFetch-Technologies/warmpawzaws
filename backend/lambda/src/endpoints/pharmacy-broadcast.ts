@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
-import { sendPharmacyBroadcast } from '../lib/services/push-notification-service';
+import { sendPharmacyBroadcast } from '../aws/aws-sns-notification-service';
 
 // ============================================================================
 // TYPES

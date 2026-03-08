@@ -236,15 +236,89 @@ class VerifyOtpHandler extends BaseHandler {
       return this.error('Phone and OTP are required', 400);
     }
 
-    // Check UAT mode - ONLY check UAT_MODE env variable
+    // ============================================================================
+    // PHONE NUMBER NORMALIZATION
+    // ============================================================================
+    // Normalize phone number for consistent comparison and database lookups
+    // Handles various formats: +91 9999999999, 919999999999, 9999999999, etc.
+    const normalizePhoneNumber = (phoneNumber: string): string => {
+      // Remove all non-digit characters
+      const phoneDigits = phoneNumber.replace(/\D/g, '');
+      
+      // Handle different phone number lengths:
+      // - If > 10 digits: take last 10 (removes country code)
+      // - If 9 digits: pad with leading 0
+      // - If 10 digits: use as-is
+      if (phoneDigits.length > 10) {
+        return phoneDigits.slice(-10);
+      } else if (phoneDigits.length === 9) {
+        return '0' + phoneDigits;
+      } else {
+        return phoneDigits;
+      }
+    };
+
+    const normalizedPhone = normalizePhoneNumber(phone);
+
+    // ============================================================================
+    // OTP VERIFICATION LOGIC
+    // ============================================================================
+    // Priority order:
+    // 1. Test User Bypass (works in PRODUCTION - highest priority)
+    // 2. UAT Mode Bypass (only works when UAT_MODE=true)
+    // 3. Normal OTP Verification (production flow)
+    
     const UAT_MODE = process.env.UAT_MODE === 'true';
+    const TEST_USER_PHONE = process.env.TEST_USER_PHONE || '';
+    const TEST_USER_OTP = process.env.TEST_USER_OTP || '';
+    
+    // Check if this is the test user (works in PRODUCTION)
+    // Only ONE specific phone number with ONE specific OTP will bypass verification
+    const normalizedTestPhone = TEST_USER_PHONE ? normalizePhoneNumber(TEST_USER_PHONE) : '';
+    const isTestUser = TEST_USER_PHONE && 
+                       TEST_USER_OTP && 
+                       normalizedPhone === normalizedTestPhone && 
+                       otp === TEST_USER_OTP;
     
     let isValid = false;
-    if (UAT_MODE && otp === '123456') {
-      // In UAT mode, accept 123456 without checking database
-      console.log(`[AUTH] UAT MODE: Accepting fixed OTP 123456 for ${phone}`);
+
+    // ============================================================================
+    // TEST USER BYPASS (PRODUCTION MODE)
+    // ============================================================================
+    // This allows ONE specific test phone number with ONE specific OTP to bypass
+    // OTP verification in production. This is useful for testing without SMS.
+    // Security: Only works for the exact phone + OTP combination from env variables.
+    if (isTestUser) {
+      console.log(`[AUTH] 🧪 TEST USER: Bypassing OTP verification for test phone ${normalizedPhone} with OTP ${otp}`);
       isValid = true;
-      // Try to mark any existing OTP as used to clean up
+      
+      // Cleanup: Mark any existing OTP records as used (non-blocking)
+      try {
+        const records = await select('otp_tokens', {
+          phone: normalizedPhone,
+          is_used: false,
+        });
+        if (records.length > 0) {
+          await query(
+            'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+            [records[0].id]
+          );
+          console.log(`[AUTH] 🧪 TEST USER: Marked existing OTP record as used`);
+        }
+      } catch (e) {
+        console.warn('[AUTH] 🧪 TEST USER: Could not mark existing OTP as used:', e);
+      }
+    }
+    // ============================================================================
+    // UAT MODE BYPASS (DEVELOPMENT/TESTING ONLY)
+    // ============================================================================
+    // In UAT mode, accept OTP '123456' for any phone number
+    // This only works when UAT_MODE=true (disabled in production)
+    else if (UAT_MODE && otp === '123456') {
+      console.log(`[AUTH] 🔧 UAT MODE: Accepting fixed OTP 123456 for ${phone}`);
+      isValid = true;
+      
+      // Cleanup: Mark any existing OTP records as used (non-blocking)
       try {
         const records = await select('otp_tokens', {
           phone,
@@ -257,27 +331,25 @@ class VerifyOtpHandler extends BaseHandler {
           );
         }
       } catch (e) {
-        console.warn('[AUTH] Could not mark existing OTP as used:', e);
+        console.warn('[AUTH] 🔧 UAT MODE: Could not mark existing OTP as used:', e);
       }
-    } else {
-      // Normal verification
+    }
+    // ============================================================================
+    // NORMAL OTP VERIFICATION (PRODUCTION FLOW)
+    // ============================================================================
+    // For all other cases, verify OTP against database
+    // This is the standard production flow for regular users
+    else {
       isValid = await verifyOtp(phone, otp);
     }
 
+    // ============================================================================
+    // VALIDATION RESULT
+    // ============================================================================
+    // If OTP verification failed, return error immediately
     if (!isValid) {
       return this.error('Invalid or expired OTP', 401);
     }
-
-    // ✅ FIX: Normalize phone number (remove non-digits, handle country codes)
-    // Phone numbers in database are stored as digits only (10 digits for India)
-    const phoneDigits = phone.replace(/\D/g, ''); // Remove all non-digits
-    // If phone has country code (11+ digits), take last 10 digits
-    // If phone is 9 digits, pad with leading 0 to make it 10 digits (handles cases like "985342940" -> "0985342940")
-    let normalizedPhone = phoneDigits.length > 10 
-      ? phoneDigits.slice(-10)  // Take last 10 digits if longer
-      : phoneDigits.length === 9 
-        ? '0' + phoneDigits      // Pad with 0 if 9 digits
-        : phoneDigits;            // Use as-is if 10 digits
     
     console.log(`[AUTH] Normalized phone: ${phone} -> ${normalizedPhone}`);
 

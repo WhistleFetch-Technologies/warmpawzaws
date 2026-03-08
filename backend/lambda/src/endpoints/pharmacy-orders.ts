@@ -21,7 +21,7 @@ import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules, getRuleNumberArray } from '../lib/rule-engine';
 import { prescriptionOCRService } from '../lib/services/prescription-ocr-service';
 import { websocketService } from '../lib/services/websocket-service';
-import { sendEventNotification } from '../lib/services/push-notification-service';
+import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { autoAssignDeliveryPartner } from '../endpoints/delivery-partner-automation';
 
 // Haversine formula to calculate distance between two points
@@ -1381,7 +1381,7 @@ async function broadcastToPharmacies(orderId: string, customerLat: number, custo
 
           // ✅ FIX GAP PH-1: Send push notification to pharmacy
           try {
-            const { pushNotificationService } = await import('../lib/services/push-notification-service');
+            const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
             
             // Get customer name for notification
             const customers = await select('customers', { id: await getOrderCustomerId(orderId) });
@@ -1546,7 +1546,7 @@ async function sendOrderStatusNotification(
       pharmacyName = pharmacies[0]?.business_name || 'Pharmacy';
     }
 
-    const { pushNotificationService } = await import('../lib/services/push-notification-service');
+    const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
 
     const statusNotifications: Record<string, { eventType: any; title: string; body: string }> = {
       'accepted': {
@@ -1925,7 +1925,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
 
         // Notify pharmacy about cancellation
         try {
-          const { sendEventNotification } = await import('../lib/services/push-notification-service');
+          const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
           await sendEventNotification({
             userId: order.pharmacy_id,
             userType: 'vendor',
@@ -1954,7 +1954,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
 
       // Notify pharmacy that customer approved
       try {
-        const { sendEventNotification } = await import('../lib/services/push-notification-service');
+        const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
         await sendEventNotification({
           userId: order.pharmacy_id,
           userType: 'vendor',

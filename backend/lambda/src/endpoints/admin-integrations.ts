@@ -20,10 +20,10 @@ import { Hono } from 'hono';
 import { select, upsert, query, insert, update } from '../database/rds-connection';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
-import { getSecret, getSecretJson, putSecret } from '../utils/secrets-manager';
+import { getSecret, getSecretJson, putSecret } from '../utils/aws/secrets-manager';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { validateBankAccountStrict } from './razorpay';
+import { validateBankAccountStrict } from './razorpay/endpoints/razorpay.razorpay';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**

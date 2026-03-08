@@ -20,7 +20,7 @@
 import { ScheduledEvent, Context, APIGatewayProxyResult } from 'aws-lambda';
 import { query, update, insert, select } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
-import { sendPharmacyBroadcast } from '../lib/services/push-notification-service';
+import { sendPharmacyBroadcast } from '../aws/aws-sns-notification-service';
 
 // ============================================================================
 // CONFIGURATION

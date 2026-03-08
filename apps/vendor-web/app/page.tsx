@@ -7,7 +7,7 @@ import { useEffect, useState, useRef } from 'react';
 import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
 
 const VendorApp = nextDynamic(
-  () => import('@/components/vendor/VendorApp').then((m) => ({ default: m.VendorApp })),
+  () => import('@/components/vendor/landingPage/VendorApp').then((m) => ({ default: m.VendorApp })),
   { ssr: false }
 );
 

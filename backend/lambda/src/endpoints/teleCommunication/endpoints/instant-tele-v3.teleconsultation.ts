@@ -22,9 +22,13 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { query, insert, update, select } from '../../../database/rds-connection';
-
+import { validateBody } from 'src/middleware/validation-middleware';
+import { instantTeleRequestSchema } from 'src/zodContracts/teleCommunication.contract';
+import type { z } from 'zod';
+import { BookingStatus, BookingPaymentStatus, PaymentTransactionStatus, InstantTeleEventType } from 'src/endpoints/constants';
+import { processInstantTeleRejectionRefund } from 'src/utils/payments/refund-service';
 // Timeout for vendor to respond (seconds)
-const VENDOR_RESPONSE_TIMEOUT_SECONDS = 60;
+const VENDOR_RESPONSE_TIMEOUT_SECONDS = 60 * 60;
 
 export function registerInstantTeleV3Endpoints(app: Hono) {
 
@@ -39,14 +43,12 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
    *
    * Body: { customerId, vendorId, petId, serviceId, serviceName, amount }
    */
-  app.post('/customer/tele/instant-request', async (c) => {
+  app.post('/customer/tele/instant-request', validateBody(instantTeleRequestSchema), async (c) => {
     try {
-      const body = await c.req.json();
+      const body = (c as any).get('validatedBody') as z.infer<typeof instantTeleRequestSchema>;
+
       const { customerId, vendorId, petId, serviceId, serviceName, amount } = body;
 
-      if (!customerId || !vendorId || !petId) {
-        return c.json({ success: false, error: 'customerId, vendorId, and petId are required' }, 400);
-      }
 
       // Verify vendor is available for instant tele
       const vendorResult = await query(
@@ -63,11 +65,11 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       }
 
       // Resolve service details if serviceId provided
-      // ✅ CRITICAL: bookings.service_id must reference services.id, not vendor_services.id
+      // bookings.service_id must reference services.id, not vendor_services.id
       // vendor_services.service_id is the FK to services.id
       let resolvedPrice = Number(amount) || 0;
       let resolvedServiceName = serviceName || 'Instant Vet Consultation';
-      let resolvedServiceId: string | null = null; // This will be services.id
+      let resolvedServiceId: string | null = null;
 
       if (serviceId) {
         try {
@@ -83,7 +85,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
           if (svcRes.rows.length > 0 && svcRes.rows[0].service_id) {
             resolvedPrice = Number(svcRes.rows[0].price) || resolvedPrice;
             resolvedServiceName = svcRes.rows[0].service_name || resolvedServiceName;
-            resolvedServiceId = svcRes.rows[0].service_id; // ✅ Use service_id (references services.id)
+            resolvedServiceId = svcRes.rows[0].service_id;
           }
         } catch (e) {
           console.warn('[instant-v3] Service lookup failed:', e);
@@ -103,7 +105,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
             [vendorId]
           );
           if (svcRes.rows.length > 0 && svcRes.rows[0].service_id) {
-            resolvedServiceId = svcRes.rows[0].service_id; // ✅ Use service_id (references services.id)
+            resolvedServiceId = svcRes.rows[0].service_id;
             resolvedPrice = Number(svcRes.rows[0].price) || resolvedPrice;
             resolvedServiceName = svcRes.rows[0].service_name || resolvedServiceName;
           }
@@ -112,7 +114,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         }
       }
 
-      // ✅ If still no service_id found, we cannot create booking (service_id is NOT NULL in bookings)
+      //If still no service_id found, we cannot create booking (service_id is NOT NULL in bookings)
       if (!resolvedServiceId) {
         return c.json({
           success: false,
@@ -134,7 +136,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         ) VALUES (
           $1, $2, NULL, $3, $4,
           'tele', $5, $6,
-          $7, $7, 'pending', 'pending', true, $8,
+          $7, $7, $8, $9, true, $10,
           NOW(), NOW()
         )
         RETURNING *
@@ -146,6 +148,8 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         today,
         timeStr,
         resolvedPrice,
+        BookingStatus.PENDING,
+        BookingPaymentStatus.PENDING,
         `[Instant Tele V3] Service: ${resolvedServiceName}`,
       ]);
 
@@ -170,7 +174,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       } catch (_) { /* ignore */ }
 
       // Send notification to vendor (incoming call)
-      // ✅ Pass data/channels as plain objects — the insert() function handles JSON.stringify + ::jsonb cast
+      //Pass data/channels as plain objects — the insert() function handles JSON.stringify + ::jsonb cast
       try {
         const notifResult = await insert('notifications', {
           recipient_id: vendorId,
@@ -239,7 +243,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       const booking = bookingResult.rows[0];
 
       // Only allow accepting pending bookings & is_instant_tele is true
-      if (booking.status !== 'pending') {
+      if (booking.status !== BookingStatus.PENDING) {
         return c.json({
           success: false,
           error: `Booking is in "${booking.status}" status, expected "pending"`,
@@ -256,7 +260,8 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       // Update booking to pending_payment
       // update(table, filters, data) — filters first, then data
       await update('bookings', { id: bookingId }, {
-        status: 'pending_payment',
+        status: BookingStatus.CONFIRMED,
+        payment_status: BookingPaymentStatus.PENDING,
         updated_at: new Date(),
         notes: booking.notes
           ? `${booking.notes}\n[Vendor accepted at ${new Date().toISOString()}]`
@@ -353,12 +358,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       }
       const booking = bookingResult.rows[0];
 
-      if (booking.status !== 'pending') {
-        return c.json({
-          success: false,
-          error: `Booking is in "${booking.status}" status, expected "pending"`,
-        }, 400);
-      } else if (!booking.is_instant_tele) {
+      if (!booking.is_instant_tele) {
         return c.json({
           success: false,
           error: 'Booking is not an instant tele consultation',
@@ -369,13 +369,14 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       // Update booking to rejected
       // update(table, filters, data) — filters first, then data
       await update('bookings', { id: bookingId }, {
-        status: 'rejected',
+        status: BookingStatus.CANCELLED,
+        payment_status: BookingPaymentStatus.PENDING,
         updated_at: new Date(),
         notes: booking.notes
           ? `${booking.notes}\n[Vendor rejected at ${new Date().toISOString()}]`
           : `[Vendor rejected at ${new Date().toISOString()}]`,
       });
-
+      console.log('booking rejected---------------------------------------------->', bookingId);
       // Notify customer
       try {
         const vendorResult = await select('vendors', { id: booking.vendor_id });
@@ -410,14 +411,201 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
     }
   });
 
-  // ============================================
-  // CUSTOMER: SSE STREAM (status tracking)
-  // ============================================
+  /**
+   * should i enforce panalty on the vendor for cancelling the booking
+   * if yes then how to enforce it
+   * if no then how to handle it
+   * if yes then how to enforce it
+   */
+  app.post('/vendor/tele/instant-cancel/:bookingId', async (c) => {
+    try {
+      const bookingId = c.req.param('bookingId');
+      if (!bookingId) {
+        return c.json({ success: false, error: 'Booking ID is required' }, 400);
+      }
+
+      // Fetch booking
+      const bookingResult = await query(
+        `SELECT * FROM bookings WHERE id = $1 AND is_instant_tele = true`,
+        [bookingId]
+      );
+      if (bookingResult.rows.length === 0) {
+        return c.json({ success: false, error: 'Booking not found' }, 404);
+      }
+      const booking = bookingResult.rows[0];
+      if (booking.status !== BookingStatus.CONFIRMED) {
+        return c.json({ success: false, error: 'Booking is not accepted' }, 400);
+      }
+
+      const vendorId = booking.vendor_id;
+      const vendorResult = await query(
+        `SELECT business_name, owner_name FROM vendors WHERE id = $1`,
+        [vendorId]
+      );
+      const vendorName = vendorResult.rows[0]?.business_name || vendorResult.rows[0]?.owner_name || 'Provider';
+
+      // Handle different cases based on payment status
+      if (booking.payment_status === BookingPaymentStatus.PAID) {
+        // Payment was made - initiate refund
+        try {
+          await processInstantTeleRejectionRefund(
+            bookingId,
+            booking.customer_id,
+            booking.total_amount,
+            vendorName
+          );
+          console.log(`[instant-v3] ✅ Refund processed for cancelled booking: ${bookingId}`);
+        } catch (error: any) {
+          console.error(`[instant-v3] ❌ Error processing refund for cancelled booking:`, error);
+          // Update booking to reflect refund failure
+          try {
+            const paymentResult = await query(
+              `SELECT payment_id FROM bookings WHERE id = $1`,
+              [bookingId]
+            );
+            const paymentId = paymentResult.rows[0]?.payment_id;
+
+            await update('bookings', { id: bookingId }, {
+              payment_status: BookingPaymentStatus.REFUND_FAILED,
+              status: BookingStatus.CANCELLED, // Keep as CANCELLED, not REJECTED
+              updated_at: new Date().toISOString(),
+              notes: booking.notes
+                ? `${booking.notes}\n[Booking cancelled by vendor. Refund failed: ${error.message || 'Unknown error'}]`
+                : `[Booking cancelled by vendor. Refund failed: ${error.message || 'Unknown error'}]`,
+            });
+
+            if (paymentId) {
+              await query(
+                `UPDATE payments 
+                 SET payment_status = $1, 
+                     updated_at = NOW(),
+                     failure_reason = $2
+                 WHERE id = $3`,
+                [PaymentTransactionStatus.REFUND_FAILED, `Refund failed: ${error.message || 'Unknown error'}`, paymentId]
+              );
+            }
+          } catch (updateError: any) {
+            console.error(`[instant-v3] ❌ Error updating booking after refund failure:`, updateError);
+          }
+        }
+
+        // Update video_call_sessions if exists
+        try {
+          await query(
+            `UPDATE video_call_sessions 
+             SET status = 'cancelled', updated_at = NOW()
+             WHERE booking_id = $1`,
+            [bookingId]
+          );
+        } catch (e) {
+          console.warn('[instant-v3] Failed to update video_call_sessions:', e);
+        }
+
+        // Notify customer about cancellation and refund
+        try {
+          await insert('notifications', {
+            recipient_id: booking.customer_id,
+            recipient_type: 'customer',
+            notification_type: 'tele_instant_cancelled',
+            title: 'Consultation Cancelled',
+            message: `${vendorName} has cancelled the consultation. Your payment will be refunded.`,
+            data: {
+              booking_id: bookingId,
+              vendor_id: vendorId,
+              vendor_name: vendorName,
+              action: 'try_another',
+              refund_initiated: true,
+            },
+            channels: { email: false, sms: false, inApp: true, push: true },
+            is_read: false,
+          });
+        } catch (e: any) {
+          console.error('[instant-v3] ❌ Customer cancellation notification failed:', e?.message || e);
+        }
+      } else {
+        // Payment is pending - simpler cancellation
+        // Update video_call_sessions if exists
+        try {
+          await query(
+            `UPDATE video_call_sessions 
+             SET status = 'cancelled', updated_at = NOW()
+             WHERE booking_id = $1 AND status = 'waiting'`,
+            [bookingId]
+          );
+        } catch (e) {
+          console.warn('[instant-v3] Failed to update video_call_sessions:', e);
+        }
+
+        // Make vendor available again
+        try {
+          await update('vendors', { id: vendorId }, {
+            available_for_instant_tele: true,
+            updated_at: new Date().toISOString(),
+          });
+        } catch (e: any) {
+          console.warn('[instant-v3] Failed to set vendor available:', e);
+        }
+
+        // Notify customer
+        try {
+          await insert('notifications', {
+            recipient_id: booking.customer_id,
+            recipient_type: 'customer',
+            notification_type: 'tele_instant_cancelled',
+            title: 'Consultation Cancelled',
+            message: `${vendorName} has cancelled the consultation. Please try another vet.`,
+            data: {
+              booking_id: bookingId,
+              vendor_id: vendorId,
+              vendor_name: vendorName,
+              action: 'try_another',
+            },
+            channels: { email: false, sms: false, inApp: true, push: true },
+            is_read: false,
+          });
+        } catch (e: any) {
+          console.error('[instant-v3] ❌ Customer cancellation notification failed:', e?.message || e);
+        }
+      }
+
+      // Update booking to cancelled (only if not already updated by refund failure)
+      if (booking.payment_status !== BookingPaymentStatus.PAID) {
+        await update('bookings', { id: bookingId }, {
+          status: BookingStatus.CANCELLED,
+          updated_at: new Date().toISOString(),
+          notes: booking.notes
+            ? `${booking.notes}\n[Booking cancelled by vendor at ${new Date().toISOString()}]`
+            : `[Booking cancelled by vendor at ${new Date().toISOString()}]`,
+        });
+      }
+
+      // Make vendor available again (for both cases)
+      try {
+        await update('vendors', { id: vendorId }, {
+          available_for_instant_tele: true,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (e: any) {
+        console.warn('[instant-v3] Failed to set vendor available:', e);
+      }
+
+      return c.json({
+        success: true,
+        bookingId,
+        message: 'Booking cancelled successfully.',
+        refundInitiated: booking.payment_status === BookingPaymentStatus.PAID,
+      });
+    } catch (error: any) {
+      console.error('[instant-v3] instant-cancel error:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
 
   /**
    * GET /customer/tele/instant-stream/:bookingId
    * SSE stream for customer. Polls booking status.
    * Emits: vendor_accepted, vendor_rejected, payment_confirmed, timeout.
+  
    */
   app.get('/customer/tele/instant-stream/:bookingId', async (c) => {
     const bookingId = c.req.param('bookingId');
@@ -458,7 +646,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         if (!isActive) return;
 
         try {
-
           //check if booking  exists
           const result = await query(
             `SELECT b.*, v.business_name, v.owner_name
@@ -477,19 +664,20 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
           }
 
           const booking = result.rows[0];
-          const currentStatus = `${booking.status}:${booking.payment_status}`;
+          const currentStatus = `${booking.status}: ${booking.payment_status}`;
           const vendorName = booking.business_name || booking.owner_name || 'Provider';
 
           // Check timeout (only for pending bookings) if th evendor deos not accept the booking within the timeout period mark it as expiered
           const elapsedSeconds = (Date.now() - startTime) / 1000;
-          if (booking.status === 'pending' && elapsedSeconds > VENDOR_RESPONSE_TIMEOUT_SECONDS) {
+          if (booking.status === BookingStatus.PENDING && elapsedSeconds > VENDOR_RESPONSE_TIMEOUT_SECONDS) {
             try {
               await update('bookings', { id: bookingId }, {
-                status: 'expired',
+                status: BookingStatus.EXPIRED,
                 updated_at: new Date(),
+                payment_status: BookingPaymentStatus.PENDING,
                 notes: booking.notes
-                  ? `${booking.notes}\n[Auto-expired: vendor did not respond within ${VENDOR_RESPONSE_TIMEOUT_SECONDS}s]`
-                  : `[Auto-expired: vendor did not respond within ${VENDOR_RESPONSE_TIMEOUT_SECONDS}s]`,
+                  ? `${booking.notes}\n[Auto - expired: vendor did not respond within ${VENDOR_RESPONSE_TIMEOUT_SECONDS}s]`
+                  : `[Auto - expired: vendor did not respond within ${VENDOR_RESPONSE_TIMEOUT_SECONDS}s]`,
               });
             } catch (e) {
               console.warn('[instant-v3] Auto-expire failed:', e);
@@ -510,42 +698,121 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
 
           // Keep checking the status of the booking and emit the status changes to the customer
           if (currentStatus !== lastStatus) {
-            console.log(`[customer-instant-stream] Status changed: ${lastStatus} -> ${currentStatus} for booking ${bookingId}`);
-            lastStatus = currentStatus;
 
-            // Vendor accepted (booking moved to pending_payment)
-            if (booking.status === 'pending_payment') {
-              console.log(`[customer-instant-stream] ✅ Emitting vendor_accepted for booking ${bookingId}`);
+            // Vendor accepted and payment is pending
+            if (booking.status === BookingStatus.CONFIRMED && booking.payment_status === BookingPaymentStatus.PENDING && booking.is_instant_tele) {
               await stream.writeSSE({
                 data: JSON.stringify({
-                  type: 'vendor_accepted',
+                  type: InstantTeleEventType.VENDOR_ACCEPTED,
                   bookingId,
                   vendorName,
                   totalAmount: booking.total_amount,
                   message: `${vendorName} accepted! Complete payment to start the call.`,
                   timestamp: new Date().toISOString(),
                 }),
-                event: 'vendor_accepted',
+                event: InstantTeleEventType.VENDOR_ACCEPTED,
               });
             }
 
-            // Vendor rejected
-            if (booking.status === 'rejected') {
+            //Vendor rejected and payment is paid we need to refund the payment
+            //     if (booking.status === BookingStatus.CANCELLED && booking.payment_status === BookingPaymentStatus.PAID && booking.is_instant_tele) {
+
+            //       processInstantTeleRejectionRefund(
+            //         bookingId,
+            //         booking.customer_id,
+            //         booking.total_amount,
+            //         vendorName
+            //       ).then((result) => {
+            //         console.log(`[instant - v3] Refund processed: ${result.refundId}`);
+            //       }).catch(async (error: any) => {
+            //         console.error(`[instant - v3] ❌ Error processing refund: `, error);
+            //         try {
+            //           // Get payment_id from booking
+            //           const bookingResult = await query(
+            //             `SELECT payment_id FROM bookings WHERE id = $1`,
+            //             [bookingId]
+            //           );
+
+            //           const paymentId = bookingResult.rows[0]?.payment_id;
+
+            //           // Update booking payment status
+            //           await update('bookings', { id: bookingId }, {
+            //             payment_status: BookingPaymentStatus.REFUND_FAILED,
+            //             status: BookingStatus.REJECTED,
+            //             updated_at: new Date().toISOString(),
+            //             notes: booking.notes
+            //               ? `${booking.notes}\n[Refund failed: ${error.message || 'Unknown error'}]`
+            //               : `[Refund failed: ${error.message || 'Unknown error'}]`,
+            //           });
+
+            //           // Update payments table if payment_id exists
+            //           if (paymentId) {
+            //             await query(
+            //               `UPDATE payments 
+            //                SET payment_status = $1,
+            // updated_at = NOW(),
+            // failure_reason = $2
+            //                WHERE id = $3`,
+            //               [PaymentTransactionStatus.REFUND_FAILED, `Refund failed: ${error.message || 'Unknown error'}`, paymentId]
+            //             );
+            //             console.log(`[instant - v3] Updated payments table for payment ${paymentId}`);
+            //           } else {
+            //             console.warn(`[instant - v3] No payment_id found for booking ${bookingId}`);
+            //           }
+            //         } catch (updateError: any) {
+            //           console.error(`[instant - v3] Error updating booking / payment after refund failure: `, updateError);
+            //         }
+            //       });
+
+            //       await stream.writeSSE({
+            //         data: JSON.stringify({
+            //           type: InstantTeleEventType.CANCELLED_BUT_PAID,
+            //           bookingId,
+            //           vendorName,
+            //           totalAmount: booking.total_amount,
+            //           message: `${vendorName} rejected the call! but the payment is processed.we will refund the payment.`,
+            //           timestamp: new Date().toISOString(),
+            //         }),
+            //         event: InstantTeleEventType.CANCELLED_BUT_PAID,
+            //       });
+            //       setTimeout(() => {
+            //         cleanup();
+            //       }, 3000);
+
+            //     }
+
+            // if (booking.status === BookingStatus.CANCELLED && booking.payment_status === BookingPaymentStatus.PENDING) {
+            //   await stream.writeSSE({
+            //     data: JSON.stringify({
+            //       type: InstantTeleEventType.CANCELLED_BUT_PAID,
+            //       bookingId,
+            //       vendorName,
+            //       totalAmount: booking.total_amount,
+            //       message: `${vendorName} accepted! Complete payment to start the call.`,
+            //     }),
+            //   });
+            // }
+
+
+            // Vendor rejected and payment is pending
+            if (booking.status === BookingStatus.CANCELLED && booking.is_instant_tele && booking.payment_status === BookingPaymentStatus.PENDING) {
               await stream.writeSSE({
                 data: JSON.stringify({
-                  type: 'vendor_rejected',
+                  type: InstantTeleEventType.VENDOR_REJECTED,
                   bookingId,
-                  message: `${vendorName} is currently unavailable. Please try another vet.`,
+                  customer_id: booking.customer_id,
+                  message: `${vendorName} is currently unavailable.Please try another vet.`,
                   timestamp: new Date().toISOString(),
                 }),
-                event: 'vendor_rejected',
+                event: InstantTeleEventType.VENDOR_REJECTED,
               });
               setTimeout(() => cleanup(), 3000);
             }
 
-            // Payment confirmed (booking is confirmed + paid)
-            if (booking.status === 'confirmed' && booking.payment_status === 'paid') {
-              // Get meeting/session info
+
+            // Payment confirmed and payment is paid
+            if (booking.status === BookingStatus.CONFIRMED && booking.payment_status === BookingPaymentStatus.PAID) {
+
               let meetingId: string | null = null;
               try {
                 const sessionRes = await query(
@@ -559,22 +826,22 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
 
               await stream.writeSSE({
                 data: JSON.stringify({
-                  type: 'payment_confirmed',
+                  type: InstantTeleEventType.PAYMENT_CONFIRMED,
                   bookingId,
                   meetingId,
                   message: 'Payment confirmed! Joining video call...',
                   timestamp: new Date().toISOString(),
                 }),
-                event: 'payment_confirmed',
+                event: InstantTeleEventType.PAYMENT_CONFIRMED,
               });
               setTimeout(() => cleanup(), 5000);
             }
 
             // Expired or cancelled
-            if (['expired', 'cancelled'].includes(booking.status)) {
+            if ([BookingStatus.EXPIRED, BookingStatus.CANCELLED].includes(booking.status)) {
               await stream.writeSSE({
                 data: JSON.stringify({
-                  type: 'ended',
+                  type: InstantTeleEventType.ENDED,
                   reason: booking.status,
                   message: booking.status === 'expired'
                     ? 'Booking expired. Please try again.'
@@ -582,7 +849,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
                   bookingId,
                   timestamp: new Date().toISOString(),
                 }),
-                event: 'ended',
+                event: InstantTeleEventType.ENDED,
               });
               cleanup();
             }
@@ -596,7 +863,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         }
       };
 
-      // ✅ FIX: Run immediate poll on connection (don't wait 2 seconds)
+      // Run immediate poll on connection (don't wait 2 seconds)
       await pollBookingStatus();
 
       // Heartbeat every 30s
@@ -610,7 +877,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         } catch { isActive = false; }
       }, 30000);
 
-      // Poll every 2s (using the helper function to avoid code duplication)
       pollInterval = setInterval(() => {
         pollBookingStatus();
       }, 2000);
@@ -620,14 +886,12 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
     });
   });
 
-  // ============================================
-  // VENDOR: SSE STREAM (payment tracking)
-  // ============================================
 
   /**
    * GET /vendor/tele/instant-stream/:bookingId
    * SSE stream for vendor. After accepting, tracks payment status.
    * Emits: payment_completed when customer pays.
+   * if the vendor cancles the booking we need to refund the payment and do we also have to put the penality on the vendor
    */
   app.get('/vendor/tele/instant-stream/:bookingId', async (c) => {
     const bookingId = c.req.param('bookingId');
@@ -668,11 +932,10 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
 
         try {
           const result = await query(
-            `SELECT b.status, b.payment_status, b.customer_id, b.total_amount
-             FROM bookings b WHERE b.id = $1`,
+            `SELECT b.status, b.payment_status, b.customer_id, b.total_amount, b.is_instant_tele
+             FROM bookings b WHERE b.id = $1 AND b.is_instant_tele = true`,
             [bookingId]
           );
-
           if (result.rows.length === 0) {
             await stream.writeSSE({
               data: JSON.stringify({ type: 'error', message: 'Booking not found' }),
@@ -683,12 +946,10 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
           }
 
           const booking = result.rows[0];
-          const currentStatus = `${booking.status}:${booking.payment_status}`;
+          const currentStatus = `${booking.status}:${booking.payment_status} `;
 
           // Emit if status changed OR if this is the first poll and payment is already completed
-          if (currentStatus !== lastStatus || (lastStatus === '' && booking.status === 'confirmed' && booking.payment_status === 'paid')) {
-            console.log(`[vendor-instant-stream] Status changed: ${lastStatus} -> ${currentStatus} for booking ${bookingId}`);
-            lastStatus = currentStatus;
+          if (currentStatus !== lastStatus || (lastStatus === '' && booking.status === BookingStatus.CONFIRMED && booking.payment_status === BookingPaymentStatus.PAID)) {
 
             // Status update to vendor
             await stream.writeSSE({
@@ -702,8 +963,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
             });
 
             // Payment completed
-            if (booking.status === 'confirmed' && booking.payment_status === 'paid' && booking.is_instant_tele) {
-              console.log(`[vendor-instant-stream]  Emitting payment_completed for booking ${bookingId}`);
+            if (booking.status === BookingStatus.CONFIRMED && booking.payment_status === BookingPaymentStatus.PAID && booking.is_instant_tele) {
               let meetingId: string | null = null;
               try {
                 const sessionRes = await query(
@@ -729,7 +989,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
             }
 
             // Booking cancelled or expired
-            if (['cancelled', 'expired', 'rejected'].includes(booking.status)) {
+            if ([BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.REJECTED].includes(booking.status)) {
               await stream.writeSSE({
                 data: JSON.stringify({
                   type: 'ended',
@@ -747,10 +1007,8 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         }
       };
 
-      // ✅ FIX: Run immediate poll on connection (don't wait 2 seconds)
       await pollBookingStatus();
 
-      // Heartbeat every 30s
       heartbeatInterval = setInterval(async () => {
         if (!isActive) return;
         try {
@@ -770,4 +1028,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       stream.onAbort?.(() => cleanup());
     });
   });
+
+
+
 }

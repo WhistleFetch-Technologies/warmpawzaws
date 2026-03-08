@@ -92,9 +92,9 @@ if (-not $VendorInfo.records -or $VendorInfo.records.Count -eq 0) {
             exit 1
         }
     } else {
-        Write-Host "ERROR: Vendor not found with ID: $VendorId" -ForegroundColor Red
+    Write-Host "ERROR: Vendor not found with ID: $VendorId" -ForegroundColor Red
         Write-Host "Checked both vendors and vendor_identity tables." -ForegroundColor Yellow
-        exit 1
+    exit 1
     }
 }
 
@@ -330,7 +330,7 @@ foreach ($step in $DeletionSteps) {
         if ($step.Optional) {
             Write-Host "  WARNING: $_ (optional step)" -ForegroundColor Yellow
         } else {
-            Write-Host "  ERROR: $_" -ForegroundColor Red
+        Write-Host "  ERROR: $_" -ForegroundColor Red
             $CriticalErrors += "$($step.Name): $_"
         }
     }

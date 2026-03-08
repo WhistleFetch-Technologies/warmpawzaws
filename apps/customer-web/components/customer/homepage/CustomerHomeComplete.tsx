@@ -28,6 +28,7 @@ import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
 import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, serviceBaseOnpincode } from './constants/helpers';
+import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -89,6 +90,10 @@ const TeleCallNotification = dynamic(
   { ssr: false }
 );
 
+const TeleTracker = dynamic(
+  () => import('./TeleTracker').then(mod => ({ default: mod.default })),
+  { ssr: false }
+);
 
 
 export function CustomerHomeComplete({
@@ -261,6 +266,17 @@ export function CustomerHomeComplete({
         });
       }
     },
+  });
+
+
+
+  const {
+    activeSessions: activeVideoCalls,
+    hasActiveCall: hasActiveVideoCall,
+    joinCall: joinVideoCall,
+  } = useActiveVideoCall(customerId, {
+    enabled: !!customerId,
+    pollingIntervalMs: 10000,
   });
 
   // Dynamic categories from admin catalog (fallback to hardcoded list if API fails or returns empty)
@@ -2433,6 +2449,26 @@ export function CustomerHomeComplete({
               onNavigate('order-tracking', { orderId, orderType: activeOrderTracking.orderType });
             } else {
               window.location.href = `/track/${orderId}`;
+            }
+          }}
+        />
+      )}
+
+      {/* ✅ Video Call Tracker - Shows active video call sessions */}
+      {hasActiveVideoCall && (
+        <TeleTracker
+          hasActiveCall={hasActiveVideoCall}
+          activeVideoCalls={activeVideoCalls.map(session => ({
+            sessionId: session.sessionId,
+            bookingId: session.bookingId,
+            vendorName: session.vendorName,
+            serviceName: session.serviceName,
+            petName: session.petName,
+          }))}
+          joinCall={(call) => {
+            const session = activeVideoCalls.find(s => s.bookingId === call.bookingId);
+            if (session) {
+              joinVideoCall(session);
             }
           }}
         />

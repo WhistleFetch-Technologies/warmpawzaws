@@ -17,7 +17,7 @@
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { getDiscoveryRules } from '../lib/rule-engine';
-import { sendRatingRequest, sendEventNotification } from '../lib/services/push-notification-service';
+import { sendRatingRequest, sendEventNotification } from '../aws/aws-sns-notification-service';
 
 export function registerReviewEndpoints(app: Hono) {
 

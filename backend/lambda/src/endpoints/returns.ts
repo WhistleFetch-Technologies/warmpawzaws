@@ -17,7 +17,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, upsert, query } from '../database/rds-connection';
-import { getRazorpayClient } from '../utils/razorpay-client';
+import { getRazorpayClient } from '../utils/payments/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 

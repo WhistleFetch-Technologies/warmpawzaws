@@ -25,6 +25,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
   const [participantId, setParticipantId] = useState<string>('');
   const [waitingForPayment, setWaitingForPayment] = useState(false);
   const [paymentReceived, setPaymentReceived] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
 
 
@@ -50,7 +51,41 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('waitingForPayment') === 'true') {
-        setWaitingForPayment(true);
+        const checkBookingStatus = async () => {
+          try {
+            const vendorId = localStorage.getItem('vendorId') || localStorage.getItem('vendor_id') || '';
+            const url = vendorId ? `/vendor/bookings/${id}/details` : `/bookings/${id}`;
+            const response = await apiClient.get<any>(url);
+            const booking = response.booking || response.data || response;
+            console.log('[VideoPageClient]:', booking);
+            if (booking?.status === 'confirmed' && booking?.
+              paymentStatus
+              === 'paid') {
+              setPaymentReceived(true);
+              setWaitingForPayment(false);
+              const newUrl = new URL(window.location.href);
+              newUrl.searchParams.delete('waitingForPayment');
+              window.history.replaceState({}, '', newUrl.toString());
+            } else if (booking?.status === 'confirmed' && booking?.
+              paymentStatus
+              === 'pending') {
+              setWaitingForPayment(true);
+            } else {
+              console.log('[VideoPageClient] Booking status:', booking, 'Payment status:', booking?.
+                paymentStatus
+              );
+              setWaitingForPayment(false);
+            }
+          } catch (err) {
+            console.warn('[VideoPageClient] Could not verify booking status, defaulting to URL param:', err);
+          }
+
+        }
+        void checkBookingStatus();
+
+      } else {
+        console.log('[VideoPageClient] No waitingForPayment flag found in URL');
+        setWaitingForPayment(false);
       }
     }
   }, [bookingIdProp, params?.bookingId]);
@@ -371,13 +406,36 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           </div>
 
           <button
-            onClick={() => {
-              sseRef.current?.close();
-              window.location.href = '/dashboard';
+            onClick={async () => {
+              if (isCancelling) return;
+
+              setIsCancelling(true);
+              try {
+                // Close SSE connection
+                sseRef.current?.close();
+
+                // Call cancel endpoint
+                const response = await apiClient.post<any>(`/vendor/tele/instant-cancel/${bookingId}`, {});
+
+                if (response.success) {
+                  console.log('[VideoPageClient] ✅ Booking cancelled successfully');
+                  alert(response.message || 'Booking cancelled successfully. Customer will be notified.');
+                  window.location.href = '/dashboard';
+                } else {
+                  console.error('[VideoPageClient] ❌ Failed to cancel booking:', response.error);
+                  alert(response.error || 'Failed to cancel booking. Please try again.');
+                  setIsCancelling(false);
+                }
+              } catch (error: any) {
+                console.error('[VideoPageClient] ❌ Error cancelling booking:', error);
+                alert(error.message || 'An error occurred while cancelling. Please try again.');
+                setIsCancelling(false);
+              }
             }}
-            className="px-6 py-2 text-gray-400 hover:text-white transition text-sm"
+            disabled={isCancelling}
+            className="px-6 py-2 text-gray-400 hover:text-white transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Cancel &amp; return to dashboard
+            {isCancelling ? 'Cancelling...' : 'Cancel & return to dashboard'}
           </button>
         </div>
       </div>
@@ -397,9 +455,49 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         vendorName={bookingData?.vendor_name || bookingData?.vendorName || 'You'}
         customerName={bookingData?.customer_name || bookingData?.customerName || 'Customer'}
         serviceName={bookingData?.service_name || bookingData?.serviceName || 'Tele Consultation'}
-        onEndCall={(duration) => {
-          console.log('[VideoPageClient] Call ended, navigating to dashboard');
-          // Use window.location for reliable navigation in static exports
+        onEndCall={async (duration) => {
+          console.log('[VideoPageClient] Call ended, marking notifications as read');
+
+          // Mark all call notifications for this booking as read when call ends
+          if (bookingId) {
+            try {
+              const vendorId = typeof window !== 'undefined'
+                ? localStorage.getItem('vendorId') || localStorage.getItem('vendor_id') || ''
+                : '';
+
+              if (vendorId) {
+                // Fetch unread call notifications for this booking
+                const notificationsResponse = await apiClient.get<any>(
+                  `/notifications?userId=${vendorId}&userType=vendor&isRead=false`
+                );
+
+                if (notificationsResponse?.success && notificationsResponse?.notifications) {
+                  const callTypes = ['tele_call_incoming', 'tele_customer_waiting', 'tele_instant_incoming'];
+                  const bookingNotifications = notificationsResponse.notifications.filter((n: any) => {
+                    const isCallType = callTypes.includes(n.notification_type || n.type);
+                    const notificationData = typeof n.data === 'string' ? JSON.parse(n.data) : n.data || {};
+                    return isCallType && notificationData.booking_id === bookingId;
+                  });
+
+                  // Mark all related notifications as read
+                  for (const notification of bookingNotifications) {
+                    const notificationId = notification.id || notification.notificationId || notification.notification_id;
+                    if (notificationId) {
+                      await apiClient.put(`/notifications/${notificationId}/read`, {}).catch(() => {
+                        // Silent fail - notification might already be read
+                      });
+                    }
+                  }
+
+                  console.log(`[VideoPageClient] ✅ Marked ${bookingNotifications.length} notification(s) as read`);
+                }
+              }
+            } catch (err) {
+              console.warn('[VideoPageClient] Failed to mark notifications as read on call end:', err);
+            }
+          }
+
+          // Navigate to dashboard
           window.location.href = '/dashboard';
         }}
       />

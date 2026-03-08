@@ -17,7 +17,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
-import { getRazorpayClient } from '../utils/razorpay-client';
+import { getRazorpayClient } from '../utils/payments/razorpay-client';
 import { publishNotification, sendToSQS } from '../utils/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';

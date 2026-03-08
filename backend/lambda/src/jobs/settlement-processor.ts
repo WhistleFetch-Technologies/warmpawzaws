@@ -279,7 +279,7 @@ async function executeSettlement(settlementId: string, settlement: SettlementMes
     });
 
     // Transfer funds via Razorpay Route API
-    const { razorpayRequest } = await import('../utils/razorpay-client');
+    const { razorpayRequest } = await import('../utils/payments/razorpay-client');
     
     // Get payment ID from booking
     const bookings = await select('bookings', { id: settlement.bookingId });

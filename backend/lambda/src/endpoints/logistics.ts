@@ -26,7 +26,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { getSecretJson } from '../utils/secrets-manager';
+import { getSecretJson } from '../utils/aws/secrets-manager';
 
 // ============================================================================
 // API BASE URLS

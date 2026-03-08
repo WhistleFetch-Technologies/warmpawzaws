@@ -311,7 +311,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       }
 
       // Strict verification: call Razorpay verify-bank-account (valid only when name + IFSC + account all verified)
-      const { getRazorpayConfig, getRazorpayAuthHeader } = await import('../utils/razorpay-client');
+      const { getRazorpayConfig, getRazorpayAuthHeader } = await import('../utils/payments/razorpay-client');
       try {
         await getRazorpayConfig();
       } catch {

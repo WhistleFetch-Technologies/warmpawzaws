@@ -47,13 +47,11 @@ export const CreateBookingRequestSchema = z.object({
   idempotencyKey: z.string().uuid('Invalid idempotency key format').optional(),
   couponCode: z.string().optional(),
   promotionId: z.string().uuid('Invalid promotion ID format').optional(),
-  // ✅ NEW: Support for multiple services in a single booking
   selectedServices: z.array(SelectedServiceSchema).optional(),
   serviceName: z.string().optional(),
   customerPhone: z.string().optional(),
   customerName: z.string().optional(),
   petName: z.string().optional(),
-  /** When provided and valid, booking uses package credit: totalAmount=0, payment_status=completed, no payment step */
   packagePurchaseId: z.string().uuid('Invalid package purchase ID format').optional(),
 });
 
@@ -112,7 +110,6 @@ export const BookingSchema = z.object({
   updatedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
   cancelledAt: z.string().datetime().nullable(),
-  // ✅ NEW: Support for multiple services
   selectedServices: z.array(SelectedServiceSchema).nullable().optional(),
   totalDurationMinutes: z.number().nullable().optional(),
 });

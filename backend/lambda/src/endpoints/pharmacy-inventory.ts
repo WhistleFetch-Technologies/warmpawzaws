@@ -15,7 +15,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { sendEventNotification } from '../lib/services/push-notification-service';
+import { sendEventNotification } from '../aws/aws-sns-notification-service';
 
 export function registerPharmacyInventoryEndpoints(app: Hono) {
 

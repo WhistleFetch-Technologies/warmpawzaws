@@ -1,1 +1,0 @@
-{"rawPath":"/auth/verify-otp","requestContext":{"http":{"method":"POST","path":"/auth/verify-otp"}},"body":"{\"phone\":\"1234444444\",\"otp\":\"123456\"}","isBase64Encoded":false,"headers":{"content-type":"application/json"}}

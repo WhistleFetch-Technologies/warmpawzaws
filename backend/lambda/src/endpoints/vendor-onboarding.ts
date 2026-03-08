@@ -997,7 +997,7 @@ class AdminReviewApplicationHandler extends BaseHandler {
 
       // ✅ FIX GAP VO-1, VO-2, GN-1: Send push notification to vendor
       try {
-        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
 
         if (action === 'APPROVE') {
           await pushNotificationService.sendEventNotification({

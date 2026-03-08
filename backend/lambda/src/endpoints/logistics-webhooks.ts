@@ -1102,7 +1102,7 @@ async function createDelhiveryShipment(c: any, params: {
 
   try {
     // Import getSecretJson dynamically to avoid circular deps
-    const { getSecretJson } = await import('../utils/secrets-manager');
+    const { getSecretJson } = await import('../utils/aws/secrets-manager');
     
     // Get Delhivery credentials
     const config = await getSecretJson<{ api_token: string; client_name: string }>('delhivery');

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Check, X, AlertCircle, Info, MapPin, Building2, Radio, Lock, Sparkles,
-  Package, IndianRupee, Clock, FileText, Tag, Users, Navigation
+  Package, IndianRupee, Clock, FileText, Tag, Navigation
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,9 +66,6 @@ export function ServicePublishForm({
     centreLevelPrice: '', // NEW: Centre-specific price
     // PHASE 1.1: Missing Features
     serviceRadius: '', // Service radius in km (for at_home)
-    queueMaxSize: '10', // Max queue size (for tele)
-    queueAvgWaitTime: '15', // Avg wait time in minutes (for tele)
-    queueAutoAccept: false, // Auto-accept queue (for tele)
   });
 
   const [allowedCategories, setAllowedCategories] = useState<ServiceCategory[]>([]);
@@ -272,12 +269,7 @@ export function ServicePublishForm({
         // PHASE 1.1: Missing Features
         serviceRadius: formData.serviceStyle === 'at_home' && formData.serviceRadius 
           ? parseFloat(formData.serviceRadius) 
-          : undefined,
-        queueConfig: formData.serviceStyle === 'tele' ? {
-          max_queue_size: parseInt(formData.queueMaxSize) || 10,
-          avg_wait_time_minutes: parseInt(formData.queueAvgWaitTime) || 15,
-          auto_accept: formData.queueAutoAccept || false
-        } : undefined
+          : undefined
       };
 
       const data = await apiClient.post('/vendor/services/publish', payload) as any;
@@ -502,76 +494,6 @@ export function ServicePublishForm({
                 ✓ You will serve customers within {formData.serviceRadius} km of your location
               </p>
             )}
-          </Card>
-        )}
-
-        {/* PHASE 1.1: Queue Configuration (for tele services) */}
-        {formData.serviceStyle === 'tele' && (
-          <Card className="p-4 bg-purple-50 border-purple-200">
-            <div className="flex items-start gap-3 mb-4">
-              <Users className="w-5 h-5 text-purple-600 mt-0.5" />
-              <div className="flex-1">
-                <Label className="text-purple-900 font-semibold">Queue Configuration</Label>
-                <p className="text-xs text-purple-700 mt-1">
-                  Configure settings for instant tele consultation queue management
-                </p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              {/* Max Queue Size */}
-              <div>
-                <Label className="text-sm text-purple-900">Maximum Queue Size</Label>
-                <p className="text-xs text-purple-600 mb-2">Maximum number of customers allowed in queue at once</p>
-                <Input
-                  type="number"
-                  value={formData.queueMaxSize}
-                  onChange={(e) => setFormData({ ...formData, queueMaxSize: e.target.value })}
-                  placeholder="10"
-                  min="1"
-                  max="50"
-                  className="w-full"
-                />
-              </div>
-
-              {/* Average Wait Time */}
-              <div>
-                <Label className="text-sm text-purple-900">Average Wait Time (minutes)</Label>
-                <p className="text-xs text-purple-600 mb-2">Estimated time per consultation (used for ETA calculation)</p>
-                <Input
-                  type="number"
-                  value={formData.queueAvgWaitTime}
-                  onChange={(e) => setFormData({ ...formData, queueAvgWaitTime: e.target.value })}
-                  placeholder="15"
-                  min="5"
-                  max="120"
-                  className="w-full"
-                />
-              </div>
-
-              {/* Auto Accept */}
-              <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-purple-200">
-                <div className="flex-1">
-                  <Label className="text-sm text-purple-900">Auto-Accept Queue Requests</Label>
-                  <p className="text-xs text-purple-600 mt-1">
-                    Automatically accept customers from queue without manual approval
-                  </p>
-                </div>
-                <Switch
-                  checked={formData.queueAutoAccept}
-                  onCheckedChange={(checked) => setFormData({ ...formData, queueAutoAccept: checked })}
-                />
-              </div>
-
-              {formData.queueMaxSize && formData.queueAvgWaitTime && (
-                <div className="p-3 bg-purple-100 rounded-lg border border-purple-300">
-                  <p className="text-xs text-purple-900 font-medium">Queue Summary:</p>
-                  <p className="text-xs text-purple-700 mt-1">
-                    Max {formData.queueMaxSize} customers • ~{formData.queueAvgWaitTime} min per consultation • 
-                    ETA for last customer: ~{parseInt(formData.queueMaxSize) * parseInt(formData.queueAvgWaitTime)} minutes
-                  </p>
-                </div>
-              )}
-            </div>
           </Card>
         )}
 

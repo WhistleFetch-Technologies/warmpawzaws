@@ -16,7 +16,7 @@
 
 import { ScheduledEvent, Context } from 'aws-lambda';
 import { query, update, select } from '../database/rds-connection';
-import { pushNotificationService, sendVideoCallReminder } from '../lib/services/push-notification-service';
+import { pushNotificationService, sendVideoCallReminder } from '../aws/aws-sns-notification-service';
 
 // ============================================================================
 // CONFIGURATION

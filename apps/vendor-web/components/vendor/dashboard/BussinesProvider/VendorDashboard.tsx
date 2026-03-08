@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
@@ -57,10 +57,11 @@ import {
 
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Badge } from '../../../ui/badge';
-import { VendorNotificationModal } from '../../VendorNotificationModal';
+import { VendorNotificationModal } from '../../modals/VendorNotificationModal';
 import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
 import { formatBookingTime } from '../helpers';
 import { toast } from 'sonner';
+import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
 
 // Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
 const SoloProviderDashboard = lazy(() =>
@@ -90,6 +91,9 @@ const VendorChatConversationsModal = lazy(() =>
 const VendorChatModal = lazy(() =>
   import('../../VendorChatModal').then((m) => ({ default: m.VendorChatModal }))
 );
+const TeleTracker = lazy(() =>
+  import('../../teleCommunication/TeleTracker').then((m) => ({ default: m.TeleTracker }))
+);
 
 export function VendorDashboard({
   vendorId,
@@ -98,7 +102,6 @@ export function VendorDashboard({
   onNavigateToServiceManagement,
   onNavigateToBookingManagement,
   onNavigateToTeleConsultation,
-  onNavigateToTeleQueue,
   onNavigateToScheduleManagement, // ⚠️ DEPRECATED: Routes to Advanced Availability
   onNavigateToAdvancedAvailability, // ✅ STANDARD: Navigate to Advanced Availability Manager
   onNavigateToProfile, // ✅ RENAMED: Navigate to Profile Manager (works for both center and solo)
@@ -204,6 +207,31 @@ export function VendorDashboard({
   // 🔌 CORE: Load dynamic capabilities
   const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || (vendorData as any)?.selected_role_id;
   const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
+
+  // ✅ Video Call Tracking Hook - Polls for active video call sessions
+  const pathname = usePathname();
+  const isOnVideoCallPage = pathname?.includes('/video/');
+  
+  const {
+    activeSessions: activeVideoCalls,
+    hasActiveCall: hasActiveVideoCall,
+    joinCall: joinVideoCall,
+  } = useActiveVideoCallForVendor(vendorId, {
+    enabled: !!vendorId && !isOnVideoCallPage, // ✅ Disable hook when on video call page
+    pollingIntervalMs: 10000, // Poll every 10 seconds
+  });
+
+  // ✅ Filter out current video call if vendor is already on that page
+  const filteredActiveCalls = activeVideoCalls.filter(session => {
+    // Don't show tracker if vendor is already on the video call page for this booking
+    if (isOnVideoCallPage && typeof window !== 'undefined') {
+      const currentBookingId = window.location.pathname.match(/\/video\/([^/?]+)/)?.[1];
+      if (currentBookingId === session.bookingId) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendorType || vendorData?.vendor_type || null;
   const selectedServiceStyles = vendorData?.serviceStyles || vendorData?.selectedServiceStyles || [];
@@ -819,18 +847,6 @@ export function VendorDashboard({
               >
                 <Activity className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Service Management</span>
-              </button>
-            )}
-
-            {/* ✅ Tele Queue Management - For vendors with tele capability */}
-            {!isPharmacy && capabilities.tele && onNavigateToTeleQueue && (
-              <button
-                onClick={onNavigateToTeleQueue}
-                className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center relative"
-              >
-                <Users className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Tele Queue</span>
-                <span className="text-[10px] text-gray-500 mt-1">View waiting customers</span>
               </button>
             )}
 
@@ -1915,6 +1931,28 @@ export function VendorDashboard({
         capabilities={capabilities}
         vendorData={vendorData}
       />
+
+      {/* ✅ Video Call Tracker - Shows active video call sessions */}
+      {hasActiveVideoCall && filteredActiveCalls.length > 0 && (
+        <Suspense fallback={null}>
+          <TeleTracker
+            hasActiveCall={filteredActiveCalls.length > 0}
+            activeVideoCalls={filteredActiveCalls.map(session => ({
+              sessionId: session.sessionId,
+              bookingId: session.bookingId,
+              customerName: session.customerName || 'Customer',
+              serviceName: session.serviceName,
+              petName: session.petName,
+            }))}
+            joinCall={(call) => {
+              const session = filteredActiveCalls.find(s => s.bookingId === call.bookingId);
+              if (session) {
+                joinVideoCall(session);
+              }
+            }}
+          />
+        </Suspense>
+      )}
 
     </div>
   );

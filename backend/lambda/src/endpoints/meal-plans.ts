@@ -18,7 +18,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
-import { getRazorpayConfig, razorpayRequest } from '../utils/razorpay-client';
+import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-client';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
 
@@ -1321,7 +1321,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       // Notify customer
       const orders = await select('meal_orders', { id: orderId });
       if (orders.length > 0) {
-        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
         await pushNotificationService.sendEventNotification({
           eventType: 'meal_order_eta_updated',
           recipientId: orders[0].customer_id,

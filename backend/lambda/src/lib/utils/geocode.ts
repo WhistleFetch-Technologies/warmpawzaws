@@ -17,7 +17,7 @@ async function getApiKey(): Promise<string> {
     return _apiKeyCache;
   }
   try {
-    const { getSecret, getSecretJson } = await import('../../utils/secrets-manager');
+    const { getSecret, getSecretJson } = await import('../../utils/aws/secrets-manager');
     const secretJson = await getSecretJson<{ apiKey?: string; api_key?: string; key?: string }>('google-maps');
     if (secretJson?.apiKey) _apiKeyCache = secretJson.apiKey;
     if (!(_apiKeyCache) && secretJson?.api_key) _apiKeyCache = secretJson.api_key;

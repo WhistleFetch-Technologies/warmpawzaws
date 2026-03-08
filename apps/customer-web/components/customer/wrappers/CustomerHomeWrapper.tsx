@@ -124,7 +124,7 @@ import { NutritionistServicesLanding } from '../nutrition/NutritionistServicesLa
 // ✅ Dynamically import video call component to avoid SSR issues with Chime SDK
 // Use default import since ChimeVideoCall is exported as default
 const ChimeVideoCall = dynamic(
-  () => import('../booking/ChimeVideoCall'),
+  () => import('../../teleCommunication/ChimeVideoCall'),
   { 
     ssr: false, 
     loading: () => <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div></div> 

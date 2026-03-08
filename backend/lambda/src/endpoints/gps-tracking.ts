@@ -426,7 +426,7 @@ export function registerGpsTrackingEndpoints(app: Hono) {
 
       // Send notification to customer
       try {
-        const { sendEventNotification } = await import('../lib/services/push-notification-service');
+        const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
         await sendEventNotification({
           eventType: 'vendor_arrived',
           recipientId: sessions[0].customer_id,

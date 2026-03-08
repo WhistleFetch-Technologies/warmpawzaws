@@ -38,11 +38,11 @@ import { registerOnboardingFormManagementEndpoints } from '../endpoints/onboardi
 import { registerVendorDashboardEndpoints } from '../endpoints/vendor-dashboard';
 import { registerCustomerEndpoints } from '../endpoints/customer';
 import { registerGpsTrackingEndpoints } from '../endpoints/gps-tracking';
-import { registerAdminEndpoints } from '../endpoints/admin';
+import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.controller';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
 import { registerPackageSessionEndpoints } from '../endpoints/package-sessions';
 import { registerSearchEndpoints } from '../endpoints/search';
-import { registerRazorpayEndpoints } from '../endpoints/razorpay';
+import { registerRazorpayEndpoints } from '../endpoints/razorpay/endpoints/razorpay.razorpay';
 import { registerWalletEndpoints } from '../endpoints/wallet';
 import { registerWalletDiagnosticEndpoints } from '../endpoints/wallet-diagnostic';
 import { registerSpecializedServicesEndpoints } from '../endpoints/specialized-services';
@@ -51,7 +51,7 @@ import { registerAdminGovernanceEndpoints } from '../endpoints/admin-governance'
 // Staff decommissioned: solo providers discovered via discover-services for at_home/tele
 // import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerReviewEndpoints } from '../endpoints/reviews';
-import { registerNotificationEndpoints } from '../endpoints/notifications';
+import { registerNotificationEndpoints } from '../endpoints/notification/endpoitns/notifications.notification';
 import { registerFollowupRescheduleEndpoints } from '../endpoints/followup-reschedule';
 import { registerBehaviorJournalEndpoints } from '../endpoints/behavior-journal';
 import { registerVendorScheduleEndpoints } from '../endpoints/vendor-schedule';
@@ -69,7 +69,7 @@ import { registerVendorPricingEndpoints } from '../endpoints/vendor-pricing';
 import { registerVendorProductsEndpoints } from '../endpoints/vendor-products';
 import { registerVendorOrdersEndpoints } from '../endpoints/vendor-orders';
 import { registerServiceCatalogEndpoints } from '../endpoints/service-catalog';
-import { registerSettlementEndpoints } from '../endpoints/settlements';
+import { registerSettlementEndpoints } from '../endpoints/settlement&payouts/endpoints/settlements';
 import { registerRegionEndpoints } from '../endpoints/regions';
 import { registerChatEndpoints } from '../endpoints/chat';
 import { registerFileUploadEndpoints } from '../endpoints/file-upload';
@@ -115,7 +115,7 @@ import { registerBookingDetailsEnhancedEndpoints } from '../endpoints/booking-de
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminGovernanceEnhancedEndpoints } from '../endpoints/admin-governance-enhanced';
-import { registerAdminAdvancedEndpoints } from '../endpoints/admin-advanced';
+import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/admin-advanced';
 import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
 import { registerVendorSetupEndpoints } from '../endpoints/vendor-setup';
 import { registerConfigPoliciesEndpoints } from '../endpoints/config-policies';

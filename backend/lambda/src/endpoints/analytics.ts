@@ -21,7 +21,7 @@ import { select, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { resolveVendorId } from '../utils/vendor-resolve';
-import { requireAdminAuth } from './admin';
+import { requireAdminAuth } from './admin/endpoints/admin.controller';
 
 export function registerAnalyticsEndpoints(app: Hono) {
   /**

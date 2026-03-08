@@ -16,6 +16,8 @@ import {
 	Label,
 	Button,
 	Switch,
+	IconEyeOff,
+	IconEye,
 } from "@warmpawz/ui";
 
 interface PaymentSettings {
@@ -72,6 +74,7 @@ export function PaymentGatewayIntegration() {
 		commission_percentage: 15,
 		settlement_period_days: 3,
 	});
+	const [showRazorpayKeySecret, setShowRazorpayKeySecret] = useState(false);
 
 	const [loading, setLoading] = useState(false);
 	const [saveStatus, setSaveStatus] = useState<
@@ -90,32 +93,66 @@ export function PaymentGatewayIntegration() {
 			setLoading(true);
 			const res = await apiClient.get<any>("/admin/settings/payment-gateway");
 
-			if (res.success && res.settings) {
+			if (res.success && res.settings && Array.isArray(res.settings)) {
+				// Transform array response to object structure
+				const settingsMap: any = {};
+
+				res.settings.forEach((setting: any) => {
+					const name = setting.integration_name;
+					const config = setting.integration_config || {};
+
+					if (name === 'razorpay') {
+						settingsMap.razorpay = {
+							enabled: setting.is_active || false,
+							key_id: config.keyId || "",
+							key_secret: config.keySecret || "",
+							webhook_secret: config.webhookSecret || "",
+							auto_capture: config.auto_capture !== false,
+							test_mode: config.test_mode || false,
+						};
+					} else if (name === 'stripe') {
+						settingsMap.stripe = {
+							enabled: setting.is_active || false,
+							publishable_key: config.publishableKey || config.publishable_key || "",
+							secret_key: config.secretKey || config.secret_key || "",
+							webhook_secret: config.webhookSecret || config.webhook_secret || "",
+							test_mode: config.test_mode || false,
+						};
+					} else if (name === 'paytm') {
+						settingsMap.paytm = {
+							enabled: setting.is_active || false,
+							merchant_id: config.merchantId || config.merchant_id || "",
+							merchant_key: config.merchantKey || config.merchant_key || "",
+							test_mode: config.test_mode || false,
+						};
+					}
+				});
+
 				const loadedSettings = {
-					razorpay: {
-						enabled: res.settings.razorpay?.enabled || false,
-						key_id: res.settings.razorpay?.key_id || "",
-						key_secret: res.settings.razorpay?.key_secret || "",
-						webhook_secret: res.settings.razorpay?.webhook_secret || "",
-						auto_capture: res.settings.razorpay?.auto_capture !== false,
-						test_mode: res.settings.razorpay?.test_mode || false,
+					razorpay: settingsMap.razorpay || {
+						enabled: false,
+						key_id: "",
+						key_secret: "",
+						webhook_secret: "",
+						auto_capture: true,
+						test_mode: true,
 					},
-					stripe: {
-						enabled: res.settings.stripe?.enabled || false,
-						publishable_key: res.settings.stripe?.publishable_key || "",
-						secret_key: res.settings.stripe?.secret_key || "",
-						webhook_secret: res.settings.stripe?.webhook_secret || "",
-						test_mode: res.settings.stripe?.test_mode || false,
+					stripe: settingsMap.stripe || {
+						enabled: false,
+						publishable_key: "",
+						secret_key: "",
+						webhook_secret: "",
+						test_mode: true,
 					},
-					paytm: {
-						enabled: res.settings.paytm?.enabled || false,
-						merchant_id: res.settings.paytm?.merchant_id || "",
-						merchant_key: res.settings.paytm?.merchant_key || "",
-						test_mode: res.settings.paytm?.test_mode || false,
+					paytm: settingsMap.paytm || {
+						enabled: false,
+						merchant_id: "",
+						merchant_key: "",
+						test_mode: true,
 					},
-					default_gateway: res.settings.default_gateway || "razorpay",
-					commission_percentage: res.settings.commission_percentage || 15,
-					settlement_period_days: res.settings.settlement_period_days || 3,
+					default_gateway: settingsMap.default_gateway || "razorpay",
+					commission_percentage: settingsMap.commission_percentage || 15,
+					settlement_period_days: settingsMap.settlement_period_days || 3,
 				};
 				setSettings(loadedSettings);
 			}
@@ -216,48 +253,51 @@ export function PaymentGatewayIntegration() {
 					<div className="flex gap-4 px-6">
 						<button
 							onClick={() => setActiveTab("razorpay")}
-							className={`py-4 px-4 border-b-2 transition-colors ${
-								activeTab === "razorpay"
-									? "border-blue-600 text-blue-600 font-medium"
-									: "border-transparent text-gray-600 hover:text-gray-900"
-							}`}
+							className={`py-4 px-4 border-b-2 transition-colors ${activeTab === "razorpay"
+								? "border-blue-600 text-blue-600 font-medium"
+								: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
 						>
 							Razorpay
-							{settings.razorpay.enabled && (
+							{settings.razorpay.enabled ? (
 								<span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
 									Active
 								</span>
-							)}
+							) : (<span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+								Not implemented
+							</span>)}
 						</button>
 						<button
 							onClick={() => setActiveTab("stripe")}
-							className={`py-4 px-4 border-b-2 transition-colors ${
-								activeTab === "stripe"
-									? "border-blue-600 text-blue-600 font-medium"
-									: "border-transparent text-gray-600 hover:text-gray-900"
-							}`}
+							className={`py-4 px-4 border-b-2 transition-colors ${activeTab === "stripe"
+								? "border-blue-600 text-blue-600 font-medium"
+								: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
 						>
 							Stripe
-							{settings.stripe.enabled && (
+							{settings.stripe.enabled ? (
 								<span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
 									Active
 								</span>
-							)}
+							) : (<span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+								Not implemented
+							</span>)}
 						</button>
 						<button
 							onClick={() => setActiveTab("paytm")}
-							className={`py-4 px-4 border-b-2 transition-colors ${
-								activeTab === "paytm"
-									? "border-blue-600 text-blue-600 font-medium"
-									: "border-transparent text-gray-600 hover:text-gray-900"
-							}`}
+							className={`py-4 px-4 border-b-2 transition-colors ${activeTab === "paytm"
+								? "border-blue-600 text-blue-600 font-medium"
+								: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
 						>
 							Paytm
-							{settings.paytm.enabled && (
+							{settings.paytm.enabled ? (
 								<span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
 									Active
 								</span>
-							)}
+							) : (<span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+								Not implemented
+							</span>)}
 						</button>
 					</div>
 				</div>
@@ -313,15 +353,28 @@ export function PaymentGatewayIntegration() {
 								<Label className="block text-sm font-medium text-gray-700 mb-2">
 									Key Secret
 								</Label>
-								<Input
-									type="password"
-									value={settings.razorpay.key_secret}
-									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-										updateRazorpay("key_secret", e.target.value)
-									}
-									placeholder="Your Razorpay key secret"
-									className="w-full"
-								/>
+								<div className="relative">
+									<Input
+										type={showRazorpayKeySecret ? "text" : "password"}
+										value={settings.razorpay.key_secret}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+											updateRazorpay("key_secret", e.target.value)
+										}
+										placeholder="Your Razorpay key secret"
+										className="w-full pr-10"
+									/>
+									<button
+										type="button"
+										onClick={() => setShowRazorpayKeySecret(!showRazorpayKeySecret)}
+										className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 focus:outline-none"
+									>
+										{showRazorpayKeySecret ? (
+											<IconEyeOff className="w-4 h-4" />
+										) : (
+											<IconEye className="w-4 h-4" />
+										)}
+									</button>
+								</div>
 							</div>
 
 							<div>
@@ -540,47 +593,6 @@ export function PaymentGatewayIntegration() {
 					</select>
 				</div>
 
-				<div className="grid grid-cols-2 gap-4">
-					<div>
-						<Label className="block text-sm font-medium text-gray-700 mb-2">
-							Platform Commission (%)
-						</Label>
-						<Input
-							type="number"
-							value={settings.commission_percentage}
-							onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-								setSettings({
-									...settings,
-									commission_percentage: parseFloat(e.target.value),
-								})
-							}
-							min="0"
-							max="100"
-							step="0.5"
-							className="w-full"
-						/>
-					</div>
-
-					<div>
-						<Label className="block text-sm font-medium text-gray-700 mb-2" title="When the gateway credits the platform; vendor payout period is in Finance → Tier Management">
-							Gateway settlement cycle (days)
-						</Label>
-						<Input
-							type="number"
-							value={settings.settlement_period_days}
-							onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-								setSettings({
-									...settings,
-									settlement_period_days: parseInt(e.target.value),
-								})
-							}
-							min="0"
-							max="30"
-							className="w-full"
-						/>
-						<p className="text-xs text-gray-500 mt-1">When the gateway credits the platform. Vendor payout period is in Finance → Tier Management.</p>
-					</div>
-				</div>
 			</div>
 
 			{/* Save Button */}

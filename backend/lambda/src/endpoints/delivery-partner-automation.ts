@@ -15,7 +15,7 @@
 import { Hono } from 'hono';
 import { query, select, update } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
-import { sendEventNotification } from '../lib/services/push-notification-service';
+import { sendEventNotification } from '../aws/aws-sns-notification-service';
 
 // Haversine formula for distance calculation
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {

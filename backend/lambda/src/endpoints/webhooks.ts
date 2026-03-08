@@ -33,7 +33,7 @@ class ListWebhooksHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const webhooks = await select('webhooks', {});
-      
+
       // Don't expose secrets in list view
       const sanitized = webhooks.map(w => ({
         ...w,
@@ -64,7 +64,7 @@ class CreateWebhookHandler extends BaseHandler {
     }
 
     try {
-      const webhook = await insert('webhooks', {
+      const webhook: any = await insert('webhooks', {
         id: randomUUID(),
         name,
         url,
@@ -79,7 +79,7 @@ class CreateWebhookHandler extends BaseHandler {
         updated_at: new Date().toISOString(),
       });
 
-      return this.success({ 
+      return this.success({
         webhook: {
           ...webhook,
           events: JSON.parse(webhook.events || '[]'),
@@ -102,7 +102,7 @@ class GetWebhookHandler extends BaseHandler {
 
     try {
       const webhooks = await select('webhooks', { id: webhookId });
-      
+
       if (webhooks.length === 0) {
         return this.error('Webhook not found', 404);
       }
@@ -182,7 +182,7 @@ class DeleteWebhookHandler extends BaseHandler {
     try {
       // Delete webhook events first
       await query('DELETE FROM webhook_events WHERE webhook_id = $1', [webhookId]);
-      
+
       // Delete webhook
       await query('DELETE FROM webhooks WHERE id = $1', [webhookId]);
 
@@ -203,7 +203,7 @@ class TestWebhookHandler extends BaseHandler {
 
     try {
       const webhooks = await select('webhooks', { id: webhookId });
-      
+
       if (webhooks.length === 0) {
         return this.error('Webhook not found', 404);
       }
@@ -270,7 +270,7 @@ class GetWebhookEventsHandler extends BaseHandler {
  */
 async function deliverWebhook(webhook: any, payload: any): Promise<void> {
   const events = JSON.parse(webhook.events || '[]');
-  
+
   // Check if webhook is subscribed to this event type
   if (!events.includes(payload.event_type) && payload.event_type !== 'webhook.test') {
     return; // Webhook not subscribed to this event
@@ -279,7 +279,7 @@ async function deliverWebhook(webhook: any, payload: any): Promise<void> {
   // Create signature if secret is provided
   const body = JSON.stringify(payload);
   let signature: string | undefined;
-  
+
   if (webhook.secret) {
     signature = crypto
       .createHmac('sha256', webhook.secret)
@@ -318,7 +318,7 @@ async function deliverWebhook(webhook: any, payload: any): Promise<void> {
 
   while (attempts < maxAttempts) {
     attempts++;
-    
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), (webhook.timeout_seconds || 30) * 1000);
@@ -351,7 +351,7 @@ async function deliverWebhook(webhook: any, payload: any): Promise<void> {
       }
     } catch (error: any) {
       lastError = error;
-      
+
       // Wait before retry (exponential backoff)
       if (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
@@ -383,7 +383,7 @@ export async function triggerWebhook(eventType: string, data: any): Promise<void
   try {
     // Get all active webhooks subscribed to this event
     const webhooks = await select('webhooks', { is_active: true });
-    
+
     const payload = {
       event_type: eventType,
       timestamp: new Date().toISOString(),
@@ -396,7 +396,7 @@ export async function triggerWebhook(eventType: string, data: any): Promise<void
         const events = JSON.parse(w.events || '[]');
         return events.includes(eventType);
       })
-      .map(webhook => 
+      .map(webhook =>
         deliverWebhook(webhook, payload).catch(error => {
           console.error(`Failed to deliver webhook ${webhook.id}:`, error);
         })
@@ -414,9 +414,9 @@ export async function triggerWebhook(eventType: string, data: any): Promise<void
 // ============================================================================
 
 export function setupWebhookRoutes(app: Hono) {
-  // Import helper functions from admin.ts
-  const { requireAdminAuth, createApiGatewayEvent, createLambdaContext } = require('./admin');
-  
+  // Import helper functions from admin.controller.ts
+  const { requireAdminAuth, createApiGatewayEvent, createLambdaContext } = require('./admin/endpoints/admin.controller');
+
   // All webhook endpoints require admin authentication
   app.get('/admin/webhooks', async (c) => {
     const authResult = await requireAdminAuth(c);

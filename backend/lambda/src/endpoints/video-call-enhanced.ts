@@ -638,7 +638,7 @@ class NotifyReadyHandler extends BaseHandler {
 
       // ✅ FIX: Send push notification
       try {
-        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
         await pushNotificationService.sendEventNotification({
           eventType: 'tele_call_incoming',
           recipientId: targetId,
@@ -875,7 +875,7 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
 
       // Send notification to the assigned provider
       try {
-        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
         
         // Get customer name
         const customers = await select('customers', { id: customerId });

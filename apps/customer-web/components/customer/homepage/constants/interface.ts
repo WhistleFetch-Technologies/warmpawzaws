@@ -32,3 +32,18 @@ export interface CustomerHomeCompleteProps {
     onOpenCategoryMapper?: () => void;
     hideHeaderFooter?: boolean; // ✅ NEW: Option to hide header/footer when using standardized layout
 }
+
+
+export interface ActiveVideoCall {
+    sessionId: string;
+    bookingId: string;
+    vendorName: string;
+    serviceName: string;
+    petName?: string;
+}
+
+export interface TeleTrackerProps {
+    hasActiveCall: boolean;
+    activeVideoCalls: ActiveVideoCall[];
+    joinCall: (call: ActiveVideoCall) => void;
+}
