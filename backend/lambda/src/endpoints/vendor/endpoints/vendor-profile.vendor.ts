@@ -1775,7 +1775,11 @@ export function registerVendorProfileEndpoints(app: Hono) {
         latitude: vendor.latitude,
         longitude: vendor.longitude,
         description: vendor.description || '',
-        operating_hours: vendor.operating_hours ? (typeof vendor.operating_hours === 'string' ? JSON.parse(vendor.operating_hours) : vendor.operating_hours) : null,
+        operating_hours: (() => {
+          if (!vendor.operating_hours) return null;
+          if (typeof vendor.operating_hours === 'object') return vendor.operating_hours;
+          try { return JSON.parse(vendor.operating_hours); } catch { return null; }
+        })(),
         // Include other vendor fields
         ...vendor,
       };

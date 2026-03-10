@@ -285,6 +285,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const customer = customers[0];
+      const defaultAddr = customer.addresses?.[0] || null;
 
       // Get pets for this customer with error handling
       let pets: any[] = [];
@@ -303,9 +304,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           name: customer.full_name,
           email: customer.email,
           address: customer.address,
-          pincode: customer.addresses[0].pincode,
-          city: customer.addresses[0].city,
-          state: customer.addresses[0].state,
+          pincode: defaultAddr?.pincode || customer.pincode || null,
+          city: defaultAddr?.city || customer.city || null,
+          state: defaultAddr?.state || customer.state || null,
           photo: customer.profile_photo_url,
           status: customer.status,
           onboarding_status: customer.onboarding_status,

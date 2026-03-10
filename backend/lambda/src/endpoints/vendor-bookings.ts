@@ -200,9 +200,18 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             hasMedicalRecords: medicalRecordCount > 0,
             medicalRecordCount,
             isFollowUp: false, // Can be enhanced with follow_up_date check
+            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
+            // Explicitly check if rescheduled_at exists and is not null/empty
+            isRescheduled: Boolean(booking.rescheduled_at),
+            rescheduledAt: booking.rescheduled_at || null,
           };
         })
       );
+
+      // Debug: Log first booking to verify isRescheduled is set
+      if (enrichedBookings.length > 0) {
+        console.log(`[VENDOR-BOOKINGS] First booking rescheduled_at: ${enrichedBookings[0].rescheduled_at}, isRescheduled: ${enrichedBookings[0].isRescheduled}`);
+      }
 
       return c.json({
         success: true,
@@ -914,6 +923,12 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         // Timestamps
         createdAt: booking.created_at,
         updatedAt: booking.updated_at,
+        
+        // Rescheduled booking tracking: indicates if booking was rescheduled and when
+        // Explicitly check if rescheduled_at exists and is not null/empty
+        isRescheduled: Boolean(booking.rescheduled_at),
+        rescheduledAt: booking.rescheduled_at || null,
+        rescheduledFromBookingId: booking.rescheduled_from_booking_id || null,
       };
 
       return c.json({
@@ -1025,6 +1040,10 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
             hasMedicalRecords: false,
             medicalRecordCount: 0,
             isFollowUp: false,
+            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
+            // Explicitly check if rescheduled_at exists and is not null/empty
+            isRescheduled: Boolean(booking.rescheduled_at),
+            rescheduledAt: booking.rescheduled_at || null,
           };
         })
       );
@@ -1090,6 +1109,10 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
             status: booking.status,
             total_amount: parseFloat(booking.total_amount || '0'),
             service_style: booking.service_style || 'at_clinic',
+            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
+            // Explicitly check if rescheduled_at exists and is not null/empty
+            isRescheduled: Boolean(booking.rescheduled_at),
+            rescheduledAt: booking.rescheduled_at || null,
           };
         })
       );

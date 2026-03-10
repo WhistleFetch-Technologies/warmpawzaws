@@ -159,7 +159,7 @@ Write-Host "PRODUCTION DEPLOYMENT COMPLETED" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Deployment Summary:"
-Write-Host "   $APP_NAME: Built successfully"
+Write-Host "   ${APP_NAME}: Built successfully"
 Write-Host "   S3 Upload: Synced to $S3_BUCKET"
 Write-Host "   CloudFront: Cache invalidation created ($INVALIDATION_ID)"
 Write-Host ""

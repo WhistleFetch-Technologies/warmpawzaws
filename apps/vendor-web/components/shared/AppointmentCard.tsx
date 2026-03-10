@@ -33,6 +33,8 @@ interface AppointmentCardProps {
     unreadMessageCount?: number;
     chatEnabled?: boolean;
     isFollowUp?: boolean;
+    isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
+    rescheduledAt?: string | null; // Timestamp when booking was rescheduled
     otp?: string;
   };
   onViewDetails?: (appointmentId: string) => void;
@@ -123,10 +125,15 @@ export function AppointmentCard({
             </Badge>
           </div>
 
-          <div className="flex items-center gap-1 mb-1">
+          <div className="flex items-center gap-1 mb-1 flex-wrap">
             <User className="w-3 h-3 text-gray-400" />
             <span className="text-xs text-gray-500">Customer:</span>
             <span className="text-sm font-medium text-gray-900">{appointment.customerName}</span>
+            {appointment.isRescheduled && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                📅 Rescheduled
+              </span>
+            )}
           </div>
 
           <div className="text-sm font-medium text-gray-900 mb-1">

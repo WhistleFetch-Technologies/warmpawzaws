@@ -217,6 +217,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             unreadMessageCount: b.unreadMessageCount || 0,
             chatEnabled: b.chatEnabled || true,
             isFollowUp: b.isFollowUp || false,
+            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
+            isRescheduled: b.isRescheduled || b.rescheduled_at != null,
+            rescheduledAt: b.rescheduled_at || null,
           }));
           setTodaySchedule(transformedBookings);
         }

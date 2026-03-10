@@ -316,15 +316,36 @@ class PushNotificationServiceImpl {
 
   private async getUserDevices(userId: string, userType: string): Promise<any[]> {
     try {
-      const result = await query(
+      // Check device_tokens table first (where devices are actually registered)
+      const deviceTokensResult = await query(
+        `SELECT id, fcm_token as device_token, platform, app_version, is_active 
+         FROM device_tokens 
+         WHERE user_id = $1 AND user_type = $2 AND is_active = true`,
+        [userId, userType]
+      );
+      
+      if (deviceTokensResult.rows && deviceTokensResult.rows.length > 0) {
+        console.log(`📱 [NOTIFICATION] Found ${deviceTokensResult.rows.length} device(s) in device_tokens for ${userType} ${userId}`);
+        return deviceTokensResult.rows;
+      }
+
+      // Fallback to user_devices table (legacy support)
+      const userDevicesResult = await query(
         `SELECT id, device_token, platform, app_version, is_active 
          FROM user_devices 
          WHERE user_id = $1 AND user_type = $2 AND is_active = true`,
         [userId, userType]
       );
-      return (result as any).rows || [];
+      
+      if (userDevicesResult.rows && userDevicesResult.rows.length > 0) {
+        console.log(`📱 [NOTIFICATION] Found ${userDevicesResult.rows.length} device(s) in user_devices for ${userType} ${userId}`);
+        return userDevicesResult.rows;
+      }
+
+      console.log(`📱 [NOTIFICATION] No registered devices found for ${userType} ${userId}`);
+      return [];
     } catch (error) {
-      console.error('Error fetching user devices:', error);
+      console.error(`❌ [NOTIFICATION] Error fetching user devices for ${userType} ${userId}:`, error);
       return [];
     }
   }
@@ -498,23 +519,27 @@ class PushNotificationServiceImpl {
     payload: PushNotificationPayload
   ): Promise<void> {
     try {
+      // Columns must match the actual `notifications` table schema:
+      //   recipient_id, recipient_type, notification_type, title, message,
+      //   channels (JSONB NOT NULL), is_read, data (JSONB), created_at
       await insert('notifications', {
-        user_id: recipient.userId,
-        user_type: recipient.userType,
+        recipient_id: recipient.userId,
+        recipient_type: recipient.userType,
+        notification_type: payload.data?.eventType || 'general',
         title: payload.title,
         message: payload.body,
-        notification_type: payload.data?.eventType || 'general',
-        category: 'push',
+        channels: { email: false, sms: false, inApp: true, push: true },
         is_read: false,
-        metadata: JSON.stringify({
-          data: payload.data,
-          priority: payload.priority,
-          sound: payload.sound,
-        }),
+        data: payload.data || {},
         created_at: new Date().toISOString(),
       });
+
+      console.log(`✅ [NOTIFICATION] Stored notification for ${recipient.userType} ${recipient.userId}: "${payload.title}"`);
     } catch (error) {
-      console.error('Error storing notification:', error);
+      console.error(`❌ [NOTIFICATION] Failed to store notification for ${recipient.userType} ${recipient.userId}:`, error);
+      if (error instanceof Error) {
+        console.error(`   Error: ${error.message}`);
+      }
     }
   }
 }

@@ -26,16 +26,17 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
-import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
-import { query, select, insert, withTransaction } from '../database/rds-connection';
-import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
-import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
-import { calculateStaffETA } from '../utils/commute-time-calculator';
-import { validateServiceAvailability } from '../utils/service-availability-validator';
-import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
-import { normalizeBooking, isValidUUID } from '../types/entities';
-import { getDiscoveryRules } from '../lib/rule-engine';
-import { getRefundTierForCancellation, computeRefundFromTier } from '../lib/services/cancellation-policy-service';
+import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../../handler/base-handler-enhanced';
+import { query, select, insert, withTransaction } from '../../../database/rds-connection';
+import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
+import { logAuditEntry, logBookingStatusChange } from '../../../utils/audit-log';
+import { calculateStaffETA } from '../../../utils/commute-time-calculator';
+import { validateServiceAvailability } from '../../../utils/service-availability-validator';
+import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
+import { normalizeBooking, isValidUUID } from '../../../types/entities';
+import { getDiscoveryRules } from '../../../lib/rule-engine';
+import { getRefundTierForCancellation, computeRefundFromTier } from '../../../lib/services/cancellation-policy-service';
+import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -1204,7 +1205,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Publish event
       try {
-        const { publishBookingCreated } = await import('../utils/sns-client');
+        const { publishBookingCreated } = await import('../../../utils/sns-client');
         await publishBookingCreated({
           bookingId: booking.id,
           customerId: booking.customer_id,
@@ -1283,7 +1284,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             // Send OTP via SMS (async)
             if (booking.customer_phone || booking.customer_id) {
               try {
-                const { sendSMS } = await import('../utils/sms-service');
+                const { sendSMS } = await import('../../../utils/sms-service');
                 const customers = booking.customer_id ? await select('customers', { id: booking.customer_id }) : [];
                 const customerPhone = booking.customer_phone || (customers[0] as any)?.phone;
                 
@@ -1699,7 +1700,7 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
     // 2. Check context.userId/userRole (if not already set from header)
     if (!authenticatedVendorId && context.userId && context.userRole === 'vendor') {
       try {
-        const { resolveVendorId } = await import('../utils/vendor-resolve');
+        const { resolveVendorId } = await import('../../../utils/vendor-resolve');
         const resolvedId = await resolveVendorId(context.userId);
         const vendors = await select('vendors', { id: resolvedId });
         if (vendors.length > 0) {
@@ -2109,7 +2110,7 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
 
             // Send notification to customer
             try {
-              const { publishNotification } = await import('../utils/sns-client');
+              const { publishNotification } = await import('../../../utils/sns-client');
               await publishNotification({
                 userId: currentBooking.customer_id,
                 userType: 'customer',
@@ -2162,7 +2163,7 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
 
     // Publish event
     try {
-      const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+      const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
       await publishBookingStatusUpdated({
         bookingId,
         customerId: currentBooking.customer_id,
@@ -2575,7 +2576,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Publish event
       try {
-        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
         await publishBookingStatusUpdated({
           bookingId,
           customerId: currentBooking.customer_id,
@@ -2650,6 +2651,10 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     const currentBooking = existingBookings[0];
     const oldStatus = currentBooking.status;
+    
+    // Store old slot information for release tracking
+    const oldDate = currentBooking.booking_date;
+    const oldTime = currentBooking.booking_time;
 
     // Validate that booking can be rescheduled
     const reschedulableStatuses = ['pending', 'confirmed'];
@@ -2663,8 +2668,19 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
       );
     }
 
+    // Prevent rescheduling to the same slot
+    if (oldDate === newDate && oldTime === newTime) {
+      return this.error(
+        'Booking is already scheduled for this date and time. Please select a different slot.',
+        400,
+        'VALIDATION_ERROR',
+        { currentDate: oldDate, currentTime: oldTime },
+        requestId
+      );
+    }
+
     try {
-      // Check for slot conflicts
+      // Check if new slot is available (excludes current booking, so old slot is automatically released)
       const conflictCheck = await query(
         `SELECT id FROM bookings 
          WHERE vendor_id = $1 
@@ -2686,13 +2702,32 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         );
       }
 
+      // Verify old slot will be released (check if any other booking exists at old slot)
+      // This ensures the old slot is truly available after reschedule
+      const oldSlotOccupied = await query(
+        `SELECT id FROM bookings 
+         WHERE vendor_id = $1 
+           AND booking_date = $2 
+           AND booking_time = $3 
+           AND id != $4
+           AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+         LIMIT 1`,
+        [currentBooking.vendor_id, oldDate, oldTime, bookingId]
+      );
+
+      const oldSlotWillBeAvailable = oldSlotOccupied.rows.length === 0;
+
       // Update booking with new date/time
+      // NOTE: This automatically releases the old slot because:
+      // 1. The booking is moved from (oldDate, oldTime) to (newDate, newTime)
+      // 2. Future slot availability checks will not find this booking at the old slot
+      // 3. The old slot becomes available for other bookings
       await withTransaction(async (client) => {
         await client.query(
           `UPDATE bookings 
            SET booking_date = $1,
                booking_time = $2,
-               rescheduled_from_booking_id = $4,
+               rescheduled_at = NOW(),
                notes = CASE 
                  WHEN notes IS NULL THEN $3
                  ELSE notes || ' | ' || $3
@@ -2702,6 +2737,12 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
           [newDate, newTime, `Rescheduled: ${reason}`, bookingId]
         );
       });
+
+      // Log slot release for tracking
+      console.log(`[RESCHEDULE] Booking ${bookingId}: Released slot ${oldDate} ${oldTime}, moved to ${newDate} ${newTime}`);
+      if (!oldSlotWillBeAvailable) {
+        console.warn(`[RESCHEDULE] Warning: Old slot ${oldDate} ${oldTime} has another booking, but current booking slot is still released`);
+      }
 
       // Get updated booking
       const updatedBookings = await select('bookings', { id: bookingId });
@@ -2713,7 +2754,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         oldStatus, // Status remains the same, just time changes
         actorId,
         actorType,
-        `Rescheduled to ${newDate} ${newTime}: ${reason}`
+        `Rescheduled from ${oldDate} ${oldTime} to ${newDate} ${newTime}: ${reason}`
       );
 
       // Log audit entry
@@ -2722,8 +2763,8 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         entityId: bookingId,
         action: 'reschedule',
         oldValues: {
-          booking_date: currentBooking.booking_date,
-          booking_time: currentBooking.booking_time,
+          booking_date: oldDate,
+          booking_time: oldTime,
         },
         newValues: {
           booking_date: newDate,
@@ -2738,28 +2779,62 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Publish event
       try {
-        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
         await publishBookingStatusUpdated({
           bookingId,
           customerId: currentBooking.customer_id,
           vendorId: currentBooking.vendor_id,
           oldStatus,
           newStatus: oldStatus, // Status unchanged
-          reason: `Rescheduled: ${reason}`,
+          reason: `Rescheduled from ${oldDate} ${oldTime} to ${newDate} ${newTime}: ${reason}`,
           ...generateEventMetadata(requestId),
         });
       } catch (error) {
         console.error('Failed to publish booking rescheduled event:', error);
       }
 
+      // Send notification to vendor about reschedule
+      try {
+        // Format dates for display (e.g., "15 Jan 2024")
+        const formatDate = (dateStr: string) => {
+          const date = new Date(dateStr);
+          return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        };
+
+        // Send notification to vendor
+        await sendEventNotification({
+          eventType: 'booking_rescheduled',
+          recipientId: currentBooking.vendor_id,
+          recipientType: 'vendor',
+          relatedId: bookingId,
+          data: {
+            oldDate: formatDate(oldDate),
+            oldTime: oldTime,
+            newDate: formatDate(newDate),
+            newTime: newTime,
+            reason: reason || 'Customer reschedule request',
+            bookingId,
+            customerId: currentBooking.customer_id,
+          },
+        });
+
+        console.log(`[RESCHEDULE] Notification sent to vendor ${currentBooking.vendor_id} about booking reschedule`);
+      } catch (error) {
+        // Don't fail the reschedule if notification fails
+        console.error('Failed to send reschedule notification to vendor:', error);
+      }
+
       return this.success({
         bookingId,
         booking: updatedBookings[0],
         message: 'Booking rescheduled successfully',
-        oldDate: currentBooking.booking_date,
-        oldTime: currentBooking.booking_time,
+        oldDate,
+        oldTime,
         newDate,
         newTime,
+        // Slot release information
+        oldSlotReleased: true,
+        oldSlotAvailable: oldSlotWillBeAvailable,
       }, requestId);
     } catch (error: unknown) {
       const err = error as any;
@@ -3317,7 +3392,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
       // Send OTP via SMS (async, don't wait)
       if (booking.customer_phone || booking.customer_id) {
         try {
-          const { sendSMS } = await import('../utils/sms-service');
+          const { sendSMS } = await import('../../../utils/sms-service');
           const customerPhone = booking.customer_phone || (customerId ? (await select('customers', { id: customerId }))[0]?.phone : null);
           
           if (customerPhone) {

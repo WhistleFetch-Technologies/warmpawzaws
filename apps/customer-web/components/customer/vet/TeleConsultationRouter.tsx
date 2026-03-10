@@ -537,7 +537,7 @@ function CallingVendorScreen({
     console.log('[CallingVendor] 📍 API Base URL:', apiBase);
     console.log('[CallingVendor] 🔗 SSE URL:', sseUrl);
     console.log('[CallingVendor] 📋 Booking ID:', bookingId);
-
+    
     try {
       const eventSource = new EventSource(sseUrl);
       eventSourceRef.current = eventSource;

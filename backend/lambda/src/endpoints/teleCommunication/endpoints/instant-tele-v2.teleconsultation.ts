@@ -49,6 +49,7 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
 
       const result = await query(
         `
+        -- select the vendor id, vendor name, photo, phone, city, address
       SELECT
           v.id AS vendor_id,
           COALESCE(v.business_name, v.owner_name, 'Vet') AS vendor_name,
@@ -56,39 +57,47 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
           v.phone,
           v.city,
           v.address
-      
+      -- from vendors table
       FROM vendors v
-      
+      -- join vendor_identity to get the selected_role_id
       INNER JOIN vendor_identity vi 
           ON vi.vendor_id = v.id
-      
+      -- join roles to get the role_name
       INNER JOIN roles r 
           ON r.id = vi.selected_role_id
           AND r.is_active = true
-      
+      -- join vendor_availability_v2 to get the availability
       INNER JOIN vendor_availability_v2 va 
           ON va.vendor_id = v.id
-      
+      -- join vendor_onboarding_applications to get the profile_photo_url
       LEFT JOIN vendor_onboarding_applications voa
           ON voa.vendor_identity_id = vi.id
-      
+      -- join jsonb_array_elements to get the profile_photo_url
       LEFT JOIN LATERAL (
           SELECT doc->>'url' AS profile_photo_url
           FROM jsonb_array_elements(voa.uploaded_documents) AS doc
           WHERE doc->>'type' = 'profilePhoto'
           LIMIT 1
       ) photo ON true
-      
+      -- where the vendor is active
       WHERE v.is_active = true
+        -- where the vendor is approved or status is null
         AND (v.status = 'approved' OR v.status IS NULL)
+        -- where the vendor is available for instant tele
         AND v.available_for_instant_tele = true
+        -- where the role name is in the list of role names
         AND LOWER(r.name) = ANY($2::text[])
+        -- where the day of week is the current day of week
         AND va.day_of_week = $1
+        -- where the availability is available
         AND COALESCE(va.is_available, true) = true
+        -- where the time window start is less than the current time
         AND COALESCE(va.time_window_start, va.start_time) <= $3::time
+        -- where the time window end is greater than the current time
         AND COALESCE(va.time_window_end, va.end_time) >= $3::time
+        -- where the service type is tele, online, or video consultation
         AND va.service_type IN ('tele','online','video_consultation')
-      
+        -- where the vendor has a published tele service in vendor_services
         AND EXISTS (
               SELECT 1
               FROM vendor_services vs
@@ -97,7 +106,7 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
                 AND vs.is_enabled = true
                 AND COALESCE(vs.publish_status, 'published') = 'published'
         )
-      
+      -- order by the vendor name
       ORDER BY v.business_name;
       `,
         [

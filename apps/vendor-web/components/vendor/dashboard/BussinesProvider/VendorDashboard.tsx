@@ -385,6 +385,10 @@ export function VendorDashboard({
                 unreadMessageCount: b.unreadMessageCount || 0,
                 chatEnabled: b.chatEnabled || true,
                 isFollowUp: b.isFollowUp || false,
+                // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
+                // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
+                isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
+                rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
               }));
               setTodaySchedule(transformedBookings);
             }
@@ -420,6 +424,10 @@ export function VendorDashboard({
               unreadMessageCount: b.unreadMessageCount || 0,
               chatEnabled: b.chatEnabled !== false,
               isFollowUp: b.isFollowUp || false,
+              // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
+              // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
+              isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
+              rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
             }));
             setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : mapped);
           })
@@ -1473,10 +1481,15 @@ export function VendorDashboard({
                                 <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">{appointment.status}</span>
                               </div>
                               {/* ✅ FIX: Add labels for better clarity */}
-                              <div className="flex items-center gap-1 mb-1">
+                              <div className="flex items-center gap-1 mb-1 flex-wrap">
                                 <User className="w-3 h-3 text-gray-400" />
                                 <span className="text-xs text-gray-500">Customer:</span>
                                 <span className="text-sm font-medium text-gray-900">{appointment.customerName}</span>
+                                {appointment.isRescheduled && (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                                    📅 Rescheduled
+                                  </span>
+                                )}
                               </div>
                               <div className="text-sm font-medium text-gray-900 mb-1">{appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}</div>
                               <div className="flex items-center gap-1 mb-2">

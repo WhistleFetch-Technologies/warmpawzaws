@@ -341,6 +341,10 @@ export function VendorBookingManagement({
           // Preserve meetingId, service_type etc. for downstream
           meetingId: booking.meeting_id || booking.meetingId,
           meeting_id: booking.meeting_id || booking.meetingId,
+          
+          // Track rescheduled bookings
+          isRescheduled: Boolean(booking.isRescheduled || booking.rescheduledAt || booking.rescheduled_at),
+          rescheduledAt: booking.rescheduledAt || booking.rescheduled_at || null,
         };
         });
         
@@ -990,9 +994,14 @@ export function VendorBookingManagement({
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-sm font-semibold text-gray-900">{booking.time}</span>
                             <span className="text-sm text-gray-600">{booking.customerName}</span>
+                            {booking.isRescheduled && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                                📅 Rescheduled
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
                             <span>🐕</span>

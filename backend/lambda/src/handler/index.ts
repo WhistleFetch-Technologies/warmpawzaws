@@ -22,7 +22,7 @@ import { rateLimit, rateLimitAuth, rateLimitOtp, slidingWindowRateLimit } from '
 // Enhanced handlers (Phase 2-5)
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
 import { registerVendorOnboardingFixes } from '../endpoints/vendor-onboarding-fixes';
-import { registerBookingEndpointsEnhanced, registerBookingOTPEndpoint } from '../endpoints/bookings-enhanced';
+import { registerBookingEndpointsEnhanced, registerBookingOTPEndpoint } from '../endpoints/booking/endpoints/bookings-enhanced.booking';
 import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced';
 import { registerCustomerEndpointsEnhanced } from '../endpoints/customer-enhanced';
 import { registerTrackingEndpoints } from '../endpoints/tracking';
@@ -140,7 +140,7 @@ import { registerLocationSharingEndpoints } from '../endpoints/location-sharing'
 import { registerVendorSecurityEndpoints } from '../endpoints/vendor-security';
 import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-distance-pricing';
 import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
-import { registerAdminComprehensiveEndpoints } from '../endpoints/admin-comprehensive';
+import { registerAdminComprehensiveEndpoints } from '../endpoints/admin/endpoints/admin-comprehensive';
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-dashboard-missing';
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';

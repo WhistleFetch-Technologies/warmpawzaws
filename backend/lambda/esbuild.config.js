@@ -57,13 +57,46 @@ const apiContractsResolvePlugin = {
   },
 };
 
+// Plugin to resolve custom TypeScript extensions like .booking.ts
+const customExtensionResolvePlugin = {
+  name: 'custom-extension-resolve',
+  setup(build) {
+    // Handle imports that might have custom extensions like .booking
+    build.onResolve({ filter: /.*/ }, (args) => {
+      // If the path doesn't have an extension, try to resolve with custom extensions
+      if (!args.path.includes('.') || args.path.endsWith('/')) {
+        return undefined; // Let esbuild handle it
+      }
+      
+      // Check if it's a relative import
+      if (args.path.startsWith('.')) {
+        const basePath = path.resolve(path.dirname(args.importer), args.path);
+        
+        // Try .booking.ts extension
+        const bookingTsPath = basePath + '.booking.ts';
+        if (fs.existsSync(bookingTsPath)) {
+          return { path: bookingTsPath };
+        }
+        
+        // Try .booking extension (without .ts)
+        const bookingPath = basePath + '.booking';
+        if (fs.existsSync(bookingPath + '.ts')) {
+          return { path: bookingPath + '.ts' };
+        }
+      }
+      
+      return undefined; // Let esbuild handle default resolution
+    });
+  },
+};
+
 esbuild.build({
   entryPoints: ['src/handler/index.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',
   outfile: 'dist/handler.js',
-  plugins: [apiContractsResolvePlugin],
+  plugins: [apiContractsResolvePlugin, customExtensionResolvePlugin],
   
   // External dependencies (AWS SDK, native modules)
   // These are provided by Lambda runtime or must be excluded due to native bindings

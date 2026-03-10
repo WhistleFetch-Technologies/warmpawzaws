@@ -58,10 +58,18 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* Inject build-time API URL ONLY when NEXT_PUBLIC_ENVIRONMENT=production.
-            Without this guard, .env.local values (often dev URLs) get baked into
-            the static HTML and override the deploy-time runtime-config.js. */}
-        {isProd && prodApiUrl && (
+        {/* 
+          Inject NEXT_PUBLIC_API_BASE_URL for ALL environments (local dev + production).
+          
+          For local development (npm run local:customer):
+          - Sets window.__NEXT_PUBLIC_API_BASE_URL__ = "http://localhost:3000"
+          - runtime-config.js detects localhost and doesn't override this
+          
+          For production (npm run prod:customer):
+          - Sets window.__NEXT_PUBLIC_API_BASE_URL__ = production API Gateway
+          - Also sets production runtime config below
+        */}
+        {prodApiUrl && (
           <script
             dangerouslySetInnerHTML={{
               __html: `
@@ -70,7 +78,10 @@ export default function RootLayout({
             }}
           />
         )}
-        {/* Inject production config if running in prod mode */}
+        {/* 
+          Inject production runtime config ONLY when NEXT_PUBLIC_ENVIRONMENT=production.
+          This ensures prod:customer, prod:vendor, prod:admin use production API Gateway.
+        */}
         {isProd && prodApiUrl && (
           <script
             dangerouslySetInnerHTML={{
@@ -84,7 +95,11 @@ export default function RootLayout({
             }}
           />
         )}
-        {/* Runtime config injected at deploy-time (static hosting safe). */}
+        {/* 
+          Runtime config injected at deploy-time (static hosting safe).
+          For localhost, this file detects localhost and doesn't set apiBaseUrl,
+          allowing the environment variable above to take precedence.
+        */}
         <script src="/runtime-config.js" />
         {/* Error handler for chunk load errors */}
         <script

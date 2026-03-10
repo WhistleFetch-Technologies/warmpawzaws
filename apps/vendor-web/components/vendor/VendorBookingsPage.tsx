@@ -18,6 +18,8 @@ interface Booking {
   notes?: string;
   otp_code?: string;
   otp_verified?: boolean;
+  isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
+  rescheduledAt?: string | null; // Timestamp when booking was rescheduled
 }
 
 interface VendorBookingsPageProps {
@@ -222,6 +224,11 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                   <div>
                     <div className="flex items-center gap-3 flex-wrap">
                       <h3 className="font-semibold text-gray-900">{booking.customer_name}</h3>
+                      {booking.isRescheduled && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                          📅 Rescheduled
+                        </span>
+                      )}
                       <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(booking.status)}`}>
                         {booking.status.replace('_', ' ')}
                       </span>

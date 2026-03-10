@@ -27,6 +27,8 @@ interface Booking {
   booking_time: string;
   total_amount: number;
   customer_phone?: string;
+  isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
+  rescheduledAt?: string | null; // Timestamp when booking was rescheduled
 }
 
 export function VendorBookingManagementScreen({
@@ -204,9 +206,16 @@ export function VendorBookingManagementScreen({
                 <div key={booking.id} className="bg-white rounded-xl border border-gray-200 p-4">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">
-                        {booking.customer_name || 'Customer'}
-                      </h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-gray-900">
+                          {booking.customer_name || 'Customer'}
+                        </h3>
+                        {booking.isRescheduled && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                            📅 Rescheduled
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-600">{booking.service_name || 'Service'}</p>
                       {booking.customer_phone && (
                         <p className="text-xs text-gray-500 mt-1">{booking.customer_phone}</p>

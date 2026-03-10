@@ -160,6 +160,8 @@ export function VendorDashboardScreen({
               serviceName: booking.service_name || booking.service?.name || booking.service_type || 'Service',
               status: booking.status || 'pending',
               price: parseFloat(booking.total_amount || booking.amount || 0),
+              isRescheduled: Boolean(booking.isRescheduled || booking.rescheduledAt || booking.rescheduled_at),
+              rescheduledAt: booking.rescheduledAt || booking.rescheduled_at || null,
             };
           });
           setTodaySchedule(transformedBookings);
@@ -338,12 +340,19 @@ export function VendorDashboardScreen({
                     onClick={() => onNavigate('booking-detail', { bookingId: item.bookingId })}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 flex-1">
                         <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                           <span className="text-sm font-medium text-orange-600">{item.time}</span>
                         </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{item.customerName}</p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-900">{item.customerName}</p>
+                            {item.isRescheduled && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
+                                📅 Rescheduled
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-gray-500">{item.serviceName}</p>
                         </div>
                       </div>

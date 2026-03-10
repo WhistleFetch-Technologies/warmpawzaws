@@ -12,10 +12,10 @@
  */
 
 import { Hono } from 'hono';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select, update, insert, deleteRows, upsert } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
+import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 // Password verification
 import * as crypto from 'crypto';
 
@@ -290,7 +290,7 @@ class AdminLoginHandler extends BaseHandler {
         console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
         
         // Generate proper JWT tokens for UAT mode
-        const { generateUATJWTToken } = await import('../utils/jwt-generator');
+        const { generateUATJWTToken } = await import('../../../utils/jwt-generator');
         const tokens = await generateUATJWTToken({
           userId: 'uat-admin',
           phone: email, // Use email as identifier
@@ -361,7 +361,7 @@ class AdminLoginHandler extends BaseHandler {
       let tokens;
       if (isUATMode) {
         // UAT Mode: Use UAT JWT tokens
-        const { generateUATJWTToken } = await import('../utils/jwt-generator');
+        const { generateUATJWTToken } = await import('../../../utils/jwt-generator');
         tokens = await generateUATJWTToken({
           userId: admin.id,
           phone: admin.email,
@@ -375,7 +375,7 @@ class AdminLoginHandler extends BaseHandler {
         if (!cognitoUserPoolId) {
           // Cognito not configured - use PRODUCTION JWT tokens (NOT UAT tokens)
           console.warn(`[ADMIN AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using PRODUCTION JWT tokens`);
-          const { generateProductionJWTToken } = await import('../utils/jwt-generator');
+          const { generateProductionJWTToken } = await import('../../../utils/jwt-generator');
           tokens = await generateProductionJWTToken({
             userId: admin.id,
             phone: admin.email,
@@ -386,7 +386,7 @@ class AdminLoginHandler extends BaseHandler {
         } else {
           // Cognito is configured - use it
           try {
-        const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../utils/cognito-client');
+        const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../../../utils/cognito-client');
         const cognitoUser = await getOrCreateCognitoUser(admin.email, undefined, 'admin');
         const cognitoTokens = await authenticateCognitoUser(admin.email);
         tokens = {
@@ -398,7 +398,7 @@ class AdminLoginHandler extends BaseHandler {
           } catch (cognitoError: any) {
             // If Cognito fails, use PRODUCTION JWT (NOT UAT)
             console.warn(`[ADMIN AUTH] Cognito authentication failed: ${cognitoError.message}, using PRODUCTION JWT fallback`);
-            const { generateProductionJWTToken } = await import('../utils/jwt-generator');
+            const { generateProductionJWTToken } = await import('../../../utils/jwt-generator');
             tokens = await generateProductionJWTToken({
               userId: admin.id,
               phone: admin.email,
@@ -445,7 +445,7 @@ class GetCurrentAdminHandler extends BaseHandler {
       
       // Verify JWT token and extract admin ID
       try {
-        const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');
+        const { extractAndVerifyAuthToken } = await import('../../../utils/jwt-verification');
         const headers: Record<string, string> = {};
         headers['authorization'] = authHeader;
         
@@ -1999,6 +1999,70 @@ class GetVendorDocumentsHandler extends BaseHandler {
   }
 }
 
+// ============================================================================
+// VENDOR LOOKUP - shared by document update flow
+// ============================================================================
+// Finds vendor in `vendors` table first, then falls back to `vendor_identity`.
+// Uses ::uuid cast so PostgreSQL never has to guess the parameter type.
+// Database errors are NOT swallowed — only a genuine "0 rows" triggers fallback.
+// ============================================================================
+
+async function findVendorForDocumentUpdate(
+  vendorId: string
+): Promise<{ id: string; phone: string; business_name: string }> {
+  console.log(`[UpdateVendorDocuments] Looking up vendor: ${vendorId}`);
+
+  // 1. Look in the vendors table (primary source)
+  const vendorResult = await query(
+    `SELECT id, phone, business_name FROM vendors WHERE id = $1::uuid`,
+    [vendorId]
+  );
+
+  if (vendorResult.rows.length > 0) {
+    console.log(`[UpdateVendorDocuments] Found in vendors table: ${vendorResult.rows[0].business_name}`);
+    return vendorResult.rows[0];
+  }
+
+  // 2. Not in vendors — check vendor_identity (onboarding vendors)
+  console.log(`[UpdateVendorDocuments] Not in vendors table, checking vendor_identity…`);
+
+  const identityResult = await query(
+    `SELECT id, phone, business_name, vendor_id
+     FROM vendor_identity
+     WHERE id = $1::uuid OR vendor_id = $1::uuid
+     LIMIT 1`,
+    [vendorId]
+  );
+
+  if (identityResult.rows.length === 0) {
+    // Genuinely not found anywhere
+    console.error(`[UpdateVendorDocuments] Vendor ${vendorId} not found in vendors or vendor_identity`);
+    throw new Error('Vendor not found');
+  }
+
+  const identity = identityResult.rows[0];
+
+  // If the identity row links to a vendor, try to fetch that vendor
+  if (identity.vendor_id) {
+    const linkedResult = await query(
+      `SELECT id, phone, business_name FROM vendors WHERE id = $1::uuid`,
+      [identity.vendor_id]
+    );
+    if (linkedResult.rows.length > 0) {
+      console.log(`[UpdateVendorDocuments] Found linked vendor: ${linkedResult.rows[0].business_name}`);
+      return linkedResult.rows[0];
+    }
+  }
+
+  // Use the identity record itself (vendor still in onboarding)
+  console.log(`[UpdateVendorDocuments] Using vendor_identity record (vendor not yet fully created)`);
+  return {
+    id: identity.id,
+    phone: identity.phone,
+    business_name: identity.business_name || 'Unknown Business',
+  };
+}
+
 // ✅ NEW: Update vendor documents helper function (Admin-only document correction tool)
 async function updateVendorDocumentsHelper(
   vendorId: string,
@@ -2007,108 +2071,8 @@ async function updateVendorDocumentsHelper(
 ): Promise<{ success: boolean; updatedDocuments: any[]; errors: any[]; documents: any[] }> {
   console.log(`[UpdateVendorDocuments] Updating documents for vendor: ${vendorId}`);
 
-  // ============================================================================
-  // VENDOR VERIFICATION WITH FALLBACK LOGIC
-  // ============================================================================
-  // In production, vendors may exist in vendor_identity table but not yet in 
-  // vendors table, or there may be UUID type mismatches. This robust lookup
-  // handles both cases similar to resolveVendorById() pattern.
-  // ============================================================================
-  
-  let vendorCheck: any;
-  let vendor: any;
-
-  // Step 1: Try to find vendor in vendors table using text casting
-  // Using id::text handles UUID type mismatches (string vs UUID)
-  try {
-    vendorCheck = await query(
-      `SELECT id, phone, business_name FROM vendors WHERE id::text = $1`,
-      [vendorId]
-    );
-
-    if (vendorCheck.rows && vendorCheck.rows.length > 0) {
-      vendor = vendorCheck.rows[0];
-      console.log(`[UpdateVendorDocuments] Found vendor in vendors table: ${vendor.business_name || vendor.id}`);
-    }
-  } catch (error) {
-    console.warn(`[UpdateVendorDocuments] Error querying vendors table:`, error);
-    vendorCheck = { rows: [] };
-  }
-
-  // Step 2: If not found in vendors table, check vendor_identity table
-  // This handles cases where vendor is in onboarding but not yet fully created
-  if (!vendor) {
-    console.log(`[UpdateVendorDocuments] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-    
-    try {
-      const identityCheck = await query(
-        `SELECT id, phone, business_name, vendor_id 
-         FROM vendor_identity 
-         WHERE id::text = $1 OR vendor_id::text = $1 
-         LIMIT 1`,
-        [vendorId]
-      );
-
-      if (identityCheck.rows && identityCheck.rows.length > 0) {
-        const identity = identityCheck.rows[0];
-        console.log(`[UpdateVendorDocuments] Found vendor in vendor_identity table: ${identity.business_name || identity.id}`);
-        
-        // If vendor_identity has a linked vendor_id, try to get the full vendor record
-        if (identity.vendor_id) {
-          try {
-            const linkedVendorCheck = await query(
-              `SELECT id, phone, business_name FROM vendors WHERE id::text = $1`,
-              [identity.vendor_id]
-            );
-            
-            if (linkedVendorCheck.rows && linkedVendorCheck.rows.length > 0) {
-              vendor = linkedVendorCheck.rows[0];
-              console.log(`[UpdateVendorDocuments] Found linked vendor in vendors table: ${vendor.business_name || vendor.id}`);
-            } else {
-              // Use vendor_identity record as fallback (vendor exists but not fully created)
-              vendor = {
-                id: identity.id,
-                phone: identity.phone,
-                business_name: identity.business_name || 'Unknown Business'
-              };
-              console.log(`[UpdateVendorDocuments] Using vendor_identity record (vendor not yet fully created)`);
-            }
-          } catch (linkError) {
-            console.warn(`[UpdateVendorDocuments] Error checking linked vendor:`, linkError);
-            // Fall through to use identity record
-            vendor = {
-              id: identity.id,
-              phone: identity.phone,
-              business_name: identity.business_name || 'Unknown Business'
-            };
-          }
-        } else {
-          // No linked vendor_id - use vendor_identity record directly
-          vendor = {
-            id: identity.id,
-            phone: identity.phone,
-            business_name: identity.business_name || 'Unknown Business'
-          };
-          console.log(`[UpdateVendorDocuments] Using vendor_identity record (no linked vendor_id)`);
-        }
-      }
-    } catch (identityError) {
-      console.error(`[UpdateVendorDocuments] Error checking vendor_identity table:`, identityError);
-      // Continue to error handling below
-    }
-  }
-
-  // Step 3: If still not found, throw error with helpful message
-  if (!vendor) {
-    console.error(`[UpdateVendorDocuments] Vendor ${vendorId} not found in vendors or vendor_identity tables`);
-    throw new Error('Vendor not found');
-  }
-
-  // Ensure we have required vendor fields
-  if (!vendor.id || !vendor.phone) {
-    console.error(`[UpdateVendorDocuments] Vendor record incomplete:`, vendor);
-    throw new Error('Vendor record is incomplete');
-  }
+  // Find the vendor — throws with a clear message if not found or on DB error
+  const vendor = await findVendorForDocumentUpdate(vendorId);
 
   // Initialize S3 client
   const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
@@ -2459,7 +2423,7 @@ async function updateVendorDocumentsHelper(
 
       // Log audit entry
       try {
-        const { logAuditEntry } = await import('../utils/audit-log');
+        const { logAuditEntry } = await import('../../../utils/audit-log');
         await logAuditEntry({
           entityType: 'vendor',
           entityId: vendorId,
@@ -3828,18 +3792,14 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // ✅ NEW: Update vendor documents (Admin-only document correction tool)
+  // ✅ Update vendor documents (Admin-only document correction tool)
   app.patch('/admin/vendors/:vendorId/documents', async (c) => {
+    const vendorId = c.req.param('vendorId');
+    console.log(`[UpdateVendorDocuments] PATCH request for vendor: ${vendorId}`);
+
     try {
-      const vendorId = c.req.param('vendorId');
-      
-      // Get admin ID from context (set by requireAdmin middleware)
       const adminId = c.get('userId') || c.get('userRole') || 'system';
-
-      // Parse multipart form data
       const formData = await c.req.formData();
-
-      // Call helper function
       const result = await updateVendorDocumentsHelper(vendorId, formData, adminId);
 
       return c.json({
@@ -3850,17 +3810,16 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         documents: result.documents
       }, 200);
     } catch (error: any) {
-      console.error('[UpdateVendorDocuments] Route error:', error);
-      if (error.message === 'Vendor not found') {
-        return c.json({ error: error.message }, 404);
-      }
-      if (error.message === 'No files provided') {
-        return c.json({ error: error.message }, 400);
-      }
-      if (error.message.includes('All uploads failed')) {
-        return c.json({ error: error.message }, 400);
-      }
-      return c.json({ error: error.message || 'Failed to update vendor documents' }, 500);
+      const msg = error.message || 'Failed to update vendor documents';
+      console.error(`[UpdateVendorDocuments] Error for vendor ${vendorId}:`, msg);
+
+      // Client errors — return 4xx
+      if (msg === 'Vendor not found')      return c.json({ error: msg }, 404);
+      if (msg === 'No files provided')     return c.json({ error: msg }, 400);
+      if (msg.includes('All uploads failed')) return c.json({ error: msg }, 400);
+
+      // Database / server errors — return 500 with actual message so we can debug
+      return c.json({ error: msg }, 500);
     }
   });
 

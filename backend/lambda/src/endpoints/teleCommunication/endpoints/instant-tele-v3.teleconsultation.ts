@@ -25,7 +25,7 @@ import { query, insert, update, select } from '../../../database/rds-connection'
 import { validateBody } from 'src/middleware/validation-middleware';
 import { instantTeleRequestSchema } from 'src/zodContracts/teleCommunication.contract';
 import type { z } from 'zod';
-import { BookingStatus, BookingPaymentStatus, PaymentTransactionStatus, InstantTeleEventType } from 'src/endpoints/constants';
+import { BookingStatus, BookingPaymentStatus, PaymentTransactionStatus, InstantTeleEventType, UserType } from 'src/endpoints/constants';
 import { processInstantTeleRejectionRefund } from 'src/utils/payments/refund-service';
 
 // Timeout for vendor to respond (seconds)
@@ -1088,6 +1088,37 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
     });
   });
 
+  /**
+   * GET /customer/tele/instant-cancel/:bookingId
+   * Customer cancels the instant tele consultation.
+   * Updates booking to cancelled.
+   */
 
+  app.get('/customer/tele/instant-cancel/:bookingId', async (c) => {
+
+    try {
+      const bookingId = c.req.param('bookingId');
+      if (!bookingId) return c.json({ error: 'Booking ID is required' }, 400);
+
+
+      const bookingResult = await query(
+        `SELECT * FROM bookings WHERE id = $1 AND is_instant_tele = true`,
+        [bookingId]
+      );
+      if (bookingResult.rows.length === 0) return c.json({ error: 'Booking not found' }, 404);
+      const booking = bookingResult.rows[0];
+      if (booking.status !== BookingStatus.CONFIRMED) return c.json({ error: 'Booking is not accepted' }, 400);
+
+      await query(
+        `UPDATE bookings SET status = $2,cancelled_by=$3, updated_at = NOW() WHERE id = $1`,
+        [bookingId, BookingStatus.CANCELLED, UserType.CUSTOMER]
+      );
+      return c.json({ success: true, message: 'Booking cancelled' });
+    } catch (error: any) {
+      console.error('[customer-instant-cancel] error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+
+  });
 
 }

@@ -76,23 +76,37 @@ function getApiGatewayUrl(): string {
 }
 
 /**
- * Get the API Base URL from runtime config (deployed) or environment (local dev) only.
+ * Get the API Base URL from runtime config (deployed) or environment (local dev).
+ * 
+ * Priority order for LOCALHOST (npm run local:customer):
+ * 1. window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx from env var)
+ * 2. window.__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL (Next.js injected)
+ * 3. process.env.NEXT_PUBLIC_API_BASE_URL (build-time)
+ * 4. Default: http://localhost:3000
+ * 
+ * Priority order for DEPLOYED (CloudFront):
+ * 1. runtime-config.js (deploy-time, authoritative)
+ * 2. window.__NEXT_PUBLIC_API_BASE_URL__ (fallback)
+ * 3. Environment-aware API Gateway selection (last resort)
+ * 
  * Do NOT hardcode URLs. Set via runtime-config.js (injected at deploy) or NEXT_PUBLIC_API_BASE_URL.
  */
 export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
-  // Check if running on localhost
+  
+  // Detect if running on localhost (local development)
   const isLocalhost = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || 
      window.location.hostname === '127.0.0.1' ||
      window.location.hostname.includes('localhost'));
   
-  // Next.js injects NEXT_PUBLIC_* env vars at build time - check multiple sources
   let raw = '';
   
-  // When running on localhost, prioritize environment variables over runtime config
+  // LOCAL DEVELOPMENT: Prioritize environment variables over runtime config
+  // runtime-config.js detects localhost and intentionally doesn't set apiBaseUrl,
+  // allowing the environment variable (http://localhost:3000) to be used here.
   if (isLocalhost) {
-    // 1. Check window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx)
+    // 1. Check window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx from npm script)
     if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
       raw = (window as any).__NEXT_PUBLIC_API_BASE_URL__;
     }

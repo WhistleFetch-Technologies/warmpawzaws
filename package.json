@@ -66,11 +66,12 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1005.0",
     "@types/node": "^20.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react-swc": "^3.10.2",
-    "pg": "^8.17.2",
+    "pg": "^8.20.0",
     "playwright": "^1.57.0",
     "vite": "^6.4.1"
   },
@@ -78,7 +79,7 @@
     "lint": "echo Lint OK",
     "type-check": "echo TypeCheck OK",
     "dev": "npm run dev --prefix apps/admin-web",
-    "dev:admin": "npm run dev --prefix apps/admin-web",
+    "dev:admin": "cd apps/admin-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
     "build": "npm run build --prefix apps/admin-web",
     "build:admin": "npm run build --prefix apps/admin-web",
     "build:backend": "cd packages/api-contracts && npm ci && npm run build && cd ../../backend/lambda && npm ci && npm run build",
@@ -88,7 +89,6 @@
     "build:frontend:customer": "cd apps/customer-web && npm ci && npm run build",
     "package:lambda": "cd backend/lambda && npm run package",
     "dev:vendor": "cd apps/vendor-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
-    "dev:admin": "cd apps/admin-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
     "dev:customer": "cd apps/customer-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
     "prod:vendor": "cd apps/vendor-web && set NEXT_PUBLIC_API_BASE_URL=https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_ENVIRONMENT=production&& npm run dev:prod",
     "prod:admin": "cd apps/admin-web && set NEXT_PUBLIC_API_BASE_URL=https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_ENVIRONMENT=production&& npm run dev:prod",

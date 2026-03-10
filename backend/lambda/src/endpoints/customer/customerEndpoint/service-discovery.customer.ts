@@ -41,6 +41,25 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 /**
+ * Safely parse operating_hours from the vendors table.
+ * Returns the parsed object if valid JSON, or null if it's plain text / malformed.
+ * This prevents crashes when a vendor has human-readable text like "Open Daily: 9-6"
+ * instead of a proper JSON schedule object.
+ */
+function safeParseOperatingHours(raw: any): Record<string, any> | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw; // already parsed (e.g. from JSONB column)
+  if (typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' ? parsed : null;
+  } catch {
+    console.warn('[ServiceDiscovery] Skipping non-JSON operating_hours:', raw.substring(0, 60));
+    return null;
+  }
+}
+
+/**
  * ✅ FIX: Check if current environment is production.
  * Dev/UAT Lambda (`warmpawz-api-dev-api`) uses NODE_ENV=dev & UAT_MODE=true.
  * Prod Lambda (`warmpawz-prod-api-handler`) uses NODE_ENV=production.
@@ -2057,7 +2076,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             distanceText: distance !== null ? (distance < 1 ? `${Math.round(distance * 1000)}m away` : `${distance.toFixed(1)} km away`) : null,
             phone: vendor.phone,
             email: vendor.email,
-            operatingHours: vendor.operating_hours ? JSON.parse(vendor.operating_hours) : null,
+            operatingHours: safeParseOperatingHours(vendor.operating_hours),
             // ✅ NEW: Include active vendor promotions for display badges
             hasActivePromotions: activePromotions.length > 0,
             promotions: activePromotions,
@@ -3856,7 +3875,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           longitude: vendor.longitude,
           rating: avgRating,
           totalReviews: reviews.rows.length,
-          operatingHours: vendor.operating_hours ? JSON.parse(vendor.operating_hours) : null,
+          operatingHours: safeParseOperatingHours(vendor.operating_hours),
           description: vendor.description || '',
           photoUrl: await getVendorPhotoUrl(vendor),
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
@@ -4469,11 +4488,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ FIX: Extract facility data from vendor metadata and operating_hours
       const metadata = (vendor.metadata as any) || {};
-      const operatingHours = vendor.operating_hours
-        ? (typeof vendor.operating_hours === 'string'
-          ? JSON.parse(vendor.operating_hours)
-          : vendor.operating_hours)
-        : null;
+      const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
       // ✅ FIX: Generate presigned URLs for photos on-demand (since bucket has public access blocked)
       const rawPhotos = metadata.facility_photos || [];
@@ -4977,11 +4992,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ FIX: Extract metadata for description, custom amenities, and photos
       const metadata = (vendor.metadata as any) || {};
-      const operatingHours = vendor.operating_hours
-        ? (typeof vendor.operating_hours === 'string'
-          ? JSON.parse(vendor.operating_hours)
-          : vendor.operating_hours)
-        : null;
+      const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
       // ✅ FIX: Generate presigned URLs for photos on-demand (since bucket has public access blocked)
       const rawPhotos = metadata.facility_photos || [];

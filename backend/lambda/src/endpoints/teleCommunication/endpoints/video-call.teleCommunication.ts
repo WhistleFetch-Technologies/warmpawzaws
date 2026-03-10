@@ -381,12 +381,12 @@ class JoinMeetingHandler extends BaseHandler {
 
       // Only update to IN_PROGRESS if it's NOT an instant tele with pending payment
       if (!isInstantTelePendingPayment) {
-        //update the booking status to in_progress
-        const bookingUpdate = await update('bookings', { id: bookingId }, { status: BookingStatus.IN_PROGRESS });
-        if (!bookingUpdate) {
-          return this.error('Failed to update booking status', 500);
-        }
-        vidlog('join', 'booking-status-updated', { bookingId, status: BookingStatus.IN_PROGRESS }, cid);
+      //update the booking status to in_progress
+      const bookingUpdate = await update('bookings', { id: bookingId }, { status: BookingStatus.IN_PROGRESS });
+      if (!bookingUpdate) {
+        return this.error('Failed to update booking status', 500);
+      }
+      vidlog('join', 'booking-status-updated', { bookingId, status: BookingStatus.IN_PROGRESS }, cid);
       } else {
         vidlog('join', 'booking-status-skipped', { 
           bookingId, 
