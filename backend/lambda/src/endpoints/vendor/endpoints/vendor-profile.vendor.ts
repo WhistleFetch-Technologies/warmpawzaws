@@ -504,6 +504,24 @@ export function registerVendorProfileEndpoints(app: Hono) {
       console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
       console.log('═══════════════════════════════════════════════════════════');
 
+      // ✅ SECURITY: Check if vendor is deactivated (is_active = false or status = 'suspended')
+      if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
+        const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
+        console.warn(`[PROFILE-GET] ⚠️ Vendor ${vendor.id} is deactivated - blocking profile access`);
+        return c.json({
+          success: false,
+          error: 'Your vendor account has been deactivated',
+          message: `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
+          code: 'VENDOR_DEACTIVATED',
+          vendor: {
+            id: vendor.id,
+            status: 'deactivated',
+            isActive: false,
+            deactivationReason: deactivationReason
+          }
+        }, 403);
+      }
+
       // Get application data (vendor_onboarding_applications uses vendor_identity_id)
       let applicationData = null;
       try {

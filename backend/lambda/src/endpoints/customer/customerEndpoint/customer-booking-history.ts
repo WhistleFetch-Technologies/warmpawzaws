@@ -15,10 +15,10 @@
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../database/rds-connection';
-import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
-import { normalizeBooking, isValidUUID } from '../types/entities';
-import { getDiscoveryRules } from '../lib/rule-engine';
+import { select, query } from '../../../database/rds-connection';
+import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
+import { normalizeBooking, isValidUUID } from '../../../types/entities';
+import { getDiscoveryRules } from '../../../lib/rule-engine';
 
 export function registerCustomerBookingHistoryEndpoints(app: Hono) {
   /**

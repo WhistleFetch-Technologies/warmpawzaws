@@ -13,7 +13,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, query } from '../database/rds-connection';
+import { select, update, query } from '../../../database/rds-connection';
 
 export function registerAdminCustomServicesEndpoints(app: Hono) {
   /**

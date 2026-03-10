@@ -12,10 +12,10 @@
  */
 
 import { Hono } from 'hono';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
+import { query, select } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 // Note: Password hashing using crypto module (bcryptjs not installed)
 import * as crypto from 'crypto';
 

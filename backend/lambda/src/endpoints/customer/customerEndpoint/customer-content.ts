@@ -14,7 +14,7 @@
  */
 
 import { Hono } from 'hono';
-import { query, select } from '../database/rds-connection';
+import { query, select } from '../../../database/rds-connection';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**

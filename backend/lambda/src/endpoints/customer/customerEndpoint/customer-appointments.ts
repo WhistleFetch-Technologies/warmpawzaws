@@ -14,11 +14,11 @@
  */
 
 import { Hono } from 'hono';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
-import { getRefundTierForCancellation, computeRefundFromTier } from '../lib/services/cancellation-policy-service';
+import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
+import { query } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
+import { getRefundTierForCancellation, computeRefundFromTier } from '../../../lib/services/cancellation-policy-service';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer

@@ -386,7 +386,7 @@ class VerifyOtpHandler extends BaseHandler {
           // Verify vendor exists and is NOT solo (business rule for staff)
           try {
             const vendorQuery = await query(`
-              SELECT id, business_name, phone as vendor_phone, role_id
+              SELECT id, business_name, phone as vendor_phone, role_id, is_active, status, metadata
               FROM vendors 
               WHERE id = $1::uuid
               LIMIT 1
@@ -396,6 +396,16 @@ class VerifyOtpHandler extends BaseHandler {
               console.error(`[AUTH] Staff member ${staffMember.id} has invalid vendor_id: ${staffVendorId}`);
             } else if (vendorQuery.rows && vendorQuery.rows.length > 0) {
               const vendor = vendorQuery.rows[0];
+              
+              // ✅ SECURITY: Check if vendor is deactivated (is_active = false or status = 'suspended')
+              if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
+                const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
+                console.warn(`[AUTH] ⚠️ Staff member ${staffMember.id} belongs to deactivated vendor ${staffVendorId} - blocking login`);
+                return this.error(
+                  `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
+                  403
+                );
+              }
               
               // Check vendor_type - must NOT be "solo" (business rule)
               const vendorIdentityForVendor = await query(`
@@ -586,6 +596,59 @@ class VerifyOtpHandler extends BaseHandler {
           console.log(`[AUTH] Found vendor_identity by phone: ${vendorIdentity.id}, status: ${vendorIdentity.onboarding_status}`);
           // ✅ BUSINESS RULE: Regular vendor login - don't modify status
           // This preserves existing vendor business rules
+          
+          // ✅ SECURITY: Check if vendor is deactivated (for regular vendor login)
+          // Try to find vendor record by vendor_id or phone
+          if (vendorIdentity.vendor_id) {
+            try {
+              const vendorCheck = await query(`
+                SELECT id, is_active, status, metadata
+                FROM vendors 
+                WHERE id = $1::uuid
+                LIMIT 1
+              `, [vendorIdentity.vendor_id]);
+              
+              if (vendorCheck.rows && vendorCheck.rows.length > 0) {
+                const vendor = vendorCheck.rows[0];
+                if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
+                  const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
+                  console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated - blocking login for phone ${normalizedPhone}`);
+                  return this.error(
+                    `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
+                    403
+                  );
+                }
+              }
+            } catch (vendorCheckError: any) {
+              console.warn('[AUTH] Error checking vendor deactivation status:', vendorCheckError.message);
+              // Continue with login if check fails (non-blocking)
+            }
+          } else {
+            // If no vendor_id, try to find vendor by phone
+            try {
+              const vendorByPhone = await query(`
+                SELECT id, is_active, status, metadata
+                FROM vendors 
+                WHERE phone = $1 OR phone = $2
+                LIMIT 1
+              `, [phone, normalizedPhone]);
+              
+              if (vendorByPhone.rows && vendorByPhone.rows.length > 0) {
+                const vendor = vendorByPhone.rows[0];
+                if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
+                  const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
+                  console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated - blocking login for phone ${normalizedPhone}`);
+                  return this.error(
+                    `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
+                    403
+                  );
+                }
+              }
+            } catch (vendorCheckError: any) {
+              console.warn('[AUTH] Error checking vendor deactivation status by phone:', vendorCheckError.message);
+              // Continue with login if check fails (non-blocking)
+            }
+          }
         }
       }
       

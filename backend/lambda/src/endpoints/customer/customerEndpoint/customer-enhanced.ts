@@ -22,15 +22,15 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
-import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
-import { query, select, insert, update } from '../database/rds-connection';
+import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../../handler/base-handler-enhanced';
+import { query, select, insert, update } from '../../../database/rds-connection';
 import {
   UpdateCustomerProfileRequestSchema,
   AddPetRequestSchema,
 } from '@warmpawz/api-contracts/customers';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
-import { getDiscoveryRules } from '../lib/rule-engine';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
+import { getDiscoveryRules } from '../../../lib/rule-engine';
 
 // ============================================================================
 // CUSTOMER HANDLERS
