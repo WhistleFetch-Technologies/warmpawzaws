@@ -665,6 +665,23 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             vendorQueriesPromise,
             vendorQueriesTimeout
           ]);
+
+          // If not found with original phone (e.g. "+912143242342"), retry with normalizedPhone ("2143242342")
+          // This handles the mismatch between how the frontend sends phone (+91 prefix) vs how DB stores it
+          if (vendors.length === 0 && normalizedPhone !== phone) {
+            console.log(`[AUTH] Vendor not found with phone "${phone}", retrying with normalizedPhone "${normalizedPhone}"`);
+            const retryVendors = await select('vendors', { phone: normalizedPhone });
+            if (retryVendors.length > 0) {
+              vendors = retryVendors;
+            }
+          }
+          if (vendorIdentity.length === 0 && normalizedPhone !== phone) {
+            console.log(`[AUTH] Vendor identity not found with phone "${phone}", retrying with normalizedPhone "${normalizedPhone}"`);
+            const retryIdentity = await select('vendor_identity', { phone: normalizedPhone });
+            if (retryIdentity.length > 0) {
+              vendorIdentity = retryIdentity;
+            }
+          }
         } catch (vendorQueryError: any) {
           console.warn('[AUTH] Vendor queries timed out or failed, continuing with minimal data:', vendorQueryError.message);
           // Continue with empty arrays - will create temp vendor ID
@@ -672,7 +689,23 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           vendors = [];
         }
 
+        // ────────────────────────────────────────────────────────────────────────────
+        // FILTER OUT SOFT-DELETED RECORDS
+        // If is_deleted = true, treat as if record doesn't exist (allow phone reuse)
+        // ────────────────────────────────────────────────────────────────────────────
+        vendors = vendors.filter((v: any) => v.is_deleted !== true);
+        vendorIdentity = vendorIdentity.filter((vi: any) => vi.is_deleted !== true);
+
         if (vendors.length > 0) {
+          const vendor = vendors[0];
+          
+          // ✅ SECURITY: Block login if vendor is deactivated (only for non-deleted records)
+          // Check: is_deleted = false AND status = 'suspended' AND is_active = false
+          if (vendor.is_deleted !== true && vendor.is_active === false && vendor.status === 'suspended') {
+            console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated (is_active: ${vendor.is_active}, status: ${vendor.status}) - blocking login`);
+            return this.error('Your vendor account has been deactivated. Please contact support for assistance.', 403, 'VENDOR_DEACTIVATED', undefined, context.requestId);
+          }
+
           userId = vendors[0].id;
           userData = vendors[0];
           // ✅ Merge onboarding_status from vendor_identity if available
@@ -714,14 +747,36 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               vendorsByVendorId = [];
             }
             if (vendorsByVendorId.length > 0) {
-              // Use the actual vendor record
-              userId = vendorsByVendorId[0].id;
-              userData = vendorsByVendorId[0];
-              userData.onboarding_status = identity.onboarding_status;
-              userData.vendor_identity_id = identity.id;
-              console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
-            } else {
-              // vendor_id points to non-existent vendor - use identity ID
+              const vendorById = vendorsByVendorId[0];
+              
+              // ────────────────────────────────────────────────────────────────────────────
+              // CHECK IF VENDOR IS SOFT-DELETED
+              // If is_deleted = true, treat as if vendor doesn't exist (allow new registration)
+              // ────────────────────────────────────────────────────────────────────────────
+              if (vendorById.is_deleted === true) {
+                console.log(`[AUTH] Vendor ${vendorById.id} is soft-deleted (is_deleted = true) - allowing new registration for phone ${phone}`);
+                // Clear array to fall through to use identity ID
+                vendorsByVendorId = [];
+              } else {
+                // ✅ SECURITY: Block login if vendor is deactivated (only for non-deleted records)
+                // Check: is_deleted = false AND status = 'suspended' AND is_active = false
+                if (vendorById.is_active === false && vendorById.status === 'suspended') {
+                  console.warn(`[AUTH] ⚠️ Vendor ${vendorById.id} is deactivated (is_active: ${vendorById.is_active}, status: ${vendorById.status}) - blocking login`);
+                  return this.error('Your vendor account has been deactivated. Please contact support for assistance.', 403, 'VENDOR_DEACTIVATED', undefined, context.requestId);
+                }
+
+                // Use the actual vendor record (not deleted and not deactivated)
+                userId = vendorById.id;
+                userData = vendorById;
+                userData.onboarding_status = identity.onboarding_status;
+                userData.vendor_identity_id = identity.id;
+                console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
+              }
+            }
+            
+            // If vendor was deleted or not found, use identity ID
+            if (vendorsByVendorId.length === 0) {
+              // vendor_id points to deleted/non-existent vendor - use identity ID
               userId = identity.id;
               userData = {
                 id: identity.id,
@@ -731,7 +786,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                 vendor_identity_id: identity.id,
                 created_at: identity.created_at,
               };
-              console.log(`[AUTH] vendor_identity.vendor_id points to missing vendor, using identity ID: ${userId}`);
+              console.log(`[AUTH] vendor_identity.vendor_id points to deleted/missing vendor, using identity ID: ${userId}`);
             }
           } else {
             // Vendor not approved yet - use identity ID (this is correct for mid-onboarding)

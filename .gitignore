@@ -154,7 +154,6 @@ reports/
 test-data/
 misc/
 docs/
-db/
 
 # =============================================================================
 # BUILD BACKUP DIRECTORIES

@@ -16,6 +16,7 @@ import { ReverificationTab } from './ReverificationTab';
 import { ComplianceIssuesTab } from './ComplianceIssuesTab';
 import { EnhancedPendingApplicationsTab } from './EnhancedPendingApplicationsTab';
 import { ActiveVendorsTab } from './ActiveVendorsTab';
+import { DeactivatedVendorsTab } from './DeactivatedVendorsTab';
 import { AddVendorModal } from './AddVendorModal';
 import { QualityAlertsPanel } from './QualityAlertsPanel';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
@@ -37,7 +38,7 @@ interface AdminVendorManagementProps {
 
 export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps = {}) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'overview' | 'applications' | 'deactivation' | 'reverification' | 'compliance' | 'active-vendors' | 'insights'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'applications' | 'deactivation' | 'reverification' | 'compliance' | 'active-vendors' | 'deactivated-vendors' | 'insights'>('overview');
   const [stats, setStats] = useState<VendorStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -284,6 +285,19 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
               </div>
             </button>
             <button
+              onClick={() => setActiveTab('deactivated-vendors')}
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
+                activeTab === 'deactivated-vendors'
+                  ? 'border-red-500 text-red-500 bg-red-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <UserX className="w-4 h-4" />
+                Deactivated Vendors
+              </div>
+            </button>
+            <button
               onClick={() => setActiveTab('insights')}
               className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'insights'
@@ -354,6 +368,9 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
           )}
           {activeTab === 'active-vendors' && (
             <ActiveVendorsTab />
+          )}
+          {activeTab === 'deactivated-vendors' && (
+            <DeactivatedVendorsTab />
           )}
           {activeTab === 'insights' && (
             <VendorInsightsDashboard />
