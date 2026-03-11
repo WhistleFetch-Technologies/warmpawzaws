@@ -227,556 +227,268 @@ class SendOtpHandler extends BaseHandler {
   }
 }
 
+/**
+ * ============================================================================
+ * VERIFY OTP HANDLER
+ * ============================================================================
+ * 
+ * Handles OTP verification and user authentication flow:
+ * 1. Validates phone and OTP input
+ * 2. Normalizes phone number format
+ * 3. Verifies OTP (with test user and UAT mode bypasses)
+ * 4. Finds vendor identity by phone number
+ * 5. Generates authentication tokens (Cognito or fallback)
+ * 6. Returns user profile and session information
+ * 
+ * Business Rules:
+ * - Test user bypass works in production (single phone + OTP combo)
+ * - UAT mode bypass only works when UAT_MODE=true
+ * - Regular vendor login preserves existing onboarding status
+ * ============================================================================
+ */
 class VerifyOtpHandler extends BaseHandler {
+  /**
+   * Main handler method - orchestrates the entire OTP verification flow
+   */
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
     const { phone, otp } = body;
 
+    // Validate input
     if (!phone || !otp) {
       return this.error('Phone and OTP are required', 400);
     }
 
-    // ============================================================================
-    // PHONE NUMBER NORMALIZATION
-    // ============================================================================
-    // Normalize phone number for consistent comparison and database lookups
-    // Handles various formats: +91 9999999999, 919999999999, 9999999999, etc.
-    const normalizePhoneNumber = (phoneNumber: string): string => {
-      // Remove all non-digit characters
-      const phoneDigits = phoneNumber.replace(/\D/g, '');
+    // Normalize phone number for consistent database lookups
+    const normalizedPhone = this.normalizePhoneNumber(phone);
+    console.log(`[AUTH] Normalized phone: ${phone} -> ${normalizedPhone}`);
+
+    // Verify OTP code (handles test user, UAT mode, and normal verification)
+    const isValid = await this.verifyOtpCode(phone, normalizedPhone, otp);
+    if (!isValid) {
+      return this.error('Invalid or expired OTP', 401);
+    }
+
+    // Find vendor identity and resolve role
+    const vendorIdentity = await this.findVendorIdentityByPhone(phone, normalizedPhone);
+    const vendorRole = vendorIdentity && vendorIdentity.selected_role_id
+      ? await this.resolveVendorRole(vendorIdentity.selected_role_id)
+      : null;
+
+    // Generate authentication tokens
+    try {
+      const cognitoUser = await getOrCreateCognitoUser(phone);
+      const tokens = await authenticateCognitoUser(phone);
       
-      // Handle different phone number lengths:
-      // - If > 10 digits: take last 10 (removes country code)
-      // - If 9 digits: pad with leading 0
-      // - If 10 digits: use as-is
-      if (phoneDigits.length > 10) {
-        return phoneDigits.slice(-10);
-      } else if (phoneDigits.length === 9) {
-        return '0' + phoneDigits;
-      } else {
-        return phoneDigits;
-      }
-    };
+      // Build and return success response with Cognito tokens
+      const responseData = this.buildSuccessResponse(
+        phone,
+        cognitoUser,
+        tokens,
+        vendorIdentity,
+        vendorRole
+      );
+      
+      return this.success(responseData);
+    } catch (error) {
+      // Cognito failed - use fallback tokens
+      console.error('[AUTH] Cognito integration failed:', error);
+      const fallbackData = this.buildFallbackResponse(
+        phone,
+        vendorIdentity,
+        vendorRole
+      );
+      return this.success(fallbackData);
+    }
+  }
 
-    const normalizedPhone = normalizePhoneNumber(phone);
-
-    // ============================================================================
-    // OTP VERIFICATION LOGIC
-    // ============================================================================
-    // Priority order:
-    // 1. Test User Bypass (works in PRODUCTION - highest priority)
-    // 2. UAT Mode Bypass (only works when UAT_MODE=true)
-    // 3. Normal OTP Verification (production flow)
+  /**
+   * Normalizes phone number to consistent 10-digit format
+   * Handles various formats: +91 9999999999, 919999999999, 9999999999, etc.
+   */
+  private normalizePhoneNumber(phoneNumber: string): string {
+    // Remove all non-digit characters
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
     
+    // Handle different phone number lengths:
+    // - If > 10 digits: take last 10 (removes country code)
+    // - If 9 digits: pad with leading 0
+    // - If 10 digits: use as-is
+    if (phoneDigits.length > 10) {
+      return phoneDigits.slice(-10);
+    } else if (phoneDigits.length === 9) {
+      return '0' + phoneDigits;
+    } else {
+      return phoneDigits;
+    }
+  }
+
+  /**
+   * Verifies OTP code with priority order:
+   * 1. Test User Bypass (works in PRODUCTION - highest priority)
+   * 2. UAT Mode Bypass (only works when UAT_MODE=true)
+   * 3. Normal OTP Verification (production flow)
+   */
+  private async verifyOtpCode(phone: string, normalizedPhone: string, otp: string): Promise<boolean> {
     const UAT_MODE = process.env.UAT_MODE === 'true';
     const TEST_USER_PHONE = process.env.TEST_USER_PHONE || '';
     const TEST_USER_OTP = process.env.TEST_USER_OTP || '';
     
     // Check if this is the test user (works in PRODUCTION)
     // Only ONE specific phone number with ONE specific OTP will bypass verification
-    const normalizedTestPhone = TEST_USER_PHONE ? normalizePhoneNumber(TEST_USER_PHONE) : '';
+    const normalizedTestPhone = TEST_USER_PHONE ? this.normalizePhoneNumber(TEST_USER_PHONE) : '';
     const isTestUser = TEST_USER_PHONE && 
                        TEST_USER_OTP && 
                        normalizedPhone === normalizedTestPhone && 
                        otp === TEST_USER_OTP;
     
-    let isValid = false;
-
-    // ============================================================================
     // TEST USER BYPASS (PRODUCTION MODE)
-    // ============================================================================
-    // This allows ONE specific test phone number with ONE specific OTP to bypass
-    // OTP verification in production. This is useful for testing without SMS.
-    // Security: Only works for the exact phone + OTP combination from env variables.
     if (isTestUser) {
       console.log(`[AUTH] 🧪 TEST USER: Bypassing OTP verification for test phone ${normalizedPhone} with OTP ${otp}`);
-      isValid = true;
-      
-      // Cleanup: Mark any existing OTP records as used (non-blocking)
-      try {
-        const records = await select('otp_tokens', {
-          phone: normalizedPhone,
-          is_used: false,
-        });
-        if (records.length > 0) {
-          await query(
-            'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-            [records[0].id]
-          );
-          console.log(`[AUTH] 🧪 TEST USER: Marked existing OTP record as used`);
-        }
-      } catch (e) {
-        console.warn('[AUTH] 🧪 TEST USER: Could not mark existing OTP as used:', e);
-      }
+      await this.markOtpAsUsed(normalizedPhone);
+      return true;
     }
-    // ============================================================================
+    
     // UAT MODE BYPASS (DEVELOPMENT/TESTING ONLY)
-    // ============================================================================
-    // In UAT mode, accept OTP '123456' for any phone number
-    // This only works when UAT_MODE=true (disabled in production)
-    else if (UAT_MODE && otp === '123456') {
+    if (UAT_MODE && otp === '123456') {
       console.log(`[AUTH] 🔧 UAT MODE: Accepting fixed OTP 123456 for ${phone}`);
-      isValid = true;
-      
-      // Cleanup: Mark any existing OTP records as used (non-blocking)
-      try {
-        const records = await select('otp_tokens', {
-          phone,
-          is_used: false,
-        });
-        if (records.length > 0) {
-          await query(
-            'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-            [records[0].id]
-          );
-        }
-      } catch (e) {
-        console.warn('[AUTH] 🔧 UAT MODE: Could not mark existing OTP as used:', e);
-      }
+      await this.markOtpAsUsed(phone);
+      return true;
     }
-    // ============================================================================
+    
     // NORMAL OTP VERIFICATION (PRODUCTION FLOW)
-    // ============================================================================
-    // For all other cases, verify OTP against database
-    // This is the standard production flow for regular users
-    else {
-      isValid = await verifyOtp(phone, otp);
-    }
+    return await verifyOtp(phone, otp);
+  }
 
-    // ============================================================================
-    // VALIDATION RESULT
-    // ============================================================================
-    // If OTP verification failed, return error immediately
-    if (!isValid) {
-      return this.error('Invalid or expired OTP', 401);
-    }
-    
-    console.log(`[AUTH] Normalized phone: ${phone} -> ${normalizedPhone}`);
-
-    // ✅ FIX: Check BOTH vendor_identity AND staff table, prioritize staff if phone belongs to staff
-    let vendorIdentity = null;
-    let vendorRole = null;
-    let staffMember = null;
-    
+  /**
+   * Marks existing OTP records as used (non-blocking cleanup)
+   */
+  private async markOtpAsUsed(phone: string): Promise<void> {
     try {
-      // ============================================================================
-      // STEP 1: ALWAYS check if phone belongs to staff FIRST
-      // ============================================================================
-      // This ensures staff login works even if vendor_identity already exists
-      console.log(`[AUTH] Checking if phone ${normalizedPhone} belongs to staff...`);
-      
-      const staffQuery = await query(`
-        SELECT id, name, vendor_id, phone, mobile_verified, role
-        FROM staff 
-        WHERE phone = $1 OR phone = $2
-        LIMIT 1
-      `, [phone, normalizedPhone]);
-      
-      if (staffQuery.rows && staffQuery.rows.length > 0) {
-        // ============================================================================
-        // STAFF LOGIN FLOW - Phone belongs to staff member
-        // ============================================================================
-        staffMember = staffQuery.rows[0];
-        const staffVendorId = staffMember.vendor_id;
-        const staffRoleName = staffMember.role;
-        
-        console.log(`[AUTH] ✅ Phone ${phone} belongs to STAFF member ${staffMember.id}, vendor_id: ${staffVendorId}, role: ${staffRoleName}`);
-        
-        if (staffVendorId) {
-          // Verify vendor exists and is NOT solo (business rule for staff)
-          try {
-            const vendorQuery = await query(`
-              SELECT id, business_name, phone as vendor_phone, role_id, is_active, status, metadata
-              FROM vendors 
-              WHERE id = $1::uuid
-              LIMIT 1
-            `, [staffVendorId]);
-            
-            if (vendorQuery.rows && vendorQuery.rows.length === 0) {
-              console.error(`[AUTH] Staff member ${staffMember.id} has invalid vendor_id: ${staffVendorId}`);
-            } else if (vendorQuery.rows && vendorQuery.rows.length > 0) {
-              const vendor = vendorQuery.rows[0];
-              
-              // ✅ SECURITY: Check if vendor is deactivated (is_active = false or status = 'suspended')
-              if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
-                const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
-                console.warn(`[AUTH] ⚠️ Staff member ${staffMember.id} belongs to deactivated vendor ${staffVendorId} - blocking login`);
-                return this.error(
-                  `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
-                  403
-                );
-              }
-              
-              // Check vendor_type - must NOT be "solo" (business rule)
-              const vendorIdentityForVendor = await query(`
-                SELECT vendor_type, onboarding_status
-                FROM vendor_identity 
-                WHERE vendor_id = $1::uuid
-                LIMIT 1
-              `, [staffVendorId]);
-              
-              let vendorType = null;
-              if (vendorIdentityForVendor.rows && vendorIdentityForVendor.rows.length > 0) {
-                vendorType = vendorIdentityForVendor.rows[0].vendor_type;
-              }
-              
-              // Business rule: Solo vendors cannot have staff
-              if (vendorType === 'solo') {
-                console.error(`[AUTH] Staff member ${staffMember.id} belongs to solo vendor ${staffVendorId} - solo vendors cannot have staff`);
-              } else {
-                // Vendor is business/clinic - proceed with staff login
-                console.log(`[AUTH] Verified vendor ${staffVendorId} exists and is ${vendorType || 'business'} type (not solo)`);
-              
-                // Resolve role ID from staff role name
-                let resolvedRoleId = null;
-                if (staffRoleName) {
-                  try {
-                    const roleQuery = await query(`
-                      SELECT id, name, display_name 
-                      FROM roles 
-                      WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
-                        AND is_active = true
-                      LIMIT 1
-                    `, [staffRoleName]);
-                    
-                    if (roleQuery.rows && roleQuery.rows.length > 0) {
-                      resolvedRoleId = roleQuery.rows[0].id;
-                      vendorRole = roleQuery.rows[0];
-                      console.log(`[AUTH] Resolved role "${staffRoleName}" to role ID: ${resolvedRoleId}`);
-                    }
-                  } catch (roleError: any) {
-                    console.warn('[AUTH] Error resolving role from staff member:', roleError.message);
-                  }
-                }
-                
-                // ✅ FIX: Create/update vendor_identity for staff phone - ALWAYS set to ACTIVATED
-                try {
-                  // Check which columns exist
-                  const viSchemaCheck = await query(`
-                    SELECT 
-                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'user_type') as has_user_type,
-                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'metadata') as has_metadata,
-                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'full_name') as has_full_name,
-                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'business_name') as has_business_name
-                  `);
-                  const viSchema = viSchemaCheck.rows[0] || {};
-                  
-                  // Check if vendor_identity already exists for this phone
-                  const existingCheck = await query('SELECT * FROM vendor_identity WHERE phone = $1', [normalizedPhone]);
-                  
-                  if (existingCheck.rows.length > 0) {
-                    // ✅ UPDATE existing vendor_identity to ACTIVATED for staff
-                    vendorIdentity = existingCheck.rows[0];
-                    console.log(`[AUTH] Found existing vendor_identity ${vendorIdentity.id} with status ${vendorIdentity.onboarding_status}, updating to ACTIVATED for staff...`);
-                    
-                    const updateFields: string[] = [
-                      'onboarding_status = $1',
-                      'vendor_id = $2::uuid',
-                      'updated_at = NOW()'
-                    ];
-                    const updateValues: any[] = ['ACTIVATED', staffVendorId];
-                    let paramIndex = 3;
-                    
-                    if (viSchema.has_user_type) {
-                      updateFields.push(`user_type = $${paramIndex}`);
-                      updateValues.push('staff');
-                      paramIndex++;
-                    }
-                    
-                    if (resolvedRoleId) {
-                      updateFields.push(`selected_role_id = $${paramIndex}::uuid`);
-                      updateValues.push(resolvedRoleId);
-                      paramIndex++;
-                    }
-                    
-                    if (vendorType) {
-                      updateFields.push(`vendor_type = $${paramIndex}`);
-                      updateValues.push(vendorType);
-                      paramIndex++;
-                    }
-                    
-                    if (viSchema.has_business_name && vendor.business_name) {
-                      updateFields.push(`business_name = $${paramIndex}`);
-                      updateValues.push(vendor.business_name);
-                      paramIndex++;
-                    }
-                    
-                    if (viSchema.has_full_name && staffMember.name) {
-                      updateFields.push(`full_name = $${paramIndex}`);
-                      updateValues.push(staffMember.name);
-                      paramIndex++;
-                    }
-                    
-                    if (viSchema.has_metadata) {
-                      updateFields.push(`metadata = $${paramIndex}::jsonb`);
-                      updateValues.push(JSON.stringify({
-                        staff_id: staffMember.id,
-                        created_via: 'staff_login',
-                      }));
-                      paramIndex++;
-                    }
-                    
-                    updateValues.push(vendorIdentity.id);
-                    
-                    await query(`UPDATE vendor_identity SET ${updateFields.join(', ')} WHERE id = $${paramIndex}::uuid`, updateValues);
-                    
-                    // Re-fetch to get updated data
-                    const updated = await query('SELECT * FROM vendor_identity WHERE id = $1', [vendorIdentity.id]);
-                    vendorIdentity = updated.rows[0];
-                    console.log(`[AUTH] ✅ Updated vendor_identity ${vendorIdentity.id} to ACTIVATED for staff member ${staffMember.id}`);
-                  } else {
-                    // Create new vendor_identity for staff
-                    console.log(`[AUTH] No vendor_identity found for staff phone ${normalizedPhone}, creating new one with ACTIVATED status...`);
-                    
-                    const insertFields = ['phone', 'vendor_id', 'onboarding_status'];
-                    const insertValues: any[] = [normalizedPhone, staffVendorId, 'ACTIVATED'];
-                    
-                    if (viSchema.has_user_type) {
-                      insertFields.push('user_type');
-                      insertValues.push('staff');
-                    }
-                    
-                    if (resolvedRoleId) {
-                      insertFields.push('selected_role_id');
-                      insertValues.push(resolvedRoleId);
-                    }
-                    
-                    if (vendorType) {
-                      insertFields.push('vendor_type');
-                      insertValues.push(vendorType);
-                    }
-                    
-                    if (viSchema.has_business_name && vendor.business_name) {
-                      insertFields.push('business_name');
-                      insertValues.push(vendor.business_name);
-                    }
-                    
-                    if (viSchema.has_full_name && staffMember.name) {
-                      insertFields.push('full_name');
-                      insertValues.push(staffMember.name);
-                    }
-                    
-                    if (viSchema.has_metadata) {
-                      insertFields.push('metadata');
-                      insertValues.push(JSON.stringify({
-                        staff_id: staffMember.id,
-                        created_via: 'staff_login',
-                      }));
-                    }
-                    
-                    const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
-                    const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
-                    
-                    const result = await query(insertQuery, insertValues);
-                    vendorIdentity = result.rows[0];
-                    console.log(`[AUTH] ✅ Created vendor_identity ${vendorIdentity.id} for staff phone ${normalizedPhone} with ACTIVATED status`);
-                  }
-                } catch (createError: any) {
-                  console.error('[AUTH] Error creating/updating vendor_identity for staff:', createError.message, createError.stack);
-                }
-              }
-            }
-          } catch (vendorError: any) {
-            console.error('[AUTH] Error verifying vendor for staff:', vendorError.message);
-          }
-        }
-      } else {
-        // ============================================================================
-        // STEP 2: NORMAL VENDOR LOGIN FLOW - Phone is NOT staff, check vendor_identity
-        // ============================================================================
-        console.log(`[AUTH] Phone ${normalizedPhone} is NOT staff, checking vendor_identity for regular vendor login...`);
-        
-        let identities = await select('vendor_identity', { phone: normalizedPhone });
-        if (identities.length === 0 && phone !== normalizedPhone) {
-          identities = await select('vendor_identity', { phone });
-        }
-        
-        if (identities.length > 0) {
-          vendorIdentity = identities[0];
-          console.log(`[AUTH] Found vendor_identity by phone: ${vendorIdentity.id}, status: ${vendorIdentity.onboarding_status}`);
-          // ✅ BUSINESS RULE: Regular vendor login - don't modify status
-          // This preserves existing vendor business rules
-          
-          // ✅ SECURITY: Check if vendor is deactivated (for regular vendor login)
-          // Try to find vendor record by vendor_id or phone
-          if (vendorIdentity.vendor_id) {
-            try {
-              const vendorCheck = await query(`
-                SELECT id, is_active, status, metadata
-                FROM vendors 
-                WHERE id = $1::uuid
-                LIMIT 1
-              `, [vendorIdentity.vendor_id]);
-              
-              if (vendorCheck.rows && vendorCheck.rows.length > 0) {
-                const vendor = vendorCheck.rows[0];
-                if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
-                  const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
-                  console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated - blocking login for phone ${normalizedPhone}`);
-                  return this.error(
-                    `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
-                    403
-                  );
-                }
-              }
-            } catch (vendorCheckError: any) {
-              console.warn('[AUTH] Error checking vendor deactivation status:', vendorCheckError.message);
-              // Continue with login if check fails (non-blocking)
-            }
-          } else {
-            // If no vendor_id, try to find vendor by phone
-            try {
-              const vendorByPhone = await query(`
-                SELECT id, is_active, status, metadata
-                FROM vendors 
-                WHERE phone = $1 OR phone = $2
-                LIMIT 1
-              `, [phone, normalizedPhone]);
-              
-              if (vendorByPhone.rows && vendorByPhone.rows.length > 0) {
-                const vendor = vendorByPhone.rows[0];
-                if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
-                  const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
-                  console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated - blocking login for phone ${normalizedPhone}`);
-                  return this.error(
-                    `Your vendor account has been deactivated. Reason: ${deactivationReason}. Please contact support for assistance.`,
-                    403
-                  );
-                }
-              }
-            } catch (vendorCheckError: any) {
-              console.warn('[AUTH] Error checking vendor deactivation status by phone:', vendorCheckError.message);
-              // Continue with login if check fails (non-blocking)
-            }
-          }
-        }
-      }
-      
-      // Fetch role info if vendor has a selected role (and we haven't already fetched it)
-      if (vendorIdentity && vendorIdentity.selected_role_id && !vendorRole) {
-        const roles = await select('roles', { id: vendorIdentity.selected_role_id, is_active: true });
-        if (roles.length > 0) {
-          vendorRole = roles[0];
-        }
-      }
-      
-      // ✅ CRITICAL FIX: If staff member found, FORCE vendorIdentity.onboarding_status to ACTIVATED
-      // This ensures we never return INIT for staff, even if DB update failed
-      if (staffMember && vendorIdentity) {
-        if (vendorIdentity.onboarding_status !== 'ACTIVATED') {
-          console.warn(`[AUTH] ⚠️ Staff member ${staffMember.id} has vendor_identity with status ${vendorIdentity.onboarding_status}, forcing to ACTIVATED`);
-          vendorIdentity.onboarding_status = 'ACTIVATED';
-        }
-      }
-      
-    } catch (e) {
-      console.warn('[AUTH] Could not fetch vendor identity:', e);
-    }
-
-    // Create or get Cognito user
-    let cognitoUser;
-    let tokens: CognitoTokens;
-    
-    try {
-      cognitoUser = await getOrCreateCognitoUser(phone);
-      tokens = await authenticateCognitoUser(phone);
-    } catch (error) {
-      console.error('[AUTH] Cognito integration failed:', error);
-      
-      // ✅ CRITICAL: Generate fallback accessToken for staff members (and regular vendors)
-      // This ensures they can always log in even if Cognito fails
-      const generateFallbackToken = (phone: string, userId?: string): string => {
-        // Create a session token based on phone, timestamp, and random bytes
-        const timestamp = Date.now();
-        const random = randomBytes(16).toString('hex');
-        const userIdPart = userId || phone;
-        const tokenData = `${phone}_${userIdPart}_${timestamp}_${random}`;
-        const tokenHash = createHash('sha256').update(tokenData).digest('hex');
-        // Return a JWT-like format: base64 encoded payload with hash
-        // Use base64 and replace URL-unsafe characters for base64url compatibility
-        const payload = Buffer.from(JSON.stringify({
-          phone,
-          userId: userIdPart,
-          timestamp,
-          type: 'fallback_session'
-        })).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        return `fallback_${payload}.${tokenHash.substring(0, 32)}`;
-      };
-      
-      const fallbackUserId = staffMember?.id || vendorIdentity?.id || phone;
-      const fallbackAccessToken = generateFallbackToken(phone, fallbackUserId);
-      const fallbackIdToken = generateFallbackToken(phone, fallbackUserId);
-      const fallbackRefreshToken = generateFallbackToken(phone, `${fallbackUserId}_refresh`);
-      
-      console.log(`[AUTH] Generated fallback tokens for ${staffMember ? 'staff member' : 'vendor'}: ${phone}`);
-      
-      // Fallback: return success with generated tokens (for backward compatibility during migration)
-      const fallbackData: any = {
-        message: 'OTP verified successfully',
-        verified: true,
+      const records = await select('otp_tokens', {
         phone,
-        userId: fallbackUserId,
-        username: phone,
+        is_used: false,
+      });
+      if (records.length > 0) {
+        await query(
+          'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+          [records[0].id]
+        );
+        console.log(`[AUTH] Marked existing OTP record as used for ${phone}`);
+      }
+    } catch (e) {
+      console.warn(`[AUTH] Could not mark existing OTP as used for ${phone}:`, e);
+    }
+  }
+
+  /**
+   * Finds vendor identity by phone number
+   */
+  private async findVendorIdentityByPhone(phone: string, normalizedPhone: string): Promise<any | null> {
+    console.log(`[AUTH] Checking vendor_identity for phone: ${normalizedPhone}`);
+    
+    let identities = await select('vendor_identity', { phone: normalizedPhone });
+    if (identities.length === 0 && phone !== normalizedPhone) {
+      identities = await select('vendor_identity', { phone });
+    }
+    
+    if (identities.length > 0) {
+      const identity = identities[0];
+      console.log(`[AUTH] Found vendor_identity by phone: ${identity.id}, status: ${identity.onboarding_status}`);
+      return identity;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Resolves vendor role information from role ID
+   */
+  private async resolveVendorRole(roleId: string): Promise<any | null> {
+    const roles = await select('roles', { id: roleId, is_active: true });
+    return roles.length > 0 ? roles[0] : null;
+  }
+
+  /**
+   * Generates fallback authentication token when Cognito fails
+   */
+  private generateFallbackToken(phone: string, userId?: string): string {
+    const timestamp = Date.now();
+    const random = randomBytes(16).toString('hex');
+    const userIdPart = userId || phone;
+    const tokenData = `${phone}_${userIdPart}_${timestamp}_${random}`;
+    const tokenHash = createHash('sha256').update(tokenData).digest('hex');
+    
+    // Return a JWT-like format: base64 encoded payload with hash
+    const payload = Buffer.from(JSON.stringify({
+      phone,
+      userId: userIdPart,
+      timestamp,
+      type: 'fallback_session'
+    })).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    
+    return `fallback_${payload}.${tokenHash.substring(0, 32)}`;
+  }
+
+  /**
+   * Builds fallback response when Cognito integration fails
+   */
+  private buildFallbackResponse(
+    phone: string,
+    vendorIdentity: any | null,
+    vendorRole: any | null
+  ): any {
+    const fallbackUserId = vendorIdentity?.id || phone;
+    const fallbackAccessToken = this.generateFallbackToken(phone, fallbackUserId);
+    const fallbackIdToken = this.generateFallbackToken(phone, fallbackUserId);
+    const fallbackRefreshToken = this.generateFallbackToken(phone, `${fallbackUserId}_refresh`);
+    
+    console.log(`[AUTH] Generated fallback tokens for vendor: ${phone}`);
+    
+    const fallbackData: any = {
+      message: 'OTP verified successfully',
+      verified: true,
+      phone,
+      userId: fallbackUserId,
+      username: phone,
+      accessToken: fallbackAccessToken,
+      idToken: fallbackIdToken,
+      refreshToken: fallbackRefreshToken,
+      expiresIn: 3600,
+      warning: 'Cognito integration unavailable - using fallback tokens',
+      profile: this.buildVendorProfile(vendorIdentity, vendorRole),
+      token: {
+        access_token: fallbackAccessToken,
+        id_token: fallbackIdToken,
+        refresh_token: fallbackRefreshToken,
+        expires_in: 3600
+      },
+      tokens: {
         accessToken: fallbackAccessToken,
         idToken: fallbackIdToken,
         refreshToken: fallbackRefreshToken,
-        expiresIn: 3600, // 1 hour
-        warning: 'Cognito integration unavailable - using fallback tokens',
-        // ✅ Include vendor profile data even without Cognito
-        // ✅ CRITICAL: For staff members, ALWAYS return ACTIVATED status
-        profile: vendorIdentity ? {
-          id: vendorIdentity.id,
-          onboarding_status: staffMember ? 'ACTIVATED' : (vendorIdentity.onboarding_status || 'INIT'), // ✅ FIX: Force ACTIVATED for staff
-          roleId: vendorIdentity.selected_role_id,
-          role_id: vendorIdentity.selected_role_id,
-          vendor_type: vendorIdentity.vendor_type,
-          roleName: vendorRole?.display_name || vendorRole?.name,
-          // ✅ NEW: Include vendor_id
-          vendor_id: vendorIdentity.vendor_id || (staffMember?.vendor_id ? staffMember.vendor_id.toString() : null),
-        } : (staffMember && staffMember.vendor_id ? {
-          // ✅ NEW: Staff member but no vendor_identity - return minimal profile with vendor_id
-          vendor_id: staffMember.vendor_id.toString(),
-          onboarding_status: 'ACTIVATED', // ✅ FIX: Use ACTIVATED for staff
-        } : null),
-        // ✅ CRITICAL: Include token object for frontend compatibility
-        token: {
-          access_token: fallbackAccessToken,
-          id_token: fallbackIdToken,
-          refresh_token: fallbackRefreshToken,
-          expires_in: 3600
-        },
-        tokens: {
-          accessToken: fallbackAccessToken,
-          idToken: fallbackIdToken,
-          refreshToken: fallbackRefreshToken,
-          expiresIn: 3600
-        },
-        user: {
-          id: fallbackUserId,
-          phone: phone,
-          username: phone
-        }
-      };
-      
-      // ✅ NEW: Add staff info if staff member logged in
-      if (staffMember) {
-        fallbackData.staff_info = {
-          staff_id: staffMember.id,
-          staff_name: staffMember.name,
-          vendor_id: staffMember.vendor_id?.toString() || null,
-        };
-        // ✅ CRITICAL: Force ACTIVATED in fallback response for staff
-        if (fallbackData.profile) {
-          fallbackData.profile.onboarding_status = 'ACTIVATED';
-          console.log(`[AUTH] ✅ FORCED onboarding_status to ACTIVATED for staff in fallback response`);
-        }
+        expiresIn: 3600
+      },
+      user: {
+        id: fallbackUserId,
+        phone: phone,
+        username: phone
       }
-      
-      return this.success(fallbackData);
-    }
+    };
+    
+    return fallbackData;
+  }
 
-    // Return tokens and user info with vendor profile
-    // ✅ NEW: If staff member logged in, include vendor_id in response
+  /**
+   * Builds success response with Cognito tokens
+   */
+  private buildSuccessResponse(
+    phone: string,
+    cognitoUser: any,
+    tokens: CognitoTokens,
+    vendorIdentity: any | null,
+    vendorRole: any | null
+  ): any {
     const responseData: any = {
       message: 'OTP verified successfully',
       verified: true,
@@ -787,42 +499,32 @@ class VerifyOtpHandler extends BaseHandler {
       idToken: tokens.idToken,
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
-      // ✅ FIX: Include vendor profile with roleId
-      // ✅ CRITICAL: For staff members, ALWAYS return ACTIVATED status
-      profile: vendorIdentity ? {
+      profile: this.buildVendorProfile(vendorIdentity, vendorRole),
+    };
+    
+    return responseData;
+  }
+
+  /**
+   * Builds vendor profile object from vendor identity and role
+   */
+  private buildVendorProfile(
+    vendorIdentity: any | null,
+    vendorRole: any | null
+  ): any | null {
+    if (vendorIdentity) {
+      return {
         id: vendorIdentity.id,
-        onboarding_status: staffMember ? 'ACTIVATED' : (vendorIdentity.onboarding_status || 'INIT'), // ✅ FIX: Force ACTIVATED for staff
+        onboarding_status: vendorIdentity.onboarding_status || 'INIT',
         roleId: vendorIdentity.selected_role_id,
         role_id: vendorIdentity.selected_role_id,
         vendor_type: vendorIdentity.vendor_type,
         roleName: vendorRole?.display_name || vendorRole?.name,
-        // ✅ NEW: Include vendor_id if available (from staff lookup or vendor_identity)
-        vendor_id: vendorIdentity.vendor_id || (staffMember?.vendor_id ? staffMember.vendor_id.toString() : null),
-      } : (staffMember && staffMember.vendor_id ? {
-        // ✅ NEW: Staff member but no vendor_identity - return minimal profile with vendor_id
-        vendor_id: staffMember.vendor_id.toString(),
-        onboarding_status: 'ACTIVATED', // ✅ FIX: Use ACTIVATED, not 'completed'
-      } : null),
-    };
-    
-    // ✅ NEW: Add staff info if staff member logged in (for reference, but they're logged in as vendor)
-    if (staffMember) {
-      responseData.staff_info = {
-        staff_id: staffMember.id,
-        staff_name: staffMember.name,
-        vendor_id: staffMember.vendor_id?.toString() || null,
+        vendor_id: vendorIdentity.vendor_id,
       };
-      console.log(`[AUTH] Staff member ${staffMember.name} (${staffMember.id}) logged in as vendor ${staffMember.vendor_id}`);
-      // ✅ CRITICAL: Force ACTIVATED in response for staff (double-check)
-      if (responseData.profile) {
-        responseData.profile.onboarding_status = 'ACTIVATED';
-        console.log(`[AUTH] ✅ FORCED onboarding_status to ACTIVATED for staff in response`);
-      }
-      // ✅ FIX: Log the final onboarding_status being returned
-      console.log(`[AUTH] Final onboarding_status in response: ${responseData.profile?.onboarding_status || 'MISSING'}`);
     }
     
-    return this.success(responseData);
+    return null;
   }
 }
 

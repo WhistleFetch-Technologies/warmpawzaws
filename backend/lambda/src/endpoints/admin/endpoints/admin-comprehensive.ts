@@ -1137,6 +1137,130 @@ class ReactivateVendorHandler extends BaseHandler {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Delete Vendor Handler (Soft Delete)
+// Sets is_deleted = true in both vendors and vendor_identity tables
+// ────────────────────────────────────────────────────────────────────────────
+class DeleteVendorHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const vendorId = context.event.pathParameters?.vendorId;
+    const body = this.parseBody(context.event);
+    const adminId = context.userId || body.adminId || 'admin';
+    const reason = body.reason || 'Deleted by admin';
+
+    if (!vendorId) {
+      return this.error('Vendor ID is required', 400);
+    }
+
+    try {
+      // Check if vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return this.error('Vendor not found', 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Check if already deleted
+      if (vendor.is_deleted === true) {
+        return this.error('Vendor is already deleted', 400);
+      }
+
+      // 1. Soft delete the vendor record
+      await update(
+        'vendors',
+        { id: vendorId },
+        {
+          is_deleted: true,
+          is_active: false,
+          status: 'inactive',
+          updated_at: new Date(),
+          metadata: {
+            ...vendor.metadata,
+            deleted_at: new Date().toISOString(),
+            deleted_by: adminId,
+            deletion_reason: reason
+          }
+        }
+      );
+
+      // 2. Soft delete the associated vendor_identity record (if exists)
+      // Find vendor_identity by vendor_id or by phone
+      let vendorIdentityRecords = [];
+      
+      if (vendor.vendor_identity_id) {
+        vendorIdentityRecords = await select('vendor_identity', { id: vendor.vendor_identity_id });
+      }
+      
+      // If not found by vendor_identity_id, try by phone
+      if (vendorIdentityRecords.length === 0 && vendor.phone) {
+        vendorIdentityRecords = await select('vendor_identity', { phone: vendor.phone });
+      }
+
+      // Update all matching vendor_identity records
+      for (const vi of vendorIdentityRecords) {
+        if (vi.is_deleted !== true) {
+          await update(
+            'vendor_identity',
+            { id: vi.id },
+            {
+              is_deleted: true,
+              updated_at: new Date(),
+              metadata: {
+                ...(vi.metadata || {}),
+                deleted_at: new Date().toISOString(),
+                deleted_by: adminId,
+                deletion_reason: reason,
+                deleted_vendor_id: vendorId
+              }
+            }
+          );
+        }
+      }
+
+      // Create notification for vendor (optional, since they're deleted)
+      try {
+        await insert('notifications', {
+          recipient_id: vendorId,
+          recipient_type: 'vendor',
+          notification_type: 'vendor_deleted',
+          title: 'Account Deleted',
+          message: `Your vendor account has been permanently deleted. Reason: ${reason}`,
+          channels: { email: true, sms: false, inApp: false, push: false },
+          is_read: false,
+        });
+      } catch (notifError) {
+        console.warn('Failed to create deletion notification:', notifError);
+      }
+
+      // Log to audit
+      try {
+        await insert('entity_audit_log', {
+          entity_type: 'vendor',
+          entity_id: vendorId,
+          action: 'deleted',
+          old_values: { is_deleted: false, is_active: vendor.is_active, status: vendor.status },
+          new_values: { is_deleted: true, is_active: false, status: 'inactive' },
+          changed_fields: ['is_deleted', 'is_active', 'status'],
+          actor_id: adminId,
+          actor_type: 'admin',
+        });
+      } catch (auditError) {
+        console.warn('Failed to create audit log:', auditError);
+      }
+
+      return this.success({ 
+        success: true, 
+        message: 'Vendor deleted successfully',
+        vendorId
+      });
+    } catch (error: any) {
+      console.error('Error in DeleteVendorHandler:', error);
+      return this.error(error.message || 'Failed to delete vendor', 500);
+    }
+  }
+}
+
 // ✅ NEW: Get vendor activity history
 class GetVendorActivityHistoryHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
@@ -3739,6 +3863,146 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     }
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // GET /admin/vendors/deactivated
+  // Returns vendors where is_active = false OR status IN ('suspended','inactive')
+  // Includes deactivation metadata (reason, date, who deactivated)
+  // ────────────────────────────────────────────────────────────────────────────
+  app.get('/admin/vendors/deactivated', async (c) => {
+    try {
+      const search = c.req.query('search')?.trim();
+      const category = c.req.query('category');
+      const city = c.req.query('city');
+      const limit = parseInt(c.req.query('limit') || '200', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // Build WHERE clause — deactivated = is_active false OR status suspended/inactive
+      const whereConditions: string[] = [
+        `(v.is_active = false OR v.status IN ('suspended', 'inactive'))`
+      ];
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (search) {
+        whereConditions.push(`(
+          v.business_name ILIKE $${paramIdx} OR
+          v.owner_name ILIKE $${paramIdx} OR
+          v.phone ILIKE $${paramIdx} OR
+          v.email ILIKE $${paramIdx} OR
+          v.city ILIKE $${paramIdx}
+        )`);
+        params.push(`%${search}%`);
+        paramIdx++;
+      }
+
+      if (category && category !== 'all') {
+        whereConditions.push(`(
+          LOWER(v.category) = LOWER($${paramIdx}) OR
+          LOWER(r.name) ILIKE $${paramIdx + 1}
+        )`);
+        params.push(category.toLowerCase());
+        params.push(`%${category}%`);
+        paramIdx += 2;
+      }
+
+      if (city && city !== 'all') {
+        whereConditions.push(`LOWER(v.city) = LOWER($${paramIdx})`);
+        params.push(city);
+        paramIdx++;
+      }
+
+      const whereClause = whereConditions.join(' AND ');
+
+      const vendorsResult = await query(`
+        SELECT
+          v.id,
+          v.phone,
+          v.email,
+          v.business_name,
+          v.owner_name,
+          v.role_id,
+          v.category,
+          v.status,
+          v.tier,
+          v.is_active,
+          v.address,
+          v.city,
+          v.state,
+          v.pincode,
+          v.created_at,
+          v.approved_at,
+          v.updated_at,
+          v.metadata,
+          r.name       AS role_name,
+          r.display_name AS role_display_name,
+          CASE
+            WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
+            WHEN r.name LIKE '%_solo' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END AS vendor_type,
+          (SELECT COUNT(*)              FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS completed_bookings_count,
+          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS total_revenue
+        FROM vendors v
+        LEFT JOIN roles r             ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        WHERE ${whereClause}
+        ORDER BY v.updated_at DESC
+        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+      `, [...params, limit, offset]);
+
+      // Count total (for pagination)
+      const countResult = await query(`
+        SELECT COUNT(DISTINCT v.id) AS total
+        FROM vendors v
+        LEFT JOIN roles r             ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        WHERE ${whereClause}
+      `, params);
+      const totalCount = parseInt(countResult.rows[0]?.total) || 0;
+
+      // Transform rows for the frontend
+      const vendors = (vendorsResult.rows || []).map((v: any) => {
+        const meta = typeof v.metadata === 'string'
+          ? (() => { try { return JSON.parse(v.metadata); } catch { return {}; } })()
+          : (v.metadata || {});
+
+        return {
+          id: v.id,
+          vendorId: v.id,
+          businessName: v.business_name,
+          ownerName: v.owner_name,
+          phone: v.phone,
+          email: v.email,
+          roleId: v.role_id,
+          roleName: v.role_name,
+          roleDisplayName: v.role_display_name,
+          category: v.category || v.role_name || 'General',
+          status: v.status,
+          tier: v.tier || 'Bronze',
+          isActive: v.is_active,
+          vendorType: v.vendor_type,
+          address: v.address,
+          city: v.city,
+          state: v.state,
+          location: v.city ? `${v.city}${v.state ? ', ' + v.state : ''}` : null,
+          completedBookingsCount: parseInt(v.completed_bookings_count) || 0,
+          totalRevenue: parseFloat(v.total_revenue) || 0,
+          createdAt: v.created_at,
+          updatedAt: v.updated_at,
+          // Deactivation-specific fields from metadata
+          deactivatedAt: meta.deactivated_at || null,
+          deactivatedBy: meta.deactivated_by || null,
+          deactivationReason: meta.deactivation_reason || null,
+        };
+      });
+
+      return c.json({ success: true, vendors, total: totalCount });
+    } catch (error: any) {
+      console.error('Error fetching deactivated vendors:', error);
+      return c.json({ success: false, error: error.message || 'Failed to fetch deactivated vendors' }, 500);
+    }
+  });
+
   // ✅ NEW: Get comprehensive vendor details by ID
   app.get('/admin/vendors/:vendorId/details', async (c) => {
     const handler = new GetVendorDetailsHandler();
@@ -3763,6 +4027,20 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   // ✅ NEW: Reactivate vendor
   app.post('/admin/vendors/:vendorId/reactivate', async (c) => {
     const handler = new ReactivateVendorHandler();
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: c.req.param('vendorId') };
+    event.body = await c.req.text();
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // POST /admin/vendors/:vendorId/delete
+  // Soft delete vendor (sets is_deleted = true in vendors and vendor_identity)
+  // ────────────────────────────────────────────────────────────────────────────
+  app.post('/admin/vendors/:vendorId/delete', async (c) => {
+    const handler = new DeleteVendorHandler();
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
     event.body = await c.req.text();

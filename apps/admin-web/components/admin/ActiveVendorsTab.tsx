@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText, Edit } from 'lucide-react';
+import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText, Edit, Trash2 } from 'lucide-react';
 import { Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { CustomDropdown } from './CustomDropdown';
@@ -65,6 +65,7 @@ export function ActiveVendorsTab() {
   const [editingDetailsVendorName, setEditingDetailsVendorName] = useState<string>('');
   const [totalCount, setTotalCount] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Debounce search to avoid too many API calls
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -237,6 +238,32 @@ export function ActiveVendorsTab() {
     } catch (error: any) {
       console.error('Error deactivating vendor:', error);
       alert(error.message || 'Failed to deactivate vendor');
+    }
+  };
+
+  const handleDeleteVendor = async (vendorId: string, vendorName: string) => {
+    const reason = prompt(
+      `Enter reason for deleting "${vendorName}":\n\nThis will permanently delete the vendor account.`
+    );
+    if (!reason || reason.trim() === '') {
+      return;
+    }
+
+    const confirmed = confirm(
+      `⚠️ WARNING: Are you sure you want to permanently delete "${vendorName}"?\n\nThis action cannot be undone. The vendor will be soft-deleted (is_deleted = true).`
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(vendorId);
+      await apiClient.post(`/admin/vendors/${vendorId}/delete`, { reason: reason.trim() });
+      alert(`${vendorName} has been deleted successfully.`);
+      loadActiveVendors();
+    } catch (error: any) {
+      console.error('Error deleting vendor:', error);
+      alert(error.message || 'Failed to delete vendor');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -569,6 +596,16 @@ export function ActiveVendorsTab() {
                   >
                     <PowerOff className="w-4 h-4 mr-2" />
                     Deactivate
+                  </Button>
+                  {/* ✅ NEW: Delete button */}
+                  <Button
+                    size="sm"
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={() => handleDeleteVendor(vendor.id, vendor.name)}
+                    disabled={deletingId === vendor.id}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {deletingId === vendor.id ? 'Deleting...' : 'Delete'}
                   </Button>
                 </div>
               </div>
