@@ -1,8 +1,8 @@
-# Direct AWS CLI deployment script for vendor-web (DEV)
-# Usage: .\scripts\deploy-vendor-web.ps1 [-DeployOnly]
+# Direct AWS CLI deployment script for admin-web (DEV)
+# Usage: .\scripts\deploy-admin-web-dev.ps1 [-DeployOnly]
 #   -DeployOnly  Skip build; inject config and upload existing dist (fails if dist missing).
 #
-# WARNING: This script deploys to DEV environment!
+# This script deploys to DEV environment!
 
 param(
     [switch]$DeployOnly
@@ -10,16 +10,34 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 Deploying vendor-web to AWS dev environment..." -ForegroundColor Cyan
+Write-Host "Deploying admin-web to AWS dev environment..." -ForegroundColor Cyan
 
 # Configuration
-$APP_NAME = "vendor-web"
-$S3_BUCKET = "warmpawz-dev-vendor-frontend-ap-south-1"
-$CLOUDFRONT_DIST_ID = "E95171GX1I6HN"
-$CLOUDFRONT_URL = "https://d1s6ykkj381k58.cloudfront.net"
-$ALTERNATE_DOMAIN = "dev.vendor.warmpawz.com"
+$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
+$APP_NAME = "admin-web"
+$S3_BUCKET = "warmpawz-dev-admin-frontend-ap-south-1"
+$CLOUDFRONT_DIST_ID = "E1WPXL8WBOWOE8"
+$CLOUDFRONT_URL = "https://dfof7mguaa0a5.cloudfront.net"
+$ALTERNATE_DOMAIN = "dev.admin.warmpawz.com"
 $REGION = "ap-south-1"
 $API_BASE_URL = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"  # Dev API Gateway
+
+# Verify API endpoint
+if ([string]::IsNullOrEmpty($API_BASE_URL)) {
+    Write-Host "Getting API endpoint from AWS..." -ForegroundColor Yellow
+    try {
+        $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
+        $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-dev-api" } | Select-Object -First 1
+        if ($api -and $api.ApiEndpoint) {
+            $API_BASE_URL = $api.ApiEndpoint
+        }
+    } catch {
+        Write-Host "Error: Could not get API Gateway endpoint" -ForegroundColor Red
+        exit 1
+    }
+}
+$API_BASE_URL = $API_BASE_URL.TrimEnd('/')
 
 Write-Host "Dev Configuration:" -ForegroundColor Blue
 Write-Host "   S3 Bucket: $S3_BUCKET"
@@ -29,9 +47,7 @@ Write-Host "   Alternate Domain: $ALTERNATE_DOMAIN"
 Write-Host "   API Endpoint: $API_BASE_URL"
 Write-Host ""
 
-# Get project root
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
+Set-Location $PROJECT_ROOT
 
 # Step 1: Build the app
 Set-Location "apps\$APP_NAME"
@@ -58,34 +74,17 @@ if ($DeployOnly -and (Test-Path "dist")) {
         npm run build
     }
 
-if (-not (Test-Path "dist")) {
+    if (-not (Test-Path "dist")) {
         Write-Host "Error: dist directory not found after build!" -ForegroundColor Red
-    exit 1
-}
+        exit 1
+    }
 
     Write-Host "Build completed successfully" -ForegroundColor Green
 }
 
-
 # Step 1.5: Inject runtime-config.js
 Write-Host "Injecting runtime-config.js..." -ForegroundColor Blue
 Set-Location $PROJECT_ROOT
-
-# Verify API endpoint
-if ([string]::IsNullOrEmpty($API_BASE_URL)) {
-    Write-Host "Getting API endpoint from AWS..." -ForegroundColor Yellow
-    try {
-        $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
-        $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-dev-api" } | Select-Object -First 1
-        if ($api -and $api.ApiEndpoint) {
-            $API_BASE_URL = $api.ApiEndpoint
-        }
-    } catch {
-        Write-Host "Error: Could not get API Gateway endpoint" -ForegroundColor Red
-        exit 1
-    }
-}
-$API_BASE_URL = $API_BASE_URL.TrimEnd('/')
 
 $runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (DEV)`n" +
 "// Injected at deployment - API base is API Gateway (backend), not CloudFront`n" +
@@ -161,7 +160,7 @@ Write-Host "   S3 Upload: Synced to $S3_BUCKET"
 Write-Host "   CloudFront: Cache invalidation created ($INVALIDATION_ID)"
 Write-Host ""
 Write-Host "Access URLs:"
-Write-Host "   - Vendor Web (DEV): $CLOUDFRONT_URL"
+Write-Host "   - Admin Web (DEV): $CLOUDFRONT_URL"
 Write-Host "   - Alternate Domain: https://$ALTERNATE_DOMAIN"
 Write-Host "   - Direct S3: s3://$S3_BUCKET"
 Write-Host ""

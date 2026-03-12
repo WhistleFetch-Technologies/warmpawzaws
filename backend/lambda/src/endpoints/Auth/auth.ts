@@ -307,20 +307,20 @@ class VerifyOtpHandler extends BaseHandler {
    * Handles various formats: +91 9999999999, 919999999999, 9999999999, etc.
    */
   private normalizePhoneNumber(phoneNumber: string): string {
-    // Remove all non-digit characters
-    const phoneDigits = phoneNumber.replace(/\D/g, '');
-    
-    // Handle different phone number lengths:
-    // - If > 10 digits: take last 10 (removes country code)
-    // - If 9 digits: pad with leading 0
-    // - If 10 digits: use as-is
-    if (phoneDigits.length > 10) {
-      return phoneDigits.slice(-10);
-    } else if (phoneDigits.length === 9) {
-      return '0' + phoneDigits;
-    } else {
-      return phoneDigits;
-    }
+      // Remove all non-digit characters
+      const phoneDigits = phoneNumber.replace(/\D/g, '');
+      
+      // Handle different phone number lengths:
+      // - If > 10 digits: take last 10 (removes country code)
+      // - If 9 digits: pad with leading 0
+      // - If 10 digits: use as-is
+      if (phoneDigits.length > 10) {
+        return phoneDigits.slice(-10);
+      } else if (phoneDigits.length === 9) {
+        return '0' + phoneDigits;
+      } else {
+        return phoneDigits;
+      }
   }
 
   /**
@@ -347,7 +347,7 @@ class VerifyOtpHandler extends BaseHandler {
       console.log(`[AUTH] 🧪 TEST USER: Bypassing OTP verification for test phone ${normalizedPhone} with OTP ${otp}`);
       await this.markOtpAsUsed(normalizedPhone);
       return true;
-    }
+        }
     
     // UAT MODE BYPASS (DEVELOPMENT/TESTING ONLY)
     if (UAT_MODE && otp === '123456') {
@@ -355,7 +355,7 @@ class VerifyOtpHandler extends BaseHandler {
       await this.markOtpAsUsed(phone);
       return true;
     }
-    
+      
     // NORMAL OTP VERIFICATION (PRODUCTION FLOW)
     return await verifyOtp(phone, otp);
   }
@@ -364,43 +364,43 @@ class VerifyOtpHandler extends BaseHandler {
    * Marks existing OTP records as used (non-blocking cleanup)
    */
   private async markOtpAsUsed(phone: string): Promise<void> {
-    try {
-      const records = await select('otp_tokens', {
-        phone,
-        is_used: false,
-      });
-      if (records.length > 0) {
-        await query(
-          'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-          [records[0].id]
-        );
+      try {
+        const records = await select('otp_tokens', {
+          phone,
+          is_used: false,
+        });
+        if (records.length > 0) {
+          await query(
+            'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+            [records[0].id]
+          );
         console.log(`[AUTH] Marked existing OTP record as used for ${phone}`);
       }
     } catch (e) {
       console.warn(`[AUTH] Could not mark existing OTP as used for ${phone}:`, e);
-    }
-  }
-
+                  }
+                }
+                
   /**
    * Finds vendor identity by phone number
    */
   private async findVendorIdentityByPhone(phone: string, normalizedPhone: string): Promise<any | null> {
     console.log(`[AUTH] Checking vendor_identity for phone: ${normalizedPhone}`);
-    
-    let identities = await select('vendor_identity', { phone: normalizedPhone });
-    if (identities.length === 0 && phone !== normalizedPhone) {
-      identities = await select('vendor_identity', { phone });
-    }
-    
-    if (identities.length > 0) {
+        
+        let identities = await select('vendor_identity', { phone: normalizedPhone });
+        if (identities.length === 0 && phone !== normalizedPhone) {
+          identities = await select('vendor_identity', { phone });
+        }
+        
+        if (identities.length > 0) {
       const identity = identities[0];
       console.log(`[AUTH] Found vendor_identity by phone: ${identity.id}, status: ${identity.onboarding_status}`);
       return identity;
     }
     
     return null;
-  }
-
+      }
+      
   /**
    * Resolves vendor role information from role ID
    */
@@ -413,21 +413,21 @@ class VerifyOtpHandler extends BaseHandler {
    * Generates fallback authentication token when Cognito fails
    */
   private generateFallbackToken(phone: string, userId?: string): string {
-    const timestamp = Date.now();
-    const random = randomBytes(16).toString('hex');
-    const userIdPart = userId || phone;
-    const tokenData = `${phone}_${userIdPart}_${timestamp}_${random}`;
-    const tokenHash = createHash('sha256').update(tokenData).digest('hex');
+        const timestamp = Date.now();
+        const random = randomBytes(16).toString('hex');
+        const userIdPart = userId || phone;
+        const tokenData = `${phone}_${userIdPart}_${timestamp}_${random}`;
+        const tokenHash = createHash('sha256').update(tokenData).digest('hex');
     
-    // Return a JWT-like format: base64 encoded payload with hash
-    const payload = Buffer.from(JSON.stringify({
-      phone,
-      userId: userIdPart,
-      timestamp,
-      type: 'fallback_session'
-    })).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        // Return a JWT-like format: base64 encoded payload with hash
+        const payload = Buffer.from(JSON.stringify({
+          phone,
+          userId: userIdPart,
+          timestamp,
+          type: 'fallback_session'
+        })).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
     
-    return `fallback_${payload}.${tokenHash.substring(0, 32)}`;
+        return `fallback_${payload}.${tokenHash.substring(0, 32)}`;
   }
 
   /**
@@ -442,40 +442,40 @@ class VerifyOtpHandler extends BaseHandler {
     const fallbackAccessToken = this.generateFallbackToken(phone, fallbackUserId);
     const fallbackIdToken = this.generateFallbackToken(phone, fallbackUserId);
     const fallbackRefreshToken = this.generateFallbackToken(phone, `${fallbackUserId}_refresh`);
-    
+      
     console.log(`[AUTH] Generated fallback tokens for vendor: ${phone}`);
-    
-    const fallbackData: any = {
-      message: 'OTP verified successfully',
-      verified: true,
-      phone,
-      userId: fallbackUserId,
-      username: phone,
-      accessToken: fallbackAccessToken,
-      idToken: fallbackIdToken,
-      refreshToken: fallbackRefreshToken,
-      expiresIn: 3600,
-      warning: 'Cognito integration unavailable - using fallback tokens',
-      profile: this.buildVendorProfile(vendorIdentity, vendorRole),
-      token: {
-        access_token: fallbackAccessToken,
-        id_token: fallbackIdToken,
-        refresh_token: fallbackRefreshToken,
-        expires_in: 3600
-      },
-      tokens: {
+      
+      const fallbackData: any = {
+        message: 'OTP verified successfully',
+        verified: true,
+        phone,
+        userId: fallbackUserId,
+        username: phone,
         accessToken: fallbackAccessToken,
         idToken: fallbackIdToken,
         refreshToken: fallbackRefreshToken,
-        expiresIn: 3600
-      },
-      user: {
-        id: fallbackUserId,
-        phone: phone,
-        username: phone
-      }
-    };
-    
+      expiresIn: 3600,
+        warning: 'Cognito integration unavailable - using fallback tokens',
+      profile: this.buildVendorProfile(vendorIdentity, vendorRole),
+        token: {
+          access_token: fallbackAccessToken,
+          id_token: fallbackIdToken,
+          refresh_token: fallbackRefreshToken,
+          expires_in: 3600
+        },
+        tokens: {
+          accessToken: fallbackAccessToken,
+          idToken: fallbackIdToken,
+          refreshToken: fallbackRefreshToken,
+          expiresIn: 3600
+        },
+        user: {
+          id: fallbackUserId,
+          phone: phone,
+          username: phone
+        }
+      };
+      
     return fallbackData;
   }
 
@@ -521,7 +521,7 @@ class VerifyOtpHandler extends BaseHandler {
         vendor_type: vendorIdentity.vendor_type,
         roleName: vendorRole?.display_name || vendorRole?.name,
         vendor_id: vendorIdentity.vendor_id,
-      };
+    };
     }
     
     return null;

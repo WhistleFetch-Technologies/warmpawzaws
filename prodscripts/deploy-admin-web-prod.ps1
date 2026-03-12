@@ -1,37 +1,65 @@
-# Direct AWS CLI deployment script for vendor-web (DEV)
-# Usage: .\scripts\deploy-vendor-web.ps1 [-DeployOnly]
+# Direct AWS CLI deployment script for admin-web (PRODUCTION) - PowerShell Version
+# Usage: .\prodscripts\deploy-admin-web-prod.ps1 [-DeployOnly] [-SkipConfirm]
 #   -DeployOnly  Skip build; inject config and upload existing dist (fails if dist missing).
 #
-# WARNING: This script deploys to DEV environment!
+# WARNING: This script deploys to PRODUCTION environment!
 
 param(
-    [switch]$DeployOnly
+    [switch]$DeployOnly,
+    [switch]$SkipConfirm
 )
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 Deploying vendor-web to AWS dev environment..." -ForegroundColor Cyan
+# Safety confirmation for PROD
+if (-not $SkipConfirm) {
+    Write-Host "WARNING: PRODUCTION DEPLOYMENT" -ForegroundColor Red
+    Write-Host "This will deploy admin-web to PRODUCTION environment!" -ForegroundColor Yellow
+    Write-Host ""
+    $confirm = Read-Host "Are you sure you want to continue? Type 'yes' to proceed"
+    if ($confirm -ne "yes") {
+        Write-Host "Deployment cancelled" -ForegroundColor Red
+        exit 1
+    }
+}
 
-# Configuration
-$APP_NAME = "vendor-web"
-$S3_BUCKET = "warmpawz-dev-vendor-frontend-ap-south-1"
-$CLOUDFRONT_DIST_ID = "E95171GX1I6HN"
-$CLOUDFRONT_URL = "https://d1s6ykkj381k58.cloudfront.net"
-$ALTERNATE_DOMAIN = "dev.vendor.warmpawz.com"
+Write-Host "Deploying admin-web to AWS PRODUCTION environment..." -ForegroundColor Green
+
+# Production Configuration
+$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
+$APP_NAME = "admin-web"
+$S3_BUCKET = "warmpawz-prod-admin-frontend-ap-south-1"
+$CLOUDFRONT_DIST_ID = "E2NHO6UUI5UIHW"
+$CLOUDFRONT_URL = "https://dbr09zyoq9akb.cloudfront.net"
+$API_BASE_URL = "https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
 $REGION = "ap-south-1"
-$API_BASE_URL = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"  # Dev API Gateway
 
-Write-Host "Dev Configuration:" -ForegroundColor Blue
+# Verify API endpoint
+if ([string]::IsNullOrEmpty($API_BASE_URL)) {
+    Write-Host "Getting API endpoint from AWS..." -ForegroundColor Yellow
+    try {
+        $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
+        $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-prod-api" } | Select-Object -First 1
+        if ($api -and $api.ApiEndpoint) {
+            $API_BASE_URL = $api.ApiEndpoint
+        }
+    } catch {
+        Write-Host "Error: Could not get API Gateway endpoint" -ForegroundColor Red
+        exit 1
+    }
+}
+$API_BASE_URL = $API_BASE_URL.TrimEnd('/')
+
+Write-Host "Production Configuration:" -ForegroundColor Blue
 Write-Host "   S3 Bucket: $S3_BUCKET"
 Write-Host "   CloudFront ID: $CLOUDFRONT_DIST_ID"
 Write-Host "   CloudFront URL: $CLOUDFRONT_URL"
-Write-Host "   Alternate Domain: $ALTERNATE_DOMAIN"
+Write-Host "   Alternate Domain: admin.warmpawz.com"
 Write-Host "   API Endpoint: $API_BASE_URL"
 Write-Host ""
 
-# Get project root
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
+Set-Location $PROJECT_ROOT
 
 # Step 1: Build the app
 Set-Location "apps\$APP_NAME"
@@ -58,44 +86,27 @@ if ($DeployOnly -and (Test-Path "dist")) {
         npm run build
     }
 
-if (-not (Test-Path "dist")) {
+    if (-not (Test-Path "dist")) {
         Write-Host "Error: dist directory not found after build!" -ForegroundColor Red
-    exit 1
-}
+        exit 1
+    }
 
     Write-Host "Build completed successfully" -ForegroundColor Green
 }
-
 
 # Step 1.5: Inject runtime-config.js
 Write-Host "Injecting runtime-config.js..." -ForegroundColor Blue
 Set-Location $PROJECT_ROOT
 
-# Verify API endpoint
-if ([string]::IsNullOrEmpty($API_BASE_URL)) {
-    Write-Host "Getting API endpoint from AWS..." -ForegroundColor Yellow
-    try {
-        $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
-        $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-dev-api" } | Select-Object -First 1
-        if ($api -and $api.ApiEndpoint) {
-            $API_BASE_URL = $api.ApiEndpoint
-        }
-    } catch {
-        Write-Host "Error: Could not get API Gateway endpoint" -ForegroundColor Red
-        exit 1
-    }
-}
-$API_BASE_URL = $API_BASE_URL.TrimEnd('/')
-
-$runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (DEV)`n" +
+$runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (PRODUCTION)`n" +
 "// Injected at deployment - API base is API Gateway (backend), not CloudFront`n" +
 "(function() {`n" +
 "  window.__WARMPAWZ_RUNTIME_CONFIG__ = {`n" +
 "    apiBaseUrl: `"$API_BASE_URL`",`n" +
-"    uatMode: true,`n" +
-"    environment: `"development`"`n" +
+"    uatMode: false,`n" +
+"    environment: `"production`"`n" +
 "  };`n" +
-"  console.log('Runtime config loaded (DEV):', window.__WARMPAWZ_RUNTIME_CONFIG__);`n" +
+"  console.log('Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);`n" +
 "})();`n"
 
 $runtimeConfig | Out-File -FilePath "apps\$APP_NAME\dist\runtime-config.js" -Encoding utf8 -NoNewline
@@ -104,7 +115,7 @@ Write-Host "runtime-config.js injected (apiBaseUrl -> API Gateway)" -ForegroundC
 
 # Step 1.6: Replace inline runtime-config in HTML files
 Write-Host "Replacing inline runtime-config in HTML files..." -ForegroundColor Blue
-$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: true, environment: 'development' };"
+$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production' };"
 Get-ChildItem -Path "apps\$APP_NAME\dist" -Filter "*.html" -Recurse | ForEach-Object {
     $content = Get-Content $_.FullName -Raw
     if ($content -match 'runtime-config-inline') {
@@ -112,7 +123,7 @@ Get-ChildItem -Path "apps\$APP_NAME\dist" -Filter "*.html" -Recurse | ForEach-Ob
         $content | Set-Content $_.FullName -NoNewline
     }
 }
-Write-Host "Inline runtime-config replaced in HTML files (dev values)" -ForegroundColor Green
+Write-Host "Inline runtime-config replaced in HTML files (production values)" -ForegroundColor Green
 
 # Step 2: Deploy to S3
 Write-Host "Uploading to S3 bucket: $S3_BUCKET..." -ForegroundColor Blue
@@ -152,7 +163,7 @@ if ($LASTEXITCODE -eq 0) {
 # Summary
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "DEV DEPLOYMENT COMPLETED" -ForegroundColor Green
+Write-Host "PRODUCTION DEPLOYMENT COMPLETED" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Deployment Summary:"
@@ -161,12 +172,12 @@ Write-Host "   S3 Upload: Synced to $S3_BUCKET"
 Write-Host "   CloudFront: Cache invalidation created ($INVALIDATION_ID)"
 Write-Host ""
 Write-Host "Access URLs:"
-Write-Host "   - Vendor Web (DEV): $CLOUDFRONT_URL"
-Write-Host "   - Alternate Domain: https://$ALTERNATE_DOMAIN"
+Write-Host "   - Admin Web (PROD): $CLOUDFRONT_URL"
+Write-Host "   - Alternate Domain: https://admin.warmpawz.com"
 Write-Host "   - Direct S3: s3://$S3_BUCKET"
 Write-Host ""
 Write-Host "Next Steps:"
 Write-Host "   1. Wait 5-15 minutes for CloudFront propagation"
 Write-Host "   2. Test the deployed application at $CLOUDFRONT_URL"
-Write-Host "   3. Verify API calls are using: $API_BASE_URL"
+Write-Host "   3. Verify all features work correctly in production"
 Write-Host ""

@@ -263,15 +263,24 @@ class ListVendorsHandler extends BaseHandler {
       console.log('[ListVendors] Filters:', { status, search, category, role, vendorType, city, tier, isActive });
 
       // Build dynamic WHERE clause
-      let whereConditions: string[] = ['1=1'];
+      // ✅ SECURITY: Exclude soft-deleted vendors (is_deleted = true)
+      // Deleted vendors should not appear in admin listings
+      // Handle both boolean true and PostgreSQL 't'/'f' string representations
+      let whereConditions: string[] = ['(v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = \'f\')'];
       const params: any[] = [];
       let paramIdx = 1;
 
       // Status filter
+      // 'approved' and 'active' are semantically equivalent — an active vendor was approved
+      // So filtering by either should include both
       if (status && status !== 'all') {
-        whereConditions.push(`v.status = $${paramIdx}`);
-        params.push(status);
-        paramIdx++;
+        if (status === 'approved' || status === 'active') {
+          whereConditions.push(`v.status IN ('approved', 'active')`);
+        } else {
+          whereConditions.push(`v.status = $${paramIdx}`);
+          params.push(status);
+          paramIdx++;
+        }
       }
 
       // Search filter - across multiple fields
@@ -334,56 +343,72 @@ class ListVendorsHandler extends BaseHandler {
       const whereClause = whereConditions.join(' AND ');
 
       // Main query with all filters
-      // ✅ FIX: Join vendor_identity by phone instead of vendor_id (vendor_id column may not exist in production)
+      // ✅ FIX: Use DISTINCT ON to ensure unique vendors and LATERAL JOIN for vendor_identity
+      // This handles phone format mismatches and prevents duplicate rows
+      // Wrap in subquery to maintain proper sorting by created_at DESC
       const vendorsResult = await query(`
-        SELECT 
-          v.id,
-          v.phone,
-          v.email,
-          v.business_name,
-          v.owner_name,
-          v.role_id,
-          v.category,
-          v.status,
-          v.tier,
-          v.is_active,
-          v.city,
-          v.state,
-          v.address,
-          v.experience_years,
-          v.created_at,
-          v.approved_at,
-          -- Role information
-          r.name as role_name,
-          r.display_name as role_display_name,
-          -- Vendor type derived from multiple sources
-          CASE 
-            WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
-            WHEN r.config->>'vendorConfiguration' IS NOT NULL THEN r.config->>'vendorConfiguration'
-            WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
-            ELSE 'business'
-          END as vendor_type,
-          -- Services count
-          (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true) as active_services_count,
-          -- Average rating
-          (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
-          -- Review count
-          (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
-        FROM vendors v
-        LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
-        WHERE ${whereClause}
-        ORDER BY v.created_at DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON (v.id)
+            v.id,
+            v.phone,
+            v.email,
+            v.business_name,
+            v.owner_name,
+            v.role_id,
+            v.category,
+            v.status,
+            v.tier,
+            v.is_active,
+            v.city,
+            v.state,
+            v.address,
+            v.experience_years,
+            v.created_at,
+            v.approved_at,
+            -- Role information
+            r.name as role_name,
+            r.display_name as role_display_name,
+            -- Vendor type derived from multiple sources (use LATERAL JOIN for vendor_identity)
+            CASE 
+              WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
+              WHEN r.config->>'vendorConfiguration' IS NOT NULL THEN r.config->>'vendorConfiguration'
+              WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+              ELSE 'business'
+            END as vendor_type,
+            -- Services count
+            (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true) as active_services_count,
+            -- Average rating
+            (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
+            -- Review count
+            (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
+          FROM vendors v
+          LEFT JOIN roles r ON r.id = v.role_id
+          LEFT JOIN LATERAL (
+            SELECT vendor_type
+            FROM vendor_identity vi2
+            WHERE (
+              vi2.phone = v.phone 
+              OR REPLACE(REPLACE(REPLACE(vi2.phone, ' ', ''), '+', ''), '-', '') = REPLACE(REPLACE(REPLACE(v.phone, ' ', ''), '+', ''), '-', '')
+              OR vi2.phone = REPLACE(REPLACE(REPLACE(v.phone, '+91', ''), ' ', ''), '-', '')
+              OR v.phone = REPLACE(REPLACE(REPLACE(vi2.phone, '+91', ''), ' ', ''), '-', '')
+            )
+            AND (vi2.is_deleted IS NULL OR vi2.is_deleted = false OR vi2.is_deleted = 'f')
+            ORDER BY vi2.updated_at DESC NULLS LAST, vi2.created_at DESC
+            LIMIT 1
+          ) vi ON true
+          WHERE ${whereClause}
+          ORDER BY v.id, v.created_at DESC NULLS LAST
+        ) AS unique_vendors
+        ORDER BY created_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
       `, [...params, limit, offset]);
 
       // Get total count for pagination
-      // ✅ FIX: Join vendor_identity by phone instead of vendor_id
+      // ✅ FIX: Count distinct vendors (no need for vendor_identity in count query)
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
       `, params);
 

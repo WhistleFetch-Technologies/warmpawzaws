@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useRef } from 'react';
 import { VendorAuth } from '@/components/vendor/VendorAuth';
 import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
+import { apiClient } from '@/lib/api-client';
 
 export default function AuthPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
@@ -45,14 +46,44 @@ export default function AuthPage() {
       return;
     }
 
-    // Valid session exists - redirect based on status
-    const storedVendor = localStorage.getItem('vendorData');
-    const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
-    const onboardingStatus = vendorData?.onboarding_status || localStorage.getItem('vendorApplicationStatus');
-    
-    // Route based on status
-    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
-    window.location.replace(isActiveVendor ? '/' : '/onboarding');
+    // ✅ SECURITY: Validate session with backend before redirecting
+    // This ensures deleted/deactivated vendors don't use cached data
+    // Run validation in background - if it fails, clear session and show login
+    apiClient.get<any>('/vendor/profile')
+      .then((profileResponse) => {
+        const profileData = profileResponse?.data || profileResponse;
+        
+        // If profile indicates vendor is deleted or deactivated, clear session
+        if (profileData?.success === false) {
+          const errorCode = profileData?.code;
+          if (errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
+            console.warn(`[AuthPage] Vendor account invalid (${errorCode}) — clearing session`);
+            clearVendorSession();
+            setIsCheckingSession(false);
+            return;
+          }
+        }
+        
+        // Valid session - redirect based on status
+        const storedVendor = localStorage.getItem('vendorData');
+        const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
+        const onboardingStatus = profileData?.vendor?.onboarding_status || 
+                                 vendorData?.onboarding_status || 
+                                 localStorage.getItem('vendorApplicationStatus');
+        
+        // Route based on status
+        const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
+        window.location.replace(isActiveVendor ? '/' : '/onboarding');
+      })
+      .catch((err: any) => {
+        // If profile check fails (403/404), clear session and show login
+        const statusCode = err?.statusCode;
+        if (statusCode === 403 || statusCode === 404) {
+          console.warn(`[AuthPage] Vendor account invalid (${statusCode}) — clearing session`);
+          clearVendorSession();
+        }
+        setIsCheckingSession(false);
+      });
   }, []);
 
   const handleAuthSuccess = (session: any) => {

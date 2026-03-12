@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
+import { clearVendorSession } from '@/lib/session-utils';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
 const logoImage = '/logo.png';
@@ -256,6 +257,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     setError('');
     console.log('🔐 [VendorAuth] Verifying OTP:', otpCode);
     console.log('🔐 [VendorAuth] Phone number:', `${countryCode}${phoneNumber}`);
+    
+    // ✅ SECURITY: Clear any existing session data before verifying OTP
+    // This ensures deleted/deactivated vendors don't use cached ACTIVATED status
+    clearVendorSession();
+    console.log('🔐 [VendorAuth] Cleared existing session data before OTP verification');
     
     try {
       // Verify OTP using the correct endpoint

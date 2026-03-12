@@ -122,7 +122,8 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
   const updateStatusCounts = () => {
     const counts = {
       new_applications: vendors.filter(v => v.status === 'pending_approval' || (v.status as any) === 'pending').length,
-      approved: vendors.filter(v => v.status === 'approved').length,
+      // 'approved' and 'active' are semantically equivalent — count both
+      approved: vendors.filter(v => v.status === 'approved' || v.status === 'active').length,
       rejected: vendors.filter(v => v.status === 'rejected').length,
       reverification: vendors.filter(v => v.status === 'pending_reverification').length
     };
@@ -256,8 +257,10 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
 
   const filteredVendors = vendors.filter(vendor => {
     // Status filter
+    // 'approved' and 'active' are semantically equivalent — an active vendor was approved
+    // So filtering by 'approved' should include both statuses
     if (activeStatusTab === 'new_applications' && vendor.status !== 'pending_approval' && (vendor.status as string) !== 'pending') return false;
-    if (activeStatusTab === 'approved' && vendor.status !== 'approved') return false;
+    if (activeStatusTab === 'approved' && vendor.status !== 'approved' && vendor.status !== 'active') return false;
     if (activeStatusTab === 'rejected' && vendor.status !== 'rejected') return false;
     if (activeStatusTab === 'reverification' && vendor.status !== 'pending_reverification') return false;
 

@@ -48,10 +48,16 @@ class GetOnboardingStatusHandler extends BaseHandler {
       const viSchema = viSchemaCheck.rows[0] || {};
 
       // Get or create vendor identity (try both original and normalized phone)
+      // ✅ SECURITY: Filter out soft-deleted records so deleted users are treated as new
       let identity = await select('vendor_identity', { phone });
       if (identity.length === 0 && normalizedPhone !== phone) {
         identity = await select('vendor_identity', { phone: normalizedPhone });
       }
+      // Filter out deleted records
+      identity = identity.filter((vi: any) =>
+        vi.is_deleted !== true && vi.is_deleted !== 't' &&
+        !(typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true')
+      );
 
       // Create vendor identity if it doesn't exist
       if (identity.length === 0) {
