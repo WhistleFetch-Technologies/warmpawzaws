@@ -232,6 +232,26 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
 class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
+  /**
+   * Helper function to check if a record is soft-deleted
+   * Handles boolean true, string "true", PostgreSQL 't'/'f', and case variations
+   */
+  private isRecordDeleted(record: any): boolean {
+    if (!record || record.is_deleted === undefined || record.is_deleted === null) {
+      return false;
+    }
+    // Handle boolean true
+    if (record.is_deleted === true) return true;
+    // Handle PostgreSQL boolean 't' (true) or 'f' (false)
+    if (record.is_deleted === 't') return true;
+    if (record.is_deleted === 'f') return false;
+    // Handle string "true" (case-insensitive)
+    if (typeof record.is_deleted === 'string' && record.is_deleted.toLowerCase() === 'true') return true;
+    // Handle numeric 1 (some databases return 1 for true)
+    if (record.is_deleted === 1) return true;
+    return false;
+  }
+
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     console.log(`[AUTH] 📝 VerifyOtpHandlerEnhanced handle called`);
     const body = this.parseBody(context.event);
@@ -673,6 +693,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             const retryVendors = await select('vendors', { phone: normalizedPhone });
             if (retryVendors.length > 0) {
               vendors = retryVendors;
+              console.log(`[AUTH] Found ${retryVendors.length} vendor(s) with normalizedPhone, is_deleted: ${retryVendors.map((v: any) => v.is_deleted).join(', ')}`);
             }
           }
           if (vendorIdentity.length === 0 && normalizedPhone !== phone) {
@@ -680,6 +701,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             const retryIdentity = await select('vendor_identity', { phone: normalizedPhone });
             if (retryIdentity.length > 0) {
               vendorIdentity = retryIdentity;
+              console.log(`[AUTH] Found ${retryIdentity.length} vendor_identity record(s) with normalizedPhone, is_deleted: ${retryIdentity.map((vi: any) => vi.is_deleted).join(', ')}`);
             }
           }
         } catch (vendorQueryError: any) {
@@ -691,17 +713,31 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
         // ────────────────────────────────────────────────────────────────────────────
         // FILTER OUT SOFT-DELETED RECORDS
-        // If is_deleted = true, treat as if record doesn't exist (allow phone reuse)
+        // If is_deleted = true, treat as if record doesn't exist (allow new registration)
+        // Deleted users should be able to create new accounts with the same phone number
         // ────────────────────────────────────────────────────────────────────────────
-        vendors = vendors.filter((v: any) => v.is_deleted !== true);
-        vendorIdentity = vendorIdentity.filter((vi: any) => vi.is_deleted !== true);
+        const deletedVendor = vendors.find((v: any) => this.isRecordDeleted(v));
+        if (deletedVendor) {
+          console.log(`[AUTH] Vendor ${deletedVendor.id} is soft-deleted (is_deleted = true) - treating as new user, allowing role selection`);
+        }
+
+        const deletedIdentity = vendorIdentity.find((vi: any) => this.isRecordDeleted(vi));
+        if (deletedIdentity) {
+          console.log(`[AUTH] Vendor identity ${deletedIdentity.id} is soft-deleted (is_deleted = true) - treating as new user, allowing role selection`);
+        }
+
+        // ────────────────────────────────────────────────────────────────────────────
+        // FILTER OUT SOFT-DELETED RECORDS (defense in depth)
+        // ────────────────────────────────────────────────────────────────────────────
+        vendors = vendors.filter((v: any) => !this.isRecordDeleted(v));
+        vendorIdentity = vendorIdentity.filter((vi: any) => !this.isRecordDeleted(vi));
 
         if (vendors.length > 0) {
           const vendor = vendors[0];
           
-          // ✅ SECURITY: Block login if vendor is deactivated (only for non-deleted records)
-          // Check: is_deleted = false AND status = 'suspended' AND is_active = false
-          if (vendor.is_deleted !== true && vendor.is_active === false && vendor.status === 'suspended') {
+          // ✅ SECURITY: Block login if vendor is deactivated
+          // Check: status = 'suspended' OR 'inactive' AND is_active = false
+          if (vendor.is_active === false && (vendor.status === 'suspended' || vendor.status === 'inactive')) {
             console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated (is_active: ${vendor.is_active}, status: ${vendor.status}) - blocking login`);
             return this.error('Your vendor account has been deactivated. Please contact support for assistance.', 403, 'VENDOR_DEACTIVATED', undefined, context.requestId);
           }
@@ -753,14 +789,14 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               // CHECK IF VENDOR IS SOFT-DELETED
               // If is_deleted = true, treat as if vendor doesn't exist (allow new registration)
               // ────────────────────────────────────────────────────────────────────────────
-              if (vendorById.is_deleted === true) {
-                console.log(`[AUTH] Vendor ${vendorById.id} is soft-deleted (is_deleted = true) - allowing new registration for phone ${phone}`);
-                // Clear array to fall through to use identity ID
+              if (this.isRecordDeleted(vendorById)) {
+                console.log(`[AUTH] Vendor ${vendorById.id} is soft-deleted (is_deleted = true) - treating as new user, allowing role selection`);
+                // Clear array to fall through to new user flow
                 vendorsByVendorId = [];
               } else {
                 // ✅ SECURITY: Block login if vendor is deactivated (only for non-deleted records)
-                // Check: is_deleted = false AND status = 'suspended' AND is_active = false
-                if (vendorById.is_active === false && vendorById.status === 'suspended') {
+                // Check: status = 'suspended' OR 'inactive' AND is_active = false
+                if (vendorById.is_active === false && (vendorById.status === 'suspended' || vendorById.status === 'inactive')) {
                   console.warn(`[AUTH] ⚠️ Vendor ${vendorById.id} is deactivated (is_active: ${vendorById.is_active}, status: ${vendorById.status}) - blocking login`);
                   return this.error('Your vendor account has been deactivated. Please contact support for assistance.', 403, 'VENDOR_DEACTIVATED', undefined, context.requestId);
                 }
@@ -774,19 +810,12 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               }
             }
             
-            // If vendor was deleted or not found, use identity ID
+            // If vendor was deleted or not found, treat as new user (allow role selection)
             if (vendorsByVendorId.length === 0) {
-              // vendor_id points to deleted/non-existent vendor - use identity ID
-              userId = identity.id;
-              userData = {
-                id: identity.id,
-                phone: phone,
-                is_active: false,
-                onboarding_status: identity.onboarding_status,
-                vendor_identity_id: identity.id,
-                created_at: identity.created_at,
-              };
-              console.log(`[AUTH] vendor_identity.vendor_id points to deleted/missing vendor, using identity ID: ${userId}`);
+              // vendor_id points to deleted/non-existent vendor - treat as new user
+              console.log(`[AUTH] vendor_identity.vendor_id points to deleted/missing vendor - treating as new user, allowing role selection`);
+              // Clear vendorIdentity to fall through to new user flow
+              vendorIdentity = [];
             }
           } else {
             // Vendor not approved yet - use identity ID (this is correct for mid-onboarding)

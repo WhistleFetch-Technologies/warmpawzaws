@@ -23,18 +23,18 @@ CREATE TABLE IF NOT EXISTS vendor_onboarding_applications (
     
     -- Relationships
     vendor_identity_id UUID NOT NULL REFERENCES vendor_identity(id) ON DELETE CASCADE,
-    role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE SET NULL,
     
     -- Application Type
-    vendor_type VARCHAR(50) CHECK (vendor_type IN ('solo', 'center', 'business')),
+    vendor_type TEXT NOT NULL CHECK (vendor_type IN ('solo', 'center', 'business')),
     
     -- Application Data
-    application_payload JSONB DEFAULT '{}'::jsonb,
+    application_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     uploaded_documents JSONB DEFAULT '[]'::jsonb,
-    form_version INTEGER DEFAULT 1,
+    form_version TEXT,
     
     -- Status & Workflow
-    status VARCHAR(50) NOT NULL DEFAULT 'DRAFT' CHECK (
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (
         status IN (
             'DRAFT',
             'SUBMITTED',
@@ -60,11 +60,11 @@ CREATE TABLE IF NOT EXISTS vendor_onboarding_applications (
     rejection_reason TEXT,
     
     -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
-
-
-      is_deleted BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    -- Soft Deletion
+    is_deleted BOOLEAN DEFAULT false
 );
 
 -- ============================================================================

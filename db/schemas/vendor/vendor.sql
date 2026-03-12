@@ -25,36 +25,36 @@ CREATE TABLE IF NOT EXISTS vendors (
     vendor_identity_id UUID REFERENCES vendor_identity(id) ON DELETE SET NULL,
     
     -- Contact Information
-    phone VARCHAR(20) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    alternate_phone VARCHAR(20),
+    phone TEXT NOT NULL,
+    email TEXT NOT NULL,
+    alternate_phone TEXT,
     
     -- Business Information
-    business_name VARCHAR(255) NOT NULL,
-    owner_name VARCHAR(255) NOT NULL,
+    business_name TEXT NOT NULL,
+    owner_name TEXT NOT NULL,
     
     -- Business Details
     role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
-    category VARCHAR(100),
+    category TEXT,
     experience_years INTEGER,
-    registration_number VARCHAR(100),
-    gst_number VARCHAR(50),
-    pan_number VARCHAR(20),
+    registration_number TEXT,
+    gst_number TEXT,
+    pan_number TEXT,
     
     -- Location
     address TEXT NOT NULL,
-    city VARCHAR(100) NOT NULL,
-    state VARCHAR(100) NOT NULL,
-    pincode VARCHAR(10) NOT NULL,
+    city TEXT NOT NULL,
+    state TEXT NOT NULL,
+    pincode TEXT,
     landmark TEXT,
     latitude NUMERIC(10, 8),
     longitude NUMERIC(11, 8),
     
     -- Status & Tier
-    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
         status IN ('new', 'onboarding', 'pending', 'approved', 'rejected', 'active', 'suspended', 'inactive')
     ),
-    tier VARCHAR(20) DEFAULT 'Bronze' CHECK (tier IN ('Bronze', 'Silver', 'Gold', 'Platinum')),
+    tier TEXT DEFAULT 'Bronze' CHECK (tier IN ('Bronze', 'Silver', 'Gold', 'Platinum')),
     commission_percentage NUMERIC(5, 2) DEFAULT 15.00,
     
     -- Operational Details
@@ -62,9 +62,14 @@ CREATE TABLE IF NOT EXISTS vendors (
     capacity INTEGER,
     specialization TEXT,
     specializations JSONB DEFAULT '[]'::jsonb,
+    qualifications TEXT, -- Vendor qualifications/certifications
+    service_area TEXT, -- Service area description
+    description TEXT, -- Vendor description
     
     -- Profile & Verification
     profile_image TEXT,
+    profile_photo_url TEXT, -- Profile photo URL (alternative to profile_image)
+    logo_url TEXT, -- Business logo URL
     is_verified BOOLEAN DEFAULT false,
     languages JSONB DEFAULT '["English", "Hindi"]'::jsonb,
     rating NUMERIC(3, 2) DEFAULT 0 CHECK (rating >= 0 AND rating <= 5),
@@ -72,6 +77,8 @@ CREATE TABLE IF NOT EXISTS vendors (
     
     -- Onboarding & Go Live
     onboarding_progress INTEGER DEFAULT 0 CHECK (onboarding_progress >= 0 AND onboarding_progress <= 100),
+    onboarding_status TEXT, -- Onboarding status (separate from vendor status)
+    vendor_type TEXT, -- Vendor type classification
     go_live_at TIMESTAMPTZ,
     go_live_checklist JSONB DEFAULT '{}'::jsonb,
     
@@ -121,10 +128,12 @@ CREATE TABLE IF NOT EXISTS vendors (
     availability_configured BOOLEAN DEFAULT false,
     services_configured BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
-    is_online BOOLEAN DEFAULT false,
+    is_online BOOLEAN DEFAULT true,
+    went_offline_at TIMESTAMPTZ, -- Timestamp when vendor went offline
+    available_for_instant_tele BOOLEAN NOT NULL DEFAULT false, -- Available for instant teleconsultation
     
     -- Metadata & Settings
-    metadata JSONB DEFAULT '{}'::jsonb,
+    metadata JSONB,
     timezone TEXT DEFAULT 'Asia/Kolkata',
     user_id UUID,
     
@@ -133,19 +142,19 @@ CREATE TABLE IF NOT EXISTS vendors (
     pending_payout NUMERIC(10, 2) DEFAULT 0,
     
     -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     approved_at TIMESTAMPTZ,
     approved_by UUID, -- References admin users
     last_login_at TIMESTAMPTZ,
+    
+    -- Soft Deletion
+    is_deleted BOOLEAN DEFAULT false,
     
     -- Constraints
     CONSTRAINT chk_vendor_phone_format CHECK (phone ~ '^[0-9]{10,15}$'),
     CONSTRAINT chk_vendor_email_format CHECK (email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
     CONSTRAINT chk_vendor_commission CHECK (commission_percentage >= 0 AND commission_percentage <= 100)
-
-
-    is_deleted BOOLEAN DEFAULT false,
 );
 
 -- ============================================================================

@@ -11,6 +11,7 @@ import { VendorClarificationRequested } from '../VendorClarificationRequested';
 import { VendorLandingPage } from './VendorLandingPage';
 import { VendorApprovedSetup } from '../VendorApprovedSetup';
 import { apiClient } from '@/lib/api-client';
+import { clearVendorSession } from '@/lib/session-utils';
 
 interface VendorSession {
   phone: string;
@@ -82,6 +83,18 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   const hasCheckedStatus = useRef(false);
   const isCheckingStatus = useRef(false);
 
+  // ✅ SECURITY: Validate vendor session with backend on mount — but ONLY for
+  // vendors whose cached status says ACTIVATED or APPROVED. New / onboarding
+  // vendors (INIT, SUBMITTED, etc.) don't have a profile yet, so calling
+  // /vendor/profile would incorrectly return 404 and boot them to /auth.
+  useEffect(() => {
+    const cachedStatus = localStorage.getItem('vendorApplicationStatus');
+    const isSupposedlyActive = cachedStatus === 'ACTIVATED' || cachedStatus === 'APPROVED';
+    if (isSupposedlyActive) {
+      validateVendorWithBackend();
+    }
+  }, []);
+
   useEffect(() => {
     if (hasCheckedStatus.current || isCheckingStatus.current) return;
     if (!initial.isLoading) {
@@ -91,6 +104,36 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     hasCheckedStatus.current = true;
     checkVendorStatus();
   }, []);
+
+  /**
+   * Background validation: calls /vendor/profile to confirm the vendor account
+   * is still valid (not deleted or deactivated). If invalid, clears session and
+   * redirects to /auth so the user can register fresh.
+   */
+  const validateVendorWithBackend = async () => {
+    try {
+      const response = await apiClient.get<any>('/vendor/profile');
+      const data = response?.data || response;
+
+      // Explicit VENDOR_DELETED or VENDOR_DEACTIVATED code from backend
+      if (data?.success === false && (data?.code === 'VENDOR_DELETED' || data?.code === 'VENDOR_DEACTIVATED')) {
+        console.warn(`[VendorApp] ⚠️ Backend says vendor is ${data.code} — clearing session`);
+        clearVendorSession();
+        window.location.replace('/auth');
+        return;
+      }
+    } catch (err: any) {
+      // 403 = deactivated, 404 = deleted/not found
+      if (err?.statusCode === 403 || err?.statusCode === 404 || err?.status === 403 || err?.status === 404) {
+        console.warn(`[VendorApp] ⚠️ Profile check returned ${err?.statusCode || err?.status} — clearing session`);
+        clearVendorSession();
+        window.location.replace('/auth');
+        return;
+      }
+      // Other errors (network, 500, etc.) — don't clear session, just log
+      console.warn('[VendorApp] Background profile validation failed (non-fatal):', err?.message);
+    }
+  };
 
   const checkVendorStatus = async () => {
     if (isCheckingStatus.current) {
@@ -123,6 +166,16 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         }
         setIsLoading(false);
         isCheckingStatus.current = false;
+
+        // ✅ SECURITY: Background validation — check if vendor is still active on the backend
+        apiClient.get<any>('/vendor/profile').catch((err: any) => {
+          const statusCode = err?.statusCode;
+          if (statusCode === 403 || statusCode === 404) {
+            console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
+            clearVendorSession();
+            window.location.replace('/auth');
+          }
+        });
         return;
       }
 
@@ -149,83 +202,66 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               .then((profileResponse) => {
                 const profileData = profileResponse?.data || profileResponse;
 
-                // ✅ BIG LOGGING: Show full payload during OTP login
-                console.log('═══════════════════════════════════════════════════════════');
-                console.log('═══════════════════════════════════════════════════════════');
-                console.log('═══════════════════════════════════════════════════════════');
-                console.log('🔍🔍🔍 VENDOR PROFILE PAYLOAD - OTP LOGIN (FAST PATH) 🔍🔍🔍');
-                console.log('═══════════════════════════════════════════════════════════');
-                console.log('═══════════════════════════════════════════════════════════');
-                console.log('═══════════════════════════════════════════════════════════');
-                console.log('');
-                console.log('📦 FULL PROFILE RESPONSE:');
-                console.log(JSON.stringify(profileResponse, null, 2));
-                console.log('');
-                console.log('📦 PROFILE DATA:');
-                console.log(JSON.stringify(profileData, null, 2));
-                console.log('');
+                console.log('🔍 [VendorApp] FAST PATH: Profile response received');
+
+                // ✅ SECURITY: Check if profile indicates vendor is deleted or deactivated
+                if (profileData?.success === false) {
+                  const errorCode = profileData?.code;
+                  if (errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
+                    console.warn(`⚠️ [VendorApp] Vendor is ${errorCode} — clearing session and redirecting to auth`);
+                    clearVendorSession();
+                    window.location.replace('/auth');
+                    return;
+                  }
+                }
 
                 if (profileData?.success && profileData?.vendor) {
                   const profileVendor = profileData.vendor;
-                  const correctVendorId = profileVendor.id; // ✅ Always use vendors.id from profile
+                  const correctVendorId = profileVendor.id;
 
-                  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                  console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', correctVendorId);
-                  console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', correctVendorId);
-                  console.log('🆔🆔🆔 VENDOR ID FROM PROFILE:', correctVendorId);
-                  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                  console.log('');
-                  console.log('📋 STORED VENDOR ID (localStorage):', storedVendorId);
-                  console.log('📋 PROFILE VENDOR OBJECT:');
-                  console.log(JSON.stringify(profileVendor, null, 2));
-                  console.log('');
-                  console.log('═══════════════════════════════════════════════════════════');
-                  console.log('═══════════════════════════════════════════════════════════');
-                  console.log('═══════════════════════════════════════════════════════════');
+                  console.log('✅ [VendorApp] FAST PATH: Vendor ID from profile:', correctVendorId);
 
-                  // ✅ CRITICAL: If vendorId changed, update localStorage immediately
                   if (correctVendorId && correctVendorId !== storedVendorId) {
-                    console.log(`✅ [VendorApp] FAST PATH: Updating vendorId from ${storedVendorId} to ${correctVendorId}`);
                     localStorage.setItem('vendorId', correctVendorId);
                   }
 
-                  // ✅ CRITICAL FIX: ALWAYS merge profile data to get roleId and capabilities
-                  // Preserve address and vendorConfiguration from localStorage when profile returns null/undefined
-                  // (on reload, profile API can omit these and overwriting would hide address + flip to solo UI)
                   const updatedVendor = {
                     ...vendor,
                     ...profileVendor,
-                    id: correctVendorId, // ✅ Always use correct vendors.id
+                    id: correctVendorId,
                     roleId: profileVendor.role_id ?? profileVendor.roleId ?? vendor.roleId,
                     role_id: profileVendor.role_id ?? profileVendor.roleId ?? vendor.role_id,
                     roleName: profileVendor.roleName ?? profileVendor.role_name ?? vendor.roleName ?? vendor.role_name,
                     role_name: profileVendor.role_name ?? profileVendor.roleName ?? vendor.role_name ?? vendor.roleName,
                     isActive: true,
                     status: 'active',
-                    // Preserve from localStorage when profile omits or nulls (prevents reload bug)
                     address: (profileVendor.address != null && profileVendor.address !== '') ? profileVendor.address : (vendor.address ?? profileVendor.address),
                     vendorConfiguration: (profileVendor.vendorConfiguration ?? profileVendor.vendor_configuration) ?? (vendor.vendorConfiguration ?? vendor.vendor_configuration),
                   };
 
-                  console.log('✅ [VendorApp] FAST PATH: Merging profile data with roleId:', updatedVendor.roleId || updatedVendor.role_id);
-
-                  // Update localStorage with correct vendorId
                   localStorage.setItem('vendorId', correctVendorId);
                   localStorage.setItem('vendorData', JSON.stringify(updatedVendor));
 
-                  // Update roleId in localStorage
                   const roleId = profileVendor.role_id || profileVendor.roleId;
                   if (roleId) {
                     localStorage.setItem('vendorRole', roleId);
-                    console.log('✅ [VendorApp] FAST PATH: Updated vendorRole to', roleId);
                   }
 
-                  // ✅ CRITICAL: Update state to trigger re-render with roleId
                   setVendorData(updatedVendor);
                 }
               })
-              .catch((err) => {
-                console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile for ID update:', err);
+              .catch((err: any) => {
+                // ✅ SECURITY: If profile returns 403 (deactivated) or 404 (deleted),
+                // clear session and redirect to auth page
+                const statusCode = err?.statusCode;
+                const errorCode = err?.originalError?.code;
+                if (statusCode === 403 || statusCode === 404 || errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
+                  console.warn(`⚠️ [VendorApp] Vendor account invalid (status: ${statusCode}, code: ${errorCode}) — clearing session`);
+                  clearVendorSession();
+                  window.location.replace('/auth');
+                  return;
+                }
+                console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile:', err?.message);
               });
           } catch (e) {
             console.warn('⚠️ [VendorApp] Could not parse stored vendor data');
@@ -486,7 +522,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
         localStorage.setItem('vendorData', JSON.stringify(vendorData));
         localStorage.setItem('vendorApplicationStatus', onboardingStatus);
-        localStorage.setItem('vendorId', vendorData.id || identity.id);
+        // Guard: never store "undefined" or "null" as vendorId
+        const resolvedVendorId = vendorData.id || identity.id;
+        if (resolvedVendorId && resolvedVendorId !== 'undefined' && resolvedVendorId !== 'null') {
+          localStorage.setItem('vendorId', resolvedVendorId);
+        }
         const bizName = (vendorData as any).business_name || (vendorData as any).businessName || '';
         if (bizName) {
           localStorage.setItem('vendorName', bizName);
