@@ -15,7 +15,6 @@
  */
 
 import { Hono } from 'hono';
-import { randomUUID } from 'crypto';
 import { select, update, insert, query } from '../../../database/rds-connection';
 import { getSnsClient } from '../../../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
@@ -149,41 +148,13 @@ export async function getVendorIdentityId(vendorIdOrResolved: string): Promise<s
   }
 }
 
-/** 
- * Helper: Check if a record is soft-deleted
- * Handles boolean true, string "true", PostgreSQL 't'/'f', and case variations
- */
-function isRecordDeleted(record: any): boolean {
-  if (!record || record.is_deleted === undefined || record.is_deleted === null) {
-    return false;
-  }
-  // Handle boolean true
-  if (record.is_deleted === true) return true;
-  // Handle PostgreSQL boolean 't' (true) or 'f' (false)
-  if (record.is_deleted === 't') return true;
-  if (record.is_deleted === 'f') return false;
-  // Handle string "true" (case-insensitive)
-  if (typeof record.is_deleted === 'string' && record.is_deleted.toLowerCase() === 'true') return true;
-  // Handle numeric 1 (some databases return 1 for true)
-  if (record.is_deleted === 1) return true;
-  return false;
-}
-
 /** Resolve vendor by ID - checks vendors, then vendor_identity with auto-create. Returns vendor row or null. Exported for use by vendor-schedule. */
 export async function resolveVendorById(vendorId: string): Promise<any | null> {
   const trimmedId = (vendorId || '').trim();
   if (!trimmedId) return null;
 
-  // ✅ SECURITY: Check vendors table - filter out deleted vendors
   let vendors = await select('vendors', { id: trimmedId });
-  const activeVendors = vendors.filter((v: any) => !isRecordDeleted(v));
-  if (activeVendors.length > 0) {
-    return activeVendors[0];
-  }
-  // If only deleted vendors found, treat as if vendor doesn't exist
-  if (vendors.length > 0) {
-    console.log(`⚠️ [PROFILE] Vendor ${trimmedId} exists but is soft-deleted - treating as not found`);
-  }
+  if (vendors.length > 0) return vendors[0];
 
   console.log(`[PROFILE] Vendor ${trimmedId} not in vendors table, checking vendor_identity...`);
   let identities = await select('vendor_identity', { id: trimmedId });
@@ -213,43 +184,27 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
       ).catch(() => ({ rows: [] }));
       if (staffRows.rows?.length > 0 && staffRows.rows[0].vendor_id) {
         const linked = await select('vendors', { id: staffRows.rows[0].vendor_id });
-        const activeLinked = linked.filter((v: any) => !isRecordDeleted(v));
-        if (activeLinked.length > 0) return activeLinked[0];
+        if (linked.length > 0) return linked[0];
       }
       return null;
     }
   }
 
-  // ✅ SECURITY: Filter out deleted vendor_identity records
-  const activeIdentities = identities.filter((vi: any) => !isRecordDeleted(vi));
-  if (activeIdentities.length === 0) {
-    console.log(`⚠️ [PROFILE] Vendor identity ${trimmedId} exists but is soft-deleted - treating as not found`);
-    return null;
-  }
-
-  const identity = activeIdentities[0];
+  const identity = identities[0];
   if (identity.onboarding_status !== 'APPROVED' && identity.onboarding_status !== 'ACTIVATED') {
     return null;
   }
 
-  // ✅ SECURITY: Check vendors by phone - filter out deleted vendors
   const phoneNorm = normalizePhoneForLookup(identity.phone);
   if (phoneNorm) {
     const vendorByPhone = await query(
-      `SELECT * FROM vendors 
-       WHERE (REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 OR phone = $2)
-       AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
-       LIMIT 1`,
+      `SELECT * FROM vendors WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 OR phone = $2 LIMIT 1`,
       [`%${phoneNorm}%`, identity.phone]
     ).catch(() => ({ rows: [] }));
-    if (vendorByPhone.rows?.length > 0) {
-      const activeByPhone = vendorByPhone.rows.filter((v: any) => !isRecordDeleted(v));
-      if (activeByPhone.length > 0) return activeByPhone[0];
-    }
+    if (vendorByPhone.rows?.length > 0) return vendorByPhone.rows[0];
   }
   const vendorByPhoneDirect = await select('vendors', { phone: identity.phone });
-  const activeByPhoneDirect = vendorByPhoneDirect.filter((v: any) => !isRecordDeleted(v));
-  if (activeByPhoneDirect.length > 0) return activeByPhoneDirect[0];
+  if (vendorByPhoneDirect.length > 0) return vendorByPhoneDirect[0];
 
   const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identity.id });
   const application = applications.length > 0 ? applications[0] : null;
@@ -319,34 +274,15 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     }
   }
 
-  // Determine the vendor ID to use - prefer identity.vendor_id, fallback to identity.id
-  let proposedVendorId = identity.vendor_id || identity.id;
-  
-  // ✅ FIX: Check if a vendor with this ID already exists (even if deleted)
-  // If it exists, generate a new unique UUID to avoid primary key violation
-  // This ensures each new vendor registration gets a fresh record, even if the old one was deleted
-  const existingVendorCheck = await query(
-    `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
-    [proposedVendorId]
-  ).catch(() => ({ rows: [] }));
-
-  let finalVendorId = proposedVendorId;
-  
-  if (existingVendorCheck.rows && existingVendorCheck.rows.length > 0) {
-    // Vendor with this ID already exists (may be deleted or active)
-    // Generate a new unique UUID for the new vendor record
-    finalVendorId = randomUUID();
-    console.log(`⚠️ [PROFILE] Vendor ID ${proposedVendorId} already exists - generating new unique ID: ${finalVendorId}`);
-  }
-
-  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${finalVendorId}`);
+  const newVendorId = identity.vendor_id || identity.id;
+  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
   console.log(`[PROFILE] Extracted values - pincode: ${(() => {
     const { extractPincodeFromPayload } = require('../../../utils/extract-profile-photo');
     return extractPincodeFromPayload(payload);
   })()}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
   
   const newVendor = await insert('vendors', {
-    id: finalVendorId,
+    id: newVendorId,
     phone: identity.phone,
     email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
     business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
@@ -369,23 +305,6 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
-  
-  // ✅ FIX: Update vendor_identity to link the new vendor_id
-  // This ensures vendor_identity.vendor_id points to the correct (new) vendors record
-  if (identity.vendor_id !== finalVendorId) {
-    try {
-      await query(
-        `UPDATE vendor_identity 
-         SET vendor_id = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [finalVendorId, identity.id]
-      );
-      console.log(`✅ [PROFILE] Linked vendor_id ${finalVendorId} to vendor_identity ${identity.id}`);
-    } catch (linkErr: any) {
-      console.warn(`⚠️ [PROFILE] Failed to link vendor_id (non-critical):`, linkErr.message);
-    }
-  }
-  
   return newVendor[0];
 }
 
@@ -439,22 +358,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
       console.log('🆔 VendorId from JWT:', vendorIdFromAuth);
       console.log('═══════════════════════════════════════════════════════════');
 
-      /** Helper: true when the record is soft-deleted */
-      const isRecordDeleted = (r: any): boolean =>
-        r?.is_deleted === true || r?.is_deleted === 't' ||
-        (typeof r?.is_deleted === 'string' && r.is_deleted.toLowerCase() === 'true');
-
       // Try to find vendor by vendorId first (userId from JWT might be vendor ID)
       if (vendorIdFromAuth && !vendorIdFromAuth.startsWith('temp_')) {
         try {
           const vendors = await select('vendors', { id: vendorIdFromAuth });
-          // Skip deleted records — treat as if they don't exist
-          const activeVendors = vendors.filter((v: any) => !isRecordDeleted(v));
-          if (activeVendors.length > 0) {
-            vendor = activeVendors[0];
+          if (vendors.length > 0) {
+            vendor = vendors[0];
             console.log(`✅ [PROFILE-GET] Found vendor by vendorId: ${vendor.id}`);
-          } else if (vendors.length > 0) {
-            console.log(`⚠️ [PROFILE-GET] Vendor ${vendorIdFromAuth} exists but is soft-deleted — skipping`);
           } else {
             console.log(`⚠️ [PROFILE-GET] No vendor found with ID: ${vendorIdFromAuth}`);
           }
@@ -464,44 +374,53 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
 
       // If not found by vendorId, try by phone directly on vendors table
-      // ✅ FIX: Use normalized phone matching + filter out soft-deleted vendors
+      // ✅ FIX: Use normalized phone matching (remove spaces, +, country codes)
       if (!vendor && phone) {
         try {
+          // Normalize phone for matching (remove all non-digits, then remove leading 91 if present)
           const normalizedPhone = normalizePhoneForLookup(phone);
           const phoneWithoutCountryCode = normalizedPhone?.replace(/^91/, '') || phone;
           
           console.log(`[PROFILE-GET] Phone normalization: original=${phone}, normalized=${normalizedPhone}, withoutCountryCode=${phoneWithoutCountryCode}`);
           
+          // First try exact match with original phone
           let vendorsByPhone = await select('vendors', { phone });
+          console.log(`[PROFILE-GET] Exact match result: ${vendorsByPhone.length} vendors found`);
+          
+          // If not found, try normalized phone
           if (vendorsByPhone.length === 0 && normalizedPhone) {
             vendorsByPhone = await select('vendors', { phone: normalizedPhone });
+            console.log(`[PROFILE-GET] Normalized match result: ${vendorsByPhone.length} vendors found`);
           }
+          
+          // If still not found, try without country code
           if (vendorsByPhone.length === 0 && phoneWithoutCountryCode && phoneWithoutCountryCode !== phone) {
             vendorsByPhone = await select('vendors', { phone: phoneWithoutCountryCode });
+            console.log(`[PROFILE-GET] Without country code match result: ${vendorsByPhone.length} vendors found`);
           }
+          
+          // If still not found, try SQL query with normalized matching
           if (vendorsByPhone.length === 0) {
             const phoneQuery = await query(
               `SELECT * FROM vendors 
                WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = $1
                   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = $2
                   OR phone = $3
-                  OR phone = $4`,
+                  OR phone = $4
+               LIMIT 1`,
               [normalizedPhone || '', phoneWithoutCountryCode || '', phone, normalizedPhone || phone]
             );
-            if (phoneQuery.rows?.length > 0) {
+            if (phoneQuery.rows && phoneQuery.rows.length > 0) {
               vendorsByPhone = phoneQuery.rows;
+              console.log(`✅ [PROFILE-GET] Found vendor using SQL normalized query: ${vendorsByPhone[0].id}`);
             }
           }
           
-          // ✅ SECURITY: Filter out soft-deleted vendors — only use active records
-          const activeVendors = vendorsByPhone.filter((v: any) => !isRecordDeleted(v));
-          if (activeVendors.length > 0) {
-            vendor = activeVendors[0];
-            console.log(`✅ [PROFILE-GET] Found active vendor by phone: ${vendor.id}`);
-          } else if (vendorsByPhone.length > 0) {
-            console.log(`⚠️ [PROFILE-GET] Only deleted vendor(s) found for phone — treating as no vendor`);
+          if (vendorsByPhone.length > 0) {
+            vendor = vendorsByPhone[0];
+            console.log(`✅✅✅ [PROFILE-GET] FOUND VENDOR BY PHONE: ${vendor.id} (phone in DB: ${vendor.phone}) ✅✅✅`);
           } else {
-            console.log(`⚠️ [PROFILE-GET] No vendor found for phone: ${phone}`);
+            console.log(`⚠️ [PROFILE-GET] No vendor found for phone: ${phone} (tried: ${phone}, ${normalizedPhone}, ${phoneWithoutCountryCode})`);
           }
         } catch (e) {
           console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
@@ -509,38 +428,34 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
       
       // Also fetch vendor_identity for onboarding status (handle missing vendor_id column gracefully)
-      // Prefer non-deleted, APPROVED/ACTIVATED identity when multiple rows exist for same phone
+      // Prefer APPROVED/ACTIVATED identity when multiple rows exist for same phone (re-applications)
       if (phone) {
         try {
           const identitiesResult = await query(
-            `SELECT * FROM vendor_identity WHERE phone = $1 ORDER BY
-             (CASE WHEN COALESCE(is_deleted, false) = true THEN 1 ELSE 0 END),
+            `SELECT * FROM vendor_identity WHERE phone = $1 ORDER BY 
              (CASE WHEN onboarding_status IN ('APPROVED', 'ACTIVATED') THEN 0 ELSE 1 END),
              updated_at DESC NULLS LAST`,
             [phone]
           );
-          const identities = (identitiesResult?.rows || [])
-            .filter((vi: any) => !isRecordDeleted(vi)); // ✅ Skip deleted identities
+          const identities = identitiesResult?.rows || [];
           if (identities.length > 0) {
             identityData = identities[0];
             // Try to link vendor via vendor_id if column exists and vendor not found yet
             if (!vendor && identityData && typeof identityData.vendor_id === 'string') {
               try {
                 const vendors = await select('vendors', { id: identityData.vendor_id });
-                const activeVendors = vendors.filter((v: any) => !isRecordDeleted(v));
-                if (activeVendors.length > 0) {
-                  vendor = activeVendors[0];
+                if (vendors.length > 0) {
+                  vendor = vendors[0];
                 }
               } catch (e) {
                 console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
               }
             }
-            // Try vendor by phone if identity has vendor_id but select failed
+            // Try vendor by phone if identity has vendor_id but select failed (e.g. different id)
             if (!vendor && identityData?.vendor_id) {
               try {
                 const vByPhone = await select('vendors', { phone });
-                const activeByPhone = vByPhone.filter((v: any) => !isRecordDeleted(v));
-                if (activeByPhone.length > 0) vendor = activeByPhone[0];
+                if (vByPhone.length > 0) vendor = vByPhone[0];
               } catch (_e) { /* ignore */ }
             }
           }
@@ -550,79 +465,49 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
 
       if (!vendor) {
-        // No active vendor record found — check if there's non-deleted identity data for onboarding
+        // No vendor record found - check if there's identity data for onboarding
         if (identityData) {
           const identityStatus = identityData.onboarding_status || 'INIT';
           const isApproved = identityStatus === 'APPROVED' || identityStatus === 'ACTIVATED';
-          
-          // ✅ AUTO-CREATE VENDORS RECORD: If vendor is APPROVED/ACTIVATED but no vendors record exists,
-          // auto-create it using resolveVendorById (same logic as used by bank details, settlements, etc.)
-          if (isApproved) {
-            try {
-              console.log(`📝 [PROFILE-GET] APPROVED vendor found but no vendors record - auto-creating...`);
-              const autoCreatedVendor = await resolveVendorById(identityData.id);
-              if (autoCreatedVendor) {
-                vendor = autoCreatedVendor;
-                console.log(`✅ [PROFILE-GET] Auto-created vendors record: ${vendor.id}`);
-                // Continue to return vendor data below instead of identity data
-              } else {
-                console.warn(`⚠️ [PROFILE-GET] resolveVendorById returned null for identity ${identityData.id}`);
-              }
-            } catch (createError: any) {
-              // Log error but continue to return identity data as fallback
-              console.error(`⚠️ [PROFILE-GET] Failed to auto-create vendors record:`, createError);
-              console.error(`⚠️ [PROFILE-GET] Error details:`, {
-                message: createError.message,
-                identityId: identityData.id,
-                phone: phone
-              });
-            }
-          }
-          
-          // If vendor was auto-created above, it will be returned below. Otherwise return identity data.
-          if (!vendor) {
-            console.log(`📝 [PROFILE-GET] No active vendor found, returning identity: ${identityData.id}, status: ${identityStatus}`);
-            return c.json({
-              success: true,
-              vendor: {
-                id: identityData.id,
-                phone: phone,
-                status: isApproved ? 'active' : identityStatus.toLowerCase(),
-                isActive: isApproved,
-                onboardingStatus: identityStatus,
-              },
-              status: isApproved ? 'active' : (identityStatus === 'INIT' ? 'new' : identityStatus.toLowerCase()),
-              message: 'Vendor in onboarding'
-            });
-          }
-        } else {
-          console.log(`⚠️ [PROFILE-GET] No vendor or identity found for phone: ${phone}`);
+          // ⚠️ WARNING: Returning identity.id instead of vendors.id - this is WRONG for approved vendors
+          console.log(`⚠️⚠️⚠️ [PROFILE-GET] WARNING: No vendor found, returning identity.id: ${identityData.id} ⚠️⚠️⚠️`);
+          console.log(`📝 [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}, isApproved: ${isApproved}`);
+          console.log(`📝 [PROFILE-GET] Phone searched: ${phone}`);
+          console.log(`📝 [PROFILE-GET] This should NOT happen for APPROVED vendors - vendor record should exist!`);
           return c.json({
             success: true,
-            vendor: null,
-            status: 'new',
-            message: 'No vendor profile found'
+            vendor: {
+              id: identityData.id, // ⚠️ WRONG ID - this is vendor_identity.id, not vendors.id
+              phone: phone,
+              status: isApproved ? 'active' : identityStatus.toLowerCase(),
+              isActive: isApproved,
+              onboardingStatus: identityStatus,
+            },
+            status: isApproved ? 'active' : (identityStatus === 'INIT' ? 'new' : identityStatus.toLowerCase()),
+            message: 'Vendor in onboarding'
           });
         }
+        
+        console.log(`⚠️ [PROFILE-GET] No vendor found for phone: ${phone}`);
+        return c.json({
+          success: true,
+          vendor: null,
+          status: 'new',
+          message: 'No vendor profile found'
+        });
       }
       
-      console.log(`✅ [PROFILE-GET] RETURNING VENDOR ID: ${vendor.id}`);
-
-      // Defense-in-depth: should not reach here for deleted vendors (filtered above)
-      if (isRecordDeleted(vendor)) {
-        console.warn(`[PROFILE-GET] ⚠️ Vendor ${vendor.id} is soft-deleted (defense check) — returning VENDOR_DELETED`);
-        return c.json({
-          success: false,
-          error: 'Account not found',
-          message: 'Your vendor account no longer exists. Please register again.',
-          code: 'VENDOR_DELETED',
-        }, 404);
-      }
+      // ✅ CRITICAL: Log the vendor ID we're returning
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
+      console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
+      console.log('✅✅✅ [PROFILE-GET] RETURNING VENDOR ID:', vendor.id);
+      console.log('═══════════════════════════════════════════════════════════');
 
       // ✅ SECURITY: Check if vendor is deactivated (is_active = false or status = 'suspended')
       if (!vendor.is_active || vendor.status === 'suspended' || vendor.status === 'inactive') {
         const deactivationReason = vendor.metadata?.deactivation_reason || 'Account deactivated by admin';
-        console.warn(`[PROFILE-GET] ⚠️ Vendor ${vendor.id} is deactivated — blocking profile access`);
+        console.warn(`[PROFILE-GET] ⚠️ Vendor ${vendor.id} is deactivated - blocking profile access`);
         return c.json({
           success: false,
           error: 'Your vendor account has been deactivated',
@@ -1070,17 +955,6 @@ export function registerVendorProfileEndpoints(app: Hono) {
           return c.json({ error: 'Vendor not approved or activated' }, 403);
         }
         return c.json({ error: 'Vendor not found' }, 404);
-      }
-      
-      // ✅ SECURITY: Double-check that vendor is not soft-deleted (defense in depth)
-      const isDeleted = vendor.is_deleted === true || vendor.is_deleted === 't' ||
-        (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
-      if (isDeleted) {
-        console.warn(`⚠️ [PROFILE-GET] Vendor ${vendorId} is soft-deleted - returning 404`);
-        return c.json({ 
-          error: 'Vendor not found',
-          message: 'This vendor account no longer exists.'
-        }, 404);
       }
       
       // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
