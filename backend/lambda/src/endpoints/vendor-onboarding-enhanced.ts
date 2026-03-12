@@ -70,16 +70,10 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
 
     try {
       // Get or create vendor identity - try both phone formats
-      // ✅ SECURITY: Filter out soft-deleted records so deleted users are treated as new
       let identity = await select('vendor_identity', { phone });
       if (identity.length === 0 && phone !== normalizedPhone) {
         identity = await select('vendor_identity', { phone: normalizedPhone });
       }
-      // Filter out deleted records
-      identity = identity.filter((vi: any) =>
-        vi.is_deleted !== true && vi.is_deleted !== 't' &&
-        !(typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true')
-      );
       
       if (identity.length === 0) {
         // Create new vendor identity with INIT status
@@ -640,24 +634,8 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
     const { phone, application_payload, uploaded_documents } = validationResult.data;
 
     try {
-      // ✅ FIX: Get vendor identity - filter out deleted records and prefer newest non-APPROVED/ACTIVATED
-      // This ensures we use the correct identity when multiple exist for the same phone
-      const identityResult = await query(
-        `SELECT * FROM vendor_identity 
-         WHERE phone = $1 
-           AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
-         ORDER BY 
-           CASE 
-             WHEN onboarding_status NOT IN ('APPROVED', 'ACTIVATED') THEN 0
-             ELSE 1
-           END,
-           created_at DESC
-         LIMIT 1`,
-        [phone]
-      );
-      
-      let identities = identityResult.rows || [];
-      let identity: any = null;
+      // Get vendor identity
+      let identities = await select('vendor_identity', { phone });
       
       // ✅ FIX: Auto-create vendor identity if not found
       if (identities.length === 0) {
@@ -668,15 +646,12 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
           metadata: {},
         });
         identities = newIdentity;
-        identity = newIdentity[0];
         
         // ✅ FIX: Check if there's an existing application for this phone that needs to be linked
         const existingApps = await query(
           `SELECT voa.* FROM vendor_onboarding_applications voa
            JOIN vendor_identity vi ON voa.vendor_identity_id = vi.id
-           WHERE vi.phone = $1 
-             AND voa.status IN ('REJECTED', 'DRAFT', 'CLARIFICATION_REQUIRED')
-             AND (vi.is_deleted IS NULL OR vi.is_deleted = false OR vi.is_deleted = 'f')
+           WHERE vi.phone = $1 AND voa.status IN ('REJECTED', 'DRAFT', 'CLARIFICATION_REQUIRED')
            ORDER BY voa.submitted_at DESC
            LIMIT 1`,
           [phone]
@@ -697,27 +672,10 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
             { id: newIdentity[0].id },
             { application_id: existingApp.id }
           );
-          // Refresh identity with updated application_id
-          const refreshed = await select('vendor_identity', { id: newIdentity[0].id });
-          if (refreshed.length > 0) {
-            identity = refreshed[0];
-          }
         }
-      } else {
-        identity = identities[0];
-        console.log(`📦 [SUBMIT] Using vendor_identity ${identity.id} with onboarding_status: ${identity.onboarding_status}`);
       }
 
-      // ✅ Safety check: Ensure identity exists
-      if (!identity) {
-        return this.error(
-          'Failed to create or retrieve vendor identity',
-          500,
-          'INTERNAL_ERROR',
-          undefined,
-          requestId
-        );
-      }
+      let identity = identities[0];
 
       // ✅ FIX: Extract roleId and vendorType from payload or body if not in identity
       // Note: businessType (e.g., "veterinarian") is different from vendor_type (e.g., "solo" or "business")
@@ -1175,164 +1133,6 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
           JSON.stringify({ comments, rejection_reason }),
         ]
       );
-
-      // ✅ CREATE VENDORS RECORD: When approving, create vendors table record if it doesn't exist
-      // This ensures approved vendors appear in admin listings and can access vendor features
-      if (action === 'APPROVE') {
-        try {
-          // Check if vendor record already exists (by phone or by vendor_id from identity)
-          const existingVendorsByPhone = await query(
-            `SELECT id FROM vendors 
-             WHERE phone = $1 
-             AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
-             LIMIT 1`,
-            [identity.phone]
-          );
-
-          const existingVendorsById = identity.vendor_id
-            ? await query(
-                `SELECT id FROM vendors 
-                 WHERE id = $1 
-                 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
-                 LIMIT 1`,
-                [identity.vendor_id]
-              )
-            : { rows: [] };
-
-          // If vendor record already exists, just link it to vendor_identity if needed
-          if (existingVendorsByPhone.rows.length > 0 || existingVendorsById.rows.length > 0) {
-            const existingVendorId = existingVendorsById.rows[0]?.id || existingVendorsByPhone.rows[0]?.id;
-            console.log(`✅ [APPROVE] Vendor record already exists: ${existingVendorId}`);
-
-            // Link vendor_id to vendor_identity if not already linked
-            if (identity.vendor_id !== existingVendorId) {
-              try {
-                await query(
-                  `UPDATE vendor_identity 
-                   SET vendor_id = $1, updated_at = NOW()
-                   WHERE id = $2`,
-                  [existingVendorId, identity.id]
-                );
-                console.log(`✅ [APPROVE] Linked vendor_id ${existingVendorId} to vendor_identity ${identity.id}`);
-              } catch (linkErr: any) {
-                console.warn(`⚠️ [APPROVE] Failed to link vendor_id (non-critical):`, linkErr.message);
-              }
-            }
-          } else {
-            // No vendor record exists - create it from application data
-            console.log(`📝 [APPROVE] Creating vendors record for approved vendor ${identity.id}`);
-
-            // Extract form data from application payload
-            const formData = (application.application_payload as Record<string, any>) || {};
-            
-            // Get email with fallback chain: application payload → identity → phone-based default
-            const vendorEmail = formData.email || 
-                              formData.businessEmail || 
-                              identity.email || 
-                              `vendor-${identity.phone}@warmpawz.app`;
-
-            // Fetch default tier from vendor_tiers table (fallback to 'Bronze')
-            let defaultTierName = 'Bronze';
-            try {
-              const tierResult = await query(
-                `SELECT tier_name 
-                 FROM vendor_tiers 
-                 WHERE is_active = true 
-                   AND (is_default = true OR is_free_tier = true)
-                 ORDER BY is_default DESC NULLS LAST, tier_level ASC
-                 LIMIT 1`
-              );
-              if (tierResult.rows && tierResult.rows.length > 0) {
-                defaultTierName = tierResult.rows[0].tier_name;
-              }
-            } catch (tierError: any) {
-              console.warn(`⚠️ [APPROVE] Could not fetch default tier, using 'Bronze':`, tierError.message);
-            }
-
-            // Determine the vendor ID to use - prefer identity.vendor_id, fallback to identity.id
-            let proposedVendorId = identity.vendor_id || identity.id;
-            
-            // ✅ FIX: Check if a vendor with this ID already exists (even if deleted)
-            // If it exists, generate a new unique UUID to avoid primary key violation
-            // This ensures each new vendor registration gets a fresh record, even if the old one was deleted
-            const existingVendorCheck = await query(
-              `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
-              [proposedVendorId]
-            ).catch(() => ({ rows: [] }));
-
-            let finalVendorId = proposedVendorId;
-            
-            if (existingVendorCheck.rows && existingVendorCheck.rows.length > 0) {
-              // Vendor with this ID already exists (may be deleted or active)
-              // Generate a new unique UUID for the new vendor record
-              finalVendorId = randomUUID();
-              console.log(`⚠️ [APPROVE] Vendor ID ${proposedVendorId} already exists - generating new unique ID: ${finalVendorId}`);
-            }
-
-            // Extract pincode from various possible field names
-            const pincode = formData.pincode || 
-                          formData.pinCode || 
-                          formData.pin || 
-                          '';
-
-            // Create vendors record with the final (unique) vendor ID
-            const insertResult = await query(
-              `INSERT INTO vendors (
-                id, phone, email, owner_name, business_name, role_id, status, vendor_type,
-                city, state, address, pincode, tier, is_active, created_at, approved_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true, NOW(), NOW())
-              RETURNING id`,
-              [
-                finalVendorId,
-                identity.phone,
-                vendorEmail,
-                formData.contactPersonName || formData.fullName || formData.businessName || 'Vendor',
-                formData.businessName || formData.contactPersonName || 'Business',
-                identity.selected_role_id || identity.role_id,
-                identity.vendor_type || formData.vendorType || formData.vendor_type || 'business',
-                formData.city || 'Unknown',
-                formData.state || 'Unknown',
-                formData.address || 'Unknown',
-                pincode,
-                defaultTierName
-              ]
-            );
-
-            // Check if insert succeeded
-            if (insertResult.rows && insertResult.rows.length > 0) {
-              const createdVendorId = insertResult.rows[0].id;
-              console.log(`✅ [APPROVE] Created vendors record: ${createdVendorId}`);
-
-              // ✅ FIX: Always update vendor_identity to link the new vendor_id
-              // This ensures vendor_identity.vendor_id points to the correct (new) vendors record
-              if (!identity.vendor_id || identity.vendor_id !== createdVendorId) {
-                try {
-                  await query(
-                    `UPDATE vendor_identity 
-                     SET vendor_id = $1, updated_at = NOW()
-                     WHERE id = $2`,
-                    [createdVendorId, identity.id]
-                  );
-                  console.log(`✅ [APPROVE] Linked vendor_id ${createdVendorId} to vendor_identity ${identity.id}`);
-                } catch (linkErr: any) {
-                  console.warn(`⚠️ [APPROVE] Failed to link vendor_id (non-critical):`, linkErr.message);
-                }
-              }
-            } else {
-              console.error(`❌ [APPROVE] Failed to create vendors record - insert returned no rows`);
-            }
-          }
-        } catch (createError: any) {
-          // Log error but don't fail the approval - vendor can still access profile which will auto-create
-          console.error(`⚠️ [APPROVE] Failed to create vendors record (non-critical):`, createError);
-          console.error(`⚠️ [APPROVE] Error details:`, {
-            message: createError.message,
-            stack: createError.stack,
-            identityId: identity.id,
-            phone: identity.phone
-          });
-        }
-      }
 
       return this.success({
         message: `Application ${action.toLowerCase()}d successfully`,

@@ -3653,13 +3653,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       console.log('[AdminVendorsActive] Filters:', { search, category, role, vendorType, city, performance, tier });
 
       // Build dynamic WHERE clause (active = approved or active status, and is_active true)
-      // ✅ SECURITY: Exclude soft-deleted vendors (is_deleted = true)
-      // Handle both boolean true and PostgreSQL 't'/'f' string representations
-      let whereConditions = [
-        `v.status IN ('approved', 'active')`, 
-        `COALESCE(v.is_active, true) = true`,
-        `(v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')`
-      ];
+      let whereConditions = [`v.status IN ('approved', 'active')`, `COALESCE(v.is_active, true) = true`];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -3715,86 +3709,70 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       // ✅ DIRECT QUERY: Get active vendors (approved + is_active). No requirement for published services
       // so approved vendors appear even before they publish; active_services_count shows 0 when none.
-      // ✅ FIX: Use DISTINCT ON to ensure unique vendors and LATERAL JOIN for vendor_identity
-      // This handles phone format mismatches and prevents duplicate rows
       const vendorsResult = await query(`
-        SELECT * FROM (
-          SELECT DISTINCT ON (v.id)
-            v.id,
-            v.phone,
-            v.email,
-            v.business_name,
-            v.owner_name,
-            v.role_id,
-            v.category,
-            v.status,
-            v.tier,
-            v.is_active,
-            v.address,
-            v.city,
-            v.state,
-            v.pincode,
-            v.commission_percentage,
-            v.experience_years,
-            v.operating_hours,
-            v.created_at,
-            v.approved_at,
-            v.updated_at,
-            v.metadata,
-            -- Role information
-            r.name as role_name,
-            r.display_name as role_display_name,
-            r.config as role_config,
-            -- Vendor type derived from multiple sources (use LATERAL JOIN for vendor_identity)
-            CASE 
-              WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
-              WHEN r.config->>'vendorConfiguration' IS NOT NULL THEN r.config->>'vendorConfiguration'
-              WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
-              ELSE 'business'
-            END as vendor_type,
-            vi.onboarding_status,
-            -- Services count (can be 0)
-            (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published') as active_services_count,
-            -- Completed bookings count
-            (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings_count,
-            -- Total revenue (last 30 days)
-            (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '30 days') as revenue_30_days,
-            -- Average rating
-            (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
-            -- Review count
-            (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
-            -- Last active
-            GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
-            -- Discovery health: availability (vendor_availability_v2 only)
-            (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND COALESCE(va.is_available, true) = true)
-            ) as has_availability
-          FROM vendors v
-          LEFT JOIN roles r ON r.id = v.role_id
-          LEFT JOIN LATERAL (
-            SELECT vendor_type, onboarding_status
-            FROM vendor_identity vi2
-            WHERE (
-              vi2.phone = v.phone 
-              OR REPLACE(REPLACE(REPLACE(vi2.phone, ' ', ''), '+', ''), '-', '') = REPLACE(REPLACE(REPLACE(v.phone, ' ', ''), '+', ''), '-', '')
-              OR vi2.phone = REPLACE(REPLACE(REPLACE(v.phone, '+91', ''), ' ', ''), '-', '')
-              OR v.phone = REPLACE(REPLACE(REPLACE(vi2.phone, '+91', ''), ' ', ''), '-', '')
-            )
-            AND (vi2.is_deleted IS NULL OR vi2.is_deleted = false OR vi2.is_deleted = 'f')
-            ORDER BY vi2.updated_at DESC NULLS LAST, vi2.created_at DESC
-            LIMIT 1
-          ) vi ON true
-          WHERE ${whereClause}
-          ORDER BY v.id, v.updated_at DESC NULLS LAST
-        ) AS unique_vendors
-        ORDER BY updated_at DESC
+        SELECT 
+          v.id,
+          v.phone,
+          v.email,
+          v.business_name,
+          v.owner_name,
+          v.role_id,
+          v.category,
+          v.status,
+          v.tier,
+          v.is_active,
+          v.address,
+          v.city,
+          v.state,
+          v.pincode,
+          v.commission_percentage,
+          v.experience_years,
+          v.operating_hours,
+          v.created_at,
+          v.approved_at,
+          v.updated_at,
+          v.metadata,
+          -- Role information
+          r.name as role_name,
+          r.display_name as role_display_name,
+          r.config as role_config,
+          -- Vendor type derived from multiple sources
+          CASE 
+            WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
+            WHEN r.config->>'vendorConfiguration' IS NOT NULL THEN r.config->>'vendorConfiguration'
+            WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END as vendor_type,
+          vi.onboarding_status,
+          -- Services count (can be 0)
+          (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published') as active_services_count,
+          -- Completed bookings count
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings_count,
+          -- Total revenue (last 30 days)
+          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '30 days') as revenue_30_days,
+          -- Average rating
+          (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
+          -- Review count
+          (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
+          -- Last active
+          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
+          -- Discovery health: availability (vendor_availability_v2 only)
+          (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND COALESCE(va.is_enabled, va.is_available, true) = true)
+          ) as has_availability
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        WHERE ${whereClause}
+        ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
       `, [...params, limit, offset]);
 
-      // Get total count for pagination (no need for vendor_identity in count query)
+      // Get total count for pagination (same WHERE, no EXISTS)
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
         WHERE ${whereClause}
       `, params);
 
@@ -3899,14 +3877,8 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
       // Build WHERE clause — deactivated = is_active false OR status suspended/inactive
-      // ✅ SECURITY: Exclude soft-deleted vendors (is_deleted = true)
-      // Deleted vendors should not appear in deactivated list either
-      // Handle both boolean true and PostgreSQL 't'/'f' string representations
       const whereConditions: string[] = [
-        `(v.is_active = false OR v.status IN ('suspended', 'inactive'))`,
-        // ✅ CRITICAL: Exclude deleted vendors - only include NULL, false, or 'f' values
-        // This explicitly excludes true, 't', and any other truthy representations
-        `(v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')`
+        `(v.is_active = false OR v.status IN ('suspended', 'inactive'))`
       ];
       const params: any[] = [];
       let paramIdx = 1;
@@ -3941,65 +3913,49 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       const whereClause = whereConditions.join(' AND ');
 
-      // ✅ FIX: Use DISTINCT ON to ensure unique vendors and LATERAL JOIN for vendor_identity
-      // This handles phone format mismatches and prevents duplicate rows
       const vendorsResult = await query(`
-        SELECT * FROM (
-          SELECT DISTINCT ON (v.id)
-            v.id,
-            v.phone,
-            v.email,
-            v.business_name,
-            v.owner_name,
-            v.role_id,
-            v.category,
-            v.status,
-            v.tier,
-            v.is_active,
-            v.address,
-            v.city,
-            v.state,
-            v.pincode,
-            v.created_at,
-            v.approved_at,
-            v.updated_at,
-            v.metadata,
-            r.name       AS role_name,
-            r.display_name AS role_display_name,
-            CASE
-              WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
-              WHEN r.name LIKE '%_solo' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
-              ELSE 'business'
-            END AS vendor_type,
-            (SELECT COUNT(*)              FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS completed_bookings_count,
-            (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS total_revenue
-          FROM vendors v
-          LEFT JOIN roles r             ON r.id = v.role_id
-          LEFT JOIN LATERAL (
-            SELECT vendor_type
-            FROM vendor_identity vi2
-            WHERE (
-              vi2.phone = v.phone 
-              OR REPLACE(REPLACE(REPLACE(vi2.phone, ' ', ''), '+', ''), '-', '') = REPLACE(REPLACE(REPLACE(v.phone, ' ', ''), '+', ''), '-', '')
-              OR vi2.phone = REPLACE(REPLACE(REPLACE(v.phone, '+91', ''), ' ', ''), '-', '')
-              OR v.phone = REPLACE(REPLACE(REPLACE(vi2.phone, '+91', ''), ' ', ''), '-', '')
-            )
-            AND (vi2.is_deleted IS NULL OR vi2.is_deleted = false OR vi2.is_deleted = 'f')
-            ORDER BY vi2.updated_at DESC NULLS LAST, vi2.created_at DESC
-            LIMIT 1
-          ) vi ON true
-          WHERE ${whereClause}
-          ORDER BY v.id, v.updated_at DESC NULLS LAST
-        ) AS unique_vendors
-        ORDER BY updated_at DESC
+        SELECT
+          v.id,
+          v.phone,
+          v.email,
+          v.business_name,
+          v.owner_name,
+          v.role_id,
+          v.category,
+          v.status,
+          v.tier,
+          v.is_active,
+          v.address,
+          v.city,
+          v.state,
+          v.pincode,
+          v.created_at,
+          v.approved_at,
+          v.updated_at,
+          v.metadata,
+          r.name       AS role_name,
+          r.display_name AS role_display_name,
+          CASE
+            WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
+            WHEN r.name LIKE '%_solo' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END AS vendor_type,
+          (SELECT COUNT(*)              FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS completed_bookings_count,
+          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS total_revenue
+        FROM vendors v
+        LEFT JOIN roles r             ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        WHERE ${whereClause}
+        ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
       `, [...params, limit, offset]);
 
-      // Count total (for pagination) - no need for vendor_identity in count query
+      // Count total (for pagination)
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) AS total
         FROM vendors v
         LEFT JOIN roles r             ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
         WHERE ${whereClause}
       `, params);
       const totalCount = parseInt(countResult.rows[0]?.total) || 0;
@@ -4044,165 +4000,6 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching deactivated vendors:', error);
       return c.json({ success: false, error: error.message || 'Failed to fetch deactivated vendors' }, 500);
-    }
-  });
-
-  // GET /admin/vendors/deleted
-  // Returns vendors where is_deleted = true
-  // Includes deletion metadata (reason, date, who deleted)
-  // ────────────────────────────────────────────────────────────────────────────
-  app.get('/admin/vendors/deleted', async (c) => {
-    try {
-      const search = c.req.query('search')?.trim();
-      const category = c.req.query('category');
-      const city = c.req.query('city');
-      const limit = parseInt(c.req.query('limit') || '200', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
-
-      // Build WHERE clause — only deleted vendors (is_deleted = true)
-      // Handle both boolean true and PostgreSQL 't'/'f' string representations
-      // PostgreSQL boolean columns can be true, 't', or 'true' as text
-      const whereConditions: string[] = [
-        `(v.is_deleted IS TRUE OR v.is_deleted::text = 't' OR v.is_deleted::text = 'true')`
-      ];
-      const params: any[] = [];
-      let paramIdx = 1;
-
-      if (search) {
-        whereConditions.push(`(
-          v.business_name ILIKE $${paramIdx} OR
-          v.owner_name ILIKE $${paramIdx} OR
-          v.phone ILIKE $${paramIdx} OR
-          v.email ILIKE $${paramIdx} OR
-          v.city ILIKE $${paramIdx}
-        )`);
-        params.push(`%${search}%`);
-        paramIdx++;
-      }
-
-      if (category && category !== 'all') {
-        whereConditions.push(`(
-          LOWER(v.category) = LOWER($${paramIdx}) OR
-          LOWER(r.name) ILIKE $${paramIdx + 1}
-        )`);
-        params.push(category.toLowerCase());
-        params.push(`%${category}%`);
-        paramIdx += 2;
-      }
-
-      if (city && city !== 'all') {
-        whereConditions.push(`LOWER(v.city) = LOWER($${paramIdx})`);
-        params.push(city);
-        paramIdx++;
-      }
-
-      const whereClause = whereConditions.join(' AND ');
-
-      // ✅ FIX: Use DISTINCT ON to ensure unique vendors and LATERAL JOIN for vendor_identity
-      // This handles phone format mismatches and prevents duplicate rows
-      const vendorsResult = await query(`
-        SELECT * FROM (
-          SELECT DISTINCT ON (v.id)
-            v.id,
-            v.phone,
-            v.email,
-            v.business_name,
-            v.owner_name,
-            v.role_id,
-            v.category,
-            v.status,
-            v.tier,
-            v.is_active,
-            v.is_deleted,
-            v.address,
-            v.city,
-            v.state,
-            v.pincode,
-            v.created_at,
-            v.approved_at,
-            v.updated_at,
-            v.metadata,
-            r.name       AS role_name,
-            r.display_name AS role_display_name,
-            CASE
-              WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
-              WHEN r.name LIKE '%_solo' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
-              ELSE 'business'
-            END AS vendor_type,
-            (SELECT COUNT(*)              FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS completed_bookings_count,
-            (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS total_revenue
-          FROM vendors v
-          LEFT JOIN roles r             ON r.id = v.role_id
-          LEFT JOIN LATERAL (
-            SELECT vendor_type
-            FROM vendor_identity vi2
-            WHERE (
-              vi2.phone = v.phone 
-              OR REPLACE(REPLACE(REPLACE(vi2.phone, ' ', ''), '+', ''), '-', '') = REPLACE(REPLACE(REPLACE(v.phone, ' ', ''), '+', ''), '-', '')
-              OR vi2.phone = REPLACE(REPLACE(REPLACE(v.phone, '+91', ''), ' ', ''), '-', '')
-              OR v.phone = REPLACE(REPLACE(REPLACE(vi2.phone, '+91', ''), ' ', ''), '-', '')
-            )
-            AND (vi2.is_deleted IS NULL OR vi2.is_deleted = false OR vi2.is_deleted = 'f')
-            ORDER BY vi2.updated_at DESC NULLS LAST, vi2.created_at DESC
-            LIMIT 1
-          ) vi ON true
-          WHERE ${whereClause}
-          ORDER BY v.id, v.updated_at DESC NULLS LAST
-        ) AS unique_vendors
-        ORDER BY updated_at DESC
-        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
-      `, [...params, limit, offset]);
-
-      // Count total (for pagination) - no need for vendor_identity in count query
-      const countResult = await query(`
-        SELECT COUNT(DISTINCT v.id) AS total
-        FROM vendors v
-        LEFT JOIN roles r             ON r.id = v.role_id
-        WHERE ${whereClause}
-      `, params);
-      const totalCount = parseInt(countResult.rows[0]?.total) || 0;
-
-      // Transform rows for the frontend
-      const vendors = (vendorsResult.rows || []).map((v: any) => {
-        const meta = typeof v.metadata === 'string'
-          ? (() => { try { return JSON.parse(v.metadata); } catch { return {}; } })()
-          : (v.metadata || {});
-
-        return {
-          id: v.id,
-          vendorId: v.id,
-          businessName: v.business_name,
-          ownerName: v.owner_name,
-          phone: v.phone,
-          email: v.email,
-          roleId: v.role_id,
-          roleName: v.role_name,
-          roleDisplayName: v.role_display_name,
-          category: v.category || v.role_name || 'General',
-          status: v.status,
-          tier: v.tier || 'Bronze',
-          isActive: v.is_active,
-          isDeleted: v.is_deleted,
-          vendorType: v.vendor_type,
-          address: v.address,
-          city: v.city,
-          state: v.state,
-          location: v.city ? `${v.city}${v.state ? ', ' + v.state : ''}` : null,
-          completedBookingsCount: parseInt(v.completed_bookings_count) || 0,
-          totalRevenue: parseFloat(v.total_revenue) || 0,
-          createdAt: v.created_at,
-          updatedAt: v.updated_at,
-          // Deletion-specific fields from metadata
-          deletedAt: meta.deleted_at || null,
-          deletedBy: meta.deleted_by || null,
-          deletionReason: meta.deletion_reason || null,
-        };
-      });
-
-      return c.json({ success: true, vendors, total: totalCount });
-    } catch (error: any) {
-      console.error('Error fetching deleted vendors:', error);
-      return c.json({ success: false, error: error.message || 'Failed to fetch deleted vendors' }, 500);
     }
   });
 

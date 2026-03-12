@@ -22,16 +22,16 @@ CREATE TABLE IF NOT EXISTS vendor_identity (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Authentication & Contact
-    phone TEXT NOT NULL,
-    email TEXT,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(255),
     
     -- Role & Type Selection
     selected_role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
-    vendor_type TEXT CHECK (vendor_type IN ('solo', 'center', 'business')),
-    user_type TEXT DEFAULT 'vendor' CHECK (user_type IN ('vendor', 'staff', 'individual_provider')),
+    vendor_type VARCHAR(50) CHECK (vendor_type IN ('solo', 'center', 'business')),
+    user_type VARCHAR(20) DEFAULT 'vendor' CHECK (user_type IN ('vendor', 'staff', 'individual_provider')),
     
     -- Onboarding State
-    onboarding_status TEXT NOT NULL DEFAULT 'INIT' CHECK (
+    onboarding_status VARCHAR(50) NOT NULL DEFAULT 'ROLE_PENDING' CHECK (
         onboarding_status IN (
             'INIT',
             'ROLE_PENDING',
@@ -43,31 +43,28 @@ CREATE TABLE IF NOT EXISTS vendor_identity (
             'ACTIVATED'
         )
     ),
-    current_step TEXT, -- Current step in onboarding process
     
     -- Relationships
     application_id UUID, -- References vendor_onboarding_applications(id) - FK added separately to avoid circular dependency
     vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL,
     
     -- Identity Information
-    full_name TEXT, -- For staff members or individual providers
-    business_name TEXT, -- For business/center vendors
-    profile_photo_url TEXT, -- Profile photo URL
+    full_name VARCHAR(255), -- For staff members or individual providers
+    business_name VARCHAR(255), -- For business/center vendors
     
     -- Metadata & Flexible Storage
     metadata JSONB DEFAULT '{}'::jsonb,
     
     -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     last_activity_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    -- Soft Deletion
-    is_deleted BOOLEAN DEFAULT false,
     
     -- Constraints
     CONSTRAINT chk_vendor_identity_phone_format CHECK (phone ~ '^[0-9]{10,15}$'),
     CONSTRAINT chk_vendor_identity_email_format CHECK (email IS NULL OR email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+
+      is_deleted BOOLEAN DEFAULT false,
 );
 
 -- ============================================================================

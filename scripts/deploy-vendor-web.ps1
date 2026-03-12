@@ -1,12 +1,5 @@
-# Direct AWS CLI deployment script for vendor-web (DEV)
-# Usage: .\scripts\deploy-vendor-web.ps1 [-DeployOnly]
-#   -DeployOnly  Skip build; inject config and upload existing dist (fails if dist missing).
-#
-# WARNING: This script deploys to DEV environment!
-
-param(
-    [switch]$DeployOnly
-)
+# Direct AWS CLI deployment script for vendor-web
+# Usage: .\scripts\deploy-vendor-web.ps1
 
 $ErrorActionPreference = "Stop"
 
@@ -15,158 +8,193 @@ Write-Host "🚀 Deploying vendor-web to AWS dev environment..." -ForegroundColo
 # Configuration
 $APP_NAME = "vendor-web"
 $S3_BUCKET = "warmpawz-dev-vendor-frontend-ap-south-1"
-$CLOUDFRONT_DIST_ID = "E95171GX1I6HN"
-$CLOUDFRONT_URL = "https://d1s6ykkj381k58.cloudfront.net"
-$ALTERNATE_DOMAIN = "dev.vendor.warmpawz.com"
 $REGION = "ap-south-1"
-$API_BASE_URL = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"  # Dev API Gateway
 
-Write-Host "Dev Configuration:" -ForegroundColor Blue
-Write-Host "   S3 Bucket: $S3_BUCKET"
-Write-Host "   CloudFront ID: $CLOUDFRONT_DIST_ID"
-Write-Host "   CloudFront URL: $CLOUDFRONT_URL"
-Write-Host "   Alternate Domain: $ALTERNATE_DOMAIN"
-Write-Host "   API Endpoint: $API_BASE_URL"
-Write-Host ""
+# Get CloudFront distribution ID
+Write-Host "🔍 Finding CloudFront distribution..." -ForegroundColor Blue
+$distributions = aws cloudfront list-distributions --region $REGION --output json | ConvertFrom-Json
+$CLOUDFRONT_DIST_ID = $null
+$CLOUDFRONT_URL = $null
 
-# Get project root
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
-
-# Step 1: Build the app
-Set-Location "apps\$APP_NAME"
-if ($DeployOnly -and (Test-Path "dist")) {
-    Write-Host "Skipping build (-DeployOnly, dist exists)" -ForegroundColor Green
-} else {
-    Write-Host "Building $APP_NAME..." -ForegroundColor Blue
-    # Clean stale build artifacts
-    Write-Host "Cleaning stale build artifacts..." -ForegroundColor Blue
-    if (Test-Path ".next") { Remove-Item -Recurse -Force ".next" }
-    if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-    if (Test-Path "node_modules\.cache") { Remove-Item -Recurse -Force "node_modules\.cache" }
-    Start-Sleep -Seconds 2
-
-    # Build with retry on failure
-    try {
-        npm run build
-    } catch {
-        Write-Host "First build failed, retrying with full clean..." -ForegroundColor Yellow
-        if (Test-Path ".next") { Remove-Item -Recurse -Force ".next" }
-        if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-        if (Test-Path "node_modules\.cache") { Remove-Item -Recurse -Force "node_modules\.cache" }
-        Start-Sleep -Seconds 3
-        npm run build
+foreach ($dist in $distributions.DistributionList.Items) {
+    foreach ($origin in $dist.Origins.Items) {
+        if ($origin.DomainName -eq "$S3_BUCKET.s3.$REGION.amazonaws.com") {
+            $CLOUDFRONT_DIST_ID = $dist.Id
+            $CLOUDFRONT_URL = $dist.DomainName
+            break
+        }
     }
+    if ($CLOUDFRONT_DIST_ID) { break }
+}
 
-if (-not (Test-Path "dist")) {
-        Write-Host "Error: dist directory not found after build!" -ForegroundColor Red
+if (-not $CLOUDFRONT_DIST_ID) {
+    Write-Host "❌ Error: Could not find CloudFront distribution for $S3_BUCKET" -ForegroundColor Red
     exit 1
 }
 
-    Write-Host "Build completed successfully" -ForegroundColor Green
+Write-Host "✅ Found CloudFront distribution: $CLOUDFRONT_DIST_ID" -ForegroundColor Green
+Write-Host "   URL: $CLOUDFRONT_URL" -ForegroundColor Green
+
+# Get project root
+$SCRIPT_DIR = $PSScriptRoot
+$PROJECT_ROOT = Split-Path -Parent $SCRIPT_DIR
+$APP_DIR = Join-Path $PROJECT_ROOT "apps" $APP_NAME
+
+# Step 1: Clean previous build and build the app
+Write-Host "🧹 Cleaning previous build..." -ForegroundColor Blue
+Set-Location $APP_DIR
+
+# Remove dist folder to ensure clean build
+if (Test-Path "dist") {
+    Remove-Item -Recurse -Force "dist"
+    Write-Host "✅ Cleaned previous build" -ForegroundColor Green
 }
 
+# Clean Next.js cache
+if (Test-Path ".next") {
+    Remove-Item -Recurse -Force ".next"
+    Write-Host "✅ Cleaned Next.js cache" -ForegroundColor Green
+}
+
+Write-Host "📦 Building $APP_NAME..." -ForegroundColor Blue
+npm run build
+
+if (-not (Test-Path "dist")) {
+    Write-Host "❌ Error: dist directory not found after build!" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "✅ Build completed successfully" -ForegroundColor Green
+
+# Verify critical files exist
+$criticalFiles = @(
+    "dist/index.html",
+    "_next/static"
+)
+$missingFiles = @()
+foreach ($file in $criticalFiles) {
+    $fullPath = Join-Path $APP_DIR "dist" $file
+    if (-not (Test-Path $fullPath)) {
+        $missingFiles += $file
+    }
+}
+if ($missingFiles.Count -gt 0) {
+    Write-Host "⚠️  Warning: Some critical files may be missing: $($missingFiles -join ', ')" -ForegroundColor Yellow
+}
 
 # Step 1.5: Inject runtime-config.js
-Write-Host "Injecting runtime-config.js..." -ForegroundColor Blue
+Write-Host "🔧 Injecting runtime-config.js..." -ForegroundColor Blue
 Set-Location $PROJECT_ROOT
 
-# Verify API endpoint
-if ([string]::IsNullOrEmpty($API_BASE_URL)) {
-    Write-Host "Getting API endpoint from AWS..." -ForegroundColor Yellow
+# Get API Gateway endpoint - Priority: config/urls.json apiGatewayDefaultUrl → AWS query → fallback
+$API_ENDPOINT = ""
+$urlsConfigPath = Join-Path $PROJECT_ROOT "config" "urls.json"
+
+# Priority 1: Read from config/urls.json
+if (Test-Path $urlsConfigPath) {
+    try {
+        $urlsConfig = Get-Content $urlsConfigPath | ConvertFrom-Json
+        if ($urlsConfig.apiGatewayDefaultUrl) {
+            $API_ENDPOINT = $urlsConfig.apiGatewayDefaultUrl
+            Write-Host "✅ API Gateway endpoint (from config): $API_ENDPOINT" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "⚠️  Could not read config/urls.json" -ForegroundColor Yellow
+    }
+}
+
+# Priority 2: Query AWS if not found in config
+if (-not $API_ENDPOINT) {
     try {
         $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
         $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-dev-api" } | Select-Object -First 1
         if ($api -and $api.ApiEndpoint) {
-            $API_BASE_URL = $api.ApiEndpoint
+            $API_ENDPOINT = $api.ApiEndpoint
+            Write-Host "✅ API Gateway endpoint (from AWS): $API_ENDPOINT" -ForegroundColor Green
         }
     } catch {
-        Write-Host "Error: Could not get API Gateway endpoint" -ForegroundColor Red
-        exit 1
+        Write-Host "⚠️  Could not fetch API Gateway endpoint from AWS" -ForegroundColor Yellow
     }
 }
-$API_BASE_URL = $API_BASE_URL.TrimEnd('/')
 
-$runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (DEV)`n" +
-"// Injected at deployment - API base is API Gateway (backend), not CloudFront`n" +
-"(function() {`n" +
-"  window.__WARMPAWZ_RUNTIME_CONFIG__ = {`n" +
-"    apiBaseUrl: `"$API_BASE_URL`",`n" +
-"    uatMode: true,`n" +
-"    environment: `"development`"`n" +
-"  };`n" +
-"  console.log('Runtime config loaded (DEV):', window.__WARMPAWZ_RUNTIME_CONFIG__);`n" +
-"})();`n"
-
-$runtimeConfig | Out-File -FilePath "apps\$APP_NAME\dist\runtime-config.js" -Encoding utf8 -NoNewline
-
-Write-Host "runtime-config.js injected (apiBaseUrl -> API Gateway)" -ForegroundColor Green
-
-# Step 1.6: Replace inline runtime-config in HTML files
-Write-Host "Replacing inline runtime-config in HTML files..." -ForegroundColor Blue
-$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: true, environment: 'development' };"
-Get-ChildItem -Path "apps\$APP_NAME\dist" -Filter "*.html" -Recurse | ForEach-Object {
-    $content = Get-Content $_.FullName -Raw
-    if ($content -match 'runtime-config-inline') {
-        $content = $content -replace "window\.__WARMPAWZ_RUNTIME_CONFIG__ = \{[^}]+\};", $INLINE_CONFIG
-        $content | Set-Content $_.FullName -NoNewline
-    }
+# Priority 3: Fallback to known API Gateway endpoint
+if (-not $API_ENDPOINT) {
+    $API_ENDPOINT = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+    Write-Host "⚠️  Using fallback API endpoint: $API_ENDPOINT" -ForegroundColor Yellow
 }
-Write-Host "Inline runtime-config replaced in HTML files (dev values)" -ForegroundColor Green
+
+# Inject runtime-config.js into dist folder
+$runtimeConfigPath = Join-Path $APP_DIR "dist" "runtime-config.js"
+$runtimeConfigLines = @(
+    '// Runtime Configuration for Warmpawz ' + $APP_NAME,
+    '// Injected at deployment time with actual API Gateway endpoint',
+    '(function() {',
+    '  window.__WARMPAWZ_RUNTIME_CONFIG__ = {',
+    '    apiBaseUrl: "' + $API_ENDPOINT + '",',
+    '    uatMode: true',
+    '  };',
+    '  console.log(''Runtime config loaded:'', window.__WARMPAWZ_RUNTIME_CONFIG__);',
+    '})();'
+)
+$runtimeConfigContent = $runtimeConfigLines -join "`n"
+
+Set-Content -Path $runtimeConfigPath -Value $runtimeConfigContent -Encoding UTF8
+Write-Host "✅ runtime-config.js injected" -ForegroundColor Green
 
 # Step 2: Deploy to S3
-Write-Host "Uploading to S3 bucket: $S3_BUCKET..." -ForegroundColor Blue
-aws s3 sync "apps\$APP_NAME\dist\" "s3://$S3_BUCKET/" --delete --exclude "*.map" --region $REGION
+Write-Host "📤 Uploading to S3 bucket: $S3_BUCKET..." -ForegroundColor Blue
+$distPath = Join-Path $APP_DIR "dist"
 
-# Upload runtime-config.js with no-cache headers
-Write-Host "Uploading runtime-config.js with no-cache headers..." -ForegroundColor Blue
-aws s3 cp "apps\$APP_NAME\dist\runtime-config.js" "s3://$S3_BUCKET/runtime-config.js" `
-    --content-type "application/javascript" `
-    --cache-control "no-cache, no-store, must-revalidate" `
-    --metadata-directive REPLACE `
-    --region $REGION
+# First, remove all files from S3 to ensure clean state
+Write-Host "🧹 Cleaning S3 bucket..." -ForegroundColor Blue
+aws s3 rm "s3://$S3_BUCKET/" --recursive --region $REGION | Out-Null
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "S3 upload completed successfully" -ForegroundColor Green
+# Upload all files (excluding source maps for production)
+Write-Host "📤 Uploading new build..." -ForegroundColor Blue
+aws s3 sync "$distPath/" "s3://$S3_BUCKET/" --exclude "*.map" --region $REGION --cache-control "public, max-age=0, must-revalidate"
+
+if ($?) {
+    Write-Host "✅ S3 upload completed successfully" -ForegroundColor Green
+    
+    # Verify chunk files were uploaded
+    $chunkCount = (aws s3 ls "s3://$S3_BUCKET/_next/static/chunks/" --recursive --region $REGION 2>$null | Measure-Object -Line).Lines
+    Write-Host "   📊 Uploaded $chunkCount chunk files" -ForegroundColor Cyan
 } else {
-    Write-Host "Error: S3 upload failed!" -ForegroundColor Red
+    Write-Host "❌ Error: S3 upload failed!" -ForegroundColor Red
     exit 1
 }
 
-# Step 3: Invalidate CloudFront cache
-Write-Host "Invalidating CloudFront cache..." -ForegroundColor Blue
-$INVALIDATION_ID = aws cloudfront create-invalidation `
-    --distribution-id $CLOUDFRONT_DIST_ID `
-    --paths "/*" `
-    --query 'Invalidation.Id' `
-    --output text `
-    --region $REGION
+# Step 3: Invalidate CloudFront cache (aggressive invalidation)
+Write-Host "🔄 Invalidating CloudFront cache..." -ForegroundColor Blue
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "CloudFront invalidation created: $INVALIDATION_ID" -ForegroundColor Green
-    Write-Host "Full propagation may take 5-15 minutes" -ForegroundColor Yellow
+# Invalidate all paths including chunks - use wildcard to catch everything
+$invalidation = aws cloudfront create-invalidation `
+    --distribution-id "$CLOUDFRONT_DIST_ID" `
+    --paths "/*" `
+    --region $REGION `
+    --output json | ConvertFrom-Json
+
+if ($?) {
+    $INVALIDATION_ID = $invalidation.Invalidation.Id
+    Write-Host "✅ CloudFront invalidation created: $INVALIDATION_ID" -ForegroundColor Green
+    Write-Host "⏳ Full propagation may take 5-15 minutes" -ForegroundColor Yellow
+    Write-Host "💡 Tip: Hard refresh (Ctrl+Shift+R) after propagation completes" -ForegroundColor Yellow
 } else {
-    Write-Host "Warning: CloudFront invalidation failed (but files are uploaded)" -ForegroundColor Yellow
+    Write-Host "⚠️  Warning: CloudFront invalidation failed (but files are uploaded)" -ForegroundColor Yellow
 }
 
 # Summary
 Write-Host ""
-Write-Host "========================================" -ForegroundColor Green
-Write-Host "DEV DEPLOYMENT COMPLETED" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
+Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+Write-Host "║   ✅ DIRECT AWS DEPLOYMENT COMPLETED                          ║" -ForegroundColor Green
+Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
-Write-Host "Deployment Summary:"
-Write-Host "   ${APP_NAME}: Built successfully"
-Write-Host "   S3 Upload: Synced to $S3_BUCKET"
-Write-Host "   CloudFront: Cache invalidation created ($INVALIDATION_ID)"
+Write-Host "📦 Deployment Summary:" -ForegroundColor Cyan
+Write-Host "   ✅ $APP_NAME: Built successfully" -ForegroundColor Green
+Write-Host "   ✅ S3 Upload: Synced to $S3_BUCKET" -ForegroundColor Green
+Write-Host "   ✅ CloudFront: Cache invalidation created ($CLOUDFRONT_DIST_ID)" -ForegroundColor Green
 Write-Host ""
-Write-Host "Access URLs:"
-Write-Host "   - Vendor Web (DEV): $CLOUDFRONT_URL"
-Write-Host "   - Alternate Domain: https://$ALTERNATE_DOMAIN"
-Write-Host "   - Direct S3: s3://$S3_BUCKET"
-Write-Host ""
-Write-Host "Next Steps:"
-Write-Host "   1. Wait 5-15 minutes for CloudFront propagation"
-Write-Host "   2. Test the deployed application at $CLOUDFRONT_URL"
-Write-Host "   3. Verify API calls are using: $API_BASE_URL"
+Write-Host "🌐 Access URLs:" -ForegroundColor Cyan
+Write-Host "   - Vendor Web: $CLOUDFRONT_URL" -ForegroundColor White
+Write-Host "   - Direct S3: s3://$S3_BUCKET" -ForegroundColor White
 Write-Host ""
