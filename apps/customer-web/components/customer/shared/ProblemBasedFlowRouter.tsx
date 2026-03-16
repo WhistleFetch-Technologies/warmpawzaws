@@ -85,6 +85,7 @@ type FlowStep =
 // ============================================================================
 
 interface ServiceStyleSelectorProps {
+  phone: string;
   problemId: string;
   problemTitle: string;
   category: string;
@@ -96,6 +97,7 @@ interface ServiceStyleSelectorProps {
 }
 
 function ServiceStyleSelector({ 
+  phone,
   problemId, 
   problemTitle, 
   category, 
@@ -452,8 +454,9 @@ export function ProblemBasedFlowRouter({
 
           try {
             // Check if there are providers for this style + specialization
+            const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
             const response = await apiClient.get(
-              `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}${locationParams}`
+              `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}${locationParams}${phoneParam}`
             ) as any;
 
             let providers = response.providers || response.vendors || [];
@@ -664,6 +667,7 @@ export function ProblemBasedFlowRouter({
     case 'style-selection':
       return (
         <ServiceStyleSelector
+          phone={phone}
           problemId={problemId}
           problemTitle={problemTitle}
           category={category}
@@ -731,6 +735,7 @@ export function ProblemBasedFlowRouter({
     default:
       return (
         <ServiceStyleSelector
+          phone={phone}
           problemId={problemId}
           problemTitle={problemTitle}
           category={category}

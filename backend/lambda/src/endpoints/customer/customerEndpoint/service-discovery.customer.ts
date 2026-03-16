@@ -21,7 +21,7 @@ import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../vendor/endpoints/vendor-profile.vendor';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../vendor/endpoints/vendorProfile.vendor';
 import { taxCalculationService } from '../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../constants';
@@ -481,18 +481,192 @@ async function resolveTargetRolesForDiscovery(category?: string | null, roleId?:
 
 /** Resolve customer ID from phone for vendor-specific package badges (hasActivePackage, inActivePackage). */
 async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<string | null> {
+  console.log('phone_______________________________>', phone);
   if (!phone || typeof phone !== 'string') return null;
+  console.log('phone_______________________________>2', phone);
   const clean = phone.replace(/[^0-9]/g, '');
+  console.log('clean_______________________________>3', clean);
   if (clean.length < 10) return null;
-  const customers = await select('customers', { phone: clean });
+  console.log('clean_______________________________>4', clean);
+
+  // ✅ FIX: Specify columns explicitly to avoid "latitude does not exist" error
+  const customers = await select('customers', { phone: clean }, { columns: ['id', 'phone'] });
+  console.log('customers_______________________________>5', customers);
   if (customers.length > 0) return (customers[0] as any).id;
+  console.log('customers_______________________________>6', customers);
+
   if (clean.length === 10) {
-    const with91 = await select('customers', { phone: `+91${clean}` });
+    const with91 = await select('customers', { phone: `+91${clean}` }, { columns: ['id', 'phone'] });
     if (with91.length > 0) return (with91[0] as any).id;
   }
   return null;
 }
 
+export async function getCoordinates(
+  source: 'customer' | 'vendor',
+  identifier: string,
+  phone?: string
+): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    if (source === 'customer') {
+      // Customer: Use existing getCustomerCoordinates function
+      const customerId = identifier.includes('-') ? identifier : null; // UUID format check
+      const customerPhone = customerId ? null : (identifier || phone || null);
+      return await getCustomerCoordinates(customerPhone, customerId);
+    } else {
+      // Vendor: Query vendors table with separate latitude/longitude columns
+      const vendorId = identifier;
+      
+      const vendorResult = await query(
+        `SELECT latitude, longitude 
+         FROM vendors 
+         WHERE id = $1 
+         LIMIT 1`,
+        [vendorId]
+      );
+
+      if (vendorResult.rows.length === 0) {
+        console.warn('[getCoordinates] No vendor found', { vendorId });
+        return null;
+      }
+
+      const vendor = vendorResult.rows[0];
+      
+      if (vendor.latitude != null && vendor.longitude != null) {
+        const latitude = parseFloat(String(vendor.latitude));
+        const longitude = parseFloat(String(vendor.longitude));
+        
+        console.log('[getCoordinates] Extracted from vendor columns', {
+          vendorId,
+          latitude,
+          longitude
+        });
+        
+        return { latitude, longitude };
+      }
+
+      console.warn('[getCoordinates] Vendor has no coordinates', {
+        vendorId,
+        hasLat: vendor.latitude != null,
+        hasLng: vendor.longitude != null,
+      });
+
+      return null;
+    }
+  } catch (error) {
+    console.error('[getCoordinates] Unexpected error', {
+      error: error instanceof Error ? error.message : String(error),
+      source,
+      identifier,
+    });
+    return null;
+  }
+}
+
+/**
+ * Get customer coordinates from their default address.
+ * Fetches coordinates from customer_addresses table (JSONB format only).
+ * Note: customer_addresses table only has coordinates JSONB field, not separate latitude/longitude columns.
+ * 
+ * @param customerPhone - Customer phone number (optional, used to resolve customerId)
+ * @param customerId - Customer ID (optional, if already known)
+ * @returns Object with latitude and longitude, or null if not found
+ * 
+ * @example
+ * // Using phone number
+ * const coords = await getCustomerCoordinates('9326977987');
+ * if (coords) {
+ *   console.log(`Lat: ${coords.latitude}, Lng: ${coords.longitude}`);
+ * }
+ * 
+ * @example
+ * // Using customer ID
+ * const coords = await getCustomerCoordinates(null, 'customer-uuid');
+ */
+export async function getCustomerCoordinates(
+  customerPhone?: string | null,
+  customerId?: string | null
+): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    let resolvedCustomerId: string | null = customerId || null;
+    console.log('resolvedCustomerId_______________________________>', resolvedCustomerId, customerPhone);
+    // Resolve customerId from phone if not provided
+    if (resolvedCustomerId === null && customerPhone) {
+      resolvedCustomerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+    }
+    console.log('resolvedCustomerId_______________________________>', resolvedCustomerId);
+    if (!resolvedCustomerId) {
+      console.warn('[getCustomerCoordinates] No customerId resolved', { customerPhone, customerId });
+      return null;
+    }
+
+    // ✅ FIX: customer_addresses only has coordinates JSONB, not separate latitude/longitude columns
+    const addressResult = await query(
+      `SELECT coordinates 
+       FROM customer_addresses 
+       WHERE customer_id = $1 AND is_default = true 
+       LIMIT 1`,
+      [resolvedCustomerId]
+    );
+
+    if (addressResult.rows.length === 0) {
+      console.warn('[getCustomerCoordinates] No default address found', { customerId: resolvedCustomerId });
+      return null;
+    }
+
+    const addr = addressResult.rows[0];
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+
+    // Extract from coordinates JSON field (format: {"lat": 12.9756425, "lng": 77.6032208})
+    if (addr.coordinates) {
+      try {
+        const coords = typeof addr.coordinates === 'string'
+          ? JSON.parse(addr.coordinates)
+          : addr.coordinates;
+
+        if (coords?.lat != null && coords?.lng != null) {
+          latitude = parseFloat(String(coords.lat));
+          longitude = parseFloat(String(coords.lng));
+          console.log('[getCustomerCoordinates] Extracted from JSON coordinates', {
+            customerId: resolvedCustomerId,
+            latitude,
+            longitude
+          });
+        }
+      } catch (e) {
+        console.warn('[getCustomerCoordinates] Failed to parse coordinates JSON', {
+          error: e instanceof Error ? e.message : String(e),
+          raw: addr.coordinates
+        });
+      }
+    }
+
+    // ✅ REMOVED: Fallback to latitude/longitude columns - they don't exist in customer_addresses
+
+    if (latitude != null && longitude != null) {
+      return { latitude, longitude };
+    }
+
+    // Log failure details for debugging
+    console.warn('[getCustomerCoordinates] Could not extract valid coordinates', {
+      customerId: resolvedCustomerId,
+      hasCoordinates: !!addr.coordinates,
+      coordinatesType: typeof addr.coordinates,
+      finalLat: latitude,
+      finalLng: longitude,
+    });
+
+    return null;
+  } catch (error) {
+    console.error('[getCustomerCoordinates] Unexpected error', {
+      error: error instanceof Error ? error.message : String(error),
+      customerPhone,
+      customerId,
+    });
+    return null;
+  }
+}
 /** 
  * Get next available slot for a vendor from vendor_availability_v2.
  * Returns null if no availability set.
@@ -1166,14 +1340,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     }
   });
 
-  /**
-   * OPTIONS /customer/discover-services
-   * Handle CORS preflight requests
-   * ✅ FIX: Explicit OPTIONS handler for CORS preflight
-   */
-  app.options("/customer/discover-services", async (c) => {
-    return c.json({}, 200);
-  });
 
   /**
    * GET /customer/discover-services
@@ -1194,9 +1360,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const sortBy = c.req.query('sortBy') || 'rating';
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
-      const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
-      const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
-      const problemTitle = c.req.query('problemTitle'); // Phase 2: Best for [problem] badge
+      const serviceStyle = c.req.query('serviceStyle');
+      const roleId = c.req.query('roleId');
+      const problemTitle = c.req.query('problemTitle');
       const acceptableStyles = acceptableStylesForService(serviceStyle);
       let categoryFilterClause = '';
 
@@ -5257,11 +5423,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/services/by-style
    * Get available services filtered by style (tele, at_home, at_center)
-   * 
-   * ⚠️ CRITICAL BUSINESS RULE for at_home and tele:
-   * - For BUSINESS ENTITIES (clinics, grooming centers): Return only VERIFIED STAFF MEMBERS
-   * - For INDIVIDUAL PROVIDERS (home groomers, individual vets): Return the provider directly
-   * - Only verified providers (mobile_verified = true) appear in results
    */
   app.get("/customer/services/by-style", async (c) => {
     try {
@@ -5279,25 +5440,48 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const roleId = c.req.query('roleId');
       const problemTitle = c.req.query('problemTitle');
-      const latitude = c.req.query('latitude');
-      const longitude = c.req.query('longitude');
+      let latitude = c.req.query('latitude');
+      let longitude = c.req.query('longitude');
 
+      // If coordinates not provided, fetch from customer's default address
+      if (!latitude || !longitude) {
+        const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
+        console.log('customerPhone_______________________________>', customerPhone);
+        const coords = await getCustomerCoordinates(customerPhone || undefined);
+        console.log('coords_______________________________>', coords);
+        if (coords) {
+          latitude = String(coords.latitude);
+          longitude = String(coords.longitude);
+          console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}`);
+        }
+      }
+
+      //get the rules for the discovery
       const rules = await getDiscoveryRules(
         roleId || category || 'all', 'discover', serviceStyle, category || undefined
       );
+
+      //get the max results, default radius, radius, max distance, min rating, sort by from the rules
       const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
-      const defaultRadius = rules.discovery_radius_km ?? 50;
+
+      //Use discovery_radius_km_tele for tele services, discovery_radius_km for others
+      const defaultRadius = serviceStyle === 'tele'
+        ? (rules.discovery_radius_km_tele ?? 0)  // 0 = no distance limit for tele
+        : (rules.discovery_radius_km ?? 50);
+
       const radius = c.req.query('radius') ? parseInt(c.req.query('radius')!, 10) : defaultRadius;
       const maxDistanceKm = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : null;
       const minRatingVal = c.req.query('minRating') ? parseFloat(c.req.query('minRating')!) : null;
       const sortBy = c.req.query('sortBy') || (rules.discovery_sort_default as string) || 'relevance';
 
+      //get the acceptable styles for the service style
       const acceptableStyles = acceptableStylesForService(serviceStyle);
+      //get the customer latitude and longitude
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
+      //check if the service style is at_center
       const isAtCenter = serviceStyle === 'at_center';
 
-      console.log(`[by-style] style=${serviceStyle}, category=${category}, roleId=${roleId}`);
 
       // ────────────────────────────────────────────────────────
       // 2. RESOLVE TARGET ROLES FROM roleId / category
@@ -5321,7 +5505,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         targetRoles = [...new Set([...targetRoles, ...list])];
       }
 
-      console.log(`[by-style] targetRoles:`, targetRoles);
+      //check if the target roles are empty
+      if (targetRoles.length === 0) {
+        return c.json({
+          error: 'No target roles found',
+          success: false,
+        }, 400);
+      }
+
 
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
@@ -5334,7 +5525,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (!customerLat || !customerLng || !lat || !lng) return null;
         return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
       };
-
+      console.log('customerLat_______________________________>', customerLat, customerLng);
       /** Human-readable distance label */
       const fmtDistance = (km: number | null): string | null => {
         if (km == null) return null;
@@ -5388,18 +5579,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (!roleConfigAllowsStyle(vendor.role_config, serviceStyle)) return null;
 
         const services = await fetchServices(vendor.vendor_id);
-        console.log('services<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<------>', services);
+
         if (services.length === 0) return null;
 
         const dist = getDistanceKm(
           vendor.latitude ? parseFloat(vendor.latitude) : null,
           vendor.longitude ? parseFloat(vendor.longitude) : null,
         );
-
+        console.log('vendor_______________________________>', "customer coordinates", customerLat, customerLng, "vendor coordinates", vendor.latitude, vendor.longitude, "distance", dist, vendor);
         const nextAvailable = await getNextAvailableSlot(
           vendor.vendor_id, vendor.phone || '', acceptableStyles
         );
-        if (isProductionEnvironment() && !nextAvailable) return null;
+        if (!nextAvailable) return null;
 
         const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
         const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
@@ -5511,98 +5702,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const vendorRows = await query(vendorSql, vendorParams);
       console.log(`[by-style] vendors table → ${vendorRows.rows.length} matches`);
 
-      // ────────────────────────────────────────────────────────
-      // 5. QUERY SOLO PROVIDERS FROM `vendor_identity`
-      //    (at_home / tele only)
-      //    These are approved solo providers that haven't been
-      //    migrated to the `vendors` table yet.
-      // ────────────────────────────────────────────────────────
-      // let viRows: any[] = [];
 
-      // if (!isAtCenter) {
-      //   const hasViPhoto = await columnExists('vendor_identity', 'profile_photo_url');
-      //   const viPhotoCol = hasViPhoto ? 'vi.profile_photo_url' : 'NULL';
-
-      //   let viSql = `
-      //     SELECT DISTINCT
-      //       vi.id AS vendor_id,
-      //       COALESCE(
-      //         vi.metadata->>'businessName', vi.metadata->>'business_name',
-      //         vi.metadata->>'fullName',     vi.metadata->>'full_name',
-      //         'Provider'
-      //       ) AS business_name,
-      //       COALESCE(
-      //         vi.metadata->>'fullName', vi.metadata->>'full_name', 'Provider'
-      //       ) AS owner_name,
-      //       vi.phone,
-      //       vi.metadata->>'address' AS address,
-      //       vi.metadata->>'city'    AS city,
-      //       (vi.metadata->>'latitude')::numeric  AS latitude,
-      //       (vi.metadata->>'longitude')::numeric AS longitude,
-      //       ${viPhotoCol} AS profile_photo_url,
-      //       NULL AS logo_url,
-      //       vi.metadata,
-      //       COALESCE(vi.vendor_type, 'solo') AS vendor_type,
-      //       r.name AS role_name,
-      //       r.display_name AS role_display_name,
-      //       r.config AS role_config,
-      //       0 AS avg_rating,
-      //       0 AS review_count
-      //     FROM vendor_identity vi
-      //     LEFT JOIN roles r ON vi.selected_role_id = r.id
-      //     WHERE vi.onboarding_status IN ('APPROVED','ACTIVATED')
-      //       AND (vi.vendor_type = 'solo' OR vi.vendor_type IS NULL)
-      //       AND NOT EXISTS (
-      //         SELECT 1 FROM vendors v WHERE v.id = vi.id OR v.phone = vi.phone
-      //       )
-      //       AND TRIM(COALESCE(
-      //         vi.metadata->>'businessName', vi.metadata->>'business_name',
-      //         vi.metadata->>'fullName',     vi.metadata->>'full_name', ''
-      //       )) != ''
-      //       AND EXISTS (
-      //         SELECT 1 FROM vendor_services vs
-      //         WHERE vs.vendor_id::text = vi.id::text
-      //           AND vs.service_style = ANY($1::text[])
-      //           AND vs.is_enabled = true
-      //           AND (vs.publish_status IN ('published','auto_published')
-      //                OR vs.publish_status IS NULL)
-      //       )
-      //   `;
-
-      //   const viParams: any[] = [acceptableStyles];
-      //   let viIdx = 2;
-
-      //   if (targetRoles.length > 0) {
-      //     const lower = targetRoles.map((r) => r.toLowerCase());
-      //     const norm = lower.map((r) => r.replace(/[_\s()]/g, ''));
-      //     viSql += `
-      //       AND (
-      //         LOWER(r.name) = ANY($${viIdx}::text[])
-      //         OR LOWER(r.display_name) = ANY($${viIdx}::text[])
-      //         OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(
-      //              r.name,'_',''),' ',''),'(',''),')',''))
-      //            = ANY($${viIdx + 1}::text[])
-      //       )`;
-      //     viParams.push(lower, norm);
-      //     viIdx += 2;
-      //   }
-
-      //   viSql += ` ORDER BY vi.id LIMIT ${maxResults}`;
-
-      //   const viResult = await query(viSql, viParams).catch((err) => {
-      //     console.error('[by-style] vendor_identity query error:', err.message);
-      //     return { rows: [] };
-      //   });
-
-      //   viRows = viResult.rows;
-      //   console.log(`[by-style] vendor_identity → ${viRows.length} matches`);
-      // }
-
-      // ────────────────────────────────────────────────────────
       // 6. ENRICH ALL VENDORS
       //    Run enrichVendor() on every row; it returns null for
       //    vendors that should be excluded, so we filter those.
-      // ────────────────────────────────────────────────────────
+
       const seen = new Set<string>();
       const providers: any[] = [];
 
@@ -5615,20 +5719,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
 
-      // for (const row of viRows) {
-      //   if (seen.has(row.vendor_id)) continue;
-      //   const provider = await enrichVendor(row);
-      //   if (provider) {
-      //     seen.add(row.vendor_id);
-      //     providers.push(provider);
-      //   }
-      // }
 
-      console.log(`[by-style] Enriched providers: ${providers.length}`);
-
-      // ────────────────────────────────────────────────────────
       // 7. FILTER
-      // ────────────────────────────────────────────────────────
       let results = providers;
 
       if (minRatingVal != null && minRatingVal > 0) {
@@ -5672,7 +5764,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       });
 
-      console.log(`[by-style] Returning ${results.length} providers`);
 
       // ────────────────────────────────────────────────────────
       // 9. RESPOND

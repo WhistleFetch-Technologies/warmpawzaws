@@ -67,7 +67,7 @@ import { apiClient } from '@/lib/api-client';
 import { useNotificationService } from '../useNotificationService';
 import { toast } from 'sonner';
 import { useCart } from '@/context/CartContext';
-import { MyBookings } from '../MyBookings';
+import { MyBookings } from '../booking/MyBookings';
 import { AppointmentsList } from '../AppointmentsList';
 import { AppointmentDetailsView } from '../AppointmentDetailsView';
 import { RescheduleAppointmentView } from '../RescheduleAppointmentView';

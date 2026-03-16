@@ -332,12 +332,12 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     // Check if UAT mode is enabled - ONLY check UAT_MODE env variable
     // This ensures PROD (UAT_MODE=false) never accepts fixed OTP 123456
     const isUATMode = process.env.UAT_MODE === 'true';
-    
+
     // Production bypass configuration (for testing/admin access in production)
     // These phones can verify with OTP 000000 in production mode
-    const PRODUCTION_BYPASS_PHONES = ['9999999999', '9326977987'];
+    const PRODUCTION_BYPASS_PHONES = ['9999999999', '9326977987', '9148219125', 7899139662];
     const PRODUCTION_BYPASS_OTP = '000000';
-    
+
     try {
       let isValid = false;
 
@@ -357,7 +357,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       if (!isUATMode && PRODUCTION_BYPASS_PHONES.includes(normalizedPhone) && otp === PRODUCTION_BYPASS_OTP) {
         isValid = true;
         console.log(`[AUTH] Production Bypass: OTP accepted for phone ${phone} (normalized: ${normalizedPhone})`);
-        
+
         // Try to mark any existing OTP tokens as used (non-blocking, with timeout)
         Promise.race([
           (async () => {
@@ -459,8 +459,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
       let role = body.role || 'customer';
 
-      let userId: string;
-      let userData: any;
+      let userId: string = '';
+      let userData: any = null;
 
       // ============================================================================
       // REGULAR CUSTOMER/VENDOR LOGIN
@@ -734,7 +734,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (vendors.length > 0) {
           const vendor = vendors[0];
-          
+
           // ✅ SECURITY: Block login if vendor is deactivated
           // Check: status = 'suspended' OR 'inactive' AND is_active = false
           if (vendor.is_active === false && (vendor.status === 'suspended' || vendor.status === 'inactive')) {
@@ -784,7 +784,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
             if (vendorsByVendorId.length > 0) {
               const vendorById = vendorsByVendorId[0];
-              
+
               // ────────────────────────────────────────────────────────────────────────────
               // CHECK IF VENDOR IS SOFT-DELETED
               // If is_deleted = true, treat as if vendor doesn't exist (allow new registration)
@@ -809,7 +809,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                 console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
               }
             }
-            
+
             // If vendor was deleted or not found, treat as new user (allow role selection)
             if (vendorsByVendorId.length === 0) {
               // vendor_id points to deleted/non-existent vendor - treat as new user
@@ -977,6 +977,39 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         return this.error('Invalid role', 400, 'VALIDATION_ERROR', undefined, context.requestId);
       }
 
+      // ✅ FIX: Ensure userId and userData are always defined (safety check)
+      // This must happen before we use userId to generate tokens
+      if (!userId || userId === '') {
+        console.error('[AUTH] ❌ userId is not set - this should not happen');
+        // Generate a fallback userId based on role and phone
+        userId = role === 'vendor'
+          ? `temp_vendor_${phone}_${Date.now()}`
+          : role === 'customer'
+            ? `temp_customer_${phone}_${Date.now()}`
+            : `temp_${role}_${phone}_${Date.now()}`;
+        console.warn(`[AUTH] ⚠️ Generated fallback userId: ${userId}`);
+      }
+
+      if (!userData) {
+        console.error('[AUTH] ❌ userData is not set - this should not happen');
+        // Generate a fallback userData based on role
+        userData = {
+          id: userId,
+          phone,
+          is_active: true,
+          status: role === 'vendor' ? 'pending' : 'new',
+          onboarding_status: role === 'vendor' ? 'INIT' : 'PHONE_VERIFIED',
+          created_at: new Date().toISOString(),
+        };
+        if (role === 'vendor') {
+          userData.business_name = null;
+        } else if (role === 'customer') {
+          userData.full_name = null;
+          userData.email = null;
+        }
+        console.warn(`[AUTH] ⚠️ Generated fallback userData for role: ${role}`);
+      }
+
       // Get or create Cognito user
 
       let cognitoTokens: CognitoTokens;
@@ -1065,8 +1098,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         const customerState = await getCustomerStateForAuth(userId);
         isNewUser = customerState === 'new';
       } else if (role === 'vendor') {
-        isNewUser = userId.startsWith('temp_vendor_') || !userData.id || !userData.created_at ||
-          (userData.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
+        isNewUser = (userId && userId.startsWith('temp_vendor_')) || !userData?.id || !userData?.created_at ||
+          (userData?.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
       }
 
       // Return standardized response with state information
@@ -1083,21 +1116,21 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             id: userId,
             phone,
             role,
-            is_active: userData.is_active !== false,
-            created_at: userData.created_at || new Date().toISOString(),
+            is_active: userData?.is_active !== false,
+            created_at: userData?.created_at || new Date().toISOString(),
           },
           state: isNewUser ? 'new' : 'existing',
           profile: role === 'customer' ? {
             id: userId,
             phone,
-            full_name: userData.full_name || null,
-            email: userData.email || null,
+            full_name: userData?.full_name || null,
+            email: userData?.email || null,
           } : role === 'vendor' ? {
-            id: userId.startsWith('temp_vendor_') ? null : userId,
+            id: (userId && userId.startsWith('temp_vendor_')) ? null : userId,
             phone,
-            business_name: userData.business_name || null,
-            status: userData.status || 'pending',
-            onboarding_status: userData.onboarding_status || 'INIT',
+            business_name: userData?.business_name || null,
+            status: userData?.status || 'pending',
+            onboarding_status: userData?.onboarding_status || 'INIT',
           } : undefined,
         },
         meta: {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { BusinessTypeSelector } from './BusinessTypeSelector';
 import { SoloProviderOnboarding } from './SoloProviderOnboarding';
-import { DynamicVendorOnboardingForm } from '../DynamicVendorOnboardingForm';
+import { DynamicVendorOnboardingForm } from '../orders/DynamicVendorOnboardingForm';
 import { apiClient } from '@/lib/api-client';
 
 interface EnhancedVendorOnboardingProps {

@@ -595,8 +595,9 @@ export function UniversalServiceProviderList({
         : '';
 
       // Fetch providers for this service style and category
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}${problemTitleParam}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}${problemTitleParam}${phoneParam}`
       ) as any;
 
       if (response.success) {
@@ -627,153 +628,13 @@ export function UniversalServiceProviderList({
           })(),
         }));
 
-        // ✅ FIX: If primary endpoint returns 0 providers, also try fallback
-        if (cleanedProviders.length > 0) {
-          setProviders(cleanedProviders);
-          console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
-          return; // Exit early if we have providers
-        }
-
-        console.log(`⚠️ Primary endpoint returned 0 providers for ${category}/${serviceStyle}, trying fallback...`);
+        // Set providers from primary endpoint
+        setProviders(cleanedProviders);
+        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
+      } else {
+        console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
+        setProviders([]);
       }
-
-      // Try fallback endpoint (also called when primary returns empty results)
-      // ✅ FIX: Remove roleId from discover-services call - category is sufficient and avoids uuid=text error
-      const fallbackResponse = await apiClient.get(
-        `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}${specializationParam}${problemTitleParam}`
-      ) as any;
-
-      const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-
-      // Group by provider
-      const providerMap = new Map<string, Provider>();
-      servicesData.forEach((item: any) => {
-        const providerId = item.providerId || item.vendorId || item.id;
-
-        if (!providerMap.has(providerId)) {
-          // Clean the name to remove trailing IDs/numbers
-          const rawName = item.name || item.vendorName || item.businessName || 'Provider';
-          const cleanedName = cleanProviderName(rawName);
-
-          providerMap.set(providerId, {
-            providerId,
-            providerType: item.providerType || 'vendor',
-            vendorId: item.vendorId || item.id,
-            vendorName: item.vendorName ? cleanProviderName(item.vendorName) : undefined,
-            businessName: item.businessName ? cleanProviderName(item.businessName) : undefined,
-            staffId: item.staffId,
-            name: cleanedName,
-            photo: item.photo || item.photoUrl || item.vendorProfileImage,
-            address: item.address,
-            city: item.city,
-            phone: item.phone,
-            email: item.email,
-            role: item.role,
-            specialization: item.specialization,
-            qualifications: item.qualifications,
-            degree: item.degree,
-            experienceYears: item.experienceYears,
-            rating: parseFloat(item.rating || '4.5'),
-            reviewCount: parseInt(item.reviewCount || '0', 10),
-            distance: item.distance || null,
-            isVerified: item.isVerified,
-            isOnline: item.isOnline,
-            nextAvailableSlot: (() => {
-              // If nextAvailable is an object (API returns this field name), extract display
-              if (item.nextAvailable && typeof item.nextAvailable === 'object') {
-                return item.nextAvailable.display || item.nextAvailable.formattedDisplay ||
-                  (item.nextAvailable.date && item.nextAvailable.time
-                    ? `${item.nextAvailable.date} ${item.nextAvailable.time}`
-                    : undefined);
-              }
-              // If nextAvailable is a string, use it
-              if (typeof item.nextAvailable === 'string') {
-                return item.nextAvailable;
-              }
-              // If nextAvailability is a string, use it
-              if (typeof item.nextAvailability === 'string') {
-                return item.nextAvailability;
-              }
-              // If nextAvailability is an object, extract formattedDisplay or display
-              if (item.nextAvailability && typeof item.nextAvailability === 'object') {
-                return item.nextAvailability.formattedDisplay || item.nextAvailability.display ||
-                  (item.nextAvailability.date && item.nextAvailability.time
-                    ? `${item.nextAvailability.date} ${item.nextAvailability.time}`
-                    : undefined);
-              }
-              // If nextAvailableSlot is a string, use it
-              if (typeof item.nextAvailableSlot === 'string') {
-                return item.nextAvailableSlot;
-              }
-              // If nextAvailableSlot is an object, extract formattedDisplay or display
-              if (item.nextAvailableSlot && typeof item.nextAvailableSlot === 'object') {
-                return item.nextAvailableSlot.formattedDisplay || item.nextAvailableSlot.display ||
-                  (item.nextAvailableSlot.date && item.nextAvailableSlot.time
-                    ? `${item.nextAvailableSlot.date} ${item.nextAvailableSlot.time}`
-                    : undefined);
-              }
-              return undefined;
-            })(),
-            services: [],
-            bestForProblem: item.bestForProblem,
-            photos: item.photos,
-            priceMin: item.priceMin,
-            priceMax: item.priceMax,
-            hasPackages: item.hasPackages,
-          });
-          const prov = providerMap.get(providerId)!;
-          if ((item.price != null || item.consultationFee != null) && prov.services.length === 0) {
-            prov.services = [{
-              id: 'min',
-              serviceId: 'min',
-              name: 'Starting from',
-              price: item.price ?? item.consultationFee ?? 0,
-              duration: 0,
-              serviceStyle,
-            }];
-          }
-        }
-
-        // Add service to provider
-        // ✅ FIX: Only use serviceName or service_name, avoid using provider name as fallback
-        const serviceName = item.serviceName || item.service_name;
-        const providerName = item.vendorName || item.businessName || item.business_name || item.providerName;
-
-        // Only add if we have a valid service name that's different from the provider name
-        if (serviceName && serviceName !== providerName) {
-          const provider = providerMap.get(providerId)!;
-          provider.services.push({
-            id: item.id || item.serviceId,
-            serviceId: item.serviceId || item.id,
-            name: serviceName,
-            price: item.price || 0,
-            duration: item.duration || 30,
-            description: item.description,
-            serviceStyle: item.serviceStyle || serviceStyle,
-          });
-        } else if (!serviceName && item.services && Array.isArray(item.services)) {
-          // If no serviceName but has services array, use that
-          const provider = providerMap.get(providerId)!;
-          item.services.forEach((svc: any) => {
-            const svcName = typeof svc === 'string' ? svc : (svc.name || svc.serviceName);
-            if (svcName && svcName !== providerName) {
-              provider.services.push({
-                id: svc.id || `${providerId}-${svcName}`,
-                serviceId: svc.serviceId || svc.id,
-                name: svcName,
-                price: svc.price || item.price || 0,
-                duration: svc.duration || item.duration || 30,
-                description: svc.description,
-                serviceStyle: svc.serviceStyle || item.serviceStyle || serviceStyle,
-              });
-            }
-          });
-        }
-      });
-
-      const fallbackProviders = Array.from(providerMap.values());
-      console.log(`✅ Loaded ${fallbackProviders.length} providers from fallback for ${category}/${serviceStyle}`);
-      setProviders(fallbackProviders);
     } catch (error: any) {
       console.error('Error loading providers:', error);
       const errorMessage = error?.message || error?.response?.data?.error || 'Failed to load service providers. Please try again.';

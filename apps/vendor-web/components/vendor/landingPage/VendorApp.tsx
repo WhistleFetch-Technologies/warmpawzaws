@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { VendorRoleSelection } from '../VendorRoleSelection';
-import { DynamicVendorOnboardingForm } from '../DynamicVendorOnboardingForm';
+import { DynamicVendorOnboardingForm } from '../orders/DynamicVendorOnboardingForm';
 import { VendorApplicationSubmitted } from '../VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from '../VendorApplicationUnderReview';
 import { VendorApplicationRejected } from '../VendorApplicationRejected';
@@ -12,59 +12,12 @@ import { VendorLandingPage } from './VendorLandingPage';
 import { VendorApprovedSetup } from '../VendorApprovedSetup';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
+import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
+import { getInitialVendorState } from './constants/helpers';
 
-interface VendorSession {
-  phone: string;
-  vendorId?: string;
-  vendor?: any;
-  sessionToken?: string;
-  verified: boolean;
-}
 
-interface VendorAppProps {
-  initialSession: VendorSession;
-}
 
-type VendorStatus =
-  | 'new'
-  | 'profile_incomplete'
-  | 'submitted'
-  | 'pending'
-  | 'approved'
-  | 'approved_services'      // Approved, needs service setup
-  | 'rejected'
-  | 'clarification'
-  | 'active';
 
-/** Compute initial state from session + localStorage so existing vendors never flash "choose role" or loading. */
-function getInitialVendorState(session: VendorSession): { status: VendorStatus; vendorData: any; isLoading: boolean } {
-  if (typeof window === 'undefined') return { status: 'new', vendorData: null, isLoading: true };
-  const sv = session?.vendor;
-  const sessionActive = sv && (
-    sv.onboarding_status === 'ACTIVATED' || sv.onboarding_status === 'APPROVED' ||
-    sv.onboardingStatus === 'ACTIVATED' || sv.onboardingStatus === 'APPROVED' ||
-    sv.isActive === true
-  );
-  if (sessionActive && sv) {
-    return { status: 'active', vendorData: { ...sv, isActive: true, status: 'active' }, isLoading: false };
-  }
-  const storedStatus = localStorage.getItem('vendorApplicationStatus');
-  const storedVendorRaw = localStorage.getItem('vendorData');
-  if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
-    try {
-      const v = storedVendorRaw ? JSON.parse(storedVendorRaw) : sv;
-      if (v) return { status: 'active', vendorData: { ...v, isActive: true, status: 'active' }, isLoading: false };
-    } catch (_) { }
-  }
-  if (storedVendorRaw) {
-    try {
-      const v = JSON.parse(storedVendorRaw);
-      const active = v?.isActive === true || v?.onboarding_status === 'ACTIVATED' || v?.onboarding_status === 'APPROVED' || v?.onboardingStatus === 'ACTIVATED' || v?.onboardingStatus === 'APPROVED';
-      if (active) return { status: 'active', vendorData: { ...v, isActive: true, status: 'active' }, isLoading: false };
-    } catch (_) { }
-  }
-  return { status: 'new', vendorData: null, isLoading: true };
-}
 
 export function VendorApp({ initialSession }: VendorAppProps) {
   const router = useRouter();
@@ -83,10 +36,24 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   const hasCheckedStatus = useRef(false);
   const isCheckingStatus = useRef(false);
 
+  /**
+   * Helper function to resolve vendorId from multiple sources
+   * Priority: localStorage > session > identity
+   */
+  const resolveVendorId = (identity?: any): string | null => {
+    if (typeof window === 'undefined') return null;
+    const storedVendorId = localStorage.getItem('vendorId');
+    if (storedVendorId) return storedVendorId;
+    if (session?.vendorId) return session.vendorId;
+    if (identity?.vendor_id) return identity.vendor_id;
+    if (identity?.id) return identity.id;
+    return null;
+  };
+
   // ✅ SECURITY: Validate vendor session with backend on mount — but ONLY for
   // vendors whose cached status says ACTIVATED or APPROVED. New / onboarding
   // vendors (INIT, SUBMITTED, etc.) don't have a profile yet, so calling
-  // /vendor/profile would incorrectly return 404 and boot them to /auth.
+  // /vendor/:vendorId/profile would incorrectly return 404 and boot them to /auth.
   useEffect(() => {
     const cachedStatus = localStorage.getItem('vendorApplicationStatus');
     const isSupposedlyActive = cachedStatus === 'ACTIVATED' || cachedStatus === 'APPROVED';
@@ -106,13 +73,19 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   }, []);
 
   /**
-   * Background validation: calls /vendor/profile to confirm the vendor account
+   * Background validation: calls /vendor/:vendorId/profile to confirm the vendor account
    * is still valid (not deleted or deactivated). If invalid, clears session and
    * redirects to /auth so the user can register fresh.
    */
   const validateVendorWithBackend = async () => {
     try {
-      const response = await apiClient.get<any>('/vendor/profile');
+      const vendorId = resolveVendorId(session?.vendor);
+      if (!vendorId) {
+        console.warn('[VendorApp] No vendorId available for validation');
+        return;
+      }
+
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/profile`);
       const data = response?.data || response;
 
       // Explicit VENDOR_DELETED or VENDOR_DEACTIVATED code from backend
@@ -158,24 +131,96 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       // FAST PATH 1: Session already has active vendor (e.g. from root page localStorage)
       if (sessionVendorActive) {
         console.log('✅ [VendorApp] Existing vendor from session – showing dashboard (session FAST PATH)');
-        const v = { ...sessionVendor, isActive: true, status: 'active' };
-        setVendorData(v);
+
+        const vendorIdForProfile = resolveVendorId(sessionVendor || session.vendor);
+        if (vendorIdForProfile) {
+          try {
+            const profileResponse = await apiClient.get<any>(`/vendor/${vendorIdForProfile}/profile`);
+            const profileData = profileResponse?.data || profileResponse;
+
+            if (profileData?.success === false) {
+              const errorCode = profileData?.code;
+              if (errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
+                console.warn(`⚠️ [VendorApp] Vendor is ${errorCode} — clearing session and redirecting to auth`);
+                clearVendorSession();
+                window.location.replace('/auth');
+                return;
+              }
+            }
+
+            if (profileData?.success && profileData?.vendor) {
+              const profileVendor = profileData.vendor;
+
+
+              const completeVendor = {
+                ...profileVendor, // Profile data first (source of truth)
+                // Only preserve essential session fields that might not be in profile
+                phone: profileVendor.phone || sessionVendor?.phone,
+                business_name: profileVendor.business_name || profileVendor.businessName || sessionVendor?.business_name || sessionVendor?.businessName,
+                businessName: profileVendor.business_name || profileVendor.businessName || sessionVendor?.business_name || sessionVendor?.businessName,
+                // Explicitly set all critical fields from profile
+                id: profileVendor.id,
+                roleId: profileVendor.roleId || profileVendor.role_id,
+                role_id: profileVendor.role_id || profileVendor.roleId,
+                roleName: profileVendor.roleName || profileVendor.role_name,
+                role_name: profileVendor.role_name || profileVendor.roleName,
+                isActive: true,
+                status: 'active',
+                onboarding_status: profileVendor.onboarding_status || sessionVendor?.onboarding_status || sessionVendor?.onboardingStatus || 'ACTIVATED',
+                capabilities: profileVendor.capabilities || [],
+                role: profileVendor.role || null,
+                serviceStyles: profileVendor.serviceStyles || [],
+                allowedServiceStyles: profileVendor.allowedServiceStyles || [],
+                vendorConfiguration: profileVendor.vendorConfiguration || profileVendor.vendor_configuration,
+                customer_service: profileVendor.customer_service,
+                vendorTypes: profileVendor.vendorTypes || [],
+                vendorType: profileVendor.vendor_type || profileVendor.vendorType,
+                vendor_type: profileVendor.vendor_type || profileVendor.vendorType,
+                profileType: profileVendor.profileType,
+              };
+
+              console.log('✅ [VendorApp] FAST PATH 1: Complete vendor data being set:', {
+                id: completeVendor.id,
+                roleId: completeVendor.roleId,
+                hasCapabilities: completeVendor.capabilities?.length > 0,
+                hasServiceStyles: completeVendor.serviceStyles?.length > 0,
+                hasRole: !!completeVendor.role,
+              });
+
+              setVendorData(completeVendor);
+              localStorage.setItem('vendorData', JSON.stringify(completeVendor));
+              localStorage.setItem('vendorId', profileVendor.id);
+
+              if (profileVendor.roleId || profileVendor.role_id) {
+                localStorage.setItem('vendorRole', profileVendor.roleId || profileVendor.role_id);
+              }
+            } else {
+              const v = { ...sessionVendor, isActive: true, status: 'active' };
+              setVendorData(v);
+            }
+          } catch (err: any) {
+            const statusCode = err?.statusCode;
+            if (statusCode === 403 || statusCode === 404) {
+              console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
+              clearVendorSession();
+              window.location.replace('/auth');
+              return;
+            }
+            console.warn('⚠️ [VendorApp] FAST PATH 1: Could not fetch profile, using session data:', err?.message);
+            const v = { ...sessionVendor, isActive: true, status: 'active' };
+            setVendorData(v);
+          }
+        } else {
+          const v = { ...sessionVendor, isActive: true, status: 'active' };
+          setVendorData(v);
+        }
+
         setStatus('active');
         if (!storedStatus || (storedStatus !== 'ACTIVATED' && storedStatus !== 'APPROVED')) {
           localStorage.setItem('vendorApplicationStatus', sessionVendor.onboarding_status || sessionVendor.onboardingStatus || 'ACTIVATED');
         }
         setIsLoading(false);
         isCheckingStatus.current = false;
-
-        // ✅ SECURITY: Background validation — check if vendor is still active on the backend
-        apiClient.get<any>('/vendor/profile').catch((err: any) => {
-          const statusCode = err?.statusCode;
-          if (statusCode === 403 || statusCode === 404) {
-            console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
-            clearVendorSession();
-            window.location.replace('/auth');
-          }
-        });
         return;
       }
 
@@ -191,20 +236,13 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         if (storedVendor) {
           try {
             const vendor = JSON.parse(storedVendor);
-            vendor.isActive = true;
-            vendor.status = 'active';
-            setVendorData(vendor);
+            const vendorIdForProfile = storedVendorId || vendor?.id || resolveVendorId(session?.vendor);
 
-            // ✅ CRITICAL FIX: Fetch profile in background to update vendorId if needed
-            // This ensures we get the correct vendors table ID (not vendor_identity ID)
-            // Use /vendor/profile (no ID param) to get vendor by phone from JWT
-            apiClient.get<any>('/vendor/profile')
-              .then((profileResponse) => {
+            if (vendorIdForProfile) {
+              try {
+                const profileResponse = await apiClient.get<any>(`/vendor/${vendorIdForProfile}/profile`);
                 const profileData = profileResponse?.data || profileResponse;
 
-                console.log('🔍 [VendorApp] FAST PATH: Profile response received');
-
-                // ✅ SECURITY: Check if profile indicates vendor is deleted or deactivated
                 if (profileData?.success === false) {
                   const errorCode = profileData?.code;
                   if (errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
@@ -219,40 +257,54 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                   const profileVendor = profileData.vendor;
                   const correctVendorId = profileVendor.id;
 
-                  console.log('✅ [VendorApp] FAST PATH: Vendor ID from profile:', correctVendorId);
 
-                  if (correctVendorId && correctVendorId !== storedVendorId) {
-                    localStorage.setItem('vendorId', correctVendorId);
-                  }
-
+                  // ✅ CRITICAL: Profile data is source of truth - use it directly, only merge essential stored fields
                   const updatedVendor = {
-                    ...vendor,
-                    ...profileVendor,
+                    ...profileVendor, // Profile data first (source of truth)
+                    // Only preserve essential stored vendor fields that might not be in profile
+                    phone: profileVendor.phone || vendor?.phone,
+                    business_name: profileVendor.business_name || profileVendor.businessName || vendor?.business_name || vendor?.businessName,
+                    businessName: profileVendor.business_name || profileVendor.businessName || vendor?.business_name || vendor?.businessName,
+                    // Explicitly set all critical fields from profile
                     id: correctVendorId,
-                    roleId: profileVendor.role_id ?? profileVendor.roleId ?? vendor.roleId,
-                    role_id: profileVendor.role_id ?? profileVendor.roleId ?? vendor.role_id,
-                    roleName: profileVendor.roleName ?? profileVendor.role_name ?? vendor.roleName ?? vendor.role_name,
-                    role_name: profileVendor.role_name ?? profileVendor.roleName ?? vendor.role_name ?? vendor.roleName,
+                    roleId: profileVendor.roleId || profileVendor.role_id,
+                    role_id: profileVendor.role_id || profileVendor.roleId,
+                    roleName: profileVendor.roleName || profileVendor.role_name,
+                    role_name: profileVendor.role_name || profileVendor.roleName,
                     isActive: true,
                     status: 'active',
-                    address: (profileVendor.address != null && profileVendor.address !== '') ? profileVendor.address : (vendor.address ?? profileVendor.address),
-                    vendorConfiguration: (profileVendor.vendorConfiguration ?? profileVendor.vendor_configuration) ?? (vendor.vendorConfiguration ?? vendor.vendor_configuration),
+                    onboarding_status: profileVendor.onboarding_status || vendor?.onboarding_status || 'ACTIVATED',
+                    // ✅ CRITICAL: Ensure all critical fields are explicitly set from profile
+                    capabilities: profileVendor.capabilities || [],
+                    role: profileVendor.role || null,
+                    serviceStyles: profileVendor.serviceStyles || [],
+                    allowedServiceStyles: profileVendor.allowedServiceStyles || [],
+                    vendorConfiguration: profileVendor.vendorConfiguration || profileVendor.vendor_configuration,
+                    customer_service: profileVendor.customer_service,
+                    vendorTypes: profileVendor.vendorTypes || [],
+                    vendorType: profileVendor.vendor_type || profileVendor.vendorType,
+                    vendor_type: profileVendor.vendor_type || profileVendor.vendorType,
+                    profileType: profileVendor.profileType,
                   };
+
 
                   localStorage.setItem('vendorId', correctVendorId);
                   localStorage.setItem('vendorData', JSON.stringify(updatedVendor));
 
-                  const roleId = profileVendor.role_id || profileVendor.roleId;
+                  const roleId = profileVendor.roleId || profileVendor.role_id;
                   if (roleId) {
                     localStorage.setItem('vendorRole', roleId);
                   }
 
                   setVendorData(updatedVendor);
+                } else {
+                  // Fallback to stored vendor if profile doesn't have vendor data
+                  vendor.isActive = true;
+                  vendor.status = 'active';
+                  setVendorData(vendor);
                 }
-              })
-              .catch((err: any) => {
-                // ✅ SECURITY: If profile returns 403 (deactivated) or 404 (deleted),
-                // clear session and redirect to auth page
+              } catch (err: any) {
+
                 const statusCode = err?.statusCode;
                 const errorCode = err?.originalError?.code;
                 if (statusCode === 403 || statusCode === 404 || errorCode === 'VENDOR_DELETED' || errorCode === 'VENDOR_DEACTIVATED') {
@@ -261,8 +313,18 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                   window.location.replace('/auth');
                   return;
                 }
-                console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile:', err?.message);
-              });
+                console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile, using stored data:', err?.message);
+                // Fallback to stored vendor on error
+                vendor.isActive = true;
+                vendor.status = 'active';
+                setVendorData(vendor);
+              }
+            } else {
+              console.warn('⚠️ [VendorApp] FAST PATH: No vendorId available for profile fetch');
+              vendor.isActive = true;
+              vendor.status = 'active';
+              setVendorData(vendor);
+            }
           } catch (e) {
             console.warn('⚠️ [VendorApp] Could not parse stored vendor data');
           }
@@ -271,11 +333,10 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         setStatus('active');
         setIsLoading(false);
         isCheckingStatus.current = false;
-        return; // ✅ FIX: Return early to prevent further API calls
+        return; 
       }
 
       // Fetch onboarding status from API (correct endpoint)
-      console.log('📊 [VendorApp] Fetching onboarding status for phone:', session.phone);
 
       const response = await apiClient.get<any>(`/vendor/onboarding/status?phone=${encodeURIComponent(session.phone)}`);
 
@@ -310,29 +371,17 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         }
 
         // ✅ FIX: For APPROVED/ACTIVATED vendors, fetch vendor profile to get correct vendor.id
-        // ALWAYS use /vendor/profile to get the correct vendors.id (not vendor_identity.id)
+        // ✅ FIX: Use /vendor/:vendorId/profile to get full vendor data with capabilities, role, etc.
         let vendorId = identity.vendor_id || identity.id;
         let vendorRecordExists = false;
+        let profileData: any = null; // ✅ Store profile data for merging into vendorData
         if ((onboardingStatus === 'APPROVED' || onboardingStatus === 'ACTIVATED')) {
           try {
-            console.log('📊 [VendorApp] Fetching vendor profile to get correct vendor ID...');
-            const profileResponse = await apiClient.get<any>('/vendor/profile');
+            const profileResponse = await apiClient.get<any>(`/vendor/${vendorId}/profile`);
 
-            // ✅ BIG LOGGING: Show full payload during initial login
-            console.log('═══════════════════════════════════════════════════════════');
-            console.log('═══════════════════════════════════════════════════════════');
-            console.log('═══════════════════════════════════════════════════════════');
-            console.log('🔍🔍🔍 VENDOR PROFILE PAYLOAD - INITIAL LOGIN 🔍🔍🔍');
-            console.log('═══════════════════════════════════════════════════════════');
-            console.log('═══════════════════════════════════════════════════════════');
-            console.log('═══════════════════════════════════════════════════════════');
-            console.log('');
-            console.log('📦 FULL PROFILE RESPONSE:');
-            console.log(JSON.stringify(profileResponse, null, 2));
-            console.log('');
 
             // ✅ FIX: Check response structure (could be response.data or response directly)
-            const profileData = profileResponse?.data || profileResponse;
+            profileData = profileResponse?.data || profileResponse;
             console.log('📦 PROFILE DATA:');
             console.log(JSON.stringify(profileData, null, 2));
             console.log('');
@@ -370,25 +419,28 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               Object.assign(identity, { vendor_id: vendorId });
             } else {
               // Profile returned null vendor - use identity.id (vendors must not call /admin/vendors; 403)
-              console.log('⚠️ [VendorApp] Profile returned null vendor, using identity ID:', identity.id);
               vendorId = identity.id;
               vendorRecordExists = false;
             }
           } catch (profileError: any) {
             console.warn('⚠️ [VendorApp] Could not fetch vendor profile, using identity ID:', profileError.message);
-            // Continue with identity.id as fallback
-            vendorRecordExists = false;
+            // ✅ FIX: Don't set vendorRecordExists = false if we already have profileData
+            // This can happen if profile was fetched in a fast-path scenario
+            if (!profileData) {
+              vendorRecordExists = false;
+            }
           }
         }
 
         // Update localStorage with identity and application data
         // ✅ FIX GAP 1.1: Simplified and prioritized role ID resolution
-        // PRIORITY: API response is the source of truth, localStorage is ONLY for offline fallback
-        // The backend should always return role from identity.selected_role_id
+        // PRIORITY: Profile API response > identity.selected_role_id > role object > application
+        // The profile endpoint returns the most up-to-date roleId from the vendors table
         const resolvedRoleId =
-          identity.selected_role_id || // 1. PRIMARY: From identity table (backend source of truth)
-          role?.id ||                   // 2. From role object returned by API
-          application?.role_id ||       // 3. From application record
+          profileData?.vendor?.roleId || profileData?.vendor?.role_id || // 1. PRIMARY: From profile API (most accurate)
+          identity.selected_role_id ||                                  // 2. From identity table
+          role?.id ||                                                   // 3. From role object returned by API
+          application?.role_id ||                                       // 4. From application record
           null;
 
         // ✅ ONLY use localStorage as a last resort when API fails (handled in catch block)
@@ -402,6 +454,21 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           'resolvedRoleId': resolvedRoleId,
           'source': identity.selected_role_id ? 'identity' : (role?.id ? 'role_object' : 'application'),
         });
+
+        // ✅ CRITICAL: If we fetched profile data, merge it into vendorData
+        // This ensures we have capabilities, role, serviceStyles, etc.
+        // ✅ FIX: Always use profile data if available, even if vendorRecordExists was false
+        // The profile endpoint returns complete data and is the source of truth
+        let profileVendorData: any = null;
+        if (profileData?.vendor) {
+          profileVendorData = profileData.vendor;
+          // If we have profile data, the vendor definitely exists
+          vendorRecordExists = true;
+          // Update vendorId from profile if it's different
+          if (profileVendorData.id && profileVendorData.id !== vendorId) {
+            vendorId = profileVendorData.id;
+          }
+        }
 
         const vendorData: any = {
           id: vendorId, // ✅ Use correct vendor ID (from vendors table if available, otherwise identity ID)
@@ -417,6 +484,42 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           businessName: identity.business_name || identity.full_name || application?.application_payload?.businessName || 'Vendor',
           fullName: identity.full_name || identity.business_name || 'Vendor',
           address: identity.address || application?.application_payload?.address || 'India',
+          // ✅ CRITICAL: Merge profile data if available (includes capabilities, role, serviceStyles, etc.)
+          // ✅ FIX: Always merge all critical profile fields to ensure complete vendor data
+          ...(profileVendorData ? {
+            // Merge critical fields from profile (profile is source of truth for these)
+            capabilities: profileVendorData.capabilities || [],
+            role: profileVendorData.role || null,
+            roleId: profileVendorData.roleId || profileVendorData.role_id || resolvedRoleId,
+            role_id: profileVendorData.role_id || profileVendorData.roleId || resolvedRoleId,
+            roleName: profileVendorData.roleName || profileVendorData.role_name,
+            serviceStyles: profileVendorData.serviceStyles || [],
+            allowedServiceStyles: profileVendorData.allowedServiceStyles || [],
+            vendorConfiguration: profileVendorData.vendorConfiguration || profileVendorData.vendor_configuration || identity.vendor_type,
+            customer_service: profileVendorData.customer_service,
+            vendorTypes: profileVendorData.vendorTypes || [],
+            profileType: profileVendorData.profileType,
+            // Merge additional profile fields that might be needed
+            profile_photo_url: profileVendorData.profile_photo_url || profileVendorData.profilePhotoUrl,
+            profilePhotoUrl: profileVendorData.profilePhotoUrl || profileVendorData.profile_photo_url,
+            specializations: profileVendorData.specializations || [],
+            qualifications: profileVendorData.qualifications,
+            service_area: profileVendorData.service_area,
+            description: profileVendorData.description,
+            experience_years: profileVendorData.experience_years,
+            // Update business_name from profile if available (profile is more accurate)
+            business_name: profileVendorData.business_name || profileVendorData.businessName || identity.business_name || identity.full_name || application?.application_payload?.businessName || 'Vendor',
+            businessName: profileVendorData.business_name || profileVendorData.businessName || identity.business_name || identity.full_name || application?.application_payload?.businessName || 'Vendor',
+            // Update other profile fields
+            owner_name: profileVendorData.owner_name || profileVendorData.ownerName,
+            address: profileVendorData.address || identity.address || application?.application_payload?.address || 'India',
+            city: profileVendorData.city || identity.city || application?.application_payload?.city,
+            state: profileVendorData.state || identity.state || application?.application_payload?.state,
+            pincode: profileVendorData.pincode || identity.pincode || application?.application_payload?.pincode || application?.application_payload?.pinCode,
+            status: profileVendorData.status || 'approved',
+            is_active: profileVendorData.is_active !== undefined ? profileVendorData.is_active : true,
+            is_deleted: profileVendorData.is_deleted !== undefined ? profileVendorData.is_deleted : false,
+          } : {}),
         };
 
         // Add application data if exists

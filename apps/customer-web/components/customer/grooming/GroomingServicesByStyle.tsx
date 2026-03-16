@@ -141,92 +141,11 @@ export function GroomingServicesByStyle({
       setLoading(true);
       console.log(`🔵 [Grooming] Discovering providers: category=${category}, serviceStyle=${serviceStyle}`);
 
-      // ✅ RULE: Same as vet center/home – call discover-services first (standard service provider discovery).
-      let providerData: any[] = [];
-      try {
-        const discoverUrl = `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}`;
-        console.log(`🔵 [Grooming] API: GET ${discoverUrl}`);
-        const discoverResponse = await apiClient.get(discoverUrl) as any;
-        const rawVendors = discoverResponse?.vendors || discoverResponse?.providers || [];
-        if (rawVendors.length > 0) {
-          // Map discover-services response (vendors with featuredOfferings) to provider shape with services array
-          providerData = rawVendors.map((v: any) => {
-            const offerings = v.featuredOfferings || v.services || [];
-            const services = offerings.map((s: any) => ({
-              id: s.id || s.serviceId,
-              serviceId: s.id || s.serviceId,
-              name: s.name || s.serviceName || 'Grooming',
-              price: Number(s.price ?? s.custom_price ?? 0),
-              duration: Number(s.duration ?? s.duration_minutes ?? 30),
-              description: s.description || s.custom_description,
-              category: s.category_name || s.category,
-              isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
-            }));
-            return {
-              providerId: v.id || v.vendorId,
-              providerType: 'vendor',
-              vendorId: v.id || v.vendorId,
-              name: v.businessName || v.name || v.owner_name || 'Grooming',
-              phone: v.phone,
-              address: v.address,
-              city: v.city,
-              role: v.role || v.role_display_name,
-              rating: String(v.rating ?? v.avgRating ?? '0'),
-              reviewCount: Number(v.reviewCount ?? v.review_count ?? 0),
-              distance: v.distance != null ? Number(v.distance) : null,
-              isVerified: v.isVerified !== false,
-              services,
-              specialisation: v.specialisation || v.specialization,
-              amenities: Array.isArray(v.amenities) ? v.amenities : [],
-            };
-          });
-          console.log(`✅ [Grooming] discover-services returned ${providerData.length} provider(s)`);
-        }
-      } catch (discoverErr) {
-        console.warn('⚠️ [Grooming] discover-services failed, trying by-style:', discoverErr);
-      }
-
-      // When discover-services returned providers, apply promotions and set
-      if (providerData.length > 0) {
-        const enrichedProviders = await Promise.all(
-          providerData.map(async (p: any) => {
-            if (p.services && Array.isArray(p.services) && p.services.length > 0 && promotions.length > 0) {
-              const enrichedServices = await Promise.all(
-                p.services.map((s: any) => {
-                  const basePrice = s.price || 0;
-                  const applicablePromo = promotions.find((promo: any) => {
-                    const appliesToService = !promo.applicable_services?.length || promo.applicable_services.includes(s.id || s.serviceId);
-                    const appliesToCategory = !promo.applicable_roles?.length || promo.applicable_roles.includes(category);
-                    const now = new Date();
-                    const startDate = new Date(promo.start_date);
-                    const endDate = promo.end_date ? new Date(promo.end_date) : null;
-                    return appliesToService && appliesToCategory && now >= startDate && (!endDate || now <= endDate) && promo.is_active;
-                  });
-                  if (!applicablePromo) return s;
-                  let finalPrice = basePrice;
-                  let discountAmount: number | undefined;
-                  if (applicablePromo.discount_type === 'percentage') {
-                    discountAmount = (basePrice * parseFloat(applicablePromo.discount_value || '0')) / 100;
-                    if (applicablePromo.max_discount_amount) discountAmount = Math.min(discountAmount, parseFloat(applicablePromo.max_discount_amount));
-                    finalPrice = Math.max(0, basePrice - discountAmount);
-                  } else {
-                    discountAmount = parseFloat(applicablePromo.discount_value || '0');
-                    finalPrice = Math.max(0, basePrice - discountAmount);
-                  }
-                  return { ...s, price: finalPrice, originalPrice: basePrice, discountAmount, promotionId: applicablePromo.id };
-                })
-              );
-              return { ...p, services: enrichedServices };
-            }
-            return p;
-          })
-        );
-        setProviders(enrichedProviders);
-      } else {
-        // Fallback: by-style (same as vet center / UniversalServicesByStyle)
-        const response = await apiClient.get(
-          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
-        ) as any;
+      // Use by-style endpoint (primary)
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const response = await apiClient.get(
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
+      ) as any;
         console.log(`🔵 [Grooming] API: GET by-style?style=${serviceStyle}&category=${category}`);
 
       if (response.success) {
@@ -327,76 +246,9 @@ export function GroomingServicesByStyle({
         console.warn('⚠️ [Grooming] by-style API returned success=false');
         setProviders([]);
       }
-      }
     } catch (error) {
       console.error('❌ [Grooming] Error loading services by style:', error);
-      // Try fallback endpoint
-      try {
-        const fallbackResponse = await apiClient.get(
-          `/customer/discover-services?category=${category}&roleId=pet_groomer&serviceStyle=${serviceStyle}${locationParams}`
-        ) as any;
-        
-        const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-        const vendorMap = new Map();
-        
-        servicesData.forEach((service: any) => {
-          const vendorId = service.vendorId || service.id;
-          if (!vendorMap.has(vendorId)) {
-            // ✅ ENHANCED: Properly map specialisation and amenities from various API response formats
-            const specialisation = service.specialisation || service.vendorSpecialisation || 
-                                 service.vendor?.specialisation || service.specialization || 
-                                 service.category || service.role;
-            const amenities = Array.isArray(service.amenities) ? service.amenities :
-                            (Array.isArray(service.vendorAmenities) ? service.vendorAmenities :
-                            (service.vendor?.amenities ? (Array.isArray(service.vendor.amenities) ? service.vendor.amenities : [service.vendor.amenities]) :
-                            (service.facility?.amenities ? (Array.isArray(service.facility.amenities) ? service.facility.amenities : [service.facility.amenities]) : [])));
-            
-            vendorMap.set(vendorId, {
-              providerId: vendorId,
-              providerType: 'vendor',
-              vendorId: vendorId,
-              name: service.vendorName || service.businessName || service.name || 'Grooming Service',
-              rating: Number(service.vendorRating || service.rating || 4.5),
-              reviewCount: service.vendorReviewCount || service.reviewsCount || service.reviewCount || 0,
-              distance: service.distance || null,
-              specialisation: specialisation, // ✅ FIX: Map specialisation from multiple sources
-              amenities: amenities, // ✅ FIX: Map amenities from multiple sources
-              services: []
-            });
-          }
-          
-          const provider = vendorMap.get(vendorId);
-          if (service.serviceId || service.id) {
-            provider.services.push({
-              id: service.serviceId || service.id,
-              serviceId: service.serviceId || service.id,
-              name: service.serviceName || service.name || 'Grooming Service',
-              price: service.price || 999,
-              duration: service.duration || 60,
-              description: service.description,
-              category: service.category,
-              isPackage: !!(service.isPackage ?? (service.metadata && (service.metadata as any).isPackage)),
-            });
-          }
-        });
-        
-        let providersList = Array.from(vendorMap.values());
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          providersList = providersList.filter(p => 
-            p.providerId === vendorId || 
-            p.vendorId === vendorId || 
-            p.staffId === vendorId
-          );
-        }
-        
-        setProviders(providersList);
-        console.log(`✅ [Grooming] Loaded ${providersList.length} provider${vendorId ? ' (filtered)' : 's'} from fallback endpoint`);
-      } catch (fallbackError) {
-        console.error('❌ [Grooming] Fallback endpoint also failed:', fallbackError);
-        setProviders([]);
-      }
+      setProviders([]);
     } finally {
       setLoading(false);
     }

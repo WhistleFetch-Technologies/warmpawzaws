@@ -27,9 +27,13 @@ import { instantTeleRequestSchema } from 'src/zodContracts/teleCommunication.con
 import type { z } from 'zod';
 import { BookingStatus, BookingPaymentStatus, PaymentTransactionStatus, InstantTeleEventType, UserType } from 'src/endpoints/constants';
 import { processInstantTeleRejectionRefund } from 'src/utils/payments/refund-service';
+import { VET_ROLE_NAMES } from 'src/endpoints/customer/constants';
+import { regeneratePresignedUrl } from 'src/endpoints/constants/helper';
 
 // Timeout for vendor to respond (seconds)
 const VENDOR_RESPONSE_TIMEOUT_SECONDS = 60 * 60;
+
+
 
 /**
  * Helper function to determine allowed CORS origin for SSE requests
@@ -82,6 +86,123 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
   // CUSTOMER: INSTANT REQUEST
   // ============================================
 
+
+
+  /**
+   * GET /customer/tele/available-now
+   * Vendors (vet only) who are "available right now" for instant tele:
+   * - Have at least one row in vendor_availability_v2 for today's day_of_week
+   * - With 'tele' in service_styles (or service_style/service_type = 'tele')
+   * - Current time is inside time_window_start..time_window_end (no buffer applied)
+   * - Vendor has published tele service in vendor_services
+   * No staff. No queue.
+   *
+   * ✅ FIX: Vendor availability windows are stored in IST (Asia/Kolkata).
+   * AWS Lambda runs in UTC, so new Date().getHours() returns UTC hours.
+   * We must convert to IST before comparing against availability windows.
+   */
+  app.get('/customer/tele/available-now', async (c) => {
+    try {
+      const now = new Date();
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const istNow = new Date(now.getTime() + IST_OFFSET_MS);
+      const dayOfWeek = istNow.getUTCDay();
+      const currentTime = `${String(istNow.getUTCHours()).padStart(2, '0')}:${String(istNow.getUTCMinutes()).padStart(2, '0')}:00`;
+
+      const result = await query(
+        `
+        -- select the vendor id, vendor name, photo, phone, city, address
+      SELECT
+          v.id AS vendor_id,
+          COALESCE(v.business_name, v.owner_name, 'Vet') AS vendor_name,
+          photo.profile_photo_url AS photo,
+          v.phone,
+          v.city,
+          v.address
+      -- from vendors table
+      FROM vendors v
+      -- join vendor_identity to get the selected_role_id
+      INNER JOIN vendor_identity vi 
+          ON vi.vendor_id = v.id
+      -- join roles to get the role_name
+      INNER JOIN roles r 
+          ON r.id = vi.selected_role_id
+          AND r.is_active = true
+      -- join vendor_availability_v2 to get the availability
+      INNER JOIN vendor_availability_v2 va 
+          ON va.vendor_id = v.id
+      -- join vendor_onboarding_applications to get the profile_photo_url
+      LEFT JOIN vendor_onboarding_applications voa
+          ON voa.vendor_identity_id = vi.id
+      -- join jsonb_array_elements to get the profile_photo_url
+      LEFT JOIN LATERAL (
+          SELECT doc->>'url' AS profile_photo_url
+          FROM jsonb_array_elements(voa.uploaded_documents) AS doc
+          WHERE doc->>'type' = 'profilePhoto'
+          LIMIT 1
+      ) photo ON true
+      -- where the vendor is active
+      WHERE v.is_active = true
+        -- where the vendor is approved or status is null
+        AND (v.status = 'approved' OR v.status IS NULL OR v.status = 'active')
+        -- where the vendor is not deleted
+        AND v.is_deleted = false
+        -- where the vendor is available for instant tele
+        AND v.available_for_instant_tele = true
+        -- where the role name is in the list of role names
+        AND LOWER(r.name) = ANY($2::text[])
+        -- where the day of week is the current day of week
+        AND va.day_of_week = $1
+        -- where the availability is available
+        AND COALESCE(va.is_available, true) = true
+        -- where the time window start is less than the current time
+        AND COALESCE(va.time_window_start, va.start_time) <= $3::time
+        -- where the time window end is greater than the current time
+        AND COALESCE(va.time_window_end, va.end_time) >= $3::time
+        -- where the service type is tele, online, or video consultation
+        AND va.service_type IN ('tele','online','video_consultation')
+        -- where the vendor has a published tele service in vendor_services
+        AND EXISTS (
+              SELECT 1
+              FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
+                AND vs.service_style = 'tele'
+                AND vs.is_enabled = true
+                AND COALESCE(vs.publish_status, 'published') = 'published'
+        )
+      -- order by the vendor name
+      ORDER BY v.business_name;
+      `,
+        [
+          dayOfWeek,
+          VET_ROLE_NAMES.map(r => r.toLowerCase()),
+          currentTime
+        ]
+      ).catch((err) => {
+        console.error('[instant-tele-v2] available-now query error:', err);
+        return { rows: [] };
+      });
+      const rows = (result as any).rows || [];
+      const vendors = await Promise.all(
+        rows.map(async (r: any) => ({
+          vendorId: r.vendor_id,
+          vendorName: r.vendor_name,
+          photo: await regeneratePresignedUrl(r.photo),
+          phone: r.phone,
+          city: r.city,
+          address: r.address,
+        }))
+      );
+
+      return c.json({ success: true, vendors, total: vendors.length });
+    } catch (error: any) {
+      console.error('[instant-tele-v2] available-now error:', error);
+      return c.json({ success: false, error: error.message, vendors: [] }, 500);
+    }
+  });
+
+
+
   /**
    * POST /customer/tele/instant-request
    * Customer picks a vendor. Creates booking with status='pending', payment_status='pending'.
@@ -110,28 +231,27 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         return c.json({ success: false, error: 'Vendor is not currently available for instant consultations' }, 400);
       }
 
-      // Resolve service details if serviceId provided
-      // bookings.service_id must reference services.id, not vendor_services.id
-      // vendor_services.service_id is the FK to services.id
+      // Resolve vendor service - bookings.service_id now references vendor_services.id
+      // This works for both catalog services and custom services
       let resolvedPrice = Number(amount) || 0;
       let resolvedServiceName = serviceName || 'Instant Vet Consultation';
-      let resolvedServiceId: string | null = null;
+      let resolvedVendorServiceId: string | null = null;
 
       if (serviceId) {
         try {
-          // serviceId could be vendor_services.id (UUID) or vendor_services.service_id (UUID)
-          // Try both: first as vendor_services.id, then as vendor_services.service_id
+          // serviceId is vendor_services.id (the service instance being booked)
           const svcRes = await query(
-            `SELECT service_id, price, service_name, duration_minutes
+            `SELECT id, price, service_name, duration_minutes
              FROM vendor_services
-             WHERE (id = $1 OR service_id = $1) AND vendor_id = $2 AND is_enabled = true
+             WHERE id = $1 AND vendor_id = $2 AND is_enabled = true
+               AND COALESCE(publish_status, 'published') IN ('published', 'auto_published')
              LIMIT 1`,
             [serviceId, vendorId]
           );
-          if (svcRes.rows.length > 0 && svcRes.rows[0].service_id) {
+          if (svcRes.rows.length > 0) {
+            resolvedVendorServiceId = svcRes.rows[0].id;
             resolvedPrice = Number(svcRes.rows[0].price) || resolvedPrice;
             resolvedServiceName = svcRes.rows[0].service_name || resolvedServiceName;
-            resolvedServiceId = svcRes.rows[0].service_id;
           }
         } catch (e) {
           console.warn('[instant-v3] Service lookup failed:', e);
@@ -139,19 +259,18 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       }
 
       // If no specific service provided, try to find vendor's tele service
-      if (!resolvedServiceId) {
+      if (!resolvedVendorServiceId) {
         try {
           const svcRes = await query(
-            `SELECT service_id, price, service_name
+            `SELECT id, price, service_name
              FROM vendor_services
              WHERE vendor_id = $1 AND service_style = 'tele' AND is_enabled = true
                AND COALESCE(publish_status, 'published') IN ('published', 'auto_published')
-               AND service_id IS NOT NULL
              LIMIT 1`,
             [vendorId]
           );
-          if (svcRes.rows.length > 0 && svcRes.rows[0].service_id) {
-            resolvedServiceId = svcRes.rows[0].service_id;
+          if (svcRes.rows.length > 0) {
+            resolvedVendorServiceId = svcRes.rows[0].id;
             resolvedPrice = Number(svcRes.rows[0].price) || resolvedPrice;
             resolvedServiceName = svcRes.rows[0].service_name || resolvedServiceName;
           }
@@ -160,11 +279,11 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         }
       }
 
-      //If still no service_id found, we cannot create booking (service_id is NOT NULL in bookings)
-      if (!resolvedServiceId) {
+      // If still no vendor service found, we cannot create booking
+      if (!resolvedVendorServiceId) {
         return c.json({
           success: false,
-          error: 'No valid service found. Please ensure the vendor has at least one enabled tele service with a valid service catalog entry.'
+          error: 'No valid service found. Please ensure the vendor has at least one enabled and published tele service.'
         }, 400);
       }
 
@@ -189,7 +308,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       `, [
         customerId,
         vendorId,
-        resolvedServiceId,
+        resolvedVendorServiceId, // ✅ Now using vendor_services.id instead of vendor_services.service_id
         petId,
         today,
         timeStr,

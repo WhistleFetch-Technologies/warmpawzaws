@@ -129,9 +129,10 @@ export function UniversalServicesByStyle({
         const specializationParam = specialization 
           ? `&specialization=${encodeURIComponent(specialization)}` 
           : '';
+        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
         
         const response = await apiClient.get(
-          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}`
+          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
         ) as any;
 
         if (response.success) {
@@ -185,8 +186,9 @@ export function UniversalServicesByStyle({
       } else {
         // ✅ HOME/TELE FLOWS: Use discover-services endpoint (solo vendors and staff only)
         // ✅ FIX: Don't pass roleId - it causes filtering issues. Category is sufficient.
+        const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
         const discoverResponse = await apiClient.get(
-          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}`
+          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}${phoneParam}`
         ) as any;
         
         // The endpoint returns providers array (solo vendors and staff)

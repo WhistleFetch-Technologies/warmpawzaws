@@ -1,0 +1,31 @@
+{
+  "subject": "Lambda AccessDeniedException despite AdministratorAccess policy",
+  "serviceCode": "amazon-lambda",
+  "severityCode": "normal",
+  "categoryCode": "general-info",
+  "issueType": "technical",
+  "language": "en",
+  "communicationBody": "PROBLEM SUMMARY:\nUser 'shivangtiwari' (Account: 057442119249) is experiencing AccessDeniedException when trying to access Lambda functions in ap-south-1 region, despite having AdministratorAccess policy attached.\n\nDETAILED ISSUE:\n- Error: AccessDeniedException when calling ListFunctions/GetFunction operations\n- User: shivangtiwari\n- Account: 057442119249\n- Region: ap-south-1\n- Service: AWS Lambda\n\nPOLICIES ATTACHED:\n1. AdministratorAccess (AWS Managed Policy) - ARN: arn:aws:iam::aws:policy/AdministratorAccess\n2. perkmissiontolambda (Custom Managed Policy) - Grants lambda:ListFunctions, lambda:GetFunction, lambda:GetFunctionConfiguration\n3. WarmpawzLambdaReadAccess (Inline Policy) - Same as above\n4. WarmpawzLambdaFullAccess (Inline Policy) - Grants lambda:* on warmpawz-* functions\n5. Warmpawz_lambda_Permission (Inline Policy) - Grants lambda:* on all resources\n\nACCOUNT STATUS:\n- Account is healthy (S3, EC2, Service Quotas all accessible)\n- Lambda service is enabled (quotas visible)\n- Not part of AWS Organizations (no SCPs)\n- No Permissions Boundary attached\n- Other AWS services work normally\n\nTROUBLESHOOTING ATTEMPTS:\n1. Applied multiple Lambda permission policies (read-only and full access)\n2. Verified policies are correctly attached via IAM Console\n3. Waited for IAM propagation (10+ minutes)\n4. Checked for SCPs - none found\n5. Checked account health - appears healthy\n6. Verified Lambda service is enabled (quotas visible)\n\nERROR DETAILS:\n- Operation: lambda:ListFunctions, lambda:GetFunction\n- Error: AccessDeniedException: None\n- Region: ap-south-1\n- Time: Ongoing issue\n\nREQUEST:\nPlease investigate why AdministratorAccess policy is not granting Lambda access. This appears to be an IAM policy evaluation issue rather than a service availability issue.",
+  "stepsToReproduce": [
+    "1. User 'shivangtiwari' tries to list Lambda functions: aws lambda list-functions --region ap-south-1",
+    "2. Command returns: AccessDeniedException when calling the ListFunctions operation: None",
+    "3. Same error occurs for GetFunction, GetFunctionConfiguration operations",
+    "4. User has AdministratorAccess policy attached which should grant full access",
+    "5. Multiple Lambda-specific policies also attached but access still denied"
+  ],
+  "expectedBehavior": "User with AdministratorAccess should be able to list and access Lambda functions without any restrictions.",
+  "actualBehavior": "AccessDeniedException is returned despite AdministratorAccess policy being attached.",
+  "additionalInfo": {
+    "accountId": "057442119249",
+    "username": "shivangtiwari",
+    "region": "ap-south-1",
+    "service": "AWS Lambda",
+    "errorCode": "AccessDeniedException",
+    "relatedServices": ["IAM", "Lambda"],
+    "supportingDocuments": [
+      "scripts/LAMBDA_ACCESS_TROUBLESHOOTING.md",
+      "scripts/BILLING_ACCOUNT_CHECK.md",
+      "scripts/lambda-full-permissions-policy.json"
+    ]
+  }
+}

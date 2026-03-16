@@ -461,14 +461,16 @@ export function UniversalPaymentPage({
           );
 
           if (matchingService) {
-            // Use service_id (UUID) from the vendor service
-            const resolved = matchingService.service_id || matchingService.serviceId;
-            if (uuidRegex.test(resolved)) {
-              setResolvedServiceId(resolved);
-              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
-            } else if (uuidRegex.test(matchingService.id)) {
+            // ✅ FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
+            // bookings.service_id must reference vendor_services.id, not services.id
+            if (uuidRegex.test(matchingService.id)) {
               setResolvedServiceId(matchingService.id);
-              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+              console.log(`✅ Resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
+            } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
+              // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
+              const resolved = matchingService.service_id || matchingService.serviceId;
+              setResolvedServiceId(resolved);
+              console.log(`✅ Resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
             } else {
               console.warn(`⚠️ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
             }
@@ -1074,8 +1076,54 @@ export function UniversalPaymentPage({
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         let finalServiceId = resolvedServiceId || serviceId;
 
+        // ✅ FIX: If selectedServices is provided, use the first service's id (vendor_services.id)
+        // This ensures we use vendor_services.id instead of services.id to match the foreign key constraint
+        console.log(`🔍 [SERVICE-ID-RESOLUTION] Initial serviceId: "${serviceId}", resolvedServiceId: "${resolvedServiceId}", finalServiceId: "${finalServiceId}"`);
+        console.log(`🔍 [SERVICE-ID-RESOLUTION] selectedServices:`, selectedServices);
+        
+        if (selectedServices && selectedServices.length > 0) {
+          const firstSelectedService = selectedServices[0];
+          console.log(`🔍 [SERVICE-ID-RESOLUTION] First selected service:`, {
+            id: firstSelectedService.id,
+            serviceId: firstSelectedService.serviceId,
+            service_id: firstSelectedService.service_id,
+            hasId: !!firstSelectedService.id,
+            idIsUUID: firstSelectedService.id ? uuidRegex.test(String(firstSelectedService.id)) : false,
+            hasServiceId: !!firstSelectedService.serviceId,
+            serviceIdIsUUID: firstSelectedService.serviceId ? uuidRegex.test(String(firstSelectedService.serviceId)) : false,
+            fullObject: firstSelectedService,
+          });
+          
+          // ✅ CRITICAL: Prioritize id field (vendor_services.id) over serviceId (services.id)
+          // The id field should be vendor_services.id which is what bookings.service_id FK requires
+          const candidateId = firstSelectedService.id;
+          const candidateServiceId = firstSelectedService.serviceId || firstSelectedService.service_id;
+          
+          if (candidateId && uuidRegex.test(String(candidateId))) {
+            finalServiceId = String(candidateId);
+            console.log(`✅ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].id (vendor_services.id): "${finalServiceId}"`);
+          } else if (candidateServiceId && uuidRegex.test(String(candidateServiceId))) {
+            // ⚠️ WARNING: This might be services.id, not vendor_services.id
+            // We'll use it but log a warning - the backend validation will catch if it's wrong
+            finalServiceId = String(candidateServiceId);
+            console.warn(`⚠️ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].serviceId (might be services.id, not vendor_services.id): "${finalServiceId}"`);
+          } else {
+            console.warn(`⚠️ [SERVICE-ID-RESOLUTION] selectedServices[0] has no valid UUID in id or serviceId fields`);
+          }
+        } else {
+          console.log(`ℹ️ [SERVICE-ID-RESOLUTION] No selectedServices provided, using finalServiceId: "${finalServiceId}"`);
+        }
+        
+        console.log(`🔍 [SERVICE-ID-RESOLUTION] Final resolved serviceId before sync resolution: "${finalServiceId}"`);
+
+        // ✅ CRITICAL: Only resolve if we don't already have a valid UUID from selectedServices
+        // If selectedServices provided a valid UUID, skip the synchronous resolution to avoid overriding it
+        const hasValidServiceIdFromSelectedServices = selectedServices && selectedServices.length > 0 && 
+          selectedServices[0].id && uuidRegex.test(selectedServices[0].id);
+        
         // If not a UUID, resolve it NOW (synchronously)
-        if (!uuidRegex.test(finalServiceId)) {
+        // BUT skip if we already got a valid UUID from selectedServices
+        if (!uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
           console.log(`🔄 Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
 
           try {
@@ -1155,16 +1203,18 @@ export function UniversalPaymentPage({
               );
 
               if (matchingService) {
-                // Use service_id (UUID) from the vendor service
-                const resolved = matchingService.service_id || matchingService.serviceId;
-                if (uuidRegex.test(resolved)) {
-                  finalServiceId = resolved;
-                  setResolvedServiceId(resolved);
-                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
-                } else if (uuidRegex.test(matchingService.id)) {
+                // ✅ FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
+                // bookings.service_id must reference vendor_services.id, not services.id
+                if (uuidRegex.test(matchingService.id)) {
                   finalServiceId = matchingService.id;
                   setResolvedServiceId(matchingService.id);
-                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
+                } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
+                  // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
+                  const resolved = matchingService.service_id || matchingService.serviceId;
+                  finalServiceId = resolved;
+                  setResolvedServiceId(resolved);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
                 } else {
                   throw new Error(`Service found but no valid UUID available. Service ID: ${serviceId}`);
                 }
@@ -1329,6 +1379,19 @@ export function UniversalPaymentPage({
           ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
           : bookingTime;
 
+        // ✅ FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
+        // This is a last-ditch check to prevent using services.id instead of vendor_services.id
+        if (selectedServices && selectedServices.length > 0) {
+          const firstSelectedService = selectedServices[0];
+          if (firstSelectedService.id && uuidRegex.test(String(firstSelectedService.id))) {
+            // Only override if current finalServiceId doesn't match the vendor_services.id
+            if (finalServiceId !== String(firstSelectedService.id)) {
+              console.warn(`⚠️ [FINAL-CHECK] Overriding finalServiceId "${finalServiceId}" with selectedServices[0].id "${firstSelectedService.id}"`);
+              finalServiceId = String(firstSelectedService.id);
+            }
+          }
+        }
+
         const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // ✅ Required UUID (resolved above)
           vendorId: vendorId, // ✅ Required UUID
@@ -1370,7 +1433,9 @@ export function UniversalPaymentPage({
           ...bookingPayload,
           originalServiceId: serviceId, // Log original
           resolvedServiceId: finalServiceId, // Log resolved UUID
+          selectedServicesDebug: selectedServices ? selectedServices.map(s => ({ id: s.id, serviceId: s.serviceId, service_id: s.service_id })) : null,
         });
+        console.log('📋 [CRITICAL] Final serviceId being sent to backend:', finalServiceId);
 
         // ✅ Payment policy aware: attempt booking creation (may be blocked if upfront payment required)
         // Try all possible booking creation endpoints

@@ -54,6 +54,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     city: vendorData?.city || '',
     state: vendorData?.state || '',
     pincode: (vendorData?.pincode && vendorData?.pincode !== '000000') ? vendorData.pincode : '',
+    latitude: vendorData?.latitude ?? undefined,
+    longitude: vendorData?.longitude ?? undefined,
     operatingHours: DAYS.reduce((acc, day) => ({
       ...acc,
       [day]: { isOpen: true, open: '09:00', close: '18:00' }
@@ -139,13 +141,22 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         }
       }
 
-      // ✅ Load availableForInstantTele from vendor profile
+      // ✅ Load availableForInstantTele and coordinates from vendor profile
       if (vendorProfileData?.vendor) {
         const instantTeleValue = vendorProfileData.vendor.availableForInstantTele ?? 
                                  vendorProfileData.vendor.available_for_instant_tele ?? 
                                  false;
         setAvailableForInstantTele(instantTeleValue);
         console.log('[CENTER-PROFILE] Loaded availableForInstantTele:', instantTeleValue);
+        
+        // Load latitude/longitude from vendor profile if available
+        if (vendorProfileData.vendor.latitude != null || vendorProfileData.vendor.longitude != null) {
+          setProfile(prev => ({
+            ...prev,
+            latitude: vendorProfileData.vendor.latitude ?? prev.latitude,
+            longitude: vendorProfileData.vendor.longitude ?? prev.longitude,
+          }));
+        }
       }
       
       // ✅ FIX: Load facility data using correct endpoint
@@ -170,6 +181,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           city: facilityData.facility.city || prev.city,
           state: facilityData.facility.state || prev.state,
           pincode: (facilityData.facility.pincode && facilityData.facility.pincode !== '000000') ? facilityData.facility.pincode : ((prev.pincode && prev.pincode !== '000000') ? prev.pincode : ''),
+          latitude: facilityData.vendor?.latitude ?? prev.latitude,
+          longitude: facilityData.vendor?.longitude ?? prev.longitude,
           amenities: facilityData.facility.amenities || [],
           customAmenities: facilityData.facility.customAmenities || [],
           photos: loadedPhotos,
@@ -312,20 +325,34 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         // Continue - we already saved in facility data above
       }
 
-      // 4. Save availableForInstantTele to vendor profile
+      // 4. Save address coordinates and availableForInstantTele to vendor profile
       try {
-        const vendorProfileRes = await apiClient.put(`/vendor/${vendorId}/profile`, {
+        const vendorProfileUpdate: any = {
           availableForInstantTele: availableForInstantTele
-        }) as any;
+        };
+        
+        // Include latitude/longitude if they exist in profile state
+        if (profile.latitude != null) {
+          vendorProfileUpdate.latitude = profile.latitude;
+        }
+        if (profile.longitude != null) {
+          vendorProfileUpdate.longitude = profile.longitude;
+        }
+        
+        const vendorProfileRes = await apiClient.put(`/vendor/${vendorId}/profile`, vendorProfileUpdate) as any;
 
         if (vendorProfileRes && vendorProfileRes.error) {
-          console.warn('⚠️ Failed to save availableForInstantTele:', vendorProfileRes.error);
+          console.warn('⚠️ Failed to save vendor profile updates:', vendorProfileRes.error);
           // Non-critical, but log it
         } else {
-          console.log('✅ availableForInstantTele saved:', availableForInstantTele);
+          console.log('✅ Vendor profile updated:', { 
+            availableForInstantTele, 
+            hasLatitude: profile.latitude != null,
+            hasLongitude: profile.longitude != null
+          });
         }
       } catch (vendorProfileError) {
-        console.warn('⚠️ Failed to save availableForInstantTele - continuing:', vendorProfileError);
+        console.warn('⚠️ Failed to save vendor profile updates - continuing:', vendorProfileError);
         // Continue - not critical for facility save
       }
 
@@ -525,13 +552,19 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
                   <EnhancedAddressAutocomplete
                     value={profile.address || ''}
                     onChange={(address: string, components?: AddressComponents) => {
-                      // Single state update: address + city, state, pincode from search (like customer profile)
+                      // Update address + city, state, pincode, and coordinates from Places
                       setProfile(prev => ({
                         ...prev,
                         address,
                         ...(components?.city != null && { city: components.city }),
                         ...(components?.state != null && { state: components.state }),
                         ...(components?.pincode != null && { pincode: components.pincode }),
+                        // Extract latitude and longitude from coordinates
+                        ...(components?.coordinates?.lat != null && { latitude: components.coordinates.lat }),
+                        ...(components?.coordinates?.lng != null && { longitude: components.coordinates.lng }),
+                        // Support direct lat/lng for backward compatibility
+                        ...(components?.lat != null && !components?.coordinates?.lat && { latitude: components.lat }),
+                        ...(components?.lng != null && !components?.coordinates?.lng && { longitude: components.lng }),
                       }));
                     }}
                     placeholder="Search address, landmark, city..."

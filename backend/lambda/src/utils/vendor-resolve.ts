@@ -69,6 +69,7 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
       service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding
       status: 'active',
       is_active: true,
+      is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });

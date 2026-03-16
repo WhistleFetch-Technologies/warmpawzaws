@@ -147,8 +147,9 @@ export function VendorListingByStyle({
         }
       }
       
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
       ) as any;
 
       if (response.success) {
@@ -214,50 +215,8 @@ export function VendorListingByStyle({
         setVendors(vendorsList);
         console.log(`✅ [VendorListingByStyle] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
       } else {
-        // Try fallback
-        try {
-          const roleMapping: Record<string, string> = {
-            'grooming': 'pet_groomer',
-            'vet': 'veterinarian',
-            'training': 'pet_trainer',
-            'walker': 'pet_walker',
-            'boarding': 'pet_boarder',
-            'nutritionist': 'pet_nutritionist',
-          };
-          
-          const fallbackResponse = await apiClient.get(
-            `/customer/discover-services?category=${category}&roleId=${roleMapping[category] || category}&serviceStyle=${serviceStyle}${locationParams}`
-          ) as any;
-          
-          const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-          const vendorMap = new Map<string, Vendor>();
-          
-          servicesData.forEach((service: any) => {
-            const vendorId = service.vendorId || service.id;
-            if (!vendorMap.has(vendorId)) {
-              vendorMap.set(vendorId, {
-                id: vendorId,
-                name: service.vendorName || service.businessName || service.name || 'Service Provider',
-                type: 'vendor',
-                rating: parseFloat(service.vendorRating || service.rating || '4.5'),
-                reviewCount: parseInt(service.vendorReviewCount || service.reviewsCount || '0', 10),
-                distance: service.distance || null,
-                city: service.city,
-                address: service.address,
-                photo: service.photo,
-                isVerified: service.isVerified,
-                price: service.price,
-              });
-            }
-          });
-          
-          const vendorsList = Array.from(vendorMap.values());
-          setVendors(vendorsList);
-          console.log(`✅ [VendorListingByStyle] Loaded ${vendorsList.length} vendors from fallback`);
-        } catch (fallbackError) {
-          console.error('❌ [VendorListingByStyle] Fallback failed:', fallbackError);
-          setVendors([]);
-        }
+        console.warn(`⚠️ [VendorListingByStyle] Primary endpoint returned success=false or no vendors`);
+        setVendors([]);
       }
     } catch (error) {
       console.error('❌ [VendorListingByStyle] Error:', error);

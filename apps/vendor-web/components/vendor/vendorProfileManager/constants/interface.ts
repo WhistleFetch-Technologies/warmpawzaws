@@ -27,6 +27,8 @@ export interface ProfessionalProfile {
     city: string;
     state: string;
     pincode: string;
+    latitude?: number;
+    longitude?: number;
     description?: string;
     photo_url?: string;
     qualifications?: string;
@@ -62,6 +64,8 @@ export interface CenterProfile {
     city: string;
     state: string;
     pincode: string;
+    latitude?: number;
+    longitude?: number;
 
     // Operating Hours - Day by Day
     operatingHours: {

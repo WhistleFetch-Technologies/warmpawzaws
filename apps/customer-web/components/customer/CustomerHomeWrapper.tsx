@@ -95,7 +95,7 @@ const PharmacyOrderStatus = dynamic(() => import('./pharmacy/PharmacyOrderStatus
 const PharmacyOrderFlow = dynamic(() => import('./specialized/PharmacyOrderFlow').then(mod => ({ default: mod.PharmacyOrderFlow })), { loading: LoadingSpinner });
 
 // Bookings & Appointments
-const MyBookings = dynamic(() => import('./MyBookings').then(mod => ({ default: mod.MyBookings })), { loading: LoadingSpinner });
+const MyBookings = dynamic(() => import('./booking/MyBookings').then(mod => ({ default: mod.MyBookings })), { loading: LoadingSpinner });
 const AppointmentsList = dynamic(() => import('./AppointmentsList').then(mod => ({ default: mod.AppointmentsList })), { loading: LoadingSpinner });
 const AppointmentDetailsView = dynamic(() => import('./AppointmentDetailsView').then(mod => ({ default: mod.AppointmentDetailsView })), { loading: LoadingSpinner });
 const RescheduleAppointmentView = dynamic(() => import('./RescheduleAppointmentView').then(mod => ({ default: mod.RescheduleAppointmentView })), { loading: LoadingSpinner });

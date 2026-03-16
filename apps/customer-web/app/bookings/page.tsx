@@ -1,6 +1,6 @@
 'use client';
 
-import { MyBookings } from '@/components/customer/MyBookings';
+import { MyBookings } from '@/components/customer/booking/MyBookings';
 import { useEffect, useState } from 'react';
 
 export default function BookingsPage() {

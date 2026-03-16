@@ -677,11 +677,22 @@ export function registerAdminEndpoints(app: Hono) {
         `UPDATE vendor_onboarding_applications SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() WHERE id = $1`,
         [applicationId, notes]
       );
+      // ✅ FIX: Use vendor_identity_id from application, not application_id column
       try {
-        await query(
-          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() WHERE application_id = $1 OR id = $1`,
+        const appCheck = await query(
+          `SELECT vendor_identity_id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
           [applicationId]
         );
+        
+        if (appCheck.rows.length > 0 && appCheck.rows[0].vendor_identity_id) {
+          await query(
+            `UPDATE vendor_identity 
+             SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+             WHERE id = $1 
+               AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
+            [appCheck.rows[0].vendor_identity_id]
+          );
+        }
       } catch (e) {
         console.warn('Optional vendor_identity update failed:', (e as Error).message);
       }
@@ -730,16 +741,51 @@ export function registerAdminEndpoints(app: Hono) {
     const applicationId = c.req.param('applicationId');
 
     try {
-      //  Look up vendor_identity by application_id first
-      const identityResults = await query(
+      //  Look up vendor_identity by application_id
+      // Handle case where vi.application_id might not be a valid UUID (could be status string)
+      // Strategy: Find application first, then get identity from vendor_identity_id
+      // Fallback: If application not found, try finding identity directly by ID
+      let identityResults;
+      
+      // First, try to find the application and get identity from it
+      const appResult = await query(
+        `SELECT voa.*, voa.vendor_identity_id 
+         FROM vendor_onboarding_applications voa 
+         WHERE voa.id = $1`,
+        [applicationId]
+      );
+      
+      if (appResult.rows.length > 0) {
+        const app = appResult.rows[0];
+        
+        //Validate vendor_identity_id is a valid UUID before using it
+        if (!app.vendor_identity_id || 
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.vendor_identity_id)) {
+          console.error(`⚠️ [APPROVE] Invalid vendor_identity_id in application: ${app.vendor_identity_id}`);
+          return c.json({ error: 'Invalid application data: vendor_identity_id is not a valid UUID' }, 400);
+        }
+        
+        // Get identity from the application's vendor_identity_id
+        identityResults = await query(
         `SELECT vi.*, voa.id as app_id, voa.application_payload, voa.status as app_status,
                 r.name as role_name, r.id as role_id
          FROM vendor_identity vi
-         LEFT JOIN vendor_onboarding_applications voa ON voa.id = vi.application_id
+           LEFT JOIN vendor_onboarding_applications voa ON voa.id = $1
          LEFT JOIN roles r ON vi.selected_role_id = r.id
-         WHERE vi.application_id = $1 OR vi.id = $1 OR voa.id = $1`,
+           WHERE vi.id = $2`,
+          [applicationId, app.vendor_identity_id]
+        );
+      } else {
+        // Application not found - try finding identity directly by ID (backward compatibility)
+        identityResults = await query(
+          `SELECT vi.*, NULL as app_id, NULL as application_payload, NULL as app_status,
+                  r.name as role_name, r.id as role_id
+           FROM vendor_identity vi
+           LEFT JOIN roles r ON vi.selected_role_id = r.id
+           WHERE vi.id = $1`,
         [applicationId]
       );
+      }
 
       let vendorId: string;
       let identity: any = null;
@@ -747,15 +793,24 @@ export function registerAdminEndpoints(app: Hono) {
       if (identityResults.rows.length > 0) {
         identity = identityResults.rows[0];
 
-        // Check if vendor already exists
+        // Check if vendor already exists - filter out deleted vendors
+        // Only use identity.vendor_id if it's a valid UUID, otherwise use identity.id
+        const vendorIdToCheck = (identity.vendor_id && 
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.vendor_id))
+          ? identity.vendor_id 
+          : identity.id;
+        
         const existingVendor = await query(
-          `SELECT id FROM vendors WHERE id = $1 OR phone = $2`,
-          [identity.vendor_id || identity.id, identity.phone]
+          `SELECT id, is_deleted FROM vendors 
+           WHERE (id = $1 OR phone = $2)
+           AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
+           LIMIT 1`,
+          [vendorIdToCheck, identity.phone]
         );
 
         if (existingVendor.rows.length > 0) {
           vendorId = existingVendor.rows[0].id;
-          // Vendor exists but vendor_identity.vendor_id might not be set - link them
+          // Vendor exists and is not deleted - link them
           if (!identity.vendor_id || identity.vendor_id !== vendorId) {
             try {
               await query(
@@ -763,7 +818,8 @@ export function registerAdminEndpoints(app: Hono) {
                  SET vendor_id = $1, 
                      onboarding_status = 'APPROVED',
                      updated_at = NOW()
-                 WHERE id = $2`,
+                 WHERE id = $2 
+                 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
                 [vendorId, identity.id]
               );
             } catch (linkErr) {
@@ -771,13 +827,65 @@ export function registerAdminEndpoints(app: Hono) {
             }
           }
         } else {
+          // Check if identity.vendor_id points to a deleted vendor
+          // If it does, we MUST create a new vendor with a new ID
+          // Only check identity.vendor_id if it's a valid UUID (not a string like "approved")
+          let proposedVendorId: string | null = null;
+          
+          if (identity.vendor_id && 
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.vendor_id)) {
+            const deletedVendorCheck = await query(
+              `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
+              [identity.vendor_id]
+            );
+            
+            if (deletedVendorCheck.rows.length > 0) {
+              const vendor = deletedVendorCheck.rows[0];
+              const isDeleted = vendor.is_deleted === true || 
+                vendor.is_deleted === 't' ||
+                (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
+              
+              if (isDeleted) {
+                console.log(`⚠️ [APPROVE] Identity ${identity.id} vendor_id ${identity.vendor_id} points to deleted vendor - generating new ID`);
+                proposedVendorId = null; // Will generate new UUID
+              } else {
+                // Shouldn't happen if query above worked, but be safe
+                proposedVendorId = identity.vendor_id;
+              }
+            } else {
+              // Vendor doesn't exist - can use identity.vendor_id
+              proposedVendorId = identity.vendor_id;
+            }
+          }
+          
+          // Generate new UUID if needed
+          if (!proposedVendorId) {
+            const { randomUUID } = await import('crypto');
+            proposedVendorId = randomUUID();
+            console.log(`✅ [APPROVE] Generating new unique vendor ID: ${proposedVendorId}`);
+          }
+          
+          // Double-check the ID doesn't exist (even if deleted)
+          const finalIdCheck = await query(
+            `SELECT id FROM vendors WHERE id = $1 LIMIT 1`,
+            [proposedVendorId]
+          );
+          
+          let finalVendorId = proposedVendorId;
+          if (finalIdCheck.rows.length > 0) {
+            // ID exists - generate new one
+            const { randomUUID } = await import('crypto');
+            finalVendorId = randomUUID();
+            console.log(`⚠️ [APPROVE] Proposed vendor ID ${proposedVendorId} already exists - generating new: ${finalVendorId}`);
+          }
+          
           // Create vendor from application data
           const formData = identity.application_payload || {};
           //Ensure email is never null - use phone-based fallback if needed
           const vendorEmail = formData.email || identity.email || `vendor-${identity.phone}@warmpawz.app`;
 
           // Fetch default tier from vendor_tiers table also have a fallback of a basic paln 
-          let defaultTierName = 'Bronze';
+          let defaultTierName = 'Basic';
           try {
             const tierResult = await query(
               `SELECT tier_name, commission_rate 
@@ -797,17 +905,18 @@ export function registerAdminEndpoints(app: Hono) {
 
           const insertResult = await query(
             `INSERT INTO vendors (
-              phone, email, owner_name, business_name, role_id, status, vendor_type,
-              city, state, address, pincode, tier, is_active, created_at, approved_at
-            ) VALUES ($1, $2, $3, $4, $5, 'approved', $6, $7, $8, $9, $10, $11, true, NOW(), NOW())
+              id, phone, email, owner_name, business_name, role_id, status, vendor_type,
+              city, state, address, pincode, tier, is_active, is_deleted, metadata, created_at, approved_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true, false, '{}'::jsonb, NOW(), NOW())
             RETURNING id`,
             [
+              finalVendorId, // ✅ Use the final (unique) vendor ID
               identity.phone,
               vendorEmail,
               formData.contactPersonName || formData.businessName || 'Vendor',
               formData.businessName || formData.contactPersonName || 'Business',
-              identity.role_id || identity.selected_role_id,
-              identity.vendor_type || 'solo',
+              identity.role_id || identity.selected_role_id, // ✅ role_id (UUID)
+              identity.vendor_type || 'solo', // ✅ vendor_type
               formData.city || 'Unknown',
               formData.state || 'Unknown',
               formData.address || 'Unknown',
@@ -817,14 +926,54 @@ export function registerAdminEndpoints(app: Hono) {
           );
           vendorId = insertResult.rows[0].id;
 
+          //Immediately verify vendor was created correctly
+          const verifyVendor = await query(
+            `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
+            [vendorId]
+          );
+          
+          if (verifyVendor.rows.length > 0) {
+            const vendor = verifyVendor.rows[0];
+            const isDeleted = vendor.is_deleted === true || 
+              vendor.is_deleted === 't' ||
+              (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
+            
+            if (isDeleted) {
+              console.error(`❌ [APPROVE] CRITICAL: Vendor ${vendorId} was created but is marked as deleted! Fixing...`);
+              await query(
+                `UPDATE vendors 
+                 SET is_deleted = false, 
+                     metadata = '{}'::jsonb,
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [vendorId]
+              );
+              console.log(`✅ [APPROVE] Fixed vendor ${vendorId} - set is_deleted to false`);
+            }
+          }
+
           // Update vendor_identity to link vendor_id and set status
+          //Only update if identity is not deleted
+          const verifyIdentity = await query(
+            `SELECT id, is_deleted FROM vendor_identity WHERE id = $1 LIMIT 1`,
+            [identity.id]
+          );
+          
+          if (verifyIdentity.rows.length > 0) {
+            const identityCheck = verifyIdentity.rows[0];
+            const isIdentityDeleted = identityCheck.is_deleted === true || 
+              identityCheck.is_deleted === 't' ||
+              (typeof identityCheck.is_deleted === 'string' && identityCheck.is_deleted.toLowerCase() === 'true');
+            
+            if (!isIdentityDeleted) {
           try {
             await query(
               `UPDATE vendor_identity 
                SET onboarding_status = 'APPROVED', 
                    vendor_id = $1,
                    updated_at = NOW()
-               WHERE id = $2`,
+                   WHERE id = $2 
+                   AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
               [vendorId, identity.id]
             );
           } catch (updateErr) {
@@ -837,6 +986,10 @@ export function registerAdminEndpoints(app: Hono) {
               );
             } catch (fallbackErr) {
               console.error('Failed to update vendor_identity (fallback):', fallbackErr);
+                }
+              }
+            } else {
+              console.warn(`⚠️ [APPROVE] Cannot update deleted vendor_identity ${identity.id}`);
             }
           }
         }
@@ -849,7 +1002,7 @@ export function registerAdminEndpoints(app: Hono) {
         vendorId = vendors[0].id;
       }
 
-      // ✅ FIX: Ensure facility/profile is provisioned after approval
+      //Ensure facility/profile is provisioned after approval
       // Update vendor record with any missing facility fields from application data
       // Do this BEFORE status update so facility data is available immediately
       try {
@@ -912,32 +1065,43 @@ export function registerAdminEndpoints(app: Hono) {
         [applicationId]
       );
 
-      // ✅ FIX: Update vendor_identity status to APPROVED and ensure vendor_id is set
+      //Update vendor_identity status to APPROVED and ensure vendor_id is set
+      // Use identity.id directly (we already validated it's a valid UUID)
       let updatedIdentity = null;
+      if (identity && identity.id) {
       try {
         const updateResult = await query(
           `UPDATE vendor_identity 
            SET onboarding_status = 'APPROVED', 
                vendor_id = COALESCE(vendor_id, $1),
                updated_at = NOW() 
-           WHERE (application_id = $2 OR id = $2 OR phone = $3) AND (vendor_id IS NULL OR vendor_id = $1)
+             WHERE id = $2 
+               AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
+               AND (vendor_id IS NULL OR vendor_id = $1)
            RETURNING *`,
-          [vendorId, applicationId, identity?.phone || '']
+            [vendorId, identity.id]
         );
         if (updateResult.rows.length > 0) {
           updatedIdentity = updateResult.rows[0];
         }
       } catch (updateErr) {
         console.error('Failed to update vendor_identity with vendor_id:', updateErr);
-        // Fallback: update status only
+          // Fallback: update status only (using identity.id which we know is valid)
+          try {
         const fallbackResult = await query(
-          `UPDATE vendor_identity SET onboarding_status = 'APPROVED', updated_at = NOW() 
-           WHERE application_id = $1 OR id = $1 OR phone = $2
+              `UPDATE vendor_identity 
+               SET onboarding_status = 'APPROVED', updated_at = NOW() 
+               WHERE id = $1 
+                 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
            RETURNING *`,
-          [applicationId, identity?.phone || '']
+              [identity.id]
         );
         if (fallbackResult.rows.length > 0) {
           updatedIdentity = fallbackResult.rows[0];
+            }
+          } catch (fallbackErr) {
+            console.error('Failed to update vendor_identity (fallback):', fallbackErr);
+          }
         }
       }
 
@@ -1209,11 +1373,21 @@ export function registerAdminEndpoints(app: Hono) {
     const reason = body.reason || 'Application rejected by admin';
 
     try {
-      // Update vendor_identity status
-      await query(
-        `UPDATE vendor_identity SET onboarding_status = 'REJECTED' WHERE application_id = $1 OR id = $1`,
+      // ✅ FIX: Update vendor_identity status - use vendor_identity_id from application, not application_id column
+      const appCheck = await query(
+        `SELECT vendor_identity_id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
         [applicationId]
       );
+      
+      if (appCheck.rows.length > 0 && appCheck.rows[0].vendor_identity_id) {
+        await query(
+          `UPDATE vendor_identity 
+           SET onboarding_status = 'REJECTED' 
+           WHERE id = $1 
+             AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
+          [appCheck.rows[0].vendor_identity_id]
+        );
+      }
 
       // Update application status
       await query(
@@ -1263,12 +1437,22 @@ export function registerAdminEndpoints(app: Hono) {
          WHERE id = $1`,
         [applicationId, notes]
       );
+      // ✅ FIX: Use vendor_identity_id from application, not application_id column
       try {
-        await query(
-          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
-           WHERE application_id = $1 OR id = $1`,
+        const appCheck = await query(
+          `SELECT vendor_identity_id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
           [applicationId]
         );
+        
+        if (appCheck.rows.length > 0 && appCheck.rows[0].vendor_identity_id) {
+          await query(
+            `UPDATE vendor_identity 
+             SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+             WHERE id = $1 
+               AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
+            [appCheck.rows[0].vendor_identity_id]
+          );
+        }
       } catch (e) {
         console.warn('Optional vendor_identity update failed:', (e as Error).message);
       }
