@@ -481,20 +481,11 @@ async function resolveTargetRolesForDiscovery(category?: string | null, roleId?:
 
 /** Resolve customer ID from phone for vendor-specific package badges (hasActivePackage, inActivePackage). */
 async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<string | null> {
-  console.log('phone_______________________________>', phone);
   if (!phone || typeof phone !== 'string') return null;
-  console.log('phone_______________________________>2', phone);
   const clean = phone.replace(/[^0-9]/g, '');
-  console.log('clean_______________________________>3', clean);
   if (clean.length < 10) return null;
-  console.log('clean_______________________________>4', clean);
-
-  // ✅ FIX: Specify columns explicitly to avoid "latitude does not exist" error
   const customers = await select('customers', { phone: clean }, { columns: ['id', 'phone'] });
-  console.log('customers_______________________________>5', customers);
   if (customers.length > 0) return (customers[0] as any).id;
-  console.log('customers_______________________________>6', customers);
-
   if (clean.length === 10) {
     const with91 = await select('customers', { phone: `+91${clean}` }, { columns: ['id', 'phone'] });
     if (with91.length > 0) return (with91[0] as any).id;
@@ -516,7 +507,7 @@ export async function getCoordinates(
     } else {
       // Vendor: Query vendors table with separate latitude/longitude columns
       const vendorId = identifier;
-      
+
       const vendorResult = await query(
         `SELECT latitude, longitude 
          FROM vendors 
@@ -531,17 +522,17 @@ export async function getCoordinates(
       }
 
       const vendor = vendorResult.rows[0];
-      
+
       if (vendor.latitude != null && vendor.longitude != null) {
         const latitude = parseFloat(String(vendor.latitude));
         const longitude = parseFloat(String(vendor.longitude));
-        
+
         console.log('[getCoordinates] Extracted from vendor columns', {
           vendorId,
           latitude,
           longitude
         });
-        
+
         return { latitude, longitude };
       }
 
@@ -4815,7 +4806,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * PUT /vendor/facility/:vendorId
    * Update vendor facility details (address, timings, amenities, etc.)
-   * ✅ FIX: This endpoint was missing, causing 404 errors in UAT
+   * This endpoint was missing, causing 404 errors in UAT
    */
   app.put("/vendor/facility/:vendorId", async (c) => {
     try {
@@ -5014,7 +5005,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * POST /vendor/facility/:vendorId/upload-photos
    * Upload facility photos for a vendor
-   * ✅ FIX: This endpoint was missing, causing 404 errors
+   * This endpoint was missing, causing 404 errors
    */
   app.post("/vendor/facility/:vendorId/upload-photos", async (c) => {
     try {
@@ -5446,9 +5437,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // If coordinates not provided, fetch from customer's default address
       if (!latitude || !longitude) {
         const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
-        console.log('customerPhone_______________________________>', customerPhone);
         const coords = await getCustomerCoordinates(customerPhone || undefined);
-        console.log('coords_______________________________>', coords);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
@@ -5525,7 +5514,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (!customerLat || !customerLng || !lat || !lng) return null;
         return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
       };
-      console.log('customerLat_______________________________>', customerLat, customerLng);
       /** Human-readable distance label */
       const fmtDistance = (km: number | null): string | null => {
         if (km == null) return null;
@@ -5694,13 +5682,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               'pet_sitter','sitter',
               'pet_taxi','pet_transport','pet_relocation','relocation'
             )
+              OR v.vendor_type = 'business'
+              OR v.vendor_type = 'clinic'
           )`;
       }
 
       vendorSql += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}`;
 
       const vendorRows = await query(vendorSql, vendorParams);
-      console.log(`[by-style] vendors table → ${vendorRows.rows.length} matches`);
 
 
       // 6. ENRICH ALL VENDORS

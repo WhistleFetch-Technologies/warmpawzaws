@@ -872,7 +872,6 @@ export function registerVendorProfileEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const rawUpdates = await c.req.json();
 
-      console.log(`📝 [PROFILE-UPDATE] Vendor ${vendorId} updating profile`, rawUpdates);
 
       // Convert camelCase keys to snake_case for database compatibility
       const camelToSnakeMap: Record<string, string> = {
@@ -914,8 +913,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
-      console.log(`🔍 [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
-      console.log(`📋 [PROFILE-UPDATE] Changed fields: ${changedFields.join(', ')}`);
+
 
       // Dynamically check which columns exist in the vendors table
       const schemaResult = await query(`

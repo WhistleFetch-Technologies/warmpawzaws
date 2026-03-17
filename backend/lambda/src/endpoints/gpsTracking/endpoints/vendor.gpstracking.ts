@@ -981,7 +981,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
   /**
    * POST /vendor/bookings/:bookingId/location-update
    * Update vendor's current location during travel
-   * ✅ FIX: Now uses updateLocation service to recalculate ETA/distance properly
+   *  Now uses updateLocation service to recalculate ETA/distance properly
    */
   app.post("/vendor/bookings/:bookingId/location-update", validateBody(locationUpdateRequestSchema), async (c) => {
     try {
@@ -1570,30 +1570,28 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       // OtpAction enum: 'start' | 'complete' | 'end'
       let mappedAction: OtpAction = OtpAction.COMPLETE;
       if (action === 'end_session') {
-        mappedAction = OtpAction.END; // Will be normalized to COMPLETE
+        mappedAction = OtpAction.END;
       } else if (action === 'start_travel') {
         mappedAction = OtpAction.START;
       } else if (action === 'mark_arrived' || action === 'check_in' || !action) {
-        mappedAction = OtpAction.COMPLETE; // Default for arrival, check-in, or no action
+        mappedAction = OtpAction.COMPLETE; 
       }
 
-      // ✅ FIX: Get correct OTP based on action and service type (walker vs non-walker)
+      // Get correct OTP based on action and service type (walker vs non-walker)
       // Default to 'complete' if action not specified
       const otpAction = (mappedAction === OtpAction.END ? OtpAction.COMPLETE : mappedAction) as OtpAction.START | OtpAction.COMPLETE;
       const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, otpAction);
       const providedOtp = String(otp).trim();
 
       if (!expectedOTP) {
-        console.error(`❌ [VERIFY-OTP] No OTP found for booking ${bookingId}`);
         return c.json({ error: 'No OTP found for this booking', verified: false }, 400);
       }
 
       if (expectedOTP !== providedOtp) {
-        console.error(`❌ [VERIFY-OTP] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOtp}" (Walker: ${isWalkerService}, Action: ${action || 'complete'})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
       }
 
-      // ✅ Mark end OTP as used if it's a walker service completing
+      //Mark end OTP as used if it's a walker service completing
       if (isWalkerService && (mappedAction === OtpAction.COMPLETE || mappedAction === OtpAction.END || !action)) {
         try {
           await update('otp_tokens',
@@ -1604,9 +1602,9 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             },
             { is_used: true }
           );
-          console.log(`✅ [VERIFY-OTP] Marked end OTP as used for walker service`);
+          console.log(` [VERIFY-OTP] Marked end OTP as used for walker service`);
         } catch (error: any) {
-          console.warn(`⚠️ [VERIFY-OTP] Failed to mark end OTP as used:`, error);
+          console.warn(` [VERIFY-OTP] Failed to mark end OTP as used:`, error);
           // Non-critical, continue
         }
       }
