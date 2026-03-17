@@ -468,7 +468,7 @@ export function UniversalPaymentPage({
               console.log(`✅ Resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
             } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
               // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
-              const resolved = matchingService.service_id || matchingService.serviceId;
+            const resolved = matchingService.service_id || matchingService.serviceId;
               setResolvedServiceId(resolved);
               console.log(`✅ Resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
             } else {
@@ -1120,7 +1120,7 @@ export function UniversalPaymentPage({
         // If selectedServices provided a valid UUID, skip the synchronous resolution to avoid overriding it
         const hasValidServiceIdFromSelectedServices = selectedServices && selectedServices.length > 0 && 
           selectedServices[0].id && uuidRegex.test(selectedServices[0].id);
-        
+
         // If not a UUID, resolve it NOW (synchronously)
         // BUT skip if we already got a valid UUID from selectedServices
         if (!uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
@@ -1211,7 +1211,7 @@ export function UniversalPaymentPage({
                   console.log(`✅ Synchronously resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
                 } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
                   // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
-                  const resolved = matchingService.service_id || matchingService.serviceId;
+                const resolved = matchingService.service_id || matchingService.serviceId;
                   finalServiceId = resolved;
                   setResolvedServiceId(resolved);
                   console.log(`✅ Synchronously resolved serviceId "${serviceId}" to service_id: "${resolved}"`);

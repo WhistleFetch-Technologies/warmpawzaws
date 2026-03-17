@@ -21,7 +21,11 @@ import { isValidUUID } from '../../../types/entities';
 import { geocodeAddress } from '../../../lib/utils/geocode';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { publishNotification } from 'src/utils/sns-client';
-import { startTracking, completeTracking } from 'src/lib/services/gpsServices/gps-tracking-service';
+import { startTracking, completeTracking, updateLocation } from 'src/lib/services/gpsServices/gps-tracking-service';
+import { acceptBookingRequestSchema, checkInRequestSchema, completeBookingRequestSchema, endSessionRequestSchema, locationUpdateRequestSchema, markArrivedRequestSchema, otpVerifyRequestSchema, rejectBookingRequestSchema, startSessionRequestSchema, startTravelRequestSchema } from 'src/zodContracts/gpsTracking.contract';
+import { validateBody } from 'src/middleware/validation-middleware';
+import z from 'zod';
+import { BookingStatus, gps_tracking_sessions, ServiceStyle, OtpAction } from 'src/endpoints/constants';
 
 /**
  * Get commission rate for a vendor from their tier configuration
@@ -65,13 +69,13 @@ async function getVendorCommissionRate(vendorId: string): Promise<number> {
 async function getExpectedOTPForBooking(
   booking: any,
   bookingId: string,
-  action: 'start' | 'complete' | 'end' = 'complete'
+  action: OtpAction = OtpAction.COMPLETE
 ): Promise<{ expectedOTP: string; isWalkerService: boolean }> {
   let isWalkerService = false;
   let expectedOTP = '';
 
   // For 'start' action, always use otp_code (start OTP)
-  if (action === 'start') {
+  if (action === OtpAction.START) {
     expectedOTP = String(booking.otp_code || '').trim();
     return { expectedOTP, isWalkerService: false };
   }
@@ -129,20 +133,19 @@ async function getExpectedOTPForBooking(
 }
 
 export function registerVendorBookingActionsEndpoints(app: Hono) {
+
   /**
    * POST /vendor/bookings/:bookingId/complete
    * Complete a booking with OTP verification
    */
-  app.post("/vendor/bookings/:bookingId/complete", async (c) => {
+  app.post("/vendor/bookings/:bookingId/complete", validateBody(completeBookingRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { otp, vendorId } = await c.req.json();
+      const { otp, vendorId } = (c as any).get('validatedBody') as z.infer<typeof completeBookingRequestSchema>;
 
-      console.log(`📋 [COMPLETE-BOOKING] Vendor ${vendorId} completing booking ${bookingId} with OTP: ${otp}`);
 
       // Resolve vendorId (may be vendor_identity.id) to canonical vendors.id
       const resolvedVendorId = await resolveVendorId(vendorId);
-      console.log(`📋 [COMPLETE-BOOKING] Resolved vendorId ${vendorId} to ${resolvedVendorId}`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
@@ -154,7 +157,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       //Resolve booking's vendor_id as well (may also be vendor_identity.id)
       const resolvedBookingVendorId = await resolveVendorId(booking.vendor_id);
-      console.log(`📋 [COMPLETE-BOOKING] Resolved booking vendor_id ${booking.vendor_id} to ${resolvedBookingVendorId}`);
 
       //Verify vendor owns this booking - check both resolved vendor IDs
       // Also check by phone number for solo providers (same vendor with different IDs)
@@ -166,7 +168,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         resolvedBookingVendorId === vendorId ||
         booking.vendor_id === vendorId) {
         vendorAuthorized = true;
-        console.log(`✅ [COMPLETE-BOOKING] Authorized: Direct vendor ID match`);
       } else {
         // Check if both vendor IDs resolve to the same vendor by phone number (solo provider case)
         try {
@@ -179,7 +180,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
             // Same phone = same solo provider
             if (bookingVendorPhone && requestingVendorPhone && bookingVendorPhone === requestingVendorPhone) {
-              console.log(`✅ [COMPLETE-BOOKING] Authorized: Same vendor by phone (${bookingVendorPhone})`);
               vendorAuthorized = true;
             }
           }
@@ -200,7 +200,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             const requestingIdentity = (requestingVendorIdentity as any).rows?.[0];
 
             if (bookingIdentity && requestingIdentity && bookingIdentity.phone === requestingIdentity.phone) {
-              console.log(`✅ [COMPLETE-BOOKING] Authorized: Same vendor by vendor_identity phone (${bookingIdentity.phone})`);
               vendorAuthorized = true;
             }
           }
@@ -210,32 +209,29 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       if (!vendorAuthorized) {
-        console.error(`❌ [COMPLETE-BOOKING] Unauthorized: Booking vendor_id=${booking.vendor_id} (resolved=${resolvedBookingVendorId}), Requesting vendorId=${vendorId} (resolved=${resolvedVendorId})`);
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
 
       // Check if booking is already completed
-      if (booking.status === 'completed') {
+      if (booking.status === BookingStatus.COMPLETED || booking.status === BookingStatus.CANCELLED) {
         return c.json({ error: 'Booking is already completed' }, 400);
       }
 
-      // ✅ FIXED: For tele/video consultations, no OTP required - completed via prescription upload or video call end
-      const isTeleConsultation = booking.service_type === 'tele' ||
-        booking.service_type === 'video_consultation' ||
-        booking.service_style === 'tele';
-
+      // For tele/video consultations, no OTP required - completed via prescription upload or video call end
+      const isTeleConsultation = booking.service_type === ServiceStyle.TELE ||
+        booking.service_type === gps_tracking_sessions.VIDEO_CONSULTATION ||
+        booking.service_style === ServiceStyle.TELE;
       if (isTeleConsultation) {
         const updated = await update('bookings',
           { id: bookingId },
           {
-            status: 'completed',
+            status: BookingStatus.COMPLETED,
             completed_at: new Date().toISOString(),
           }
         );
 
-        console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
 
-        // ✅ Create vendor_earnings for tele consultation (regardless of payment status — handles COD/pending)
+        // Create vendor_earnings for tele consultation (regardless of payment status — handles COD/pending)
         try {
           const commissionRate = await getVendorCommissionRate(booking.vendor_id);
           const totalAmount = parseFloat(booking.total_amount || '0');
@@ -257,10 +253,9 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               commission_amount: commissionAmount,
               total_amount: totalAmount,
               commission_rate: commissionRate,
-              status: 'pending',
+              status: BookingStatus.PENDING,
               realized_at: new Date().toISOString(),
             });
-            console.log(`✅ [EARNINGS] Created vendor_earnings for tele booking ${bookingId}: vendor gets ₹${vendorAmount}`);
 
             // Update vendor totals (non-critical)
             await query(
@@ -287,20 +282,18 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       // ✅ FIX: Get correct OTP based on service type (walker vs non-walker)
       // For walker services: use end OTP from otp_tokens table
       // For other services: use otp_code from bookings table (single OTP for completion)
-      const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, 'complete');
+      const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, OtpAction.COMPLETE);
       const providedOTP = String(otp).trim();
 
       if (!expectedOTP) {
-        console.error(`❌ [COMPLETE-BOOKING] No OTP found for booking ${bookingId}`);
         return c.json({ error: 'No OTP found for this booking. Please contact support.' }, 400);
       }
 
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}" (Walker: ${isWalkerService})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
 
-      // ✅ Mark end OTP as used if it's a walker service
+      //  Mark end OTP as used if it's a walker service
       if (isWalkerService) {
         try {
           await update('otp_tokens',
@@ -311,7 +304,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             },
             { is_used: true }
           );
-          console.log(`✅ [COMPLETE-BOOKING] Marked end OTP as used for walker service`);
         } catch (error: any) {
           console.warn(`⚠️ [COMPLETE-BOOKING] Failed to mark end OTP as used:`, error);
           // Non-critical, continue with completion
@@ -328,19 +320,18 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       );
 
-      console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
 
-      // ✅ Complete GPS tracking session if it exists (for at_home services)
+      //  Complete GPS tracking session if it exists (for at_home services)
       try {
         const activeSessions = await select('gps_tracking_sessions', {
           booking_id: bookingId,
         });
-        
+
         // Find active session (not already completed or cancelled)
         const activeSession = activeSessions.find(
           (s: any) => s.status !== 'completed' && s.status !== 'cancelled'
         );
-        
+
         if (activeSession) {
           await completeTracking(activeSession.id);
           console.log(`✅ [COMPLETE-BOOKING] GPS tracking session ${activeSession.id} marked as completed`);
@@ -352,7 +343,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         // Don't fail booking completion if GPS session update fails
       }
 
-      // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
+      //Create vendor_earnings record regardless of payment status (handles COD/pending)
       try {
         const commissionRate = await getVendorCommissionRate(booking.vendor_id);
         const totalAmount = parseFloat(booking.total_amount || '0');
@@ -380,7 +371,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             realized_at: new Date().toISOString(),
           });
 
-          console.log(`✅ [EARNINGS] Created vendor_earnings for booking ${bookingId}: vendor gets ₹${vendorAmount} (commission: ₹${commissionAmount})`);
+          console.log(` [EARNINGS] Created vendor_earnings for booking ${bookingId}: vendor gets ₹${vendorAmount} (commission: ₹${commissionAmount})`);
 
           // Update vendor's total earnings and pending payout (non-critical)
           await query(
@@ -413,10 +404,10 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * Start traveling to customer location (initiates GPS tracking)
    * This is called when vendor clicks "Start Travel" button
    */
-  app.post("/vendor/bookings/:bookingId/start-travel", async (c) => {
+  app.post("/vendor/bookings/:bookingId/start-travel", validateBody(startTravelRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, staffId, startLocation } = await c.req.json();
+      const { vendorId, staffId, startLocation } = (c as any).get('validatedBody') as z.infer<typeof startTravelRequestSchema>;
 
 
       // Resolve vendorId (may be vendor_identity.id) to vendors.id
@@ -443,7 +434,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         try {
           const vendorCheck = await select('vendors', { id: resolvedVendorId });
           const bookingVendorCheck = await select('vendors', { id: bookingVendorId });
-          console.log(`🚗 [START-TRAVEL] Vendor check: resolvedVendor exists=${vendorCheck.length > 0}, bookingVendor exists=${bookingVendorCheck.length > 0}`);
           if (vendorCheck.length > 0) {
             console.log(`🚗 [START-TRAVEL] Resolved vendor: ${JSON.stringify({ id: vendorCheck[0].id, phone: vendorCheck[0].phone, business_name: vendorCheck[0].business_name })}`);
           }
@@ -469,7 +459,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       // Check if already traveling
-      if (booking.status === 'vendor_on_way' || booking.status === 'in_transit') {
+      if (booking.status === BookingStatus.VENDOR_ON_WAY || booking.status === BookingStatus.IN_TRANSIT) {
         return c.json({ error: 'Travel already started' }, 400);
       }
 
@@ -910,12 +900,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/mark-arrived
    * Mark vendor as arrived at customer location
    */
-  app.post("/vendor/bookings/:bookingId/mark-arrived", async (c) => {
+  app.post("/vendor/bookings/:bookingId/mark-arrived", validateBody(markArrivedRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, arrivedAt, location } = await c.req.json();
+      const { vendorId, arrivedAt, location } = (c as any).get('validatedBody') as z.infer<typeof markArrivedRequestSchema>;
 
-      console.log(`📍 [MARK-ARRIVED] Vendor ${vendorId} arrived for booking ${bookingId}`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
@@ -947,7 +936,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           await update('gps_tracking_sessions',
             { id: existingSessions[0].id },
             {
-              status: 'arrived',
+              status: gps_tracking_sessions.ARRIVED,
               arrived_at: new Date().toISOString(),
               current_latitude: location?.latitude || null,
               current_longitude: location?.longitude || null,
@@ -960,7 +949,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       // Send notification to customer
       try {
-        const { publishNotification } = await import('../utils/sns-client');
         await publishNotification({
           userId: booking.customer_id,
           userType: 'customer',
@@ -995,18 +983,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * Update vendor's current location during travel
    * ✅ FIX: Now uses updateLocation service to recalculate ETA/distance properly
    */
-  app.post("/vendor/bookings/:bookingId/location-update", async (c) => {
+  app.post("/vendor/bookings/:bookingId/location-update", validateBody(locationUpdateRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { latitude, longitude, accuracy, heading, speed } = await c.req.json();
+      const { latitude, longitude, accuracy, heading, speed } = (c as any).get('validatedBody') as z.infer<typeof locationUpdateRequestSchema>;
 
-      console.log(`📍 [LOCATION-UPDATE] Received update for booking ${bookingId}:`, {
-        latitude,
-        longitude,
-        accuracy,
-        heading,
-        speed,
-      });
 
       if (!latitude || !longitude) {
         return c.json({ error: 'latitude and longitude are required' }, 400);
@@ -1018,35 +999,26 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       });
 
       const activeSession = sessions.find(s =>
-        s.status === 'in_transit' || s.status === 'started' || s.status === 'active'
+        s.status === gps_tracking_sessions.IN_TRANSIT || s.status === gps_tracking_sessions.STARTED || s.status === gps_tracking_sessions.ACTIVE
       );
 
       if (!activeSession) {
-        console.warn(`📍 [LOCATION-UPDATE] No active session found for booking ${bookingId}`);
-        // Create new session if none exists (for backward compatibility)
         return c.json({ success: true, message: 'No active session, location noted' });
       }
 
-      console.log(`📍 [LOCATION-UPDATE] Found active session ${activeSession.id} for booking ${bookingId}`);
 
-      // ✅ CRITICAL FIX: Use updateLocation service to recalculate ETA/distance
+      // Use updateLocation service to recalculate ETA/distance
       // This ensures accurate ETA/distance calculation using Google Maps API
-      const { updateLocation } = await import('../lib/services/gpsServices/gps-tracking-service');
 
       const result = await updateLocation(activeSession.id, {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-        accuracy: accuracy ? parseFloat(accuracy) : undefined,
-        heading: heading ? parseFloat(heading) : undefined,
-        speed: speed ? parseFloat(speed) : undefined,
+        latitude: latitude,
+        longitude: longitude,
+        accuracy: accuracy,
+        heading: heading,
+        speed: speed,
         timestamp: new Date().toISOString(),
       });
 
-      console.log(`✅ [LOCATION-UPDATE] Successfully updated location for booking ${bookingId}:`, {
-        sessionId: activeSession.id,
-        eta: result.eta,
-        distanceRemaining: result.distanceRemaining,
-      });
 
       return c.json({
         success: true,
@@ -1056,7 +1028,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       });
 
     } catch (error: any) {
-      console.error(`❌ [LOCATION-UPDATE] Error updating location for booking ${bookingId}:`, error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -1074,8 +1045,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       // Get the most recent active session
       const activeSession = sessions
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .find(s => s.status !== 'completed' && s.status !== 'cancelled');
-
+        .find(s => s.status !== gps_tracking_sessions.COMPLETED && s.status !== gps_tracking_sessions.CANCELLED);
       if (!activeSession) {
         return c.json({ success: true, session: null });
       }
@@ -1084,7 +1054,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       return c.json({
         success: true,
         session: {
-          status: activeSession.status === 'in_transit' ? 'traveling' : activeSession.status,
+          status: activeSession.status === gps_tracking_sessions.IN_TRANSIT ? gps_tracking_sessions.IS_TRAVELING : activeSession.status,
           startedAt: activeSession.started_at,
           arrivedAt: activeSession.arrived_at,
           sessionStartedAt: activeSession.session_started_at,
@@ -1106,12 +1076,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/start-session
    * Start a session (for services like dog walking with live tracking)
    */
-  app.post("/vendor/bookings/:bookingId/start-session", async (c) => {
+  app.post("/vendor/bookings/:bookingId/start-session", validateBody(startSessionRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { otp, vendorId } = await c.req.json();
+      const { otp, vendorId } = (c as any).get('validatedBody') as z.infer<typeof startSessionRequestSchema>;
 
-      console.log(`🚀 [START-SESSION] Vendor ${vendorId} starting session for booking ${bookingId} with OTP: ${otp}`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
@@ -1127,7 +1096,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       // Check if session already started
-      if (booking.status === 'in_progress') {
+      if (booking.status === BookingStatus.IN_PROGRESS) {
         return c.json({ error: 'Session already started' }, 400);
       }
 
@@ -1144,18 +1113,15 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const updated = await update('bookings',
         { id: bookingId },
         {
-          status: 'in_progress',
+          status: BookingStatus.IN_PROGRESS,
           otp_verified: true,
         }
       );
 
-      console.log(`✅ [START-SESSION] Session started successfully`);
 
-      // ✅ AUTO-INITIATE GPS TRACKING for at_home services
-      if (booking.service_style === 'at_home' || booking.service_type === 'at_home') {
+      //  AUTO-INITIATE GPS TRACKING for at_home services
+      if (booking.service_style === ServiceStyle.AT_HOME || booking.service_type === ServiceStyle.AT_HOME) {
         try {
-          console.log(`🚀 [GPS-AUTO-INIT] Auto-initiating GPS tracking for booking ${bookingId}`);
-
           // Check if tracking session already exists (any status)
           const existingSessions = await select('gps_tracking_sessions', {
             booking_id: bookingId,
@@ -1214,12 +1180,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             // Only create session if we have destination coordinates
             if (destinationLat != null && destinationLng != null) {
               // Create tracking session with proper status and columns
-              const { insert } = await import('../database/rds-connection');
               const newSessions = await insert('gps_tracking_sessions', {
                 booking_id: bookingId,
                 vendor_id: vendorId,
                 customer_id: booking.customer_id,
-                status: 'in_transit', // Use 'in_transit' not 'active'
+                status: gps_tracking_sessions.IN_TRANSIT, // Use 'in_transit' not 'active'
                 destination_latitude: destinationLat,
                 destination_longitude: destinationLng,
                 is_active: true,
@@ -1228,11 +1193,9 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
                 created_at: new Date(),
               });
 
-              console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
 
               // Send notification to customer
               try {
-                const { publishNotification } = await import('../utils/sns-client');
                 await publishNotification({
                   userId: booking.customer_id,
                   userType: 'customer',
@@ -1273,12 +1236,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/check-in
    * Check in a booking (for services like grooming, boarding)
    */
-  app.post("/vendor/bookings/:bookingId/check-in", async (c) => {
+  app.post("/vendor/bookings/:bookingId/check-in", validateBody(checkInRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, staffId, notes, petCondition } = await c.req.json();
+      const { vendorId, staffId, notes, petCondition } = (c as any).get('validatedBody') as z.infer<typeof checkInRequestSchema>;
 
-      console.log(`✅ [CHECK-IN] Vendor ${vendorId} checking in booking ${bookingId}`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
@@ -1294,7 +1256,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       // Check if booking is already checked in or completed
-      if (booking.status === 'checked_in' || booking.status === 'in_progress' || booking.status === 'completed') {
+      if (booking.status === BookingStatus.CHECKED_IN || booking.status === BookingStatus.IN_PROGRESS || booking.status === BookingStatus.COMPLETED) {
         return c.json({ error: `Booking is already ${booking.status}` }, 400);
       }
 
@@ -1302,7 +1264,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const updated = await update('bookings',
         { id: bookingId },
         {
-          status: 'checked_in',
+          status: BookingStatus.CHECKED_IN,
           checked_in_at: new Date().toISOString(),
           checked_in_by: staffId || null,
           notes: notes || booking.notes,
@@ -1310,7 +1272,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       );
 
-      console.log(`✅ [CHECK-IN] Booking checked in successfully`);
 
       return c.json({
         success: true,
@@ -1327,12 +1288,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/end-session
    * End a session
    */
-  app.post("/vendor/bookings/:bookingId/end-session", async (c) => {
+  app.post("/vendor/bookings/:bookingId/end-session", validateBody(endSessionRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, notes } = await c.req.json();
+      const { vendorId, notes } = (c as any).get('validatedBody') as z.infer<typeof endSessionRequestSchema>;
 
-      console.log(`🏁 [END-SESSION] Vendor ${vendorId} ending session for booking ${bookingId}`);
 
       // Get booking
       const bookings = await select('bookings', { id: bookingId });
@@ -1348,7 +1308,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       // Check if session is in progress
-      if (booking.status !== 'in_progress') {
+      if (booking.status !== BookingStatus.IN_PROGRESS) {
         return c.json({ error: `Session cannot be ended. Current status: ${booking.status}` }, 400);
       }
 
@@ -1356,13 +1316,12 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const updated = await update('bookings',
         { id: bookingId },
         {
-          status: 'completed',
+          status: BookingStatus.COMPLETED,
           completed_at: new Date().toISOString(),
           notes: notes || booking.notes,
         }
       );
 
-      console.log(`✅ [END-SESSION] Session ended successfully`);
 
       return c.json({
         success: true,
@@ -1379,12 +1338,10 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/otp/verify
    * Verify OTP for booking actions
    */
-  app.post("/vendor/bookings/:bookingId/otp/verify", async (c) => {
+  app.post("/vendor/bookings/:bookingId/otp/verify", validateBody(otpVerifyRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { otp, action } = await c.req.json();
-
-      console.log(`🔐 [OTP-VERIFY] Verifying OTP for booking ${bookingId}, action: ${action}`);
+      const { otp, action } = (c as any).get('validatedBody') as z.infer<typeof otpVerifyRequestSchema>;
 
       if (!otp) {
         return c.json({ error: 'OTP is required' }, 400);
@@ -1397,49 +1354,57 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // ✅ FIX: Get correct OTP based on action and service type (walker vs non-walker)
-      const otpAction = (action === 'end' ? 'complete' : action) as 'start' | 'complete';
+      // Map request action to OtpAction enum (request uses different action names)
+      // If action is not provided or doesn't match, default to COMPLETE
+      let mappedAction: OtpAction = OtpAction.COMPLETE;
+      if (action === 'end_session') {
+        mappedAction = OtpAction.END;
+      } else if (action) {
+        // For other actions, default to COMPLETE
+        mappedAction = OtpAction.COMPLETE;
+      }
+
+      // Get correct OTP based on action and service type (walker vs non-walker)
+      const otpAction = (mappedAction === OtpAction.END ? OtpAction.COMPLETE : mappedAction) as OtpAction.START | OtpAction.COMPLETE;
       const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, otpAction);
       const providedOtp = String(otp).trim();
 
       // Only validate if we have an expected OTP
       if (!expectedOTP) {
-        console.error(`❌ [OTP-VERIFY] No OTP found for booking ${bookingId}`);
         return c.json({ error: 'No OTP found for this booking. Please contact support.', verified: false }, 400);
       }
 
       if (expectedOTP !== providedOtp) {
-        console.error(`❌ [OTP-VERIFY] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOtp}" (Walker: ${isWalkerService}, Action: ${action})`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
       }
 
-      // ✅ Mark end OTP as used if it's a walker service completing
-      if (isWalkerService && (action === 'complete' || action === 'end')) {
+      // Mark end OTP as used if it's a walker service completing
+      if (isWalkerService && otpAction === OtpAction.COMPLETE) {
         try {
           await update('otp_tokens',
             {
               'metadata->>bookingId': bookingId,
-              'metadata->>action': 'end',
+              'metadata->>action': OtpAction.END,
               is_used: false
             },
             { is_used: true }
           );
-          console.log(`✅ [OTP-VERIFY] Marked end OTP as used for walker service`);
+          console.log(`[OTP-VERIFY] Marked end OTP as used for walker service`);
         } catch (error: any) {
-          console.warn(`⚠️ [OTP-VERIFY] Failed to mark end OTP as used:`, error);
+          console.warn(`[OTP-VERIFY] Failed to mark end OTP as used:`, error);
           // Non-critical, continue
         }
       }
 
       // Update booking based on action
       let newStatus = booking.status;
-      if (action === 'complete' || action === 'end') {
+      if (mappedAction === OtpAction.COMPLETE || mappedAction === OtpAction.END) {
         newStatus = 'completed';
         await update('bookings', { id: bookingId }, {
           status: 'completed',
           completed_at: new Date().toISOString()
         });
-      } else if (action === 'start') {
+      } else if (mappedAction === OtpAction.START) {
         newStatus = 'in_progress';
         await update('bookings', { id: bookingId }, {
           status: 'in_progress',
@@ -1507,12 +1472,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/accept
    * Accept a booking
    */
-  app.post("/vendor/bookings/:bookingId/accept", async (c) => {
+  app.post("/vendor/bookings/:bookingId/accept", validateBody(acceptBookingRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId } = await c.req.json();
+      const { vendorId } = (c as any).get('validatedBody') as z.infer<typeof acceptBookingRequestSchema>;
 
-      console.log(`✅ [ACCEPT] Accepting booking ${bookingId} for vendor ${vendorId}`);
 
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
@@ -1525,8 +1489,9 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       const updated = await update('bookings', { id: bookingId }, {
-        status: 'confirmed',
-        confirmed_at: new Date().toISOString()
+        status: BookingStatus.CONFIRMED,
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: vendorId,
       });
 
       return c.json({
@@ -1544,12 +1509,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/reject
    * Reject a booking
    */
-  app.post("/vendor/bookings/:bookingId/reject", async (c) => {
+  app.post("/vendor/bookings/:bookingId/reject", validateBody(rejectBookingRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, reason } = await c.req.json();
+      const { vendorId, reason } = (c as any).get('validatedBody') as z.infer<typeof rejectBookingRequestSchema>;
 
-      console.log(`❌ [REJECT] Rejecting booking ${bookingId} for vendor ${vendorId}`);
 
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
@@ -1562,9 +1526,10 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       const updated = await update('bookings', { id: bookingId }, {
-        status: 'cancelled',
+        status: BookingStatus.CANCELLED,
         cancellation_reason: reason || 'Rejected by vendor',
-        cancelled_at: new Date().toISOString()
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: vendorId,
       });
 
       return c.json({
@@ -1582,10 +1547,10 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
    * POST /vendor/bookings/:bookingId/verify-otp
    * Alias for OTP verification
    */
-  app.post("/vendor/bookings/:bookingId/verify-otp", async (c) => {
+  app.post("/vendor/bookings/:bookingId/verify-otp", validateBody(otpVerifyRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { otp, action } = await c.req.json();
+      const { otp, action } = (c as any).get('validatedBody') as z.infer<typeof otpVerifyRequestSchema>;
 
       console.log(`🔐 [VERIFY-OTP] Verifying OTP for booking ${bookingId}`);
 
@@ -1600,9 +1565,21 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
+      // Map request action (from otpVerifyRequestSchema) to OtpAction enum
+      // Request actions: 'start_travel' | 'mark_arrived' | 'check_in' | 'end_session' | undefined
+      // OtpAction enum: 'start' | 'complete' | 'end'
+      let mappedAction: OtpAction = OtpAction.COMPLETE;
+      if (action === 'end_session') {
+        mappedAction = OtpAction.END; // Will be normalized to COMPLETE
+      } else if (action === 'start_travel') {
+        mappedAction = OtpAction.START;
+      } else if (action === 'mark_arrived' || action === 'check_in' || !action) {
+        mappedAction = OtpAction.COMPLETE; // Default for arrival, check-in, or no action
+      }
+
       // ✅ FIX: Get correct OTP based on action and service type (walker vs non-walker)
       // Default to 'complete' if action not specified
-      const otpAction = (action === 'end' ? 'complete' : (action || 'complete')) as 'start' | 'complete';
+      const otpAction = (mappedAction === OtpAction.END ? OtpAction.COMPLETE : mappedAction) as OtpAction.START | OtpAction.COMPLETE;
       const { expectedOTP, isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, otpAction);
       const providedOtp = String(otp).trim();
 
@@ -1617,12 +1594,12 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       // ✅ Mark end OTP as used if it's a walker service completing
-      if (isWalkerService && (action === 'complete' || action === 'end' || !action)) {
+      if (isWalkerService && (mappedAction === OtpAction.COMPLETE || mappedAction === OtpAction.END || !action)) {
         try {
           await update('otp_tokens',
             {
               'metadata->>bookingId': bookingId,
-              'metadata->>action': 'end',
+              'metadata->>action': OtpAction.END,
               is_used: false
             },
             { is_used: true }

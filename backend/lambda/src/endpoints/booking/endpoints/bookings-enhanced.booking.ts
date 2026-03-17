@@ -332,63 +332,63 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         } else {
           // FALLBACK 3: Check vendor_services by service_id (legacy support for services.id)
           console.log(`[BOOKING] Service not found by vendor_services.id, checking if it's a vendor_services.service_id (services.id reference)`);
-          let vendorServicesResult = await query(
-            `SELECT * FROM vendor_services 
-             WHERE service_id = $1::uuid 
-             AND vendor_id = $2::uuid 
-             AND (is_enabled = true OR is_enabled IS NULL)
-             AND publish_status = 'published'
-             LIMIT 1`,
-            [lookupServiceId, vendorId]
-          );
-          
-          if (vendorServicesResult.rows.length > 0) {
+    let vendorServicesResult = await query(
+      `SELECT * FROM vendor_services 
+       WHERE service_id = $1::uuid 
+       AND vendor_id = $2::uuid 
+       AND (is_enabled = true OR is_enabled IS NULL)
+       AND publish_status = 'published'
+       LIMIT 1`,
+      [lookupServiceId, vendorId]
+    );
+    
+    if (vendorServicesResult.rows.length > 0) {
             console.log(`[BOOKING] Found vendor_service by service_id (legacy lookup)`);
-            service = vendorServicesResult.rows[0];
-          } else {
+      service = vendorServicesResult.rows[0];
+    } else {
             // FALLBACK 4: Try service_id without publish_status
             console.log(`[BOOKING] Service not found by service_id with publish_status, trying without it`);
-            vendorServicesResult = await query(
-              `SELECT * FROM vendor_services 
-               WHERE service_id = $1::uuid 
-               AND vendor_id = $2::uuid 
-               AND (is_enabled = true OR is_enabled IS NULL)
-               LIMIT 1`,
-              [lookupServiceId, vendorId]
-            );
-            
-            if (vendorServicesResult.rows.length > 0) {
-              console.log(`[BOOKING] Found vendor_service by service_id (without publish_status check)`);
-              service = vendorServicesResult.rows[0];
-            } else {
+      vendorServicesResult = await query(
+        `SELECT * FROM vendor_services 
+         WHERE service_id = $1::uuid 
+         AND vendor_id = $2::uuid 
+         AND (is_enabled = true OR is_enabled IS NULL)
+         LIMIT 1`,
+        [lookupServiceId, vendorId]
+      );
+      
+      if (vendorServicesResult.rows.length > 0) {
+        console.log(`[BOOKING] Found vendor_service by service_id (without publish_status check)`);
+        service = vendorServicesResult.rows[0];
+      } else {
               // FALLBACK 5: Try service_id without any checks
               console.log(`[BOOKING] Service not found by service_id with status checks, trying without any checks`);
-              vendorServicesResult = await query(
-                `SELECT * FROM vendor_services 
-                 WHERE service_id = $1::uuid 
-                 AND vendor_id = $2::uuid 
-                 LIMIT 1`,
-                [lookupServiceId, vendorId]
-              );
-              
-              if (vendorServicesResult.rows.length > 0) {
-                console.log(`[BOOKING] Found vendor_service by service_id (no status checks)`);
-                service = vendorServicesResult.rows[0];
-              } else {
+        vendorServicesResult = await query(
+          `SELECT * FROM vendor_services 
+           WHERE service_id = $1::uuid 
+           AND vendor_id = $2::uuid 
+           LIMIT 1`,
+          [lookupServiceId, vendorId]
+        );
+        
+        if (vendorServicesResult.rows.length > 0) {
+          console.log(`[BOOKING] Found vendor_service by service_id (no status checks)`);
+          service = vendorServicesResult.rows[0];
+        } else {
                 // FALLBACK 6: Check base services table
-                const services = await select('services', { id: lookupServiceId });
-                console.log(`[BOOKING] Found ${services.length} services in services table`);
-                let baseService = services.length > 0 ? services[0] : null;
-                
-                if (baseService) {
-                  // Base service exists, but no vendor_services entry found
-                  // This shouldn't happen if the service was fetched from the customer clinic endpoint
-                  console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${vendorId}`);
-                  return this.error('Service not found for this vendor', 404, 'NOT_FOUND', undefined, requestId);
-                } else {
-                  // Service doesn't exist in base services table either
-                  console.error(`[BOOKING] Service ${serviceId} not found in services table or vendor_services table`);
-                  return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+            const services = await select('services', { id: lookupServiceId });
+            console.log(`[BOOKING] Found ${services.length} services in services table`);
+            let baseService = services.length > 0 ? services[0] : null;
+            
+            if (baseService) {
+              // Base service exists, but no vendor_services entry found
+              // This shouldn't happen if the service was fetched from the customer clinic endpoint
+              console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${vendorId}`);
+              return this.error('Service not found for this vendor', 404, 'NOT_FOUND', undefined, requestId);
+            } else {
+              // Service doesn't exist in base services table either
+              console.error(`[BOOKING] Service ${serviceId} not found in services table or vendor_services table`);
+              return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
                 }
               }
             }

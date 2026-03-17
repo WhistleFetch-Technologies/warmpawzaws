@@ -222,7 +222,7 @@ export function VendorListingByStyle({
         console.log(`✅ [VendorListing] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
       } else {
         console.warn(`⚠️ [VendorListing] Primary endpoint returned success=false or no vendors`);
-        setVendors([]);
+          setVendors([]);
       }
     } catch (error) {
       console.error('❌ [VendorListing] Error:', error);

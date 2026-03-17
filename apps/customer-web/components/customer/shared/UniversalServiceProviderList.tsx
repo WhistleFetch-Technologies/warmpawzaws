@@ -629,8 +629,8 @@ export function UniversalServiceProviderList({
         }));
 
         // Set providers from primary endpoint
-        setProviders(cleanedProviders);
-        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
+          setProviders(cleanedProviders);
+          console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
       } else {
         console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
         setProviders([]);

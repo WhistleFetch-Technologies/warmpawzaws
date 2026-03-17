@@ -143,9 +143,9 @@ export function GroomingServicesByStyle({
 
       // Use by-style endpoint (primary)
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const response = await apiClient.get(
+        const response = await apiClient.get(
         `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
-      ) as any;
+        ) as any;
         console.log(`🔵 [Grooming] API: GET by-style?style=${serviceStyle}&category=${category}`);
 
       if (response.success) {
@@ -248,7 +248,7 @@ export function GroomingServicesByStyle({
       }
     } catch (error) {
       console.error('❌ [Grooming] Error loading services by style:', error);
-      setProviders([]);
+        setProviders([]);
     } finally {
       setLoading(false);
     }

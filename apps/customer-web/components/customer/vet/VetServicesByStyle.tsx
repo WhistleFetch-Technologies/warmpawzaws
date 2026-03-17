@@ -132,8 +132,8 @@ export function VetServicesByStyle({
         }
         
         // Set providers from primary endpoint
-        setProviders(providerData);
-        console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+          setProviders(providerData);
+          console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       } else {
         console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
         setProviders([]);

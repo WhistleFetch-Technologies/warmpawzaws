@@ -86,8 +86,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
   // CUSTOMER: INSTANT REQUEST
   // ============================================
 
-
-
   /**
    * GET /customer/tele/available-now
    * Vendors (vet only) who are "available right now" for instant tele:
@@ -770,7 +768,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
    * GET /customer/tele/instant-stream/:bookingId
    * SSE stream for customer. Polls booking status.
    * Emits: vendor_accepted, vendor_rejected, payment_confirmed, timeout.
-  
    */
   app.get('/customer/tele/instant-stream/:bookingId', async (c) => {
     const bookingId = c.req.param('bookingId');
@@ -1212,7 +1209,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
    * Customer cancels the instant tele consultation.
    * Updates booking to cancelled.
    */
-
   app.get('/customer/tele/instant-cancel/:bookingId', async (c) => {
 
     try {
