@@ -11,7 +11,6 @@ import {
   Database, 
   Calendar, 
   FileText, 
-  IndianRupee, 
   Package, 
   Wallet, 
   UserCog, 
@@ -20,7 +19,6 @@ import {
   LogOut,
   Briefcase,
   Gift,
-  Image,
   Menu,
   X
 } from 'lucide-react';
@@ -96,12 +94,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       onClick: () => onNavigate('marketing')
     },
     { 
-      icon: Image, 
-      label: 'Banner Management', 
-      id: 'banners',
-      onClick: () => onNavigate('banners')
-    },
-    { 
       icon: Gift, 
       label: 'Loyalty & Rewards', 
       id: 'loyalty',
@@ -136,12 +128,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       label: 'Content Management', 
       id: 'content',
       onClick: () => onNavigate('content')
-    },
-    { 
-      icon: IndianRupee, 
-      label: 'Payment & Refund', 
-      id: 'payment-refund',
-      onClick: () => onNavigate('payment-refund')
     },
     { 
       icon: Package, 

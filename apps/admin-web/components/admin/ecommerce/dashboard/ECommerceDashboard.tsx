@@ -40,8 +40,8 @@ export function ECommerceDashboard({
       setLoading(true);
       
       // Load analytics
-      const analyticsData = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({}));
-      setAnalytics(analyticsData || {});
+      const analyticsResponse = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({ data: {} }));
+      setAnalytics(analyticsResponse?.data || {});
       
       // Load recent orders
       const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
@@ -51,8 +51,8 @@ export function ECommerceDashboard({
       const approvalsData = await apiClient.get<any>('/admin/products?status=pending_approval&limit=5').catch(() => ({ products: [] }));
       setPendingApprovals((approvalsData as any)?.products || []);
       
-      // Load top sellers
-      const sellersData = await apiClient.get<any>('/admin/vendors/top-sellers?limit=5').catch(() => ({ sellers: [] }));
+      // Load top sellers - use e-commerce specific endpoint
+      const sellersData = await apiClient.get<any>('/admin/ecommerce/top-sellers?limit=5').catch(() => ({ sellers: [] }));
       setTopSellers((sellersData as any)?.sellers || []);
       
     } catch (error) {
@@ -305,7 +305,7 @@ export function ECommerceDashboard({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {topSellers.map((seller, index) => (
-                  <tr key={seller.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={seller.id || index} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4">
                       <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
                         index === 0 ? 'bg-amber-100 text-amber-700' :
@@ -322,17 +322,27 @@ export function ECommerceDashboard({
                           <Store className="w-5 h-5 text-orange-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900">{seller.business_name || seller.businessName}</p>
-                          <p className="text-sm text-slate-500">{seller.phone}</p>
+                          <p className="font-medium text-slate-900">
+                            {seller.name || seller.business_name || seller.businessName || 'Unknown Seller'}
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            {seller.phone || seller.owner_name || seller.email || 'N/A'}
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="p-4 text-right font-bold text-slate-900">₹{(seller.total_revenue || 0).toLocaleString()}</td>
-                    <td className="p-4 text-center text-slate-600">{seller.order_count || 0}</td>
-                    <td className="p-4 text-center text-slate-600">{seller.product_count || 0}</td>
+                    <td className="p-4 text-right font-bold text-slate-900">
+                      ₹{(seller.total_revenue || 0).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-center text-slate-600">
+                      {seller.total_bookings || seller.order_count || 0}
+                    </td>
+                    <td className="p-4 text-center text-slate-600">
+                      {seller.product_count || 'N/A'}
+                    </td>
                     <td className="p-4 text-center">
                       <span className="inline-flex items-center gap-1 text-amber-600">
-                        ⭐ {seller.rating || '4.5'}
+                        ⭐ {seller.avg_rating || seller.rating || '4.5'}
                       </span>
                     </td>
                   </tr>

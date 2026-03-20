@@ -17,9 +17,9 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
-import { select, insert, update, query, upsert } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { select, insert, update, query, upsert } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 
 export function registerEcommerceEndpoints(app: Hono) {
   // ============================================
@@ -83,10 +83,10 @@ export function registerEcommerceEndpoints(app: Hono) {
       } catch (error: any) {
         // Handle table not existing, column not existing, or invalid UUID
         if (error.message?.includes('invalid input syntax for type uuid') ||
-            error.message?.includes('relation "products" does not exist') ||
-            error.message?.includes('column') ||
-            error.code === '42P01' || // undefined_table
-            error.code === '42703') { // undefined_column
+          error.message?.includes('relation "products" does not exist') ||
+          error.message?.includes('column') ||
+          error.code === '42P01' || // undefined_table
+          error.code === '42703') { // undefined_column
           return c.json({
             success: true,
             products: [],
@@ -157,10 +157,10 @@ export function registerEcommerceEndpoints(app: Hono) {
       } catch (error: any) {
         // Handle table not existing, column not existing, or invalid UUID
         if (error.message?.includes('invalid input syntax for type uuid') ||
-            error.message?.includes('relation "products" does not exist') ||
-            error.message?.includes('column') ||
-            error.code === '42P01' || // undefined_table
-            error.code === '42703') { // undefined_column
+          error.message?.includes('relation "products" does not exist') ||
+          error.message?.includes('column') ||
+          error.code === '42P01' || // undefined_table
+          error.code === '42703') { // undefined_column
           return c.json({
             success: true,
             products: [],
@@ -189,14 +189,14 @@ export function registerEcommerceEndpoints(app: Hono) {
   app.post("/ecommerce/orders", async (c) => {
     try {
       const orderData = await c.req.json();
-      
+
       // Handle both naming conventions from frontend
       const customerPhone = orderData.customer_phone || orderData.customerPhone;
       const items = orderData.items || [];
       const shippingAddress = orderData.shipping_address || orderData.shippingAddress || {};
       const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'cod';
       const couponCode = orderData.coupon_code || orderData.couponCode;
-      
+
       if (!customerPhone || !items || items.length === 0) {
         return c.json({ error: 'customer_phone and items are required' }, 400);
       }
@@ -255,7 +255,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       for (const item of items) {
         const productId = item.product_id || item.productId;
         const quantity = item.quantity || 1;
-        
+
         // Get product details
         try {
           const products = await query(
@@ -266,7 +266,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             const product = products.rows[0];
             const itemTotal = parseFloat(product.price) * quantity;
             subtotal += itemTotal;
-            
+
             if (!firstVendorId && product.vendor_id) {
               firstVendorId = product.vendor_id;
             }
@@ -287,12 +287,12 @@ export function registerEcommerceEndpoints(app: Hono) {
       // Create order
       const orderId = randomUUID();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      
+
       // Calculate amounts
       const shippingAmount = subtotal > 499 ? 0 : 49;
       const taxAmount = subtotal * 0.18;
       const totalAmount = subtotal + shippingAmount;
-      
+
       const order = {
         id: orderId,
         order_number: orderNumber,
@@ -393,7 +393,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       } catch (dbError: any) {
         // Handle table not existing
         if (dbError.message?.includes('relation "ecommerce_categories" does not exist') ||
-            dbError.code === '42P01') {
+          dbError.code === '42P01') {
           return c.json({
             success: true,
             categories: [],
@@ -546,12 +546,12 @@ export function registerEcommerceEndpoints(app: Hono) {
       // Get customer and vendor locations for tax calculation
       let customerLocation: { state: string; city?: string; pincode?: string } | undefined = undefined;
       let vendorLocation: { state: string; city?: string } | undefined = undefined;
-      
+
       if (customerId) {
         const customers = await select('customers', { id: customerId });
         if (customers.length > 0 && customers[0].address) {
-          const addr = typeof customers[0].address === 'string' 
-            ? JSON.parse(customers[0].address) 
+          const addr = typeof customers[0].address === 'string'
+            ? JSON.parse(customers[0].address)
             : customers[0].address;
           if (addr?.state) {
             customerLocation = {
@@ -615,14 +615,14 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       if (taxCalculationItems.length > 0) {
         try {
-          const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
+          const { taxCalculationService } = await import('../../../lib/services/tax-calculation-service');
           const taxResult = await taxCalculationService.calculateTax({
             items: taxCalculationItems,
             customerLocation,
             vendorLocation,
             vendorId: vendorId || undefined,
           });
-          
+
           taxAmount = taxResult.totalTax;
           cgstAmount = taxResult.totalCGST;
           sgstAmount = taxResult.totalSGST;
@@ -664,12 +664,12 @@ export function registerEcommerceEndpoints(app: Hono) {
       // Award loyalty points for order (if first product or regular product)
       if (customerId) {
         try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-          
+          const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
+
           // Check if this is first product purchase
           const existingOrders = await select('orders', { customer_id: customerId });
           const isFirstProduct = existingOrders.length === 0;
-          
+
           // Award points for each product
           for (const item of orderItems) {
             const actionName = isFirstProduct ? 'buy_first_product' : 'buy_product';
@@ -805,11 +805,35 @@ export function registerEcommerceEndpoints(app: Hono) {
          FROM orders`
       );
 
-      // Get seller stats
+      // Get seller stats - filter for e-commerce sellers only
+      // E-commerce sellers are identified by:
+      // 1. Specific e-commerce roles: pet_product, pet_products_store, product_seller, pet_product_seller, seller
+      // 2. seller_status IN ('pending', 'approved') - excludes 'not_applied' (default for all vendors)
       const sellerStats = await query(
         `SELECT 
-           COUNT(DISTINCT v.id) FILTER (WHERE v.is_active = true AND r.name = 'pet_product') as active_sellers,
-           COUNT(DISTINCT v.id) FILTER (WHERE r.name = 'pet_product') as total_sellers
+           COUNT(DISTINCT v.id) FILTER (WHERE 
+             v.is_active = true 
+             AND (v.is_deleted IS NULL OR v.is_deleted = false)
+             AND (
+               r.name = 'pet_product' OR 
+               r.name = 'pet_products_store' OR 
+               r.name = 'product_seller' OR 
+               r.name = 'pet_product_seller' OR
+               r.name = 'seller' OR
+               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+             )
+           ) as active_sellers,
+           COUNT(DISTINCT v.id) FILTER (WHERE 
+             (v.is_deleted IS NULL OR v.is_deleted = false)
+             AND (
+               r.name = 'pet_product' OR 
+               r.name = 'pet_products_store' OR 
+               r.name = 'product_seller' OR 
+               r.name = 'pet_product_seller' OR
+               r.name = 'seller' OR
+               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+             )
+           ) as total_sellers
          FROM vendors v
          LEFT JOIN roles r ON v.role_id = r.id`
       );
@@ -863,7 +887,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         `SELECT 
            p.name,
            COUNT(oi.id) as sales,
-           COALESCE(SUM(oi.total), 0) as revenue
+           COALESCE(SUM(oi.total_price), 0) as revenue
          FROM order_items oi
          INNER JOIN products p ON oi.product_id = p.id
          INNER JOIN orders o ON oi.order_id = o.id
@@ -874,13 +898,75 @@ export function registerEcommerceEndpoints(app: Hono) {
         [startDate.toISOString()]
       );
 
+      // Get e-commerce seller stats
+      const sellerStats = await query(
+        `SELECT 
+           COUNT(DISTINCT v.id) FILTER (WHERE 
+             v.is_active = true 
+             AND (v.is_deleted IS NULL OR v.is_deleted = false)
+             AND (
+               r.name = 'pet_product' OR 
+               r.name = 'pet_products_store' OR 
+               r.name = 'product_seller' OR 
+               r.name = 'pet_product_seller' OR
+               r.name = 'seller' OR
+               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+             )
+           ) as active_sellers,
+           COUNT(DISTINCT v.id) FILTER (WHERE 
+             (v.is_deleted IS NULL OR v.is_deleted = false)
+             AND (
+               r.name = 'pet_product' OR 
+               r.name = 'pet_products_store' OR 
+               r.name = 'product_seller' OR 
+               r.name = 'pet_product_seller' OR
+               r.name = 'seller' OR
+               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+             )
+           ) as total_sellers
+         FROM vendors v
+         LEFT JOIN roles r ON v.role_id = r.id`
+      );
+
+      // Get top sellers by revenue (only vendors with actual sales)
+      const topSellers = await query(
+        `SELECT 
+           v.id,
+           v.business_name as name,
+           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1), 0) as revenue,
+           COUNT(o.id) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1) as orders
+         FROM vendors v
+         INNER JOIN roles r ON v.role_id = r.id
+         INNER JOIN orders o ON v.id = o.vendor_id AND o.order_status = 'delivered' AND o.created_at >= $1
+         WHERE (v.is_deleted IS NULL OR v.is_deleted = false)
+           AND (
+             r.name = 'pet_product' OR 
+             r.name = 'pet_products_store' OR 
+             r.name = 'product_seller' OR 
+             r.name = 'pet_product_seller' OR
+             r.name = 'seller' OR
+             (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+           )
+         GROUP BY v.id, v.business_name
+         HAVING SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1) > 0
+         ORDER BY revenue DESC
+         LIMIT 10`,
+        [startDate.toISOString()]
+      );
+
+      const totalRevenue = revenueStats.rows.reduce((sum: number, row: any) => sum + parseFloat(row.revenue || '0'), 0);
+      const totalOrders = revenueStats.rows.reduce((sum: number, row: any) => sum + parseInt(row.order_count || '0', 10), 0);
+
       return c.json({
         success: true,
         data: {
           revenue: revenueStats.rows,
           topProducts: topProducts.rows,
-          totalRevenue: revenueStats.rows.reduce((sum: number, row: any) => sum + parseFloat(row.revenue || '0'), 0),
-          totalOrders: revenueStats.rows.reduce((sum: number, row: any) => sum + parseInt(row.order_count || '0', 10), 0),
+          topSellers: topSellers.rows,
+          totalRevenue,
+          totalOrders,
+          activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
+          totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || '0', 10),
         },
       });
     } catch (error: any) {
@@ -1136,10 +1222,10 @@ export function registerEcommerceEndpoints(app: Hono) {
         'archived': 'archived',
       };
       const publishStatus = statusMap[status] || status;
-      
-      const updated = await update('vendor_services', { id: serviceId }, { 
-        publish_status: publishStatus, 
-        is_enabled: publishStatus === 'published' 
+
+      const updated = await update('vendor_services', { id: serviceId }, {
+        publish_status: publishStatus,
+        is_enabled: publishStatus === 'published'
       });
 
       return c.json({
@@ -1166,7 +1252,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         settings = await query(
           `SELECT * FROM ecommerce_commission_settings WHERE setting_key = 'default' LIMIT 1`
         );
-        
+
         if (settings.rows.length > 0) {
           const row = settings.rows[0];
           return c.json({
@@ -1183,7 +1269,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         // Table doesn't exist, try platform_settings fallback
         console.warn('[Commission] ecommerce_commission_settings table not found, using platform_settings fallback');
       }
-      
+
       // Fallback to platform_settings (old KV-based approach)
       settings = await query(
         `SELECT * FROM platform_settings WHERE setting_key = 'ecommerce_commission' LIMIT 1`
@@ -1196,8 +1282,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       };
 
       if (settings.rows.length > 0) {
-        const config = typeof settings.rows[0].value === 'string' 
-          ? JSON.parse(settings.rows[0].value) 
+        const config = typeof settings.rows[0].value === 'string'
+          ? JSON.parse(settings.rows[0].value)
           : settings.rows[0].value;
         return c.json({
           success: true,
@@ -1242,7 +1328,8 @@ export function registerEcommerceEndpoints(app: Hono) {
 
   /**
    * GET /admin/vendor/list
-   * Get all vendors (alias for /admin/vendors)
+   * Get all e-commerce sellers only
+   * Filters for e-commerce sellers based on role and seller_status
    */
   app.get("/admin/vendor/list", async (c) => {
     try {
@@ -1250,9 +1337,20 @@ export function registerEcommerceEndpoints(app: Hono) {
         `SELECT 
           v.*,
           r.id as role_id,
-          r.name as role_name
+          r.name as role_name,
+          r.display_name as role_display_name
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
+        WHERE (v.status = 'active' OR v.is_active = true)
+          AND (v.is_deleted IS NULL OR v.is_deleted = false)
+          AND (
+            r.name = 'pet_product' OR 
+            r.name = 'pet_products_store' OR 
+            r.name = 'product_seller' OR 
+            r.name = 'pet_product_seller' OR
+            r.name = 'seller' OR
+            (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+          )
         ORDER BY v.created_at DESC`
       );
 
@@ -1268,5 +1366,107 @@ export function registerEcommerceEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /ecommerce/vendors/list
+   * Get all e-commerce sellers only
+   * Filters for e-commerce sellers based on role and seller_status
+   */
+  app.get("/ecommerce/vendors/list", async (c) => {
+    try {
+      const vendors = await query(
+        `SELECT 
+          v.*,
+          r.id as role_id,
+          r.name as role_name,
+          r.display_name as role_display_name
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE (v.status = 'active' OR v.is_active = true)
+          AND (v.is_deleted IS NULL OR v.is_deleted = false)
+          AND (
+            r.name = 'pet_product' OR 
+            r.name = 'pet_products_store' OR 
+            r.name = 'product_seller' OR 
+            r.name = 'pet_product_seller' OR
+            r.name = 'seller' OR
+            (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+          )
+        ORDER BY v.created_at DESC`
+      );
+
+      return c.json({
+        success: true,
+        vendors: vendors.rows,
+      });
+    } catch (error: any) {
+      console.error('Error fetching e-commerce vendors list:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+ * GET /admin/ecommerce/top-sellers
+ * Get top performing e-commerce sellers (admin dashboard)
+ * Filters for e-commerce sellers only based on role and seller_status
+ */
+  app.get("/admin/ecommerce/top-sellers", async (c) => {
+    try {
+      const limit = parseInt(c.req.query('limit') || '5', 10);
+
+      let topSellers;
+      try {
+        topSellers = await query(`
+            SELECT 
+              v.id,
+              v.business_name as name,
+              v.business_name,
+              v.owner_name,
+              v.email,
+              v.phone,
+              COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0) as total_revenue,
+              COUNT(o.id) FILTER (WHERE o.order_status = 'delivered') as total_bookings,
+              COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'active') as product_count,
+              COALESCE(AVG(rev.rating), 0) as avg_rating
+            FROM vendors v
+            INNER JOIN roles r ON v.role_id = r.id
+            INNER JOIN orders o ON v.id = o.vendor_id AND o.order_status = 'delivered'
+            LEFT JOIN reviews rev ON v.id = rev.vendor_id
+            LEFT JOIN products p ON v.id = p.vendor_id AND p.status = 'active'
+            WHERE (v.status = 'active' OR v.is_active = true)
+              AND (v.is_deleted IS NULL OR v.is_deleted = false)
+              AND (
+                r.name = 'pet_product' OR 
+                r.name = 'pet_products_store' OR 
+                r.name = 'product_seller' OR 
+                r.name = 'pet_product_seller' OR
+                r.name = 'seller' OR
+                (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
+              )
+            GROUP BY v.id, v.business_name, v.owner_name, v.email, v.phone
+            HAVING SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered') > 0
+            ORDER BY total_revenue DESC
+            LIMIT $1
+          `, [limit]);
+      } catch (error: any) {
+        console.error('Error fetching top e-commerce sellers:', error);
+        topSellers = { rows: [] };
+      }
+
+      return c.json({
+        success: true,
+        sellers: topSellers.rows || [],
+        topSellers: topSellers.rows || []
+      });
+    } catch (error: any) {
+      console.error('Error fetching top e-commerce sellers:', error);
+      return c.json({
+        success: true,
+        sellers: [],
+        topSellers: []
+      });
+    }
+  });
+
 }
 

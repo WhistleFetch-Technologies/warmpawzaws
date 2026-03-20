@@ -48,11 +48,13 @@ import { useRouter } from "next/navigation";
 interface SupportAgent {
   id: string;
   staffId: string;
+  userId?: string;
   name: string;
   email: string;
   phone: string;
   role: string;
   staffRole: string;
+  roleDisplayNames?: string;
   maxConcurrentTickets: number;
   specialties: string[];
   availabilityStatus: string;
@@ -101,6 +103,7 @@ interface Staff {
   email: string;
   phone: string;
   role: string;
+  roleDisplayNames?: string;
   canHandleSupport: boolean;
 }
 
@@ -410,18 +413,38 @@ export default function SupportSettingsPage() {
           {activeTab === "agents" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">Support Agents</h2>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Support Agents</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Add users with support-related RBAC roles as support agents
+                  </p>
+                </div>
                 <Button
                   onClick={() => {
                     setEditingAgent({});
                     setShowAgentModal(true);
                   }}
                   className="bg-[#FF8C42] hover:bg-[#E07830] text-white"
+                  disabled={staffList.length === 0}
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Agent
                 </Button>
               </div>
+              {staffList.length === 0 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-orange-900">No users with support roles available</p>
+                      <p className="text-xs text-orange-700 mt-1">
+                        To add support agents, first assign support-related RBAC roles (admin, support_agent, support) 
+                        to users in <strong>Role & User Management</strong>. Then return here to add them as agents.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {agents.map((agent) => (
@@ -433,7 +456,9 @@ export default function SupportSettingsPage() {
                         </div>
                         <div>
                           <h3 className="font-bold text-gray-900">{agent.name}</h3>
-                          <p className="text-xs text-gray-500 capitalize">{agent.role}</p>
+                          <p className="text-xs text-gray-500 capitalize">
+                            {agent.roleDisplayNames || agent.staffRole || agent.role}
+                          </p>
                         </div>
                       </div>
                       <Badge className={`${
@@ -734,22 +759,31 @@ export default function SupportSettingsPage() {
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Staff Member *</label>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">User with RBAC Role *</label>
                 <Select
                   value={editingAgent?.staffId || ""}
                   onValueChange={(value: string) => setEditingAgent({ ...editingAgent, staffId: value })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select staff member..." />
+                    <SelectValue placeholder="Select user with support role..." />
                   </SelectTrigger>
                   <SelectContent>
                     {staffList.filter(s => !s.canHandleSupport || s.id === editingAgent?.staffId).map((staff) => (
                       <SelectItem key={staff.id} value={staff.id}>
-                        {staff.name} ({staff.role})
+                        {staff.name} {staff.roleDisplayNames && `(${staff.roleDisplayNames})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  Only users with support-related RBAC roles (admin, support_agent, support) are shown. 
+                  Assign roles in <strong>Role & User Management</strong> first.
+                </p>
+                {staffList.length === 0 && (
+                  <p className="text-xs text-orange-600 mt-1.5">
+                    ⚠️ No users with support roles found. Please assign support-related roles in RBAC management first.
+                  </p>
+                )}
               </div>
 
               <div>

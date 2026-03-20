@@ -1173,6 +1173,7 @@ export function CustomerHomeComplete({
   const articles = dynamicArticles.map((a: any) => ({
     id: a.id,
     title: a.title,
+    slug: a.slug,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
     Icon: a.category === 'Nutrition' ? UtensilsCrossed
@@ -2025,10 +2026,13 @@ export function CustomerHomeComplete({
                 <button
                   key={article.id || index}
                   onClick={() => {
-                    // ✅ FIX: Navigate to article detail page
-                    if (article.url) {
+                    // ✅ FIX: Navigate to content page by slug
+                    if (article.slug) {
+                      router.push(`/content/${article.slug}`);
+                    } else if (article.url) {
                       window.open(article.url, '_blank');
                     } else {
+                      // Fallback to old navigation if slug not available
                       onNavigate?.('article-detail', { articleId: article.id, article });
                     }
                   }}

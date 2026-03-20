@@ -435,7 +435,7 @@ export function VendorCustomServiceCreation({
       if (data && data.success) {
         // data already available
         console.log('✅ Service published:', data);
-        toast.success('Service submitted for admin approval!');
+        toast.success('Service published successfully!');
         await loadCustomServices();
       } else {
         console.error('❌ Failed to publish service:', data);

@@ -1770,7 +1770,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
 
       const requestedPublishStatus = serviceData.publishStatus || 'draft';
-      const effectivePublishStatus = requestedPublishStatus === 'published' ? 'pending_approval' : requestedPublishStatus;
+      // Auto-approve custom services: if vendor requests 'published', set it directly to 'published' (no approval needed)
+      const effectivePublishStatus = requestedPublishStatus;
       // DB constraint allows: draft, published, auto_published, pending_approval (migration 544). If DB is not yet migrated, fallback to draft.
       const allowedPublishStatuses = ['draft', 'published', 'auto_published', 'pending_approval'];
       const publishStatusForDb = allowedPublishStatuses.includes(effectivePublishStatus) ? effectivePublishStatus : 'draft';
@@ -1809,7 +1810,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         is_enabled: isEnabled,
         publish_status: publishStatusForDb,
         is_custom_service: true,
-        submitted_for_approval_at: effectivePublishStatus === 'pending_approval' ? new Date().toISOString() : null,
+        submitted_for_approval_at: null, // No approval needed - services are auto-approved
       };
       if (metadataToStore) {
         vendorServicePayload.metadata = metadataToStore;
@@ -2436,8 +2437,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/services/custom/:serviceId/publish
-   * Submit a draft custom service for admin approval
-   * Changes status from 'draft' to 'pending_approval'
+   * Publish a draft custom service (auto-approved - no admin approval needed)
+   * Changes status from 'draft' to 'published'
    */
   app.post("/vendor/:vendorId/services/custom/:serviceId/publish", async (c) => {
     try {
@@ -2472,27 +2473,28 @@ export function registerVendorServicesEndpoints(app: Hono) {
         return c.json({ error: 'This endpoint is only for custom services' }, 400);
       }
       
-      // Only draft services can be submitted for approval
+      // Only draft services can be published
       if (service.publish_status !== 'draft') {
         return c.json({ 
-          error: `Cannot publish service with status '${service.publish_status}'. Only draft services can be submitted for approval.` 
+          error: `Cannot publish service with status '${service.publish_status}'. Only draft services can be published.` 
         }, 400);
       }
       
-      // Update to pending_approval
+      // Auto-approve: Update directly to 'published' (no approval needed)
       await update(
         'vendor_services',
         { id: serviceId, vendor_id: vendorId },
         {
-          publish_status: 'pending_approval',
-          submitted_for_approval_at: new Date().toISOString(),
+          publish_status: 'published',
+          is_enabled: true,
+          submitted_for_approval_at: null, // No approval needed
         }
       );
       
       return c.json({
         success: true,
-        message: 'Service submitted for admin approval',
-        publishStatus: 'pending_approval',
+        message: 'Service published successfully',
+        publishStatus: 'published',
       });
     } catch (error: any) {
       console.error('Error publishing custom service:', error);

@@ -10,12 +10,10 @@ import {
 	BarChart3,
 	Settings,
 	FileText,
-	CheckCircle2,
 } from "lucide-react";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
 import {
-	CustomServiceApproval,
 	ECommerceAnalytics,
 	PolicyManagement,
 	CategoryManagement,
@@ -30,7 +28,6 @@ type TabType =
 	| "dashboard"
 	| "sellers"
 	| "products"
-	| "service-approval"
 	| "orders"
 	| "commission"
 	| "categories"
@@ -63,7 +60,6 @@ export default function ECommerceManagement() {
 		{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
 		{ id: "sellers", label: "Sellers", icon: Store },
 		{ id: "products", label: "Product Approval", icon: Package },
-		{ id: "service-approval", label: "Service Approval", icon: CheckCircle2 },
 		{ id: "orders", label: "Orders", icon: ShoppingCart },
 		{ id: "commission", label: "Commission", icon: Percent },
 		{ id: "categories", label: "Categories", icon: FileText },
@@ -128,7 +124,6 @@ export default function ECommerceManagement() {
 						{activeTab === "dashboard" && <ECommerceDashboard />}
 						{activeTab === "sellers" && <SellerManagement />}
 						{activeTab === "products" && <ProductApproval />}
-						{activeTab === "service-approval" && <CustomServiceApproval />}
 						{activeTab === "orders" && <OrderManagementAdmin />}
 						{activeTab === "commission" && <CommissionSettings />}
 						{activeTab === "categories" && <CategoryManagement />}

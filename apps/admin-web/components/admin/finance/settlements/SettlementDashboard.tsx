@@ -100,7 +100,9 @@ export function SettlementDashboard() {
         failed: 'Failed',
       };
       setSettlements(list.map((s: any) => {
-        const originalStatus = String(s.status ?? s.settlement_status ?? '').toLowerCase();
+        // Normalize status: check both settlement_status and status fields, convert to lowercase
+        const rawStatus = s.settlement_status || s.status || 'pending';
+        const originalStatus = String(rawStatus).toLowerCase();
         return {
           id: s.id,
           vendorName: s.vendorName ?? s.vendor_name ?? 'Unknown',

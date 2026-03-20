@@ -254,7 +254,7 @@ export function CreatePackageFlow({
       const response = await apiClient.post<any>(`/vendor/${vendorId}/packages`, formData);
 
       if (response.success) {
-        toast.success('Package created and submitted for approval!');
+        toast.success('Package created successfully!');
         onSuccess();
       } else {
         toast.error(response.error || response.hint || 'Failed to create package');

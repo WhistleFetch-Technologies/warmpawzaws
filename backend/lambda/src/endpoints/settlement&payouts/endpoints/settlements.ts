@@ -102,7 +102,7 @@ export function registerSettlementEndpoints(app: Hono) {
       let paramIndex = 1;
 
       if (status && status !== 'all') {
-        queryStr += ` AND s.status = $${paramIndex}`;
+        queryStr += ` AND s.settlement_status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
@@ -122,18 +122,22 @@ export function registerSettlementEndpoints(app: Hono) {
         const gross = parseFloat(s.gross_amount ?? s.total_amount ?? '0');
         const net = parseFloat(s.net_amount ?? s.vendor_amount ?? '0');
         const commission = parseFloat(s.commission_amount || '0');
+        // Database uses settlement_status, normalize to lowercase status
+        const rawStatus = s.settlement_status || s.status || 'pending';
+        const normalizedStatus = String(rawStatus).toLowerCase();
         return {
           id: String(s.id || ''),
           vendor_id: String(s.vendor_id || ''),
           vendor_name: String(s.vendor_name || ''),
           vendor_phone: String(s.vendor_phone || ''),
-          period_start: s.period_start ? String(s.period_start) : '',
-          period_end: s.period_end ? String(s.period_end) : '',
+          period_start: s.settlement_period_start || s.period_start ? String(s.settlement_period_start || s.period_start) : '',
+          period_end: s.settlement_period_end || s.period_end ? String(s.settlement_period_end || s.period_end) : '',
           gross_amount: gross,
           commission_amount: commission,
           net_amount: net,
           booking_count: parseInt(s.booking_count || '0', 10),
-          status: String(s.status || 'pending'),
+          status: normalizedStatus,
+          settlement_status: normalizedStatus, // Include both for compatibility
           payout_reference: s.payout_reference || undefined,
           payout_date: s.payout_date ? String(s.payout_date) : undefined,
           failure_reason: s.failure_reason || undefined,

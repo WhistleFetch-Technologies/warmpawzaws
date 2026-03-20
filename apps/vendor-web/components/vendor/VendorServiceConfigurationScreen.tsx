@@ -974,7 +974,7 @@ export function VendorServiceConfigurationScreen({
         
         if (data && data.success) {
           console.log('✅ Package created:', data);
-          toast.success('Package created successfully! Pending admin approval.');
+          toast.success('Package created successfully!');
           return;
         } else {
           console.error('❌ Failed to create package:', data);

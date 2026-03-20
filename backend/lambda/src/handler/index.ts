@@ -52,7 +52,7 @@ import { registerBehaviorJournalEndpoints } from '../endpoints/behavior-journal'
 import { registerVendorScheduleEndpoints } from '../endpoints/vendor/endpoints/vendor-schedule';
 import { registerPrescriptionEndpoints } from '../endpoints/prescription/endpoints/prescriptions';
 import { registerMedicalRecordsEndpoints } from '../endpoints/medical-records';
-import { registerEcommerceEndpoints } from '../endpoints/ecommerce';
+import { registerEcommerceEndpoints } from '../endpoints/ecommerce/endpoints/ecommerce';
 import { registerAnalyticsEndpoints } from '../endpoints/admin/endpoints/analytics.admin';
 import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
@@ -119,7 +119,7 @@ import { registerCommunityEndpoints } from '../endpoints/community';
 import { registerReferralEndpoints } from '../endpoints/referrals';
 import { registerRewardsEndpoints } from '../endpoints/rewards';
 import { registerAIChatbotEndpoints } from '../endpoints/ai-chatbot';
-import { registerSupportCrmEndpoints } from '../endpoints/support-crm';
+import { registerSupportCrmEndpoints } from '../endpoints/supportCrm/endpoint/support-crm';
 import { registerLocationSharingEndpoints } from '../endpoints/location-sharing';
 import { registerVendorSecurityEndpoints } from '../endpoints/vendor/endpoints/vendor-security';
 import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor/endpoints/vendor-distance-pricing';
