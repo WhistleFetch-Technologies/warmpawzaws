@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { buildWhatsNewAnnouncements } from '@/lib/whats-new-announcements';
+import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
@@ -30,6 +32,9 @@ import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface'
 import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, serviceBaseOnpincode } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import { getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { toast } from 'sonner';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -210,6 +215,11 @@ export function CustomerHomeComplete({
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
+
+  const whatsNewAnnouncements = useMemo(
+    () => buildWhatsNewAnnouncements(dynamicAnnouncements),
+    [dynamicAnnouncements]
+  );
 
   // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
   const {
@@ -1172,6 +1182,7 @@ export function CustomerHomeComplete({
   // ✅ FIX: Remove dummy articles - show only admin-created articles
   const articles = dynamicArticles.map((a: any) => ({
     id: a.id,
+    slug: a.slug,
     title: a.title,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
@@ -1202,7 +1213,7 @@ export function CustomerHomeComplete({
                 className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
               >
                 {userProfilePhoto ? (
-                  <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                  <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
                     {userData.name.charAt(0).toUpperCase()}
@@ -1214,7 +1225,7 @@ export function CustomerHomeComplete({
                   <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
                   <span className="text-base" role="img" aria-label="wave">👋</span>
                 </div>
-                <p className="text-white/65 text-xs font-normal tracking-wide">Explore WarmPawz Services</p>
+                <p className="text-white/65 text-xs font-normal tracking-wide">Explore Warmpawz Services</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1225,17 +1236,6 @@ export function CustomerHomeComplete({
                 size="sm"
                 showBalance={true}
               />
-              <button
-                onClick={() => onNavigate && onNavigate('cart')}
-                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
-              >
-                <ShoppingCart className="w-[18px] h-[18px] text-white" />
-                {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-[18px] h-[18px] flex items-center justify-center font-bold shadow-sm">
-                    {itemCount}
-                  </span>
-                )}
-              </button>
               <button
                 onClick={() => onNavigate?.('wishlist')}
                 className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
@@ -1264,7 +1264,7 @@ export function CustomerHomeComplete({
                           }`}
                       >
                         {pet.photo || pet.image ? (
-                          <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                          <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
                         ) : (
                           pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
                         )}
@@ -1277,9 +1277,13 @@ export function CustomerHomeComplete({
                     {/* Edit/View Button - Only show for selected pet */}
                     {selectedPet?.id === pet.id && (
                       <button
-                        onClick={() => onPetClick && onPetClick(pet.id)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPetClick?.(pet.id);
+                        }}
                         className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
-                        title="View/Edit Pet Profile"
+                        title="View / edit pet"
                       >
                         <ChevronRight className="w-2.5 h-2.5 text-white" />
                       </button>
@@ -1809,7 +1813,7 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* What's New Section - announcements from Admin > Marketing > What's New */}
+        {/* What's New Section */}
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1817,98 +1821,23 @@ export function CustomerHomeComplete({
               <h2 className="text-black font-semibold">What's New</h2>
             </div>
             <button
-              onClick={() => onNavigate?.('services')}
+              type="button"
+              onClick={() => onNavigate?.('whats-new')}
               className="text-xs text-[#FF8C42] font-medium"
             >
-              See All
+              See all
             </button>
           </div>
-          <div className="px-6 space-y-3">
-            {((dynamicAnnouncements.length > 0 ? dynamicAnnouncements : [
-              { id: 'ai', title: 'AI Pet Assistant', subtitle: 'Get instant answers about pet care', badgeText: 'NEW', badgeColor: 'green', icon: '🤖', announcementType: 'feature', ctaLink: 'services' },
-              { id: 'sos', title: 'Emergency Ambulance', subtitle: 'Instant location-based dispatch', badgeText: 'SOS', badgeColor: 'red', icon: '📞', ctaText: 'SOS ALERT', ctaLink: 'ambulance', announcementType: 'emergency' },
-              { id: 'premium', title: 'WarmPawz Plus', subtitle: 'Unlimited services at best prices', badgeText: 'PREMIUM', badgeColor: 'purple', icon: '⭐', announcementType: 'premium', ctaLink: 'shop' },
-            ])).map((announcement: any) => {
-              const isEmergency = announcement.announcementType === 'emergency';
-              const isPremium = announcement.announcementType === 'premium';
-              const rawLink = announcement.ctaLink ?? '';
-              const isExternalUrl = /^https?:\/\//i.test(rawLink);
-              const normalizedScreen = rawLink.replace(/^\/+/, '').trim() || null;
-              const isClickable = !isEmergency ? (isExternalUrl || (normalizedScreen && onNavigate)) : false;
-
-              const handleAnnouncementClick = () => {
-                if (isEmergency) return;
-                if (!rawLink) return;
-                if (isExternalUrl) {
-                  window.open(rawLink, '_blank', 'noopener,noreferrer');
-                  return;
-                }
-                if (normalizedScreen && onNavigate) onNavigate(normalizedScreen);
-              };
-
-              const bgGradient = isEmergency
-                ? 'from-red-50 to-orange-50 border-red-100'
-                : isPremium
-                  ? 'from-purple-50 to-indigo-50 border-purple-100'
-                  : 'from-orange-50 to-pink-50 border-orange-100';
-              const iconGradient = isEmergency
-                ? 'from-red-500 to-orange-500'
-                : isPremium
-                  ? 'from-purple-500 to-indigo-500'
-                  : 'from-[#FF8C42] to-[#FF6B35]';
-              const badgeColor = announcement.badgeColor === 'red' ? 'bg-red-500'
-                : announcement.badgeColor === 'purple' ? 'bg-purple-500'
-                  : announcement.badgeColor === 'blue' ? 'bg-blue-500'
-                    : 'bg-green-500';
-              const IconComponent = isEmergency ? Phone : isPremium ? Star : Bot;
-
-              return (
-                <div
-                  key={announcement.id}
-                  role={isClickable ? 'button' : undefined}
-                  tabIndex={isClickable ? 0 : undefined}
-                  onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAnnouncementClick(); } } : undefined}
-                  className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4 ${isClickable ? 'cursor-pointer hover:opacity-95 active:opacity-90 transition-opacity' : ''}`}
-                  onClick={handleAnnouncementClick}
-                >
-                  <div className={`w-16 h-16 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg ${isEmergency ? 'animate-pulse' : ''}`}>
-                    {announcement.icon ? (
-                      <span className="text-2xl">{announcement.icon}</span>
-                    ) : (
-                      <IconComponent className="w-8 h-8" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-xs ${badgeColor} text-white px-2 py-0.5 rounded-full font-medium ${isEmergency ? 'font-bold animate-pulse' : ''}`}>
-                        {announcement.badgeText || 'NEW'}
-                      </span>
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-800 mb-1">{announcement.title}</h3>
-                    <p className="text-xs text-gray-600">{announcement.subtitle}</p>
-                  </div>
-                  {isEmergency && announcement.ctaText ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const link = announcement.ctaLink ?? 'ambulance';
-                        if (/^https?:\/\//i.test(link)) {
-                          window.open(link, '_blank', 'noopener,noreferrer');
-                        } else {
-                          onNavigate?.(link.replace(/^\/+/, '').trim() || 'ambulance');
-                        }
-                      }}
-                      className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
-                    >
-                      {announcement.ctaText}
-                    </button>
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  )}
-                </div>
-              );
-            })}
+          <div className="px-6">
+            <WhatsNewAnnouncementList
+              announcements={whatsNewAnnouncements}
+              interactionMode="home"
+              onRowPress={(a) => {
+                if (a.announcementType === 'emergency') return;
+                if (a.ctaLink) onNavigate?.(a.ctaLink);
+              }}
+              onSosPress={(a) => onNavigate?.(a.ctaLink || 'ambulance')}
+            />
           </div>
         </div>
 
@@ -2039,8 +1968,12 @@ export function CustomerHomeComplete({
                 <BookOpen className="w-5 h-5 text-teal-600" />
                 <h2 className="text-black font-semibold">Pet Care Articles</h2>
               </div>
-              <button className="text-xs text-teal-600 font-medium flex items-center gap-1">
-                Read More <ChevronRight className="w-4 h-4" />
+              <button
+                type="button"
+                onClick={() => onNavigate?.('articles')}
+                className="text-xs text-teal-600 font-medium flex items-center gap-1"
+              >
+                Read more <ChevronRight className="w-4 h-4" />
               </button>
             </div>
             <div className="px-6 space-y-3">
@@ -2052,7 +1985,7 @@ export function CustomerHomeComplete({
                     if (article.url) {
                       window.open(article.url, '_blank');
                     } else {
-                      onNavigate?.('article-detail', { articleId: article.id, article });
+                      onNavigate?.('article-detail', { articleId: article.id, article: { id: article.id, slug: article.slug } });
                     }
                   }}
                   className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm hover:shadow-md transition-shadow text-left"
@@ -2082,14 +2015,18 @@ export function CustomerHomeComplete({
         <div className="px-6 mb-6">
           <h2 className="text-black font-semibold mb-4">More Services</h2>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-2xl p-4 border border-rose-100">
+            <button
+              type="button"
+              onClick={() => onNavigate?.('mating-dating-hub')}
+              className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-2xl p-4 border border-rose-100 text-left hover:shadow-md transition-shadow w-full"
+            >
               <Users className="w-8 h-8 text-rose-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Mating & Dating</h3>
               <p className="text-xs text-gray-600 mb-3">Find perfect match for your pet</p>
-              <button className="text-xs text-rose-600 font-medium flex items-center gap-1">
+              <span className="text-xs text-rose-600 font-medium inline-flex items-center gap-1">
                 Explore <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
+              </span>
+            </button>
             <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4 border border-cyan-100">
               <Shield className="w-8 h-8 text-cyan-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Insurance</h3>
@@ -2186,10 +2123,33 @@ export function CustomerHomeComplete({
               Our support team is available 24/7 for you
             </p>
             <div className="flex gap-3">
-              <button className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
+              <button
+                type="button"
+                className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 active:opacity-90"
+                onClick={() => {
+                  try {
+                    window.location.href = getSupportTelHref();
+                  } catch {
+                    toast.error('Could not start call. Try Help & Support from your profile.');
+                  }
+                }}
+              >
                 <Phone className="w-4 h-4" /> Call Us
               </button>
-              <button className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
+              <button
+                type="button"
+                className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 active:opacity-90"
+                onClick={() => {
+                  try {
+                    if (typeof window !== 'undefined') {
+                      sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, 'contact');
+                    }
+                    onNavigate?.('support_help', { initialTab: 'contact' });
+                  } catch {
+                    toast.error('Could not open support. Please try again.');
+                  }
+                }}
+              >
                 <Video className="w-4 h-4" /> Live Chat
               </button>
             </div>
