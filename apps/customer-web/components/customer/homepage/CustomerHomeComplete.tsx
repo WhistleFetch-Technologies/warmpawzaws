@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { buildWhatsNewAnnouncements } from '@/lib/whats-new-announcements';
+import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
 import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -1370,6 +1370,11 @@ export function CustomerHomeComplete({
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={phone}
+            onSearch={(searchQuery) => {
+              if (searchQuery?.trim()) {
+                router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+              }
+            }}
             onResultSelect={(result) => {
               console.log('Search result selected:', result);
               if (result.type === 'symptom') {
@@ -1831,10 +1836,15 @@ export function CustomerHomeComplete({
           <div className="px-6">
             <WhatsNewAnnouncementList
               announcements={whatsNewAnnouncements}
-              interactionMode="home"
+              interactionMode="hub"
               onRowPress={(a) => {
                 if (a.announcementType === 'emergency') return;
-                if (a.ctaLink) onNavigate?.(a.ctaLink);
+                // AI Pet Assistant: open chat widget
+                if (a.id === 'ai' || (a.announcementType === 'feature' && !a.ctaLink?.trim())) {
+                  setShowAIChat(true);
+                  return;
+                }
+                navigateWhatsNewFromFullPage(router, a, 'row');
               }}
               onSosPress={(a) => onNavigate?.(a.ctaLink || 'ambulance')}
             />
