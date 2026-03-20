@@ -31,25 +31,14 @@ import {
   Package,
   ArrowLeft,
   Download,
-  Calendar,
   Activity,
   Target,
   Percent,
   RefreshCw,
-  FileText,
   BarChart3,
-  Eye,
-  Share2,
-  Plus,
   Brain,
   UserCheck,
   TrendingUp as TrendingUpIcon,
-  RotateCcw,
-  Clock,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Headphones,
 } from 'lucide-react';
 import {
   PieChart,
@@ -76,29 +65,6 @@ interface KPICard {
   change: number;
   icon: React.ReactNode;
   color: string;
-}
-
-// Refund stats interface
-interface RefundStats {
-  total: number;
-  pending: number;
-  approved: number;
-  rejected: number;
-  totalAmount: number;
-  pendingAmount: number;
-}
-
-interface RefundItem {
-  id: string;
-  bookingId: string;
-  customerId: string;
-  customerName: string;
-  vendorName: string;
-  amount: number;
-  reason: string;
-  status: string;
-  requestedAt: string;
-  processedAt: string;
 }
 
 // Peak times data interface
@@ -129,11 +95,6 @@ interface SalesByRoleData {
 export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState('7d');
   const [activeTab, setActiveTab] = useState('overview');
-  const [savedReports, setSavedReports] = useState<any[]>([]);
-  const [loadingReports, setLoadingReports] = useState(false);
-  const [refundStats, setRefundStats] = useState<RefundStats | null>(null);
-  const [refunds, setRefunds] = useState<RefundItem[]>([]);
-  const [loadingRefunds, setLoadingRefunds] = useState(false);
   
   // New state for behavioral analytics
   const [peakTimesData, setPeakTimesData] = useState<PeakTimeData[]>([]);
@@ -179,45 +140,10 @@ export default function AnalyticsPage() {
   };
 
   useEffect(() => {
-    if (activeTab === 'reports') {
-      loadSavedReports();
-    }
-    if (activeTab === 'refunds') {
-      loadRefundData();
-    }
     if (activeTab === 'behavioral' || activeTab === 'sales') {
       loadBehavioralData();
     }
   }, [activeTab, dateRange]);
-
-  const loadRefundData = async () => {
-    setLoadingRefunds(true);
-    try {
-      const [statsRes, refundsRes] = await Promise.all([
-        apiClient.get<any>('/admin/refunds/stats'),
-        apiClient.get<any>('/admin/refunds?limit=50'),
-      ]);
-      
-      if (statsRes) {
-        setRefundStats({
-          total: statsRes.total || 0,
-          pending: statsRes.pending || 0,
-          approved: statsRes.approved || 0,
-          rejected: statsRes.rejected || 0,
-          totalAmount: parseFloat(statsRes.totalAmount || statsRes.total_amount || '0'),
-          pendingAmount: parseFloat(statsRes.pendingAmount || statsRes.pending_amount || '0'),
-        });
-      }
-      
-      if (refundsRes?.refunds) {
-        setRefunds(refundsRes.refunds);
-      }
-    } catch (error) {
-      console.error('Error loading refund data:', error);
-    } finally {
-      setLoadingRefunds(false);
-    }
-  };
 
   // Add null checks and default values
   const safeKpiData = kpiData || {
@@ -271,28 +197,6 @@ export default function AnalyticsPage() {
     '#8B5CF6',
   ];
 
-  const loadSavedReports = async () => {
-    setLoadingReports(true);
-    try {
-      const data = await apiClient.get('/admin/reports');
-      setSavedReports((data as any).reports || []);
-    } catch (error) {
-      console.error('Error loading reports:', error);
-      toast.error('Failed to load saved reports');
-    } finally {
-      setLoadingReports(false);
-    }
-  };
-
-  const generateReport = async (reportId: string) => {
-    try {
-      await apiClient.post(`/admin/reports/${reportId}/generate`, {});
-      toast.success('Report generated successfully');
-      loadSavedReports();
-    } catch (error) {
-      toast.error('Failed to generate report');
-    }
-  };
 
   const exportData = () => {
     try {
@@ -540,12 +444,10 @@ export default function AnalyticsPage() {
             <TabsList className="mb-6 flex-wrap">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="revenue">Revenue</TabsTrigger>
-              <TabsTrigger value="refunds">Refunds & Support</TabsTrigger>
               <TabsTrigger value="vendors">Vendor Performance</TabsTrigger>
               <TabsTrigger value="customers">Customer Reports</TabsTrigger>
               <TabsTrigger value="behavioral">Behavioral Patterns</TabsTrigger>
               <TabsTrigger value="sales">Sales by Category/Role</TabsTrigger>
-              <TabsTrigger value="reports">Saved Reports</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -560,28 +462,37 @@ export default function AnalyticsPage() {
                     Revenue by Category
                   </h3>
                   <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryData}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={(entry) => entry.name}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {categoryData?.map((entry: any, index: number) => (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={COLORS[index % COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    {!categoryData || categoryData.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-gray-500">
+                        <div className="text-center">
+                          <p className="text-sm">No category data available</p>
+                          <p className="text-xs mt-1">No completed bookings found for this period</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={categoryData}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={(entry) => entry.name}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                          >
+                            {categoryData?.map((entry: any, index: number) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={COLORS[index % COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </Card>
               </div>
@@ -623,216 +534,6 @@ export default function AnalyticsPage() {
                 data={revenueData}
                 title="Detailed Revenue Analysis"
               />
-            </TabsContent>
-
-            {/* Refunds & Support Tab */}
-            <TabsContent value="refunds" className="space-y-6">
-              {loadingRefunds ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
-                </div>
-              ) : (
-                <>
-                  {/* Refund Stats Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card className="p-6 border-l-4 border-l-blue-500">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="bg-blue-100 text-blue-600 p-3 rounded-lg">
-                          <RotateCcw className="w-5 h-5" />
-                        </div>
-                      </div>
-                      <h3 className="text-3xl font-bold text-gray-900">{refundStats?.total || 0}</h3>
-                      <p className="text-sm text-gray-500">Total Refund Requests</p>
-                    </Card>
-
-                    <Card className="p-6 border-l-4 border-l-yellow-500">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="bg-yellow-100 text-yellow-600 p-3 rounded-lg">
-                          <Clock className="w-5 h-5" />
-                        </div>
-                      </div>
-                      <h3 className="text-3xl font-bold text-yellow-600">{refundStats?.pending || 0}</h3>
-                      <p className="text-sm text-gray-500">Pending Approval</p>
-                      <p className="text-xs text-yellow-600 mt-1">
-                        ₹{(refundStats?.pendingAmount || 0).toLocaleString()} pending
-                      </p>
-                    </Card>
-
-                    <Card className="p-6 border-l-4 border-l-green-500">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="bg-green-100 text-green-600 p-3 rounded-lg">
-                          <CheckCircle className="w-5 h-5" />
-                        </div>
-                      </div>
-                      <h3 className="text-3xl font-bold text-green-600">{refundStats?.approved || 0}</h3>
-                      <p className="text-sm text-gray-500">Approved/Processed</p>
-                      <p className="text-xs text-green-600 mt-1">
-                        ₹{(refundStats?.totalAmount || 0).toLocaleString()} processed
-                      </p>
-                    </Card>
-
-                    <Card className="p-6 border-l-4 border-l-red-500">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="bg-red-100 text-red-600 p-3 rounded-lg">
-                          <XCircle className="w-5 h-5" />
-                        </div>
-                      </div>
-                      <h3 className="text-3xl font-bold text-red-600">{refundStats?.rejected || 0}</h3>
-                      <p className="text-sm text-gray-500">Rejected</p>
-                    </Card>
-                  </div>
-
-                  {/* Refund Rate & Support Connection */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <IndianRupee className="w-5 h-5 text-[#FF8C42]" />
-                        Refund Analytics
-                      </h3>
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                          <span className="text-gray-600">Total Refund Value</span>
-                          <span className="text-xl font-bold text-[#FF8C42]">
-                            ₹{((refundStats?.totalAmount || 0) + (refundStats?.pendingAmount || 0)).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                          <span className="text-gray-600">Approval Rate</span>
-                          <span className="text-xl font-bold text-green-600">
-                            {refundStats?.total ? Math.round((refundStats.approved / refundStats.total) * 100) : 0}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                          <span className="text-gray-600">Rejection Rate</span>
-                          <span className="text-xl font-bold text-red-600">
-                            {refundStats?.total ? Math.round((refundStats.rejected / refundStats.total) * 100) : 0}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                          <span className="text-gray-600">Avg. Refund Amount</span>
-                          <span className="text-xl font-bold text-blue-600">
-                            ₹{refundStats?.approved ? Math.round((refundStats.totalAmount || 0) / refundStats.approved) : 0}
-                          </span>
-                        </div>
-                      </div>
-                    </Card>
-
-                    <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Headphones className="w-5 h-5 text-[#FF8C42]" />
-                        Support CRM Integration
-                      </h3>
-                      <div className="space-y-4">
-                        <div className="p-4 bg-[#FFF3E8] border border-[#FF8C42]/20 rounded-xl">
-                          <div className="flex items-center gap-3 mb-2">
-                            <AlertTriangle className="w-5 h-5 text-[#FF8C42]" />
-                            <span className="font-semibold text-gray-800">Refunds from Support Tickets</span>
-                          </div>
-                          <p className="text-sm text-gray-600">
-                            Refunds initiated through Support CRM are tracked here and linked to their originating tickets.
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="p-3 bg-purple-50 rounded-lg text-center">
-                            <p className="text-2xl font-bold text-purple-600">
-                              {refunds.filter(r => r.reason?.includes('Support') || r.reason?.includes('ticket')).length}
-                            </p>
-                            <p className="text-xs text-gray-500">From Support</p>
-                          </div>
-                          <div className="p-3 bg-blue-50 rounded-lg text-center">
-                            <p className="text-2xl font-bold text-blue-600">
-                              {refunds.filter(r => r.reason?.includes('cancellation') || r.reason?.includes('cancel')).length}
-                            </p>
-                            <p className="text-xs text-gray-500">Cancellations</p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          className="w-full border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
-                          onClick={() => window.location.href = '/support'}
-                        >
-                          <Headphones className="w-4 h-4 mr-2" />
-                          Go to Support CRM
-                        </Button>
-                      </div>
-                    </Card>
-                  </div>
-
-                  {/* Recent Refunds Table */}
-                  <Card className="p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-semibold">Recent Refund Requests</h3>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={loadRefundData}>
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Refresh
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => window.location.href = '/finance?tab=refund-policies'}>
-                          Manage Policies
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Refund ID</TableHead>
-                            <TableHead>Customer</TableHead>
-                            <TableHead>Vendor</TableHead>
-                            <TableHead>Amount</TableHead>
-                            <TableHead>Reason</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Requested</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {refunds.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={7} className="text-center py-8">
-                                <RotateCcw className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                                <p className="text-gray-500">No refund requests found</p>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            refunds.slice(0, 10).map((refund) => (
-                              <TableRow key={refund.id}>
-                                <TableCell className="font-mono text-xs">
-                                  {refund.id.slice(0, 8)}...
-                                </TableCell>
-                                <TableCell>{refund.customerName || 'N/A'}</TableCell>
-                                <TableCell>{refund.vendorName || 'N/A'}</TableCell>
-                                <TableCell className="font-semibold text-[#FF8C42]">
-                                  ₹{refund.amount?.toLocaleString() || 0}
-                                </TableCell>
-                                <TableCell className="max-w-[200px] truncate" title={refund.reason}>
-                                  {refund.reason || 'No reason provided'}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge className={
-                                    refund.status === 'approved' || refund.status === 'completed' || refund.status === 'processed'
-                                      ? 'bg-green-100 text-green-700'
-                                      : refund.status === 'pending'
-                                        ? 'bg-yellow-100 text-yellow-700'
-                                        : refund.status === 'rejected'
-                                          ? 'bg-red-100 text-red-700'
-                                          : 'bg-gray-100 text-gray-700'
-                                  }>
-                                    {refund.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm text-gray-500">
-                                  {refund.requestedAt ? new Date(refund.requestedAt).toLocaleDateString() : '-'}
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </Card>
-                </>
-              )}
             </TabsContent>
 
             {/* Vendors Tab */}
@@ -1146,169 +847,6 @@ export default function AnalyticsPage() {
               </Card>
             </TabsContent>
 
-            {/* Saved Reports Tab (Merged from ReportsDashboard) */}
-            <TabsContent value="reports" className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-lg font-semibold">Saved Reports</h3>
-                  <p className="text-sm text-gray-500">
-                    Generate and manage custom reports
-                  </p>
-                </div>
-                <Button className="bg-[#FF8C42] hover:bg-[#ff7a28]">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Report
-                </Button>
-              </div>
-
-              {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <Card className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="bg-blue-500 text-white p-3 rounded-lg">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-1">
-                    {savedReports.length}
-                  </h3>
-                  <p className="text-sm text-gray-500">Total Reports</p>
-                </Card>
-
-                <Card className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="bg-green-500 text-white p-3 rounded-lg">
-                      <Calendar className="w-5 h-5" />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-1">
-                    {savedReports.filter((r) => r.schedule?.enabled).length}
-                  </h3>
-                  <p className="text-sm text-gray-500">Scheduled Reports</p>
-                </Card>
-
-                <Card className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="bg-[#FF8C42] text-white p-3 rounded-lg">
-                      <Download className="w-5 h-5" />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-1">
-                    {savedReports.reduce(
-                      (sum, r) => sum + (r.generationCount || 0),
-                      0
-                    )}
-                  </h3>
-                  <p className="text-sm text-gray-500">Total Generations</p>
-                </Card>
-
-                <Card className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="bg-purple-500 text-white p-3 rounded-lg">
-                      <Share2 className="w-5 h-5" />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-1">5</h3>
-                  <p className="text-sm text-gray-500">Shared Reports</p>
-                </Card>
-              </div>
-
-              {/* Reports Table */}
-              <Card className="p-6">
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Report Name</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Date Range</TableHead>
-                        <TableHead>Format</TableHead>
-                        <TableHead>Last Generated</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loadingReports ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>
-                          </TableCell>
-                        </TableRow>
-                      ) : savedReports.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-12">
-                            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                            <p className="text-gray-500">
-                              No reports created yet
-                            </p>
-                            <p className="text-sm text-gray-400 mt-2">
-                              Create your first report to get started
-                            </p>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        savedReports.map((report) => (
-                          <TableRow key={report.id}>
-                            <TableCell className="font-medium">
-                              {report.name}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="capitalize">
-                                {report.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{report.dateRange}</TableCell>
-                            <TableCell>
-                              <Badge>
-                                {report.format?.toUpperCase() || 'CSV'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-gray-500">
-                              {report.lastGenerated
-                                ? new Date(
-                                    report.lastGenerated
-                                  ).toLocaleDateString()
-                                : 'Never'}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                className={
-                                  report.schedule?.enabled
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }
-                              >
-                                {report.schedule?.enabled
-                                  ? 'Scheduled'
-                                  : 'Manual'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => generateReport(report.id)}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                                <Button variant="ghost" size="sm">
-                                  <Download className="w-4 h-4" />
-                                </Button>
-                                <Button variant="ghost" size="sm">
-                                  <Share2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Card>
-            </TabsContent>
           </Tabs>
         </div>
       </div>

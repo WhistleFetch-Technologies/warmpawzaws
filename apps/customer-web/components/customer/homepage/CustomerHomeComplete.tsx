@@ -1184,6 +1184,7 @@ export function CustomerHomeComplete({
     id: a.id,
     slug: a.slug,
     title: a.title,
+    slug: a.slug,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
     Icon: a.category === 'Nutrition' ? UtensilsCrossed
@@ -1991,8 +1992,10 @@ export function CustomerHomeComplete({
                 <button
                   key={article.id || index}
                   onClick={() => {
-                    // ✅ FIX: Navigate to article detail page
-                    if (article.url) {
+                    // ✅ FIX: Navigate to content page by slug
+                    if (article.slug) {
+                      router.push(`/content/${article.slug}`);
+                    } else if (article.url) {
                       window.open(article.url, '_blank');
                     } else {
                       onNavigate?.('article-detail', { articleId: article.id, article: { id: article.id, slug: article.slug } });

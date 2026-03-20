@@ -650,14 +650,22 @@ export function registerAnalyticsEndpoints(app: Hono) {
          GROUP BY DATE_TRUNC('day', created_at)
          ORDER BY date`
       ).catch(() => ({ rows: [] }));
-      console.log("------------------------>", revenueData.rows);
       return c.json({
         success: true,
         data: revenueData.rows.map((row: any) => {
           const revenue = parseFloat(row.revenue || 0);
           const commission = parseFloat(row.commission || 0) || (revenue * 0.02); // Default 2% commission if not tracked
+          
+          // Format date for X-axis display (e.g., "Mar 13", "Mar 18")
+          const dateObj = row.date instanceof Date ? row.date : new Date(row.date);
+          const formattedDate = dateObj.toLocaleDateString('en-IN', { 
+            month: 'short', 
+            day: 'numeric' 
+          });
+          
           return {
-            date: row.date,
+            date: formattedDate,
+            dateRaw: row.date, // Keep raw date for sorting/filtering if needed
             revenue,
             commission,
             count: parseInt(row.count || 0),
@@ -692,6 +700,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
       // ✅ FIX: Changed vendor_roles to roles (vendors.role_id references roles.id)
+      // ✅ FIX: Added is_deleted filter to exclude deleted vendors
       const categoryData = await query(
         `SELECT 
             COALESCE(rl.name, rl.display_name, v.category, 'Other') as category_name,
@@ -702,7 +711,9 @@ export function registerAnalyticsEndpoints(app: Hono) {
          LEFT JOIN bookings b ON v.id = b.vendor_id 
            AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
            AND b.status = 'completed'
-         WHERE v.status = 'approved' AND v.is_active = true
+         WHERE v.status = 'approved' 
+           AND v.is_active = true
+           AND (v.is_deleted IS NULL OR v.is_deleted = false)
          GROUP BY COALESCE(rl.name, rl.display_name, v.category, 'Other')
          HAVING COALESCE(rl.name, rl.display_name, v.category, 'Other') IS NOT NULL
          ORDER BY revenue DESC`

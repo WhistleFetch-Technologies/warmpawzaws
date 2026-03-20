@@ -27,6 +27,25 @@ export function RevenueChart({
   data,
   title = 'Revenue Overview',
 }: RevenueChartProps) {
+  // Handle empty data
+  if (!data || data.length === 0) {
+    return (
+      <Card className="col-span-4">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[350px] flex items-center justify-center text-gray-500">
+            <div className="text-center">
+              <p className="text-lg font-medium mb-2">No revenue data available</p>
+              <p className="text-sm">No completed payments found for this period</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="col-span-4">
       <CardHeader>
@@ -69,7 +88,12 @@ export function RevenueChart({
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `₹${value / 1000}k`}
+                tickFormatter={(value) => {
+                  if (value === 0) return '₹0';
+                  if (value < 1000) return `₹${value}`;
+                  return `₹${(value / 1000).toFixed(1)}k`;
+                }}
+                domain={[0, 'auto']}
               />
               <Tooltip
                 contentStyle={{

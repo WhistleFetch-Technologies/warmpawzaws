@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
-import { query, select, update, insert, deleteRows } from '../../../database/rds-connection';
+import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
 import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -3047,7 +3047,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
       const rows = result.rows || [];
       const settlements = rows.map((s: any) => {
-        const status = s.status || s.settlement_status || 'pending';
+        // Database uses settlement_status, normalize to lowercase status
+        const rawStatus = s.settlement_status || s.status || 'pending';
+        const status = String(rawStatus).toLowerCase();
         const amount = parseFloat(s.vendor_amount ?? s.net_amount ?? s.total_amount ?? '0');
         const commission = parseFloat(s.commission_amount ?? '0');
         const periodStart = s.settlement_period_start || s.period_start || s.created_at;
@@ -3066,6 +3068,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           commission,
           total_amount: parseFloat(s.total_amount ?? '0'),
           status,
+          settlement_status: status, // Include both for compatibility
           failure_reason: s.failure_reason || s.error_message || null,
           period: periodStr,
           period_start: periodStart,
@@ -4926,38 +4929,112 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payments/gateways', async (c) => {
     try {
-      const config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC').catch(async () => {
-        return await query('SELECT * FROM payment_gateway_settings ORDER BY created_at DESC').catch(() => ({ rows: [] }));
-      });
+      // Try payment_gateway_config first, then payment_gateway_settings, then platform_integrations
+      let config: { rows?: any[] } = { rows: [] };
+      let source: 'config' | 'settings' | 'integrations' = 'config';
+      
+      try {
+        config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC');
+        source = 'config';
+      } catch {
+        try {
+          config = await query('SELECT * FROM payment_gateway_settings ORDER BY created_at DESC');
+          source = 'settings';
+        } catch {
+          try {
+            config = await query(`
+              SELECT 
+                id,
+                integration_name,
+                integration_config,
+                is_active,
+                created_at,
+                updated_at
+              FROM platform_integrations 
+              WHERE integration_name IN ('razorpay', 'stripe', 'paytm')
+              ORDER BY integration_name ASC
+            `);
+            source = 'integrations';
+          } catch {
+            config = { rows: [] };
+          }
+        }
+      }
+      
       const rows = config.rows || [];
       const gateways: Array<Record<string, unknown>> = [];
+      
       for (const row of rows) {
-        const data = row.gateway_config
-          ? (typeof row.gateway_config === 'string' ? JSON.parse(row.gateway_config) : row.gateway_config)
-          : row;
-        const razorpay = data.razorpay ?? data;
-        if (razorpay && (razorpay.keyId || razorpay.key_id)) {
+        if (source === 'integrations') {
+          // Handle platform_integrations structure
+          const integrationName = row.integration_name || '';
+          const configData = row.integration_config 
+            ? (typeof row.integration_config === 'string' ? JSON.parse(row.integration_config) : row.integration_config)
+            : {};
+          
+          if (configData.keyId || configData.key_id) {
+            const gatewayName = integrationName.charAt(0).toUpperCase() + integrationName.slice(1);
+            gateways.push({
+              id: row.id,
+              name: gatewayName,
+              type: integrationName,
+              keyId: configData.keyId || configData.key_id || '',
+              enabled: row.is_active !== false && (configData.enabled !== false),
+              is_active: row.is_active,
+              config: configData,
+            });
+          }
+        } else {
+          // Handle payment_gateway_config and payment_gateway_settings structure
+          const data = row.gateway_config
+            ? (typeof row.gateway_config === 'string' ? JSON.parse(row.gateway_config) : row.gateway_config)
+            : row;
+          const razorpay = data.razorpay ?? data;
+          if (razorpay && (razorpay.keyId || razorpay.key_id)) {
+            gateways.push({
+              id: row.id ?? 'razorpay',
+              name: 'Razorpay',
+              type: 'razorpay',
+              keyId: razorpay.keyId ?? razorpay.key_id ?? '',
+              enabled: razorpay.enabled !== false,
+            });
+          }
+        }
+      }
+      
+      // Fallback: if no gateways found but rows exist, try to extract from first row
+      if (gateways.length === 0 && rows.length > 0) {
+        const first = rows[0];
+        if (source === 'integrations') {
+          const configData = first.integration_config 
+            ? (typeof first.integration_config === 'string' ? JSON.parse(first.integration_config) : first.integration_config)
+            : {};
+          if (configData.keyId || configData.key_id) {
+            const integrationName = first.integration_name || 'razorpay';
+            const gatewayName = integrationName.charAt(0).toUpperCase() + integrationName.slice(1);
+            gateways.push({
+              id: first.id,
+              name: gatewayName,
+              type: integrationName,
+              keyId: configData.keyId || configData.key_id || '',
+              enabled: first.is_active !== false,
+              is_active: first.is_active,
+              config: configData,
+            });
+          }
+        } else {
+          const data = first.gateway_config ? (typeof first.gateway_config === 'string' ? JSON.parse(first.gateway_config) : first.gateway_config) : first;
+          const r = data.razorpay ?? data;
           gateways.push({
-            id: row.id ?? 'razorpay',
+            id: first.id ?? 'razorpay',
             name: 'Razorpay',
             type: 'razorpay',
-            keyId: razorpay.keyId ?? razorpay.key_id ?? '',
-            enabled: razorpay.enabled !== false,
+            keyId: r?.keyId ?? r?.key_id ?? '',
+            enabled: r?.enabled !== false,
           });
         }
       }
-      if (gateways.length === 0 && rows.length > 0) {
-        const first = rows[0];
-        const data = first.gateway_config ? (typeof first.gateway_config === 'string' ? JSON.parse(first.gateway_config) : first.gateway_config) : first;
-        const r = data.razorpay ?? data;
-        gateways.push({
-          id: first.id ?? 'razorpay',
-          name: 'Razorpay',
-          type: 'razorpay',
-          keyId: r?.keyId ?? r?.key_id ?? '',
-          enabled: r?.enabled !== false,
-        });
-      }
+      
       return c.json({ success: true, gateways });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
@@ -7358,7 +7435,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           id,
           integration_name,
           integration_config,
-          is_active,
+          is_active
         FROM platform_integrations 
         WHERE integration_name IN ('razorpay', 'stripe', 'paytm')
         ORDER BY integration_name ASC
@@ -7526,6 +7603,170 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * GET /admin/content/pages/:slug/preview
+   * Get a content page by slug for admin preview (works for both published and unpublished)
+   * IMPORTANT: This route must be defined BEFORE /admin/content/pages/:pageId to ensure proper matching
+   */
+  app.get('/admin/content/pages/:slug/preview', async (c) => {
+    try {
+      const rawSlug = c.req.param('slug');
+      console.log('[Admin Content Preview] Received request:', { rawSlug, url: c.req.url, path: c.req.path });
+      
+      // Decode URL-encoded slug
+      let slug: string;
+      try {
+        slug = rawSlug ? decodeURIComponent(rawSlug) : '';
+      } catch (e) {
+        slug = rawSlug || '';
+      }
+
+      console.log('[Admin Content Preview] Decoded slug:', { rawSlug, decodedSlug: slug });
+
+      if (!slug) {
+        return c.json({ success: false, error: 'Slug is required' }, 400);
+      }
+
+      // Try exact match first (most common case)
+      console.log('[Admin Content Preview] Executing exact match query with slug:', slug);
+      let pageResult = await query(
+        `SELECT 
+          id,
+          title,
+          slug,
+          content,
+          category,
+          is_published,
+          created_at,
+          updated_at
+        FROM content_pages
+        WHERE slug = $1
+        LIMIT 1`,
+        [slug]
+      ).catch((err) => {
+        console.error('[Admin Content Preview] Exact match query error:', err);
+        return { rows: [] };
+      });
+
+      console.log('[Admin Content Preview] Exact match result:', {
+        found: pageResult.rows?.length > 0,
+        rowCount: pageResult.rows?.length || 0,
+        matchedSlug: pageResult.rows?.[0]?.slug,
+      });
+
+      // If exact match fails, try multiple slug variations
+      if (!pageResult.rows || pageResult.rows.length === 0) {
+        console.log('[Admin Content Preview] Exact match failed, trying variations for slug:', slug);
+        
+        const slugVariations = [
+          slug,
+          slug.replace(/\s+/g, '-'),
+          slug.replace(/\s+/g, '_'),
+          slug.toLowerCase(),
+          slug.toLowerCase().replace(/\s+/g, '-'),
+          slug.toLowerCase().replace(/\s+/g, '_'),
+        ];
+
+        const uniqueVariations = [...new Set(slugVariations)];
+        console.log('[Admin Content Preview] Trying variations:', uniqueVariations);
+        
+        const placeholders = uniqueVariations.map((_, i) => `$${i + 1}`).join(', ');
+
+        pageResult = await query(
+          `SELECT 
+            id,
+            title,
+            slug,
+            content,
+            category,
+            is_published,
+            created_at,
+            updated_at
+          FROM content_pages
+          WHERE slug IN (${placeholders})
+          LIMIT 1`,
+          uniqueVariations
+        ).catch((err) => {
+          console.error('[Admin Content Preview] Variations query error:', err);
+          return { rows: [] };
+        });
+      }
+
+      if (!pageResult.rows || pageResult.rows.length === 0) {
+        // Try case-insensitive search
+        const caseInsensitiveResult = await query(
+          `SELECT 
+            id,
+            title,
+            slug,
+            content,
+            category,
+            is_published,
+            created_at,
+            updated_at
+          FROM content_pages
+          WHERE LOWER(TRIM(slug)) = LOWER(TRIM($1))
+          LIMIT 1`,
+          [slug]
+        ).catch(() => ({ rows: [] }));
+
+        if (caseInsensitiveResult.rows && caseInsensitiveResult.rows.length > 0) {
+          const page = caseInsensitiveResult.rows[0];
+          return c.json({
+            success: true,
+            page: {
+              id: page.id,
+              title: page.title,
+              slug: page.slug,
+              content: page.content,
+              category: page.category,
+              readTime: '5 min', // Default since metadata column doesn't exist
+              featured: false,
+              imageUrl: null,
+              seoTitle: page.title,
+              seoDescription: page.content?.substring(0, 160) || '',
+              createdAt: page.created_at,
+              updatedAt: page.updated_at,
+              isPublished: page.is_published === true || page.is_published === 'true',
+            },
+          });
+        }
+
+        return c.json({ 
+          success: false, 
+          error: 'Page not found' 
+        }, 404);
+      }
+
+      const page = pageResult.rows[0];
+      
+      return c.json({
+        success: true,
+        page: {
+          id: page.id,
+          title: page.title,
+          slug: page.slug,
+          content: page.content,
+          category: page.category,
+          readTime: '5 min', // Default since metadata column doesn't exist
+          featured: false,
+          imageUrl: null,
+          seoTitle: page.title,
+          seoDescription: page.content?.substring(0, 160) || '',
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+          isPublished: page.is_published === true || page.is_published === 'true',
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching content page for preview:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch page' 
+      }, 500);
+    }
+  });
+
   app.put('/admin/content/pages/:pageId', async (c) => {
     try {
       const pageId = c.req.param('pageId');
@@ -7557,6 +7798,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
 
   app.delete('/admin/content/pages/:pageId', async (c) => {
     try {
@@ -7623,6 +7865,123 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const shiprocket = await query('SELECT * FROM shiprocket_integrations ORDER BY created_at DESC');
       return c.json({ success: true, integrations: shiprocket.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.get('/admin/integrations/logistics', async (c) => {
+    try {
+      const partnersResult = await query(
+        `SELECT 
+          partner_id as id,
+          partner_name as name,
+          partner_type as type,
+          enabled,
+          email as apiEndpoint,
+          api_key as apiKey,
+          config->>'categories' as categories,
+          config->>'pricing' as pricing,
+          config->>'regions' as regions,
+          config,
+          created_at,
+          updated_at
+        FROM logistics_partners
+        ORDER BY created_at DESC`
+      );
+
+      const partners = (partnersResult.rows || []).map((p: any) => {
+        const config = p.config || {};
+        return {
+          id: p.id,
+          name: p.name,
+          type: p.type,
+          enabled: p.enabled !== false,
+          apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
+          apiKey: p.apiKey ? '••••••••' : null,
+          categories: config.categories || (typeof p.categories === 'string' ? JSON.parse(p.categories) : []),
+          pricing: config.pricing || (typeof p.pricing === 'string' ? JSON.parse(p.pricing) : {}),
+          regions: config.regions || (typeof p.regions === 'string' ? JSON.parse(p.regions) : []),
+        };
+      });
+
+      return c.json({
+        success: true,
+        partners: partners,
+      });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.post('/admin/integrations/logistics', async (c) => {
+    try {
+      const partnerData = await c.req.json();
+      const {
+        id: partner_id,
+        name: partner_name,
+        type: partner_type,
+        enabled,
+        apiEndpoint,
+        apiKey,
+        categories,
+        pricing,
+        regions,
+      } = partnerData;
+
+      if (!partner_id || !partner_name || !partner_type) {
+        return c.json({ success: false, error: 'id, name, and type are required' }, 400);
+      }
+
+      const config: any = {};
+      if (categories) config.categories = categories;
+      if (pricing) config.pricing = pricing;
+      if (regions) config.regions = regions;
+
+      const partnerRecord = {
+        partner_id: String(partner_id),
+        partner_name: String(partner_name),
+        partner_type: String(partner_type),
+        enabled: enabled !== false,
+        email: apiEndpoint || null,
+        api_key: apiKey || null,
+        config: config,
+        updated_at: new Date().toISOString(),
+      };
+
+      await upsert('logistics_partners', partnerRecord, 'partner_id');
+
+      return c.json({
+        success: true,
+        message: 'Logistics partner saved',
+        partner: partnerRecord,
+      });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/integrations/logistics', async (c) => {
+    try {
+      const logisticsData = await c.req.json();
+
+      await upsert('platform_settings',
+        {
+          setting_key: 'platform:settings:logistics',
+          setting_value: logisticsData,
+          setting_type: 'json',
+          description: 'Logistics partner configuration',
+        },
+        'setting_key'
+      );
+
+      return c.json({
+        success: true,
+        message: 'Logistics settings updated',
+      });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);

@@ -813,7 +813,7 @@ class GetProductPerformanceHandler extends BaseHandler {
           p.images,
           COUNT(oi.id) as units_sold,
           SUM(oi.quantity) as total_quantity,
-          COALESCE(SUM(oi.total) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
+          COALESCE(SUM(oi.total_price) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
         FROM order_items oi
         INNER JOIN orders o ON oi.order_id = o.id
         INNER JOIN products p ON oi.product_id = p.id
@@ -831,7 +831,7 @@ class GetProductPerformanceHandler extends BaseHandler {
           COALESCE(ec.name, p.category) as category,
           COUNT(DISTINCT p.id) as product_count,
           COUNT(oi.id) as units_sold,
-          COALESCE(SUM(oi.total) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
+          COALESCE(SUM(oi.total_price) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
         FROM order_items oi
         INNER JOIN orders o ON oi.order_id = o.id
         INNER JOIN products p ON oi.product_id = p.id

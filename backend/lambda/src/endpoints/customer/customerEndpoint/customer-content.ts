@@ -139,6 +139,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '5', 10);
       const featured = c.req.query('featured') === 'true';
 
+      // Include all categories: both admin categories (legal, help, marketing, other) 
+      // and customer-facing categories (tips, article, nutrition, health, grooming, insurance, behavior)
       let articlesQuery = `
         SELECT 
           id,
@@ -147,12 +149,11 @@ export function registerCustomerContentEndpoints(app: Hono) {
           content,
           category,
           is_published,
-          metadata,
           created_at,
           updated_at
         FROM content_pages
         WHERE is_published = true
-        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior')
+        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'legal', 'help', 'other')
       `;
 
       const params: any[] = [];
@@ -164,12 +165,12 @@ export function registerCustomerContentEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      if (featured) {
-        articlesQuery += ` AND (metadata->>'featured')::boolean = true`;
-      }
+      // Note: featured filter removed since metadata column doesn't exist
+      // if (featured) {
+      //   articlesQuery += ` AND (metadata->>'featured')::boolean = true`;
+      // }
 
       articlesQuery += ` ORDER BY 
-        CASE WHEN (metadata->>'featured')::boolean = true THEN 0 ELSE 1 END,
         updated_at DESC
         LIMIT $${paramIndex}`;
       params.push(limit);
@@ -555,6 +556,249 @@ export function registerCustomerContentEndpoints(app: Hono) {
           rehomingListings: 20,
         },
       });
+    }
+  });
+
+  /**
+   * GET /customer/content/pages/:slug
+   * Get a single content page by slug for full page display
+   */
+  app.get("/customer/content/pages/:slug", async (c) => {
+    try {
+      const rawSlug = c.req.param('slug');
+      
+      // Hono's param() may already decode, but handle both cases
+      let slug: string;
+      try {
+        // Try decoding - if already decoded, this will work fine
+        slug = rawSlug ? decodeURIComponent(rawSlug) : '';
+      } catch (e) {
+        // If decode fails, use raw value (might already be decoded)
+        slug = rawSlug || '';
+      }
+
+      console.log('[ContentPageViewer API] Received slug:', { rawSlug, decodedSlug: slug });
+
+      if (!slug) {
+        return c.json({ success: false, error: 'Slug is required' }, 400);
+      }
+
+      // Try multiple slug variations to handle different storage formats
+      const slugVariations = [
+        slug,                                    // Exact match
+        slug.replace(/\s+/g, '-'),               // Spaces to hyphens
+        slug.replace(/\s+/g, '_'),               // Spaces to underscores
+        slug.toLowerCase(),                      // Lowercase
+        slug.toLowerCase().replace(/\s+/g, '-'), // Lowercase + hyphens
+        slug.toLowerCase().replace(/\s+/g, '_'), // Lowercase + underscores
+      ];
+
+      // Remove duplicates
+      const uniqueVariations = [...new Set(slugVariations)];
+
+      console.log('[ContentPageViewer API] Searching with variations:', uniqueVariations);
+
+      // Build query with all variations
+      const placeholders = uniqueVariations.map((_, i) => `$${i + 1}`).join(', ');
+      const queryParams = uniqueVariations;
+      
+      const pageResult = await query(
+        `SELECT 
+          id,
+          title,
+          slug,
+          content,
+          category,
+          is_published,
+          created_at,
+          updated_at
+        FROM content_pages
+        WHERE slug IN (${placeholders}) AND (is_published = true OR is_published = 'true')
+        LIMIT 1`,
+        queryParams
+      ).catch((err) => {
+        console.error('[ContentPageViewer API] Database query error:', err);
+        return { rows: [] };
+      });
+
+      console.log('[ContentPageViewer API] Query result:', {
+        found: pageResult.rows?.length > 0,
+        matchedSlug: pageResult.rows?.[0]?.slug,
+      });
+
+      if (!pageResult.rows || pageResult.rows.length === 0) {
+        // Try case-insensitive search as fallback
+        console.log('[ContentPageViewer API] Exact match failed, trying case-insensitive search');
+        
+        const caseInsensitiveResult = await query(
+          `SELECT 
+            id,
+            title,
+            slug,
+            content,
+            category,
+            is_published,
+            created_at,
+            updated_at
+          FROM content_pages
+          WHERE LOWER(TRIM(slug)) = LOWER(TRIM($1)) AND (is_published = true OR is_published = 'true')
+          LIMIT 1`,
+          [slug]
+        ).catch(() => ({ rows: [] }));
+
+        if (caseInsensitiveResult.rows && caseInsensitiveResult.rows.length > 0) {
+          console.log('[ContentPageViewer API] Found via case-insensitive search');
+          const page = caseInsensitiveResult.rows[0];
+          
+          return c.json({
+            success: true,
+            page: {
+              id: page.id,
+              title: page.title,
+              slug: page.slug,
+              content: page.content,
+              category: page.category,
+              readTime: '5 min', // Default since metadata column doesn't exist
+              featured: false,
+              imageUrl: null,
+              seoTitle: page.title,
+              seoDescription: page.content?.substring(0, 160) || '',
+              createdAt: page.created_at,
+              updatedAt: page.updated_at,
+            },
+          });
+        }
+
+        // Log available slugs for debugging
+        const allPages = await query(
+          `SELECT slug, title, is_published, category FROM content_pages ORDER BY updated_at DESC LIMIT 20`
+        ).catch(() => ({ rows: [] }));
+        
+        const availablePages = allPages.rows.map((p: any) => ({
+          slug: p.slug,
+          slugLength: p.slug?.length || 0,
+          slugEncoded: encodeURIComponent(p.slug || ''),
+          title: p.title,
+          isPublished: p.is_published,
+          category: p.category,
+        }));
+        
+        console.log('[ContentPageViewer API] Available pages:', JSON.stringify(availablePages, null, 2));
+        console.log('[ContentPageViewer API] Searched variations:', JSON.stringify(uniqueVariations.map(s => ({
+          slug: s,
+          length: s.length,
+          encoded: encodeURIComponent(s),
+        })), null, 2));
+        
+        return c.json({ 
+          success: false, 
+          error: `Page not found. Searched for: ${uniqueVariations.join(', ')}`,
+          debug: {
+            searchedVariations: uniqueVariations,
+            availableSlugs: allPages.rows.map((p: any) => p.slug),
+            rawSlug: rawSlug,
+            decodedSlug: slug,
+          }
+        }, 404);
+      }
+
+      const page = pageResult.rows[0];
+      
+      return c.json({
+        success: true,
+        page: {
+          id: page.id,
+          title: page.title,
+          slug: page.slug,
+          content: page.content,
+          category: page.category,
+          readTime: '5 min', // Default since metadata column doesn't exist
+          featured: false,
+          imageUrl: null,
+          seoTitle: page.title,
+          seoDescription: page.content?.substring(0, 160) || '',
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching content page:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch page' 
+      }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/content/pages
+   * Get all published content pages with optional filtering
+   * Query params: category (optional), limit (optional), offset (optional)
+   */
+  app.get("/customer/content/pages", async (c) => {
+    try {
+      const category = c.req.query('category');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let pagesQuery = `
+        SELECT 
+          id,
+          title,
+          slug,
+          content,
+          category,
+          is_published,
+          created_at,
+          updated_at
+        FROM content_pages
+        WHERE is_published = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (category) {
+        pagesQuery += ` AND category = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+
+      pagesQuery += ` ORDER BY 
+        updated_at DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const pagesResult = await query(pagesQuery, params).catch(() => ({ rows: [] }));
+
+      const pages = (pagesResult.rows || []).map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        slug: p.slug,
+        category: p.category,
+        excerpt: p.content?.substring(0, 150) + '...',
+        readTime: '5 min', // Default since metadata column doesn't exist
+        featured: false, // Default since metadata column doesn't exist
+        imageUrl: null, // Default since metadata column doesn't exist
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      }));
+
+      return c.json({
+        success: true,
+        pages,
+        total: pages.length,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      console.error('Error fetching content pages:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch pages',
+        pages: [],
+        total: 0,
+      }, 500);
     }
   });
 }
