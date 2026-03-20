@@ -174,30 +174,16 @@ export function EnhancedSearchBar({
         params.append('customerId', customerId);
       }
 
-      let searchData: { data?: { vendors?: any[]; services?: any[]; results?: any[] }; vendors?: any[]; services?: any[]; results?: any[] };
-      try {
-        searchData = await apiClient.get<typeof searchData>(`/search?${params.toString()}`);
-      } catch (searchErr) {
-        // Fallback: use vendor search when /search is unavailable (e.g. wrong base URL or route missing)
-        try {
-          const vendorParams = new URLSearchParams({ query: searchQuery, limit: '10' });
-          if (userLocation) {
-            vendorParams.append('latitude', userLocation.lat.toString());
-            vendorParams.append('longitude', userLocation.lng.toString());
-          }
-          const vendorRes = await apiClient.get<{ vendors?: any[] }>(`/customer/vendors/search?${vendorParams.toString()}`);
-          searchData = { vendors: vendorRes.vendors || [], services: [] };
-        } catch (fallbackErr) {
-          console.error('Search and fallback failed:', searchErr, fallbackErr);
-          setResults([]);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Symptom search in parallel (e.g. "vomiting" shows vet options)
-      const symptomData = await apiClient.get<{ success?: boolean; results?: any[] }>(`/public/search/symptoms?q=${encodeURIComponent(searchQuery)}`).catch(() => ({ success: false, results: [] }));
-
+      // Parallel: universal search + symptom search (so e.g. "vomiting" shows vet options and drives to booking)
+      const [searchData, symptomData] = await Promise.all([
+        apiClient.get<{ 
+          data?: { vendors?: any[], services?: any[], results?: any[] }, 
+          vendors?: any[], 
+          services?: any[], 
+          results?: any[] 
+        }>(`/search?${params.toString()}`),
+        apiClient.get<{ success?: boolean; results?: any[] }>(`/public/search/symptoms?q=${encodeURIComponent(searchQuery)}`).catch(() => ({ success: false, results: [] })),
+      ]);
       const data = searchData;
       
       // Transform results from universal search format to SearchResult format
@@ -306,18 +292,11 @@ export function EnhancedSearchBar({
     }
   };
 
-  const handleSearch = async (searchQuery: string) => {
-    const trimmed = searchQuery.trim();
-    if (!trimmed) return;
-  
-    saveSearch(trimmed);
-  
-    setIsOpen(true); // keep dropdown open
-  
-    await performSearch(trimmed); // 🔥 THIS LINE FIXES EVERYTHING
-  
+  const handleSearch = (searchQuery: string) => {
+    saveSearch(searchQuery);
+    setIsOpen(false);
     if (onSearch) {
-      onSearch(trimmed);
+      onSearch(searchQuery);
     }
   };
 
@@ -339,15 +318,9 @@ export function EnhancedSearchBar({
 
   const showRecentSearches = !query && recentSearches.length > 0;
   const showSuggestions = !query && suggestions.length > 0;
-  // Keep dropdown open when user has searched (so we can show results or "No results found")
-  const hasContent =
-    showRecentSearches ||
-    showSuggestions ||
-    results.length > 0 ||
-    loading ||
-    (query.trim().length > 0 && !loading);
-
-  // Auto-close dropdown only when there's truly nothing to show (no query, no recent/suggestions)
+  const hasContent = showRecentSearches || showSuggestions || results.length > 0 || loading;
+  
+  // Auto-close dropdown if there's no content to show (prevents empty white space)
   useEffect(() => {
     if (isOpen && !hasContent) {
       setIsOpen(false);
@@ -363,45 +336,32 @@ export function EnhancedSearchBar({
             type="text"
             value={query}
             onChange={handleInputChange}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') e.currentTarget.form?.requestSubmit();
-            }}
             onFocus={() => {
+              // Only open if we have content to show
               const hasContent = query.trim().length > 0 || recentSearches.length > 0 || suggestions.length > 0 || results.length > 0;
               setIsOpen(hasContent);
             }}
             placeholder={placeholder}
-            className="w-full pl-12 pr-24 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-            aria-label="Search for services, products, vets, groomers"
+            className="w-full pl-12 pr-12 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
           />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            {query && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery('');
-                  setResults([]);
-                  setIsOpen(false);
-                }}
-                className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100"
-                aria-label="Clear search"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
+          {query && (
             <button
-              type="submit"
-              className="p-2 rounded-full bg-orange-500 text-white hover:bg-orange-600 transition-colors shadow-sm"
-              aria-label="Search"
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setResults([]);
+                setIsOpen(false);
+              }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
             >
-              <Search className="w-5 h-5" />
+              <X className="w-5 h-5" />
             </button>
-          </div>
+          )}
         </div>
       </form>
 
-      {/* Dropdown - Show when there's content or user has searched (so we can show results or "No results") */}
-      {isOpen && hasContent && (
+      {/* Dropdown - Only show when there's content to display */}
+      {isOpen && (showRecentSearches || showSuggestions || results.length > 0 || loading) && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-[70vh] overflow-y-auto z-50">
           {/* Loading */}
           {loading && (

@@ -8,8 +8,5 @@
     }
   ],
   "java.compile.nullAnalysis.mode": "automatic",
-  "java.configuration.updateBuildConfiguration": "automatic",
-
-  "git.enabled": true,
-  "workbench.statusBar.visible": true
+  "java.configuration.updateBuildConfiguration": "automatic"
 }
