@@ -28,7 +28,7 @@ interface SettingsState {
 export function AdminSettings({ onBack }: AdminSettingsProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'payments' | 'security'>('general');
   const [settings, setSettings] = useState<SettingsState>({
-    platformName: 'WarmPawz',
+    platformName: 'Warmpawz',
     supportEmail: 'support@warmpawz.com',
     supportPhone: '+91 9876543210',
     commissionRate: 15,

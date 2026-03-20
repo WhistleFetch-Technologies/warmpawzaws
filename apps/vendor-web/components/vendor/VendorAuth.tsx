@@ -505,7 +505,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </div>
           <h2 className="text-2xl mb-4">Application Under Review</h2>
           <p className="text-gray-600 mb-6">
-            Thank you for registering with WarmPawz! Your vendor application is being reviewed by our admin team. 
+            Thank you for registering with Warmpawz! Your vendor application is being reviewed by our admin team. 
             We'll notify you once your account is approved.
           </p>
           <p className="text-sm text-gray-500 mb-6">
@@ -824,11 +824,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <div className="inline-flex items-center justify-center mb-4">
                 <img 
                   src={logoImage} 
-                  alt="WarmPawz Logo" 
+                  alt="Warmpawz Logo" 
                   className="w-24 h-24 object-contain"
                 />
               </div>
-              <h1 className="text-3xl text-[#FF8C42] mb-2">WarmPawz</h1>
+              <h1 className="text-3xl text-[#FF8C42] mb-2">Warmpawz</h1>
               <p className="text-gray-600">Vendor Portal</p>
             </div>
 

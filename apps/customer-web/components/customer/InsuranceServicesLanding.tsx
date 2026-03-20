@@ -143,7 +143,7 @@ export function InsuranceServicesLanding({ phone, onBack, onNavigate }: Insuranc
       <div className="px-6 pb-24">
         {/* Promotion Banner */}
         <div className="mb-6">
-          <PromotionBanner service="insurance" maxPromotions={3} />
+          <PromotionBanner service="insurance" maxPromotions={3} onNavigate={onNavigate} />
         </div>
 
         {/* Insurance Plans */}

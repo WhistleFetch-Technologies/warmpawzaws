@@ -38,10 +38,32 @@ export default function ProfilePage() {
   const loadProfile = async () => {
     try {
       const customerId = localStorage.getItem('customerId');
+      const phone = localStorage.getItem('customerPhone');
       if (customerId) {
         const response = await apiClient.get<CustomerProfile>(`/customer/${customerId}/profile`);
         setProfile(response);
         setEditData(response);
+      } else if (phone) {
+        const data = await apiClient.get<{ profile?: CustomerProfile & { name?: string; firstName?: string; lastName?: string } }>(
+          `/customer/profile?phone=${encodeURIComponent(phone)}`
+        );
+        const p = data.profile;
+        if (p) {
+          const full = p.full_name || p.name || [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || '';
+          const mapped: CustomerProfile = {
+            id: p.id,
+            phone: p.phone || phone,
+            email: p.email || '',
+            full_name: full,
+            city: p.city,
+            state: p.state,
+            pincode: p.pincode,
+            address: typeof p.address === 'string' ? p.address : (p as any).address?.street,
+            profile_photo_url: p.profile_photo_url || (p as any).photo,
+          };
+          setProfile(mapped);
+          setEditData(mapped);
+        }
       }
     } catch (err) {
       console.error('Error loading profile:', err);

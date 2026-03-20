@@ -83,11 +83,11 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
 
   const shareReferral = () => {
     const referralLink = `${window.location.origin}/auth?ref=${stats?.referral_code}`;
-    const shareText = `Join WarmPawz and get amazing pet care services! Use my referral code: ${stats?.referral_code}`;
+    const shareText = `Join Warmpawz and get amazing pet care services! Use my referral code: ${stats?.referral_code}`;
     
     if (navigator.share) {
       navigator.share({
-        title: 'Join WarmPawz',
+        title: 'Join Warmpawz',
         text: shareText,
         url: referralLink,
       });

@@ -548,7 +548,7 @@ function generatePrescriptionText(prescription: PrescriptionData): string {
   }
   
   text += `\n━━━━━━━━━━━━━━━━━\n`;
-  text += `Generated via WarmPawz`;
+  text += `Generated via Warmpawz`;
   
   return text;
 }

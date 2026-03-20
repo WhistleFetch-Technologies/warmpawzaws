@@ -179,7 +179,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
         <div className="space-y-8">
 
           {/* Promotion Banner */}
-          <PromotionBanner service="nutrition" maxPromotions={3} />
+          <PromotionBanner service="nutrition" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Problem Grid - Consult by Need */}
           <div>

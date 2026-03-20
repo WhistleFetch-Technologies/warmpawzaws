@@ -201,7 +201,7 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
         key: orderResponse.keyId,
         amount: orderResponse.amount * 100, // Convert to paise
         currency: orderResponse.currency,
-        name: 'WarmPawz',
+        name: 'Warmpawz',
         description: `Wallet Top-up of ₹${amount}`,
         order_id: orderResponse.orderId,
         handler: async (response: any) => {

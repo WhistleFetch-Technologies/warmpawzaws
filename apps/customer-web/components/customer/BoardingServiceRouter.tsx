@@ -131,7 +131,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         <div className="space-y-8">
           
           {/* Promotion Banner */}
-          <PromotionBanner service="boarding" maxPromotions={3} />
+          <PromotionBanner service="boarding" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Phase 1: Book again with previous facility */}
           {previousFacility && (

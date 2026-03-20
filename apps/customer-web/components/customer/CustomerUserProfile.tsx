@@ -170,7 +170,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
       <div className="flex-1 overflow-y-auto pb-32">
         {/* Logo */}
         <div className="flex justify-center pt-4 mb-6">
-          <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+          <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
         </div>
 
         {/* Orange Circle Icon */}

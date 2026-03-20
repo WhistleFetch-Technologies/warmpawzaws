@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, TrendingUp, Clock, Filter, Search, Package } from 'lucide-react';
+import { Calendar, TrendingUp, Clock, Filter, Search, Package, ArrowLeft, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -34,10 +34,13 @@ interface Booking {
 interface PetProfileDashboardProps {
   phone: string;
   petData: Pet;
+  /** Return to view/edit pet screen */
   onBack: () => void;
+  /** Optional: jump to app home / main menu */
+  onBackToHome?: () => void;
 }
 
-export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashboardProps) {
+export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: PetProfileDashboardProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,9 +126,40 @@ export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashbo
 
   return (
     <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Stats Cards - Moved below header */}
+      <header className="sticky top-0 z-20 px-2 py-3 bg-white border-b border-gray-100 shadow-sm">
+        <div className="grid grid-cols-3 items-center gap-1 max-w-[430px] mx-auto">
+          <div className="flex justify-start min-w-0">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 rounded-lg px-2 py-2 text-gray-800 hover:bg-gray-100 active:bg-gray-200"
+              aria-label="Back to pet profile"
+            >
+              <ArrowLeft className="w-5 h-5 shrink-0" />
+              <span className="text-sm font-medium truncate">Pet</span>
+            </button>
+          </div>
+          <div className="min-w-0 text-center px-1">
+            <p className="text-sm font-semibold text-gray-900 truncate">{petData.name}</p>
+            <p className="text-xs text-gray-500">Bookings</p>
+          </div>
+          <div className="flex justify-end min-w-0">
+            {onBackToHome ? (
+              <button
+                type="button"
+                onClick={onBackToHome}
+                className="flex items-center gap-1 rounded-lg px-2 py-2 text-[#FF8C42] hover:bg-orange-50 active:bg-orange-100"
+                aria-label="Back to home"
+              >
+                <Home className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium truncate">Home</span>
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </header>
+
+      {/* Stats Cards */}
       <div className="px-6 pt-4 pb-4 bg-white">
         <div className="grid grid-cols-4 gap-2 mb-4">
           <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">

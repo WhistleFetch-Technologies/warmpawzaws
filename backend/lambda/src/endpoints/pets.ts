@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -70,6 +71,8 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = pets[0];
+      const photo =
+        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
 
       return c.json({
         success: true,
@@ -82,7 +85,8 @@ export function registerPetEndpoints(app: Hono) {
           age_months: pet.age_months,
           gender: pet.gender,
           weight_kg: pet.weight_kg,
-          profile_photo_url: pet.profile_photo_url,
+          photo,
+          profile_photo_url: photo,
           medical_history: pet.medical_history || {},
           createdAt: pet.created_at,
         },
@@ -117,6 +121,8 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = pets[0];
+      const photo =
+        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
 
       // Map to frontend-expected format
       return c.json({
@@ -133,8 +139,8 @@ export function registerPetEndpoints(app: Hono) {
           gender: pet.gender,
           weight: pet.weight_kg?.toString() || '',
           weight_kg: pet.weight_kg,
-          photo: pet.profile_photo_url,
-          profile_photo_url: pet.profile_photo_url,
+          photo,
+          profile_photo_url: photo,
           microchipId: pet.microchip_id,
           healthRecords: pet.medical_history || {},
           vaccinations: pet.vaccination_records || {},
@@ -162,6 +168,8 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = pets[0];
+      const profilePhoto =
+        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
 
       // Get medical records count
       const medicalRecords = await query(
@@ -185,6 +193,8 @@ export function registerPetEndpoints(app: Hono) {
         success: true,
         pet: {
           ...pet,
+          profile_photo_url: profilePhoto,
+          photo: profilePhoto,
           medicalRecordsCount: parseInt(medicalRecords.rows[0]?.count || '0', 10),
           prescriptionsCount: parseInt(prescriptions.rows[0]?.count || '0', 10),
           bookingsCount: parseInt(bookings.rows[0]?.count || '0', 10),
