@@ -513,7 +513,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (path === 'home') setCurrentScreen('home');
     else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
-    else if (path === 'account/wallet') setCurrentScreen('wallet');
+    else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'account/settings') {

@@ -53,10 +53,11 @@ export function WhatsNewAnnouncementList({
         const IconComponent = isEmergency ? Phone : isPremium ? Star : isArticles ? BookOpen : Bot;
 
         const hubPremium = interactionMode === 'hub' && announcement.announcementType === 'premium';
+        const hubFeature = interactionMode === 'hub' && (announcement.announcementType === 'feature' || announcement.id === 'ai');
         const rowClickable =
           !isEmergency &&
           !!onRowPress &&
-          (!!announcement.ctaLink || hubPremium);
+          (!!announcement.ctaLink || hubPremium || hubFeature);
 
         return (
           <div

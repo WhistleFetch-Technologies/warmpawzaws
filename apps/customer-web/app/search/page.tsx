@@ -2,6 +2,7 @@
 
 import React, { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
@@ -62,7 +63,7 @@ function SearchContent() {
       performSearch();
       setShowVendorServices(false);
     }
-  }, [category, vendorIdParam]);
+  }, [query, category, vendorIdParam]);
 
   const loadVendorServices = async (vendorId: string) => {
     try {
@@ -102,37 +103,43 @@ function SearchContent() {
   };
 
   const performSearch = async () => {
+    if (!query?.trim() && !category) {
+      setResults([]);
+      setError(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
 
       const params = new URLSearchParams();
-      if (query) params.append('q', query);
+      if (query?.trim()) params.append('q', query.trim());
       if (category) params.append('category', category);
 
-      const response = await apiClient.get<any>(`/search/universal?${params.toString()}`);
+      // Backend exposes GET /search (not /search/universal)
+      const response = await apiClient.get<any>(`/search?${params.toString()}`);
       
-      // Combine vendors and services into results
+      // Map backend response (camelCase: businessName, rating, etc.)
       const vendors = (response.vendors || []).map((v: any) => ({
         id: v.id,
         type: 'vendor' as const,
-        name: v.business_name,
-        category: v.category,
-        rating: parseFloat(v.avg_rating) || 0,
-        reviewCount: v.review_count || 0,
-        city: v.city,
-        imageUrl: v.profile_image,
+        name: v.businessName ?? v.business_name ?? '',
+        category: v.category ?? '',
+        rating: parseFloat(v.rating ?? v.avg_rating) || 0,
+        reviewCount: v.review_count ?? v.completedBookings ?? 0,
+        city: v.city ?? '',
+        imageUrl: v.profile_image ?? v.photoUrl,
       }));
 
       const services = (response.services || []).map((s: any) => ({
         id: s.id,
         type: 'service' as const,
-        name: s.service_name,
-        category: s.category,
+        name: s.serviceName ?? s.service_name ?? '',
+        category: s.category ?? '',
         rating: 0,
         reviewCount: 0,
-        city: s.city,
-        price: parseFloat(s.base_price),
+        city: s.city ?? '',
+        price: parseFloat(s.price ?? s.base_price) || undefined,
         imageUrl: s.image_url,
       }));
 
@@ -185,8 +192,9 @@ function SearchContent() {
             </div>
             <button
               type="submit"
-              className="px-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition"
+              className="px-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition flex items-center justify-center gap-2 font-medium"
             >
+              <Search className="w-5 h-5" />
               Search
             </button>
           </form>
