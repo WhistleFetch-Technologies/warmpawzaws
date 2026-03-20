@@ -1184,22 +1184,56 @@ class DeleteVendorHandler extends BaseHandler {
         }
       );
 
-      // 2. Soft delete the associated vendor_identity record (if exists)
-      // Find vendor_identity by vendor_id or by phone
-      let vendorIdentityRecords = [];
+      // 2. Soft delete ALL associated vendor_identity records
+      // ✅ CRITICAL FIX: Find ALL vendor_identity records by vendor_id, vendor_identity_id, or phone
+      let vendorIdentityRecords: any[] = [];
       
-      if (vendor.vendor_identity_id) {
-        vendorIdentityRecords = await select('vendor_identity', { id: vendor.vendor_identity_id });
-      }
-      
-      // If not found by vendor_identity_id, try by phone
-      if (vendorIdentityRecords.length === 0 && vendor.phone) {
-        vendorIdentityRecords = await select('vendor_identity', { phone: vendor.phone });
+      // First, find by vendor_id (most important - catches all related identities)
+      if (vendorId) {
+        const byVendorId = await select('vendor_identity', { vendor_id: vendorId });
+        vendorIdentityRecords.push(...byVendorId);
       }
 
+      // Also check by vendor_identity_id if exists
+      if (vendor.vendor_identity_id) {
+        const byIdentityId = await select('vendor_identity', { id: vendor.vendor_identity_id });
+        // Add only if not already in the array
+        for (const vi of byIdentityId) {
+          if (!vendorIdentityRecords.find((v: any) => v.id === vi.id)) {
+            vendorIdentityRecords.push(vi);
+          }
+        }
+      }
+
+      // Also check by phone (in case vendor_id wasn't set)
+      if (vendor.phone) {
+        const byPhone = await select('vendor_identity', { phone: vendor.phone });
+        // Filter out already deleted ones and add only active ones
+        const activeByPhone = byPhone.filter((vi: any) => 
+          vi.is_deleted !== true && 
+          vi.is_deleted !== 't' &&
+          !(typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true')
+        );
+        // Add only if not already in the array
+        for (const vi of activeByPhone) {
+          if (!vendorIdentityRecords.find((v: any) => v.id === vi.id)) {
+            vendorIdentityRecords.push(vi);
+          }
+        }
+      }
+
+      // Remove duplicates based on id
+      const uniqueRecords = vendorIdentityRecords.filter((vi: any, index: number, self: any[]) =>
+        index === self.findIndex((v: any) => v.id === vi.id)
+      );
+
       // Update all matching vendor_identity records
-      for (const vi of vendorIdentityRecords) {
-        if (vi.is_deleted !== true) {
+      for (const vi of uniqueRecords) {
+        const isDeleted = vi.is_deleted === true || 
+          vi.is_deleted === 't' ||
+          (typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true');
+        
+        if (!isDeleted) {
           await update(
             'vendor_identity',
             { id: vi.id },
@@ -1215,7 +1249,12 @@ class DeleteVendorHandler extends BaseHandler {
               }
             }
           );
+          console.log(`✅ [DELETE-VENDOR] Marked vendor_identity ${vi.id} as deleted`);
         }
+      }
+      
+      if (uniqueRecords.length > 0) {
+        console.log(`✅ [DELETE-VENDOR] Deleted ${uniqueRecords.length} vendor_identity record(s) associated with vendor ${vendorId}`);
       }
 
       // Create notification for vendor (optional, since they're deleted)
@@ -2781,10 +2820,13 @@ class CreateVendorHandler extends BaseHandler {
     try {
       const body = this.parseBody(context.event);
       
+      // ✅ CRITICAL FIX: Exclude is_deleted from body to prevent it from being set to true
+      const { is_deleted, ...safeBody } = body;
       const vendor = await insert('vendors', {
-        ...body,
+        ...safeBody,
         status: 'pending',
         is_active: false,
+        is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
         created_at: new Date().toISOString(),
       });
 

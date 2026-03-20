@@ -118,7 +118,8 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 2: services/by-style (at_center = grooming centre)
       if (groomerServices.length === 0) {
         try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming${locationParams}`);
+          const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming${locationParams}${phoneParam}`);
           const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
           if (Array.isArray(altData)) groomerServices = altData;
           else if (altData?.services) groomerServices = altData.services;

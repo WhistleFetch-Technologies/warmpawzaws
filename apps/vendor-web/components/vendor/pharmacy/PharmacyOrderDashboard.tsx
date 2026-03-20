@@ -171,9 +171,11 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
   }, [vendorId]);
 
   // Fetch active orders
+  // Includes: accepted (newly accepted), invoice_generated, payment_confirmed, preparing, dispatched
+  // Note: 'accepted' is included to show orders that were just accepted but invoice not yet generated
   const fetchActiveOrders = useCallback(async () => {
     try {
-      const response = await apiClient.get(`/pharmacy/${vendorId}/orders?status=confirmed,invoice_generated,payment_confirmed,preparing,dispatched`);
+      const response = await apiClient.get(`/pharmacy/${vendorId}/orders?status=accepted,invoice_generated,payment_confirmed,preparing,dispatched`);
       if (response && (response as any).success) {
         setActiveOrders((response as any).orders || []);
       }
@@ -254,14 +256,57 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
     }
   };
 
+  // Open invoice modal for accepted orders
+  // This allows pharmacy to generate invoice for orders that were already accepted
+  const handleOpenInvoiceModal = (order: ActiveOrder) => {
+    // Initialize invoice items from order items, or create placeholder if no items exist
+    const existingItems = (order.items || []).map((item: any) => ({
+      name: item.product_name || item.medicine_name || item.name || 'Medicine',
+      quantity: item.quantity || 1,
+      price: item.unit_price || item.price || 0,
+    }));
+
+    // If no items exist, add a placeholder item for the pharmacy to fill
+    if (existingItems.length === 0) {
+      existingItems.push({
+        name: 'Medicine',
+        quantity: 1,
+        price: 0,
+      });
+    }
+
+    setInvoiceItems(existingItems);
+    setSelectedOrder(order as any);
+    setShowInvoiceModal(true);
+  };
+
   // Generate invoice (proforma: subtotal + delivery + platform + convenience)
+  // Works with both IncomingOrder (when accepting) and ActiveOrder (when generating invoice for accepted orders)
   const handleGenerateInvoice = async () => {
     if (!selectedOrder) return;
 
-    const deliveryFee = (selectedOrder as IncomingOrder).delivery_fee || 40;
+    // Get order ID - works for both IncomingOrder (order_id) and ActiveOrder (id)
+    const orderId = (selectedOrder as any).order_id || (selectedOrder as any).id;
+    if (!orderId) {
+      toast.error('Order ID not found');
+      return;
+    }
+
+    // Validate invoice items
+    if (invoiceItems.length === 0) {
+      toast.error('Please add at least one item to the invoice');
+      return;
+    }
+
+    // Validate that all items have prices
+    const itemsWithoutPrice = invoiceItems.filter(item => !item.price || item.price <= 0);
+    if (itemsWithoutPrice.length > 0) {
+      toast.error('Please set prices for all items');
+      return;
+    }
 
     try {
-      const response = await apiClient.post(`/pharmacy/orders/${(selectedOrder as IncomingOrder).order_id}/invoice`, {
+      const response = await apiClient.post(`/pharmacy/orders/${orderId}/invoice`, {
         invoiceItems: invoiceItems.map((i) => ({
           name: i.name,
           quantity: i.quantity,
@@ -272,7 +317,9 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
       if (response && (response as any).success) {
         setShowInvoiceModal(false);
         setSelectedOrder(null);
+        setInvoiceItems([]);
         await fetchActiveOrders();
+        await fetchIncomingOrders(); // Refresh incoming orders in case status changed
         toast.success('Invoice sent to customer');
       }
     } catch (error: any) {
@@ -721,6 +768,17 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
                         Total: ₹{order.total_amount || 0}
                       </div>
 
+                      {/* Generate Invoice button for accepted orders */}
+                      {order.status === 'accepted' && (
+                        <button
+                          onClick={() => handleOpenInvoiceModal(order)}
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                        >
+                          {Icons.receipt}
+                          <span className="text-sm font-medium">Generate Invoice</span>
+                        </button>
+                      )}
+
                       {order.status === 'payment_confirmed' && (
                         <button
                           onClick={() => handleDispatchOrder(order.id)}
@@ -793,57 +851,136 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
                 {Icons.receipt}
                 Generate Invoice
               </h2>
-              <p className="text-sm text-slate-500">Order {(selectedOrder as IncomingOrder).order_number}</p>
+              <p className="text-sm text-slate-500">
+                Order {(selectedOrder as any).order_number || (selectedOrder as any).order_id?.slice(0, 8) || 'N/A'}
+              </p>
             </div>
 
             <div className="p-4 space-y-4">
-              {invoiceItems.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-700">{item.name}</p>
-                    <p className="text-xs text-slate-500">Qty: {item.quantity}</p>
-                  </div>
-                  <div className="w-32">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+              {invoiceItems.map((item, idx) => {
+                const itemPrice = parseFloat(String(item.price || 0)) || 0;
+                const itemQuantity = parseInt(String(item.quantity || 1)) || 1;
+                const itemTotal = itemPrice * itemQuantity;
+                
+                return (
+                  <div key={idx} className="flex items-center gap-4 p-3 border border-slate-200 rounded-lg">
+                    <div className="flex-1 space-y-2">
                       <input
-                        type="number"
-                        value={item.price}
+                        type="text"
+                        value={item.name}
                         onChange={(e) => {
                           const newItems = [...invoiceItems];
-                          newItems[idx].price = parseFloat(e.target.value) || 0;
+                          newItems[idx].name = e.target.value;
                           setInvoiceItems(newItems);
                         }}
-                        className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-right"
-                        placeholder="0"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                        placeholder="Medicine name"
                       />
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-500">Qty:</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity || 1}
+                          onChange={(e) => {
+                            const newItems = [...invoiceItems];
+                            const qty = parseInt(e.target.value, 10);
+                            newItems[idx].quantity = (isNaN(qty) || qty < 1) ? 1 : qty;
+                            setInvoiceItems(newItems);
+                          }}
+                          className="w-20 px-2 py-1 border border-slate-200 rounded text-sm"
+                        />
+                        <span className="text-xs text-slate-400">×</span>
+                        <span className="text-xs text-slate-500">₹{itemPrice.toFixed(2)}</span>
+                        <span className="text-xs text-slate-400">=</span>
+                        <span className="text-xs font-medium text-slate-700">₹{itemTotal.toFixed(2)}</span>
+                      </div>
                     </div>
+                    <div className="w-32">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.price || 0}
+                          onChange={(e) => {
+                            const newItems = [...invoiceItems];
+                            const price = parseFloat(e.target.value);
+                            newItems[idx].price = (isNaN(price) || price < 0) ? 0 : price;
+                            setInvoiceItems(newItems);
+                          }}
+                          className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-right"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newItems = invoiceItems.filter((_, i) => i !== idx);
+                        setInvoiceItems(newItems);
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Remove item"
+                    >
+                      {Icons.x}
+                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+
+              {/* Add Item Button */}
+              <button
+                onClick={() => {
+                  setInvoiceItems([...invoiceItems, { name: 'Medicine', quantity: 1, price: 0 }]);
+                }}
+                className="w-full py-2 border-2 border-dashed border-slate-300 rounded-lg text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
+              >
+                <span className="text-lg">+</span>
+                <span className="text-sm font-medium">Add Item</span>
+              </button>
 
               <div className="pt-4 border-t border-slate-100 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Subtotal</span>
-                  <span className="text-slate-700">₹{invoiceItems.reduce((sum, i) => sum + (i.price * i.quantity), 0)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Tax (5%)</span>
-                  <span className="text-slate-700">₹{Math.round(invoiceItems.reduce((sum, i) => sum + (i.price * i.quantity), 0) * 0.05)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Delivery Fee</span>
-                  <span className="text-slate-700">₹{(selectedOrder as IncomingOrder).delivery_fee || 40}</span>
-                </div>
-                <div className="flex justify-between font-semibold text-lg pt-2 border-t border-slate-100">
-                  <span className="text-slate-800">Total</span>
-                  <span className="text-slate-800">
-                    ₹{Math.round(
-                      invoiceItems.reduce((sum, i) => sum + (i.price * i.quantity), 0) * 1.05 +
-                      ((selectedOrder as IncomingOrder).delivery_fee || 40)
-                    )}
-                  </span>
-                </div>
+                {(() => {
+                  // Calculate values safely, excluding items with zero price or quantity
+                  // Only include items that have both a valid price (> 0) and quantity (> 0)
+                  const validItems = invoiceItems.filter(i => {
+                    const price = parseFloat(String(i.price || 0)) || 0;
+                    const quantity = parseInt(String(i.quantity || 0)) || 0;
+                    return price > 0 && quantity > 0;
+                  });
+                  
+                  const subtotal = validItems.reduce((sum, i) => {
+                    const price = parseFloat(String(i.price || 0)) || 0;
+                    const quantity = parseInt(String(i.quantity || 1)) || 1;
+                    return sum + (price * quantity);
+                  }, 0);
+                  
+                  const tax = subtotal * 0.05;
+                  const deliveryFee = parseFloat(String((selectedOrder as any).delivery_fee || 40)) || 40;
+                  const total = subtotal + tax + deliveryFee;
+                  
+                  return (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Subtotal</span>
+                        <span className="text-slate-700">₹{subtotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Tax (5%)</span>
+                        <span className="text-slate-700">₹{tax.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Delivery Fee</span>
+                        <span className="text-slate-700">₹{deliveryFee.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold text-lg pt-2 border-t border-slate-100">
+                        <span className="text-slate-800">Total</span>
+                        <span className="text-slate-800">₹{total.toFixed(2)}</span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 

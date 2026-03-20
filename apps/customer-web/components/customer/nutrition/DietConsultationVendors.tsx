@@ -54,8 +54,9 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
       }
 
       // Fetch vendors with tele style (not services)
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=tele&category=nutritionist&roleId=nutritionist${locationParams}`
+        `/customer/services/by-style?style=tele&category=nutritionist&roleId=nutritionist${locationParams}${phoneParam}`
       ) as any;
       if (response.success && response.providers) {
         // Extract vendors from providers (ignore services for now)

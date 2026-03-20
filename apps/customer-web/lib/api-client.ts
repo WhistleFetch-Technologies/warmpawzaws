@@ -269,7 +269,24 @@ export class ApiClient {
     
     // Fix: Normalize URL to avoid double slashes
     const base = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
-    const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+    let path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+    
+    // ✅ Auto-add phone parameter to /customer/services/by-style if not present
+    if (typeof window !== 'undefined' && path.includes('/customer/services/by-style')) {
+      // Check if phone is already in query string
+      const hasPhone = path.includes('phone=') || path.includes('customerPhone=');
+      
+      if (!hasPhone) {
+        // Try to get phone from localStorage
+        const phone = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+        if (phone && phone.length >= 10) {
+          // Append phone parameter to the endpoint
+          const separator = path.includes('?') ? '&' : '?';
+          path = `${path}${separator}phone=${encodeURIComponent(phone)}`;
+        }
+      }
+    }
+    
     const url = `${base}${path}`;
     let token = this.getAuthToken();
 

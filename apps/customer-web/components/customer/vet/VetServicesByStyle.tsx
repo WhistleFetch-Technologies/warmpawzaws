@@ -107,8 +107,9 @@ export function VetServicesByStyle({
     try {
       setLoading(true);
       
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
       ) as any;
 
       if (response.success) {
@@ -130,72 +131,11 @@ export function VetServicesByStyle({
           );
         }
         
-        // ✅ FIX: If primary endpoint returns providers, use them and exit
-        if (providerData.length > 0) {
+        // Set providers from primary endpoint
           setProviders(providerData);
           console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
-          return;
-        }
-        
-        console.log(`⚠️ [Vet] Primary endpoint returned 0 providers, trying fallback...`);
-      }
-      
-      // Try fallback endpoint (also when primary returns 0 providers)
-      try {
-        const fallbackResponse = await apiClient.get(
-          `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}`
-        ) as any;
-        
-        const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-        const vendorMap = new Map();
-        
-        servicesData.forEach((service: any) => {
-          const vendorId = service.vendorId || service.id;
-          if (!vendorMap.has(vendorId)) {
-            vendorMap.set(vendorId, {
-              providerId: vendorId,
-              providerType: 'vendor',
-              vendorId: vendorId,
-              name: service.vendorName || service.businessName || service.name || 'Veterinarian',
-              rating: Number(service.vendorRating || service.rating || 4.5),
-              reviewCount: service.vendorReviewCount || service.reviewsCount || 0,
-              distance: service.distance || null,
-              services: []
-            });
-          }
-          
-          const provider = vendorMap.get(vendorId);
-          if (service.serviceId || service.id) {
-            provider.services.push({
-              id: service.serviceId || service.id,
-              serviceId: service.serviceId || service.id,
-              name: service.serviceName || service.name || 'Vet Service',
-              price: service.price || 499,
-              originalPrice: service.originalPrice || service.basePrice || service.price || 499, // ✅ FIX GAP-7.1
-              vendorDiscount: service.vendorDiscount || service.discount || service.discountPercentage, // ✅ FIX GAP-7.1
-              duration: service.duration || 30,
-              description: service.description,
-              category: service.category,
-              isPackage: !!(service.isPackage ?? (service as any).metadata?.isPackage),
-            });
-          }
-        });
-        
-        let providersList = Array.from(vendorMap.values());
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          providersList = providersList.filter(p => 
-            p.providerId === vendorId || 
-            p.vendorId === vendorId || 
-            p.staffId === vendorId
-          );
-        }
-        
-        setProviders(providersList);
-        console.log(`✅ [Vet] Loaded ${providersList.length} provider${vendorId ? ' (filtered)' : 's'} from fallback endpoint`);
-      } catch (fallbackError) {
-        console.error('❌ [Vet] Fallback endpoint also failed:', fallbackError);
+      } else {
+        console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
         setProviders([]);
       }
     } finally {

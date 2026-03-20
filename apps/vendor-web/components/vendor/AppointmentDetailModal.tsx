@@ -148,6 +148,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [otpAction, setOtpAction] = useState<'start' | 'complete' | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  
+  // Address details from start-travel response (ensures we always have the latest address)
+  const [destinationAddressDetails, setDestinationAddressDetails] = useState<any>(null);
 
   useEffect(() => {
     loadAppointmentDetails();
@@ -225,10 +228,64 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       }
       
       // Map backend response to frontend Booking interface
+      // ✅ FIX: Extract petId from multiple sources (booking object, pet object, or fetch by name)
+      const petIdFromBooking = rawBooking.petId || rawBooking.pet_id;
+      const petIdFromPetObject = data.pet?.id;
+      let finalPetId = petIdFromBooking || petIdFromPetObject;
+      
+      // ✅ FIX: If petId is still missing but we have customerId and petName, fetch it
+      if (!finalPetId && (rawBooking.customerId || rawBooking.customer_id) && rawBooking.petName) {
+        try {
+          const customerId = rawBooking.customerId || rawBooking.customer_id;
+          const petName = rawBooking.petName;
+          console.log('[AppointmentDetailModal] Fetching pet by customerId and petName:', { customerId, petName });
+          
+          const petsResponse = await apiClient.get(`/pets/customer/${customerId}`) as any;
+          if (petsResponse?.pets && Array.isArray(petsResponse.pets)) {
+            // First try exact name match
+            let matchingPet = petsResponse.pets.find((p: any) => 
+              p.name?.toLowerCase().trim() === petName.toLowerCase().trim()
+            );
+            
+            // ✅ FIX: If no exact match but only one pet exists, use that pet
+            // This handles cases where the booking has incorrect pet name but customer has only one pet
+            if (!matchingPet && petsResponse.pets.length === 1) {
+              matchingPet = petsResponse.pets[0];
+              console.log('[AppointmentDetailModal] ⚠️ Pet name mismatch, but using single pet as fallback:', {
+                bookingPetName: petName,
+                actualPetName: matchingPet.name,
+                petId: matchingPet.id
+              });
+            }
+            
+            if (matchingPet?.id) {
+              finalPetId = matchingPet.id;
+              console.log('[AppointmentDetailModal] ✅ Found petId:', { 
+                petId: finalPetId, 
+                bookingPetName: petName,
+                actualPetName: matchingPet.name
+              });
+            } else {
+              console.warn('[AppointmentDetailModal] ⚠️ Pet not found by name:', { petName, availablePets: petsResponse.pets.map((p: any) => p.name) });
+            }
+          }
+        } catch (error) {
+          console.warn('[AppointmentDetailModal] Could not fetch pet by name:', error);
+        }
+      }
+      
+      console.log('[AppointmentDetailModal] PetId extraction:', {
+        petIdFromBooking,
+        petIdFromPetObject,
+        finalPetId,
+        petObject: data.pet,
+        rawBooking: { petId: rawBooking.petId, pet_id: rawBooking.pet_id, petName: rawBooking.petName, customerId: rawBooking.customerId || rawBooking.customer_id }
+      });
+      
       const mappedBooking: Booking = {
         id: rawBooking.id || rawBooking.bookingId,
-        petId: rawBooking.petId,
-        customerId: rawBooking.customerId, // ✅ For prescription creation
+        petId: finalPetId, // ✅ FIX: Get petId from booking or pet object
+        customerId: rawBooking.customerId || rawBooking.customer_id, // ✅ FIX: Handle both camelCase and snake_case
         // ✅ FIX: Map bookingDate/bookingTime to date/time
         date: rawBooking.bookingDate || rawBooking.date || new Date().toISOString(),
         time: formatBookingTime(rawBooking.bookingTime || rawBooking.time) || '09:00 AM',
@@ -762,12 +819,30 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             }
             
             // ✅ Update booking location with full address from start-travel response
-            if (trackingResponse?.destinationAddressDetails && booking) {
-              setBooking({
-                ...booking,
-                location: trackingResponse.destinationAddress || booking.location,
-                customerAddressDetails: trackingResponse.destinationAddressDetails,
+            if (trackingResponse?.destinationAddressDetails) {
+              console.log('[START-TRAVEL] Updating booking with address details:', {
+                destinationAddress: trackingResponse.destinationAddress,
+                destinationAddressDetails: trackingResponse.destinationAddressDetails,
               });
+              // Store in separate state for immediate availability
+              setDestinationAddressDetails(trackingResponse.destinationAddressDetails);
+              // Also update booking state
+              if (booking) {
+                setBooking({
+                  ...booking,
+                  location: trackingResponse.destinationAddress || booking.location,
+                  customerAddressDetails: trackingResponse.destinationAddressDetails,
+                });
+              }
+            } else if (trackingResponse?.destinationAddress) {
+              // Fallback: Update location even if details aren't available
+              console.log('[START-TRAVEL] Updating booking location only:', trackingResponse.destinationAddress);
+              if (booking) {
+                setBooking({
+                  ...booking,
+                  location: trackingResponse.destinationAddress,
+                });
+              }
             }
             
             // Start watching position (use ref in callback so session ID is available immediately)
@@ -1899,11 +1974,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   Video Call
                 </button>
               )}
-              {/* Home style: Start Travel, Mark Arrived, etc. (all providers) - mounted near Chat */}
+              {/* Home style: Start Travel, etc. (all providers) - mounted near Chat */}
               {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <>
-                  {/* Phase 1: Start Travel (confirmed or pending = appointment received) */}
-                  {(booking.status === 'confirmed' || booking.status === 'pending') && (
+                  {/* Start Travel - Show for confirmed, pending, traveling, or vendor_on_way (allows restarting after canceling tracking modal) */}
+                  {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') && (
                     <button
                       onClick={handleStartTravel}
                       disabled={processing}
@@ -1911,18 +1986,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     >
                       <MapPin className="w-4 h-4" />
                       Start Travel
-                    </button>
-                  )}
-
-                  {/* Phase 2: Arrived (If traveling/vendor_on_way/in_progress) */}
-                  {(booking.status === 'traveling' || booking.status === 'vendor_on_way' || (booking.status === 'in_progress' && !(booking as any).arrived)) && (
-                    <button
-                      onClick={handleArrived}
-                      disabled={processing}
-                      className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Mark Arrived
                     </button>
                   )}
 
@@ -1973,7 +2036,84 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setShowMedicalHistory(true)}
+                    onClick={async () => {
+                      console.log('[Medical History] Button clicked, booking data:', {
+                        petId: booking?.petId,
+                        pet_id: (booking as any)?.pet_id,
+                        customerId: booking?.customerId,
+                        customer_id: (booking as any)?.customer_id,
+                        petName: booking?.petName,
+                        bookingId: bookingId,
+                      });
+                      
+                      let petIdToUse = booking?.petId || (booking as any)?.pet_id;
+                      
+                      // ✅ FIX: If petId is missing, try to fetch it by customerId and petName
+                      if (!petIdToUse && booking?.customerId && booking?.petName) {
+                        try {
+                          console.log('[Medical History] Attempting to fetch pet by customerId and petName:', {
+                            customerId: booking.customerId,
+                            petName: booking.petName
+                          });
+                          
+                          const petsResponse = await apiClient.get(`/pets/customer/${booking.customerId}`) as any;
+                          console.log('[Medical History] Pets response:', petsResponse);
+                          
+                          if (petsResponse?.pets && Array.isArray(petsResponse.pets)) {
+                            // First try exact name match
+                            let matchingPet = petsResponse.pets.find((p: any) => 
+                              p.name?.toLowerCase().trim() === booking.petName?.toLowerCase().trim()
+                            );
+                            
+                            // ✅ FIX: If no exact match but only one pet exists, use that pet
+                            // This handles cases where the booking has incorrect pet name but customer has only one pet
+                            if (!matchingPet && petsResponse.pets.length === 1) {
+                              matchingPet = petsResponse.pets[0];
+                              console.log('[Medical History] ⚠️ Pet name mismatch, but using single pet as fallback:', {
+                                bookingPetName: booking.petName,
+                                actualPetName: matchingPet.name,
+                                petId: matchingPet.id
+                              });
+                            }
+                            
+                            if (matchingPet?.id) {
+                              petIdToUse = matchingPet.id;
+                              console.log('[Medical History] ✅ Found petId:', { 
+                                petId: petIdToUse, 
+                                bookingPetName: booking.petName,
+                                actualPetName: matchingPet.name
+                              });
+                              
+                              // Update booking state with the found petId
+                              setBooking((prev) => prev ? { ...prev, petId: petIdToUse } : null);
+                            } else {
+                              console.warn('[Medical History] ⚠️ Pet not found by name:', { 
+                                petName: booking.petName, 
+                                availablePets: petsResponse.pets.map((p: any) => ({ id: p.id, name: p.name }))
+                              });
+                              toast.error(`Pet "${booking.petName}" not found in customer's pets. Available pets: ${petsResponse.pets.map((p: any) => p.name).join(', ') || 'none'}`);
+                              return;
+                            }
+                          } else {
+                            console.warn('[Medical History] ⚠️ No pets array in response:', petsResponse);
+                            toast.error('Could not fetch customer pets. Please try again.');
+                            return;
+                          }
+                        } catch (error: any) {
+                          console.error('[Medical History] Error fetching pet by name:', error);
+                          toast.error(`Failed to fetch pet information: ${error.message || 'Unknown error'}`);
+                          return;
+                        }
+                      }
+                      
+                      if (!petIdToUse) {
+                        console.warn('[Medical History] No petId found and cannot fetch it');
+                        toast.error('Pet information not available. Cannot open medical history.');
+                        return;
+                      }
+                      
+                      setShowMedicalHistory(true);
+                    }}
                     className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
@@ -2007,10 +2147,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       </div>
 
       {/* Medical History Modal */}
-      {showMedicalHistory && booking.petId && (
+      {showMedicalHistory && (booking?.petId || (booking as any)?.pet_id) && (
         <MedicalHistoryModal
-          petId={booking.petId}
-          petName={(booking as any).petName || 'Pet'}
+          petId={booking?.petId || (booking as any)?.pet_id}
+          petName={(booking as any)?.petName || booking?.petName || 'Pet'}
           bookingId={bookingId}
           vendorId={vendorData?.id || ''}
           onClose={() => setShowMedicalHistory(false)}
@@ -2270,34 +2410,47 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {booking && (
                 <div className="bg-blue-50 rounded-xl p-3">
                   <span className="text-xs font-medium text-blue-600">Destination</span>
-                  {(booking as any).customerAddressDetails ? (
+                  {(destinationAddressDetails || (booking as any).customerAddressDetails) ? (
                     <div className="mt-1 space-y-1">
-                      {(booking as any).customerAddressDetails.apartmentName && (
-                        <p className="text-sm font-semibold text-gray-900">{(booking as any).customerAddressDetails.apartmentName}</p>
-                      )}
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-700">
-                        {(booking as any).customerAddressDetails.flatNo && (
-                          <span>Flat {(booking as any).customerAddressDetails.flatNo}</span>
-                        )}
-                        {(booking as any).customerAddressDetails.houseNo && (
-                          <span>House {(booking as any).customerAddressDetails.houseNo}</span>
-                        )}
-                        {(booking as any).customerAddressDetails.floor && (
-                          <span>Floor {(booking as any).customerAddressDetails.floor}</span>
-                        )}
-                      </div>
-                      {(booking as any).customerAddressDetails.streetName && (
-                        <p className="text-xs text-gray-700">{(booking as any).customerAddressDetails.streetName}</p>
-                      )}
-                      <p className="text-xs text-gray-600">
-                        {[(booking as any).customerAddressDetails.addressLine1, (booking as any).customerAddressDetails.addressLine2].filter(Boolean).join(', ')}
-                      </p>
-                      {(booking as any).customerAddressDetails.landmark && (
-                        <p className="text-xs text-gray-500">Near {(booking as any).customerAddressDetails.landmark}</p>
-                      )}
-                      <p className="text-xs text-gray-500">
-                        {[(booking as any).customerAddressDetails.city, (booking as any).customerAddressDetails.state, (booking as any).customerAddressDetails.pincode].filter(Boolean).join(', ')}
-                      </p>
+                      {(() => {
+                        const addrDetails = destinationAddressDetails || (booking as any).customerAddressDetails;
+                        return (
+                          <>
+                            {addrDetails.apartmentName && (
+                              <p className="text-sm font-semibold text-gray-900">{addrDetails.apartmentName}</p>
+                            )}
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-700">
+                              {addrDetails.flatNo && (
+                                <span className="font-medium">Flat {addrDetails.flatNo}</span>
+                              )}
+                              {addrDetails.houseNo && (
+                                <span className="font-medium">House {addrDetails.houseNo}</span>
+                              )}
+                              {addrDetails.floor && (
+                                <span className="font-medium">Floor {addrDetails.floor}</span>
+                              )}
+                            </div>
+                            {addrDetails.streetName && (
+                              <p className="text-xs text-gray-700">{addrDetails.streetName}</p>
+                            )}
+                            <p className="text-xs text-gray-600">
+                              {[addrDetails.addressLine1, addrDetails.addressLine2].filter(Boolean).join(', ')}
+                            </p>
+                            {addrDetails.landmark && (
+                              <p className="text-xs text-gray-500">Near {addrDetails.landmark}</p>
+                            )}
+                            <p className="text-xs text-gray-500">
+                              {[addrDetails.city, addrDetails.state, addrDetails.pincode].filter(Boolean).join(', ')}
+                            </p>
+                            {/* Fallback: Show formatted address if individual fields are missing */}
+                            {addrDetails.formattedAddress && 
+                             !addrDetails.flatNo && 
+                             !addrDetails.addressLine1 && (
+                              <p className="text-xs text-gray-600 mt-1">{addrDetails.formattedAddress}</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <p className="text-sm font-medium text-gray-900 mt-1 break-words">{booking.location || booking.customerName}</p>

@@ -69,6 +69,7 @@ async function resolveOrCreateVendorIdForBank(vendorId: string): Promise<{ actua
     pincode: (payload.pin as string) || (payload.pincode as string) || '',
     status: 'active',
     is_active: true,
+    is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });

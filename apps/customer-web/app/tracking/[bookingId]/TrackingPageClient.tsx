@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { Key, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { copyTextToClipboard } from '@/lib/shareUtils';
+import { toast } from 'sonner';
 
 interface TrackingData {
   sessionId?: string;
@@ -99,6 +102,9 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   const [isPolling, setIsPolling] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [correctedDestination, setCorrectedDestination] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [bookingData, setBookingData] = useState<any>(null);
+  const [showOTP, setShowOTP] = useState(false);
+  const [copiedOTP, setCopiedOTP] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapInstanceRef = useRef<any>(null);
@@ -138,6 +144,77 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
       petName: data.petName || data.pet_name,
       startedAt: data.startedAt || data.started_at,
     };
+  };
+
+  // Fetch booking data for OTP
+  useEffect(() => {
+    if (!bookingId) return;
+    
+    const fetchBookingData = async () => {
+      try {
+        const response = await apiClient.get<any>(`/customer/bookings/${bookingId}`);
+        console.log('[TrackingPage] Booking data response:', response);
+        
+        // Handle different response structures
+        let booking = null;
+        if (response?.booking) {
+          booking = response.booking;
+        } else if (response?.data?.booking) {
+          booking = response.data.booking;
+        } else if (Array.isArray(response) && response.length > 0) {
+          booking = response[0];
+        } else if (response && typeof response === 'object' && response.id) {
+          booking = response;
+        }
+        
+        if (booking) {
+          // Check all possible OTP field names
+          const otpCode = booking.otp_code || booking.otpCode || booking.otp || booking.otp_code_value;
+          const completionOTP = booking.completion_otp || booking.completionOTP || booking.completion_otp_code;
+          const startOTP = booking.start_otp || booking.startOTP || booking.start_otp_code;
+          const otpVerified = booking.otp_verified || booking.otpVerified || booking.otp_verified_at || false;
+          
+          const bookingDataToSet = {
+            otpCode,
+            completionOTP,
+            startOTP,
+            otpVerified: !!otpVerified,
+            serviceStyle: booking.service_style || booking.serviceStyle || booking.service_style_type,
+            serviceType: booking.service_type || booking.serviceType,
+          };
+          
+          console.log('[TrackingPage] Extracted booking data:', bookingDataToSet);
+          console.log('[TrackingPage] Raw booking fields:', {
+            otp_code: booking.otp_code,
+            otpCode: booking.otpCode,
+            otp: booking.otp,
+            completion_otp: booking.completion_otp,
+            completionOTP: booking.completionOTP,
+            start_otp: booking.start_otp,
+            startOTP: booking.startOTP,
+            otp_verified: booking.otp_verified,
+            otpVerified: booking.otpVerified,
+          });
+          console.log('[TrackingPage] Has OTP?', !!(bookingDataToSet.otpCode || bookingDataToSet.completionOTP || bookingDataToSet.startOTP));
+          
+          setBookingData(bookingDataToSet);
+        } else {
+          console.warn('[TrackingPage] Could not extract booking from response:', response);
+        }
+      } catch (error) {
+        console.error('[TrackingPage] Error fetching booking data for OTP:', error);
+      }
+    };
+    
+    fetchBookingData();
+  }, [bookingId]);
+
+  // Helper function to copy OTP
+  const copyOTP = (otp: string) => {
+    copyTextToClipboard(otp);
+    setCopiedOTP(true);
+    setTimeout(() => setCopiedOTP(false), 2000);
+    toast.success('OTP copied to clipboard');
   };
 
   // ✅ Polling-based GPS tracking (SSE not supported on Lambda)
@@ -1060,6 +1137,84 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                 <span className="text-xl">🎉</span>
                 Your provider has arrived!
               </p>
+            </div>
+          )}
+
+          {/* ✅ OTP Display for arrived/in_progress bookings */}
+          {(() => {
+            const hasOTP = !!(bookingData?.otpCode || bookingData?.completionOTP || bookingData?.startOTP);
+            const correctStatus = tracking.status === 'arrived' || tracking.status === 'in_progress';
+            const notVerified = !bookingData?.otpVerified;
+            
+            // Debug logging
+            if (tracking.status === 'arrived' || tracking.status === 'in_progress') {
+              console.log('[TrackingPage] OTP Display Check:', {
+                hasOTP,
+                correctStatus,
+                notVerified,
+                bookingData,
+                trackingStatus: tracking.status,
+                shouldShow: hasOTP && correctStatus && notVerified
+              });
+            }
+            
+            return hasOTP && correctStatus && notVerified;
+          })() && (
+            <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-orange-600" />
+                  <span className="text-sm font-medium text-orange-800">
+                    {bookingData?.serviceStyle === 'at_home' || bookingData?.serviceType === 'at_home'
+                      ? 'Service OTP'
+                      : bookingData?.serviceStyle === 'at_center' || bookingData?.serviceType === 'at_center'
+                        ? 'Check-in OTP'
+                        : 'Booking OTP'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-lg font-bold text-orange-600 tracking-wider">
+                    {showOTP
+                      ? (bookingData?.otpCode || bookingData?.completionOTP || bookingData?.startOTP)
+                      : '****'}
+                  </span>
+                  <button
+                    onClick={() => setShowOTP(!showOTP)}
+                    className="p-1.5 hover:bg-orange-100 rounded-lg transition"
+                  >
+                    {showOTP ? (
+                      <EyeOff className="w-4 h-4 text-orange-600" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-orange-600" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => copyOTP((bookingData?.otpCode || bookingData?.completionOTP || bookingData?.startOTP)!)}
+                    className="p-1.5 hover:bg-orange-100 rounded-lg transition"
+                  >
+                    {copiedOTP ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-orange-600" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 mt-2 text-center">
+                {bookingData?.serviceStyle === 'at_home' || bookingData?.serviceType === 'at_home'
+                  ? 'Share this OTP with the vendor when they arrive'
+                  : bookingData?.serviceStyle === 'at_center' || bookingData?.serviceType === 'at_center'
+                    ? 'Share this OTP with the vendor at check-in'
+                    : 'Share this OTP with the vendor to complete the service'}
+              </p>
+            </div>
+          )}
+
+          {/* ✅ OTP Verified Badge */}
+          {bookingData?.otpVerified && (
+            <div className="flex items-center gap-2 bg-green-50 rounded-xl border border-green-200 p-3">
+              <Check className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-700">Check-in completed</span>
             </div>
           )}
           

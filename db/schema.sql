@@ -211,7 +211,7 @@ CREATE TABLE bookings (
     customer_id UUID NOT NULL REFERENCES customers(id),
     vendor_id UUID REFERENCES vendors(id),
     staff_id UUID REFERENCES staff(id),
-    service_id UUID NOT NULL REFERENCES services(id),
+    service_id UUID NOT NULL REFERENCES vendor_services(id),
     
     -- Booking Details
     booking_date DATE NOT NULL,

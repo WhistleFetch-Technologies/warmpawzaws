@@ -60,6 +60,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     city: initialProfile?.city || '',
     state: initialProfile?.state || '',
     pincode: (initialProfile?.pincode && initialProfile?.pincode !== '000000') ? initialProfile.pincode : '',
+    latitude: initialProfile?.latitude ?? undefined,
+    longitude: initialProfile?.longitude ?? undefined,
     description: initialProfile?.description || '',
     photo_url: initialProfile?.profile_photo_url || initialProfile?.logo_url || initialProfile?.photo_url || '',
     qualifications: initialProfile?.qualifications || '',
@@ -141,6 +143,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           city: response.vendor.city || '',
           state: response.vendor.state || '',
           pincode: (response.vendor.pincode && response.vendor.pincode !== '000000') ? response.vendor.pincode : '',
+          latitude: response.vendor.latitude ?? undefined,
+          longitude: response.vendor.longitude ?? undefined,
           description: response.vendor.description || '',
           photo_url: response.vendor.profile_photo_url || response.vendor.photo_url || response.vendor.logo_url || '',
           qualifications: response.vendor.qualifications || '',
@@ -207,6 +211,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           city: profile.city,
           state: profile.state,
           pincode: profile.pincode,
+          latitude: profile.latitude,
+          longitude: profile.longitude,
           description: profile.description,
           qualifications: profile.qualifications,
           specializations: JSON.stringify(profile.specializations), // Store as JSON array
@@ -584,13 +590,19 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                 <EnhancedAddressAutocomplete
                   value={profile.address || ''}
                   onChange={(address: string, components?: AddressComponents) => {
-                    // Update address + city, state, pincode from Places (pincode from postal_code)
+                    // Update address + city, state, pincode, and coordinates from Places
                     setProfile(prev => ({
                       ...prev,
                       address,
                       ...(components?.city !== undefined && { city: components.city ?? prev.city ?? '' }),
                       ...(components?.state !== undefined && { state: components.state ?? prev.state ?? '' }),
                       ...(components?.pincode !== undefined && { pincode: components.pincode ?? prev.pincode ?? '' }),
+                      // Extract latitude and longitude from coordinates
+                      ...(components?.coordinates?.lat != null && { latitude: components.coordinates.lat }),
+                      ...(components?.coordinates?.lng != null && { longitude: components.coordinates.lng }),
+                      // Support direct lat/lng for backward compatibility
+                      ...(components?.lat != null && !components?.coordinates?.lat && { latitude: components.lat }),
+                      ...(components?.lng != null && !components?.coordinates?.lng && { longitude: components.lng }),
                     }));
                     setHasChanges(true);
                   }}

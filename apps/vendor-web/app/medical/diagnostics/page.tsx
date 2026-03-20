@@ -416,8 +416,11 @@ export default function DiagnosticsPage() {
 
       {/* Add/Edit Test Modal - Mobile-sized */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <Card className="w-full max-w-[430px] max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
+        <div 
+          className="fixed inset-0 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.75)' }}
+        >
+          <Card className="w-full max-w-[430px] max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <button

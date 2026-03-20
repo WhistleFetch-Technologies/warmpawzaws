@@ -127,7 +127,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
 
-    // ✅ FORENSIC FIX: Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
+    //Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
     if (!body.customerId && body.customerPhone) {
       try {
         const custResult = await query(
@@ -284,10 +284,54 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     
     let service: any = null; // Initialize service variable
     
-    // PRIMARY LOOKUP: Check vendor_services by service_id first (most common case)
-    // Match the same criteria as customer clinic services endpoint:
-    // - is_enabled = true (or NULL)
-    // - publish_status = 'published'
+    // ✅ CRITICAL FIX: PRIMARY LOOKUP - Check vendor_services.id FIRST (bookings.service_id FK references vendor_services.id)
+    // Frontend now sends vendor_services.id, not services.id, so we must check id column first
+    console.log(`[BOOKING] PRIMARY: Checking if ${lookupServiceId} is a vendor_services.id (primary key)`);
+    let vendorServiceByIdResult = await query(
+      `SELECT * FROM vendor_services 
+       WHERE id = $1::uuid 
+       AND vendor_id = $2::uuid 
+       AND (is_enabled = true OR is_enabled IS NULL)
+       AND publish_status = 'published'
+       LIMIT 1`,
+      [lookupServiceId, vendorId]
+    );
+    
+    if (vendorServiceByIdResult.rows.length > 0) {
+      console.log(`[BOOKING] Found vendor_service by id (primary lookup - vendor_services.id)`);
+      service = vendorServiceByIdResult.rows[0];
+    } else {
+      // FALLBACK 1: Try vendor_services.id without publish_status check
+      console.log(`[BOOKING] Service not found with publish_status='published', trying vendor_services.id without it`);
+      vendorServiceByIdResult = await query(
+        `SELECT * FROM vendor_services 
+         WHERE id = $1::uuid 
+         AND vendor_id = $2::uuid 
+         AND (is_enabled = true OR is_enabled IS NULL)
+         LIMIT 1`,
+        [lookupServiceId, vendorId]
+      );
+      
+      if (vendorServiceByIdResult.rows.length > 0) {
+        console.log(`[BOOKING] Found vendor_service by id (without publish_status check)`);
+        service = vendorServiceByIdResult.rows[0];
+      } else {
+        // FALLBACK 2: Try vendor_services.id without any status checks
+        console.log(`[BOOKING] Service not found with status checks, trying vendor_services.id without any checks`);
+        vendorServiceByIdResult = await query(
+          `SELECT * FROM vendor_services 
+           WHERE id = $1::uuid 
+           AND vendor_id = $2::uuid 
+           LIMIT 1`,
+          [lookupServiceId, vendorId]
+        );
+        
+        if (vendorServiceByIdResult.rows.length > 0) {
+          console.log(`[BOOKING] Found vendor_service by id (no status checks)`);
+          service = vendorServiceByIdResult.rows[0];
+        } else {
+          // FALLBACK 3: Check vendor_services by service_id (legacy support for services.id)
+          console.log(`[BOOKING] Service not found by vendor_services.id, checking if it's a vendor_services.service_id (services.id reference)`);
     let vendorServicesResult = await query(
       `SELECT * FROM vendor_services 
        WHERE service_id = $1::uuid 
@@ -299,11 +343,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     );
     
     if (vendorServicesResult.rows.length > 0) {
-      console.log(`[BOOKING] Found vendor_service by service_id (primary lookup)`);
+            console.log(`[BOOKING] Found vendor_service by service_id (legacy lookup)`);
       service = vendorServicesResult.rows[0];
     } else {
-      // FALLBACK 1: Try without publish_status check
-      console.log(`[BOOKING] Service not found with publish_status='published', trying without it`);
+            // FALLBACK 4: Try service_id without publish_status
+            console.log(`[BOOKING] Service not found by service_id with publish_status, trying without it`);
       vendorServicesResult = await query(
         `SELECT * FROM vendor_services 
          WHERE service_id = $1::uuid 
@@ -317,8 +361,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         console.log(`[BOOKING] Found vendor_service by service_id (without publish_status check)`);
         service = vendorServicesResult.rows[0];
       } else {
-        // FALLBACK 2: Try without any status checks
-        console.log(`[BOOKING] Service not found with status checks, trying without any checks`);
+              // FALLBACK 5: Try service_id without any checks
+              console.log(`[BOOKING] Service not found by service_id with status checks, trying without any checks`);
         vendorServicesResult = await query(
           `SELECT * FROM vendor_services 
            WHERE service_id = $1::uuid 
@@ -331,21 +375,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           console.log(`[BOOKING] Found vendor_service by service_id (no status checks)`);
           service = vendorServicesResult.rows[0];
         } else {
-          // FALLBACK 3: Check if it's a vendor_services.id (direct lookup)
-          console.log(`[BOOKING] Service not found by service_id, checking if it's a vendor_services.id`);
-          let vendorServiceByIdResult = await query(
-            `SELECT * FROM vendor_services 
-             WHERE id = $1::uuid 
-             AND vendor_id = $2::uuid 
-             LIMIT 1`,
-            [lookupServiceId, vendorId]
-          );
-          
-          if (vendorServiceByIdResult.rows.length > 0) {
-            console.log(`[BOOKING] Found vendor_service by id (direct lookup)`);
-            service = vendorServiceByIdResult.rows[0];
-          } else {
-            // FALLBACK 4: Check base services table
+                // FALLBACK 6: Check base services table
             const services = await select('services', { id: lookupServiceId });
             console.log(`[BOOKING] Found ${services.length} services in services table`);
             let baseService = services.length > 0 ? services[0] : null;
@@ -359,6 +389,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               // Service doesn't exist in base services table either
               console.error(`[BOOKING] Service ${serviceId} not found in services table or vendor_services table`);
               return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+                }
+              }
             }
           }
         }
@@ -651,67 +683,20 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Create booking
-        // ✅ CRITICAL FIX: Foreign key constraint expects services.id (base service UUID)
-        // If service doesn't exist in services table, we need to handle custom services
+        // ✅ CRITICAL FIX: Foreign key constraint bookings_service_id_vendor_services_fkey expects vendor_services.id
+        // NOT services.id. We must use service.id (vendor_services.id) for the booking insert.
         if (!service) {
           console.error(`[BOOKING] Service object is missing. serviceId=${serviceId}`);
           throw new Error('Service object is invalid');
         }
         
-        // Check if base service exists in services table (required for foreign key)
-        const baseServiceId = service.service_id || serviceId;
-        console.log(`[BOOKING] Checking if base service ${baseServiceId} exists in services table for foreign key constraint`);
-        // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
-        const baseServicesResult = await client.query(
-          `SELECT * FROM services WHERE id = $1::uuid`,
-          [baseServiceId]
-        );
-        const baseServices = baseServicesResult.rows;
+        // ✅ FIX: Use service.id (vendor_services.id) directly for the foreign key constraint
+        // The bookings.service_id FK references vendor_services.id, not services.id
+        const finalServiceId = service.id;
+        console.log(`[BOOKING] Using service.id=${finalServiceId} (vendor_services.id) for booking insert`);
+        console.log(`[BOOKING] This matches the foreign key constraint bookings_service_id_vendor_services_fkey`);
         
-        let finalServiceId: string;
-        if (baseServices.length === 0) {
-          // Custom service - doesn't exist in services table
-          // Create service in services table for custom services to satisfy foreign key
-          console.warn(`[BOOKING] Base service ${baseServiceId} not found in services table. Creating service entry for custom service.`);
-          
-          try {
-            // ✅ CRITICAL FIX: Use SAVEPOINT to prevent transaction abort if INSERT fails
-            // In PostgreSQL, a failed query inside a transaction aborts the ENTIRE transaction
-            // even if JavaScript catches the error. SAVEPOINTs allow recovery from errors.
-            await client.query('SAVEPOINT sp_create_service');
-            await client.query(
-              `INSERT INTO services (id, name, description, category, price, duration_minutes, vendor_id, is_active, created_at, updated_at)
-               VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10)
-               ON CONFLICT (id) DO NOTHING`,
-              [
-                baseServiceId,
-                service.service_name || service.name || 'Custom Service',
-                service.custom_description || service.description || '',
-                service.category || 'custom',
-                service.price || service.custom_price || 0,
-                service.duration_minutes || service.custom_duration || 30,
-                vendorId,
-                true,
-                new Date().toISOString(),
-                new Date().toISOString(),
-              ]
-            );
-            await client.query('RELEASE SAVEPOINT sp_create_service');
-            console.log(`[BOOKING] Created service entry in services table: ${baseServiceId}`);
-          } catch (insertError: any) {
-            // ✅ CRITICAL: Rollback to savepoint to keep transaction alive
-            await client.query('ROLLBACK TO SAVEPOINT sp_create_service').catch(() => {});
-            console.warn(`[BOOKING] Failed to create service entry (may already exist): ${insertError.message}`);
-          }
-          
-          finalServiceId = baseServiceId;
-        } else {
-          // Base service exists - use it for foreign key
-          console.log(`[BOOKING] Base service ${baseServiceId} found in services table. Using it for foreign key.`);
-          finalServiceId = baseServiceId;
-        }
-        
-        console.log(`[BOOKING] Inserting booking with service_id=${finalServiceId} (for foreign key constraint)`);
+        console.log(`[BOOKING] Inserting booking with service_id=${finalServiceId} (vendor_services.id for FK constraint)`);
         
         // ✅ FIX GAP PM-1: Check for active unlimited subscription
         let subscriptionId: string | null = null;
@@ -773,7 +758,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           // Skip subscription check when already using package
           if (!isPackageBooking) {
           // Get service category for subscription matching
-          const serviceCategory = service.category || baseServices[0]?.category || null;
+          const serviceCategory = service.category || null;
           
           await client.query('SAVEPOINT sp_subscription_check');
           const activeSubscriptions = await client.query(

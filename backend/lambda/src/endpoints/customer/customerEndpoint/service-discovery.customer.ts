@@ -21,10 +21,11 @@ import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../vendor/endpoints/vendor-profile.vendor';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../vendor/endpoints/vendorProfile.vendor';
 import { taxCalculationService } from '../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../constants';
+import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../constants/helper';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -77,126 +78,7 @@ function isProductionEnvironment(): boolean {
   );
 }
 
-/**
- * ✅ FIX: Extract S3 key from pre-signed URL or full S3 URL
- * Handles various URL formats and returns the S3 key for regenerating pre-signed URLs
- */
-function extractS3KeyFromUrl(url: string | null | undefined): string | null {
-  if (!url || typeof url !== 'string') return null;
-
-  // If it's already just a key (no http/https), return as-is
-  if (!url.startsWith('http')) {
-    return url.trim();
-  }
-
-  try {
-    // If it's a pre-signed URL or full S3 URL, extract the key
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-
-    // Remove leading slash and extract key (before query params)
-    if (pathname) {
-      // Remove leading slash if present
-      const key = pathname.startsWith('/') ? pathname.substring(1) : pathname;
-      // Remove query string if present in pathname (shouldn't be, but just in case)
-      const cleanKey = key.split('?')[0].trim();
-      if (cleanKey) {
-        return cleanKey;
-      }
-    }
-  } catch (urlError) {
-    // If URL parsing fails, try to extract key manually using regex
-    try {
-      // Pattern 1: Extract from S3 URL format: https://bucket.s3.region.amazonaws.com/key
-      const s3Match = url.match(/amazonaws\.com\/([^?]+)/);
-      if (s3Match && s3Match[1]) {
-        return s3Match[1].trim();
-      }
-
-      // Pattern 2: Extract vendors/... pattern (most common)
-      const vendorsMatch = url.match(/(vendors\/[^?]+)/);
-      if (vendorsMatch && vendorsMatch[1]) {
-        return vendorsMatch[1].trim();
-      }
-
-      console.warn(`[EXTRACT-S3-KEY] Could not extract key from URL: ${url?.substring(0, 150)}`);
-    } catch (regexError) {
-      console.error(`[EXTRACT-S3-KEY] Error in regex extraction:`, regexError);
-      return null;
-    }
-  }
-
-  return null;
-}
-
-/**
- * ✅ FIX: Regenerate pre-signed URL for S3 object
- * Takes an S3 key or existing URL and returns a fresh pre-signed URL
- */
-async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
-  if (!s3KeyOrUrl) return null;
-
-  try {
-    const s3Key = extractS3KeyFromUrl(s3KeyOrUrl);
-    if (!s3Key) {
-      console.warn(`[PRESIGNED-URL] Could not extract S3 key from URL: ${s3KeyOrUrl?.substring(0, 100)}`);
-      // ✅ FIX: Return null instead of expired URL to prevent 403 errors
-      return null;
-    }
-
-    console.log(`[PRESIGNED-URL] Regenerating URL for S3 key: ${s3Key}`);
-
-    const { S3Client, GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
-    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-    const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-
-    // ✅ FIX: Verify object exists before generating presigned URL
-    try {
-      const headCommand = new HeadObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-      });
-      await s3Client.send(headCommand);
-      console.log(`[PRESIGNED-URL] Object exists in S3: ${s3Key}`);
-    } catch (headError: any) {
-      if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
-        console.error(`[PRESIGNED-URL] Object not found in S3: ${s3Key}`);
-        return null; // Return null if object doesn't exist
-      }
-      console.warn(`[PRESIGNED-URL] Error checking object existence for ${s3Key}:`, headError?.message);
-      // Continue anyway - might be a permission issue, not a missing object
-    }
-
-    const signedUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-      }),
-      { expiresIn: 604800 } // 7 days
-    );
-
-    if (!signedUrl || typeof signedUrl !== 'string' || !signedUrl.startsWith('https://')) {
-      console.error(`[PRESIGNED-URL] Invalid presigned URL generated for ${s3Key}`);
-      return null; // ✅ FIX: Return null instead of expired URL to prevent 403 errors
-    }
-
-    console.log(`[PRESIGNED-URL] Successfully regenerated URL for ${s3Key} (length: ${signedUrl.length})`);
-    return signedUrl;
-  } catch (error: any) {
-    console.error(`[PRESIGNED-URL] Error regenerating URL for ${s3KeyOrUrl?.substring(0, 100)}:`, {
-      message: error.message,
-      name: error.name,
-      code: error.code,
-      statusCode: error.$metadata?.httpStatusCode,
-      stack: error.stack?.substring(0, 200)
-    });
-    // ✅ FIX: Don't return expired URL - return null instead to prevent 403 errors
-    // Frontend should handle null photo URLs gracefully
-    return null;
-  }
-}
+// ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
 
 /**
  * Unified vendor photo URL: profile_photo_url (vendor profile upload) takes precedence,
@@ -484,15 +366,180 @@ async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<st
   if (!phone || typeof phone !== 'string') return null;
   const clean = phone.replace(/[^0-9]/g, '');
   if (clean.length < 10) return null;
-  const customers = await select('customers', { phone: clean });
+  const customers = await select('customers', { phone: clean }, { columns: ['id', 'phone'] });
   if (customers.length > 0) return (customers[0] as any).id;
   if (clean.length === 10) {
-    const with91 = await select('customers', { phone: `+91${clean}` });
+    const with91 = await select('customers', { phone: `+91${clean}` }, { columns: ['id', 'phone'] });
     if (with91.length > 0) return (with91[0] as any).id;
   }
   return null;
 }
 
+export async function getCoordinates(
+  source: 'customer' | 'vendor',
+  identifier: string,
+  phone?: string
+): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    if (source === 'customer') {
+      // Customer: Use existing getCustomerCoordinates function
+      const customerId = identifier.includes('-') ? identifier : null; // UUID format check
+      const customerPhone = customerId ? null : (identifier || phone || null);
+      return await getCustomerCoordinates(customerPhone, customerId);
+    } else {
+      // Vendor: Query vendors table with separate latitude/longitude columns
+      const vendorId = identifier;
+
+      const vendorResult = await query(
+        `SELECT latitude, longitude 
+         FROM vendors 
+         WHERE id = $1 
+         LIMIT 1`,
+        [vendorId]
+      );
+
+      if (vendorResult.rows.length === 0) {
+        console.warn('[getCoordinates] No vendor found', { vendorId });
+        return null;
+      }
+
+      const vendor = vendorResult.rows[0];
+
+      if (vendor.latitude != null && vendor.longitude != null) {
+        const latitude = parseFloat(String(vendor.latitude));
+        const longitude = parseFloat(String(vendor.longitude));
+
+        console.log('[getCoordinates] Extracted from vendor columns', {
+          vendorId,
+          latitude,
+          longitude
+        });
+
+        return { latitude, longitude };
+      }
+
+      console.warn('[getCoordinates] Vendor has no coordinates', {
+        vendorId,
+        hasLat: vendor.latitude != null,
+        hasLng: vendor.longitude != null,
+      });
+
+      return null;
+    }
+  } catch (error) {
+    console.error('[getCoordinates] Unexpected error', {
+      error: error instanceof Error ? error.message : String(error),
+      source,
+      identifier,
+    });
+    return null;
+  }
+}
+
+/**
+ * Get customer coordinates from their default address.
+ * Fetches coordinates from customer_addresses table (JSONB format only).
+ * Note: customer_addresses table only has coordinates JSONB field, not separate latitude/longitude columns.
+ * 
+ * @param customerPhone - Customer phone number (optional, used to resolve customerId)
+ * @param customerId - Customer ID (optional, if already known)
+ * @returns Object with latitude and longitude, or null if not found
+ * 
+ * @example
+ * // Using phone number
+ * const coords = await getCustomerCoordinates('9326977987');
+ * if (coords) {
+ *   console.log(`Lat: ${coords.latitude}, Lng: ${coords.longitude}`);
+ * }
+ * 
+ * @example
+ * // Using customer ID
+ * const coords = await getCustomerCoordinates(null, 'customer-uuid');
+ */
+export async function getCustomerCoordinates(
+  customerPhone?: string | null,
+  customerId?: string | null
+): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    let resolvedCustomerId: string | null = customerId || null;
+    console.log('resolvedCustomerId_______________________________>', resolvedCustomerId, customerPhone);
+    // Resolve customerId from phone if not provided
+    if (resolvedCustomerId === null && customerPhone) {
+      resolvedCustomerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+    }
+    console.log('resolvedCustomerId_______________________________>', resolvedCustomerId);
+    if (!resolvedCustomerId) {
+      console.warn('[getCustomerCoordinates] No customerId resolved', { customerPhone, customerId });
+      return null;
+    }
+
+    // ✅ FIX: customer_addresses only has coordinates JSONB, not separate latitude/longitude columns
+    const addressResult = await query(
+      `SELECT coordinates 
+       FROM customer_addresses 
+       WHERE customer_id = $1 AND is_default = true 
+       LIMIT 1`,
+      [resolvedCustomerId]
+    );
+
+    if (addressResult.rows.length === 0) {
+      console.warn('[getCustomerCoordinates] No default address found', { customerId: resolvedCustomerId });
+      return null;
+    }
+
+    const addr = addressResult.rows[0];
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+
+    // Extract from coordinates JSON field (format: {"lat": 12.9756425, "lng": 77.6032208})
+    if (addr.coordinates) {
+      try {
+        const coords = typeof addr.coordinates === 'string'
+          ? JSON.parse(addr.coordinates)
+          : addr.coordinates;
+
+        if (coords?.lat != null && coords?.lng != null) {
+          latitude = parseFloat(String(coords.lat));
+          longitude = parseFloat(String(coords.lng));
+          console.log('[getCustomerCoordinates] Extracted from JSON coordinates', {
+            customerId: resolvedCustomerId,
+            latitude,
+            longitude
+          });
+        }
+      } catch (e) {
+        console.warn('[getCustomerCoordinates] Failed to parse coordinates JSON', {
+          error: e instanceof Error ? e.message : String(e),
+          raw: addr.coordinates
+        });
+      }
+    }
+
+    // ✅ REMOVED: Fallback to latitude/longitude columns - they don't exist in customer_addresses
+
+    if (latitude != null && longitude != null) {
+      return { latitude, longitude };
+    }
+
+    // Log failure details for debugging
+    console.warn('[getCustomerCoordinates] Could not extract valid coordinates', {
+      customerId: resolvedCustomerId,
+      hasCoordinates: !!addr.coordinates,
+      coordinatesType: typeof addr.coordinates,
+      finalLat: latitude,
+      finalLng: longitude,
+    });
+
+    return null;
+  } catch (error) {
+    console.error('[getCustomerCoordinates] Unexpected error', {
+      error: error instanceof Error ? error.message : String(error),
+      customerPhone,
+      customerId,
+    });
+    return null;
+  }
+}
 /** 
  * Get next available slot for a vendor from vendor_availability_v2.
  * Returns null if no availability set.
@@ -508,10 +555,9 @@ async function getNextAvailableSlot(
   serviceStyleFilter?: string[]
 ): Promise<{ date: string; time: string; display: string } | null> {
   try {
-    // ✅ CRITICAL FIX: Use IST time since all vendor times are in IST
-    const IST_OFFSET_MS_LOCAL = 5.5 * 60 * 60 * 1000;
-    const nowUTCLocal = new Date();
-    const now = new Date(nowUTCLocal.getTime() + IST_OFFSET_MS_LOCAL); // IST time
+    // ✅ FIX: Use server's current time (server should be configured in IST)
+    // Database stores times in IST, so we use server time directly
+    const now = new Date();
     const currentDayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const SLOT_DURATION = 30; // minutes - atomic slot size
@@ -645,6 +691,10 @@ async function getNextAvailableSlot(
           } else {
             display = `${checkDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatted}`;
           }
+
+
+
+          console.log('display_______________________________>', display, dateStr, timeStr);
 
           return {
             date: dateStr,
@@ -1166,14 +1216,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     }
   });
 
-  /**
-   * OPTIONS /customer/discover-services
-   * Handle CORS preflight requests
-   * ✅ FIX: Explicit OPTIONS handler for CORS preflight
-   */
-  app.options("/customer/discover-services", async (c) => {
-    return c.json({}, 200);
-  });
 
   /**
    * GET /customer/discover-services
@@ -1194,9 +1236,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const sortBy = c.req.query('sortBy') || 'rating';
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
-      const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
-      const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
-      const problemTitle = c.req.query('problemTitle'); // Phase 2: Best for [problem] badge
+      const serviceStyle = c.req.query('serviceStyle');
+      const roleId = c.req.query('roleId');
+      const problemTitle = c.req.query('problemTitle');
       const acceptableStyles = acceptableStylesForService(serviceStyle);
       let categoryFilterClause = '';
 
@@ -3554,8 +3596,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const category = c.req.query('category');
-      const serviceStyle = c.req.query('serviceStyle');
+      // Check multiple possible parameter names for serviceStyle
+      const serviceStyle = c.req.query('serviceStyle') || c.req.query('service_style') || c.req.query('style');
       const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
+
+      console.log(`[Vendor Services] Request params: vendorId=${vendorId}, category=${category}, serviceStyle=${serviceStyle}, customerPhone=${customerPhone}`);
+      console.log(`[Vendor Services] All query params:`, Object.keys(c.req.query()).reduce((acc, key) => {
+        acc[key] = c.req.query(key);
+        return acc;
+      }, {} as Record<string, string | undefined>));
 
       // Resolve vendor (frontend may pass vendor_identity.id or staff id; resolve to vendors.id)
       const vendor = await resolveVendorById(vendorId);
@@ -3661,19 +3710,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         queryParams.push(category);
         servicesQuery += ` AND (LOWER(vs.category) = LOWER($${queryParams.length}) OR LOWER(vs.category) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
       }
-      if (serviceStyle) {
+      if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         queryParams.push(acceptableStyles);
         servicesQuery += ` AND vs.service_style = ANY($${queryParams.length}::text[])`;
-        // ✅ FIX: For at_center, exclude at_home services in query
-        if (serviceStyle === 'at_center') {
-          servicesQuery += ` AND vs.service_style != 'at_home'`;
-        }
+        console.log(`[Vendor Services] SQL filter: serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
       }
 
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
 
+      console.log(`[Vendor Services] SQL query: ${servicesQuery.substring(0, 500)}...`);
       const result = await query(servicesQuery, queryParams);
+      console.log(`[Vendor Services] SQL result: ${result.rows.length} services from database`);
 
       const formattedServices = result.rows.map((row: any) => {
         const price = row.custom_price != null ? parseFloat(row.custom_price) : (row.price != null ? parseFloat(row.price) : 0);
@@ -3713,7 +3761,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           duration,
           category: row.category,
           categorySlug: row.category,
-          serviceStyle: row.service_style || 'at_center',
+          serviceStyle: row.service_style || null, // Don't default to 'at_center' - use actual value from DB
           specializationIds,
           specialization_ids: specializationIds,
           isPackage,
@@ -3733,13 +3781,38 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const packages = formattedServices.filter((s: any) => s.isPackage);
       const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
 
-      // ✅ FIX: Fallback filter - for at_center, filter out at_home services
-      if (serviceStyle === 'at_center') {
+      // ✅ FIX: Filter services by serviceStyle if provided - ensure only matching services are returned
+      // This is a critical filter to ensure SQL query results match the requested serviceStyle
+      if (serviceStyle && serviceStyle !== 'all') {
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        
+        console.log(`[Vendor Services] Before filter: ${services.length} services`);
+        console.log(`[Vendor Services] Filtering by serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
+        
+        // Log all service styles before filtering
+        const serviceStylesBefore = services.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          style: s.serviceStyle || s.service_style
+        }));
+        console.log(`[Vendor Services] Service styles before filter:`, serviceStylesBefore);
+        
         services = services.filter((s: any) => {
           const style = s.serviceStyle || s.service_style;
-          return style !== 'at_home';
+          const matches = acceptableStyles.includes(style);
+          if (!matches) {
+            console.log(`[Vendor Services] Filtering out service: ${s.name} (style: ${style}, not in ${JSON.stringify(acceptableStyles)})`);
+          }
+          return matches;
         });
-        console.log(`[Vendor Services] After fallback filter for at_center: ${services.length} services (removed at_home services)`);
+        
+        console.log(`[Vendor Services] After filter: ${services.length} services`);
+        const serviceStylesAfter = services.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          style: s.serviceStyle || s.service_style
+        }));
+        console.log(`[Vendor Services] Service styles after filter:`, serviceStylesAfter);
       }
 
       return c.json({
@@ -4649,7 +4722,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * PUT /vendor/facility/:vendorId
    * Update vendor facility details (address, timings, amenities, etc.)
-   * ✅ FIX: This endpoint was missing, causing 404 errors in UAT
+   * This endpoint was missing, causing 404 errors in UAT
    */
   app.put("/vendor/facility/:vendorId", async (c) => {
     try {
@@ -4848,7 +4921,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * POST /vendor/facility/:vendorId/upload-photos
    * Upload facility photos for a vendor
-   * ✅ FIX: This endpoint was missing, causing 404 errors
+   * This endpoint was missing, causing 404 errors
    */
   app.post("/vendor/facility/:vendorId/upload-photos", async (c) => {
     try {
@@ -5257,11 +5330,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/services/by-style
    * Get available services filtered by style (tele, at_home, at_center)
-   * 
-   * ⚠️ CRITICAL BUSINESS RULE for at_home and tele:
-   * - For BUSINESS ENTITIES (clinics, grooming centers): Return only VERIFIED STAFF MEMBERS
-   * - For INDIVIDUAL PROVIDERS (home groomers, individual vets): Return the provider directly
-   * - Only verified providers (mobile_verified = true) appear in results
    */
   app.get("/customer/services/by-style", async (c) => {
     try {
@@ -5279,25 +5347,45 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const roleId = c.req.query('roleId');
       const problemTitle = c.req.query('problemTitle');
-      const latitude = c.req.query('latitude');
-      const longitude = c.req.query('longitude');
+      let latitude = c.req.query('latitude');
+      let longitude = c.req.query('longitude');
 
+      // If coordinates not provided, fetch from customer's default address
+      if (!latitude || !longitude) {
+        const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
+        const coords = await getCustomerCoordinates(customerPhone || undefined);
+        if (coords) {
+          latitude = String(coords.latitude);
+          longitude = String(coords.longitude);
+          console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}`);
+        }
+      }
+
+      //get the rules for the discovery
       const rules = await getDiscoveryRules(
         roleId || category || 'all', 'discover', serviceStyle, category || undefined
       );
+
+      //get the max results, default radius, radius, max distance, min rating, sort by from the rules
       const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
-      const defaultRadius = rules.discovery_radius_km ?? 50;
+      //Use discovery_radius_km_tele for tele services, discovery_radius_km for others
+      const defaultRadius = serviceStyle === 'tele'
+        ? (rules.discovery_radius_km_tele ?? 0)  // 0 = no distance limit for tele
+        : (rules.discovery_radius_km ?? 50);
+
       const radius = c.req.query('radius') ? parseInt(c.req.query('radius')!, 10) : defaultRadius;
       const maxDistanceKm = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : null;
       const minRatingVal = c.req.query('minRating') ? parseFloat(c.req.query('minRating')!) : null;
       const sortBy = c.req.query('sortBy') || (rules.discovery_sort_default as string) || 'relevance';
 
+      //get the acceptable styles for the service style
       const acceptableStyles = acceptableStylesForService(serviceStyle);
+      //get the customer latitude and longitude
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
+      //check if the service style is at_center
       const isAtCenter = serviceStyle === 'at_center';
 
-      console.log(`[by-style] style=${serviceStyle}, category=${category}, roleId=${roleId}`);
 
       // ────────────────────────────────────────────────────────
       // 2. RESOLVE TARGET ROLES FROM roleId / category
@@ -5321,7 +5409,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         targetRoles = [...new Set([...targetRoles, ...list])];
       }
 
-      console.log(`[by-style] targetRoles:`, targetRoles);
+      //check if the target roles are empty
+      if (targetRoles.length === 0) {
+        return c.json({
+          error: 'No target roles found',
+          success: false,
+        }, 400);
+      }
+
 
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
@@ -5334,7 +5429,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (!customerLat || !customerLng || !lat || !lng) return null;
         return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
       };
-
       /** Human-readable distance label */
       const fmtDistance = (km: number | null): string | null => {
         if (km == null) return null;
@@ -5388,32 +5482,43 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         if (!roleConfigAllowsStyle(vendor.role_config, serviceStyle)) return null;
 
         const services = await fetchServices(vendor.vendor_id);
-        console.log('services<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<------>', services);
+
         if (services.length === 0) return null;
 
         const dist = getDistanceKm(
           vendor.latitude ? parseFloat(vendor.latitude) : null,
           vendor.longitude ? parseFloat(vendor.longitude) : null,
         );
-
         const nextAvailable = await getNextAvailableSlot(
           vendor.vendor_id, vendor.phone || '', acceptableStyles
         );
-        if (isProductionEnvironment() && !nextAvailable) return null;
+        if (!nextAvailable) return null;
 
         const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
         const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
 
         // Photos from vendor metadata (facility_photos / photos)
+        // ✅ FIX: Regenerate presigned URLs for facility photos
         let photos: string[] = [];
         try {
           const meta = typeof vendor.metadata === 'string'
             ? JSON.parse(vendor.metadata || '{}')
             : vendor.metadata;
           const raw = meta?.facility_photos || meta?.photos || [];
-          photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+          const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+          // Regenerate presigned URLs for all photos
+          const regeneratedPhotos = await Promise.all(
+            rawPhotos.map(async (photoUrl: string) => {
+              const regenerated = await regeneratePresignedUrl(photoUrl);
+              return regenerated;
+            })
+          );
+          photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { /* non-fatal */ }
+
+        // ✅ FIX: Get photo URL once and use for both photo and photoUrl fields
+        const photoUrl = await getVendorPhotoUrl(vendor);
 
         return {
           id: vendor.vendor_id,
@@ -5427,7 +5532,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           role: vendor.role_display_name || vendor.role_name,
           roleName: vendor.role_name || vendor.role_display_name || '',
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photo: photoUrl, // ✅ Frontend expects 'photo' field
+          photoUrl: photoUrl, // ✅ Keep 'photoUrl' for backward compatibility
           rating: parseFloat(vendor.avg_rating || '0'),
           reviewCount: parseInt(vendor.review_count || '0', 10),
           distance: dist,
@@ -5503,106 +5609,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               'pet_sitter','sitter',
               'pet_taxi','pet_transport','pet_relocation','relocation'
             )
+              OR v.vendor_type = 'business'
+              OR v.vendor_type = 'clinic'
           )`;
       }
 
       vendorSql += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}`;
 
       const vendorRows = await query(vendorSql, vendorParams);
-      console.log(`[by-style] vendors table → ${vendorRows.rows.length} matches`);
 
-      // ────────────────────────────────────────────────────────
-      // 5. QUERY SOLO PROVIDERS FROM `vendor_identity`
-      //    (at_home / tele only)
-      //    These are approved solo providers that haven't been
-      //    migrated to the `vendors` table yet.
-      // ────────────────────────────────────────────────────────
-      // let viRows: any[] = [];
 
-      // if (!isAtCenter) {
-      //   const hasViPhoto = await columnExists('vendor_identity', 'profile_photo_url');
-      //   const viPhotoCol = hasViPhoto ? 'vi.profile_photo_url' : 'NULL';
-
-      //   let viSql = `
-      //     SELECT DISTINCT
-      //       vi.id AS vendor_id,
-      //       COALESCE(
-      //         vi.metadata->>'businessName', vi.metadata->>'business_name',
-      //         vi.metadata->>'fullName',     vi.metadata->>'full_name',
-      //         'Provider'
-      //       ) AS business_name,
-      //       COALESCE(
-      //         vi.metadata->>'fullName', vi.metadata->>'full_name', 'Provider'
-      //       ) AS owner_name,
-      //       vi.phone,
-      //       vi.metadata->>'address' AS address,
-      //       vi.metadata->>'city'    AS city,
-      //       (vi.metadata->>'latitude')::numeric  AS latitude,
-      //       (vi.metadata->>'longitude')::numeric AS longitude,
-      //       ${viPhotoCol} AS profile_photo_url,
-      //       NULL AS logo_url,
-      //       vi.metadata,
-      //       COALESCE(vi.vendor_type, 'solo') AS vendor_type,
-      //       r.name AS role_name,
-      //       r.display_name AS role_display_name,
-      //       r.config AS role_config,
-      //       0 AS avg_rating,
-      //       0 AS review_count
-      //     FROM vendor_identity vi
-      //     LEFT JOIN roles r ON vi.selected_role_id = r.id
-      //     WHERE vi.onboarding_status IN ('APPROVED','ACTIVATED')
-      //       AND (vi.vendor_type = 'solo' OR vi.vendor_type IS NULL)
-      //       AND NOT EXISTS (
-      //         SELECT 1 FROM vendors v WHERE v.id = vi.id OR v.phone = vi.phone
-      //       )
-      //       AND TRIM(COALESCE(
-      //         vi.metadata->>'businessName', vi.metadata->>'business_name',
-      //         vi.metadata->>'fullName',     vi.metadata->>'full_name', ''
-      //       )) != ''
-      //       AND EXISTS (
-      //         SELECT 1 FROM vendor_services vs
-      //         WHERE vs.vendor_id::text = vi.id::text
-      //           AND vs.service_style = ANY($1::text[])
-      //           AND vs.is_enabled = true
-      //           AND (vs.publish_status IN ('published','auto_published')
-      //                OR vs.publish_status IS NULL)
-      //       )
-      //   `;
-
-      //   const viParams: any[] = [acceptableStyles];
-      //   let viIdx = 2;
-
-      //   if (targetRoles.length > 0) {
-      //     const lower = targetRoles.map((r) => r.toLowerCase());
-      //     const norm = lower.map((r) => r.replace(/[_\s()]/g, ''));
-      //     viSql += `
-      //       AND (
-      //         LOWER(r.name) = ANY($${viIdx}::text[])
-      //         OR LOWER(r.display_name) = ANY($${viIdx}::text[])
-      //         OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(
-      //              r.name,'_',''),' ',''),'(',''),')',''))
-      //            = ANY($${viIdx + 1}::text[])
-      //       )`;
-      //     viParams.push(lower, norm);
-      //     viIdx += 2;
-      //   }
-
-      //   viSql += ` ORDER BY vi.id LIMIT ${maxResults}`;
-
-      //   const viResult = await query(viSql, viParams).catch((err) => {
-      //     console.error('[by-style] vendor_identity query error:', err.message);
-      //     return { rows: [] };
-      //   });
-
-      //   viRows = viResult.rows;
-      //   console.log(`[by-style] vendor_identity → ${viRows.length} matches`);
-      // }
-
-      // ────────────────────────────────────────────────────────
       // 6. ENRICH ALL VENDORS
       //    Run enrichVendor() on every row; it returns null for
       //    vendors that should be excluded, so we filter those.
-      // ────────────────────────────────────────────────────────
+
       const seen = new Set<string>();
       const providers: any[] = [];
 
@@ -5614,29 +5634,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           providers.push(provider);
         }
       }
+      console.log('providers_______________________________>', providers);
 
-      // for (const row of viRows) {
-      //   if (seen.has(row.vendor_id)) continue;
-      //   const provider = await enrichVendor(row);
-      //   if (provider) {
-      //     seen.add(row.vendor_id);
-      //     providers.push(provider);
-      //   }
-      // }
-
-      console.log(`[by-style] Enriched providers: ${providers.length}`);
-
-      // ────────────────────────────────────────────────────────
       // 7. FILTER
-      // ────────────────────────────────────────────────────────
       let results = providers;
 
       if (minRatingVal != null && minRatingVal > 0) {
         results = results.filter((p) => p.rating >= minRatingVal);
       }
 
+      // ✅ FIX: For tele services, radius = 0 means "no distance limit"
+      // Only apply distance filter if radius > 0 (or maxDistanceKm is explicitly set)
       const effectiveMaxKm =
-        maxDistanceKm ?? (customerLat && customerLng ? radius : null);
+        maxDistanceKm ?? (customerLat && customerLng && radius > 0 ? radius : null);
 
       if (effectiveMaxKm != null && customerLat && customerLng) {
         results = results.filter(
@@ -5647,6 +5657,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ────────────────────────────────────────────────────────
       // 8. SORT
       // ────────────────────────────────────────────────────────
+      console.log('sortBy_______________________________>', results);
       results.sort((a, b) => {
         switch (sortBy) {
           case 'distance':
@@ -5672,8 +5683,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       });
 
-      console.log(`[by-style] Returning ${results.length} providers`);
-
+      console.log('results_______________________________>', results);
       // ────────────────────────────────────────────────────────
       // 9. RESPOND
       // ────────────────────────────────────────────────────────
