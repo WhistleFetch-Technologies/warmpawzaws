@@ -265,16 +265,6 @@ export default function ProfilePage() {
             <span className="text-gray-400">→</span>
           </button>
           <button
-            onClick={() => router.push('/wallet')}
-            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
-          >
-            <span className="flex items-center gap-3">
-              <span className="text-2xl">💰</span>
-              <span className="font-medium">Wallet</span>
-            </span>
-            <span className="text-gray-400">→</span>
-          </button>
-          <button
             onClick={() => router.push('/settings')}
             className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
           >

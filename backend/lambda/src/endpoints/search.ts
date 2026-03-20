@@ -303,13 +303,17 @@ export function registerSearchEndpoints(app: Hono) {
 }
 
 function createApiGatewayEvent(req: any): any {
+  // Support relative req.url (e.g. /search?q=...) by resolving against a base
+  const url = typeof req.url === 'string' && req.url.startsWith('http')
+    ? new URL(req.url)
+    : new URL(req.url || '/search', 'http://localhost');
   return {
     httpMethod: req.method,
     path: req.url,
     headers: req.headers,
     body: JSON.stringify(req.body || {}),
     pathParameters: req.param() || {},
-    queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    queryStringParameters: Object.fromEntries(url.searchParams),
     requestContext: {
       requestId: randomUUID(),
     },
