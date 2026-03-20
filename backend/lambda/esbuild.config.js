@@ -57,11 +57,11 @@ const apiContractsResolvePlugin = {
   },
 };
 
-// Plugin to resolve custom TypeScript extensions like .booking.ts
+// Plugin to resolve custom TypeScript extensions like .booking.ts, .customer.ts, etc.
 const customExtensionResolvePlugin = {
   name: 'custom-extension-resolve',
   setup(build) {
-    // Handle imports that might have custom extensions like .booking
+    // Handle imports that might have custom extensions like .booking, .customer, etc.
     build.onResolve({ filter: /.*/ }, (args) => {
       // If the path doesn't have an extension, try to resolve with custom extensions
       if (!args.path.includes('.') || args.path.endsWith('/')) {
@@ -72,16 +72,30 @@ const customExtensionResolvePlugin = {
       if (args.path.startsWith('.')) {
         const basePath = path.resolve(path.dirname(args.importer), args.path);
         
-        // Try .booking.ts extension
-        const bookingTsPath = basePath + '.booking.ts';
-        if (fs.existsSync(bookingTsPath)) {
-          return { path: bookingTsPath };
+        // List of custom extensions to try
+        const customExtensions = ['.booking', '.customer', '.razorpay', '.notification', '.teleCommunication', '.controller'];
+        
+        // First, try if the path already ends with a custom extension (like .customer)
+        for (const ext of customExtensions) {
+          if (args.path.endsWith(ext)) {
+            const fullPath = basePath + '.ts';
+            if (fs.existsSync(fullPath)) {
+              return { path: fullPath };
+            }
+          }
         }
         
-        // Try .booking extension (without .ts)
-        const bookingPath = basePath + '.booking';
-        if (fs.existsSync(bookingPath + '.ts')) {
-          return { path: bookingPath + '.ts' };
+        // Then try adding custom extensions to the base path
+        for (const ext of customExtensions) {
+          const extTsPath = basePath + ext + '.ts';
+          if (fs.existsSync(extTsPath)) {
+            return { path: extTsPath };
+          }
+          
+          const extPath = basePath + ext;
+          if (fs.existsSync(extPath + '.ts')) {
+            return { path: extPath + '.ts' };
+          }
         }
       }
       

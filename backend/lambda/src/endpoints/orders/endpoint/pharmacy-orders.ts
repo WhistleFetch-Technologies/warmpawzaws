@@ -16,23 +16,26 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
-import { isValidUUID } from '../types/entities';
-import { getDiscoveryRules, getRuleNumberArray } from '../lib/rule-engine';
-import { prescriptionOCRService } from '../lib/services/prescription-ocr-service';
-import { websocketService } from '../lib/services/websocket-service';
-import { sendEventNotification } from '../aws/aws-sns-notification-service';
-import { autoAssignDeliveryPartner } from '../endpoints/delivery-partner-automation';
+import { select, insert, update, query } from '../../../database/rds-connection';
+import { isValidUUID } from '../../../types/entities';
+import { getDiscoveryRules, getRuleNumberArray } from '../../../lib/rule-engine';
+import { prescriptionOCRService } from '../../../lib/services/prescription-ocr-service';
+import { websocketService } from '../../../lib/services/websocket-service';
+import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
+import { autoAssignDeliveryPartner } from '../../delivery-partner-automation';
+import { createPharmacyOrderRequestSchema, approveInvoiceRequestSchema } from '../../../zodContracts/orders.contract';
+import { uuidSchema } from '../../../middleware/validation-middleware';
+import { verifyPayment, requiresPayment } from '../../../utils/payments/payment-verification-service';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371; // Earth's radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng/2) * Math.sin(dLng/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
@@ -48,7 +51,7 @@ async function calculateDeliveryFee(distanceKm: number): Promise<number> {
        LIMIT 1`,
       [distanceKm]
     );
-    
+
     if (rules.rows.length > 0) {
       const rule = rules.rows[0];
       if (rule.rule_type === 'slab') {
@@ -57,7 +60,7 @@ async function calculateDeliveryFee(distanceKm: number): Promise<number> {
         return parseFloat(rule.base_fee) + (distanceKm * parseFloat(rule.per_km_rate));
       }
     }
-    
+
     // Default fee if no rule found
     return 50;
   } catch (error) {
@@ -129,18 +132,18 @@ async function getConfigurableFees(serviceType: string = 'pharmacy'): Promise<{
 // ✅ FIX GAP 6.1: Calculate platform fee based on configurable settings
 async function calculatePlatformFee(subtotal: number, serviceType: string = 'pharmacy'): Promise<number> {
   const fees = await getConfigurableFees(serviceType);
-  
+
   // Calculate percentage-based fee
   let platformFee = Math.round(subtotal * (fees.platformFeePercentage / 100));
-  
+
   // Add flat fee if configured
   platformFee += fees.platformFeeFlat;
-  
+
   // Apply max cap if configured
   if (fees.maxPlatformFee > 0 && platformFee > fees.maxPlatformFee) {
     platformFee = fees.maxPlatformFee;
   }
-  
+
   return platformFee;
 }
 
@@ -151,7 +154,7 @@ async function getConvenienceFee(serviceType: string = 'pharmacy'): Promise<numb
 }
 
 export function registerPharmacyOrderEndpoints(app: Hono) {
-  
+
   // Ensure required columns exist (runtime migration fallback)
   const ensureColumnsExist = async () => {
     try {
@@ -215,7 +218,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       // Support both lat/lng and latitude/longitude formats
       const customerLat = deliveryAddress.lat || deliveryAddress.latitude;
       const customerLng = deliveryAddress.lng || deliveryAddress.longitude;
-      
+
       if (!customerLat || !customerLng) {
         return c.json({ error: 'Delivery address must include coordinates (lat/lng or latitude/longitude)' }, 400);
       }
@@ -463,7 +466,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       const subtotal = parseFloat(order.subtotal) || 0;
       const platformFee = parseFloat(order.platform_fee) || 0;
       const newTotal = subtotal + finalDeliveryFee + platformFee;
-      
+
       await update('pharmacy_orders', { id: broadcast.order_id }, {
         pharmacy_id: broadcast.pharmacy_id,
         status: 'accepted',
@@ -765,8 +768,8 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       if (order) {
         await sendEventNotification({
           eventType: status === 'dispatched' ? 'pharmacy_order_dispatched' :
-                     status === 'delivered' ? 'pharmacy_order_delivered' :
-                     'pharmacy_order_preparing',
+            status === 'delivered' ? 'pharmacy_order_delivered' :
+              'pharmacy_order_preparing',
           recipientId: order.customer_id,
           recipientType: 'customer',
           relatedId: orderId,
@@ -777,12 +780,12 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       // Auto-assign delivery partner if ready and using Warmpawz logistics
       if (status === 'ready_for_pickup' && order.logistics_type === 'warmpawz') {
         try {
-          const deliveryAddress = typeof order.delivery_address === 'string' 
-            ? JSON.parse(order.delivery_address) 
+          const deliveryAddress = typeof order.delivery_address === 'string'
+            ? JSON.parse(order.delivery_address)
             : order.delivery_address;
-          
+
           const pharmacy = (await select('vendors', { id: order.pharmacy_id }))[0];
-          
+
           if (pharmacy && deliveryAddress && pharmacy.latitude && pharmacy.longitude) {
             const assignment = await autoAssignDeliveryPartner(
               orderId,
@@ -1040,12 +1043,25 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
   /**
    * GET /pharmacy/:vendorId/orders
    * Get pharmacy orders by vendor with status filter
+   * 
+   * Status Flow:
+   * 1. broadcasting -> Order created, searching for pharmacy
+   * 2. accepted -> Pharmacy accepted the order
+   * 3. invoice_generated -> Pharmacy generated invoice
+   * 4. payment_confirmed -> Customer paid
+   * 5. preparing -> Pharmacy preparing order
+   * 6. dispatched -> Order dispatched for delivery
+   * 7. delivered -> Order delivered
+   * 
+   * Note: If status filter includes post-acceptance statuses (invoice_generated, payment_confirmed, etc.),
+   * we automatically include 'accepted' to ensure newly accepted orders are visible.
    */
   app.get("/pharmacy/:vendorId/orders", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const statusFilter = c.req.query('status');
 
+      // Build base query to fetch orders with customer and delivery tracking info
       let queryStr = `
         SELECT 
           po.*,
@@ -1065,20 +1081,53 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
 
       const params: any[] = [vendorId];
 
+      // Process status filter if provided
       if (statusFilter) {
-        const statuses = statusFilter.split(',').map(s => s.trim());
+        // Parse comma-separated status values
+        const requestedStatuses = statusFilter.split(',').map(s => s.trim()).filter(Boolean);
+
+        // Statuses that come after 'accepted' in the order lifecycle
+        const postAcceptanceStatuses = [
+          'invoice_generated',
+          'payment_confirmed',
+          'preparing',
+          'dispatched',
+          'ready_for_pickup',
+          'picked_up',
+          'on_the_way',
+          'delivered'
+        ];
+
+        // If any requested status comes after 'accepted', automatically include 'accepted'
+        // This ensures newly accepted orders are visible even if frontend doesn't explicitly request 'accepted'
+        const includesPostAcceptanceStatus = requestedStatuses.some(status =>
+          postAcceptanceStatuses.includes(status.toLowerCase())
+        );
+
+        // Build final status list
+        const finalStatuses = [...requestedStatuses];
+        if (includesPostAcceptanceStatus && !finalStatuses.includes('accepted')) {
+          finalStatuses.push('accepted');
+        }
+
+        // Apply status filter to query
         queryStr += ` AND po.status = ANY($2::text[])`;
-        params.push(statuses);
+        params.push(finalStatuses);
       }
 
+      // Order by creation date (most recent first)
       queryStr += ` ORDER BY po.created_at DESC`;
 
+      // Execute query
       const result = await query(queryStr, params);
 
+      // Parse JSON fields and format response
       const orders = result.rows.map((row: any) => ({
         ...row,
         items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items,
-        delivery_address: typeof row.delivery_address === 'string' ? JSON.parse(row.delivery_address) : row.delivery_address,
+        delivery_address: typeof row.delivery_address === 'string'
+          ? JSON.parse(row.delivery_address)
+          : row.delivery_address,
       }));
 
       return c.json({
@@ -1245,10 +1294,10 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       const lat = parseFloat(c.req.query('lat') || '19.0954');
       const lng = parseFloat(c.req.query('lng') || '72.8331');
       const radiusKm = parseFloat(c.req.query('radius') || '5');
-      
+
       const latDiff = radiusKm / 111;
       const lngDiff = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
-      
+
       // First get all pharmacies with coordinates
       const allPharmacies = await query(
         `SELECT v.id, v.business_name, v.latitude, v.longitude, v.is_active, v.status, r.name as role_name
@@ -1261,7 +1310,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
          LIMIT 10`,
         []
       );
-      
+
       // Filter by role name
       const pharmacyVendors = await query(
         `SELECT v.id, v.business_name, v.latitude, v.longitude, v.is_active, v.status
@@ -1275,7 +1324,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
          AND v.longitude::text != ''`,
         []
       );
-      
+
       return c.json({
         success: true,
         debug: {
@@ -1330,15 +1379,15 @@ async function broadcastToPharmacies(orderId: string, customerLat: number, custo
     );
 
     console.log(`📍 Found ${pharmacies.rows.length} pharmacies with coordinates`);
-    
+
     // Filter by bounding box in JavaScript (more reliable than SQL CAST)
     const nearbyPharmacies = pharmacies.rows.filter((p: any) => {
       const lat = parseFloat(p.lat_str);
       const lng = parseFloat(p.lng_str);
       if (isNaN(lat) || isNaN(lng)) return false;
-      
+
       return lat >= (customerLat - latDiff) && lat <= (customerLat + latDiff) &&
-             lng >= (customerLng - lngDiff) && lng <= (customerLng + lngDiff);
+        lng >= (customerLng - lngDiff) && lng <= (customerLng + lngDiff);
     }).map((p: any) => ({
       ...p,
       lat: parseFloat(p.lat_str),
@@ -1357,7 +1406,7 @@ async function broadcastToPharmacies(orderId: string, customerLat: number, custo
 
       const distance = calculateDistance(customerLat, customerLng, pharmacy.lat, pharmacy.lng);
       console.log(`📏 Distance to ${pharmacy.business_name}: ${distance.toFixed(2)}km (limit: ${radiusKm}km)`);
-      
+
       if (distance <= radiusKm) {
         // Check if already broadcasted
         const existing = await query(
@@ -1379,51 +1428,51 @@ async function broadcastToPharmacies(orderId: string, customerLat: number, custo
             broadcastCount++;
             console.log(`📤 Broadcasted to ${pharmacy.business_name} (${distance.toFixed(2)}km)`);
 
-          // ✅ FIX GAP PH-1: Send push notification to pharmacy
-          try {
-            const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
-            
-            // Get customer name for notification
-            const customers = await select('customers', { id: await getOrderCustomerId(orderId) });
-            const customerName = customers[0]?.name || 'A customer';
-            
-            // Get item count
-            const orders = await select('pharmacy_orders', { id: orderId });
-            const items = orders[0]?.items ? 
-              (typeof orders[0].items === 'string' ? JSON.parse(orders[0].items) : orders[0].items) : [];
-            const itemCount = items.length;
+            // ✅ FIX GAP PH-1: Send push notification to pharmacy
+            try {
+              const { pushNotificationService } = await import('../../../aws/aws-sns-notification-service');
 
-            await pushNotificationService.sendUrgentNotification(
-              {
-                userId: pharmacy.id,
-                userType: 'vendor',
-                phone: pharmacy.phone,
-              },
-              {
-                title: '💊 New Pharmacy Order!',
-                body: `New order from ${customerName}. ${itemCount} items. Accept within 2 minutes.`,
-                sound: 'urgent',
-                priority: 'high',
-                data: {
-                  orderId,
-                  distance: Math.round(distance * 100) / 100,
-                  itemCount,
-                  expiresAt: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+              // Get customer name for notification
+              const customers = await select('customers', { id: await getOrderCustomerId(orderId) });
+              const customerName = customers[0]?.name || 'A customer';
+
+              // Get item count
+              const orders = await select('pharmacy_orders', { id: orderId });
+              const items = orders[0]?.items ?
+                (typeof orders[0].items === 'string' ? JSON.parse(orders[0].items) : orders[0].items) : [];
+              const itemCount = items.length;
+
+              await pushNotificationService.sendUrgentNotification(
+                {
+                  userId: pharmacy.id,
+                  userType: 'vendor',
+                  phone: pharmacy.phone,
                 },
-              }
-            );
-            console.log(`🔔 Push notification sent to ${pharmacy.business_name}`);
-          } catch (notifError) {
-            console.warn(`Failed to send push notification to ${pharmacy.business_name}:`, notifError);
-            // Continue - notification failure shouldn't block the broadcast
-          }
+                {
+                  title: '💊 New Pharmacy Order!',
+                  body: `New order from ${customerName}. ${itemCount} items. Accept within 2 minutes.`,
+                  sound: 'urgent',
+                  priority: 'high',
+                  data: {
+                    orderId,
+                    distance: Math.round(distance * 100) / 100,
+                    itemCount,
+                    expiresAt: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+                  },
+                }
+              );
+              console.log(`🔔 Push notification sent to ${pharmacy.business_name}`);
+            } catch (notifError) {
+              console.warn(`Failed to send push notification to ${pharmacy.business_name}:`, notifError);
+              // Continue - notification failure shouldn't block the broadcast
+            }
           } catch (insertError) {
             console.error(`❌ Failed to insert broadcast for ${pharmacy.business_name}:`, insertError);
           }
         }
       }
     }
-    
+
     console.log(`✅ Total broadcasts created: ${broadcastCount}`);
     return broadcastCount;
   } catch (error) {
@@ -1462,10 +1511,10 @@ async function createSettlementRecord(orderId: string, orderType: 'pharmacy' | '
     );
 
     const vendor = vendors.rows[0];
-    
+
     // Determine commission rate based on tier
     let commissionRate: number;
-    
+
     if (vendor?.tier_commission_rate != null && !isNaN(Number(vendor.tier_commission_rate))) {
       // Use tier's commission rate from vendor_tiers
       commissionRate = Number(vendor.tier_commission_rate);
@@ -1483,7 +1532,7 @@ async function createSettlementRecord(orderId: string, orderType: 'pharmacy' | '
     const platformFee = parseFloat(order.platform_fee || '0');
     const convenienceFee = parseFloat(order.convenience_fee || '0');
     const logisticsCost = order.logistics_type === 'warmpawz' ? parseFloat(order.logistics_cost || '0') : 0;
-    
+
     // Commission applies on base order amount (excluding delivery, platform, convenience fees)
     const commissionableAmount = orderAmount - deliveryFee - platformFee - convenienceFee;
     const commissionAmount = Math.round(commissionableAmount * commissionRate / 100);
@@ -1529,16 +1578,16 @@ async function getOrderCustomerId(orderId: string): Promise<string> {
  * Sends push notification for status changes
  */
 async function sendOrderStatusNotification(
-  orderId: string, 
-  status: string, 
+  orderId: string,
+  status: string,
   additionalData?: Record<string, any>
 ): Promise<void> {
   try {
     const orders = await select('pharmacy_orders', { id: orderId });
     if (orders.length === 0) return;
-    
+
     const order = orders[0];
-    
+
     // Get pharmacy name if assigned
     let pharmacyName = 'Pharmacy';
     if (order.pharmacy_id) {
@@ -1546,7 +1595,7 @@ async function sendOrderStatusNotification(
       pharmacyName = pharmacies[0]?.business_name || 'Pharmacy';
     }
 
-    const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
+    const { pushNotificationService } = await import('../../../aws/aws-sns-notification-service');
 
     const statusNotifications: Record<string, { eventType: any; title: string; body: string }> = {
       'accepted': {
@@ -1896,8 +1945,27 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
   app.post("/customer/pharmacy/orders/:orderId/approve-invoice", async (c) => {
     try {
       const { orderId } = c.req.param();
+
+      // Validate orderId parameter
+      const orderIdValidation = uuidSchema.safeParse(orderId);
+      if (!orderIdValidation.success) {
+        return c.json({ error: 'Invalid order ID format' }, 400);
+      }
+
+      // Validate request body using Zod schema
       const body = await c.req.json();
-      const { approved, phone } = body;
+      const validationResult = approveInvoiceRequestSchema.safeParse(body);
+      if (!validationResult.success) {
+        return c.json({
+          error: 'Invalid request body',
+          details: validationResult.error.errors.map(e => ({
+            path: e.path.join('.'),
+            message: e.message
+          }))
+        }, 400);
+      }
+
+      const { approved, phone } = validationResult.data;
 
       const orders = await select('pharmacy_orders', { id: orderId });
       if (orders.length === 0) {
@@ -1925,7 +1993,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
 
         // Notify pharmacy about cancellation
         try {
-          const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
+          const { sendEventNotification } = await import('../../../aws/aws-sns-notification-service');
           await sendEventNotification({
             userId: order.pharmacy_id,
             userType: 'vendor',
@@ -1954,7 +2022,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
 
       // Notify pharmacy that customer approved
       try {
-        const { sendEventNotification } = await import('../aws/aws-sns-notification-service');
+        const { sendEventNotification } = await import('../../../aws/aws-sns-notification-service');
         await sendEventNotification({
           userId: order.pharmacy_id,
           userType: 'vendor',
@@ -2021,7 +2089,91 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       }
 
       const order = orders.rows[0];
-      
+
+      // ✅ PAYMENT VERIFICATION: Check payment status with Razorpay
+      let verifiedPaymentStatus = order.payment_status || 'pending';
+      let paymentVerificationResult: any = null;
+
+      // Only verify if payment method is online (not COD)
+      if (order.payment_method && requiresPayment(order.payment_method)) {
+        try {
+          // Look up payment in payments table
+          const paymentQuery = `
+            SELECT p.*
+            FROM payments p
+            WHERE p.pharmacy_order_id = $1
+               OR (p.customer_id = $2 AND p.pharmacy_order_id IS NULL)
+          ORDER BY p.created_at DESC
+          LIMIT 1
+          `;
+          const paymentResult = await query(paymentQuery, [orderId, order.customer_id]);
+
+          if (paymentResult.rows.length > 0) {
+            const payment = paymentResult.rows[0];
+            const razorpayOrderId = payment.razorpay_order_id || order.razorpay_order_id;
+            const razorpayPaymentId = payment.razorpay_payment_id || order.razorpay_payment_id;
+            const totalAmount = parseFloat(order.total_amount || 0);
+
+            // Verify payment with Razorpay if we have payment IDs
+            if (razorpayOrderId || razorpayPaymentId) {
+              const verification = await verifyPayment({
+                customerId: order.customer_id,
+                totalAmount,
+                razorpayOrderId,
+                razorpayPaymentId,
+                paymentMethod: order.payment_method,
+                pharmacyOrderId: orderId,
+              });
+
+              paymentVerificationResult = {
+                verified: verification.verified,
+                databaseVerified: verification.databaseVerified,
+                razorpayVerified: verification.razorpayVerified,
+                error: verification.error,
+              };
+
+              // Update payment status based on verification
+              if (verification.verified) {
+                verifiedPaymentStatus = 'paid';
+
+                // Update pharmacy_orders table if payment is verified but DB shows pending
+                if (order.payment_status !== 'paid') {
+                  try {
+                    await update('pharmacy_orders', { id: orderId }, {
+                      payment_status: 'paid',
+                      updated_at: new Date().toISOString(),
+                    });
+                    console.log(`[ORDER STATUS] Updated payment_status to 'paid' for order ${orderId}`);
+                  } catch (updateErr: any) {
+                    console.error('[ORDER STATUS] Failed to update payment_status:', updateErr);
+                  }
+                }
+              } else {
+                // Payment not verified - keep as pending
+                verifiedPaymentStatus = 'pending';
+              }
+            } else {
+              // No Razorpay IDs found - check database payment status
+              if (payment.payment_status === 'completed') {
+                verifiedPaymentStatus = 'paid';
+              } else {
+                verifiedPaymentStatus = payment.payment_status || 'pending';
+              }
+            }
+          } else {
+            // No payment record found - check order's payment status
+            verifiedPaymentStatus = order.payment_status || 'pending';
+          }
+        } catch (paymentErr: any) {
+          console.error('[ORDER STATUS] Payment verification error:', paymentErr);
+          // Fall back to database payment status
+          verifiedPaymentStatus = order.payment_status || 'pending';
+        }
+      } else {
+        // COD order - no verification needed
+        verifiedPaymentStatus = order.payment_status || 'pending';
+      }
+
       // Get broadcast status if still broadcasting
       let broadcastStatus = null;
       if (order.status === 'broadcasting') {
@@ -2065,7 +2217,8 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
           invoiceUrl: order.perfora_invoice_url || order.invoice_url,
           invoiceAmount: parseFloat(order.invoice_amount || order.total_amount),
           paymentMethod: order.payment_method,
-          paymentStatus: order.payment_status,
+          paymentStatus: verifiedPaymentStatus, // ✅ Use verified payment status
+          paymentVerification: paymentVerificationResult, // ✅ Include verification details
           deliveryOtp: deliveryInfo.delivery_otp || order.delivery_otp,
           deliveryStatus: deliveryInfo.status || order.delivery_status,
           deliveryPartnerName: deliveryInfo.partner_name || deliveryInfo.delivery_partner_name,
@@ -2188,6 +2341,19 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
   app.post("/customer/pharmacy/orders", async (c) => {
     try {
       const body = await c.req.json();
+
+      // Validate request body using Zod schema
+      const validationResult = createPharmacyOrderRequestSchema.safeParse(body);
+      if (!validationResult.success) {
+        return c.json({
+          error: 'Invalid request body',
+          details: validationResult.error.errors.map(e => ({
+            path: e.path.join('.'),
+            message: e.message
+          }))
+        }, 400);
+      }
+
       const {
         items,
         address,
@@ -2200,20 +2366,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
         prescriptionId,
         orderType,
         notes,
-      } = body;
-
-      // Validate required fields
-      if (!items || items.length === 0) {
-        return c.json({ error: 'items array is required' }, 400);
-      }
-
-      if (!address) {
-        return c.json({ error: 'address is required' }, 400);
-      }
-
-      if (!phone) {
-        return c.json({ error: 'phone is required' }, 400);
-      }
+      } = validationResult.data;
 
       // Resolve customer ID from phone
       let customerId: string;
@@ -2267,17 +2420,17 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
       };
 
       // Calculate fees
-      const orderSubtotal = subtotal || pharmacyItems.reduce((sum: number, item: any) => 
+      const orderSubtotal = subtotal || pharmacyItems.reduce((sum: number, item: any) =>
         sum + (item.quantity * item.unit_price), 0
       );
-      
+
       const estimatedDeliveryFee = await calculateDeliveryFee(5);
       const platformFee = await calculatePlatformFee(orderSubtotal, 'pharmacy');
       const convenienceFee = await getConvenienceFee('pharmacy');
 
       // Create order - use minimal required fields to ensure compatibility
       const totalAmount = total || (orderSubtotal + estimatedDeliveryFee + platformFee + convenienceFee + (taxAmount || 0));
-      
+
       // Ensure pharmacy_orders table has all required columns
       try {
         await query(`
@@ -2415,7 +2568,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
   app.get("/customer/pharmacy/orders", async (c) => {
     try {
       const phone = c.req.query('phone');
-      
+      console.log('phone', phone);
       if (!phone) {
         return c.json({ error: 'phone parameter is required' }, 400);
       }
@@ -2428,7 +2581,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
 
       const customerId = customers[0].id;
 
-      // Get orders
+      // Get orders - exclude broadcasting and orders without invoice (only include orders with invoice generated)
       const orders = await query(
         `SELECT po.*, 
                 v.business_name as pharmacy_name,
@@ -2436,29 +2589,127 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
          FROM pharmacy_orders po
          LEFT JOIN vendors v ON po.pharmacy_id = v.id
          WHERE po.customer_id = $1
+           AND po.status IN ('invoice_generated', 'invoice_sent', 'payment_confirmed', 'preparing', 'dispatched', 'on_the_way', 'delivered')
          ORDER BY po.created_at DESC
          LIMIT 50`,
         [customerId]
       );
 
+      //Verify payment status for each order
+      const ordersWithPaymentStatus = await Promise.all(
+        orders.rows.map(async (order: any) => {
+          let verifiedPaymentStatus = order.payment_status || 'pending';
+          let paymentVerificationResult: any = null;
+
+          // Only verify if payment method is online (not COD)
+          if (order.payment_method && requiresPayment(order.payment_method)) {
+            try {
+              // Look up payment in payments table
+              const paymentQuery = `
+                SELECT p.*
+                FROM payments p
+                WHERE p.pharmacy_order_id = $1
+                   OR (p.customer_id = $2 AND p.pharmacy_order_id IS NULL)
+                ORDER BY p.created_at DESC
+                LIMIT 1
+              `;
+              const paymentResult = await query(paymentQuery, [order.id, customerId]);
+
+              if (paymentResult.rows.length > 0) {
+                const payment = paymentResult.rows[0];
+                const razorpayOrderId = payment.razorpay_order_id || order.razorpay_order_id;
+                const razorpayPaymentId = payment.razorpay_payment_id || order.razorpay_payment_id;
+                const totalAmount = parseFloat(order.total_amount || 0);
+
+                // Verify payment with Razorpay if we have payment IDs
+                if (razorpayOrderId || razorpayPaymentId) {
+                  const verification = await verifyPayment({
+                    customerId,
+                    totalAmount,
+                    razorpayOrderId,
+                    razorpayPaymentId,
+                    paymentMethod: order.payment_method,
+                    pharmacyOrderId: order.id,
+                  });
+
+                  paymentVerificationResult = {
+                    verified: verification.verified,
+                    databaseVerified: verification.databaseVerified,
+                    razorpayVerified: verification.razorpayVerified,
+                    error: verification.error,
+                  };
+
+                  // Update payment status based on verification
+                  if (verification.verified) {
+                    verifiedPaymentStatus = 'paid';
+
+                    // Update pharmacy_orders table if payment is verified but DB shows pending
+                    if (order.payment_status !== 'paid') {
+                      try {
+                        await update('pharmacy_orders', { id: order.id }, {
+                          payment_status: 'paid',
+                          updated_at: new Date().toISOString(),
+                        });
+                        console.log(`[CUSTOMER ORDERS] Updated payment_status to 'paid' for order ${order.id}`);
+                      } catch (updateErr: any) {
+                        console.error('[CUSTOMER ORDERS] Failed to update payment_status:', updateErr);
+                      }
+                    }
+                  } else {
+                    // Payment not verified - keep as pending
+                    verifiedPaymentStatus = 'pending';
+                  }
+                } else {
+                  // No Razorpay IDs found - check database payment status
+                  if (payment.payment_status === 'completed') {
+                    verifiedPaymentStatus = 'paid';
+                  } else {
+                    verifiedPaymentStatus = payment.payment_status || 'pending';
+                  }
+                }
+              } else {
+                // No payment record found - check order's payment status
+                verifiedPaymentStatus = order.payment_status || 'pending';
+              }
+            } catch (paymentErr: any) {
+              console.error(`[CUSTOMER ORDERS] Payment verification error for order ${order.id}:`, paymentErr);
+              // Fall back to database payment status
+              verifiedPaymentStatus = order.payment_status || 'pending';
+            }
+          } else {
+            // COD order - no verification needed
+            verifiedPaymentStatus = order.payment_status || 'pending';
+          }
+
+          // Determine display status: if payment is paid, show 'payment_confirmed', otherwise show actual status
+          const displayStatus = verifiedPaymentStatus === 'paid' ? 'payment_confirmed' : order.status;
+
+          return {
+            id: order.id,
+            order_number: order.order_number,
+            status: displayStatus, // ✅ Show 'payment_confirmed' if paid, otherwise actual status
+            items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
+            subtotal: parseFloat(order.subtotal || 0),
+            deliveryFee: parseFloat(order.delivery_fee || 0),
+            platformFee: parseFloat(order.platform_fee || 0),
+            convenienceFee: parseFloat(order.convenience_fee || 0),
+            taxAmount: parseFloat(order.tax_amount || 0),
+            total: parseFloat(order.total_amount || 0),
+            pharmacyName: order.pharmacy_name,
+            pharmacyPhone: order.pharmacy_phone,
+            deliveryAddress: typeof order.delivery_address === 'string' ? JSON.parse(order.delivery_address) : order.delivery_address,
+            paymentMethod: order.payment_method,
+            paymentStatus: verifiedPaymentStatus, // ✅ Use verified payment status
+            paymentVerification: paymentVerificationResult, // ✅ Include verification details
+            createdAt: order.created_at,
+            updatedAt: order.updated_at,
+          };
+        })
+      );
+
       return c.json({
         success: true,
-        orders: orders.rows.map((order: any) => ({
-          id: order.id,
-          status: order.status,
-          items: typeof order.items === 'string' ? JSON.parse(order.items) : order.items,
-          subtotal: parseFloat(order.subtotal),
-          deliveryFee: parseFloat(order.delivery_fee),
-          platformFee: parseFloat(order.platform_fee),
-          convenienceFee: parseFloat(order.convenience_fee || 0),
-          taxAmount: parseFloat(order.tax_amount || 0),
-          total: parseFloat(order.total_amount),
-          pharmacyName: order.pharmacy_name,
-          pharmacyPhone: order.pharmacy_phone,
-          deliveryAddress: typeof order.delivery_address === 'string' ? JSON.parse(order.delivery_address) : order.delivery_address,
-          createdAt: order.created_at,
-          updatedAt: order.updated_at,
-        })),
+        orders: ordersWithPaymentStatus,
       });
     } catch (error: any) {
       console.error('Error fetching customer pharmacy orders:', error);

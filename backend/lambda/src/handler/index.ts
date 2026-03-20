@@ -42,7 +42,7 @@ import { registerRazorpayEndpoints } from '../endpoints/razorpay/endpoints/razor
 import { registerWalletEndpoints } from '../endpoints/wallet';
 import { registerWalletDiagnosticEndpoints } from '../endpoints/wallet-diagnostic';
 import { registerSpecializedServicesEndpoints } from '../endpoints/specialized-services';
-import { registerSpecializedServiceFlows } from '../endpoints/specialized-service-flows';
+import { registerSpecializedServiceFlows } from '../endpoints/customer/customerEndpoint/specialized-service-flows.customer';
 // Staff decommissioned: solo providers discovered via discover-services for at_home/tele
 // import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerReviewEndpoints } from '../endpoints/reviews';
@@ -50,10 +50,10 @@ import { registerNotificationEndpoints } from '../endpoints/notification/endpoit
 import { registerFollowupRescheduleEndpoints } from '../endpoints/followup-reschedule';
 import { registerBehaviorJournalEndpoints } from '../endpoints/behavior-journal';
 import { registerVendorScheduleEndpoints } from '../endpoints/vendor/endpoints/vendor-schedule';
-import { registerPrescriptionEndpoints } from '../endpoints/prescriptions';
+import { registerPrescriptionEndpoints } from '../endpoints/prescription/endpoints/prescriptions';
 import { registerMedicalRecordsEndpoints } from '../endpoints/medical-records';
 import { registerEcommerceEndpoints } from '../endpoints/ecommerce';
-import { registerAnalyticsEndpoints } from '../endpoints/analytics';
+import { registerAnalyticsEndpoints } from '../endpoints/admin/endpoints/analytics.admin';
 import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
@@ -131,7 +131,7 @@ import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-co
 import { registerServiceLaunchConfigEndpoints } from '../endpoints/service-launch-config';
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
 import { registerVendorSupportEndpoints } from '../endpoints/vendor/endpoints/vendor-support';
-import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } from '../endpoints/pharmacy-orders';
+import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } from '../endpoints/orders/endpoint/pharmacy-orders';
 import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';

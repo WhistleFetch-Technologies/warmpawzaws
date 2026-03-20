@@ -540,8 +540,17 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     }
   });
 
-  // NOTE: /vendor/bookings/:bookingId/complete is handled by vendor-booking-actions.ts
-  // That handler properly verifies OTP for in-person services and creates vendor_earnings
+  /**
+   * POST /vendor/bookings/:bookingId/complete
+   * ⚠️ DEPRECATED: This endpoint has been moved to vendor.gpstracking.ts
+   * The new endpoint includes GPS tracking session completion and enhanced OTP handling.
+   * This endpoint is kept commented out to avoid route conflicts.
+   * 
+   * The active endpoint is registered in: src/endpoints/gpsTracking/endpoints/vendor.gpstracking.ts
+   */
+  // app.post("/vendor/bookings/:bookingId/complete", async (c) => {
+  //   ... (moved to vendor.gpstracking.ts for GPS tracking support)
+  // });
 
   /**
    * GET /vendor/bookings/:bookingId/details

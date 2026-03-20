@@ -325,10 +325,11 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         // Continue - we already saved in facility data above
       }
 
-      // 4. Save address coordinates and availableForInstantTele to vendor profile
+      // 4. Save address coordinates, business name, and availableForInstantTele to vendor profile
       try {
         const vendorProfileUpdate: any = {
-          availableForInstantTele: availableForInstantTele
+          availableForInstantTele: availableForInstantTele,
+          businessName: profile.centerName.trim() // ✅ FIX: Update business_name when centerName changes
         };
         
         // Include latitude/longitude if they exist in profile state
@@ -346,6 +347,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           // Non-critical, but log it
         } else {
           console.log('✅ Vendor profile updated:', { 
+            businessName: profile.centerName.trim(),
             availableForInstantTele, 
             hasLatitude: profile.latitude != null,
             hasLongitude: profile.longitude != null

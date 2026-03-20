@@ -167,6 +167,7 @@ export function PharmacyOrderFlow({
 
   useEffect(() => {
     loadAddresses();
+    loadRazorpayScript();
   }, []);
 
   // Load delivery status when in tracking step
@@ -275,14 +276,20 @@ export function PharmacyOrderFlow({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('customerId', customerId);
-      formData.append('documentType', 'prescription');
+      if (customerId) {
+        formData.append('customerId', customerId);
+      }
+      if (customerPhone) {
+        formData.append('customerPhone', customerPhone);
+      }
       
-      const res = await apiClient.upload<any>('/storage/upload', formData);
+      const res = await apiClient.upload<any>('/customer/prescriptions/upload', formData);
       
       if (res.url) {
         setPrescriptionUrl(res.url);
         toast.success('Prescription uploaded successfully!');
+      } else {
+        throw new Error('No URL returned from upload');
       }
     } catch (error: any) {
       console.error('Error uploading prescription:', error);
@@ -363,7 +370,13 @@ export function PharmacyOrderFlow({
     // Use WebSocket for real-time updates instead of polling
     const unsubscribe = subscribeToOrder(orderIdToTrack, (data) => {
       if (data.status === 'accepted' && data.pharmacy) {
-        setAcceptedPharmacy(data.pharmacy);
+        // ✅ FIX: Ensure distance is a number (WebSocket might return string)
+        const pharmacyData = { ...data.pharmacy };
+        if (pharmacyData.distance != null) {
+          const distanceNum = Number(pharmacyData.distance);
+          pharmacyData.distance = !isNaN(distanceNum) ? distanceNum : undefined;
+        }
+        setAcceptedPharmacy(pharmacyData);
         setStep('accepted');
         toast.success(`${data.pharmacy.name} accepted your order!`);
         unsubscribe();
@@ -415,11 +428,15 @@ export function PharmacyOrderFlow({
             if (res.broadcastStatus.accepted > 0 && res.broadcasts?.length > 0) {
               const acceptedBroadcast = res.broadcasts.find((b: any) => b.status === 'accepted');
               if (acceptedBroadcast) {
+                // ✅ FIX: Ensure distance is a number (API might return string)
+                const distanceValue = acceptedBroadcast.distance_from_customer ?? acceptedBroadcast.distanceFromCustomer;
+                const distanceNumber = distanceValue != null ? Number(distanceValue) : undefined;
+                
                 setAcceptedPharmacy({
                   id: acceptedBroadcast.pharmacyId ?? acceptedBroadcast.pharmacy_id ?? '',
                   name: acceptedBroadcast.pharmacyName ?? acceptedBroadcast.pharmacy_name ?? 'Pharmacy',
                   phone: acceptedBroadcast.pharmacy_phone ?? acceptedBroadcast.pharmacyPhone ?? '',
-                  distance: acceptedBroadcast.distance_from_customer ?? acceptedBroadcast.distanceFromCustomer,
+                  distance: !isNaN(distanceNumber || NaN) ? distanceNumber : undefined,
                   acceptedAt: acceptedBroadcast.respondedAt ?? acceptedBroadcast.accepted_at ?? acceptedBroadcast.response_time ?? new Date().toISOString(),
                 });
                 setStep('accepted');
@@ -437,6 +454,64 @@ export function PharmacyOrderFlow({
       unsubscribe();
       clearInterval(pollInterval);
     };
+  };
+
+  // ============================================================================
+  // RAZORPAY SCRIPT LOADING
+  // ============================================================================
+
+  const loadRazorpayScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined') {
+        reject(new Error('Window is not available'));
+        return;
+      }
+      
+      // If already loaded, resolve immediately
+      if ((window as any).Razorpay) {
+        resolve();
+        return;
+      }
+      
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+      if (existingScript) {
+        // Wait for existing script to load
+        existingScript.addEventListener('load', () => {
+          if ((window as any).Razorpay) {
+            resolve();
+          } else {
+            reject(new Error('Razorpay script loaded but window.Razorpay is not available'));
+          }
+        });
+        existingScript.addEventListener('error', () => {
+          reject(new Error('Failed to load Razorpay script'));
+        });
+        return;
+      }
+      
+      // Create and load new script
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      
+      script.onload = () => {
+        // Wait a bit for Razorpay to initialize
+        setTimeout(() => {
+          if ((window as any).Razorpay) {
+            resolve();
+          } else {
+            reject(new Error('Razorpay script loaded but window.Razorpay is not available'));
+          }
+        }, 100);
+      };
+      
+      script.onerror = () => {
+        reject(new Error('Failed to load Razorpay script'));
+      };
+      
+      document.body.appendChild(script);
+    });
   };
 
   // ============================================================================
@@ -461,11 +536,24 @@ export function PharmacyOrderFlow({
         throw new Error('Failed to create payment order');
       }
 
+      // Load Razorpay script if not already loaded
+      try {
+        await loadRazorpayScript();
+      } catch (scriptError: any) {
+        console.error('Failed to load Razorpay script:', scriptError);
+        throw new Error('Payment gateway not available. Please refresh the page and try again.');
+      }
+
+      // Verify Razorpay is available
+      if (!(window as any).Razorpay) {
+        throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
+      }
+
       // Open Razorpay checkout
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: invoice.totalAmount * 100,
-        currency: 'INR',
+        key: paymentRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        amount: Math.round((paymentRes.amount || invoice.totalAmount) * 100), // Convert to paise
+        currency: paymentRes.currency || 'INR',
         name: 'Warmpawz',
         description: 'Medicine Order',
         order_id: paymentRes.orderId,
@@ -499,10 +587,8 @@ export function PharmacyOrderFlow({
         },
       };
 
-      if ((window as any).Razorpay) {
-        const razorpay = new (window as any).Razorpay(options);
-        razorpay.open();
-      }
+      const razorpay = new (window as any).Razorpay(options);
+      razorpay.open();
     } catch (error: any) {
       console.error('Error processing payment:', error);
       toast.error(error.message || 'Payment failed');
@@ -808,9 +894,11 @@ export function PharmacyOrderFlow({
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900">{acceptedPharmacy.name}</h3>
-                  {acceptedPharmacy.distance && (
+                  {acceptedPharmacy.distance != null && (
                     <p className="text-sm text-gray-500">
-                      {acceptedPharmacy.distance.toFixed(1)} km away
+                      {typeof acceptedPharmacy.distance === 'number' 
+                        ? acceptedPharmacy.distance.toFixed(1) 
+                        : Number(acceptedPharmacy.distance || 0).toFixed(1)} km away
                     </p>
                   )}
                   {acceptedPharmacy.rating && (
@@ -860,40 +948,55 @@ export function PharmacyOrderFlow({
 
               {/* Price breakdown */}
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Subtotal</span>
-                  <span>₹{invoice.subtotal.toFixed(2)}</span>
-                </div>
-                {invoice.discount > 0 && (
-                  <div className="flex justify-between text-green-600">
-                    <span>Discount</span>
-                    <span>-₹{invoice.discount.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-600">GST</span>
-                  <span>₹{invoice.taxAmount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Delivery Charges</span>
-                  <span>₹{invoice.deliveryCharges.toFixed(2)}</span>
-                </div>
-                {invoice.platformFee > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Platform Fee</span>
-                    <span>₹{invoice.platformFee.toFixed(2)}</span>
-                  </div>
-                )}
-                {invoice.convenienceFee > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Convenience Fee</span>
-                    <span>₹{invoice.convenienceFee.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200">
-                  <span>Total</span>
-                  <span className="text-[#FF8C42]">₹{invoice.totalAmount.toFixed(2)}</span>
-                </div>
+                {(() => {
+                  // Safely convert all invoice values to numbers
+                  const subtotal = parseFloat(String(invoice.subtotal || 0)) || 0;
+                  const discount = parseFloat(String(invoice.discount || 0)) || 0;
+                  const taxAmount = parseFloat(String(invoice.taxAmount || 0)) || 0;
+                  const deliveryCharges = parseFloat(String(invoice.deliveryCharges || 0)) || 0;
+                  const platformFee = parseFloat(String(invoice.platformFee || 0)) || 0;
+                  const convenienceFee = parseFloat(String(invoice.convenienceFee || 0)) || 0;
+                  const totalAmount = parseFloat(String(invoice.totalAmount || 0)) || 0;
+
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span>₹{subtotal.toFixed(2)}</span>
+                      </div>
+                      {discount > 0 && (
+                        <div className="flex justify-between text-green-600">
+                          <span>Discount</span>
+                          <span>-₹{discount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">GST</span>
+                        <span>₹{taxAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Delivery Charges</span>
+                        <span>₹{deliveryCharges.toFixed(2)}</span>
+                      </div>
+                      {platformFee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Platform Fee</span>
+                          <span>₹{platformFee.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {convenienceFee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Convenience Fee</span>
+                          <span>₹{convenienceFee.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200">
+                        <span>Total</span>
+                        <span className="text-[#FF8C42]">₹{totalAmount.toFixed(2)}</span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </Card>
 
@@ -907,7 +1010,7 @@ export function PharmacyOrderFlow({
               ) : (
                 <>
                   <CreditCard className="w-5 h-5 mr-2" />
-                  Pay ₹{invoice.totalAmount.toFixed(2)}
+                  Pay ₹{(parseFloat(String(invoice.totalAmount || 0)) || 0).toFixed(2)}
                 </>
               )}
             </Button>

@@ -33,10 +33,38 @@ import { isValidUUID } from '../../../types/entities';
 class VendorStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      // ✅ SQL: Get all vendors
-      const vendors = await select('vendors', {});
+      // ✅ FIX: Get all vendors excluding soft-deleted ones
+      // Use SQL query directly to properly filter and handle is_active type conversion
+      const vendorsResult = await query(`
+        SELECT 
+          id,
+          business_name,
+          owner_name,
+          status,
+          is_active,
+          is_deleted,
+          category,
+          created_at
+        FROM vendors
+        WHERE (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
+        ORDER BY created_at DESC
+      `);
 
-      const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
+      const vendors = vendorsResult.rows || [];
+
+      // ✅ FIX: Normalize is_active to handle boolean, string ('t'/'f'), and number (1/0) types
+      const normalizeIsActive = (value: any): boolean => {
+        if (value === true || value === 1 || value === '1' || value === 't' || value === 'true') {
+          return true;
+        }
+        return false;
+      };
+
+      // ✅ FIX: Filter active vendors - 'approved' and 'active' are semantically equivalent
+      // An active vendor was approved, so we should count both statuses
+      const activeVendors = vendors.filter(v => 
+        (v.status === 'approved' || v.status === 'active') && normalizeIsActive(v.is_active)
+      );
 
       // ✅ FIX: Get pending applications from vendor_onboarding_applications table (not vendors table)
       let pendingApplicationsCount = 0;
@@ -61,7 +89,7 @@ class VendorStatsHandler extends BaseHandler {
         pendingApplicationsCount = fallbackPending.length;
       }
 
-      const deactivatedVendors = vendors.filter(v => !v.is_active);
+      const deactivatedVendors = vendors.filter(v => !normalizeIsActive(v.is_active));
       const rejectedVendors = vendors.filter(v => v.status === 'rejected');
 
       // Distribution by category
@@ -728,6 +756,187 @@ export function registerAdminEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await listHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Get pending applications (new applications + re-approval cases)
+  app.get('/admin/vendors/pending-applications-fixed', async (c) => {
+    // ✅ SECURITY FIX: Require admin authentication
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+
+    try {
+      const applications: any[] = [];
+
+      // 1️⃣ Get new vendor applications from vendor_onboarding_applications
+      try {
+        const newApplicationsResult = await query(`
+          SELECT 
+            voa.id,
+            voa.vendor_identity_id,
+            voa.status,
+            voa.submitted_at,
+            voa.created_at,
+            voa.updated_at,
+            voa.custom_fields,
+            voa.admin_comments,
+            vi.phone,
+            vi.email,
+            vi.full_name,
+            vi.business_name,
+            vi.owner_name,
+            vi.address,
+            vi.city,
+            vi.state,
+            vi.pincode,
+            vi.vendor_type,
+            vi.experience_years,
+            r.name as role_name,
+            r.display_name as role_display_name
+          FROM vendor_onboarding_applications voa
+          LEFT JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
+          LEFT JOIN roles r ON r.id = vi.selected_role_id
+          WHERE voa.status IN ('SUBMITTED', 'PENDING', 'UNDER_REVIEW')
+            AND (vi.is_deleted IS NULL OR vi.is_deleted = false OR vi.is_deleted = 'f')
+          ORDER BY voa.submitted_at DESC NULLS LAST, voa.created_at DESC
+        `);
+
+        for (const app of newApplicationsResult.rows || []) {
+          applications.push({
+            id: app.id,
+            vendorId: app.vendor_identity_id,
+            applicationId: app.id,
+            fullName: app.full_name || app.owner_name || app.business_name,
+            businessName: app.business_name,
+            ownerName: app.owner_name,
+            phone: app.phone,
+            email: app.email,
+            address: app.address,
+            city: app.city,
+            state: app.state,
+            pincode: app.pincode,
+            roleName: app.role_name,
+            roleDisplayName: app.role_display_name,
+            vendorType: app.vendor_type || 'business',
+            experienceYears: app.experience_years,
+            experience: app.experience_years ? `${app.experience_years} years` : null,
+            status: app.status.toLowerCase().replace(/_/g, '_'),
+            submittedAt: app.submitted_at || app.created_at,
+            createdAt: app.created_at,
+            customFields: app.custom_fields || {},
+            adminComments: app.admin_comments,
+            isReapproval: false,
+          });
+        }
+      } catch (e) {
+        console.warn('[pending-applications-fixed] Could not fetch new applications from vendor_onboarding_applications:', e);
+      }
+
+      // 2️⃣ Get re-approval cases from vendors table
+      try {
+        const reapprovalResult = await query(`
+          SELECT 
+            v.id,
+            v.phone,
+            v.email,
+            v.business_name,
+            v.owner_name,
+            v.role_id,
+            v.status,
+            v.city,
+            v.state,
+            v.address,
+            v.pincode,
+            v.experience_years,
+            v.created_at,
+            v.updated_at,
+            v.metadata,
+            r.name as role_name,
+            r.display_name as role_display_name,
+            vi.vendor_type
+          FROM vendors v
+          LEFT JOIN roles r ON r.id = v.role_id
+          LEFT JOIN LATERAL (
+            SELECT vendor_type
+            FROM vendor_identity vi2
+            WHERE (
+              vi2.phone = v.phone 
+              OR REPLACE(REPLACE(REPLACE(vi2.phone, ' ', ''), '+', ''), '-', '') = REPLACE(REPLACE(REPLACE(v.phone, ' ', ''), '+', ''), '-', '')
+            )
+            AND (vi2.is_deleted IS NULL OR vi2.is_deleted = false OR vi2.is_deleted = 'f')
+            ORDER BY vi2.updated_at DESC NULLS LAST
+            LIMIT 1
+          ) vi ON true
+          WHERE v.status = 'pending'
+            AND (
+              (v.metadata->>'wasApprovedBefore')::boolean = true
+              OR v.metadata->>'wasApprovedBefore' = 'true'
+            )
+            AND (v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')
+          ORDER BY 
+            CASE 
+              WHEN v.metadata->>'reapprovalRequestedAt' IS NOT NULL 
+              THEN (v.metadata->>'reapprovalRequestedAt')::timestamp 
+              ELSE v.updated_at 
+            END DESC NULLS LAST
+        `);
+
+        for (const vendor of reapprovalResult.rows || []) {
+          const metadata = vendor.metadata || {};
+          applications.push({
+            id: vendor.id,
+            vendorId: vendor.id,
+            applicationId: null, // No application ID for re-approvals
+            fullName: vendor.business_name || vendor.owner_name,
+            businessName: vendor.business_name,
+            ownerName: vendor.owner_name,
+            phone: vendor.phone,
+            email: vendor.email,
+            address: vendor.address,
+            city: vendor.city,
+            state: vendor.state,
+            pincode: vendor.pincode,
+            roleName: vendor.role_name,
+            roleDisplayName: vendor.role_display_name,
+            vendorType: vendor.vendor_type || 'business',
+            experienceYears: vendor.experience_years,
+            experience: vendor.experience_years ? `${vendor.experience_years} years` : null,
+            status: 'pending_reverification',
+            submittedAt: metadata.reapprovalRequestedAt || vendor.updated_at,
+            createdAt: vendor.created_at,
+            customFields: {},
+            adminComments: null,
+            isReapproval: true,
+            reapprovalReason: metadata.reapprovalReason || 'Critical profile fields updated',
+            previousStatus: metadata.previousStatus || 'approved',
+          });
+        }
+      } catch (e) {
+        console.warn('[pending-applications-fixed] Could not fetch re-approval cases from vendors:', e);
+      }
+
+      // Sort by submittedAt (most recent first)
+      applications.sort((a, b) => {
+        const dateA = new Date(a.submittedAt || a.createdAt || 0).getTime();
+        const dateB = new Date(b.submittedAt || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
+      return c.json({
+        success: true,
+        applications,
+        total: applications.length,
+      });
+    } catch (error: any) {
+      console.error('[pending-applications-fixed] Error:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch pending applications',
+        applications: [],
+        total: 0
+      }, 500);
+    }
   });
 
   // Frontend compatibility: /admin/vendor/application/:applicationId/approve

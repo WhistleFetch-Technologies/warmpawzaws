@@ -334,8 +334,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     const isUATMode = process.env.UAT_MODE === 'true';
 
     // Production bypass configuration (for testing/admin access in production)
-    // These phones can verify with OTP 000000 in production mode
-    const PRODUCTION_BYPASS_PHONES = ['9999999999', '9326977987', '9148219125', 7899139662];
+    // In production mode, ANY phone number can verify with OTP 000000 (6 zeros)
     const PRODUCTION_BYPASS_OTP = '000000';
 
     try {
@@ -350,13 +349,13 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           : phoneDigits;
 
       // ============================================================================
-      // PRODUCTION BYPASS: Allow specific phone/OTP combinations in production only
+      // PRODUCTION BYPASS: Allow ANY phone number with OTP 000000 in production only
       // ============================================================================
       // This bypass works ONLY in production mode (when UAT_MODE !== 'true')
-      // It allows whitelisted phones with OTP 000000 for testing/admin purposes
-      if (!isUATMode && PRODUCTION_BYPASS_PHONES.includes(normalizedPhone) && otp === PRODUCTION_BYPASS_OTP) {
+      // It allows ANY phone number to verify with OTP 000000 for testing/admin purposes
+      if (!isUATMode && otp === PRODUCTION_BYPASS_OTP) {
         isValid = true;
-        console.log(`[AUTH] Production Bypass: OTP accepted for phone ${phone} (normalized: ${normalizedPhone})`);
+        console.log(`[AUTH] Production Bypass: OTP 000000 accepted for phone ${phone} (normalized: ${normalizedPhone})`);
 
         // Try to mark any existing OTP tokens as used (non-blocking, with timeout)
         Promise.race([

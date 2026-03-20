@@ -127,7 +127,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
 
-    // ✅ FORENSIC FIX: Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
+    //Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
     if (!body.customerId && body.customerPhone) {
       try {
         const custResult = await query(

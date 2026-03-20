@@ -440,6 +440,18 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
           <p className="text-xs text-gray-500 mt-1.5 text-center">Track your meal plan deliveries and access order status</p>
         </div>
 
+        {/* Pharmacy Orders - Access pharmacy order tracker */}
+        <div className="px-4 py-3 bg-white border-b border-gray-100">
+          <button
+            onClick={() => router.push(phone ? `/orders/pharmacy?phone=${encodeURIComponent(phone)}` : '/orders/pharmacy')}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-medium hover:bg-blue-100 transition-colors"
+          >
+            <Package className="w-5 h-5" />
+            Pharmacy Orders & Tracking
+          </button>
+          <p className="text-xs text-gray-500 mt-1.5 text-center">Track your pharmacy orders and access order status</p>
+        </div>
+
         {/* Filter Tabs */}
         <div className="flex gap-2 px-4 py-3 bg-white border-b border-gray-100">
           {[

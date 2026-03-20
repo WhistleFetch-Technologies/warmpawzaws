@@ -25,6 +25,7 @@ import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentity
 import { taxCalculationService } from '../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../constants';
+import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../constants/helper';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -77,126 +78,7 @@ function isProductionEnvironment(): boolean {
   );
 }
 
-/**
- * ✅ FIX: Extract S3 key from pre-signed URL or full S3 URL
- * Handles various URL formats and returns the S3 key for regenerating pre-signed URLs
- */
-function extractS3KeyFromUrl(url: string | null | undefined): string | null {
-  if (!url || typeof url !== 'string') return null;
-
-  // If it's already just a key (no http/https), return as-is
-  if (!url.startsWith('http')) {
-    return url.trim();
-  }
-
-  try {
-    // If it's a pre-signed URL or full S3 URL, extract the key
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-
-    // Remove leading slash and extract key (before query params)
-    if (pathname) {
-      // Remove leading slash if present
-      const key = pathname.startsWith('/') ? pathname.substring(1) : pathname;
-      // Remove query string if present in pathname (shouldn't be, but just in case)
-      const cleanKey = key.split('?')[0].trim();
-      if (cleanKey) {
-        return cleanKey;
-      }
-    }
-  } catch (urlError) {
-    // If URL parsing fails, try to extract key manually using regex
-    try {
-      // Pattern 1: Extract from S3 URL format: https://bucket.s3.region.amazonaws.com/key
-      const s3Match = url.match(/amazonaws\.com\/([^?]+)/);
-      if (s3Match && s3Match[1]) {
-        return s3Match[1].trim();
-      }
-
-      // Pattern 2: Extract vendors/... pattern (most common)
-      const vendorsMatch = url.match(/(vendors\/[^?]+)/);
-      if (vendorsMatch && vendorsMatch[1]) {
-        return vendorsMatch[1].trim();
-      }
-
-      console.warn(`[EXTRACT-S3-KEY] Could not extract key from URL: ${url?.substring(0, 150)}`);
-    } catch (regexError) {
-      console.error(`[EXTRACT-S3-KEY] Error in regex extraction:`, regexError);
-      return null;
-    }
-  }
-
-  return null;
-}
-
-/**
- * ✅ FIX: Regenerate pre-signed URL for S3 object
- * Takes an S3 key or existing URL and returns a fresh pre-signed URL
- */
-async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
-  if (!s3KeyOrUrl) return null;
-
-  try {
-    const s3Key = extractS3KeyFromUrl(s3KeyOrUrl);
-    if (!s3Key) {
-      console.warn(`[PRESIGNED-URL] Could not extract S3 key from URL: ${s3KeyOrUrl?.substring(0, 100)}`);
-      // ✅ FIX: Return null instead of expired URL to prevent 403 errors
-      return null;
-    }
-
-    console.log(`[PRESIGNED-URL] Regenerating URL for S3 key: ${s3Key}`);
-
-    const { S3Client, GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
-    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-    const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-
-    // ✅ FIX: Verify object exists before generating presigned URL
-    try {
-      const headCommand = new HeadObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-      });
-      await s3Client.send(headCommand);
-      console.log(`[PRESIGNED-URL] Object exists in S3: ${s3Key}`);
-    } catch (headError: any) {
-      if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
-        console.error(`[PRESIGNED-URL] Object not found in S3: ${s3Key}`);
-        return null; // Return null if object doesn't exist
-      }
-      console.warn(`[PRESIGNED-URL] Error checking object existence for ${s3Key}:`, headError?.message);
-      // Continue anyway - might be a permission issue, not a missing object
-    }
-
-    const signedUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-      }),
-      { expiresIn: 604800 } // 7 days
-    );
-
-    if (!signedUrl || typeof signedUrl !== 'string' || !signedUrl.startsWith('https://')) {
-      console.error(`[PRESIGNED-URL] Invalid presigned URL generated for ${s3Key}`);
-      return null; // ✅ FIX: Return null instead of expired URL to prevent 403 errors
-    }
-
-    console.log(`[PRESIGNED-URL] Successfully regenerated URL for ${s3Key} (length: ${signedUrl.length})`);
-    return signedUrl;
-  } catch (error: any) {
-    console.error(`[PRESIGNED-URL] Error regenerating URL for ${s3KeyOrUrl?.substring(0, 100)}:`, {
-      message: error.message,
-      name: error.name,
-      code: error.code,
-      statusCode: error.$metadata?.httpStatusCode,
-      stack: error.stack?.substring(0, 200)
-    });
-    // ✅ FIX: Don't return expired URL - return null instead to prevent 403 errors
-    // Frontend should handle null photo URLs gracefully
-    return null;
-  }
-}
+// ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
 
 /**
  * Unified vendor photo URL: profile_photo_url (vendor profile upload) takes precedence,
@@ -673,10 +555,9 @@ async function getNextAvailableSlot(
   serviceStyleFilter?: string[]
 ): Promise<{ date: string; time: string; display: string } | null> {
   try {
-    // ✅ CRITICAL FIX: Use IST time since all vendor times are in IST
-    const IST_OFFSET_MS_LOCAL = 5.5 * 60 * 60 * 1000;
-    const nowUTCLocal = new Date();
-    const now = new Date(nowUTCLocal.getTime() + IST_OFFSET_MS_LOCAL); // IST time
+    // ✅ FIX: Use server's current time (server should be configured in IST)
+    // Database stores times in IST, so we use server time directly
+    const now = new Date();
     const currentDayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const SLOT_DURATION = 30; // minutes - atomic slot size
@@ -810,6 +691,10 @@ async function getNextAvailableSlot(
           } else {
             display = `${checkDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatted}`;
           }
+
+
+
+          console.log('display_______________________________>', display, dateStr, timeStr);
 
           return {
             date: dateStr,
@@ -3711,8 +3596,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const category = c.req.query('category');
-      const serviceStyle = c.req.query('serviceStyle');
+      // Check multiple possible parameter names for serviceStyle
+      const serviceStyle = c.req.query('serviceStyle') || c.req.query('service_style') || c.req.query('style');
       const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
+
+      console.log(`[Vendor Services] Request params: vendorId=${vendorId}, category=${category}, serviceStyle=${serviceStyle}, customerPhone=${customerPhone}`);
+      console.log(`[Vendor Services] All query params:`, Object.keys(c.req.query()).reduce((acc, key) => {
+        acc[key] = c.req.query(key);
+        return acc;
+      }, {} as Record<string, string | undefined>));
 
       // Resolve vendor (frontend may pass vendor_identity.id or staff id; resolve to vendors.id)
       const vendor = await resolveVendorById(vendorId);
@@ -3818,19 +3710,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         queryParams.push(category);
         servicesQuery += ` AND (LOWER(vs.category) = LOWER($${queryParams.length}) OR LOWER(vs.category) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
       }
-      if (serviceStyle) {
+      if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         queryParams.push(acceptableStyles);
         servicesQuery += ` AND vs.service_style = ANY($${queryParams.length}::text[])`;
-        // ✅ FIX: For at_center, exclude at_home services in query
-        if (serviceStyle === 'at_center') {
-          servicesQuery += ` AND vs.service_style != 'at_home'`;
-        }
+        console.log(`[Vendor Services] SQL filter: serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
       }
 
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
 
+      console.log(`[Vendor Services] SQL query: ${servicesQuery.substring(0, 500)}...`);
       const result = await query(servicesQuery, queryParams);
+      console.log(`[Vendor Services] SQL result: ${result.rows.length} services from database`);
 
       const formattedServices = result.rows.map((row: any) => {
         const price = row.custom_price != null ? parseFloat(row.custom_price) : (row.price != null ? parseFloat(row.price) : 0);
@@ -3870,7 +3761,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           duration,
           category: row.category,
           categorySlug: row.category,
-          serviceStyle: row.service_style || 'at_center',
+          serviceStyle: row.service_style || null, // Don't default to 'at_center' - use actual value from DB
           specializationIds,
           specialization_ids: specializationIds,
           isPackage,
@@ -3890,13 +3781,38 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const packages = formattedServices.filter((s: any) => s.isPackage);
       const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
 
-      // ✅ FIX: Fallback filter - for at_center, filter out at_home services
-      if (serviceStyle === 'at_center') {
+      // ✅ FIX: Filter services by serviceStyle if provided - ensure only matching services are returned
+      // This is a critical filter to ensure SQL query results match the requested serviceStyle
+      if (serviceStyle && serviceStyle !== 'all') {
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        
+        console.log(`[Vendor Services] Before filter: ${services.length} services`);
+        console.log(`[Vendor Services] Filtering by serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
+        
+        // Log all service styles before filtering
+        const serviceStylesBefore = services.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          style: s.serviceStyle || s.service_style
+        }));
+        console.log(`[Vendor Services] Service styles before filter:`, serviceStylesBefore);
+        
         services = services.filter((s: any) => {
           const style = s.serviceStyle || s.service_style;
-          return style !== 'at_home';
+          const matches = acceptableStyles.includes(style);
+          if (!matches) {
+            console.log(`[Vendor Services] Filtering out service: ${s.name} (style: ${style}, not in ${JSON.stringify(acceptableStyles)})`);
+          }
+          return matches;
         });
-        console.log(`[Vendor Services] After fallback filter for at_center: ${services.length} services (removed at_home services)`);
+        
+        console.log(`[Vendor Services] After filter: ${services.length} services`);
+        const serviceStylesAfter = services.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          style: s.serviceStyle || s.service_style
+        }));
+        console.log(`[Vendor Services] Service styles after filter:`, serviceStylesAfter);
       }
 
       return c.json({
@@ -5452,7 +5368,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       //get the max results, default radius, radius, max distance, min rating, sort by from the rules
       const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
-
       //Use discovery_radius_km_tele for tele services, discovery_radius_km for others
       const defaultRadius = serviceStyle === 'tele'
         ? (rules.discovery_radius_km_tele ?? 0)  // 0 = no distance limit for tele
@@ -5574,7 +5489,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendor.latitude ? parseFloat(vendor.latitude) : null,
           vendor.longitude ? parseFloat(vendor.longitude) : null,
         );
-        console.log('vendor_______________________________>', "customer coordinates", customerLat, customerLng, "vendor coordinates", vendor.latitude, vendor.longitude, "distance", dist, vendor);
         const nextAvailable = await getNextAvailableSlot(
           vendor.vendor_id, vendor.phone || '', acceptableStyles
         );
@@ -5585,14 +5499,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
 
         // Photos from vendor metadata (facility_photos / photos)
+        // ✅ FIX: Regenerate presigned URLs for facility photos
         let photos: string[] = [];
         try {
           const meta = typeof vendor.metadata === 'string'
             ? JSON.parse(vendor.metadata || '{}')
             : vendor.metadata;
           const raw = meta?.facility_photos || meta?.photos || [];
-          photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+          const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+          // Regenerate presigned URLs for all photos
+          const regeneratedPhotos = await Promise.all(
+            rawPhotos.map(async (photoUrl: string) => {
+              const regenerated = await regeneratePresignedUrl(photoUrl);
+              return regenerated;
+            })
+          );
+          photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { /* non-fatal */ }
+
+        // ✅ FIX: Get photo URL once and use for both photo and photoUrl fields
+        const photoUrl = await getVendorPhotoUrl(vendor);
 
         return {
           id: vendor.vendor_id,
@@ -5606,7 +5532,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           role: vendor.role_display_name || vendor.role_name,
           roleName: vendor.role_name || vendor.role_display_name || '',
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photo: photoUrl, // ✅ Frontend expects 'photo' field
+          photoUrl: photoUrl, // ✅ Keep 'photoUrl' for backward compatibility
           rating: parseFloat(vendor.avg_rating || '0'),
           reviewCount: parseInt(vendor.review_count || '0', 10),
           distance: dist,
@@ -5707,7 +5634,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           providers.push(provider);
         }
       }
-
+      console.log('providers_______________________________>', providers);
 
       // 7. FILTER
       let results = providers;
@@ -5716,8 +5643,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         results = results.filter((p) => p.rating >= minRatingVal);
       }
 
+      // ✅ FIX: For tele services, radius = 0 means "no distance limit"
+      // Only apply distance filter if radius > 0 (or maxDistanceKm is explicitly set)
       const effectiveMaxKm =
-        maxDistanceKm ?? (customerLat && customerLng ? radius : null);
+        maxDistanceKm ?? (customerLat && customerLng && radius > 0 ? radius : null);
 
       if (effectiveMaxKm != null && customerLat && customerLng) {
         results = results.filter(
@@ -5728,6 +5657,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ────────────────────────────────────────────────────────
       // 8. SORT
       // ────────────────────────────────────────────────────────
+      console.log('sortBy_______________________________>', results);
       results.sort((a, b) => {
         switch (sortBy) {
           case 'distance':
@@ -5753,7 +5683,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       });
 
-
+      console.log('results_______________________________>', results);
       // ────────────────────────────────────────────────────────
       // 9. RESPOND
       // ────────────────────────────────────────────────────────

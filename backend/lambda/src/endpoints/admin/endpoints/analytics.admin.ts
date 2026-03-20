@@ -17,11 +17,11 @@
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
-import { resolveVendorId } from '../utils/vendor-resolve';
-import { requireAdminAuth } from './admin/endpoints/admin.controller';
+import { select, query } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
+import { resolveVendorId } from '../../../utils/vendor-resolve';
+import { requireAdminAuth } from './admin.controller';
 
 export function registerAnalyticsEndpoints(app: Hono) {
   /**
@@ -344,7 +344,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -421,7 +421,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -430,8 +430,8 @@ export function registerAnalyticsEndpoints(app: Hono) {
 
       const period = c.req.query('period') || '30d';
       // Handle both numeric (30) and string (30d) formats
-      const days = period.endsWith('d') 
-        ? parseInt(period.replace('d', ''), 10) 
+      const days = period.endsWith('d')
+        ? parseInt(period.replace('d', ''), 10)
         : period === '1y' ? 365 : parseInt(period, 10) || 30;
 
       // Get current period stats
@@ -463,10 +463,10 @@ export function registerAnalyticsEndpoints(app: Hono) {
         const totalBookings = parseInt(row.total_bookings || '0');
         const totalRevenue = parseFloat(row.revenue || '0');
         const rating = parseFloat(row.avg_rating || '0');
-        
+
         // Calculate growth (mock for now - would need previous period data)
         const growth = Math.random() * 30 - 10; // Random between -10% and +20%
-        
+
         return {
           id: row.id,
           name: row.business_name || 'Unknown Vendor',
@@ -507,7 +507,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -555,7 +555,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -627,10 +627,10 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/admin/analytics/revenue", async (c) => {
     try {
-      // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
+      //Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -650,7 +650,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
          GROUP BY DATE_TRUNC('day', created_at)
          ORDER BY date`
       ).catch(() => ({ rows: [] }));
-
+      console.log("------------------------>", revenueData.rows);
       return c.json({
         success: true,
         data: revenueData.rows.map((row: any) => {
@@ -681,7 +681,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -735,7 +735,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -773,7 +773,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // Ensure all time slots are present
       const timeSlots = ['6-9 AM', '9-12 PM', '12-3 PM', '3-6 PM', '6-9 PM', '9-12 AM'];
       const dataMap = new Map(peakTimesData.rows.map((r: any) => [r.time_slot, parseInt(r.bookings || 0)]));
-      
+
       const result = timeSlots.map(slot => ({
         time: slot,
         bookings: dataMap.get(slot) || 0
@@ -798,7 +798,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'
@@ -859,7 +859,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
       // ✅ SECURITY FIX: Require admin authentication (supports UAT mode)
       const authResult = await requireAdminAuth(c);
       if (!authResult.authorized) {
-        return c.json({ 
+        return c.json({
           success: false,
           error: authResult.error || 'Authentication required',
           code: 'AUTH_REQUIRED'

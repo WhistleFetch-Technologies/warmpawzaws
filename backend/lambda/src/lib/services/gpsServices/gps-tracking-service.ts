@@ -17,6 +17,7 @@
 
 import { query, insert, update, select } from '../../../database/rds-connection';
 import { sendVendorOnWay, sendEventNotification } from '../../../aws/aws-sns-notification-service';
+import { gps_tracking_sessions } from 'src/endpoints/constants';
 
 // ============================================================================
 // CONFIGURATION
@@ -453,21 +454,45 @@ class GPSTrackingServiceImpl {
    */
   async completeTracking(sessionId: string): Promise<void> {
     try {
-      await update('gps_tracking_sessions', { id: sessionId }, {
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      });
-
-      // Get session to update booking
-      const sessions = await select('gps_tracking_sessions', { id: sessionId });
-      if (sessions.length > 0) {
-        await update('bookings', { id: sessions[0].booking_id }, {
-          status: 'in_progress',
-        });
+      console.log(`[GPS] Completing tracking session ${sessionId}`);
+      
+      // First, verify the session exists and get its current state
+      const existingSession = await select('gps_tracking_sessions', { id: sessionId });
+      if (existingSession.length === 0) {
+        throw new Error(`GPS session ${sessionId} not found`);
       }
-
+      console.log(`[GPS] Current session status: ${existingSession[0].status}`);
+      
+      // Use direct SQL query to ensure update works
+      const updateResult = await query(
+        `UPDATE gps_tracking_sessions 
+         SET status = $1, 
+             completed_at = $2,
+             updated_at = NOW()
+         WHERE id = $3::uuid
+         RETURNING id, status, completed_at`,
+        ['completed', new Date().toISOString(), sessionId]
+      );
+      
+      console.log(`[GPS] Update query executed. Rows affected: ${updateResult.rows.length}`);
+      console.log(`[GPS] Update result:`, JSON.stringify(updateResult.rows[0]));
+      
+      if (updateResult.rows.length === 0) {
+        throw new Error(`GPS session ${sessionId} update returned 0 rows - session may not exist or WHERE clause didn't match`);
+      }
+      
+      // Verify the update succeeded
+      const updated = await select('gps_tracking_sessions', { id: sessionId });
+      if (updated.length === 0) {
+        throw new Error(`GPS session ${sessionId} not found after update`);
+      }
+      if (updated[0].status !== 'completed') {
+        throw new Error(`GPS session ${sessionId} status is "${updated[0].status}", expected "completed"`);
+      }
+      
+      console.log(`✅ [GPS] Successfully completed tracking session ${sessionId}. Final status: ${updated[0].status}`);
     } catch (error) {
-      console.error('Error completing tracking:', error);
+      console.error(`❌ [GPS] Error completing tracking session ${sessionId}:`, error);
       throw error;
     }
   }

@@ -15,8 +15,8 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
-import { isValidUUID } from '../types/entities';
+import { select, insert, update, query } from '../../../database/rds-connection';
+import { isValidUUID } from '../../../types/entities';
 
 export function registerSpecializedServiceFlows(app: Hono) {
   // ============================================

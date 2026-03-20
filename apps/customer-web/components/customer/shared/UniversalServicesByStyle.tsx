@@ -149,6 +149,11 @@ export function UniversalServicesByStyle({
           // ✅ FIX: Normalize nextAvailableSlot to always be a string
           // Handle all possible field names: nextAvailable (API), nextAvailableSlot, nextAvailability
           providerData = providerData.map((p: any) => {
+            // ✅ FIX: Map photoUrl to photo for frontend compatibility
+            if (!p.photo && p.photoUrl) {
+              p.photo = p.photoUrl;
+            }
+            
             // Priority 1: nextAvailable (returned by by-style API)
             if (p.nextAvailable && typeof p.nextAvailable === 'object') {
               p.nextAvailableSlot = p.nextAvailable.display || p.nextAvailable.formattedDisplay || 
@@ -280,7 +285,7 @@ export function UniversalServicesByStyle({
               staffId: isStaff ? providerId : undefined,
               name: provider.businessName || provider.name || config.roleName,
               phone: provider.phone,
-              photo: provider.photo,
+              photo: provider.photo || provider.photoUrl, // ✅ Support both photo and photoUrl
               address: provider.address || provider.location,
               city: provider.city,
               role: provider.role,

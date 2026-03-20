@@ -16,17 +16,17 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, query, update } from '../database/rds-connection';
-import { checkVendorCapability } from '../middleware/capability-enforcement';
-import { extractEntityIds, normalizeDbRow } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { select, insert, query, update } from '../../../database/rds-connection';
+import { checkVendorCapability } from '../../../middleware/capability-enforcement';
+import { extractEntityIds, normalizeDbRow } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 import {
   validatePrescription,
   normalizePrescriptionData,
   formatPrescriptionResponse,
   type PrescriptionData,
-} from '../lib/services/prescription-service';
-import { prescriptionOCRService } from '../lib/services/prescription-ocr-service';
+} from '../../../lib/services/prescription-service';
+import { prescriptionOCRService } from '../../../lib/services/prescription-ocr-service';
 
 export function registerPrescriptionEndpoints(app: Hono) {
   /**

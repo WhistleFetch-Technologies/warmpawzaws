@@ -21,7 +21,7 @@ import { isValidUUID } from '../../../types/entities';
 import { geocodeAddress } from '../../../lib/utils/geocode';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { publishNotification } from 'src/utils/sns-client';
-import { startTracking, completeTracking, updateLocation } from 'src/lib/services/gpsServices/gps-tracking-service';
+import { startTracking, completeTracking, updateLocation, getTrackingStatus } from 'src/lib/services/gpsServices/gps-tracking-service';
 import { acceptBookingRequestSchema, checkInRequestSchema, completeBookingRequestSchema, endSessionRequestSchema, locationUpdateRequestSchema, markArrivedRequestSchema, otpVerifyRequestSchema, rejectBookingRequestSchema, startSessionRequestSchema, startTravelRequestSchema } from 'src/zodContracts/gpsTracking.contract';
 import { validateBody } from 'src/middleware/validation-middleware';
 import z from 'zod';
@@ -132,6 +132,187 @@ async function getExpectedOTPForBooking(
   return { expectedOTP, isWalkerService };
 }
 
+/**
+ * Helper function to fetch customer address details by customer_id
+ * @param customerId - The customer ID
+ * @param addressId - Optional address ID to fetch specific address
+ * @returns Address row with all details or null if not found
+ */
+async function getCustomerAddressDetails(
+  customerId: string,
+  addressId?: string | null
+): Promise<any | null> {
+  try {
+    let addrRow: any = null;
+
+    // Priority 1: Fetch by address_id if provided
+    if (addressId && typeof addressId === 'string') {
+      const addrResult = await query(
+        `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                flat_no, house_no, floor, street_name, apartment_name,
+                coordinates, customer_id, is_default, address_type, full_name, phone
+         FROM customer_addresses 
+         WHERE id = $1 AND customer_id = $2`,
+        [addressId, customerId]
+      );
+      if ((addrResult as any).rows?.length > 0) {
+        addrRow = (addrResult as any).rows[0];
+        return addrRow;
+      }
+    }
+
+    // Priority 2: Fetch default address for customer
+    if (customerId) {
+      const defaultAddrResult = await query(
+        `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
+                flat_no, house_no, floor, street_name, apartment_name,
+                coordinates, customer_id, is_default, address_type, full_name, phone
+         FROM customer_addresses 
+         WHERE customer_id = $1 
+         ORDER BY is_default DESC NULLS LAST, created_at DESC 
+         LIMIT 1`,
+        [customerId]
+      );
+      if ((defaultAddrResult as any).rows?.length > 0) {
+        addrRow = (defaultAddrResult as any).rows[0];
+        return addrRow;
+      }
+    }
+
+    return null;
+  } catch (error: any) {
+    console.error('[GET-CUSTOMER-ADDRESS] Error fetching address:', error?.message);
+    return null;
+  }
+}
+
+/**
+ * Helper function to format address details into readable text
+ * @param addrRow - Address row from customer_addresses
+ * @returns Formatted address string and details object
+ */
+function formatAddressDetails(addrRow: any): {
+  formattedText: string | null;
+  details: any;
+} {
+  const hasValue = (val: any): boolean => val != null && String(val).trim().length > 0;
+  const getValue = (val: any): string | null => hasValue(val) ? String(val).trim() : null;
+
+  const parts: string[] = [];
+
+  // Apartment name
+  const apartmentName = getValue(addrRow.apartment_name);
+  if (apartmentName) parts.push(apartmentName);
+
+  // Flat and House numbers
+  const flatNo = getValue(addrRow.flat_no);
+  const houseNo = getValue(addrRow.house_no);
+  if (flatNo && houseNo) {
+    parts.push(`Flat ${flatNo}, House ${houseNo}`);
+  } else if (flatNo) {
+    parts.push(`Flat ${flatNo}`);
+  } else if (houseNo) {
+    parts.push(`House ${houseNo}`);
+  }
+
+  // Floor
+  const floor = getValue(addrRow.floor);
+  if (floor) parts.push(`Floor ${floor}`);
+
+  // Street name - clean up if it contains "Flat No." prefix
+  let streetName = getValue(addrRow.street_name);
+  if (streetName) {
+    if (streetName.match(/^Flat\s+No\.?\s*/i)) {
+      streetName = streetName.replace(/^Flat\s+No\.?\s*/i, '').trim();
+    }
+    if (streetName) parts.push(streetName);
+  }
+
+  // Address lines
+  const addressLine1 = getValue(addrRow.address_line1);
+  if (addressLine1) parts.push(addressLine1);
+
+  const addressLine2 = getValue(addrRow.address_line2);
+  if (addressLine2) parts.push(addressLine2);
+
+  // Landmark
+  const landmark = getValue(addrRow.landmark);
+  if (landmark) parts.push(`Near ${landmark}`);
+
+  // City, State, Pincode
+  const city = getValue(addrRow.city);
+  if (city) parts.push(city);
+
+  const state = getValue(addrRow.state);
+  if (state) parts.push(state);
+
+  const pincode = getValue(addrRow.pincode);
+  if (pincode) parts.push(pincode);
+
+  const formattedText = parts.length > 0 ? parts.join(', ') : null;
+
+  const details = {
+    id: addrRow.id,
+    apartmentName,
+    flatNo,
+    houseNo,
+    floor,
+    streetName: getValue(addrRow.street_name), // Original value, not cleaned
+    addressLine1,
+    addressLine2,
+    landmark,
+    city,
+    state,
+    pincode,
+    addressType: addrRow.address_type,
+    fullName: addrRow.full_name,
+    phone: addrRow.phone,
+    isDefault: addrRow.is_default,
+    coordinates: addrRow.coordinates,
+    formattedAddress: formattedText,
+  };
+
+  return { formattedText, details };
+}
+
+/**
+ * Helper function to build destination address details from customer_addresses
+ * @param booking - The booking object
+ * @returns Object with destinationAddressText and destinationAddressDetails
+ */
+async function buildDestinationAddress(booking: any): Promise<{
+  destinationAddressText: string | null;
+  destinationAddressDetails: any;
+}> {
+  let destinationAddressText: string | null = booking.address || null;
+  let destinationAddressDetails: any = null;
+
+  try {
+    const customerId = booking.customer_id;
+    const addressId = booking.address_id;
+
+    if (!customerId) {
+      console.warn('[BUILD-ADDRESS] No customer_id in booking');
+      return { destinationAddressText, destinationAddressDetails };
+    }
+
+    // Fetch address details using customer_id
+    const addrRow = await getCustomerAddressDetails(customerId, addressId);
+
+    if (addrRow) {
+      const { formattedText, details } = formatAddressDetails(addrRow);
+      destinationAddressText = formattedText || booking.address || null;
+      destinationAddressDetails = details;
+    } else {
+      console.warn(`[BUILD-ADDRESS] No address found for customer_id: ${customerId}`);
+    }
+  } catch (error: any) {
+    console.error('[BUILD-ADDRESS] Error building destination address:', error?.message);
+  }
+
+  return { destinationAddressText, destinationAddressDetails };
+}
+
 export function registerVendorBookingActionsEndpoints(app: Hono) {
 
   /**
@@ -143,7 +324,9 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const { bookingId } = c.req.param();
       const { otp, vendorId } = (c as any).get('validatedBody') as z.infer<typeof completeBookingRequestSchema>;
 
-
+      console.log(`[COMPLETE-BOOKING] Request body------------------------>: ${JSON.stringify(c.req.body)}`);
+      console.log(`[COMPLETE-BOOKING] OTP: ${otp}, Vendor ID: ${vendorId}`);
+      console.log(`[COMPLETE-BOOKING] Booking ID: ${bookingId}`);
       // Resolve vendorId (may be vendor_identity.id) to canonical vendors.id
       const resolvedVendorId = await resolveVendorId(vendorId);
 
@@ -314,33 +497,40 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const updated = await update('bookings',
         { id: bookingId },
         {
-          status: 'completed',
+          status: BookingStatus.COMPLETED,
           otp_verified: true,
           completed_at: new Date().toISOString(),
         }
       );
+      console.log(`[COMPLETE-BOOKING] Updated booking: ${JSON.stringify(updated)}`);
 
+      // ✅ MANDATORY: Complete GPS tracking session if it exists (for at_home services)
+      const activeSessions = await select('gps_tracking_sessions', {
+        booking_id: bookingId,
+      });
 
-      //  Complete GPS tracking session if it exists (for at_home services)
-      try {
-        const activeSessions = await select('gps_tracking_sessions', {
-          booking_id: bookingId,
-        });
+      console.log(`[COMPLETE-BOOKING] Found ${activeSessions.length} GPS session(s) for booking ${bookingId}`);
 
-        // Find active session (not already completed or cancelled)
-        const activeSession = activeSessions.find(
-          (s: any) => s.status !== 'completed' && s.status !== 'cancelled'
-        );
+      // Find active session (not already completed or cancelled)
+      const activeSession = activeSessions.find(
+        (s: any) => s.status !== 'completed' && s.status !== 'cancelled'
+      );
 
-        if (activeSession) {
-          await completeTracking(activeSession.id);
-          console.log(`✅ [COMPLETE-BOOKING] GPS tracking session ${activeSession.id} marked as completed`);
+      if (activeSession) {
+        console.log(`[COMPLETE-BOOKING] Completing GPS session ${activeSession.id} with status: ${activeSession.status}`);
+        console.log(`[COMPLETE-BOOKING] Active session------------------------>: ${JSON.stringify(activeSession)}`);
+        // ✅ MANDATORY: Fail if GPS session completion fails
+        await completeTracking(activeSession.id);
+
+        // Verify the update succeeded
+        const updatedSession = await select('gps_tracking_sessions', { id: activeSession.id });
+        if (updatedSession.length > 0 && updatedSession[0].status === 'completed') {
+          console.log(`✅ [COMPLETE-BOOKING] GPS tracking session ${activeSession.id} successfully marked as completed`);
         } else {
-          console.log(`[COMPLETE-BOOKING] No active GPS tracking session found for booking ${bookingId}`);
+          throw new Error(`Failed to verify GPS session ${activeSession.id} was marked as completed. Current status: ${updatedSession[0]?.status}`);
         }
-      } catch (gpsError: any) {
-        console.warn('[COMPLETE-BOOKING] Failed to complete GPS tracking session (non-critical):', gpsError?.message);
-        // Don't fail booking completion if GPS session update fails
+      } else {
+        console.log(`[COMPLETE-BOOKING] No active GPS tracking session found for booking ${bookingId} (checked ${activeSessions.length} session(s))`);
       }
 
       //Create vendor_earnings record regardless of payment status (handles COD/pending)
@@ -458,12 +648,28 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }, 403);
       }
 
-      // Check if already traveling
-      if (booking.status === BookingStatus.VENDOR_ON_WAY || booking.status === BookingStatus.IN_TRANSIT) {
-        return c.json({ error: 'Travel already started' }, 400);
+      // Check if there's an existing active tracking session
+      // If yes, return it so the user can continue tracking instead of showing error
+      const existingSession = await getTrackingStatus(bookingId);
+
+      if (existingSession && (existingSession.status === 'in_transit' || existingSession.status === 'started')) {
+        console.log(`[START-TRAVEL] Found existing active session ${existingSession.id}, returning for continuation`);
+
+        // Build destination address details
+        const { destinationAddressText, destinationAddressDetails } = await buildDestinationAddress(booking);
+        console.log(`[START-TRAVEL] Destination address text: ${destinationAddressText}`);
+        console.log(`[START-TRAVEL] Destination address details: ${JSON.stringify(destinationAddressDetails)}`);
+        return c.json({
+          success: true,
+          session: existingSession,
+          message: 'Continuing existing travel session',
+          trackingEnabled: true,
+          destinationAddress: destinationAddressText,
+          destinationAddressDetails,
+        });
       }
 
-      // Call the GPS tracking start endpoint internally
+      // No active session found - proceed with creating a new one
       try {
         const { isUATMode } = await import('../../../lib/utils/uat-mode');
 
@@ -484,6 +690,8 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         let destinationLocation: { latitude: number; longitude: number } | null = null;
         let destinationSource = 'unknown';
 
+
+
         // PRIORITY 1: Use booking.latitude/longitude (primary at_home location fields)
         if (booking.latitude != null && booking.longitude != null) {
           destinationLocation = {
@@ -501,40 +709,21 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             longitude: parseFloat(String(booking.delivery_longitude)),
           };
           destinationSource = 'booking.delivery_latitude/longitude';
-          console.log(`[START-TRAVEL] Using delivery coordinates as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
+
         }
 
         // PRIORITY 3: Use customer_addresses from address_id (fallback if booking coords not available)
-        if (!destinationLocation && booking.address_id) {
-          const addresses = await select('customer_addresses', { id: booking.address_id });
-          if (addresses.length > 0) {
-            const addr = addresses[0] as any;
-            const lat = addr.latitude ?? addr.coordinates?.lat ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lat; } catch { return null; } })() : null);
-            const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
-            if (lat != null && lng != null) {
-              destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
-              destinationSource = 'customer_addresses';
-              console.log(`[START-TRAVEL] Using customer_addresses as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
-            } else if ((addr.address || addr.full_address) && !uatMode) {
-              const geocoded = await geocodeAddress(addr.address || addr.full_address);
-              if (geocoded) {
-                destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-                destinationSource = 'customer_addresses (geocoded)';
-                console.log(`[START-TRAVEL] Geocoded customer_addresses to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
-              }
-            }
-          }
-        }
-
-        // PRIORITY 3.5: Look up customer's addresses by customer_id (fallback for all bookings)
+        // PRIORITY 3: Use customer_addresses - query by customer_id from booking
         if (!destinationLocation && booking.customer_id) {
           try {
+            // Query customer_addresses using booking.customer_id
+            // Note: coordinates are stored in JSONB field, not separate latitude/longitude columns
             const custAddresses = await query(
-              `SELECT id, latitude, longitude, coordinates, address_line1, city, state, pincode, is_default
-               FROM customer_addresses 
-               WHERE customer_id = $1 
-               ORDER BY is_default DESC NULLS LAST, created_at DESC 
-               LIMIT 5`,
+              `SELECT id, coordinates, address_line1, address_line2, city, state, pincode, is_default
+                   FROM customer_addresses 
+                   WHERE customer_id = $1 
+                   ORDER BY is_default DESC NULLS LAST, created_at DESC 
+                   LIMIT 5`,
               [booking.customer_id]
             );
             const addrRows = (custAddresses as any).rows || [];
@@ -544,21 +733,17 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               let lat: number | null = null;
               let lng: number | null = null;
 
-              // Check direct lat/lng columns
-              if (addr.latitude != null && addr.longitude != null) {
-                lat = parseFloat(String(addr.latitude));
-                lng = parseFloat(String(addr.longitude));
-              }
-
-              // Check coordinates JSONB
-              if (lat == null && addr.coordinates) {
+              // Extract coordinates from JSONB field (e.g., {"lat": 12.9756425, "lng": 77.6032208})
+              if (addr.coordinates) {
                 try {
                   const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
                   lat = coords?.lat ?? coords?.latitude ?? null;
                   lng = coords?.lng ?? coords?.longitude ?? null;
                   if (lat != null) lat = parseFloat(String(lat));
                   if (lng != null) lng = parseFloat(String(lng));
-                } catch { /* ignore */ }
+                } catch (err) {
+                  console.warn('[START-TRAVEL] Failed to parse coordinates JSON:', err);
+                }
               }
 
               if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
@@ -566,24 +751,100 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
                 destinationSource = `customer_addresses (customer_id lookup, addr ${addr.id})`;
                 console.log(`[START-TRAVEL] Using customer address ${addr.id} as destination: ${lat}, ${lng}`);
 
-                // Also update the booking with the coordinates and address_id for future lookups
+                // Also update the booking with the coordinates for future lookups
+                // Note: bookings table doesn't have address_id column, so we only update coordinates
                 try {
                   await update('bookings', { id: bookingId }, {
                     latitude: lat,
                     longitude: lng,
-                    address_id: addr.id,
                   });
                   console.log(`[START-TRAVEL] Updated booking ${bookingId} with coordinates from customer address`);
                 } catch (updateErr: any) {
                   console.warn(`[START-TRAVEL] Could not update booking with coordinates:`, updateErr?.message);
                 }
-                break;
+                break; // Use first valid address with coordinates
               }
             }
-          } catch (custAddrErr: any) {
-            console.warn(`[START-TRAVEL] Error looking up customer addresses:`, custAddrErr?.message);
+
+            // If no coordinates found but we have address text, try geocoding
+            if (!destinationLocation && addrRows.length > 0 && !uatMode) {
+              const addr = addrRows[0]; // Use first address
+              if (addr.address_line1) {
+                const addressText = `${addr.address_line1}${addr.address_line2 ? ', ' + addr.address_line2 : ''}, ${addr.city}, ${addr.state} ${addr.pincode}`;
+                const geocoded = await geocodeAddress(addressText);
+                if (geocoded) {
+                  destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+                  destinationSource = 'customer_addresses (geocoded)';
+                  console.log(`[START-TRAVEL] Geocoded customer_addresses to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
+                }
+              }
+            }
+          } catch (addrErr: any) {
+            console.warn(`[START-TRAVEL] Error looking up customer address by customer_id:`, addrErr?.message);
+            // Fall through to PRIORITY 4 below
           }
         }
+
+
+
+        // // PRIORITY 3.5: Look up customer's addresses by customer_id (fallback for all bookings)
+        // if (!destinationLocation && booking.customer_id) {
+        //   try {
+        //     const custAddresses = await query(
+        //       `SELECT id, latitude, longitude, coordinates, address_line1, city, state, pincode, is_default
+        //        FROM customer_addresses 
+        //        WHERE customer_id = $1 
+        //        ORDER BY is_default DESC NULLS LAST, created_at DESC 
+        //        LIMIT 5`,
+        //       [booking.customer_id]
+        //     );
+        //     const addrRows = (custAddresses as any).rows || [];
+        //     console.log(`[START-TRAVEL] Found ${addrRows.length} customer addresses for customer ${booking.customer_id}`);
+
+        //     for (const addr of addrRows) {
+        //       let lat: number | null = null;
+        //       let lng: number | null = null;
+
+        //       // Check direct lat/lng columns
+        //       if (addr.latitude != null && addr.longitude != null) {
+        //         lat = parseFloat(String(addr.latitude));
+        //         lng = parseFloat(String(addr.longitude));
+        //       }
+
+        //       // Check coordinates JSONB
+        //       if (lat == null && addr.coordinates) {
+        //         try {
+        //           const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+        //           lat = coords?.lat ?? coords?.latitude ?? null;
+        //           lng = coords?.lng ?? coords?.longitude ?? null;
+        //           if (lat != null) lat = parseFloat(String(lat));
+        //           if (lng != null) lng = parseFloat(String(lng));
+        //         } catch { /* ignore */ }
+        //       }
+
+        //       if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        //         destinationLocation = { latitude: lat, longitude: lng };
+        //         destinationSource = `customer_addresses (customer_id lookup, addr ${addr.id})`;
+        //         console.log(`[START-TRAVEL] Using customer address ${addr.id} as destination: ${lat}, ${lng}`);
+
+        //         // Also update the booking with the coordinates and address_id for future lookups
+        //         try {
+        //           await update('bookings', { id: bookingId }, {
+        //             latitude: lat,
+        //             longitude: lng,
+        //             address_id: addr.id,
+        //           });
+        //           console.log(`[START-TRAVEL] Updated booking ${bookingId} with coordinates from customer address`);
+        //         } catch (updateErr: any) {
+        //           console.warn(`[START-TRAVEL] Could not update booking with coordinates:`, updateErr?.message);
+        //         }
+        //         break;
+        //       }
+        //     }
+        //   } catch (custAddrErr: any) {
+        //     console.warn(`[START-TRAVEL] Error looking up customer addresses:`, custAddrErr?.message);
+        //   }
+        // }
 
         // PRIORITY 4: Parse booking.address as JSON object or string
         if (!destinationLocation) {
@@ -616,6 +877,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               destinationSource = 'booking.address (parsed object)';
               console.log(`[START-TRAVEL] Using parsed booking.address as destination: ${destinationLocation.latitude}, ${destinationLocation.longitude}`);
             }
+
             if (!addressText) {
               const parts = [
                 addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
@@ -649,159 +911,16 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
 
         // Build full destination address text from customer_addresses for display
-        let destinationAddressText: string | null = booking.address || null;
-        let destinationAddressDetails: any = null;
-        try {
-          const addrId = booking.address_id;
-          const custId = booking.customer_id;
-          let addrRow: any = null;
+        const { destinationAddressText, destinationAddressDetails } = await buildDestinationAddress(booking);
 
-          // Use explicit SELECT query to ensure all columns are returned
-          if (addrId) {
-            const addrResult = await query(
-              `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
-                      flat_no, house_no, floor, street_name, apartment_name,
-                      coordinates, customer_id, is_default
-               FROM customer_addresses 
-               WHERE id = $1`,
-              [addrId]
-            );
-            if ((addrResult as any).rows?.length > 0) {
-              addrRow = (addrResult as any).rows[0];
-              console.log(`[START-TRAVEL] Found address by address_id ${addrId}:`, {
-                apartment_name: addrRow.apartment_name,
-                flat_no: addrRow.flat_no,
-                house_no: addrRow.house_no,
-                floor: addrRow.floor,
-                street_name: addrRow.street_name,
-              });
-            } else {
-              console.warn(`[START-TRAVEL] No address found with address_id ${addrId}`);
-            }
+        // Update booking address if we built a better formatted one
+        if (destinationAddressText && destinationAddressText !== booking.address) {
+          try {
+            await update('bookings', { id: bookingId }, { address: destinationAddressText });
+            console.log(`[START-TRAVEL] Updated booking address with full detailed address`);
+          } catch (updateAddrErr: any) {
+            console.warn('[START-TRAVEL] Could not update booking address:', updateAddrErr?.message);
           }
-          if (!addrRow && custId) {
-            // Try default address first
-            const custAddrResult = await query(
-              `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
-                      flat_no, house_no, floor, street_name, apartment_name,
-                      coordinates, customer_id, is_default
-               FROM customer_addresses 
-               WHERE customer_id = $1 
-               ORDER BY is_default DESC NULLS LAST, created_at DESC 
-               LIMIT 1`,
-              [custId]
-            );
-            if ((custAddrResult as any).rows?.length > 0) {
-              addrRow = (custAddrResult as any).rows[0];
-              console.log(`[START-TRAVEL] Found customer default address for customer_id ${custId}:`, {
-                address_id: addrRow.id,
-                apartment_name: addrRow.apartment_name,
-                flat_no: addrRow.flat_no,
-                house_no: addrRow.house_no,
-                floor: addrRow.floor,
-                street_name: addrRow.street_name,
-              });
-            } else {
-              // Fallback: Get any address for this customer
-              const allAddrResult = await query(
-                `SELECT id, address_line1, address_line2, city, state, pincode, landmark,
-                        flat_no, house_no, floor, street_name, apartment_name,
-                        coordinates, customer_id, is_default
-                 FROM customer_addresses 
-                 WHERE customer_id = $1 
-                 ORDER BY created_at DESC 
-                 LIMIT 1`,
-                [custId]
-              );
-              if ((allAddrResult as any).rows?.length > 0) {
-                addrRow = (allAddrResult as any).rows[0];
-                console.log(`[START-TRAVEL] Found any customer address for customer_id ${custId}:`, {
-                  address_id: addrRow.id,
-                  apartment_name: addrRow.apartment_name,
-                  flat_no: addrRow.flat_no,
-                  house_no: addrRow.house_no,
-                  floor: addrRow.floor,
-                  street_name: addrRow.street_name,
-                });
-              } else {
-                console.warn(`[START-TRAVEL] No address found for customer_id ${custId}`);
-              }
-            }
-          }
-
-
-          //If address was found but lacks detailed fields, augment from customer's other addresses
-          if (addrRow && !addrRow.flat_no && !addrRow.house_no && !addrRow.floor && !addrRow.apartment_name && booking.customer_id) {
-            try {
-              const detailedAddrResult = await query(
-                `SELECT flat_no, house_no, floor, street_name, apartment_name
-                 FROM customer_addresses 
-                 WHERE customer_id = $1 
-                   AND (flat_no IS NOT NULL OR house_no IS NOT NULL OR floor IS NOT NULL OR apartment_name IS NOT NULL)
-                 ORDER BY is_default DESC NULLS LAST, created_at DESC 
-                 LIMIT 1`,
-                [booking.customer_id]
-              );
-              if ((detailedAddrResult as any).rows?.length > 0) {
-                const detAddr = (detailedAddrResult as any).rows[0];
-                addrRow.flat_no = detAddr.flat_no || addrRow.flat_no;
-                addrRow.house_no = detAddr.house_no || addrRow.house_no;
-                addrRow.floor = detAddr.floor || addrRow.floor;
-                addrRow.street_name = detAddr.street_name || addrRow.street_name;
-                addrRow.apartment_name = detAddr.apartment_name || addrRow.apartment_name;
-                console.log(`[START-TRAVEL] Augmented address with detailed fields from customer's other address:`, {
-                  flat_no: addrRow.flat_no, house_no: addrRow.house_no, floor: addrRow.floor,
-                  street_name: addrRow.street_name, apartment_name: addrRow.apartment_name,
-                });
-              }
-            } catch (augErr) {
-              console.warn('[START-TRAVEL] Could not augment address:', augErr);
-            }
-          }
-
-          if (addrRow) {
-            const parts: string[] = [];
-            if (addrRow.apartment_name) parts.push(addrRow.apartment_name);
-            if (addrRow.flat_no && addrRow.house_no) parts.push(`Flat ${addrRow.flat_no}, House ${addrRow.house_no}`);
-            else if (addrRow.flat_no) parts.push(`Flat ${addrRow.flat_no}`);
-            else if (addrRow.house_no) parts.push(`House ${addrRow.house_no}`);
-            if (addrRow.floor) parts.push(`Floor ${addrRow.floor}`);
-            if (addrRow.street_name) parts.push(addrRow.street_name);
-            if (addrRow.address_line1) parts.push(addrRow.address_line1);
-            if (addrRow.address_line2) parts.push(addrRow.address_line2);
-            if (addrRow.landmark) parts.push(`Near ${addrRow.landmark}`);
-            if (addrRow.city) parts.push(addrRow.city);
-            if (addrRow.state) parts.push(addrRow.state);
-            if (addrRow.pincode) parts.push(addrRow.pincode);
-
-            if (parts.length > 0) destinationAddressText = parts.filter(Boolean).join(', ');
-            destinationAddressDetails = {
-              apartmentName: addrRow.apartment_name || null,
-              flatNo: addrRow.flat_no || null,
-              houseNo: addrRow.house_no || null,
-              floor: addrRow.floor || null,
-              streetName: addrRow.street_name || null,
-              addressLine1: addrRow.address_line1 || null,
-              addressLine2: addrRow.address_line2 || null,
-              landmark: addrRow.landmark || null,
-              city: addrRow.city || null,
-              state: addrRow.state || null,
-              pincode: addrRow.pincode || null,
-              formattedAddress: destinationAddressText,
-            };
-
-            // Also update the booking's address field if it was truncated
-            if (destinationAddressText && destinationAddressText !== booking.address) {
-              try {
-                await update('bookings', { id: bookingId }, { address: destinationAddressText });
-                console.log(`[START-TRAVEL] Updated booking address with full detailed address`);
-              } catch (updateAddrErr: any) {
-                console.warn('[START-TRAVEL] Could not update booking address:', updateAddrErr?.message);
-              }
-            }
-          }
-        } catch (addrTextErr: any) {
-          console.warn('[START-TRAVEL] Could not build destination address text:', addrTextErr?.message);
         }
 
         // Use booking.vendor_id for tracking session (not resolvedVendorId)
@@ -1574,7 +1693,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       } else if (action === 'start_travel') {
         mappedAction = OtpAction.START;
       } else if (action === 'mark_arrived' || action === 'check_in' || !action) {
-        mappedAction = OtpAction.COMPLETE; 
+        mappedAction = OtpAction.COMPLETE;
       }
 
       // Get correct OTP based on action and service type (walker vs non-walker)

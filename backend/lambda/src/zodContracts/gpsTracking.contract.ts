@@ -7,7 +7,7 @@ export const startSessionRequestSchema = z.object({
 }).strict();
 
 export const completeBookingRequestSchema = z.object({
-    otp: z.string().length(6, "OTP must be 6 digits").optional(),
+    otp: z.string().length(4, "OTP must be 4 digits").optional(),
     vendorId: uuidSchema,
 }).strict();
 

@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -104,6 +105,7 @@ export function DiagnosticsOrderDashboard({
   onBack,
   onSelectBooking 
 }: DiagnosticsOrderDashboardProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('scheduled');
   const [bookings, setBookings] = useState<DiagnosticsBooking[]>([]);
@@ -394,14 +396,23 @@ export function DiagnosticsOrderDashboard({
               <p className="text-sm text-gray-500">Manage lab test bookings and reports</p>
             </div>
           </div>
-          <Button 
-            onClick={loadBookings}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={() => router.push('/medical/diagnostics')}
+              className="flex items-center gap-2"
+            >
+              <TestTube className="w-4 h-4" />
+              Create Test
+            </Button>
+            <Button 
+              onClick={loadBookings}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 

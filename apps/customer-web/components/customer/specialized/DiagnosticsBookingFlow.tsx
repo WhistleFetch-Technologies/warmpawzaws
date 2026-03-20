@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { TestTube, Calendar, Clock, FileText, Truck, CreditCard } from 'lucide-react';
+import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { AddAddressModal } from '../shared/AddAddressModal';
 import { toast } from 'sonner';
 
 declare global {
@@ -52,6 +53,9 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
   const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [customerPets, setCustomerPets] = useState<{ id: string; name: string; species?: string; breed?: string; age?: string }[]>([]);
   const [address, setAddress] = useState('');
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [preferredSampleType, setPreferredSampleType] = useState<'home' | 'center'>('center');
 
   // Payment-before-booking: step 'form' | 'payment'; booking is created only after payment success
@@ -77,6 +81,41 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         if (!cancelled) setCustomerPets(list.map((p: any) => ({ id: p.id, name: p.name || p.pet_name, species: p.species || p.type, breed: p.breed, age: (p.age || p.age_years?.[0]) ?? p.age_years })));
       } catch {
         if (!cancelled) setCustomerPets([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [customerPhone]);
+
+  // Load customer addresses for home collection
+  useEffect(() => {
+    if (!customerPhone) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+        if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+          if (!cancelled) {
+            setAddresses(addressResponse.addresses);
+            // Auto-select default address if available
+            const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault || a.is_default);
+            if (defaultAddr) {
+              setSelectedAddress(defaultAddr);
+              const formattedAddr = defaultAddr.formattedAddress || 
+                `${defaultAddr.addressLine1 || defaultAddr.address || ''}, ${defaultAddr.city || ''}, ${defaultAddr.pincode || ''}`.trim();
+              setAddress(formattedAddr);
+            } else if (addressResponse.addresses.length === 1) {
+              // Auto-select if only one address
+              const addr = addressResponse.addresses[0];
+              setSelectedAddress(addr);
+              const formattedAddr = addr.formattedAddress || 
+                `${addr.addressLine1 || addr.address || ''}, ${addr.city || ''}, ${addr.pincode || ''}`.trim();
+              setAddress(formattedAddr);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading addresses:', error);
+        if (!cancelled) setAddresses([]);
       }
     })();
     return () => { cancelled = true; };
@@ -155,7 +194,11 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
       bookingType: 'scheduled',
       bookingDate: selectedDate,
       bookingTime: selectedTime,
-      address: preferredSampleType === 'home' ? address : undefined,
+      address: preferredSampleType === 'home' 
+        ? (selectedAddress?.formattedAddress || 
+           `${selectedAddress?.addressLine1 || selectedAddress?.address || ''}, ${selectedAddress?.city || ''}, ${selectedAddress?.pincode || ''}`.trim() || 
+           address) 
+        : undefined,
       amount: totalAmountNum,
       notes: JSON.stringify({
         tests: selectedTestDetails.map(t => ({
@@ -194,6 +237,10 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     }
     if (!patientName.trim()) {
       setError('Patient name is required');
+      return;
+    }
+    if (preferredSampleType === 'home' && !selectedAddress && !address.trim()) {
+      setError('Please select or enter a home address for collection');
       return;
     }
 
@@ -720,17 +767,87 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
 
           {preferredSampleType === 'home' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Home Address *
               </label>
-              <textarea
-                value={address}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setAddress(e.target.value)}
-                required={preferredSampleType === 'home'}
-                rows={3}
-                placeholder="Enter complete address for home collection"
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-              />
+              {addresses.length > 0 ? (
+                <div className="space-y-3">
+                  {addresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAddress(addr);
+                        const formattedAddr = addr.formattedAddress || 
+                          `${addr.addressLine1 || addr.address || ''}, ${addr.city || ''}, ${addr.pincode || ''}`.trim();
+                        setAddress(formattedAddr);
+                      }}
+                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                        selectedAddress?.id === addr.id 
+                          ? 'border-[#FF8C42] bg-orange-50' 
+                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          {(addr.label || '').toLowerCase() === 'home' ? (
+                            <Home className="w-4 h-4 text-blue-600" />
+                          ) : (addr.label || '').toLowerCase() === 'work' ? (
+                            <Building2 className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <MapPin className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
+                            {addr.isDefault && (
+                              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
+                          <p className="text-sm text-gray-500">{addr.city} - {addr.pincode}</p>
+                          {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                        </div>
+                        {selectedAddress?.id === addr.id && (
+                          <CheckCircle2 className="w-6 h-6 text-orange-500" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="w-full p-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-[#FF8C42] hover:text-[#FF8C42] transition flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add New Address
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
+                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
+                    <MapPin className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-gray-600 font-medium mb-2">No addresses saved</p>
+                  <p className="text-sm text-gray-500 mb-4">Add an address to continue with home collection</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
+                  >
+                    + Add Your Address
+                  </button>
+                </div>
+              )}
+              {/* Show selected address confirmation */}
+              {selectedAddress && addresses.length > 0 && (
+                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800 font-medium">
+                    ✓ Home collection will be at: {selectedAddress?.label || 'Selected Address'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -793,6 +910,33 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         </div>
       </form>
       </div>
+
+      {/* Add Address Modal */}
+      <AddAddressModal
+        phone={customerPhone}
+        isOpen={showAddAddressModal}
+        onClose={() => setShowAddAddressModal(false)}
+        onSuccess={(savedAddress) => {
+          setShowAddAddressModal(false);
+          if (savedAddress) {
+            setSelectedAddress(savedAddress);
+            const formattedAddr = savedAddress.formattedAddress || 
+              `${savedAddress.addressLine1 || savedAddress.address || ''}, ${savedAddress.city || ''}, ${savedAddress.pincode || ''}`.trim();
+            setAddress(formattedAddr);
+            // Refresh addresses list
+            (async () => {
+              try {
+                const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+                if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+                  setAddresses(addressResponse.addresses);
+                }
+              } catch (error) {
+                console.error('Error refreshing addresses:', error);
+              }
+            })();
+          }
+        }}
+      />
     </div>
   );
 }

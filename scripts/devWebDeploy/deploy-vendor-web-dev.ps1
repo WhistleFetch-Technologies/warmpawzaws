@@ -1,16 +1,16 @@
 # ============================================================================
-# Deploy Customer-Web to Dev Environment with Alternate Domain
+# Deploy Vendor-Web to Dev Environment with Alternate Domain
 # ============================================================================
-# This script builds and deploys customer-web to AWS S3 + CloudFront
-# Uses dev API Gateway (z0b3obweb6) and alternate domain (dev.customer.warmpawz.com)
+# This script builds and deploys vendor-web to AWS S3 + CloudFront
+# Uses dev API Gateway (z0b3obweb6) and alternate domain (dev.vendor.warmpawz.com)
 # ============================================================================
 
 param(
     [string]$Region = "ap-south-1",
-    [string]$S3Bucket = "warmpawz-dev-customer-frontend-ap-south-1",
-    [string]$CloudFrontDistId = "E2RDORGXSWJJ87",
-    [string]$CloudFrontUrl = "https://d2aoyjj8ine0wk.cloudfront.net",
-    [string]$AlternateDomain = "dev.customer.warmpawz.com",
+    [string]$S3Bucket = "warmpawz-dev-vendor-frontend-ap-south-1",
+    [string]$CloudFrontDistId = "E95171GX1I6HN",
+    [string]$CloudFrontUrl = "https://d1s6ykkj381k58.cloudfront.net",
+    [string]$AlternateDomain = "dev.vendor.warmpawz.com",
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation
@@ -19,7 +19,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "============================================================================" -ForegroundColor Cyan
-Write-Host "Deploying Customer-Web to Dev Environment" -ForegroundColor Cyan
+Write-Host "Deploying Vendor-Web to Dev Environment" -ForegroundColor Cyan
 Write-Host "============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Configuration:" -ForegroundColor Yellow
@@ -78,19 +78,19 @@ try {
 }
 Write-Host ""
 
-# Navigate to customer-web directory
+# Navigate to vendor-web directory
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent (Split-Path -Parent $scriptRoot)
-$customerWebDir = Join-Path $projectRoot "apps\customer-web"
+$vendorWebDir = Join-Path $projectRoot "apps\vendor-web"
 
-if (!(Test-Path $customerWebDir)) {
-    Write-Host "❌ Customer-web directory not found: $customerWebDir" -ForegroundColor Red
+if (!(Test-Path $vendorWebDir)) {
+    Write-Host "❌ Vendor-web directory not found: $vendorWebDir" -ForegroundColor Red
     exit 1
 }
 
-Set-Location $customerWebDir
-Write-Host "Step 3: Building customer-web..." -ForegroundColor Yellow
-Write-Host "  Directory: $customerWebDir" -ForegroundColor Gray
+Set-Location $vendorWebDir
+Write-Host "Step 3: Building vendor-web..." -ForegroundColor Yellow
+Write-Host "  Directory: $vendorWebDir" -ForegroundColor Gray
 
 # Build the app (skip if DeployOnly is set and dist exists)
 if ($DeployOnly -and (Test-Path "dist")) {
@@ -124,11 +124,11 @@ Write-Host ""
 
 # Inject runtime-config.js
 Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
-$distPath = Join-Path $customerWebDir "dist"
+$distPath = Join-Path $vendorWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
 $runtimeConfigContent = @"
-// Runtime Configuration for Warmpawz customer-web
+// Runtime Configuration for Warmpawz vendor-web
 // Injected at deployment time with dev API Gateway endpoint
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
@@ -217,7 +217,7 @@ if (-not $SkipInvalidation) {
 
 # Summary
 Write-Host "============================================================================" -ForegroundColor Cyan
-Write-Host "✅ Customer-Web deployed to dev environment!" -ForegroundColor Green
+Write-Host "✅ Vendor-Web deployed to dev environment!" -ForegroundColor Green
 Write-Host "============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Deployment Summary:" -ForegroundColor Cyan
