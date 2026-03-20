@@ -331,30 +331,35 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleAddPetSuccess = () => setRefreshKey(prev => prev + 1);
 
   const handleNavigateToService = (service: string) => {
-    if (service === 'walker') navigateToScreen('walker');
-    else if (service === 'vet' || service === 'veterinarian') navigateToScreen('vet');
-    else if (service === 'grooming') navigateToScreen('grooming');
-    else if (service === 'training') navigateToScreen('training');
-    else if (service === 'boarding') navigateToScreen('boarding');
-    else if (service === 'adoption') navigateToScreen('adoption');
-    else if (service === 'sunset') navigateToScreen('sunset');
-    else if (service === 'insurance') navigateToScreen('insurance');
-    else if (service === 'cafes') navigateToScreen('cafes');
-    else if (service === 'shop') navigateToScreen('shop');
-    else if (service === 'cart') navigateToScreen('shop'); // Navigate to shop then cart logic handles
-    else if (service === 'photography') navigateToScreen('photography');
-    else if (service === 'breeder') navigateToScreen('breeder');
-    else if (service === 'ambulance') navigateToScreen('ambulance');
-    else if (service === 'nutritionist') navigateToScreen('nutritionist');
-    else if (service === 'pharmacy' || service === 'pharmacy_store') navigateToScreen('pharmacy');
-    else if (service === 'diagnostics' || service === 'lab-diagnostics' || service === 'lab') navigateToScreen('lab-diagnostics');
-    else if (service === 'home-service') navigateToScreen('home-service-selection');
-    else if (service === 'relocation') navigateToScreen('relocation');
-    else if (service === 'resort') navigateToScreen('resort');
-    else if (service === 'holiday') navigateToScreen('holiday');
-    else if (service === 'mating-dating-hub') navigateToScreen('mating-dating-hub');
+    const s = (service || '').replace(/^\/+/, '').trim();
+    if (s === 'walker') navigateToScreen('walker');
+    else if (s === 'vet' || s === 'veterinarian') navigateToScreen('vet');
+    else if (s === 'grooming') navigateToScreen('grooming');
+    else if (s === 'training') navigateToScreen('training');
+    else if (s === 'boarding') navigateToScreen('boarding');
+    else if (s === 'adoption') navigateToScreen('adoption');
+    else if (s === 'sunset') navigateToScreen('sunset');
+    else if (s === 'insurance') navigateToScreen('insurance');
+    else if (s === 'cafes') navigateToScreen('cafes');
+    else if (s === 'shop') navigateToScreen('shop');
+    else if (s === 'cart') navigateToScreen('shop');
+    else if (s === 'photography') navigateToScreen('photography');
+    else if (s === 'breeder') navigateToScreen('breeder');
+    else if (s === 'ambulance') navigateToScreen('ambulance');
+    else if (s === 'nutritionist') navigateToScreen('nutritionist');
+    else if (s === 'pharmacy' || s === 'pharmacy_store') navigateToScreen('pharmacy');
+    else if (s === 'diagnostics' || s === 'lab-diagnostics' || s === 'lab') navigateToScreen('lab-diagnostics');
+    else if (s === 'home-service') navigateToScreen('home-service-selection');
+    else if (s === 'relocation') navigateToScreen('relocation');
+    else if (s === 'resort') navigateToScreen('resort');
+    else if (s === 'holiday') navigateToScreen('holiday');
+    else if (s === 'mating-dating-hub') navigateToScreen('mating-dating-hub');
+    else if (s === 'wallet') navigateToScreen('wallet');
+    else if (s === 'services') navigateToScreen('home'); // What's New "See All" / ai-assistant-style links
+    else if (s === 'promotions') navigateToScreen('shop'); // Promotions often lead to shop
+    else if (s === 'ai-assistant' || s === 'ai') navigateToScreen('home'); // AI / assistant -> home (services discovery)
     else {
-      setSelectedService(service);
+      setSelectedService(s || service);
       navigateToScreen('home');
     }
   };
@@ -377,7 +382,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleAccountNavigate = (path: string) => {
     if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
-    else if (path === 'account/wallet') navigateToScreen('wallet');
+    else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'account/settings') toast.info('Settings not available.');

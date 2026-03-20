@@ -1809,7 +1809,7 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* What's New Section */}
+        {/* What's New Section - announcements from Admin > Marketing > What's New */}
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1824,14 +1824,28 @@ export function CustomerHomeComplete({
             </button>
           </div>
           <div className="px-6 space-y-3">
-            {/* Render dynamic announcements if available */}
             {((dynamicAnnouncements.length > 0 ? dynamicAnnouncements : [
-              { id: 'ai', title: 'AI Pet Assistant', subtitle: 'Get instant answers about pet care', badgeText: 'NEW', badgeColor: 'green', icon: '🤖', announcementType: 'feature' },
+              { id: 'ai', title: 'AI Pet Assistant', subtitle: 'Get instant answers about pet care', badgeText: 'NEW', badgeColor: 'green', icon: '🤖', announcementType: 'feature', ctaLink: 'services' },
               { id: 'sos', title: 'Emergency Ambulance', subtitle: 'Instant location-based dispatch', badgeText: 'SOS', badgeColor: 'red', icon: '📞', ctaText: 'SOS ALERT', ctaLink: 'ambulance', announcementType: 'emergency' },
-              { id: 'premium', title: 'WarmPawz Plus', subtitle: 'Unlimited services at best prices', badgeText: 'PREMIUM', badgeColor: 'purple', icon: '⭐', announcementType: 'premium' },
+              { id: 'premium', title: 'WarmPawz Plus', subtitle: 'Unlimited services at best prices', badgeText: 'PREMIUM', badgeColor: 'purple', icon: '⭐', announcementType: 'premium', ctaLink: 'shop' },
             ])).map((announcement: any) => {
               const isEmergency = announcement.announcementType === 'emergency';
               const isPremium = announcement.announcementType === 'premium';
+              const rawLink = announcement.ctaLink ?? '';
+              const isExternalUrl = /^https?:\/\//i.test(rawLink);
+              const normalizedScreen = rawLink.replace(/^\/+/, '').trim() || null;
+              const isClickable = !isEmergency ? (isExternalUrl || (normalizedScreen && onNavigate)) : false;
+
+              const handleAnnouncementClick = () => {
+                if (isEmergency) return;
+                if (!rawLink) return;
+                if (isExternalUrl) {
+                  window.open(rawLink, '_blank', 'noopener,noreferrer');
+                  return;
+                }
+                if (normalizedScreen && onNavigate) onNavigate(normalizedScreen);
+              };
+
               const bgGradient = isEmergency
                 ? 'from-red-50 to-orange-50 border-red-100'
                 : isPremium
@@ -1851,8 +1865,11 @@ export function CustomerHomeComplete({
               return (
                 <div
                   key={announcement.id}
-                  className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4`}
-                  onClick={() => !isEmergency && announcement.ctaLink && onNavigate?.(announcement.ctaLink)}
+                  role={isClickable ? 'button' : undefined}
+                  tabIndex={isClickable ? 0 : undefined}
+                  onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAnnouncementClick(); } } : undefined}
+                  className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4 ${isClickable ? 'cursor-pointer hover:opacity-95 active:opacity-90 transition-opacity' : ''}`}
+                  onClick={handleAnnouncementClick}
                 >
                   <div className={`w-16 h-16 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg ${isEmergency ? 'animate-pulse' : ''}`}>
                     {announcement.icon ? (
@@ -1872,9 +1889,15 @@ export function CustomerHomeComplete({
                   </div>
                   {isEmergency && announcement.ctaText ? (
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNavigate?.(announcement.ctaLink || 'ambulance');
+                        const link = announcement.ctaLink ?? 'ambulance';
+                        if (/^https?:\/\//i.test(link)) {
+                          window.open(link, '_blank', 'noopener,noreferrer');
+                        } else {
+                          onNavigate?.(link.replace(/^\/+/, '').trim() || 'ambulance');
+                        }
                       }}
                       className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
                     >
