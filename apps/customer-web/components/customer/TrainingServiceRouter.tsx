@@ -150,7 +150,8 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 2: services/by-style (at_home = at home training)
       if (trainerServices.length === 0) {
         try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}`);
+          const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}${phoneParam}`);
           let altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
           
           // ✅ FIX: Filter out business vendors when style is at_home
@@ -464,7 +465,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           )}
 
           {/* Promotion Banner - Phase 0.1 Integration */}
-          <PromotionBanner service="training" maxPromotions={3} />
+          <PromotionBanner service="training" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Service Types */}
           <div>

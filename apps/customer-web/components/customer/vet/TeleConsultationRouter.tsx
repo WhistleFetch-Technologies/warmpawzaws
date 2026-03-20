@@ -569,18 +569,18 @@ function CallingVendorScreen({
 
           const data = JSON.parse(event.data);
           console.log('[CallingVendor] Parsed data:', data);
-          
+
           setStatus('accepted');
           toast.success(`${vendorName} accepted your call!`);
-          
+
           const finalBookingId = data.bookingId || bookingId;
           const finalAmount = Number(data.totalAmount) || servicePrice;
-          
+
           console.log('[CallingVendor] Calling onVendorAccepted with:', {
             bookingId: finalBookingId,
             totalAmount: finalAmount,
           });
-          
+
           onVendorAccepted(finalBookingId, finalAmount);
         } catch (e) {
           console.error('[CallingVendor] ❌ Parse error in vendor_accepted:', e);
@@ -642,7 +642,7 @@ function CallingVendorScreen({
           1: 'OPEN',
           2: 'CLOSED',
         }[eventSource.readyState]);
-        
+
         // If connection is closed, log it but don't take action
         // The stream should automatically reconnect
         if (eventSource.readyState === EventSource.CLOSED) {
@@ -1079,6 +1079,15 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         setStep('instant-service');
         break;
       case 'instant-calling':
+        if (callingBookingId) {
+          apiClient.post(`/customer/tele/instant-cancel/${callingBookingId}`)
+            .then(() => {
+              console.log('[TeleRouter] Booking cancelled successfully');
+            })
+            .catch((err) => {
+              console.error('[TeleRouter] Failed to cancel booking:', err);
+            });
+        }
         setCallingBookingId(null);
         setSelectedPet(null);
         setStep('instant-pet');

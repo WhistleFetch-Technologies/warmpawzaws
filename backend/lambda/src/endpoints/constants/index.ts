@@ -17,8 +17,10 @@ export const enum BookingStatus {
     PENDING_PAYMENT = 'pending_payment',
     REJECTED = 'rejected',
     EXPIRED = 'expired',
+    VENDOR_ON_WAY = 'vendor_on_way',
+    IN_TRANSIT = 'in_transit',
+    CHECKED_IN = 'checked_in',  // For grooming, boarding services
 }
-
 
 export const enum BookingPaymentStatus {
     PENDING = 'pending',
@@ -50,4 +52,30 @@ export const enum InstantTeleEventType {
     ERROR = 'error',
     REJECTED_BUT_PAID = 'rejected_but_paid',
     CANCELLED_BUT_PAID = 'cancelled_but_paid',
+}
+
+
+export const enum ServiceStyle {
+    AT_HOME = 'at_home',
+    AT_CENTER = 'at_center',
+    TELE = 'tele',
+}
+
+
+export const enum gps_tracking_sessions {
+    PENDING = 'pending',
+    STARTED = 'started',
+    IN_TRANSIT = 'in_transit',
+    ARRIVED = 'arrived',
+    COMPLETED = 'completed',
+    CANCELLED = 'cancelled',
+    VIDEO_CONSULTATION = 'video_consultation',
+    ACTIVE = 'active',
+    IS_TRAVELING = 'is_traveling',
+}
+
+export const enum OtpAction {
+    START = 'start',
+    COMPLETE = 'complete',
+    END = 'end',  // Normalized to 'complete' in code
 }

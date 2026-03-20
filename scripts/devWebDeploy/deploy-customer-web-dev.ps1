@@ -80,7 +80,7 @@ Write-Host ""
 
 # Navigate to customer-web directory
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptRoot
+$projectRoot = Split-Path -Parent (Split-Path -Parent $scriptRoot)
 $customerWebDir = Join-Path $projectRoot "apps\customer-web"
 
 if (!(Test-Path $customerWebDir)) {

@@ -1001,6 +1001,82 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   });
 
   /**
+   * POST /customer/prescriptions/upload
+   * Upload prescription file for customer (e.g., for pharmacy orders)
+   * Does not require bookingId or vendorId - just uploads file and returns URL
+   */
+  app.post("/customer/prescriptions/upload", async (c) => {
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get('file') as File;
+      const customerId = formData.get('customerId') as string;
+      const customerPhone = formData.get('customerPhone') as string;
+
+      if (!file) {
+        return c.json({ error: 'file is required' }, 400);
+      }
+
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        return c.json({ error: 'File size must be less than 10MB' }, 400);
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        return c.json({ error: 'Only images (JPG, PNG, GIF, WEBP) and PDF files are allowed' }, 400);
+      }
+
+      // Upload file to S3
+      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+      
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop() || 'pdf';
+      const identifier = customerId || customerPhone || 'customer';
+      const fileKey = `prescriptions/customer/${identifier}/${timestamp}_${file.name}`;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+        Body: uint8Array,
+        ContentType: file.type || (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+      }));
+
+      // Generate presigned URL for immediate use
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 604800 } // 7 days
+      );
+
+      return c.json({
+        success: true,
+        url: signedUrl,
+        fileKey: fileKey,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        message: 'Prescription uploaded successfully',
+      });
+
+    } catch (error: any) {
+      console.error('Error uploading customer prescription:', error);
+      return c.json({ error: error.message || 'Failed to upload prescription' }, 500);
+    }
+  });
+
+  /**
    * POST /medical-records/booking/:bookingId/prescription
    * Create prescription by doctor (auto-updates with latest date)
    * Latest prescription date comes first and keeps updating
@@ -1163,8 +1239,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const booking = bookings[0];
       const petId = booking.pet_id;
 
-      // ✅ FIX: Only get prescriptions from prescriptions table (doctor-created)
-      // Filter out uploaded documents from medical_records table
+      // ✅ FIX: Get prescriptions from prescriptions table (doctor-created)
       let prescriptionsTableRecords: any[] = [];
       try {
         const prescriptionsResult = await query(
@@ -1182,21 +1257,75 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           [petId || bookingId]
         );
         prescriptionsTableRecords = (prescriptionsResult as any).rows || [];
-        console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table (filtered out medical_records)`);
+        console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table`);
       } catch (prescError) {
         console.warn('Error querying prescriptions table:', prescError);
         prescriptionsTableRecords = [];
       }
 
-      // ✅ FIX: Only use prescriptions from prescriptions table (no medical_records)
-      const allPrescriptions = prescriptionsTableRecords;
+      // ✅ FIX: Also get uploaded prescription documents from medical_records table
+      let uploadedPrescriptions: any[] = [];
+      try {
+        const medicalRecordsResult = await query(
+          `SELECT mr.*,
+                  v.business_name as vendor_name,
+                  p.name as pet_name,
+                  'medical_records' as source,
+                  'uploaded' as record_type,
+                  mr.record_date as prescription_date,
+                  mr.title as medication_name,
+                  mr.description as instructions
+           FROM medical_records mr
+           LEFT JOIN vendors v ON mr.vendor_id = v.id
+           LEFT JOIN pets p ON mr.pet_id = p.id
+           WHERE mr.booking_id = $1::uuid
+           AND mr.is_active = true
+           AND (mr.record_type = 'prescription' 
+                OR (mr.record_type = 'treatment' AND mr.title ILIKE '%prescription%'))`,
+          [bookingId]
+        );
+        uploadedPrescriptions = (medicalRecordsResult as any).rows || [];
+        console.log(`[Prescriptions] Found ${uploadedPrescriptions.length} uploaded prescription documents from medical_records table`);
+      } catch (medicalError) {
+        console.warn('Error querying medical_records table for prescriptions:', medicalError);
+        uploadedPrescriptions = [];
+      }
+
+      // ✅ FIX: Combine both doctor-created prescriptions and uploaded prescription documents
+      const allPrescriptions = [...prescriptionsTableRecords, ...uploadedPrescriptions];
       const uniqueById = new Map();
       for (const p of allPrescriptions) {
         if (!uniqueById.has(p.id)) {
           uniqueById.set(p.id, p);
         }
       }
-      const prescriptions = Array.from(uniqueById.values());
+      let prescriptions = Array.from(uniqueById.values());
+
+      // ✅ FIX: Generate presigned URLs for uploaded prescription documents (file_url contains S3 key)
+      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+
+      prescriptions = await Promise.all(
+        prescriptions.map(async (p: any) => {
+          // If it's an uploaded prescription with file_url (S3 key), generate presigned URL
+          if (p.source === 'medical_records' && p.file_url && !p.file_url.startsWith('http')) {
+            try {
+              const signedUrl = await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({ Bucket: BUCKET_NAME, Key: p.file_url }),
+                { expiresIn: 604800 } // 7 days
+              );
+              return { ...p, file_url: signedUrl, prescription_file_url: signedUrl };
+            } catch (urlError: any) {
+              console.warn(`[Prescriptions] Failed to generate presigned URL for ${p.file_url}:`, urlError?.message);
+              return p; // Return without URL if generation fails
+            }
+          }
+          return p;
+        })
+      );
 
       // 4. Sort by date (latest first)
       prescriptions.sort((a, b) => {

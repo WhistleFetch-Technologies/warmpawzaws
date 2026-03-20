@@ -371,6 +371,7 @@ export async function insert(
     'vendor_cancellation_penalty',
     'no_show_policy',
     'setting_value',             // admin_settings
+    'attachments',               // support_tickets (URLs / metadata array)
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -447,6 +448,7 @@ export async function update(
     'vendor_cancellation_penalty',
     'no_show_policy',
     'setting_value',   // admin_settings
+    'attachments',     // support_tickets
   ]);
   
   // Also check for columns ending with common JSONB suffixes

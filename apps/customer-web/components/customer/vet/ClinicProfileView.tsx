@@ -68,9 +68,10 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       setLoading(true);
       
       // ✅ CRITICAL: Load vendor profile from real API - NO MOCK DATA, NO FALLBACKS
+      // ✅ FIX: Include serviceStyle=at_center for clinic profile (clinics offer at_center services)
       const [vendorResponse, servicesResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${clinicId}`),
-        apiClient.get(`/customer/vendor/${clinicId}/services`).catch(() => apiClient.get(`/vendor/${clinicId}/services`))
+        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center`).catch(() => apiClient.get(`/vendor/${clinicId}/services`))
       ]);
       
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;

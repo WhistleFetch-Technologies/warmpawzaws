@@ -33,6 +33,7 @@ export type NotificationEventType =
     | 'booking_completed'
     | 'booking_reminder'
     | 'booking_start_otp'
+    | 'booking_rescheduled'
     // Video Call Events
     | 'video_call_reminder_5min'
     | 'video_call_started'
@@ -104,6 +105,11 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
     booking_start_otp: {
         title: '🔐 Service Start OTP',
         body: 'Share this OTP with {vendorName} to start your service: {otp}',
+    },
+    booking_rescheduled: {
+        title: '📅 Booking Rescheduled',
+        body: 'Customer has rescheduled booking from {oldDate} {oldTime} to {newDate} {newTime}. Reason: {reason}',
+        sound: 'high_priority',
     },
 
     // Video Call Events

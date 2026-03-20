@@ -8,6 +8,8 @@ import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { validateEmail } from '@/lib/validation';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -45,9 +47,26 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile: UserProfile }>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
-      setProfile(result.profile);
-      setPhotoPreview(result.profile.photo || '');
+      const result = await apiClient.get<{ profile: Record<string, unknown> }>(
+        `/customer/profile?phone=${encodeURIComponent(phone)}`
+      );
+      const raw = result.profile;
+      if (!raw) return;
+      const base = normalizeCustomerProfileFields(raw as any, phone);
+      const normalized: UserProfile = {
+        firstName: base.firstName,
+        lastName: base.lastName,
+        email: base.email,
+        phone: base.phone,
+        address: base.address,
+        pincode: base.pincode,
+        city: base.city,
+        state: base.state,
+        photo: base.photo,
+        created_at: (raw as any).created_at ?? (raw as any).createdAt,
+      };
+      setProfile(normalized);
+      setPhotoPreview(base.photo || '');
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
@@ -221,7 +240,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
             >
               {photoPreview ? (
                 <>
-                  <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                  <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                   {uploadingPhoto && (
                     <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />

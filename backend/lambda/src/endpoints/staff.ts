@@ -22,7 +22,7 @@ import { calculateCommuteTime } from '../utils/commute-time-calculator';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
-import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
+import { resolveVendorById } from './vendor/endpoints/vendorProfile.vendor';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)

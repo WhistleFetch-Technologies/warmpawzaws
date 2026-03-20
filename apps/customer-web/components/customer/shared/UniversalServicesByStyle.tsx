@@ -129,9 +129,10 @@ export function UniversalServicesByStyle({
         const specializationParam = specialization 
           ? `&specialization=${encodeURIComponent(specialization)}` 
           : '';
+        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
         
         const response = await apiClient.get(
-          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}`
+          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
         ) as any;
 
         if (response.success) {
@@ -148,6 +149,11 @@ export function UniversalServicesByStyle({
           // ✅ FIX: Normalize nextAvailableSlot to always be a string
           // Handle all possible field names: nextAvailable (API), nextAvailableSlot, nextAvailability
           providerData = providerData.map((p: any) => {
+            // ✅ FIX: Map photoUrl to photo for frontend compatibility
+            if (!p.photo && p.photoUrl) {
+              p.photo = p.photoUrl;
+            }
+            
             // Priority 1: nextAvailable (returned by by-style API)
             if (p.nextAvailable && typeof p.nextAvailable === 'object') {
               p.nextAvailableSlot = p.nextAvailable.display || p.nextAvailable.formattedDisplay || 
@@ -185,8 +191,9 @@ export function UniversalServicesByStyle({
       } else {
         // ✅ HOME/TELE FLOWS: Use discover-services endpoint (solo vendors and staff only)
         // ✅ FIX: Don't pass roleId - it causes filtering issues. Category is sufficient.
+        const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
         const discoverResponse = await apiClient.get(
-          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}`
+          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}${phoneParam}`
         ) as any;
         
         // The endpoint returns providers array (solo vendors and staff)
@@ -278,7 +285,7 @@ export function UniversalServicesByStyle({
               staffId: isStaff ? providerId : undefined,
               name: provider.businessName || provider.name || config.roleName,
               phone: provider.phone,
-              photo: provider.photo,
+              photo: provider.photo || provider.photoUrl, // ✅ Support both photo and photoUrl
               address: provider.address || provider.location,
               city: provider.city,
               role: provider.role,

@@ -15,6 +15,8 @@ import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -241,28 +243,24 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
+      const result = await apiClient.get<{ profile?: UserProfile & { name?: string; profile_photo_url?: string } }>(
+        `/customer/profile?phone=${encodeURIComponent(phone)}`
+      );
 
       if (result && result.profile) {
-        setProfile({
-          firstName: result.profile.firstName || '',
-          lastName: result.profile.lastName || '',
-          email: result.profile.email || '',
-          phone: result.profile.phone || phone,
-          address: result.profile.address || '',
-          pincode: result.profile.pincode || '',
-          photo: result.profile.photo || ''
-        });
-        setPhotoPreview(result.profile.photo || '');
-        setOriginalProfile({
-          firstName: result.profile.firstName || '',
-          lastName: result.profile.lastName || '',
-          email: result.profile.email || '',
-          phone: result.profile.phone || phone,
-          address: result.profile.address || '',
-          pincode: result.profile.pincode || '',
-          photo: result.profile.photo || ''
-        });
+        const base = normalizeCustomerProfileFields(result.profile as any, phone);
+        const next: UserProfile = {
+          firstName: base.firstName,
+          lastName: base.lastName,
+          email: base.email,
+          phone: base.phone,
+          address: base.address,
+          pincode: base.pincode,
+          photo: base.photo,
+        };
+        setProfile(next);
+        setPhotoPreview(base.photo);
+        setOriginalProfile({ ...next });
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -711,7 +709,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 bg-white rounded-full overflow-hidden flex items-center justify-center">
                 {photoPreview ? (
-                  <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                  <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-8 h-8 text-[#FF8C42]" />
                 )}
@@ -859,7 +857,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                     <div className="relative">
                       <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
                         {photoPreview ? (
-                          <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                          <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <User className="w-16 h-16 text-gray-400" />

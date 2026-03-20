@@ -118,7 +118,8 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 2: services/by-style (at_center = grooming centre)
       if (groomerServices.length === 0) {
         try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming${locationParams}`);
+          const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming${locationParams}${phoneParam}`);
           const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
           if (Array.isArray(altData)) groomerServices = altData;
           else if (altData?.services) groomerServices = altData.services;
@@ -328,9 +329,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <Sparkles className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
             </div>
-            <PromotionBanner 
-              service="grooming"
-            />
+            <PromotionBanner service="grooming" onNavigate={onNavigate} />
           </div>
 
           {/* Grooming Needs Grid */}

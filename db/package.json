@@ -1,0 +1,20 @@
+{
+  "name": "warmpawz-db-migrations",
+  "version": "1.0.0",
+  "description": "Database migration scripts for Warmpawz",
+  "private": true,
+  "scripts": {
+    "migrate:up": "node run-migration-all.js",
+    "migrate:status": "node check-migration-status.js",
+    "migrate:delete-inactive-roles": "node run-migration.js db/migrations/251_permanent_delete_inactive_roles.sql",
+    "migrate:delete-inactive-roles-rds": "node ../scripts/run-migration-rds-node.js 251_permanent_delete_inactive_roles.sql",
+    "seed:dev": "node seed-dev-data.js",
+    "seed:prod": "node seed-prod-data.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -147,7 +147,13 @@ export function EditVendorDocumentsModal({
       }
 
       // Use fetch directly for FormData (apiClient might not handle multipart correctly)
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+        // ✅ FIX: Use runtime config via apiClient instead of build-time env var
+      // This ensures production uses the correct API Gateway (mss9sa4y01) not dev (z0b3obweb6)
+      const baseUrl = apiClient.getBaseUrl();
+      if (!baseUrl) {
+        throw new Error('API base URL is not configured. Please check runtime-config.js');
+      }
+      
       const token = localStorage.getItem('adminAuthToken') || localStorage.getItem('authToken') || '';
       const response = await fetch(`${baseUrl}/admin/vendors/${vendorId}/documents`, {
         method: 'PATCH',

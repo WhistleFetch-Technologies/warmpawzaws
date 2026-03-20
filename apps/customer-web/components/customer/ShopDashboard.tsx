@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Search, SlidersHorizontal, ShoppingCart, ArrowLeft, TrendingUp, Star, Heart, Package, Truck, Shield, Zap, MapPin, Store, Dog, ShoppingBag, Bone, Shirt, Watch, Pill, Scissors, Bed, UtensilsCrossed } from 'lucide-react';
+import { Search, SlidersHorizontal, ArrowLeft, TrendingUp, Star, Heart, Package, Truck, Shield, Zap, MapPin, Store, Dog, ShoppingBag, Bone, Shirt, Watch, Pill, Scissors, Bed, UtensilsCrossed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
@@ -49,7 +48,6 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [apiCategories, setApiCategories] = useState<any[]>([]);
-  const { itemCount } = useCart();
 
   // Sync selected category when initial category from navigation changes
   useEffect(() => {
@@ -107,7 +105,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         image: prod.image || prod.image_url || prod.primary_image || '',
         category: prod.category || prod.category_name || 'general',
         vendor: {
-          name: prod.vendor_name || prod.vendor?.business_name || 'WarmPawz Store',
+          name: prod.vendor_name || prod.vendor?.business_name || 'Warmpawz Store',
           rating: prod.vendor_rating || 4.7,
           location: prod.vendor_location || prod.vendor?.city || '',
           deliveryTime: prod.delivery_time || '2-3 days',
@@ -183,17 +181,6 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-gray-900 flex-1 font-semibold text-lg">Shop</h1>
-            <button 
-              onClick={() => onNavigate?.('cart')}
-              className="relative p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <ShoppingCart className="w-5 h-5 text-gray-700" />
-              {itemCount > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">{itemCount}</span>
-                </div>
-              )}
-            </button>
           </div>
 
           {/* Search Bar */}
@@ -236,9 +223,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
       <div className="pb-24">
         {/* PHASE 1.3: Promotion Banners (from Admin Marketing) */}
         <div className="p-4">
-          <PromotionBanner 
-            service="shop"
-          />
+          <PromotionBanner service="shop" onNavigate={onNavigate} />
         </div>
 
         {/* Quick Features */}

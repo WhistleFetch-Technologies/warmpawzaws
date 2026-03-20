@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
 import { petsApi } from '@/lib/api-client';
+import { fetchPetById } from '@/lib/fetch-customer-pet';
 import { PetProfile } from '@/components/customer/PetProfile';
 
 interface PetDetails {
@@ -43,49 +43,31 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    if (!petId) return;
     const storedPhone = localStorage.getItem('customerPhone');
     if (!storedPhone) {
       router.push('/auth');
       return;
     }
     setPhone(storedPhone);
-  }, [router]);
-
-  useEffect(() => {
-    if (!petId || !phone) return;
-    loadPet();
+    void loadPet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, phone]);
+  }, [petId, router]);
 
   const loadPet = async () => {
     if (!petId) return;
+    const storedPhone =
+      typeof window !== 'undefined' ? localStorage.getItem('customerPhone') : null;
     try {
       setLoading(true);
       setError(null);
-      // Prefer GET /pets/:petId (same API surface as edit/delete); fallback to /customer/pets/:petId
-      let response: any = null;
-      try {
-        response = await apiClient.get<any>(`/pets/${petId}`);
-        if (response?.pet) {
-          setPet(normalizePet(response.pet));
-          return;
-        }
-      } catch {
-        // ignore
+      const raw = await fetchPetById(petId, storedPhone);
+      if (raw) {
+        setPet(normalizePet(raw));
+      } else {
+        setPet(null);
+        setError('Pet not found');
       }
-      response = await apiClient.get<any>(`/customer/pets/${petId}`);
-      if (response?.success && response?.pet) {
-        setPet(normalizePet(response.pet));
-        return;
-      }
-      if (response?.pets && Array.isArray(response.pets) && response.pets.length > 0) {
-        const match = response.pets.find((p: any) => p.id === petId);
-        if (match) {
-          setPet(normalizePet(match));
-          return;
-        }
-      }
-      setError('Pet not found');
     } catch (err: any) {
       console.error('Error loading pet details:', err);
       setError(err.message || 'Failed to load pet profile');
@@ -173,7 +155,7 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
     );
   }
 
-  if (error || !pet || !phone) {
+  if (error || !pet) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 p-6 text-center">
         <p className="text-gray-700 mb-4">{error || 'Pet not found'}</p>
@@ -341,7 +323,7 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
 
       {!editing && !deleteConfirm && (
         <PetProfile
-          phone={phone}
+          phone={phone || (typeof window !== 'undefined' ? localStorage.getItem('customerPhone') || '' : '')}
           petId={pet.id}
           petName={pet.name}
           petAge={petAge}

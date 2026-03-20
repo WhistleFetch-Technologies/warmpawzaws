@@ -314,7 +314,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
         </Card>
 
         {/* Promotion Banner - Phase 0.1 Integration */}
-        <PromotionBanner service="walking" maxPromotions={3} />
+        <PromotionBanner service="walking" maxPromotions={3} onNavigate={onNavigate} />
 
         {/* Problem Grid - Walk by Need */}
         <div>

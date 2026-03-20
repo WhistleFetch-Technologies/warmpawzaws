@@ -3,12 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  Camera, Edit2, Save, X, Calendar, Clock, 
-  MapPin, User, Upload, Heart, AlertCircle, Check,
-  ChevronRight, Package
+  Camera, Edit2, X, Calendar, Clock, 
+  AlertCircle, ChevronRight, ArrowLeft
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { BookingDetailModal } from './BookingDetailModal';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import { fetchPetById } from '@/lib/fetch-customer-pet';
 
 interface Pet {
   id: string;
@@ -60,6 +60,43 @@ interface CustomerPetDetailsProps {
   onViewPetProfile?: (petData: any) => void; // View full pet profile with booking history
 }
 
+function photoUrlFromPet(raw: any): string {
+  return (
+    raw?.photo ||
+    raw?.image ||
+    raw?.profile_photo_url ||
+    raw?.profilePhotoUrl ||
+    ''
+  );
+}
+
+/** Map API pet to UI shape (photo fields, species vs type). */
+function mapApiPetToPet(raw: any): Pet {
+  const species = String(raw.species || raw.type || '').toLowerCase();
+  const typeDisplay =
+    species === 'dog' ? 'Dog' : species === 'cat' ? 'Cat' : raw.type || (species ? species.charAt(0).toUpperCase() + species.slice(1) : 'Pet');
+  return {
+    ...raw,
+    id: String(raw.id),
+    name: raw.name || 'Pet',
+    type: typeDisplay,
+    breed: raw.breed || '',
+    age: String(raw.age ?? raw.age_years ?? ''),
+    gender: raw.gender || '',
+    weight: raw.weight != null && raw.weight !== '' ? String(raw.weight) : '',
+    photo: photoUrlFromPet(raw),
+    healthRecords: raw.healthRecords || raw.health_records,
+    vaccinations: raw.vaccinations,
+  };
+}
+
+function petTypeEmoji(type: string): string {
+  const t = String(type || '').toLowerCase();
+  if (t === 'dog') return '🐕';
+  if (t === 'cat') return '🐈';
+  return '🐾';
+}
+
 export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDelete, onViewPetProfile }: CustomerPetDetailsProps) {
   const [pet, setPet] = useState<Pet | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -69,7 +106,6 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const [deleting, setDeleting] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [selectedBookingForModal, setSelectedBookingForModal] = useState<{ bookingId: string; petId: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -91,19 +127,28 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     
     try {
       setLoading(true);
-      // Fetch specific pet by ID
-      const data = await apiClient.get(`/customer/${phone}/pets/${petId}`) as any;
+      let raw: any = null;
 
-      if (data && data.success && data.pet) {
-        setPet(data.pet);
-        setPhotoPreview(data.pet.photo || '');
+      try {
+        const data = (await apiClient.get(`/customer/${phone}/pets/${petId}`)) as any;
+        if (data?.success && data.pet) raw = data.pet;
+      } catch {
+        /* fallback below */
+      }
+
+      if (!raw) {
+        raw = await fetchPetById(petId, phone);
+      }
+
+      if (raw) {
+        const mapped = mapApiPetToPet(raw);
+        setPet(mapped);
+        setPhotoPreview(photoUrlFromPet(raw));
       } else {
-        console.error('Failed to load pet:', data?.error);
-        // Pet not found - will show error state
+        console.error('Failed to load pet');
       }
     } catch (error: any) {
       console.error('Error loading pet details:', error);
-      // If 404, pet doesn't exist
       if (error?.status === 404 || error?.response?.status === 404) {
         console.error('Pet not found');
       }
@@ -304,11 +349,23 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     <>
       {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
       
-      {/* Edit Button - Moved to content area */}
-      <div className="px-6 pt-4 pb-2 bg-white flex justify-end">
-        <button 
-          onClick={() => editMode ? setEditMode(false) : setEditMode(true)}
-          className="p-2 hover:bg-gray-100 rounded-full transition-all"
+      {/* Back + edit */}
+      <div className="px-4 pt-4 pb-2 bg-white flex items-center justify-between gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          className="text-gray-800 -ml-2 gap-1 shrink-0"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span className="font-medium">Back</span>
+        </Button>
+        <button
+          type="button"
+          onClick={() => (editMode ? setEditMode(false) : setEditMode(true))}
+          className="p-2 hover:bg-gray-100 rounded-full transition-all shrink-0"
+          aria-label={editMode ? 'Close edit' : 'Edit pet'}
         >
           {editMode ? (
             <X className="w-5 h-5 text-gray-700" />
@@ -329,7 +386,11 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
             >
               {photoPreview ? (
                 <>
-                  <img src={photoPreview} alt={pet?.name || 'Pet'} className="w-full h-full object-cover" />
+                  <PresignableImage
+                    src={photoPreview}
+                    alt={pet?.name || 'Pet'}
+                    className="w-full h-full object-cover"
+                  />
                   {editMode && (
                     <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Camera className="w-8 h-8 text-white" />
@@ -337,8 +398,8 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   )}
                 </>
               ) : (
-                <span className="text-5xl">
-                  {pet.type === 'Dog' ? '🐕' : pet.type === 'Cat' ? '🐈' : '🐾'}
+                <span className="text-5xl" aria-hidden>
+                  {petTypeEmoji(pet.type)}
                 </span>
               )}
             </div>
@@ -384,7 +445,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     Type
                   </label>
                   <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                    {pet.type === 'Dog' ? '🐕 Dog' : pet.type === 'Cat' ? '🐈 Cat' : '🐾 ' + pet.type}
+                    {petTypeEmoji(pet.type)} {pet.type}
                   </p>
                 </div>
                 <div>

@@ -20,6 +20,7 @@ import { select, update, query, insert } from '../../../database/rds-connection'
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
@@ -285,6 +286,22 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const customer = customers[0];
+      const defaultAddr = customer.addresses?.[0] || null;
+
+      const fullName = (customer.full_name || '').trim();
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      const addressText =
+        typeof customer.address === 'string'
+          ? customer.address
+          : (customer.address && (customer.address as any).street) || '';
+
+      const profilePhoto =
+        (await presignS3GetUrlIfApplicable(customer.profile_photo_url)) ||
+        customer.profile_photo_url ||
+        null;
 
       // Get pets for this customer with error handling
       let pets: any[] = [];
@@ -295,30 +312,44 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         // Continue with empty pets array
       }
 
-      return c.json({
-        success: true,
-        profile: {
-          id: customer.id,
-          phone: customer.phone,
-          name: customer.full_name,
-          email: customer.email,
-          address: customer.address,
-          pincode: customer.addresses[0].pincode,
-          city: customer.addresses[0].city,
-          state: customer.addresses[0].state,
-          photo: customer.profile_photo_url,
-          status: customer.status,
-          onboarding_status: customer.onboarding_status,
-          profile_completed: customer.profile_completed,
-          createdAt: customer.created_at,
-          pets: pets.map((p: any) => ({
+      const petsOut = await Promise.all(
+        pets.map(async (p: any) => {
+          const rawPhoto = p.profile_photo_url;
+          const signed = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+          return {
             id: p.id,
             name: p.name,
             type: p.species,
             breed: p.breed,
             age: p.age_years,
             gender: p.gender,
-          })),
+            photo: signed,
+            image: signed,
+            profile_photo_url: signed,
+          };
+        })
+      );
+
+      return c.json({
+        success: true,
+        profile: {
+          id: customer.id,
+          phone: customer.phone,
+          name: customer.full_name,
+          firstName,
+          lastName,
+          email: customer.email,
+          address: addressText || customer.address,
+          pincode: defaultAddr?.pincode || customer.pincode || null,
+          city: defaultAddr?.city || customer.city || null,
+          state: defaultAddr?.state || customer.state || null,
+          photo: profilePhoto,
+          profile_photo_url: profilePhoto,
+          status: customer.status,
+          onboarding_status: customer.onboarding_status,
+          profile_completed: customer.profile_completed,
+          createdAt: customer.created_at,
+          pets: petsOut,
         }
       });
     } catch (error: any) {

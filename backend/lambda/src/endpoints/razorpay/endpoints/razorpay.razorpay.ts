@@ -86,6 +86,54 @@ export async function validateBankAccountStrict(
 }
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Resolve customer UUID from phone number or return UUID if already provided
+ * @param identifier - Phone number or customer UUID
+ * @returns Customer UUID or null if not found
+ */
+async function resolveCustomerId(identifier: string): Promise<string | null> {
+  if (!identifier) return null;
+  
+  // Check if it's already a UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(identifier)) {
+    // Verify it exists in database
+    const customers = await select('customers', { id: identifier });
+    return customers.length > 0 ? customers[0].id : null;
+  }
+  
+  // It's a phone number - normalize and lookup
+  try {
+    // Normalize phone (remove spaces, ensure +91 prefix for Indian numbers)
+    let normalizedPhone = identifier.replace(/\s+/g, '').replace(/^0+/, '');
+    if (!normalizedPhone.startsWith('+')) {
+      // Assume Indian number if no country code
+      if (normalizedPhone.length === 10) {
+        normalizedPhone = '+91' + normalizedPhone;
+      }
+    }
+    
+    // Try to find customer by phone (try both original and normalized)
+    const result = await query(
+      `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
+      [identifier, normalizedPhone]
+    );
+    
+    if (result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('[RAZORPAY] Error resolving customer ID from phone:', error.message);
+    return null;
+  }
+}
+
+// ============================================================================
 // RAZORPAY HANDLERS
 // ============================================================================
 
@@ -168,7 +216,21 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         if (order.status !== 'invoice_generated') {
           return this.error('Order is not in invoice state. Please wait for pharmacy to send invoice.', 400);
         }
-        customerIdFinal = customerId || order.customer_id;
+        
+        // ✅ FIX: Resolve customerId from phone number if provided, otherwise use order.customer_id
+        if (customerId) {
+          const resolvedId = await resolveCustomerId(customerId);
+          if (resolvedId) {
+            customerIdFinal = resolvedId;
+          } else {
+            // If resolution fails, fall back to order.customer_id
+            customerIdFinal = order.customer_id;
+            console.warn('[RAZORPAY-CREATE-ORDER] Could not resolve customerId from phone, using order.customer_id');
+          }
+        } else {
+          customerIdFinal = order.customer_id;
+        }
+        
         vendorIdFinal = order.pharmacy_id;
         const vendorResult = await select('vendors', { id: vendorIdFinal });
         vendor = vendorResult.length > 0 ? vendorResult[0] : null;
@@ -176,7 +238,16 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         receipt = `po_${shortId}`;
         notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
       } else if (isDiagnosticsOrder) {
-        customerIdFinal = customerId;
+        // ✅ FIX: Resolve customerId from phone number if needed
+        if (customerId) {
+          const resolvedId = await resolveCustomerId(customerId);
+          if (!resolvedId) {
+            return this.error(`Customer not found for identifier: ${customerId}`, 404);
+          }
+          customerIdFinal = resolvedId;
+        } else {
+          return this.error('customerId is required for diagnostics order', 400);
+        }
         vendorIdFinal = vendorId;
         const vendorResult = await Promise.race([
           select('vendors', { id: vendorIdFinal }),
@@ -187,7 +258,16 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         receipt = `diag_${shortId}`;
         notes = { type: 'diagnostics', customerId: customerIdFinal, vendorId: vendorIdFinal };
       } else if (isBookingPrepaid) {
-        customerIdFinal = customerId;
+        // ✅ FIX: Resolve customerId from phone number if needed
+        if (customerId) {
+          const resolvedId = await resolveCustomerId(customerId);
+          if (!resolvedId) {
+            return this.error(`Customer not found for identifier: ${customerId}`, 404);
+          }
+          customerIdFinal = resolvedId;
+        } else {
+          return this.error('customerId is required for booking_prepaid', 400);
+        }
         vendorIdFinal = vendorId;
         const vendorResult = await Promise.race([
           select('vendors', { id: vendorIdFinal }),
@@ -213,7 +293,21 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Vendor query timeout')), 5000)),
         ]);
         vendor = vendorResult.length > 0 ? vendorResult[0] : null;
-        customerIdFinal = customerId || booking.customer_id;
+        
+        // ✅ FIX: Resolve customerId from phone number if provided, otherwise use booking.customer_id
+        if (customerId) {
+          const resolvedId = await resolveCustomerId(customerId);
+          if (resolvedId) {
+            customerIdFinal = resolvedId;
+          } else {
+            // If resolution fails, fall back to booking.customer_id
+            customerIdFinal = booking.customer_id;
+            console.warn('[RAZORPAY-CREATE-ORDER] Could not resolve customerId from phone, using booking.customer_id');
+          }
+        } else {
+          customerIdFinal = booking.customer_id;
+        }
+        
         vendorIdFinal = booking.vendor_id;
         const shortBookingId = bookingId.replace(/-/g, '').substring(0, 32);
         receipt = `bk_${shortBookingId}`;
@@ -365,7 +459,6 @@ class VerifyPaymentHandler extends BaseHandler {
       const body = this.parseBody(context.event);
       const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
 
-      // ✅ FIX: Better validation with specific error messages
       if (!razorpay_order_id) {
         return this.error('razorpay_order_id is required', 400);
       }
@@ -467,6 +560,7 @@ class VerifyPaymentHandler extends BaseHandler {
 
         const payment = payments[0];
         const bookingId = payment.booking_id;
+        const pharmacyOrderId = payment.pharmacy_order_id;
 
         // Update payment status
         await client.query(
@@ -478,6 +572,65 @@ class VerifyPaymentHandler extends BaseHandler {
           WHERE id = $2`,
           [razorpay_payment_id, payment.id]
         );
+
+        // ✅ FIX: Handle pharmacy orders FIRST (before early return)
+        if (pharmacyOrderId) {
+          console.log('[PAYMENT-VERIFY] ✅ Processing pharmacy order payment:', {
+            pharmacyOrderId,
+            razorpay_payment_id,
+            orderId: razorpay_order_id,
+          });
+
+          // Update pharmacy order status and payment info
+          const updateResult = await client.query(
+            `UPDATE pharmacy_orders SET 
+              payment_status = 'paid',
+              razorpay_payment_id = $1,
+              status = 'payment_confirmed',
+              updated_at = NOW()
+            WHERE id = $2
+            RETURNING id, payment_status, status`,
+            [razorpay_payment_id, pharmacyOrderId]
+          );
+
+          if (updateResult.rows.length === 0) {
+            console.error('[PAYMENT-VERIFY] ❌ Pharmacy order not found:', pharmacyOrderId);
+            throw new Error(`Pharmacy order ${pharmacyOrderId} not found`);
+          }
+
+          console.log('[PAYMENT-VERIFY] ✅ Pharmacy order updated:', {
+            id: updateResult.rows[0].id,
+            payment_status: updateResult.rows[0].payment_status,
+            status: updateResult.rows[0].status,
+          });
+
+          // Create delivery tracking with OTP if it doesn't exist
+          const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+          const { rows: existing } = await client.query(
+            `SELECT id FROM delivery_tracking WHERE pharmacy_order_id = $1`,
+            [pharmacyOrderId]
+          );
+
+          if (existing.length === 0) {
+            await client.query(
+              `INSERT INTO delivery_tracking (pharmacy_order_id, status, delivery_otp, assigned_at)
+               VALUES ($1, $2, $3, NOW())`,
+              [pharmacyOrderId, 'assigned', deliveryOtp]
+            );
+            console.log('[PAYMENT-VERIFY] ✅ Delivery tracking created with OTP:', deliveryOtp);
+          } else {
+            console.log('[PAYMENT-VERIFY] ✅ Delivery tracking already exists for pharmacy order');
+          }
+
+          // Return success for pharmacy orders (no booking to update)
+          return {
+            message: 'Payment verified successfully',
+            paymentId: razorpay_payment_id,
+            orderId: razorpay_order_id,
+            bookingId: null,
+            pharmacyOrderId: pharmacyOrderId,
+          };
+        }
 
         // ✅ If booking is created after payment (prepaid flow), return success without booking update
         if (!bookingId) {
@@ -543,33 +696,6 @@ class VerifyPaymentHandler extends BaseHandler {
           }
         } catch (otpErr: any) {
           console.warn(`[PAYMENT-VERIFY] Failed to generate OTP for booking ${bookingId}:`, otpErr?.message);
-        }
-
-        const pharmacyOrderId = payment.pharmacy_order_id;
-
-        if (pharmacyOrderId) {
-          // Pharmacy order: update status and create delivery_tracking with OTP for later use at dispatch
-          await client.query(
-            `UPDATE pharmacy_orders SET 
-              payment_status = 'paid',
-              razorpay_payment_id = $1,
-              status = 'payment_confirmed',
-              updated_at = NOW()
-            WHERE id = $2`,
-            [razorpay_payment_id, pharmacyOrderId]
-          );
-          const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
-          const { rows: existing } = await client.query(
-            `SELECT id FROM delivery_tracking WHERE pharmacy_order_id = $1`,
-            [pharmacyOrderId]
-          );
-          if (existing.length === 0) {
-            await client.query(
-              `INSERT INTO delivery_tracking (pharmacy_order_id, status, delivery_otp, assigned_at)
-               VALUES ($1, $2, $3, NOW())`,
-              [pharmacyOrderId, 'assigned', deliveryOtp]
-            );
-          }
         }
 
         // Queue settlement and publish events (outside transaction for async operations)

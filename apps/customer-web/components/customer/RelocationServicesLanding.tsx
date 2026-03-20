@@ -106,7 +106,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
         <div className="space-y-8">
           
           {/* Promotion Banner */}
-          <PromotionBanner service="relocation" maxPromotions={3} />
+          <PromotionBanner service="relocation" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Service Types */}
           <div>

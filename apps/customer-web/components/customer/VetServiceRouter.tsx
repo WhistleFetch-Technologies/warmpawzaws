@@ -190,7 +190,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       // Try 2: If no data, try services/by-style endpoint
       if (servicesData.length === 0) {
         try {
-          const altEndpoint = `/customer/services/by-style?style=tele&category=vet${locationParams}`;
+          const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+          const altEndpoint = `/customer/services/by-style?style=tele&category=vet${locationParams}${phoneParam}`;
           const altData = await apiClient.get<any>(altEndpoint);
           console.log('🔵 [VetServiceRouter] services/by-style response:', altData);
           
@@ -469,7 +470,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       <div className="max-w-[430px] mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
         {/* Phase 0.1: Promotion Banner Component */}
         <div className="mb-6">
-          <PromotionBanner service="vet" maxPromotions={3} />
+          <PromotionBanner service="vet" maxPromotions={3} onNavigate={onNavigate} />
         </div>
 
         {/* Phase 1: Book again with previous vet */}

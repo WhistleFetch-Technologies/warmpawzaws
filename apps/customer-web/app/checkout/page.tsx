@@ -267,7 +267,7 @@ export default function CheckoutPage() {
         key: razorpayOrder.keyId,
         amount: razorpayOrder.amount * 100, // in paise
         currency: razorpayOrder.currency || 'INR',
-        name: 'WarmPawz',
+        name: 'Warmpawz',
         description: 'Order Payment',
         order_id: razorpayOrder.orderId,
         handler: async (response: any) => {

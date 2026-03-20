@@ -106,7 +106,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
         <div className="space-y-8">
           
           {/* Promotion Banner */}
-          <PromotionBanner service="photography" maxPromotions={3} />
+          <PromotionBanner service="photography" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Photography Types */}
           <div>

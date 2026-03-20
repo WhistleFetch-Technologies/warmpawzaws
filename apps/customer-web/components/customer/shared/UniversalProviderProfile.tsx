@@ -477,7 +477,7 @@ export function UniversalProviderProfile({
                 if (navigator.share) {
                   navigator.share({
                     title: provider.name,
-                    text: `Check out ${provider.name} on WarmPawz`,
+                    text: `Check out ${provider.name} on Warmpawz`,
                     url: window.location.href,
                   });
                 }

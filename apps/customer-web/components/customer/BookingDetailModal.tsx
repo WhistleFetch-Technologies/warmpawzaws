@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
@@ -40,10 +40,49 @@ function getServiceStyleLabel(serviceStyle: string | null | undefined): string {
 // Wireframe: Prescription and medical records only for vet, diagnostics, nutritionist (tele). Not for grooming, training, walker, behaviourist, sitter.
 const SERVICE_TYPES_WITH_PRESCRIPTION = ['vet', 'veterinarian', 'diagnostics', 'nutritionist', 'pet_nutritionist'];
 
-function showPrescriptionAndMedicalRecords(serviceType: string | undefined): boolean {
-  if (!serviceType) return false;
-  const normalized = (serviceType || '').toLowerCase().replace(/\s/g, '_');
-  return SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalized.includes(t) || t.includes(normalized));
+/**
+ * Check if booking should show prescription/medical records options
+ * Checks serviceType, serviceCategory, and notes for diagnostic tests
+ */
+function showPrescriptionAndMedicalRecords(
+  serviceType: string | undefined,
+  serviceCategory?: string | undefined,
+  booking?: any
+): boolean {
+  // Check serviceType
+  if (serviceType) {
+    const normalizedType = (serviceType || '').toLowerCase().replace(/\s/g, '_');
+    if (SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalizedType.includes(t) || t.includes(normalizedType))) {
+      return true;
+    }
+  }
+
+  // Check serviceCategory
+  if (serviceCategory) {
+    const normalizedCategory = (serviceCategory || '').toLowerCase().replace(/\s/g, '_');
+    if (SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalizedCategory.includes(t) || t.includes(normalizedCategory))) {
+      return true;
+    }
+  }
+
+  // Check if booking has diagnostic tests in notes (for diagnostics bookings where serviceType might be "at_home")
+  if (booking?.notes) {
+    try {
+      const notesData = typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes;
+      if (Array.isArray(notesData?.tests) && notesData.tests.length > 0) {
+        return true; // Has diagnostic tests
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
+  // Check if booking has isDiagnostic flag or hasDiagnosticTests
+  if (booking?.isDiagnostic || booking?.hasDiagnosticTests) {
+    return true;
+  }
+
+  return false;
 }
 
 interface Prescription {
@@ -196,6 +235,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           : (rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service'),
         serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
         serviceCategory: rawBooking.serviceCategory || rawBooking.service?.category || rawBooking.service_category,
+        // ✅ Store diagnostics flags for prescription/medical records detection
+        isDiagnostic: isDiagnostic,
+        hasDiagnosticTests: diagnosticTests.length > 0,
         // ✅ FIX: Map service_type to serviceStyle, but don't default to 'at_center' for tele consultations
         serviceStyle: rawBooking.serviceStyle || rawBooking.service_style || rawBooking.service_type || null,
         duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
@@ -959,7 +1001,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               )}
 
               {/* Prescription History - Only for vet, diagnostics, nutritionist (not grooming/training/walker/behaviourist/sitter) */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType) && (
+              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && (
                 <Button
                   onClick={() => setShowPrescriptionHistory(true)}
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
@@ -971,8 +1013,24 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
+              {/* Upload Documents - Only for vet, diagnostics, nutritionist */}
+              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && (
+                <Button
+                  onClick={() => setShowPrescriptionHistory(true)}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Upload className="w-5 h-5" />
+                  Upload Documents
+                  {(prescription || medicalRecords.length > 0) && (
+                    <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
+                      {medicalRecords.length + (prescription ? 1 : 0)} uploaded
+                    </span>
+                  )}
+                </Button>
+              )}
+
               {/* Medical Records & Lab Reports - Only for vet/diagnostics/nutritionist */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType) && medicalRecords.length > 0 && (
+              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && medicalRecords.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-gray-700 px-1">Medical records & reports</p>
                   {medicalRecords.map((rec: any) => (
@@ -1016,15 +1074,12 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
               {/* Diagnostics: View Reports Button - For diagnostics bookings with ready reports */}
               {(() => {
-                // ✅ FIX: More robust detection of diagnostic bookings
-                const isDiagnostic = 
-                  booking.serviceId === 'diagnostics' || 
-                  booking.serviceType === 'diagnostics' ||
-                  booking.serviceCategory === 'diagnostics' ||
-                  booking.service_category === 'diagnostics' ||
-                  (booking.serviceName && booking.serviceName.toLowerCase().includes('diagnostic')) ||
-                  (booking.service?.category && booking.service.category.toLowerCase().includes('diagnostic')) ||
-                  (booking.service?.name && booking.service.name.toLowerCase().includes('diagnostic'));
+                // ✅ Use the same detection logic as prescription history for consistency
+                const isDiagnosticBooking = showPrescriptionAndMedicalRecords(
+                  booking.serviceType, 
+                  booking.serviceCategory, 
+                  booking
+                );
                 
                 // ✅ FIX: Case-insensitive status check - handle multiple formats
                 const statusStr = (booking.status || '').toString();
@@ -1038,9 +1093,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   (statusLower.includes('report') && statusLower.includes('ready')) ||
                   statusLower === 'ready';
                 
-                const shouldShow = isDiagnostic && hasReportsReady;
+                const shouldShow = isDiagnosticBooking && hasReportsReady;
                 console.log('🔍 [BOOKING-DETAIL] View Reports Button Check:', {
-                  isDiagnostic,
+                  isDiagnosticBooking,
                   status: booking.status,
                   statusLower,
                   hasReportsReady,
@@ -1048,6 +1103,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   serviceId: booking.serviceId,
                   serviceType: booking.serviceType,
                   serviceCategory: booking.serviceCategory,
+                  isDiagnostic: booking.isDiagnostic,
+                  hasDiagnosticTests: booking.hasDiagnosticTests,
                 });
                 
                 return shouldShow;

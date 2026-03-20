@@ -22,12 +22,13 @@ import { query, select, insert, update } from '../../../database/rds-connection'
 import { ChimeSDKMeetingsClient, CreateMeetingCommand, CreateAttendeeCommand, GetMeetingCommand, ListAttendeesCommand } from '@aws-sdk/client-chime-sdk-meetings';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 import { ensureVideoCallSessionsTable } from '../repository/repository.telecommunication';
 import { getMediaRegion, isWithinVideoCallWindow, vidcorId, calculateVendorEarnings } from '../constants/helpers';
 import { BookingStatus, BookingPaymentStatus, isTeleServices, UserType } from 'src/endpoints/constants';
 import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../../../aws/aws-Chime-service';
 import { pushNotificationService } from '../../../aws/aws-sns-notification-service';
+import { getRazorpayConfig } from 'src/utils/payments/razorpay-client';
 
 
 
@@ -374,7 +375,7 @@ class JoinMeetingHandler extends BaseHandler {
       // ✅ CRITICAL FIX: Don't change status to IN_PROGRESS for instant tele consultations
       // that are CONFIRMED but payment is still PENDING.
       // The status should remain CONFIRMED until payment is completed.
-      const isInstantTelePendingPayment = 
+      const isInstantTelePendingPayment =
         booking.is_instant_tele === true &&
         booking.status === BookingStatus.CONFIRMED &&
         booking.payment_status === BookingPaymentStatus.PENDING;
@@ -388,8 +389,8 @@ class JoinMeetingHandler extends BaseHandler {
         }
         vidlog('join', 'booking-status-updated', { bookingId, status: BookingStatus.IN_PROGRESS }, cid);
       } else {
-        vidlog('join', 'booking-status-skipped', { 
-          bookingId, 
+        vidlog('join', 'booking-status-skipped', {
+          bookingId,
           reason: 'instant_tele_pending_payment',
           currentStatus: booking.status,
           paymentStatus: booking.payment_status
@@ -1300,6 +1301,177 @@ export function registerVideoCallEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching active video calls for vendor:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+
+  /**
+ * POST /customer/tele/confirm-payment
+ * Self-contained endpoint for queue-accepted flow.
+ * Booking already exists with status='pending_payment'.
+ * Verifies Razorpay signature, updates payment + booking, sends notifications.
+ * Does NOT depend on /razorpay/verify-payment having run first.
+ * Body: bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount
+ */
+  app.post('/customer/tele/confirm-payment', async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        bookingId,
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+        amount,
+      } = body;
+
+      if (!bookingId || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return c.json({ success: false, error: 'Booking ID and payment verification data required' }, 400);
+      }
+
+      // 1. Verify Razorpay signature
+      const config = await getRazorpayConfig();
+      if (!config?.keySecret) {
+        return c.json({ success: false, error: 'Payment configuration error' }, 500);
+      }
+      const text = `${razorpay_order_id}|${razorpay_payment_id}`;
+      const expectedSig = createHmac('sha256', config.keySecret).update(text).digest('hex');
+      if (expectedSig !== razorpay_signature) {
+        return c.json({ success: false, error: 'Invalid payment signature' }, 400);
+      }
+
+      // 2. Fetch booking
+      const bookingResult = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
+      if (bookingResult.rows.length === 0) {
+        return c.json({ success: false, error: 'Booking not found' }, 404);
+      }
+      const booking = bookingResult.rows[0];
+
+      // Idempotent: if booking is already confirmed+paid or completed+paid, return success
+      if ((booking.status === 'confirmed' || booking.status === 'completed') && booking.payment_status === 'paid') {
+        const meetRes = await query(`SELECT meeting_id, id FROM video_call_sessions WHERE booking_id = $1 LIMIT 1`, [bookingId]);
+        return c.json({
+          success: true,
+          bookingId,
+          meetingId: meetRes.rows[0]?.meeting_id || meetRes.rows[0]?.id || null,
+          message: 'Booking already confirmed.',
+          alreadyConfirmed: true,
+        });
+      }
+
+      // Accept v3 bookings: status='confirmed' with payment_status='pending' and is_instant_tele=true
+      const isV3Booking = booking.status === 'confirmed' && booking.payment_status === 'pending' && booking.is_instant_tele === true;
+      // Accept v2 bookings: status='pending_payment'
+      const isV2Booking = booking.status === 'pending_payment';
+
+      if (!isV2Booking && !isV3Booking) {
+        return c.json({
+          success: false,
+          error: `Booking is in "${booking.status}" status with payment_status "${booking.payment_status}". Expected "pending_payment" status or "confirmed" status with pending payment for instant tele bookings.`
+        }, 400);
+      }
+
+      // 3. Find or create payment record (self-contained — no dependency on verify-payment)
+      let paymentResult = await query(
+        `SELECT id, booking_id, payment_status FROM payments WHERE razorpay_order_id = $1 LIMIT 1`,
+        [razorpay_order_id]
+      );
+      let payment = paymentResult.rows[0];
+
+      if (payment) {
+        // Payment record found — mark it completed if not already
+        if (payment.payment_status !== 'completed') {
+          await query(
+            `UPDATE payments SET payment_status = 'completed', razorpay_payment_id = $1, booking_id = COALESCE(booking_id, $2), completed_at = NOW(), updated_at = NOW() WHERE id = $3`,
+            [razorpay_payment_id, bookingId, payment.id]
+          );
+        } else if (!payment.booking_id) {
+          // Already completed but not linked to booking
+          await query(`UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`, [bookingId, payment.id]);
+        }
+      } else {
+        // No payment record with this razorpay_order_id — try finding by booking_id
+        paymentResult = await query(
+          `SELECT id, booking_id, payment_status FROM payments WHERE booking_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [bookingId]
+        );
+        payment = paymentResult.rows[0];
+
+        if (payment) {
+          await query(
+            `UPDATE payments SET payment_status = 'completed', razorpay_order_id = $1, razorpay_payment_id = $2, completed_at = NOW(), updated_at = NOW() WHERE id = $3`,
+            [razorpay_order_id, razorpay_payment_id, payment.id]
+          );
+        } else {
+          // No payment record at all — create one
+          await insert('payments', {
+            booking_id: bookingId,
+            customer_id: booking.customer_id,
+            vendor_id: booking.vendor_id,
+            razorpay_order_id,
+            razorpay_payment_id,
+            amount: Number(amount) || Number(booking.total_amount) || 0,
+            currency: 'INR',
+            payment_method: 'razorpay',
+            payment_status: 'completed',
+            completed_at: new Date(),
+          });
+        }
+      }
+
+      // 4. Update booking to confirmed/completed + paid
+
+      await update('bookings', { id: bookingId }, {
+        status: BookingStatus.CONFIRMED,
+        payment_status: 'paid',
+        updated_at: new Date(),
+        notes: booking.notes
+          ? `${booking.notes}\n[Razorpay: ${razorpay_order_id}/${razorpay_payment_id}]`
+          : `[Razorpay: ${razorpay_order_id}/${razorpay_payment_id}]`,
+      });
+
+      // 5. Get meeting ID
+      const meetingResult = await query(`SELECT meeting_id, id FROM video_call_sessions WHERE booking_id = $1 LIMIT 1`, [bookingId]);
+      const meetingId = meetingResult.rows[0]?.meeting_id || meetingResult.rows[0]?.id || null;
+
+      // 6. Notifications
+      const customerName = (await query(`SELECT COALESCE(full_name, 'Customer') AS name FROM customers WHERE id = $1`, [booking.customer_id]).then((r: any) => r.rows?.[0]?.name)) || 'Customer';
+      const vendorName = (await query(`SELECT business_name FROM vendors WHERE id = $1`, [booking.vendor_id]).then((r: any) => r.rows?.[0]?.business_name)) || 'Provider';
+
+      // ✅ FIX: Use correct column names (notification_type, not type), plain objects for JSONB, no non-existent columns
+      try {
+        await insert('notifications', {
+          recipient_id: booking.vendor_id,
+          recipient_type: 'vendor',
+          notification_type: 'tele_call_incoming',
+          title: '📞 Instant Video Call',
+          message: `${customerName} has completed payment and is waiting to connect. Join the call now.`,
+          data: { booking_id: bookingId, bookingId, call_type: 'incoming', action: 'answer_call', instant: true, meeting_id: meetingId },
+          channels: { email: false, sms: false, inApp: true, push: true },
+          is_read: false,
+        });
+      } catch (e) {
+        console.error('[confirm-payment] Vendor notification failed:', e);
+      }
+
+      try {
+        await insert('notifications', {
+          recipient_id: booking.customer_id,
+          recipient_type: 'customer',
+          notification_type: 'tele_call_connecting',
+          title: 'Connecting to vet',
+          message: `${vendorName} will join shortly. Please wait.`,
+          data: { booking_id: bookingId, bookingId, action: 'join_call', instant: true, meeting_id: meetingId },
+          channels: { email: false, sms: false, inApp: true, push: true },
+          is_read: false,
+        });
+      } catch (e) {
+        console.error('[confirm-payment] Customer notification failed:', e);
+      }
+
+      return c.json({ success: true, bookingId, meetingId, message: 'Payment confirmed. Booking is now confirmed.' });
+    } catch (error: any) {
+      console.error('[confirm-payment] error:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });

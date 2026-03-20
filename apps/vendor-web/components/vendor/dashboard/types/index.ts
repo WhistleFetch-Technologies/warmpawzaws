@@ -79,6 +79,8 @@ export interface ScheduleItem {
     unreadMessageCount?: number;
     chatEnabled?: boolean;
     isFollowUp?: boolean;
+    isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
+    rescheduledAt?: string | null; // Timestamp when booking was rescheduled
 }
 
 export interface WatchlistItem {

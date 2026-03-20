@@ -257,7 +257,7 @@ export default function ProductDetailClient() {
       try {
         await navigator.share({
           title: product.name,
-          text: `Check out ${product.name} on WarmPawz!`,
+          text: `Check out ${product.name} on Warmpawz!`,
           url: window.location.href,
         });
       } catch (e) {

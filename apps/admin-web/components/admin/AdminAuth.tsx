@@ -109,7 +109,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-900 rounded-full mb-4">
               <Shield className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-3xl text-slate-900 mb-0">WarmPawz Admin</h1>
+            <h1 className="text-3xl text-slate-900 mb-0">Warmpawz Admin</h1>
             <p className="text-gray-600">Platform Administration Portal</p>
           </div>
 

@@ -204,18 +204,14 @@ class CreateBookingHandler extends BaseHandler {
       return this.error(dateValidation.error!, 400);
     }
 
-    // ✅ Validate service exists and get duration
+    // ✅ Validate vendor service exists and get duration
+    // bookings.service_id now references vendor_services.id (works for both catalog and custom services)
     let serviceDuration = 30; // Default duration
-    const services = await select('services', { id: serviceId });
-    if (services.length > 0) {
-      serviceDuration = services[0].duration_minutes || 30;
+    const vendorServices = await select('vendor_services', { id: serviceId });
+    if (vendorServices.length > 0) {
+      serviceDuration = vendorServices[0].duration_minutes || vendorServices[0].custom_duration || 30;
     } else {
-      const vendorServices = await select('vendor_services', { id: serviceId });
-      if (vendorServices.length > 0) {
-        serviceDuration = vendorServices[0].duration_minutes || vendorServices[0].custom_duration || 30;
-      } else {
-        return this.error('Service not found', 404);
-      }
+      return this.error('Vendor service not found', 404);
     }
 
     // ✅ TEMPORAL FIX: Use transaction for atomicity
