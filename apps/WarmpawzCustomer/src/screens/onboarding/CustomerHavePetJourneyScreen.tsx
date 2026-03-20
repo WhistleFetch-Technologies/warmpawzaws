@@ -1090,7 +1090,7 @@ export function CustomerHavePetJourneyScreen({
             </View>
             <View style={styles.content}>
               <Text style={styles.description}>
-                We've saved all your pet's information. You're ready to start using WarmPawz!
+                We've saved all your pet's information. You're ready to start using Warmpawz!
               </Text>
               <View style={styles.successCard}>
                 <Text style={styles.successEmoji}>🎉</Text>

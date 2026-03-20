@@ -322,7 +322,7 @@ export default function ShopPage() {
               </div>
               <div>
                 <h1 className="text-xl font-bold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">
-                  WarmPawz Shop
+                  Warmpawz Shop
                 </h1>
                 <p className="text-xs text-slate-500">Multi-Vendor Pet Marketplace</p>
               </div>
@@ -999,7 +999,7 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
         {/* Vendor */}
         <p className="text-xs text-orange-600 font-medium mb-1 flex items-center gap-1">
           <Store className="w-3 h-3" />
-          {product.vendor_name || 'WarmPawz Store'}
+          {product.vendor_name || 'Warmpawz Store'}
         </p>
         
         {/* Name */}

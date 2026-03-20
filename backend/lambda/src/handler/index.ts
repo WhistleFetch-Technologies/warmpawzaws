@@ -476,6 +476,9 @@ registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/u
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
+// Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
+// or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
+registerSpecializedServiceFlows(app);
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
@@ -487,7 +490,6 @@ registerRazorpayEndpoints(app);
 registerWalletEndpoints(app);
 registerWalletDiagnosticEndpoints(app);
 registerSpecializedServicesEndpoints(app);
-registerSpecializedServiceFlows(app);
 registerAdminGovernanceEndpoints(app);
 // registerStaffEndpoints(app); // Staff decommissioned – solo discovery for at_home/tele
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue (legacy queue/staff)

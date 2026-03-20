@@ -1022,7 +1022,7 @@ export function HomeServiceRouter({
             )}
 
             {/* Promotions */}
-            <PromotionBanner service={serviceType} />
+            <PromotionBanner service={serviceType} onNavigate={onNavigate} />
 
             {/* Last Booked Providers */}
             {lastBookedProviders.length > 0 && (

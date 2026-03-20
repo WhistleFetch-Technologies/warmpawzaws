@@ -185,17 +185,22 @@ export function registerCustomerContentEndpoints(app: Hono) {
       });
 
       // Map articles to frontend format
-      const articles = (articlesResult.rows || []).map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        slug: a.slug,
-        category: a.category,
-        readTime: a.metadata?.read_time || '5 min',
-        featured: a.metadata?.featured || false,
-        excerpt: a.content?.substring(0, 150) + '...',
-        createdAt: a.created_at,
-        updatedAt: a.updated_at,
-      }));
+      const articles = (articlesResult.rows || []).map((a: any) => {
+        const raw = typeof a.content === 'string' ? a.content : '';
+        const excerpt =
+          raw.length > 150 ? `${raw.substring(0, 150).trim()}…` : raw || '';
+        return {
+          id: a.id,
+          title: a.title,
+          slug: a.slug,
+          category: a.category,
+          readTime: a.metadata?.read_time || '5 min',
+          featured: a.metadata?.featured || false,
+          excerpt,
+          createdAt: a.created_at,
+          updatedAt: a.updated_at,
+        };
+      });
 
       return c.json({
         success: true,
@@ -242,6 +247,71 @@ export function registerCustomerContentEndpoints(app: Hono) {
    */
   app.get("/marketing/articles", async (c) => {
     return app.fetch(new Request(c.req.url.replace('/marketing/articles', '/customer/articles'), c.req.raw));
+  });
+
+  const ARTICLE_CATEGORIES = [
+    'marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior',
+  ];
+
+  /**
+   * GET /customer/articles/:articleRef
+   * Single published article by UUID id or slug (from Admin → Marketing → Articles / content_pages).
+   */
+  app.get("/customer/articles/:articleRef", async (c) => {
+    try {
+      const articleRef = c.req.param('articleRef');
+      if (!articleRef || articleRef.length > 512) {
+        return c.json({ success: false, error: 'Invalid article reference' }, 400);
+      }
+
+      const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isUuid = uuidRe.test(articleRef);
+
+      const rows = isUuid
+        ? await query(
+            `SELECT id, title, slug, content, category, is_published, metadata, created_at, updated_at
+             FROM content_pages
+             WHERE is_published = true
+             AND category = ANY($2::text[])
+             AND id = $1::uuid
+             LIMIT 1`,
+            [articleRef, ARTICLE_CATEGORIES]
+          ).catch(() => ({ rows: [] }))
+        : await query(
+            `SELECT id, title, slug, content, category, is_published, metadata, created_at, updated_at
+             FROM content_pages
+             WHERE is_published = true
+             AND category = ANY($2::text[])
+             AND slug = $1
+             LIMIT 1`,
+            [articleRef, ARTICLE_CATEGORIES]
+          ).catch(() => ({ rows: [] }));
+
+      const row = rows.rows?.[0];
+      if (!row) {
+        return c.json({ success: false, error: 'Article not found' }, 404);
+      }
+
+      const a = row as any;
+      return c.json({
+        success: true,
+        article: {
+          id: a.id,
+          title: a.title,
+          slug: a.slug,
+          content: a.content || '',
+          category: a.category,
+          readTime: a.metadata?.read_time || '5 min',
+          featured: a.metadata?.featured || false,
+          createdAt: a.created_at,
+          updatedAt: a.updated_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer article:', error);
+      return c.json({ success: false, error: error.message || 'Failed to load article' }, 500);
+    }
   });
 
   /**
@@ -331,8 +401,18 @@ export function registerCustomerContentEndpoints(app: Hono) {
             icon: '⭐',
             announcementType: 'premium',
           },
+          {
+            id: 'default-articles',
+            title: 'Pet care articles',
+            subtitle: 'Tips on pets, pet care, services & vendors',
+            badgeText: 'TIPS',
+            badgeColor: 'teal',
+            icon: '📖',
+            ctaLink: 'articles',
+            announcementType: 'articles',
+          },
         ],
-        total: 3,
+        total: 4,
         isDefault: true,
       });
     }

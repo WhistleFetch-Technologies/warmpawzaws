@@ -465,7 +465,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           )}
 
           {/* Promotion Banner - Phase 0.1 Integration */}
-          <PromotionBanner service="training" maxPromotions={3} />
+          <PromotionBanner service="training" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Service Types */}
           <div>

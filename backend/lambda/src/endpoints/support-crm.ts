@@ -22,6 +22,11 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
+function generateSupportTicketNumber(prefix = 'TKT'): string {
+  const ymd = new Date().toISOString().split('T')[0].replace(/-/g, '');
+  return `${prefix}-${ymd}-${Date.now().toString().slice(-6)}`;
+}
+
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
    * POST /support/tickets
@@ -48,6 +53,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       // Create support ticket
       const ticket = await insert('support_tickets', {
+        ticket_number: generateSupportTicketNumber(),
         customer_id: customerId || null,
         customer_phone: customerPhone || null,
         subject,
@@ -958,6 +964,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       // Create detailed support ticket
       const ticket = await insert('support_tickets', {
+        ticket_number: generateSupportTicketNumber(),
         customer_id: booking.customer_id || customerId || null,
         customer_phone: customerPhone || customer[0]?.phone || null,
         vendor_id: booking.vendor_id || vendorId || null,
@@ -966,9 +973,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
         message: reason || 'Customer requested support after booking chat ended',
         source: 'chat_handoff',
         priority: 'medium',
-        category: 'post_booking_support',
+        category: 'service',
         status: 'open',
         metadata: crmContext,
+        attachments: [],
         created_at: new Date().toISOString(),
       });
 
