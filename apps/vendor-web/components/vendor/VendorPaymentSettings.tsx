@@ -620,9 +620,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               <div className="flex items-start gap-3">
                 <Wallet className="w-5 h-5 text-purple-600 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-purple-900">WarmPawz Wallet</p>
+                  <p className="font-semibold text-purple-900">Warmpawz Wallet</p>
                   <p className="text-sm text-purple-700 mt-1">
-                    Your earnings are credited to your WarmPawz wallet. Withdraw anytime to bank or UPI.
+                    Your earnings are credited to your Warmpawz wallet. Withdraw anytime to bank or UPI.
                   </p>
                 </div>
               </div>

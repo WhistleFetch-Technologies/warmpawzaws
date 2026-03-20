@@ -618,33 +618,32 @@ export function registerSpecializedServiceFlows(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '20', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
-      // Get pets that are available for mating
+      // Customer-owned pets (schema: species, age_years, profile_photo_url, medical_history JSONB).
+      // Opt out via medical_history.matingAvailable === 'false'.
       let matchQuery = `
         SELECT 
           p.id,
           p.name as pet_name,
-          p.pet_type,
+          COALESCE(p.species, 'Pet') as pet_type,
           p.breed,
-          p.age,
+          p.age_years as age,
           p.gender,
-          p.photos,
-          p.description,
+          p.profile_photo_url,
+          p.medical_history,
           c.id as owner_id,
           c.full_name as owner_name,
-          c.city as owner_city,
-          p.metadata as pet_metadata
+          c.city as owner_city
         FROM pets p
         INNER JOIN customers c ON p.customer_id = c.id
-        WHERE p.mating_available = true
-        AND p.status = 'active'
+        WHERE p.customer_id IS NOT NULL
+        AND (COALESCE(p.medical_history->>'matingAvailable', 'true') = 'true')
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Exclude current customer's pets
-      if (customerId) {
-        matchQuery += ` AND c.id != $${paramIndex}`;
+      if (customerId && isValidUUID(customerId)) {
+        matchQuery += ` AND c.id != $${paramIndex}::uuid`;
         params.push(customerId);
         paramIndex++;
       }
@@ -656,13 +655,13 @@ export function registerSpecializedServiceFlows(app: Hono) {
       }
 
       if (petType) {
-        matchQuery += ` AND LOWER(p.pet_type) = LOWER($${paramIndex})`;
+        matchQuery += ` AND LOWER(COALESCE(p.species, '')) = LOWER($${paramIndex})`;
         params.push(petType);
         paramIndex++;
       }
 
       if (gender) {
-        matchQuery += ` AND LOWER(p.gender) = LOWER($${paramIndex})`;
+        matchQuery += ` AND LOWER(COALESCE(p.gender, '')) = LOWER($${paramIndex})`;
         params.push(gender);
         paramIndex++;
       }
@@ -673,27 +672,36 @@ export function registerSpecializedServiceFlows(app: Hono) {
         paramIndex++;
       }
 
-      matchQuery += ` ORDER BY p.updated_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      matchQuery += ` ORDER BY p.created_at DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
-      const profiles = await query(matchQuery, params).catch(() => ({ rows: [] }));
+      const profiles = await query(matchQuery, params).catch((err) => {
+        console.error('[pet-matching] query failed:', err);
+        return { rows: [] };
+      });
 
       return c.json({
         success: true,
-        profiles: profiles.rows.map((profile: any) => ({
-          id: profile.id,
-          petName: profile.pet_name,
-          petType: profile.pet_type,
-          breed: profile.breed,
-          age: profile.age,
-          gender: profile.gender,
-          photos: typeof profile.photos === 'string' ? JSON.parse(profile.photos) : profile.photos || [],
-          description: profile.description,
-          ownerId: profile.owner_id,
-          ownerName: profile.owner_name,
-          location: profile.owner_city,
-          emoji: profile.pet_type?.toLowerCase() === 'dog' ? '🐕' : profile.pet_type?.toLowerCase() === 'cat' ? '🐱' : '🐾',
-        })),
+        profiles: profiles.rows.map((profile: any) => {
+          const mh = profile.medical_history || {};
+          const photoUrl = profile.profile_photo_url;
+          const photos = photoUrl ? [photoUrl] : [];
+          const species = String(profile.pet_type || '').toLowerCase();
+          return {
+            id: profile.id,
+            petName: profile.pet_name,
+            petType: profile.pet_type,
+            breed: profile.breed,
+            age: profile.age,
+            gender: profile.gender,
+            photos,
+            description: mh.matchBio || mh.bio || mh.behaviorNotes || null,
+            ownerId: profile.owner_id,
+            ownerName: profile.owner_name,
+            location: profile.owner_city,
+            emoji: species === 'dog' ? '🐕' : species === 'cat' ? '🐱' : '🐾',
+          };
+        }),
         total: profiles.rows.length,
       });
     } catch (error: any) {
@@ -715,6 +723,18 @@ export function registerSpecializedServiceFlows(app: Hono) {
         return c.json({ error: 'Both pet IDs are required' }, 400);
       }
 
+      if (!fromCustomerId || !isValidUUID(fromCustomerId)) {
+        return c.json({ error: 'fromCustomerId (valid UUID) is required' }, 400);
+      }
+
+      const ownerCheck = await query(
+        `SELECT id FROM pets WHERE id = $1 AND customer_id = $2::uuid`,
+        [fromPetId, fromCustomerId]
+      );
+      if (ownerCheck.rows.length === 0) {
+        return c.json({ error: 'fromPetId must be one of your pets' }, 403);
+      }
+
       // Get target pet owner
       const targetPet = await query(`SELECT customer_id FROM pets WHERE id = $1`, [toPetId]);
       if (targetPet.rows.length === 0) {
@@ -722,6 +742,9 @@ export function registerSpecializedServiceFlows(app: Hono) {
       }
 
       const toCustomerId = targetPet.rows[0].customer_id;
+      if (toCustomerId && String(toCustomerId) === String(fromCustomerId)) {
+        return c.json({ error: 'Cannot send a match request to your own pet' }, 400);
+      }
 
       // Create match request
       const matchRequest = await insert('mating_requests', {
@@ -778,8 +801,8 @@ export function registerSpecializedServiceFlows(app: Hono) {
       const customerId = c.req.query('customerId');
       const type = c.req.query('type') || 'received'; // 'received' or 'sent'
 
-      if (!customerId) {
-        return c.json({ error: 'Customer ID is required' }, 400);
+      if (!customerId || !isValidUUID(customerId)) {
+        return c.json({ error: 'Valid customerId (UUID) is required' }, 400);
       }
 
       let requestsQuery;

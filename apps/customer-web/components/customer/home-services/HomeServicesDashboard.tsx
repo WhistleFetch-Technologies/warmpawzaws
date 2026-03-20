@@ -257,7 +257,7 @@ export function HomeServicesDashboard({
         )}
 
         {/* Promotions */}
-        <PromotionBanner service="home_service" />
+        <PromotionBanner service="home_service" onNavigate={onNavigate} />
 
         {/* Recently Used Services */}
         {recentlyUsed.length > 0 && (

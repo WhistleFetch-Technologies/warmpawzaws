@@ -329,9 +329,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <Sparkles className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
             </div>
-            <PromotionBanner 
-              service="grooming"
-            />
+            <PromotionBanner service="grooming" onNavigate={onNavigate} />
           </div>
 
           {/* Grooming Needs Grid */}

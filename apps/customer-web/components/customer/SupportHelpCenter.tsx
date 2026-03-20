@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { getSupportPhoneLabel, getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 
 interface Ticket {
   id: string;
@@ -25,7 +26,7 @@ interface SupportHelpCenterProps {
   onBack: () => void;
 }
 
-export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
+export function SupportHelpCenter({ phone, onBack, initialTab }: SupportHelpCenterProps) {
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
   const [searchQuery, setSearchQuery] = useState('');
   const [showContactForm, setShowContactForm] = useState(false);
@@ -37,6 +38,29 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loadingTickets, setLoadingTickets] = useState(false);
+
+  // Deep-link from home "Live chat" (sessionStorage or prop)
+  useEffect(() => {
+    if (initialTab === 'faq' || initialTab === 'contact' || initialTab === 'tickets') {
+      setActiveTab(initialTab);
+      try {
+        sessionStorage.removeItem(SUPPORT_INITIAL_TAB_KEY);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = sessionStorage.getItem(SUPPORT_INITIAL_TAB_KEY);
+      if (stored === 'contact' || stored === 'tickets' || stored === 'faq') {
+        setActiveTab(stored);
+      }
+      sessionStorage.removeItem(SUPPORT_INITIAL_TAB_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [initialTab]);
 
   // Load tickets when tab is active with auto-refresh
   useEffect(() => {
@@ -278,15 +302,18 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
                 <Card className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
                   <h3 className="font-semibold text-gray-900 mb-4">Contact Us</h3>
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3">
+                    <a
+                      href={getSupportTelHref()}
+                      className="flex items-center gap-3 rounded-lg p-1 -m-1 hover:bg-blue-100/60 transition-colors"
+                    >
                       <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                         <Phone className="w-5 h-5 text-blue-600" />
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900">Phone</p>
-                        <p className="text-sm text-gray-600">+91 1800-XXX-XXXX</p>
+                        <p className="text-sm text-blue-700 font-medium">{getSupportPhoneLabel()}</p>
                       </div>
-                    </div>
+                    </a>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                         <Mail className="w-5 h-5 text-blue-600" />

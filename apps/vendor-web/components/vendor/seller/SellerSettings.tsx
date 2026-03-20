@@ -286,7 +286,7 @@ export function SellerSettings({ sellerId, sellerData }: SellerSettingsProps) {
             { label: 'Order Status Updates', description: 'Updates when order status changes' },
             { label: 'Low Stock Alerts', description: 'Notify when products are running low' },
             { label: 'Payout Notifications', description: 'Updates about your payouts' },
-            { label: 'Promotional Messages', description: 'Tips and offers from WarmPawz' },
+            { label: 'Promotional Messages', description: 'Tips and offers from Warmpawz' },
             { label: 'Weekly Reports', description: 'Weekly sales and performance summary' }
           ].map((item, index) => (
             <div key={index} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">

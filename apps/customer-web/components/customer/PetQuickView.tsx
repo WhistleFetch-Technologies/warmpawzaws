@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { fetchPetById } from '@/lib/fetch-customer-pet';
+import { PresignableImage } from '@/components/shared/PresignableImage';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { LiveTracking } from './LiveTracking';
 import { BookingActions } from './BookingActions';
@@ -71,25 +73,43 @@ export function PetQuickView({
   const [trackingSession, setTrackingSession] = useState<{ sessionId: string; bookingId: string } | null>(null);
 
   useEffect(() => {
+    if (!petId) return;
+    if (!phone) {
+      setLoading(false);
+      return;
+    }
     loadPetData();
-  }, [petId]);
+  }, [petId, phone]);
 
   const loadPetData = async () => {
     try {
       setLoading(true);
-      
-      // Load pet details
-      const petResult = await apiClient.get(`/customer/pets/${petId}`) as any;
-      if ((petResult as any).success && (petResult as any).pet) {
-        setPet(petResult.pet);
+
+      const p = await fetchPetById(petId, phone);
+      if (p) {
+        setPet({
+          id: p.id,
+          name: p.name,
+          type: String(p.species || p.type || 'pet').toLowerCase(),
+          breed: p.breed || '',
+          age: String(p.age ?? p.age_years ?? ''),
+          gender: p.gender || '',
+          weight: String(p.weight ?? p.weight_kg ?? ''),
+          photo: p.photo || p.profile_photo_url,
+          color: p.color,
+        });
+      } else {
+        setPet(null);
       }
 
-      // Load bookings for this pet
-      console.log(`[PetQuickView] Fetching bookings for phone: ${phone}`);
-      const bookingsResult = await apiClient.get(`/customer/bookings?petId=${petId}`) as any;
-      console.log(`[PetQuickView] Bookings response:`, bookingsResult);
-      const petBookings = (bookingsResult.bookings || []).filter((b: any) => b.petId === petId);
-      console.log(`[PetQuickView] Filtered pet bookings for pet ${petId}:`, petBookings);
+      // Load bookings for this pet (API requires phone + optional petId)
+      let petBookings: any[] = [];
+      if (phone) {
+        const bookingsResult = (await apiClient.get(
+          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
+        )) as any;
+        petBookings = bookingsResult.bookings || [];
+      }
       
       // Load sessions for each booking
       const bookingsWithSessions = await Promise.all(
@@ -165,7 +185,7 @@ export function PetQuickView({
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 bg-white/30 rounded-xl overflow-hidden">
               {pet.photo ? (
-                <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
+                <PresignableImage src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-3xl">
                   {pet.type === 'dog' ? '🐕' : pet.type === 'cat' ? '🐈' : '🐾'}

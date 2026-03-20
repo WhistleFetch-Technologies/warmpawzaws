@@ -338,7 +338,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     <>
       {/* Logo */}
       <div className="flex justify-center pt-8 mb-6">
-        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+        <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
       </div>
 
       {/* Orange Circle Icon */}
@@ -439,7 +439,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     <>
       {/* Logo */}
       <div className="flex justify-center pt-8 mb-6">
-        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+        <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
       </div>
 
       {/* Header */}
@@ -694,7 +694,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     <>
       {/* Logo */}
       <div className="flex justify-center pt-8 mb-6">
-        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+        <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
       </div>
 
       {/* Header */}
@@ -813,7 +813,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     <>
       {/* Logo */}
       <div className="flex justify-center pt-8 mb-6">
-        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+        <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
       </div>
 
       {/* Header */}

@@ -5,6 +5,7 @@ import {
   Dog, Cat, ArrowLeft
 } from 'lucide-react';
 import { WalletIcon } from '../WalletIcon';
+import { PresignableImage } from '@/components/shared/PresignableImage';
 
 interface Pet {
   id: string;
@@ -93,7 +94,7 @@ export function StandardizedHeader({
             className="w-9 h-9 flex-shrink-0 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-sm"
           >
             {userProfilePhoto ? (
-              <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
+              <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-sm font-bold">
                 {userName.charAt(0).toUpperCase()}
@@ -114,7 +115,7 @@ export function StandardizedHeader({
             {displaySubtitle ? (
               <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">{displaySubtitle}</p>
             ) : !displayTitle ? (
-              <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">Explore WarmPawz Services</p>
+              <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">Explore Warmpawz Services</p>
             ) : null}
           </div>
         </div>
@@ -165,7 +166,7 @@ export function StandardizedHeader({
                     }`}
                   >
                     {pet.photo || pet.image ? (
-                      <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                      <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
                     ) : (
                       pet.type === 'Dog' ? (
                         <Dog className={`w-4 h-4 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
@@ -184,9 +185,13 @@ export function StandardizedHeader({
                 {/* Edit/View Button - Only show for selected pet */}
                 {selectedPet?.id === pet.id && onPetClick && (
                   <button
-                    onClick={() => onPetClick(pet.id)}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPetClick(pet.id);
+                    }}
                     className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
-                    title="View/Edit Pet Profile"
+                    title="View / edit pet"
                   >
                     <ChevronRight className="w-2 h-2 text-white" />
                   </button>

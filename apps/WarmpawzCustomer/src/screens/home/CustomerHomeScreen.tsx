@@ -155,7 +155,7 @@ export function CustomerHomeScreen({
               <Text style={styles.subtitle}>How's {selectedPet.name} today?</Text>
             )}
             {!selectedPet && (
-              <Text style={styles.subtitle}>Explore WarmPawz Services</Text>
+              <Text style={styles.subtitle}>Explore Warmpawz Services</Text>
             )}
           </View>
           <View style={styles.headerActions}>

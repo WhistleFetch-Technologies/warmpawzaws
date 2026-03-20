@@ -107,7 +107,7 @@ const vendorData: Record<string, { name: string; rating: number; reviews: number
   'vendor1': { name: 'PawSome Pets Store', rating: 4.8, reviews: 2340, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
   'vendor2': { name: 'Pet Paradise', rating: 4.6, reviews: 1820, deliveryTime: '1-2 days', freeDeliveryMin: 799 },
   'vendor3': { name: 'Furry Friends Shop', rating: 4.9, reviews: 3100, deliveryTime: '3-4 days', freeDeliveryMin: 1200 },
-  'default': { name: 'WarmPawz Store', rating: 4.7, reviews: 1500, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
+  'default': { name: 'Warmpawz Store', rating: 4.7, reviews: 1500, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
 export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: ShoppingCartViewProps) {

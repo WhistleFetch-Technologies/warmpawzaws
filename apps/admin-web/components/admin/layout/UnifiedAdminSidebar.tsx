@@ -193,7 +193,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
         {/* Logo */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <img src={logoImage} alt="WarmPawz" className="w-10 h-10" />
+            <img src={logoImage} alt="Warmpawz" className="w-10 h-10" />
             <div>
               <h2 className="text-[#FF8C42] font-bold">Warmpawz</h2>
               <span className="text-xs text-gray-500">Admin Portal</span>

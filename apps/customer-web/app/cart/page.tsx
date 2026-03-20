@@ -141,7 +141,7 @@ export default function CartPage() {
                       <div className="flex items-start justify-between">
                         <div>
                           <h3 className="font-semibold text-slate-900 text-lg">{item.product.name}</h3>
-                          <p className="text-sm text-orange-600">{item.product.vendor_name || 'WarmPawz Store'}</p>
+                          <p className="text-sm text-orange-600">{item.product.vendor_name || 'Warmpawz Store'}</p>
                         </div>
                         <button
                           onClick={() => removeFromCart(item.product_id)}

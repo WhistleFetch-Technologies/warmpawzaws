@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolvePromotionDestination } from '@/lib/promotion-navigation';
 
 interface Promotion {
   id: string;
@@ -25,6 +26,8 @@ interface PromotionBannerProps {
   className?: string;
   maxPromotions?: number;
   showSpotlightOnly?: boolean;
+  /** In-app navigation (CustomerHomeWrapper). When set, avoids broken `/${service}` full-page loads. */
+  onNavigate?: (screen: string, data?: { promotionId?: string }) => void;
 }
 
 /**
@@ -36,7 +39,8 @@ export function PromotionBanner({
   service, 
   className = '',
   maxPromotions = 3,
-  showSpotlightOnly = false 
+  showSpotlightOnly = false,
+  onNavigate,
 }: PromotionBannerProps) {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +126,26 @@ export function PromotionBanner({
     setDismissed(prev => new Set([...prev, promotionId]));
   };
 
+  const navigateForPromotion = (promo: Promotion, source: string) => {
+    apiClient.post(`/promotions/${promo.id}/click`, { source }).catch(() => {});
+    try {
+      sessionStorage.setItem(
+        'wp_promotion_cta',
+        JSON.stringify({ promotionId: promo.id, at: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
+    const screen = resolvePromotionDestination(promo as Record<string, unknown>, service);
+    if (onNavigate) {
+      onNavigate(screen, { promotionId: promo.id });
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      window.location.href = `/?promotion=${encodeURIComponent(promo.id)}&target=${encodeURIComponent(screen)}`;
+    }
+  };
+
   const formatDiscount = (promo: Promotion): string => {
     if (promo.discount_type === 'percentage' && promo.discount_value) {
       return `${promo.discount_value}% OFF`;
@@ -200,14 +224,7 @@ export function PromotionBanner({
                     <Button
                       size="sm"
                       className="mt-2 bg-[#FF8C42] hover:bg-[#ff7a28] text-white"
-                      onClick={() => {
-                        // Track promotion click
-                        apiClient.post(`/promotions/${promo.id}/click`, {
-                          source: `${service}_spotlight`
-                        }).catch(() => {}); // Silent fail for tracking
-                        // Navigate to booking or apply promotion
-                        window.location.href = `/${service}?promotion=${promo.id}`;
-                      }}
+                      onClick={() => navigateForPromotion(promo, `${service}_spotlight`)}
                     >
                       Book Now
                       <ChevronRight className="w-4 h-4 ml-1" />
@@ -263,13 +280,7 @@ export function PromotionBanner({
                     size="sm"
                     variant="outline"
                     className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42] hover:text-white"
-                    onClick={() => {
-                      // Track promotion click
-                      apiClient.post(`/promotions/${promo.id}/click`, {
-                        source: `${service}_regular`
-                      }).catch(() => {}); // Silent fail for tracking
-                      window.location.href = `/${service}?promotion=${promo.id}`;
-                    }}
+                    onClick={() => navigateForPromotion(promo, `${service}_regular`)}
                   >
                     Use
                   </Button>

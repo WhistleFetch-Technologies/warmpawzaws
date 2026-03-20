@@ -439,7 +439,7 @@ export function PharmacyOrderFlow({
           key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
           amount: Math.round(feeBreakdown.total * 100), // Amount in paise
           currency: 'INR',
-          name: 'WarmPawz',
+          name: 'Warmpawz',
           description: `Medicine Order - ${orderId.slice(0, 8)}`,
           order_id: response.razorpayOrderId,
           handler: async function (razorpayResponse: any) {

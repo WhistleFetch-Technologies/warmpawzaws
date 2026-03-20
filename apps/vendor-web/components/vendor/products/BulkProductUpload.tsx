@@ -56,7 +56,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
       // Fallback: create template manually
       const headers = ['name*', 'description', 'category', 'sku', 'price*', 'compare_at_price', 'stock_quantity*', 'hsn_code', 'gst_rate', 'weight_kg', 'dimensions', 'material', 'brand', 'tags', 'image_urls', 'is_active'];
       const sample = [
-        '"Premium Dog Food"', '"High-quality grain-free dog food"', '"Pet Food"', '"SKU-001"', '599', '699', '100', '2309', '18', '2.5', '"30x20x10"', '"Chicken, Rice"', '"WarmPawz"', '"dog,food"', '"https://example.com/image.jpg"', 'true'
+        '"Premium Dog Food"', '"High-quality grain-free dog food"', '"Pet Food"', '"SKU-001"', '599', '699', '100', '2309', '18', '2.5', '"30x20x10"', '"Chicken, Rice"', '"Warmpawz"', '"dog,food"', '"https://example.com/image.jpg"', 'true'
       ];
       const csv = headers.join(',') + '\n' + sample.join(',');
       const blob = new Blob([csv], { type: 'text/csv' });

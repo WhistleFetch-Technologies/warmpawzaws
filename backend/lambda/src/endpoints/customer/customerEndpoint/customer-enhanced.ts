@@ -30,6 +30,7 @@ import {
 } from '@warmpawz/api-contracts/customers';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 
 // ============================================================================
@@ -648,10 +649,45 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
    */
   app.get('/customer/pets/:phone', async (c) => {
     try {
-      const phone = c.req.param('phone');
-      if (!phone) {
+      const param = c.req.param('phone');
+      if (!param) {
         return c.json({ error: 'phone is required' }, 400);
       }
+
+      // This route is registered before pets.ts; path param is used for phone OR pet UUID.
+      if (isValidUUID(param)) {
+        const rows = await select('pets', { id: param });
+        if (rows.length === 0) {
+          return c.json({ success: false, error: 'Pet not found' }, 404);
+        }
+        const pet = rows[0];
+        const rawPhoto = pet.profile_photo_url;
+        const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+        return c.json({
+          success: true,
+          pet: {
+            id: pet.id,
+            name: pet.name,
+            type: pet.species || 'Dog',
+            species: pet.species,
+            breed: pet.breed,
+            age: pet.age_years?.toString() || '',
+            age_years: pet.age_years,
+            age_months: pet.age_months,
+            gender: pet.gender,
+            weight: pet.weight_kg?.toString() || '',
+            weight_kg: pet.weight_kg,
+            photo: photoUrl,
+            profile_photo_url: photoUrl,
+            microchipId: pet.microchip_id,
+            healthRecords: pet.medical_history || {},
+            vaccinations: pet.vaccination_records || {},
+            createdAt: pet.created_at,
+          },
+        });
+      }
+
+      const phone = param;
 
       // Clean phone - remove non-digits and country code
       let cleanPhone = phone.replace(/\D/g, '');
@@ -680,24 +716,34 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
 
+      const petsOut = await Promise.all(
+        pets.map(async (pet: any) => {
+          const rawPhoto = pet.profile_photo_url;
+          const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+          return {
+            id: pet.id,
+            name: pet.name,
+            type: pet.species || 'Dog',
+            species: pet.species,
+            breed: pet.breed,
+            age: pet.age_years?.toString() || '',
+            gender: pet.gender,
+            weight: pet.weight_kg?.toString() || '',
+            photo: photoUrl,
+            image: photoUrl,
+            profile_photo_url: photoUrl,
+            microchipId: pet.microchip_id,
+            healthRecords: pet.medical_history || {},
+            vaccinations: pet.vaccination_records || {},
+            createdAt: pet.created_at,
+          };
+        })
+      );
+
       return c.json({
         success: true,
-        pets: pets.map((pet: any) => ({
-          id: pet.id,
-          name: pet.name,
-          type: pet.species || 'Dog',
-          species: pet.species,
-          breed: pet.breed,
-          age: pet.age_years?.toString() || '',
-          gender: pet.gender,
-          weight: pet.weight_kg?.toString() || '',
-          photo: pet.profile_photo_url,
-          microchipId: pet.microchip_id,
-          healthRecords: pet.medical_history || {},
-          vaccinations: pet.vaccination_records || {},
-          createdAt: pet.created_at,
-        })),
-        count: pets.length,
+        pets: petsOut,
+        count: petsOut.length,
       });
     } catch (error: any) {
       console.error('[pets/:phone] Error fetching customer pets by phone:', error);
