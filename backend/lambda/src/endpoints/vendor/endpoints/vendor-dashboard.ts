@@ -57,8 +57,24 @@ class VendorDashboardHandler extends BaseHandler {
             const application = applications.length > 0 ? applications[0] : null;
             const payload = application?.application_payload || {};
             
-            // Create vendors record
+            // Create vendors record (include default tier/commission from vendor_tiers)
             console.log(`[DASHBOARD] Auto-creating vendor record for approved vendor ${vendorId}`);
+            let resolvedTierName: string = 'Basic';
+            let resolvedCommission: number = 15;
+            try {
+              const tierRes = await query(
+                `SELECT tier_name, commission_rate
+                 FROM vendor_tiers
+                 WHERE is_active = true
+                 ORDER BY is_default DESC NULLS LAST, tier_level ASC
+                 LIMIT 1`
+              ).catch(() => ({ rows: [] as any[] }));
+              if (tierRes.rows && tierRes.rows.length > 0) {
+                resolvedTierName = tierRes.rows[0].tier_name || resolvedTierName;
+                const cr = parseFloat(tierRes.rows[0].commission_rate || '15');
+                if (!isNaN(cr)) resolvedCommission = cr;
+              }
+            } catch {}
             const newVendor = await insert('vendors', {
               id: vendorId,
               phone: identity.phone,
@@ -74,6 +90,8 @@ class VendorDashboardHandler extends BaseHandler {
               status: 'active',
               is_active: true,
               is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
+              tier: resolvedTierName,
+              commission_percentage: resolvedCommission,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             });

@@ -830,7 +830,7 @@ export function registerReferralEndpoints(app: Hono) {
           }
 
           // Award points directly to referrer (bypassing the full referral processing)
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+          const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
           const pointsResult = await loyaltyPointsService.awardPoints({
             vendorId: referral.referrer_vendor_id,
             actionName: 'vendor_refer_friend',
@@ -1008,7 +1008,7 @@ export function registerReferralEndpoints(app: Hono) {
       // Award points directly to referrer
       let pointsResult;
       try {
-        const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+        const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
         pointsResult = await loyaltyPointsService.awardPoints({
           vendorId: referral.referrer_vendor_id,
           actionName: 'vendor_refer_friend',
@@ -1368,7 +1368,7 @@ export function registerReferralEndpoints(app: Hono) {
       // Award points to referrer (via refer_friend rule)
       let referrerPoints = 0;
       try {
-        const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+        const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
         const referrerResult = await loyaltyPointsService.awardPoints({
           customerId: customerId,
           actionName: 'refer_friend',

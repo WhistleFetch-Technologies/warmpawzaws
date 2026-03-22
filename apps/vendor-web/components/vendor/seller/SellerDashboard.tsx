@@ -28,7 +28,7 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
       
       // Load analytics
       try {
-        const data = await apiClient.get<any>(`/vendor/${sellerId}/analytics/seller`);
+        const data = await apiClient.get<any>(`/vendor/${sellerId}/analytics/sales`);
         setAnalytics(data);
       } catch (e) {
         // Use mock data if API fails

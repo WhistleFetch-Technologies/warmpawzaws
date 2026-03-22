@@ -35,7 +35,7 @@ import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../u
 import { generateUATJWTToken } from '../../utils/jwt-generator';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
 import { processReferralSignup } from 'src/lib/services/referral-service';
-import { loyaltyPointsService } from 'src/lib/services/loyalty-points-service';
+import { loyaltyPointsService } from 'src/lib/services/loyalty&reward/loyalty-points-service';
 
 // ============================================================================
 // OTP HELPERS

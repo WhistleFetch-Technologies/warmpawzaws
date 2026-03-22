@@ -25,6 +25,9 @@ interface Clinic {
   is_open?: boolean;
   photo?: string;
   nextAvailableSlot?: string; // ✅ Next available slot display string
+  roleDisplayName?: string;
+  roleName?: string;
+  role?: string;
 }
 
 export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
@@ -132,6 +135,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                 is_open: service.is_open !== undefined ? service.is_open : (service.isAvailableToday !== undefined ? service.isAvailableToday : true),
                 photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage || service.businessPhoto,
                 nextAvailableSlot: nextSlot,
+                roleDisplayName: service.roleDisplayName || service.role_name || service.roleName || service.role || undefined,
+                roleName: service.roleName || service.role || service.role_name || undefined,
+                role: service.role || service.roleDisplayName || service.roleName || undefined,
               });
             } else {
               // Add service to existing clinic
@@ -308,6 +314,14 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                       <h3 className="font-bold text-gray-900 truncate">{clinic.name}</h3>
                       <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
                     </div>
+
+                    {(clinic.roleDisplayName || clinic.role || clinic.roleName) && (
+                      <div className="mt-0.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded border border-gray-200 text-[10px] font-medium text-gray-700">
+                          {clinic.roleDisplayName || clinic.role || clinic.roleName}
+                        </span>
+                      </div>
+                    )}
                     
                     <div className="flex items-center gap-2 mt-1">
                       <Star className="w-4 h-4 text-amber-400 fill-amber-400" />

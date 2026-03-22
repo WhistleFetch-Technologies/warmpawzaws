@@ -153,8 +153,23 @@ export function isServiceProvider(vendor: any): boolean {
     return !isSeller(vendor) && (byService || byType);
 }
 
+/**
+ * Strict seller check: only route to seller hub when clearly a seller.
+ * Avoids accidental redirects for non-ecommerce roles (e.g., vet_clinic).
+ */
+export function isSellerStrict(vendor: any): boolean {
+    const info = getNormalizedRoleInfo(vendor);
+
+    // Role or explicit customer_service of 'shop' are strong signals
+    const byRole = info.roleName === 'seller' || info.roleName === 'marketplace_seller' || info.roleName === 'product_seller' || info.roleName === 'store_seller';
+    const byService = info.customerService === 'shop';
+
+    // Strict: do NOT route by capabilities or styles to avoid false positives
+    return byRole || byService;
+}
+
 /** Preferred UI route for a vendor based on role/config. */
 export function determineVendorUIRoute(vendor: any): '/seller' | '/dashboard' {
-    return isSeller(vendor) ? '/seller' : '/dashboard';
+    return isSellerStrict(vendor) ? '/seller' : '/dashboard';
 }
 

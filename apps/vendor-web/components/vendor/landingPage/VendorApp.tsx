@@ -12,8 +12,8 @@ import { VendorLandingPage } from './VendorLandingPage';
 import { VendorApprovedSetup } from '../VendorApprovedSetup';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
- import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
- import { getInitialVendorState, determineVendorUIRoute, isSeller } from './constants/helpers';
+import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
+ import { getInitialVendorState, determineVendorUIRoute, isSeller, isSellerStrict } from './constants/helpers';
 
 
 
@@ -63,8 +63,30 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       if (!isActive) return;
       const target = determineVendorUIRoute(vendorData);
       const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-      if (target === '/seller' && currentPath !== '/seller') {
-        window.location.replace('/seller');
+      // Strictly redirect only true sellers to /seller; non-sellers must not land on /seller
+      if (isSellerStrict(vendorData)) {
+        if (currentPath !== '/seller') {
+          window.location.replace('/seller');
+        }
+      } else {
+        if (currentPath === '/seller') {
+          window.location.replace('/dashboard');
+        }
+      }
+    } catch {
+      // no-op
+    }
+  }, [vendorData]);
+
+  // Clear stale seller hints if stored role mismatches current role
+  useEffect(() => {
+    if (!vendorData) return;
+    try {
+      const storedRole = localStorage.getItem('vendorRole');
+      const currentRole = ((vendorData?.role?.name) || vendorData?.role_name || vendorData?.roleName || '').toString().toLowerCase();
+      if (storedRole && storedRole.toLowerCase() !== currentRole && currentRole) {
+        localStorage.removeItem('vendorRole');
+        localStorage.removeItem('sellerHubPref');
       }
     } catch {
       // no-op
@@ -222,15 +244,15 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                 localStorage.setItem('vendorRole', profileVendor.roleId || profileVendor.role_id);
               }
             } else {
-              const v = { ...sessionVendor, isActive: true, status: 'active' };
-              setVendorData(v);
+        const v = { ...sessionVendor, isActive: true, status: 'active' };
+        setVendorData(v);
             }
           } catch (err: any) {
-            const statusCode = err?.statusCode;
-            if (statusCode === 403 || statusCode === 404) {
-              console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
-              clearVendorSession();
-              window.location.replace('/auth');
+          const statusCode = err?.statusCode;
+          if (statusCode === 403 || statusCode === 404) {
+            console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
+            clearVendorSession();
+            window.location.replace('/auth');
               return;
             }
             console.warn('⚠️ [VendorApp] FAST PATH 1: Could not fetch profile, using session data:', err?.message);
@@ -328,7 +350,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                     const route = determineVendorUIRoute(updatedVendor);
                     if (route === '/seller') {
                       window.location.replace('/seller');
-                    }
+                }
                   } catch (_) { /* noop */ }
                 } else {
                   // Fallback to stored vendor if profile doesn't have vendor data
@@ -460,7 +482,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             // ✅ FIX: Don't set vendorRecordExists = false if we already have profileData
             // This can happen if profile was fetched in a fast-path scenario
             if (!profileData) {
-              vendorRecordExists = false;
+            vendorRecordExists = false;
             }
           }
         }

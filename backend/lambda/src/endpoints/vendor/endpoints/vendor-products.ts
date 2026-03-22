@@ -79,6 +79,7 @@ class GetVendorProductsHandler extends BaseHandler {
           p.sku,
           p.price,
           COALESCE(p.stock, 0) as stock,
+        p.status,
           p.is_active,
           p.created_at,
           p.updated_at,
@@ -210,16 +211,32 @@ class CreateVendorProductHandler extends BaseHandler {
       // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
       const stockValue = parseInt(body.stock || body.stock_quantity || '0', 10);
 
+      // Resolve category name (optional) so free-text `category` is populated alongside `category_id`
+      let resolvedCategoryName: string | null = null;
+      if (body.category_id) {
+        try {
+          const cat = await query('SELECT name FROM ecommerce_categories WHERE id = $1', [body.category_id]);
+          resolvedCategoryName = cat.rows?.[0]?.name || null;
+        } catch {
+          resolvedCategoryName = null;
+        }
+      }
+
       // Prepare product data - only use columns that exist in DB
+      // Approval lifecycle:
+      // - status defaults to 'pending' at DB level (migration 700)
+      // - keep product hidden until approved by admin (is_active = false)
       const productData: any = {
         vendor_id: resolvedVendorId,
         name: body.name,
         description: body.description || null,
         category_id: body.category_id || null,
+        category: body.category ?? resolvedCategoryName ?? null,
         price: parseFloat(body.price),
         stock: stockValue, // ✅ FIX: Use stock column (migration 013 renamed stock_quantity to stock)
         sku: body.sku || null,
-        is_active: body.is_active !== false,
+        // Visibility control: vendors cannot publish directly; admin approval required
+        is_active: false,
       };
 
       // PHASE 1.3: Handle variants, images, delivery_regions in metadata
@@ -278,6 +295,7 @@ class GetVendorProductHandler extends BaseHandler {
                 p.sku,
                 p.price,
                 COALESCE(p.stock, 0) as stock,
+        p.status,
                 p.is_active,
                 p.created_at,
                 p.updated_at,
@@ -507,6 +525,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
           p.sku,
           p.price,
           COALESCE(p.stock, 0) as stock,
+                p.status,
           p.is_active,
           p.created_at,
           p.updated_at,

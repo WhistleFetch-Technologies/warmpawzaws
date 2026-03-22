@@ -644,19 +644,19 @@ class GetSalesAnalyticsHandler extends BaseHandler {
         dateFilter = `AND o.created_at >= DATE_TRUNC('year', CURRENT_DATE)`;
       }
 
-      // Sales overview
+      // Sales overview (use alias `o` to match dateFilter)
       let salesStats;
       try {
         salesStats = await query(`
           SELECT 
             COUNT(*) as total_orders,
-            COUNT(*) FILTER (WHERE order_status != 'cancelled') as completed_orders,
-            COALESCE(SUM(total_amount) FILTER (WHERE order_status != 'cancelled'), 0) as total_revenue,
-            COALESCE(AVG(total_amount) FILTER (WHERE order_status != 'cancelled'), 0) as avg_order_value,
-            COUNT(DISTINCT customer_id) FILTER (WHERE order_status != 'cancelled') as unique_customers,
-            COUNT(*) FILTER (WHERE order_status = 'cancelled') as cancelled_orders
-          FROM orders
-          WHERE vendor_id = $1 ${dateFilter}
+            COUNT(*) FILTER (WHERE o.order_status != 'cancelled') as completed_orders,
+            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
+            COALESCE(AVG(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as avg_order_value,
+            COUNT(DISTINCT o.customer_id) FILTER (WHERE o.order_status != 'cancelled') as unique_customers,
+            COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled_orders
+          FROM orders o
+          WHERE o.vendor_id = $1 ${dateFilter}
         `, [vendorId]);
       } catch (error: any) {
         // If UUID validation fails, return empty stats
@@ -676,19 +676,19 @@ class GetSalesAnalyticsHandler extends BaseHandler {
         }
       }
 
-      // Revenue by day
+      // Revenue by day (use alias `o` to match dateFilter)
       let revenueByDay;
       try {
         revenueByDay = await query(`
           SELECT 
-            DATE(created_at) as date,
+            DATE(o.created_at) as date,
             COUNT(*) as orders_count,
-            COALESCE(SUM(total_amount) FILTER (WHERE order_status != 'cancelled'), 0) as revenue
-          FROM orders
-          WHERE vendor_id = $1 
-            AND order_status != 'cancelled'
+            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as revenue
+          FROM orders o
+          WHERE o.vendor_id = $1 
+            AND o.order_status != 'cancelled'
             ${dateFilter}
-          GROUP BY DATE(created_at)
+          GROUP BY DATE(o.created_at)
           ORDER BY date ASC
         `, [vendorId]);
       } catch (error: any) {
@@ -700,21 +700,21 @@ class GetSalesAnalyticsHandler extends BaseHandler {
         }
       }
 
-      // Order trends
+      // Order trends (use alias `o` to match dateFilter)
       let orderTrends;
       try {
         orderTrends = await query(`
           SELECT 
-            DATE(created_at) as date,
-            COUNT(*) FILTER (WHERE order_status = 'pending') as pending,
-            COUNT(*) FILTER (WHERE order_status = 'confirmed') as confirmed,
-            COUNT(*) FILTER (WHERE order_status = 'processing') as processing,
-            COUNT(*) FILTER (WHERE order_status = 'shipped') as shipped,
-            COUNT(*) FILTER (WHERE order_status = 'delivered') as delivered,
-            COUNT(*) FILTER (WHERE order_status = 'cancelled') as cancelled
-          FROM orders
-          WHERE vendor_id = $1 ${dateFilter}
-          GROUP BY DATE(created_at)
+            DATE(o.created_at) as date,
+            COUNT(*) FILTER (WHERE o.order_status = 'pending') as pending,
+            COUNT(*) FILTER (WHERE o.order_status = 'confirmed') as confirmed,
+            COUNT(*) FILTER (WHERE o.order_status = 'processing') as processing,
+            COUNT(*) FILTER (WHERE o.order_status = 'shipped') as shipped,
+            COUNT(*) FILTER (WHERE o.order_status = 'delivered') as delivered,
+            COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled
+          FROM orders o
+          WHERE o.vendor_id = $1 ${dateFilter}
+          GROUP BY DATE(o.created_at)
           ORDER BY date ASC
         `, [vendorId]);
       } catch (error: any) {

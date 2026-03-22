@@ -1428,11 +1428,26 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
             // Create vendors record with the final (unique) vendor ID
             // ✅ CRITICAL FIX: Explicitly set is_deleted to false and metadata to empty object to prevent vendors from being marked as deleted
+            // Resolve default commission from vendor_tiers (defaultTierName already computed upstream if present)
+            let defaultCommission = 15;
+            try {
+              const tierRate = await query(
+                `SELECT commission_rate FROM vendor_tiers 
+                 WHERE is_active = true 
+                 AND (tier_name = $1 OR is_default = true) 
+                 ORDER BY (tier_name = $1) DESC, is_default DESC NULLS LAST, tier_level ASC 
+                 LIMIT 1`,
+                [defaultTierName || 'Basic']
+              ).catch(() => ({ rows: [] as any[] }));
+              const cr = parseFloat(tierRate.rows?.[0]?.commission_rate || '15');
+              if (!isNaN(cr)) defaultCommission = cr;
+            } catch {}
+
             const insertResult = await query(
               `INSERT INTO vendors (
                 id, phone, email, owner_name, business_name, role_id, status, vendor_type,
-                city, state, address, pincode, tier, is_active, is_deleted, metadata, created_at, approved_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true, false, '{}'::jsonb, NOW(), NOW())
+                city, state, address, pincode, tier, commission_percentage, is_active, is_deleted, metadata, created_at, approved_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, $13, true, false, '{}'::jsonb, NOW(), NOW())
               RETURNING id`,
               [
                 finalVendorId,
@@ -1446,7 +1461,8 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
                 formData.state || 'Unknown',
                 formData.address || 'Unknown',
                 pincode,
-                defaultTierName
+                defaultTierName,
+                defaultCommission
               ]
             );
 
@@ -1948,6 +1964,24 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
       delete cleanMetadata.deletion_reason;
       delete cleanMetadata.deleted_vendor_id;
       
+      // Resolve default tier/commission from vendor_tiers
+      let resolvedTierName: string = 'Basic';
+      let resolvedCommission: number = 15;
+      try {
+        const tierRes = await query(
+          `SELECT tier_name, commission_rate
+           FROM vendor_tiers
+           WHERE is_active = true
+           ORDER BY is_default DESC NULLS LAST, tier_level ASC
+           LIMIT 1`
+        ).catch(() => ({ rows: [] as any[] }));
+        if (tierRes.rows && tierRes.rows.length > 0) {
+          resolvedTierName = tierRes.rows[0].tier_name || resolvedTierName;
+          const cr = parseFloat(tierRes.rows[0].commission_rate || '15');
+          if (!isNaN(cr)) resolvedCommission = cr;
+        }
+      } catch {}
+
       const vendors = await insert('vendors', {
         id: finalVendorId, // ✅ CRITICAL: Explicitly set new unique ID
         phone: identity.phone,
@@ -1961,6 +1995,8 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         status: 'approved',
         is_active: true,
         is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
+        tier: resolvedTierName,
+        commission_percentage: resolvedCommission,
         address: payload.address || '',
         city: payload.city || '',
         state: payload.state || '',

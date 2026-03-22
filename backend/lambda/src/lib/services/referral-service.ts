@@ -8,7 +8,7 @@
  */
 
 import { select, query, update, insert } from '../../database/rds-connection';
-import { loyaltyPointsService } from './loyalty-points-service';
+import { loyaltyPointsService } from './loyalty&reward/loyalty-points-service';
 import { loyaltyRulesInitService } from './loyalty-rules-init-service';
 
 export interface ProcessReferralSignupParams {
@@ -344,7 +344,7 @@ export async function processVendorReferralSignup(
     // 5. Award points to referrer vendor immediately (vendor_refer_friend rule)
     let referrerPoints = 0;
     try {
-      const { loyaltyPointsService } = await import('./loyalty-points-service');
+      const { loyaltyPointsService } = await import('./loyalty&reward/loyalty-points-service');
       const pointsResult = await loyaltyPointsService.awardPoints({
         vendorId: referralRecord.referrer_vendor_id,
         actionName: 'vendor_refer_friend',

@@ -16,9 +16,9 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query, upsert, deleteRows } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { select, insert, update, query, upsert, deleteRows } from '../../../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 
 export function registerLoyaltyEndpoints(app: Hono) {
   /**
@@ -42,7 +42,7 @@ export function registerLoyaltyEndpoints(app: Hono) {
       }
 
       // Initialize loyalty_action_rules (new system)
-      const { loyaltyRulesInitService } = await import('../lib/services/loyalty-rules-init-service');
+      const { loyaltyRulesInitService } = await import('../../../lib/services/loyalty-rules-init-service');
       await loyaltyRulesInitService.initializeReferralRules();
       await loyaltyRulesInitService.initializeVendorReferralRules();
 
@@ -344,7 +344,7 @@ export function registerLoyaltyEndpoints(app: Hono) {
       }
 
       // Use referral service to process referral and award points
-      const { processReferralSignup } = await import('../lib/services/referral-service');
+      const { processReferralSignup } = await import('../../../lib/services/referral-service');
       const referralResult = await processReferralSignup({
         customerId: customerId,
         referralCode: referralCode,

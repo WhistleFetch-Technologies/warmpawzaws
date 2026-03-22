@@ -450,7 +450,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Award loyalty points for payment (if completed)
       if (payment.payment_status === 'completed' && customerId) {
         try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+          const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
           
           // Determine action based on booking type
           let actionName = 'book_service';
