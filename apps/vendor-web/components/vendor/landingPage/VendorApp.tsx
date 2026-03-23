@@ -13,7 +13,7 @@ import { VendorApprovedSetup } from '../VendorApprovedSetup';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
-import { getInitialVendorState } from './constants/helpers';
+ import { getInitialVendorState, determineVendorUIRoute, isSeller, isSellerStrict } from './constants/helpers';
 
 
 
@@ -49,6 +49,49 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     if (identity?.id) return identity.id;
     return null;
   };
+
+  // ✅ Generic redirect: whenever vendorData becomes available, ensure correct UI route
+  useEffect(() => {
+    try {
+      if (!vendorData) return;
+      const isActive =
+        vendorData.isActive === true ||
+        vendorData.onboarding_status === 'APPROVED' ||
+        vendorData.onboarding_status === 'ACTIVATED' ||
+        vendorData.onboardingStatus === 'APPROVED' ||
+        vendorData.onboardingStatus === 'ACTIVATED';
+      if (!isActive) return;
+      const target = determineVendorUIRoute(vendorData);
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      // Strictly redirect only true sellers to /seller; non-sellers must not land on /seller
+      if (isSellerStrict(vendorData)) {
+        if (currentPath !== '/seller') {
+          window.location.replace('/seller');
+        }
+      } else {
+        if (currentPath === '/seller') {
+          window.location.replace('/dashboard');
+        }
+      }
+    } catch {
+      // no-op
+    }
+  }, [vendorData]);
+
+  // Clear stale seller hints if stored role mismatches current role
+  useEffect(() => {
+    if (!vendorData) return;
+    try {
+      const storedRole = localStorage.getItem('vendorRole');
+      const currentRole = ((vendorData?.role?.name) || vendorData?.role_name || vendorData?.roleName || '').toString().toLowerCase();
+      if (storedRole && storedRole.toLowerCase() !== currentRole && currentRole) {
+        localStorage.removeItem('vendorRole');
+        localStorage.removeItem('sellerHubPref');
+      }
+    } catch {
+      // no-op
+    }
+  }, [vendorData]);
 
   // ✅ SECURITY: Validate vendor session with backend on mount — but ONLY for
   // vendors whose cached status says ACTIVATED or APPROVED. New / onboarding
@@ -190,20 +233,26 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               setVendorData(completeVendor);
               localStorage.setItem('vendorData', JSON.stringify(completeVendor));
               localStorage.setItem('vendorId', profileVendor.id);
+              try {
+                const route = determineVendorUIRoute(completeVendor);
+                if (route === '/seller') {
+                  window.location.replace('/seller');
+                }
+              } catch (_) { /* noop */ }
 
               if (profileVendor.roleId || profileVendor.role_id) {
                 localStorage.setItem('vendorRole', profileVendor.roleId || profileVendor.role_id);
               }
             } else {
-              const v = { ...sessionVendor, isActive: true, status: 'active' };
-              setVendorData(v);
+        const v = { ...sessionVendor, isActive: true, status: 'active' };
+        setVendorData(v);
             }
           } catch (err: any) {
-            const statusCode = err?.statusCode;
-            if (statusCode === 403 || statusCode === 404) {
-              console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
-              clearVendorSession();
-              window.location.replace('/auth');
+          const statusCode = err?.statusCode;
+          if (statusCode === 403 || statusCode === 404) {
+            console.warn(`⚠️ [VendorApp] FAST PATH 1: Vendor account invalid (${statusCode}) — clearing session`);
+            clearVendorSession();
+            window.location.replace('/auth');
               return;
             }
             console.warn('⚠️ [VendorApp] FAST PATH 1: Could not fetch profile, using session data:', err?.message);
@@ -297,6 +346,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
                   }
 
                   setVendorData(updatedVendor);
+                  try {
+                    const route = determineVendorUIRoute(updatedVendor);
+                    if (route === '/seller') {
+                      window.location.replace('/seller');
+                }
+                  } catch (_) { /* noop */ }
                 } else {
                   // Fallback to stored vendor if profile doesn't have vendor data
                   vendor.isActive = true;
@@ -427,7 +482,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             // ✅ FIX: Don't set vendorRecordExists = false if we already have profileData
             // This can happen if profile was fetched in a fast-path scenario
             if (!profileData) {
-              vendorRecordExists = false;
+            vendorRecordExists = false;
             }
           }
         }
@@ -562,11 +617,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           vendorData.status = 'active';
         } else if (onboardingStatus === 'APPROVED') {
           // Wireframe: Show "You're approved" screen with Get Started, then dashboard
-          console.log('✅ [VendorApp] Vendor is APPROVED, showing approved setup screen (Get Started)');
-          setStatus('approved');
+          console.log('✅ [VendorApp] Vendor is APPROVED, proceeding to active dashboard');
+          setStatus('active');
           vendorData.isActive = true;
-          vendorData.status = 'approved';
-          // Don't set to 'active' here - user must click Get Started first
+          vendorData.status = 'active';
+          // Previously showed a Get Started screen; now we route to active dashboard
         } else if (onboardingStatus === 'UNDER_REVIEW') {
           setStatus('pending');
           vendorData.status = 'pending';
@@ -648,7 +703,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       // ✅ FIX: Fallback to stored data on error (e.g. 401 from onboarding/status); never leave user stuck on loading
       const storedStatus = localStorage.getItem('vendorApplicationStatus');
       const storedVendor = localStorage.getItem('vendorData');
-      const knownStatuses: VendorStatus[] = ['new', 'profile_incomplete', 'submitted', 'pending', 'approved', 'approved_services', 'rejected', 'clarification', 'active'];
+      const knownStatuses: VendorStatus[] = ['new', 'profile_incomplete', 'submitted', 'pending', 'approved_services', 'approved_availability', 'setup_completed', 'rejected', 'clarification', 'documents_required', 'active'];
 
       if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
         console.log('✅ [VendorApp] Using stored APPROVED/ACTIVATED status from localStorage');
@@ -897,8 +952,8 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
-  // Approved: show "You're approved" screen with Get Started; on complete → dashboard
-  if (status === 'approved' || status === 'approved_services') {
+  // Approved: show setup screens; on complete → dashboard
+  if (status === 'approved_services') {
     // Check if vendor has already been activated or completed setup
     const isAlreadyActivated = vendorData?.isActive === true ||
       vendorData?.onboarding_status === 'ACTIVATED' ||

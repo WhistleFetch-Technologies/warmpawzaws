@@ -5,8 +5,8 @@
  * AWS Serverless compatible (Lambda, RDS)
  */
 
-import { query, select, insert, update, withTransaction } from '../../database/rds-connection';
-import { loyaltySegmentationService } from './loyalty-segmentation-service';
+import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
+import { loyaltySegmentationService } from '../loyalty-segmentation-service';
 
 export interface AwardPointsParams {
   customerId?: string;

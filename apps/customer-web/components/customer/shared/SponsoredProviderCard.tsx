@@ -11,6 +11,11 @@ interface SponsoredProvider {
   vendorId: string;
   name: string;
   businessName?: string;
+  role?: string;
+  roleName?: string;
+  roleDisplayName?: string;
+  roleIcon?: string | null;
+  roleImage?: string | null;
   photo?: string;
   rating: number;
   reviewCount: number;
@@ -141,6 +146,13 @@ export function SponsoredProviderCard({
           {/* Info */}
           <div className="flex-1 text-white">
             <h3 className="font-bold text-lg">{provider.businessName || provider.name}</h3>
+            {(provider.roleDisplayName || provider.role) && (
+              <div className="mt-0.5">
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-white/50 text-white">
+                  {provider.roleDisplayName || provider.role}
+                </Badge>
+              </div>
+            )}
             {provider.adCreative?.subtitle && (
               <p className="text-white/80 text-sm">{provider.adCreative.subtitle}</p>
             )}
@@ -208,6 +220,14 @@ export function SponsoredProviderCard({
           <h3 className="font-bold text-gray-900 truncate">
             {provider.businessName || provider.name}
           </h3>
+
+          {(provider.roleDisplayName || provider.role) && (
+            <div className="mt-0.5">
+              <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                {provider.roleDisplayName || provider.role}
+              </Badge>
+            </div>
+          )}
           
           {provider.specialization && (
             <p className="text-xs text-gray-500 truncate">{provider.specialization}</p>

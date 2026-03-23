@@ -12,16 +12,16 @@
  * 
  * This endpoint integrates all centre booking enhancements into one response.
  * 
- * Date: 2026-01-27
+ * Date: 2026-01-279022336112
  * ============================================================================
  */
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { select, query } from '../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+
+import { HandlerContext, HandlerResponse } from 'src/handler/base-handler';
+import { BaseHandler } from 'src/handler/base-handler-enhanced';
+import { query, select } from 'src/database/rds-connection';
 
 class GetEnhancedBookingDetailsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
@@ -44,7 +44,7 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
 
       // ✅ FIX: Extract pet_id from multiple sources (column, notes, special_instructions)
       let petIdToUse = booking.pet_id;
-      
+
       // Try to extract from notes if not in column
       if (!petIdToUse && booking.notes) {
         const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]{36})/i);
@@ -53,7 +53,7 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           console.log(`[BOOKING-DETAILS] Extracted pet_id from notes: ${petIdToUse}`);
         }
       }
-      
+
       // Try to extract from special_instructions if still not found
       if (!petIdToUse && booking.special_instructions) {
         const petIdMatch = booking.special_instructions.match(/Pet ID:\s*([a-f0-9-]{36})/i);
@@ -65,9 +65,9 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
 
       // Access control (only enforce if actorId is provided)
       // In UAT mode or when actorId is not provided, allow access
-      const isUATMode = context.event.headers?.['x-uat-mode'] === 'true' || 
-                        context.event.headers?.['X-UAT-Mode'] === 'true';
-      
+      const isUATMode = context.event.headers?.['x-uat-mode'] === 'true' ||
+        context.event.headers?.['X-UAT-Mode'] === 'true';
+
       if (actorId && !isUATMode) {
         if (actorRole === 'customer' && booking.customer_id !== actorId) {
           return this.error('Access denied', 403);
@@ -83,7 +83,7 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
       // Groomer, trainer, walker, behaviourist, sitters should NOT show these
       const ROLES_WITH_MEDICAL_FEATURES = ['vet', 'veterinary', 'nutritionist', 'diagnostics', 'diagnostic', 'lab', 'laboratory'];
       let showMedicalFeatures = true; // Default to true for backwards compatibility
-      
+
       if (booking.vendor_id) {
         try {
           const vendorWithRole = await query(
@@ -356,7 +356,7 @@ export function registerBookingDetailsEnhancedEndpoints(app: Hono) {
       actorRole: c.req.query('actorRole') || 'customer',
     };
     const context = createLambdaContext();
-    const result = await enhancedHandler.execute(event, context);
+    const result: any = await enhancedHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -365,7 +365,7 @@ export function registerBookingDetailsEnhancedEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
-    const result = await prescriptionsHandler.execute(event, context);
+    const result: any = await prescriptionsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -374,7 +374,7 @@ export function registerBookingDetailsEnhancedEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
-    const result = await medicalRecordsHandler.execute(event, context);
+    const result: any = await medicalRecordsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -383,7 +383,7 @@ export function registerBookingDetailsEnhancedEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
-    const result = await chatHandler.execute(event, context);
+    const result: any = await chatHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

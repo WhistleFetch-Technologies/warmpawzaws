@@ -664,7 +664,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       // Award loyalty points for order (if first product or regular product)
       if (customerId) {
         try {
-          const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
+          const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
 
           // Check if this is first product purchase
           const existingOrders = await select('orders', { customer_id: customerId });
@@ -1338,9 +1338,22 @@ export function registerEcommerceEndpoints(app: Hono) {
           v.*,
           r.id as role_id,
           r.name as role_name,
-          r.display_name as role_display_name
+          r.display_name as role_display_name,
+          COALESCE(pc_total.product_count, 0) as product_count,
+          COALESCE(pc_active.active_product_count, 0) as active_product_count
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS product_count
+          FROM products p
+          WHERE p.vendor_id = v.id
+        ) pc_total ON true
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS active_product_count
+          FROM products p
+          WHERE p.vendor_id = v.id
+            AND (COALESCE(p.status, 'pending') = 'active' OR p.is_active = true)
+        ) pc_active ON true
         WHERE (v.status = 'active' OR v.is_active = true)
           AND (v.is_deleted IS NULL OR v.is_deleted = false)
           AND (
@@ -1379,9 +1392,22 @@ export function registerEcommerceEndpoints(app: Hono) {
           v.*,
           r.id as role_id,
           r.name as role_name,
-          r.display_name as role_display_name
+          r.display_name as role_display_name,
+          COALESCE(pc_total.product_count, 0) as product_count,
+          COALESCE(pc_active.active_product_count, 0) as active_product_count
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS product_count
+          FROM products p
+          WHERE p.vendor_id = v.id
+        ) pc_total ON true
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS active_product_count
+          FROM products p
+          WHERE p.vendor_id = v.id
+            AND (COALESCE(p.status, 'pending') = 'active' OR p.is_active = true)
+        ) pc_active ON true
         WHERE (v.status = 'active' OR v.is_active = true)
           AND (v.is_deleted IS NULL OR v.is_deleted = false)
           AND (

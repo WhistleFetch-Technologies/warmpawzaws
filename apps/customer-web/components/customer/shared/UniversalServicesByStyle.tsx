@@ -1182,7 +1182,7 @@ export function UniversalServicesByStyle({
             </Button>
           </Card>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4  ">
             {providers.map((provider) => (
               <Card key={provider.providerId} className="bg-white overflow-hidden">
                 {/* Provider Header */}

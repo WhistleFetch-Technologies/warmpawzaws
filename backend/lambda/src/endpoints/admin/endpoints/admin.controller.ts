@@ -1068,8 +1068,9 @@ export function registerAdminEndpoints(app: Hono) {
           //Ensure email is never null - use phone-based fallback if needed
           const vendorEmail = formData.email || identity.email || `vendor-${identity.phone}@warmpawz.app`;
 
-          // Fetch default tier from vendor_tiers table also have a fallback of a basic paln 
+          // Fetch default tier/commission from vendor_tiers (fallback to Basic/15%)
           let defaultTierName = 'Basic';
+          let defaultCommission = 15;
           try {
             const tierResult = await query(
               `SELECT tier_name, commission_rate 
@@ -1082,6 +1083,8 @@ export function registerAdminEndpoints(app: Hono) {
 
             if (tierResult.rows && tierResult.rows.length > 0) {
               defaultTierName = tierResult.rows[0].tier_name;
+              const cr = parseFloat(tierResult.rows[0].commission_rate || '15');
+              if (!isNaN(cr)) defaultCommission = cr;
             }
           } catch (tierError: any) {
             // Continue with fallback tier
@@ -1090,8 +1093,8 @@ export function registerAdminEndpoints(app: Hono) {
           const insertResult = await query(
             `INSERT INTO vendors (
               id, phone, email, owner_name, business_name, role_id, status, vendor_type,
-              city, state, address, pincode, tier, is_active, is_deleted, metadata, created_at, approved_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true, false, '{}'::jsonb, NOW(), NOW())
+              city, state, address, pincode, tier, commission_percentage, is_active, is_deleted, metadata, created_at, approved_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, $13, $14, true, false, '{}'::jsonb, NOW(), NOW())
             RETURNING id`,
             [
               finalVendorId, // ✅ Use the final (unique) vendor ID
@@ -1105,7 +1108,8 @@ export function registerAdminEndpoints(app: Hono) {
               formData.state || 'Unknown',
               formData.address || 'Unknown',
               formData.pincode || formData.pinCode || '',
-              defaultTierName
+              defaultTierName,
+              defaultCommission
             ]
           );
           vendorId = insertResult.rows[0].id;
@@ -1341,7 +1345,7 @@ export function registerAdminEndpoints(app: Hono) {
             console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points, processing now...`);
 
             // Award points directly to referrer
-            const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
+            const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
             const pointsResult = await loyaltyPointsService.awardPoints({
               vendorId: referralRecord.referrer_vendor_id,
               actionName: 'vendor_refer_friend',
@@ -1401,7 +1405,7 @@ export function registerAdminEndpoints(app: Hono) {
 
             // Only award points if they don't exist yet
             if (!hasPoints) {
-              const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
+              const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
               const pointsResult = await loyaltyPointsService.awardPoints({
                 vendorId: referral.referrer_vendor_id,
                 actionName: 'vendor_refer_friend',
@@ -1484,7 +1488,7 @@ export function registerAdminEndpoints(app: Hono) {
               const { loyaltyRulesInitService } = await import('../../../lib/services/loyalty-rules-init-service');
               await loyaltyRulesInitService.initializeVendorReferralRules();
 
-              const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
+              const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
               const pointsResult = await loyaltyPointsService.awardPoints({
                 vendorId: referral.referrer_vendor_id,
                 actionName: 'vendor_refer_friend',

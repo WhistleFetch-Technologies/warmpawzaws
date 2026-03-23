@@ -30,6 +30,10 @@ export function SellerManagement() {
         isActive: vendor.is_active === true,
         status: vendor.status,
         sellerStatus: vendor.seller_status,
+        products:
+          (typeof vendor.active_product_count === 'number' ? vendor.active_product_count : null) ??
+          (typeof vendor.product_count === 'number' ? vendor.product_count : null) ??
+          0,
       }));
       
       setSellers(mappedSellers);
@@ -164,7 +168,9 @@ export function SellerManagement() {
                         {seller.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center text-gray-600">-</td>
+                    <td className="px-6 py-4 text-center text-gray-800 font-medium">
+                      {Number.isFinite(seller.products) ? seller.products : 0}
+                    </td>
                     <td className="px-6 py-4 text-right text-gray-600">₹0</td>
                     <td className="px-6 py-4 text-center">
                       <button className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">

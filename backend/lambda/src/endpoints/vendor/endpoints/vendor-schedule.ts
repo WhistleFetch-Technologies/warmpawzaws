@@ -1449,6 +1449,23 @@ export function registerVendorScheduleEndpoints(app: Hono) {
             const newVendorId = identity.vendor_id || identityId;
             console.log(`[AVAILABILITY] 🔨 Auto-creating vendor record for approved vendor ${identityId}, using vendor ID: ${newVendorId}`);
             try {
+              // Resolve default tier/commission from vendor_tiers
+              let resolvedTierName: string = 'Basic';
+              let resolvedCommission: number = 15;
+              try {
+                const tierRes = await query(
+                  `SELECT tier_name, commission_rate
+                   FROM vendor_tiers
+                   WHERE is_active = true
+                   ORDER BY is_default DESC NULLS LAST, tier_level ASC
+                   LIMIT 1`
+                ).catch(() => ({ rows: [] as any[] }));
+                if (tierRes.rows && tierRes.rows.length > 0) {
+                  resolvedTierName = tierRes.rows[0].tier_name || resolvedTierName;
+                  const cr = parseFloat(tierRes.rows[0].commission_rate || '15');
+                  if (!isNaN(cr)) resolvedCommission = cr;
+                }
+              } catch {}
               const newVendor = await insert('vendors', {
                 id: newVendorId,
                 phone: identity.phone,
@@ -1464,6 +1481,8 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                 status: 'active',
                 is_active: true,
                 is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
+                tier: resolvedTierName,
+                commission_percentage: resolvedCommission,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               });

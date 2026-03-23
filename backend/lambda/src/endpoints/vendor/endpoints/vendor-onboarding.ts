@@ -1184,6 +1184,28 @@ class ActivateVendorHandler extends BaseHandler {
         is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors (after spread to ensure override)
       };
 
+      // Resolve default tier/commission from vendor_tiers
+      try {
+        const tierRes = await query(
+          `SELECT tier_name, commission_rate
+           FROM vendor_tiers
+           WHERE is_active = true
+           ORDER BY is_default DESC NULLS LAST, tier_level ASC
+           LIMIT 1`
+        ).catch(() => ({ rows: [] as any[] }));
+        const row = tierRes.rows?.[0];
+        if (row) {
+          vendorData.tier = row.tier_name || vendorData.tier || 'Basic';
+          const cr = parseFloat(row.commission_rate || '15');
+          vendorData.commission_percentage = !isNaN(cr) ? cr : 15;
+        } else {
+          vendorData.tier = vendorData.tier || 'Basic';
+          vendorData.commission_percentage = vendorData.commission_percentage || 15;
+        }
+      } catch {
+        vendorData.tier = vendorData.tier || 'Basic';
+        vendorData.commission_percentage = vendorData.commission_percentage || 15;
+      }
       const vendors = await insert('vendors', vendorData);
       const vendor = vendors[0];
 

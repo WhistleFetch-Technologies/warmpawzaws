@@ -27,7 +27,6 @@ import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced
 import { registerTrackingEndpoints } from '../endpoints/tracking';
 
 // Legacy handlers (to be migrated gradually)
-import { registerVendorOnboardingEndpoints } from '../endpoints/vendor-onboarding';
 // import { registerBookingEndpoints } from '../endpoints/bookings'; // DEPRECATED - use registerBookingEndpointsEnhanced instead
 import { registerPaymentEndpoints } from '../endpoints/payments';
 import { registerRoleEndpoints } from '../endpoints/roles';
@@ -54,7 +53,7 @@ import { registerPrescriptionEndpoints } from '../endpoints/prescription/endpoin
 import { registerMedicalRecordsEndpoints } from '../endpoints/medical-records';
 import { registerEcommerceEndpoints } from '../endpoints/ecommerce/endpoints/ecommerce';
 import { registerAnalyticsEndpoints } from '../endpoints/admin/endpoints/analytics.admin';
-import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
+import { registerLoyaltyEndpoints } from '../endpoints/loyalty&reward/endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
 import { registerVendorServicesEndpoints } from '../endpoints/vendor/endpoints/vendorServices.vendor';
@@ -99,7 +98,6 @@ import { registerTimeWindowSubscriptionEndpoints } from '../endpoints/time-windo
 import { registerStorageEndpoints } from '../endpoints/storage';
 import { registerPushNotificationEndpoints } from '../endpoints/push-notifications';
 import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
-import { registerBookingDetailsEnhancedEndpoints } from '../endpoints/booking-details-enhanced';
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/admin-advanced';
@@ -113,8 +111,7 @@ import { registerPetHolidaysEndpoints } from '../endpoints/pet-holidays';
 import { registerTaxManagementEndpoints } from '../endpoints/tax-management';
 import { registerLogisticsManagementEndpoints } from '../endpoints/logistics-management';
 import { registerPaymentGatewayManagementEndpoints } from '../endpoints/payment-gateway-management';
-import { registerLoyaltyActionRulesManagementEndpoints } from '../endpoints/loyalty-action-rules-management';
-import { registerLoyaltySegmentsManagementEndpoints } from '../endpoints/loyalty-segments-management';
+
 import { registerCommunityEndpoints } from '../endpoints/community';
 import { registerReferralEndpoints } from '../endpoints/referrals';
 import { registerRewardsEndpoints } from '../endpoints/rewards';
@@ -179,7 +176,12 @@ import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/cu
 import { registerCustomerOrdersEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-orders';
 import { registerAdminCustomServicesEndpoints } from 'src/endpoints/admin/endpoints/admin-custom-services';
 import { registerGpsTrackingEndpoints } from 'src/endpoints/gpsTracking/endpoints/gps-tracking';
-import { registerVendorBookingActionsEndpoints } from 'src/endpoints/gpsTracking/endpoints/vendor.gpsTracking';
+import { registerVendorBookingActionsEndpoints } from 'src/endpoints/gpsTracking/endpoints/vendor.gpstracking';
+import { registerBookingDetailsEnhancedEndpoints } from 'src/endpoints/booking/endpoints/booking-details-enhanced';
+import { registerLoyaltySegmentsManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-segments-management';
+import { registerLoyaltyActionRulesManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-action-rules-management';
+import { registerLoyaltyActionSourcesManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-action-sources-management';
+import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 
 // Create Hono app
 const app = new Hono();
@@ -284,6 +286,9 @@ app.use('*', cors({
 app.use('*', async (c, next) => {
   await next();
 });
+
+// Action Sources middleware - emits ActionOccurred based on DB-configured triggers
+app.use('*', actionSourceMiddleware());
 
 // Authentication audit logging (for security monitoring)
 app.use('*', authAuditLog());
@@ -586,6 +591,7 @@ registerLogisticsManagementEndpoints(app);
 registerPaymentGatewayManagementEndpoints(app);
 registerLoyaltyActionRulesManagementEndpoints(app);
 registerLoyaltySegmentsManagementEndpoints(app);
+registerLoyaltyActionSourcesManagementEndpoints(app);
 registerCommunityEndpoints(app);
 registerReferralEndpoints(app);
 registerRewardsEndpoints(app);

@@ -35,6 +35,7 @@ interface Provider {
   providerType: 'vendor' | 'staff' | 'individual';
   vendorId?: string;
   vendorName?: string;
+  roleId?: string | null;
   businessName?: string;
   staffId?: string;
   name: string;
@@ -44,6 +45,10 @@ interface Provider {
   phone?: string;
   email?: string;
   role?: string;
+  roleName?: string;
+  roleDisplayName?: string;
+  roleIcon?: string | null;
+  roleImage?: string | null;
   specialization?: string;
   qualifications?: string;
   degree?: string;
@@ -342,9 +347,14 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500">
-                {provider.name.charAt(0)}
+
+              <div>
+                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500">
+                  {provider.name.charAt(0)}
+                </div>
+
               </div>
+
             )}
           </div>
           {provider.isVerified && (
@@ -361,10 +371,21 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between mb-1">
             <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-gray-900 truncate">{provider.name}</h3>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h3 className="font-bold text-gray-900 truncate">{provider.name}</h3>
+                {(provider.roleDisplayName || provider.role) && (
+                  <div className="mt-0.5 text-xs">
+                    <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                      {provider.roleDisplayName || provider.role}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+
               {provider.businessName && provider.businessName !== provider.name && (
                 <p className="text-xs text-gray-500 truncate">{provider.businessName}</p>
               )}
+
               {provider.qualifications && (
                 <p className="text-xs text-gray-500 truncate">{provider.qualifications}</p>
               )}
@@ -614,6 +635,13 @@ export function UniversalServiceProviderList({
           businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
           providerId: p.providerId || p.vendorId || p.id,
           vendorId: p.vendorId || p.id,
+          // Normalize role fields for UI badges/subtitles
+          role: p.role || p.roleDisplayName || p.roleName,
+          roleDisplayName: p.roleDisplayName || p.roleName || p.role,
+          roleName: p.roleName || p.role,
+          roleId: p.roleId || p.role_id || null,
+          roleIcon: p.roleIcon || null,
+          roleImage: p.roleImage || null,
           // ✅ FIX: Map nextAvailable object to nextAvailableSlot string for display
           nextAvailableSlot: (() => {
             if (typeof p.nextAvailableSlot === 'string') return p.nextAvailableSlot;
@@ -629,8 +657,8 @@ export function UniversalServiceProviderList({
         }));
 
         // Set providers from primary endpoint
-          setProviders(cleanedProviders);
-          console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
+        setProviders(cleanedProviders);
+        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
       } else {
         console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
         setProviders([]);
@@ -808,7 +836,7 @@ export function UniversalServiceProviderList({
           )}
         </div>
         {/*SEARCH BAR SECTION ENDS*/}
-        
+
         {/* Filters Row */}
         <div className="mb-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-2">

@@ -32,13 +32,13 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select, insert, update, withTransaction, getClient } from '../database/rds-connection';
-import { withIdempotency, checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
-import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
-import { calculateStaffETA } from '../utils/commute-time-calculator';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
+import { query, select, insert, update, withTransaction, getClient } from '../../../database/rds-connection';
+import { withIdempotency, checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
+import { logAuditEntry, logBookingStatusChange } from '../../../utils/audit-log';
+import { calculateStaffETA } from '../../../utils/commute-time-calculator';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { isValidUUID } from '../../../types/entities';
 
 // ============================================================================
 // CONFIGURATION
@@ -405,7 +405,7 @@ class CreateBookingHandler extends BaseHandler {
       try {
         // ✅ Trigger webhooks
         try {
-          const { triggerWebhook } = await import('./webhooks');
+          const { triggerWebhook } = await import('../../webhooks');
           await triggerWebhook('booking.created', {
             bookingId: booking.id,
             customerId: booking.customer_id,
@@ -420,7 +420,7 @@ class CreateBookingHandler extends BaseHandler {
           console.error('Failed to trigger webhooks:', error);
         }
 
-        const { publishBookingCreated } = await import('../utils/sns-client');
+        const { publishBookingCreated } = await import('../../../utils/sns-client');
         await publishBookingCreated({
           bookingId: booking.id,
           customerId: booking.customer_id,
@@ -641,7 +641,7 @@ class UpdateBookingStatusHandler extends BaseHandler {
 
     // ✅ TEMPORAL FIX: Publish event with timestamps
     try {
-      const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+      const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
       await publishBookingStatusUpdated({
         bookingId,
         customerId: currentBooking.customer_id,
