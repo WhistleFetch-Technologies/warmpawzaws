@@ -1366,6 +1366,11 @@ export function CustomerHomeComplete({
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={phone}
+            onSearch={(searchQuery) => {
+              if (searchQuery?.trim()) {
+                router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+              }
+            }}
             onResultSelect={(result) => {
               console.log('Search result selected:', result);
               if (result.type === 'symptom') {
@@ -1823,69 +1828,21 @@ export function CustomerHomeComplete({
               See All
             </button>
           </div>
-          <div className="px-6 space-y-3">
-            {/* Render dynamic announcements if available */}
-            {((dynamicAnnouncements.length > 0 ? dynamicAnnouncements : [
-              { id: 'ai', title: 'AI Pet Assistant', subtitle: 'Get instant answers about pet care', badgeText: 'NEW', badgeColor: 'green', icon: '🤖', announcementType: 'feature' },
-              { id: 'sos', title: 'Emergency Ambulance', subtitle: 'Instant location-based dispatch', badgeText: 'SOS', badgeColor: 'red', icon: '📞', ctaText: 'SOS ALERT', ctaLink: 'ambulance', announcementType: 'emergency' },
-              { id: 'premium', title: 'WarmPawz Plus', subtitle: 'Unlimited services at best prices', badgeText: 'PREMIUM', badgeColor: 'purple', icon: '⭐', announcementType: 'premium' },
-            ])).map((announcement: any) => {
-              const isEmergency = announcement.announcementType === 'emergency';
-              const isPremium = announcement.announcementType === 'premium';
-              const bgGradient = isEmergency
-                ? 'from-red-50 to-orange-50 border-red-100'
-                : isPremium
-                  ? 'from-purple-50 to-indigo-50 border-purple-100'
-                  : 'from-orange-50 to-pink-50 border-orange-100';
-              const iconGradient = isEmergency
-                ? 'from-red-500 to-orange-500'
-                : isPremium
-                  ? 'from-purple-500 to-indigo-500'
-                  : 'from-[#FF8C42] to-[#FF6B35]';
-              const badgeColor = announcement.badgeColor === 'red' ? 'bg-red-500'
-                : announcement.badgeColor === 'purple' ? 'bg-purple-500'
-                  : announcement.badgeColor === 'blue' ? 'bg-blue-500'
-                    : 'bg-green-500';
-              const IconComponent = isEmergency ? Phone : isPremium ? Star : Bot;
-
-              return (
-                <div
-                  key={announcement.id}
-                  className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4`}
-                  onClick={() => !isEmergency && announcement.ctaLink && onNavigate?.(announcement.ctaLink)}
-                >
-                  <div className={`w-16 h-16 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg ${isEmergency ? 'animate-pulse' : ''}`}>
-                    {announcement.icon ? (
-                      <span className="text-2xl">{announcement.icon}</span>
-                    ) : (
-                      <IconComponent className="w-8 h-8" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-xs ${badgeColor} text-white px-2 py-0.5 rounded-full font-medium ${isEmergency ? 'font-bold animate-pulse' : ''}`}>
-                        {announcement.badgeText || 'NEW'}
-                      </span>
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-800 mb-1">{announcement.title}</h3>
-                    <p className="text-xs text-gray-600">{announcement.subtitle}</p>
-                  </div>
-                  {isEmergency && announcement.ctaText ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigate?.(announcement.ctaLink || 'ambulance');
-                      }}
-                      className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
-                    >
-                      {announcement.ctaText}
-                    </button>
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  )}
-                </div>
-              );
-            })}
+          <div className="px-6">
+            <WhatsNewAnnouncementList
+              announcements={whatsNewAnnouncements}
+              interactionMode="hub"
+              onRowPress={(a) => {
+                if (a.announcementType === 'emergency') return;
+                // AI Pet Assistant: open chat widget
+                if (a.id === 'ai' || (a.announcementType === 'feature' && !a.ctaLink?.trim())) {
+                  setShowAIChat(true);
+                  return;
+                }
+                navigateWhatsNewFromFullPage(router, a, 'row');
+              }}
+              onSosPress={(a) => onNavigate?.(a.ctaLink || 'ambulance')}
+            />
           </div>
         </div>
 
