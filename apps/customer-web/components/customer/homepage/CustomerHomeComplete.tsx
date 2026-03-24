@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
@@ -30,6 +30,8 @@ import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface'
 import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, serviceBaseOnpincode } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
+import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
+import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -210,6 +212,11 @@ export function CustomerHomeComplete({
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
+
+  const whatsNewAnnouncements = useMemo(
+    () => buildWhatsNewAnnouncements(dynamicAnnouncements),
+    [dynamicAnnouncements]
+  );
 
   // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
   const {
