@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES
@@ -107,7 +108,7 @@ export default function MedicalRecordsPage() {
       return;
     }
     setCustomerPhone(phone);
-    setCustomerId(localStorage.getItem('customerId'));
+    setCustomerId(getResolvedCustomerId());
   }, [router]);
 
   useEffect(() => {

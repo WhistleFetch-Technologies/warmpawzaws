@@ -727,7 +727,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         {/* Scrollable Content Area - Fixed Height with Proper Overflow */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto overscroll-contain relative" 
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain relative pb-24" 
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {/* Scroll Indicator - Shows user can scroll */}
@@ -740,7 +740,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
           )}
 
           {activeView === 'menu' && (
-            <div className="p-5 space-y-3 pb-8">
+            <div className="p-5 space-y-3">
               {menuItems.map((item, index) => (
                 <button
                   key={index}

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 interface Pet {
   id: string;
@@ -38,7 +39,7 @@ export default function PetsPage() {
 
   const loadPets = async () => {
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (customerId) {
         const response = await apiClient.get<{ pets: Pet[] }>(`/customer/${customerId}/pets`);
         setPets(response.pets || []);
@@ -52,7 +53,7 @@ export default function PetsPage() {
 
   const handleAddPet = async () => {
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         throw new Error('Customer not found');
       }

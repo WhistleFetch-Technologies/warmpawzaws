@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES
@@ -173,7 +174,7 @@ export default function RewardsPage() {
       setLoading(true);
       setError(null);
       
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         setError('Please log in to view rewards');
         setLoading(false);
@@ -248,7 +249,7 @@ export default function RewardsPage() {
       setRedeeming(reward.id);
       setError(null);
       
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         setError('Please log in to redeem rewards');
         return;

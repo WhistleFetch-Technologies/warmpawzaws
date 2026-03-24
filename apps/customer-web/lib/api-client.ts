@@ -3,6 +3,13 @@
  * Uses API Gateway (Lambda backend)
  */
 
+import {
+  customerUuidSegmentInPath,
+  ensureCustomerIdStorageReconciledOnce,
+  isCustomerDatabaseUuid,
+  reconcileCustomerIdStorageOnLoad,
+} from './customer-id-storage';
+
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
@@ -270,6 +277,20 @@ export class ApiClient {
     // Fix: Normalize URL to avoid double slashes
     const base = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     let path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+
+    if (typeof window !== 'undefined') {
+      ensureCustomerIdStorageReconciledOnce();
+      const uuidSegment = customerUuidSegmentInPath(path);
+      if (uuidSegment && !isCustomerDatabaseUuid(uuidSegment)) {
+        reconcileCustomerIdStorageOnLoad();
+        throw new ApiError(
+          'Invalid customer id in request. Please refresh the page or sign in again.',
+          'invalid_customer_id',
+          400,
+          false
+        );
+      }
+    }
     
     // ✅ Auto-add phone parameter to /customer/services/by-style if not present
     if (typeof window !== 'undefined' && path.includes('/customer/services/by-style')) {

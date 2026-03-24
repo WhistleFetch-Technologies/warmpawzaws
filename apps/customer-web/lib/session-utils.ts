@@ -3,6 +3,8 @@
  * Handles session persistence, expiry, and hard refresh detection
  */
 
+import { ensureCustomerIdStorageReconciledOnce } from './customer-id-storage';
+
 /**
  * Check if this is a hard refresh
  * Uses multiple methods for reliability
@@ -104,6 +106,8 @@ export function clearCustomerSession(): void {
   
   localStorage.removeItem('customerPhone');
   localStorage.removeItem('customerId');
+  localStorage.removeItem('customer_id');
+  localStorage.removeItem('warmpawz_customer_id');
   localStorage.removeItem('authToken');
   localStorage.removeItem('customerData');
   localStorage.removeItem('customerProfile');
@@ -180,4 +184,6 @@ export function initializeSession(): void {
     console.log('[Session] Token expired - clearing customer session');
     clearCustomerSession();
   }
+
+  ensureCustomerIdStorageReconciledOnce();
 }
