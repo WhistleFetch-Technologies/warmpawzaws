@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 
 interface CustomerSession {
   phone: string;
@@ -90,6 +91,16 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       if (newSession.customer) {
         localStorage.setItem('customerData', JSON.stringify(newSession.customer));
       }
+      const cid =
+        newSession.customerId ||
+        (newSession.customer && typeof newSession.customer === 'object'
+          ? (newSession.customer as { id?: string }).id
+          : undefined);
+      if (cid) {
+        persistCustomerDatabaseId(cid);
+      } else if (newSession.customer) {
+        persistCustomerDatabaseId(newSession.customer);
+      }
       if (newSession.hasCompletedOnboarding) {
         localStorage.setItem('customerOnboardingComplete', 'true');
       }
@@ -106,6 +117,9 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('customerPhone');
       localStorage.removeItem('authToken');
       localStorage.removeItem('customerData');
+      localStorage.removeItem('customerId');
+      localStorage.removeItem('customer_id');
+      localStorage.removeItem('warmpawz_customer_id');
       localStorage.removeItem('customerOnboardingComplete');
       localStorage.removeItem('customerJourneyStage');
     }

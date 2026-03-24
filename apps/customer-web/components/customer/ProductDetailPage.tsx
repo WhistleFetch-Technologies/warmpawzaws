@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { canonicalProductId } from '@/lib/product-id';
 import { toast } from 'sonner';
 
 interface ProductDetailPageProps {
@@ -58,13 +59,31 @@ export function ProductDetailPage({
   const loadProductDetails = async () => {
     try {
       setLoading(true);
-      const productId = initialProduct?.id || initialProduct?.productId;
-      const response = await apiClient.get<any>(`/ecommerce/products/${productId}`);
-      
+      const productId =
+        canonicalProductId(initialProduct) ||
+        (initialProduct?.productId as string | undefined) ||
+        (initialProduct?.id as string | undefined);
+      console.log('[ProductDetailPage] fetch', { productId });
+      let response: any;
+      try {
+        response = await apiClient.get<any>(`/ecommerce/products/${productId}`);
+      } catch (firstErr: any) {
+        const is404 =
+          firstErr?.status === 404 ||
+          firstErr?.statusCode === 404 ||
+          String(firstErr?.message || '').includes('404');
+        if (is404) {
+          response = await apiClient.get<any>(`/products/${productId}`);
+        } else {
+          throw firstErr;
+        }
+      }
+
       const productData = response.product || response;
       setProduct({
         ...initialProduct,
         ...productData,
+        id: canonicalProductId(productData) || productId,
         fullDetails: true
       });
     } catch (error) {
@@ -77,7 +96,10 @@ export function ProductDetailPage({
 
   const loadRelatedProducts = async () => {
     try {
-      const productId = initialProduct?.id || initialProduct?.productId;
+      const productId =
+        canonicalProductId(initialProduct) ||
+        (initialProduct?.productId as string | undefined) ||
+        (initialProduct?.id as string | undefined);
       const category = initialProduct?.category || initialProduct?.category_name;
       
       if (category) {
@@ -95,13 +117,24 @@ export function ProductDetailPage({
   };
 
   useEffect(() => {
-    if (initialProduct?.id && !initialProduct?.fullDetails) {
+    const pid =
+      canonicalProductId(initialProduct) ||
+      initialProduct?.productId ||
+      initialProduct?.id ||
+      initialProduct?.product_id;
+    if (pid && !initialProduct?.fullDetails) {
       loadProductDetails();
     }
-    if (initialProduct?.id) {
+    if (pid) {
       loadRelatedProducts();
     }
-  }, [initialProduct?.id]);
+  }, [
+    initialProduct?.id,
+    initialProduct?.productId,
+    initialProduct?.product_id,
+    initialProduct?._id,
+    initialProduct?.fullDetails,
+  ]);
 
   const handleAddToCart = () => {
     if (!product) return;

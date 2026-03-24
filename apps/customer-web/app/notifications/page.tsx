@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 interface Notification {
   id: string;
@@ -30,7 +31,7 @@ export default function NotificationsPage() {
 
   const loadNotifications = async () => {
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       const phone = localStorage.getItem('customerPhone');
       if (customerId) {
         // Backend: GET /notifications?userId=&userType=customer (or GET /customer/notifications?phone=)

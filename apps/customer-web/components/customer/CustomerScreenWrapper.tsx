@@ -18,7 +18,7 @@ export function CustomerScreenWrapper({
 }: CustomerScreenWrapperProps) {
   return (
     <>
-      <div className="pb-20 min-h-screen">
+      <div className="pb-24 min-h-screen">
         {children}
       </div>
       <BottomNavigation 

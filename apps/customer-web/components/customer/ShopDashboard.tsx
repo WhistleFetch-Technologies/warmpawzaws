@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { canonicalProductId } from '@/lib/product-id';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
 
@@ -95,7 +97,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
       
       // Format products from API response (vendor-listed products)
       const formattedProducts: Product[] = productsData.map((prod: any) => ({
-        id: prod.id || prod.product_id,
+        id: canonicalProductId(prod as Record<string, unknown>) || String(prod.id || prod.product_id || ''),
         name: prod.name || prod.product_name,
         description: prod.description || '',
         price: parseFloat(prod.price || prod.unit_price || 0),
@@ -320,18 +322,23 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                     onClick={async (e) => {
                       e.stopPropagation();
                       try {
-                        const customerId = localStorage.getItem('warmpawz_customer_id');
+                        const customerId = getResolvedCustomerId();
+                        const productId =
+                          canonicalProductId(deal as Record<string, unknown>) || String(deal.id || '');
                         if (!customerId) {
                           toast.info('Please login to add items to wishlist');
                           return;
                         }
-                        await apiClient.post('/customer/wishlist', {
-                          customerId,
-                          productId: product.id,
-                          productName: product.name,
-                          price: product.price,
-                          image: product.image,
+                        if (!productId) {
+                          console.warn('[wishlist] ShopDashboard deal missing id', { deal });
+                          return;
+                        }
+                        console.log('[wishlist] ShopDashboard POST', { customerId, productId });
+                        const res = await apiClient.post(`/customer/${customerId}/wishlist`, {
+                          productId,
+                          action: 'add',
                         });
+                        console.log('[wishlist] ShopDashboard POST response', { customerId, productId, res });
                         toast.success('Added to wishlist');
                       } catch (error: any) {
                         console.error('Error adding to wishlist:', error);
@@ -464,18 +471,24 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {
-                          const customerId = localStorage.getItem('warmpawz_customer_id');
+                          const customerId = getResolvedCustomerId();
+                          const productId =
+                            canonicalProductId(product as Record<string, unknown>) ||
+                            String(product.id || '');
                           if (!customerId) {
                             toast.info('Please login to add items to wishlist');
                             return;
                           }
-                          await apiClient.post('/customer/wishlist', {
-                            customerId,
-                            productId: product.id,
-                            productName: product.name,
-                            price: product.price,
-                            image: product.image,
+                          if (!productId) {
+                            console.warn('[wishlist] ShopDashboard product missing id', { product });
+                            return;
+                          }
+                          console.log('[wishlist] ShopDashboard POST', { customerId, productId });
+                          const res = await apiClient.post(`/customer/${customerId}/wishlist`, {
+                            productId,
+                            action: 'add',
                           });
+                          console.log('[wishlist] ShopDashboard POST response', { customerId, productId, res });
                           toast.success('Added to wishlist');
                         } catch (error: any) {
                           console.error('Error adding to wishlist:', error);

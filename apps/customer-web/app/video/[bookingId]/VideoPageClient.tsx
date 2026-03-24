@@ -3,6 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import {
+  getResolvedCustomerId,
+  isCustomerDatabaseUuid,
+  persistCustomerDatabaseId,
+} from '@/lib/customer-id-storage';
 import { ChimeVideoCall } from '@/components/teleCommunication/ChimeVideoCall';
 
 interface VideoPageClientProps {
@@ -48,8 +53,8 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         urlParams.get('phone') ||
         '';
 
-      if (qpCustomerId) {
-        localStorage.setItem('customerId', qpCustomerId);
+      if (qpCustomerId && isCustomerDatabaseUuid(qpCustomerId)) {
+        persistCustomerDatabaseId(qpCustomerId.trim());
       }
       if (qpPhone) {
         localStorage.setItem('customerPhone', qpPhone);
@@ -58,7 +63,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
       }
 
       const storedId =
-        localStorage.getItem('customerId') ||
+        getResolvedCustomerId() ||
         localStorage.getItem('customerPhone') ||
         localStorage.getItem('customer_phone') ||
         localStorage.getItem('phone') ||
@@ -100,10 +105,10 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           }
           
           // Try customer_id first (UUID)
-          if (booking.customer_id) {
-            localStorage.setItem('customerId', booking.customer_id);
+          if (booking.customer_id && isCustomerDatabaseUuid(String(booking.customer_id))) {
+            persistCustomerDatabaseId(String(booking.customer_id).trim());
             console.log('[VideoPageClient] Extracted customerId from booking data');
-            return booking.customer_id;
+            return String(booking.customer_id).trim();
           }
           
           // Fallback to customer_phone if customer_id not available
