@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 interface Subscription {
   id: string;
@@ -35,7 +36,7 @@ export default function SubscriptionsPage() {
 
   const loadSubscriptions = async () => {
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (customerId) {
         const response = await apiClient.get<{ subscriptions: Subscription[] }>(
           `/subscriptions/customer/${customerId}`

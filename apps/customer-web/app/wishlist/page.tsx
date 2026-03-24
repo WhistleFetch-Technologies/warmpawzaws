@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { canonicalProductId } from '@/lib/product-id';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   Heart, ShoppingCart, Trash2, ArrowLeft, Package,
   Store, Star, Check, AlertCircle, ShoppingBag
@@ -49,56 +51,85 @@ export default function WishlistPage() {
     loadWishlist();
   }, []);
 
+  async function fetchProductDetailForWishlist(id: string): Promise<any | null> {
+    console.log('[wishlist] fetch product for id', { productId: id });
+    try {
+      return (await apiClient.get<any>(`/ecommerce/products/${id}`))?.product ?? null;
+    } catch (e: any) {
+      const is404 =
+        e?.status === 404 ||
+        e?.statusCode === 404 ||
+        String(e?.message || '').includes('404');
+      if (!is404) {
+        console.error('[wishlist] product fetch failed', { productId: id, err: e });
+        return null;
+      }
+      try {
+        const res = await apiClient.get<any>(`/products/${id}`);
+        return res?.product ?? null;
+      } catch (e2) {
+        console.error('[wishlist] fallback /products fetch failed', { productId: id, err: e2 });
+        return null;
+      }
+    }
+  }
+
   const loadWishlist = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       
       if (customerId) {
         // Load from API
+        console.log('[wishlist] loading server wishlist', { customerId });
         const result = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
+        console.log('[wishlist] GET /customer/:customerId/wishlist response', {
+          customerId,
+          itemCount: result?.wishlist?.items?.length ?? 0,
+          success: result?.success,
+        });
         setWishlist(result?.wishlist?.items || []);
       } else {
         // Load from localStorage
         const localWishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+        console.log('[wishlist] local id list', { count: localWishlist.length, ids: localWishlist });
         if (localWishlist.length > 0) {
-          // Fetch product details for local wishlist
           const products = await Promise.all(
-            localWishlist.map(async (productId: string) => {
-              try {
-                const result = await apiClient.get<any>(`/ecommerce/products/${productId}`);
-                return result?.product;
-              } catch {
-                return null;
-              }
-            })
+            localWishlist.map((pid: string) => fetchProductDetailForWishlist(pid))
           );
-          
+
           setWishlist(
             products
               .filter((p: any) => p !== null)
-              .map((p: any, index: number) => ({
-                id: `local-${index}`,
-                product_id: p.id,
-                product: {
-                  id: p.id,
-                  name: p.name,
-                  description: p.description,
-                  price: parseFloat(p.price) || 0,
-                  original_price: p.original_price ? parseFloat(p.original_price) : undefined,
-                  images: p.images || [],
-                  emoji: p.emoji || '🐾',
-                  rating: p.rating || 4.5,
-                  review_count: p.review_count || 0,
-                  stock: p.stock_quantity || p.stock || 0,
-                  vendor_id: p.vendor_id,
-                  vendor_name: p.vendor_name || 'Unknown Seller',
-                  is_active: p.is_active,
-                },
-                added_at: new Date().toISOString(),
-              }))
+              .map((p: any, index: number) => {
+                const pid = canonicalProductId(p) || String(p?.id ?? '');
+                const compareOrOriginal = p.original_price ?? p.compare_at_price;
+                return {
+                  id: `local-${index}`,
+                  product_id: pid,
+                  product: {
+                    id: pid,
+                    name: p.name,
+                    description: p.description,
+                    price: parseFloat(p.price) || 0,
+                    original_price:
+                      compareOrOriginal != null && String(compareOrOriginal) !== ''
+                        ? parseFloat(String(compareOrOriginal))
+                        : undefined,
+                    images: p.images || [],
+                    emoji: p.emoji || '🐾',
+                    rating: p.rating || 4.5,
+                    review_count: p.review_count || 0,
+                    stock: p.stock_quantity || p.stock || 0,
+                    vendor_id: p.vendor_id,
+                    vendor_name: p.vendor_name || 'Unknown Seller',
+                    is_active: p.is_active,
+                  },
+                  added_at: new Date().toISOString(),
+                };
+              })
           );
         }
       }
@@ -114,7 +145,7 @@ export default function WishlistPage() {
     try {
       setProcessing(productId);
       
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       
       if (customerId) {
         await apiClient.delete(`/customer/${customerId}/wishlist/${productId}`);

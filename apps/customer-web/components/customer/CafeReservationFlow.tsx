@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 
 interface CafeReservationFlowProps {
@@ -70,7 +71,7 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
       setSubmitting(true);
       
       // Get customer ID
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         toast.error('Please login to create reservation');
         return;

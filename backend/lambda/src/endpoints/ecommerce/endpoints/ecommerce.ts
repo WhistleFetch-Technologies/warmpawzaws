@@ -22,6 +22,34 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 
 export function registerEcommerceEndpoints(app: Hono) {
+  /** Shared handler body for GET /products/:id and GET /ecommerce/products/:id */
+  const handleGetPublicProductById = async (c: any, logLabel: string) => {
+    try {
+      const { productId } = c.req.param();
+      console.log(`${logLabel} lookup product id=`, productId);
+
+      const products = await query(
+        `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
+         FROM products p
+         LEFT JOIN vendors v ON p.vendor_id = v.id
+         WHERE p.id = $1`,
+        [productId]
+      );
+
+      if (products.rows.length === 0) {
+        return c.json({ error: 'Product not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        product: products.rows[0],
+      });
+    } catch (error: any) {
+      console.error(`${logLabel} Error fetching product:`, error);
+      return c.json({ error: error.message }, 500);
+    }
+  };
+
   // ============================================
   // PRODUCT CATALOG
   // ============================================
@@ -181,6 +209,14 @@ export function registerEcommerceEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /ecommerce/products/:productId
+   * Same as GET /products/:productId — customer shop and wishlist use this path.
+   */
+  app.get("/ecommerce/products/:productId", (c) =>
+    handleGetPublicProductById(c, '[ecommerce/products/:productId]')
+  );
 
   /**
    * POST /ecommerce/orders
@@ -349,33 +385,9 @@ export function registerEcommerceEndpoints(app: Hono) {
 
   /**
    * GET /products/:productId
-   * Get product details
+   * Get product details (alias path; prefer /ecommerce/products/:productId in customer app)
    */
-  app.get("/products/:productId", async (c) => {
-    try {
-      const { productId } = c.req.param();
-
-      const products = await query(
-        `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
-         FROM products p
-         LEFT JOIN vendors v ON p.vendor_id = v.id
-         WHERE p.id = $1`,
-        [productId]
-      );
-
-      if (products.rows.length === 0) {
-        return c.json({ error: 'Product not found' }, 404);
-      }
-
-      return c.json({
-        success: true,
-        product: products.rows[0],
-      });
-    } catch (error: any) {
-      console.error('Error fetching product:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
+  app.get("/products/:productId", (c) => handleGetPublicProductById(c, '[products/:productId]'));
 
   /**
    * GET /ecommerce/categories

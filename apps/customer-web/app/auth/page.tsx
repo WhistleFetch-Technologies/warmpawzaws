@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
+import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
@@ -148,8 +149,8 @@ function AuthPageContent() {
         const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
         if (profileResponse?.profile) {
           localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
-          localStorage.setItem('customerId', profileResponse.profile.id);
           localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+          persistCustomerDatabaseId(profileResponse.profile);
 
           const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
           const profileCompleted = profileResponse.profile.profile_completed;
@@ -267,8 +268,8 @@ function AuthPageContent() {
 
             // Store in localStorage for CustomerApp to use
             localStorage.setItem('customerData', JSON.stringify(profile));
-            localStorage.setItem('customerId', profile.id);
             localStorage.setItem('customerProfile', JSON.stringify(profile));
+            persistCustomerDatabaseId(profile);
 
             // Also check if customer has pets
             let hasPets = false;

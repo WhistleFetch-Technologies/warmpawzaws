@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 
 interface CustomerSession {
   phone: string;
@@ -62,7 +63,7 @@ export default function HomePage() {
             const isOnboarded = onboardingStatus === 'COMPLETED' || profileCompleted ||
               (hasProfileId && hasRealName) || (hasProfileId && hasBookings);
             localStorage.setItem('customerData', JSON.stringify(data));
-            localStorage.setItem('customerId', data.id);
+            persistCustomerDatabaseId(data);
             localStorage.setItem('customerOnboardingComplete', isOnboarded ? 'true' : 'false');
             setSession({
               phone: storedPhone,

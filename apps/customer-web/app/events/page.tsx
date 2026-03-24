@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES
@@ -84,10 +85,10 @@ export default function EventsPage() {
       setError(null);
       
       // Get customer ID
-      const customerId = localStorage.getItem('customerId');
       const customerData = localStorage.getItem('customerData');
       const customer = customerData ? JSON.parse(customerData) : null;
-      const finalCustomerId = customerId || customer?.id;
+      const finalCustomerId =
+        getResolvedCustomerId() || extractCustomerUuidFromProfile(customer as Record<string, unknown>);
 
       const [eventsRes, registrationsRes] = await Promise.all([
         apiClient.get<any>('/events/discover'),
@@ -116,17 +117,18 @@ export default function EventsPage() {
       setError(null);
       
       // Get customer ID from localStorage
-      const customerId = localStorage.getItem('customerId');
       const customerData = localStorage.getItem('customerData');
       const customer = customerData ? JSON.parse(customerData) : null;
-      
-      if (!customerId && !customer) {
+      const customerId =
+        getResolvedCustomerId() || extractCustomerUuidFromProfile(customer as Record<string, unknown>);
+
+      if (!customerId) {
         setError('Please login to register for events');
         return;
       }
 
       await apiClient.post(`/events/${eventId}/register`, {
-        customerId: customerId || customer?.id,
+        customerId,
         attendeeName: customer?.name || 'Customer',
         attendeePhone: customer?.phone || '',
         attendeeEmail: customer?.email || null,

@@ -97,8 +97,16 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
           <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
             {banners.slice(0, 3).map((banner: any, idx: number) => (
               <button
+                type="button"
                 key={banner.id || idx}
-                onClick={() => banner.link ? onNavigate?.('shop', {}) : undefined}
+                onClick={() => {
+                  const raw = banner.link || banner.ctaLink || banner.url;
+                  if (raw != null && String(raw).trim() !== '') {
+                    onNavigate?.(String(raw).trim());
+                    return;
+                  }
+                  onNavigate?.('shop');
+                }}
                 className="flex-shrink-0 w-[160px] rounded-xl overflow-hidden border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50"
               >
                 {(banner.imageUrl || banner.image) ? (

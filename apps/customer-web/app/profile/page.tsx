@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 interface CustomerProfile {
@@ -37,7 +38,7 @@ export default function ProfilePage() {
 
   const loadProfile = async () => {
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       const phone = localStorage.getItem('customerPhone');
       if (customerId) {
         const response = await apiClient.get<CustomerProfile>(`/customer/${customerId}/profile`);
@@ -63,6 +64,7 @@ export default function ProfilePage() {
           };
           setProfile(mapped);
           setEditData(mapped);
+          persistCustomerDatabaseId(mapped);
         }
       }
     } catch (err) {
@@ -74,13 +76,15 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
+      if (!customerId) throw new Error('Missing customer id');
       await apiClient.put(`/customer/${customerId}/profile`, editData);
       const updatedProfile = { ...profile, ...editData } as CustomerProfile;
       setProfile(updatedProfile);
       setEditData(updatedProfile);
       localStorage.setItem('customerProfile', JSON.stringify(updatedProfile));
       localStorage.setItem('customerData', JSON.stringify(updatedProfile));
+      persistCustomerDatabaseId(updatedProfile);
       setEditing(false);
     } catch (err) {
       console.error('Error saving profile:', err);
@@ -103,9 +107,9 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col">
       {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
-      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10 flex-shrink-0">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -118,7 +122,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto pb-24">
         <div className="max-w-7xl mx-auto p-6">
 
         <div className="bg-white rounded-xl shadow-sm p-6">

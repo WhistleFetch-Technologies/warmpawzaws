@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { canonicalProductId } from '@/lib/product-id';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -97,6 +99,14 @@ export default function ProductDetailClient() {
   const [isInCart, setIsInCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
 
+  const wishlistProductId = useMemo(() => {
+    if (product) {
+      const c = canonicalProductId(product as unknown as Record<string, unknown>);
+      return (c || productId || '').trim();
+    }
+    return (productId || '').trim();
+  }, [product, productId]);
+
   // ============================================================================
   // DATA LOADING
   // ============================================================================
@@ -104,19 +114,51 @@ export default function ProductDetailClient() {
   useEffect(() => {
     if (productId) {
       loadProductData();
-      checkWishlistStatus();
-      checkCartStatus();
       recordProductView();
     }
   }, [productId]);
+
+  useEffect(() => {
+    if (!wishlistProductId || typeof window === 'undefined') return;
+    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    setIsInWishlist(
+      wishlist.some((x: string) => String(x) === String(wishlistProductId))
+    );
+    const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
+    setIsInCart(
+      cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
+    );
+  }, [wishlistProductId]);
 
   const loadProductData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [productRes, reviewsRes, alsoBoughtRes, similarRes] = await Promise.all([
-        apiClient.get<any>(`/ecommerce/products/${productId}`),
+      console.log('[shop/product] load detail', {
+        routeParamProductId: productId,
+        fetchPathPrimary: `/ecommerce/products/${productId}`,
+      });
+
+      let productRes: any;
+      try {
+        productRes = await apiClient.get<any>(`/ecommerce/products/${productId}`);
+      } catch (firstErr: any) {
+        const is404 =
+          firstErr?.status === 404 ||
+          firstErr?.statusCode === 404 ||
+          String(firstErr?.message || '').includes('404');
+        if (is404) {
+          console.warn('[shop/product] ecommerce detail 404, retrying /products/:id', {
+            productId,
+          });
+          productRes = await apiClient.get<any>(`/products/${productId}`);
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const [reviewsRes, alsoBoughtRes, similarRes] = await Promise.all([
         apiClient.get<any>(`/products/${productId}/reviews`).catch(() => ({ reviews: [] })),
         apiClient.get<any>(`/products/${productId}/also-bought`).catch(() => ({ products: [] })),
         apiClient.get<any>(`/ads-recommendations/products/${productId}/similar`).catch(() => ({ products: [] })),
@@ -124,17 +166,32 @@ export default function ProductDetailClient() {
 
       if (productRes?.product) {
         const p = productRes.product;
+        const resolvedId = canonicalProductId(p) || productId;
+        console.log('[shop/product] detail ok', {
+          routeParamProductId: productId,
+          resolvedProductId: resolvedId,
+          rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
+        });
+        const compareOrOriginal = p.original_price ?? p.compare_at_price;
         setProduct({
           ...p,
+          id: resolvedId,
           stock: p.stock_quantity || p.stock || 0,
           price: parseFloat(p.price) || 0,
-          original_price: p.original_price ? parseFloat(p.original_price) : undefined,
+          original_price:
+            compareOrOriginal != null && String(compareOrOriginal) !== ''
+              ? parseFloat(String(compareOrOriginal))
+              : undefined,
           rating: p.rating || 4.5,
           review_count: p.review_count || 0,
           images: p.images || [],
           emoji: p.emoji || '🐾',
         });
       } else {
+        console.warn('[shop/product] response missing product wrapper', {
+          productId,
+          keys: productRes && typeof productRes === 'object' ? Object.keys(productRes) : [],
+        });
         setError('Product not found');
       }
 
@@ -151,7 +208,7 @@ export default function ProductDetailClient() {
 
   const recordProductView = async () => {
     try {
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (customerId) {
         await apiClient.post(`/products/${productId}/view`, { customerId });
       }
@@ -160,50 +217,57 @@ export default function ProductDetailClient() {
     }
   };
 
-  const checkWishlistStatus = () => {
-    if (typeof window !== 'undefined') {
-      const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-      setIsInWishlist(wishlist.includes(productId));
-    }
-  };
-
-  const checkCartStatus = () => {
-    if (typeof window !== 'undefined') {
-      const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-      setIsInCart(cart.some((item: CartItem) => item.product_id === productId));
-    }
-  };
-
   // ============================================================================
   // ACTIONS
   // ============================================================================
 
   const toggleWishlist = async () => {
-    if (typeof window !== 'undefined') {
-      const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-      
-      if (isInWishlist) {
-        const newWishlist = wishlist.filter((id: string) => id !== productId);
-        localStorage.setItem('warmpawz_wishlist', JSON.stringify(newWishlist));
-        setIsInWishlist(false);
-      } else {
-        wishlist.push(productId);
-        localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
-        setIsInWishlist(true);
-      }
+    if (typeof window === 'undefined' || !wishlistProductId) return;
 
-      // Sync with backend if customer is logged in
-      const customerId = localStorage.getItem('warmpawz_customer_id');
-      if (customerId) {
-        try {
-          await apiClient.post(`/customer/${customerId}/wishlist`, {
-            productId,
-            action: isInWishlist ? 'remove' : 'add'
-          });
-        } catch (e) {
-          console.error('Failed to sync wishlist:', e);
-        }
+    const pid = wishlistProductId;
+    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    const customerId = getResolvedCustomerId();
+    const wasInList = isInWishlist;
+
+    console.log('[wishlist] toggle start', { productId: pid, customerId, wasInList });
+
+    if (wasInList) {
+      const newWishlist = wishlist.filter((id: string) => String(id) !== String(pid));
+      localStorage.setItem('warmpawz_wishlist', JSON.stringify(newWishlist));
+      setIsInWishlist(false);
+    } else {
+      if (!wishlist.some((id: string) => String(id) === String(pid))) {
+        wishlist.push(pid);
       }
+      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
+      setIsInWishlist(true);
+    }
+
+    if (customerId) {
+      const action = wasInList ? 'remove' : 'add';
+      try {
+        const res = await apiClient.post<any>(`/customer/${customerId}/wishlist`, {
+          productId: pid,
+          action,
+        });
+        console.log('[wishlist] POST /customer/:customerId/wishlist response', {
+          productId: pid,
+          customerId,
+          res,
+        });
+        if (action === 'add') {
+          const verify = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
+          console.log('[wishlist] GET verify after add', {
+            customerId,
+            itemCount: verify?.wishlist?.items?.length ?? 0,
+            items: verify?.wishlist?.items,
+          });
+        }
+      } catch (e) {
+        console.error('[wishlist] POST sync failed', { productId: pid, customerId, err: e });
+      }
+    } else {
+      console.warn('[wishlist] no customerId resolved; saved locally only', { productId: pid });
     }
   };
 
@@ -213,13 +277,16 @@ export default function ProductDetailClient() {
     setAddingToCart(true);
     try {
       const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-      const existingIndex = cart.findIndex((item: CartItem) => item.product_id === productId);
+      const lineId = wishlistProductId || productId;
+      const existingIndex = cart.findIndex(
+        (item: CartItem) => String(item.product_id) === String(lineId)
+      );
 
       if (existingIndex >= 0) {
         cart[existingIndex].quantity += quantity;
       } else {
         cart.push({
-          product_id: productId,
+          product_id: lineId,
           product: {
             id: product.id,
             name: product.name,
@@ -290,9 +357,11 @@ export default function ProductDetailClient() {
     : 0;
 
   const finalPrice = product ? product.price * quantity : 0;
-  const averageRating = reviews.length > 0 
-    ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
-    : product?.rating || 4.5;
+  const averageRatingRaw =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / reviews.length
+      : product?.rating ?? 4.5;
+  const averageRating = Number(averageRatingRaw || 0) || 0;
 
   // ============================================================================
   // RENDER
@@ -452,7 +521,7 @@ export default function ProductDetailClient() {
                   />
                 ))}
               </div>
-              <span className="font-semibold text-slate-900">{averageRating.toFixed(1)}</span>
+              <span className="font-semibold text-slate-900">{Number(averageRating || 0).toFixed(1)}</span>
               <span className="text-slate-500">({product.review_count} reviews)</span>
             </div>
 

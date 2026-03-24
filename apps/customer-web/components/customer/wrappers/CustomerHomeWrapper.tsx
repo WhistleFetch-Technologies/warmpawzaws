@@ -405,6 +405,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'training') setCurrentScreen('training');
     else if (service === 'boarding') setCurrentScreen('boarding');
     else if (service === 'adoption') setCurrentScreen('adoption');
+    else if (service === 'adoption_questionnaire') setCurrentScreen('adoption_questionnaire');
     else if (service === 'sunset') setCurrentScreen('sunset');
     else if (service === 'insurance') setCurrentScreen('insurance');
     else if (service === 'cafes') setCurrentScreen('cafes');

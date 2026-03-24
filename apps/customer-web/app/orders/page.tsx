@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   Package, Truck, Clock, Check, X as XIcon, ArrowLeft,
   MapPin, Phone, Calendar, ChevronDown, ChevronUp, Star,
@@ -74,7 +75,7 @@ export default function OrdersPage() {
       setLoading(true);
       setError(null);
       
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         setOrders([]);
         setLoading(false);
