@@ -108,6 +108,10 @@ export function LoyaltyActionRulesManagement() {
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editingRule, setEditingRule] = useState<LoyaltyActionRule | null>(null);
+  const [actionOptions, setActionOptions] = useState<string[]>([]);
+  const [loadingActions, setLoadingActions] = useState<boolean>(false);
+  const actionsAbortRef = React.useRef<AbortController | null>(null);
+  const debounceRef = React.useRef<number | undefined>(undefined);
   const [formData, setFormData] = useState<ActionRuleFormData>({
     action_name: '',
     action_category: 'loyalty',
@@ -145,6 +149,42 @@ export function LoyaltyActionRulesManagement() {
       setLoading(false);
     }
   };
+
+  // Load distinct action names (searchable)
+  const loadActions = async (q: string) => {
+    try {
+      actionsAbortRef.current?.abort();
+      const ac = new AbortController();
+      actionsAbortRef.current = ac;
+      setLoadingActions(true);
+
+      const params = new URLSearchParams();
+      if (q?.trim()) params.set('search', q.trim());
+      params.set('limit', '100');
+
+      const res = await apiClient.get<any>(`/admin/loyalty/actions?${params.toString()}`, {
+        signal: ac.signal,
+      } as any);
+      const items = Array.isArray(res?.actions) ? res.actions : [];
+      setActionOptions(items.filter((v: any) => typeof v === 'string' && v.length > 0));
+    } catch (e) {
+      if (!(actionsAbortRef.current && actionsAbortRef.current.signal.aborted)) {
+        setActionOptions([]);
+      }
+    } finally {
+      setLoadingActions(false);
+    }
+  };
+
+  // Prime action list on dialog open
+  useEffect(() => {
+    if (showDialog) {
+      loadActions('');
+    } else {
+      actionsAbortRef.current?.abort();
+      window.clearTimeout(debounceRef.current);
+    }
+  }, [showDialog]);
 
   const handleCreate = () => {
     setEditingRule(null);
@@ -361,16 +401,34 @@ export function LoyaltyActionRulesManagement() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="action_name">Action Name *</Label>
-                <Input
-                  id="action_name"
-                  value={formData.action_name}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setFormData((prev) => ({ ...prev, action_name: e.target.value }))
-                  }
-                  placeholder="buy_medicine, book_grooming"
-                />
+                <>
+                  <Input
+                    id="action_name"
+                    list="action-name-options"
+                    value={formData.action_name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const val = e.target.value;
+                      setFormData((prev) => ({ ...prev, action_name: val }));
+                      window.clearTimeout(debounceRef.current);
+                      debounceRef.current = window.setTimeout(() => {
+                        loadActions(val);
+                      }, 250);
+                    }}
+                    placeholder={loadingActions ? 'Loading actions…' : 'Search or select (e.g., buy_medicine)'}
+                    autoComplete="off"
+                  />
+                  <datalist id="action-name-options">
+                    {actionOptions.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </>
                 <p className="text-xs text-muted-foreground">
-                  Unique identifier (e.g., buy_medicine, book_grooming)
+                  {loadingActions
+                    ? 'Loading actions…'
+                    : actionOptions.length
+                      ? `${actionOptions.length} actions · You can also type a custom name`
+                      : 'Type to search or enter a custom action (e.g., buy_medicine)'}
                 </p>
               </div>
 

@@ -149,7 +149,7 @@ export function actionSourceMiddleware() {
 			const status = c.res.status || 200;
 			console.log('status--------------------->', status);
 			const mappingsByMethod = await getMappings();
-			console.log('mappingsByMethod--------------------->', mappingsByMethod);
+			console.log('mappingsByMethod--------------------->', mappingsByMethod, method, mappingsByMethod[method]);
 			const candidates = (mappingsByMethod[method] || []).filter(m => {
 				console.log('m--------------------->', m);
 				if (status < (m.status_min ?? 200) || status > (m.status_max ?? 299)) return false;

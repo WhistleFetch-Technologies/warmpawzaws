@@ -1569,6 +1569,38 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       const finalServiceStyle = serviceStyle || catalogService.service_style || 'at_home';
 
+      // Resolve category_id to a human-readable name if it's a UUID
+      // The vendor_services.category column has a CHECK constraint that rejects UUID values
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      let resolvedCategoryName = catalogService.category_name || null;
+      let resolvedSubCategoryName = catalogService.sub_category_name || null;
+
+      if (!resolvedCategoryName && catalogService.category_id) {
+        if (uuidRegex.test(catalogService.category_id)) {
+          // Look up the name from service_categories
+          const catLookup = await query(
+            `SELECT name FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+            [catalogService.category_id]
+          );
+          resolvedCategoryName = catLookup.rows[0]?.name || null;
+        } else {
+          // category_id is a text slug (e.g. "training"), safe to use directly
+          resolvedCategoryName = catalogService.category_id;
+        }
+      }
+
+      if (!resolvedSubCategoryName && catalogService.sub_category_id) {
+        if (uuidRegex.test(catalogService.sub_category_id)) {
+          const subCatLookup = await query(
+            `SELECT name FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+            [catalogService.sub_category_id]
+          );
+          resolvedSubCategoryName = subCatLookup.rows[0]?.name || null;
+        } else {
+          resolvedSubCategoryName = catalogService.sub_category_id;
+        }
+      }
+
       // Check if vendor already has this service (use actualVendorId)
       // ✅ FIX: Only match by service_id (catalog UUID foreign key), NOT by service_name
       // Matching by service_name caused bugs: different catalog entries with the same name
@@ -1617,8 +1649,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
         vendor_id: actualVendorId,
         service_id: catalogService.id,
         service_name: catalogService.service_name || catalogService.display_name,
-        category: catalogService.category_id || catalogService.category_name,
-        sub_category: catalogService.sub_category_id || catalogService.sub_category_name,
+        category: resolvedCategoryName,
+        sub_category: resolvedSubCategoryName,
         price: customPrice || catalogService.base_price || 0,
         duration_minutes: customDuration || catalogService.duration_minutes || 30,
         service_style: finalServiceStyle,

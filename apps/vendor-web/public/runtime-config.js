@@ -38,13 +38,27 @@
     return;
   }
   
-  // DEPLOYED ENVIRONMENT: Set production API Gateway endpoint
-  // This is the default for deployed builds. At deploy-time, this file is replaced
-  // with the correct endpoint for the target environment (dev/staging/prod)
-  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com',
-    uatMode: false,
-    environment: 'production'
+  // DEPLOYED ENVIRONMENT: Choose endpoint based on hostname
+  // Default remains production, but specific dev/stage hostnames are mapped here.
+  const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
+  const configByHost = {
+    // Dev vendor web should use the specified API gateway only
+    'dev.vendor.warmpawz.com': {
+      apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+      uatMode: true,
+      environment: 'development'
+    },
   };
+  const mapped = configByHost[host];
+  if (mapped) {
+    window.__WARMPAWZ_RUNTIME_CONFIG__ = mapped;
+  } else {
+    // Fallback to production
+    window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+      apiBaseUrl: 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com',
+      uatMode: false,
+      environment: 'production'
+    };
+  }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();

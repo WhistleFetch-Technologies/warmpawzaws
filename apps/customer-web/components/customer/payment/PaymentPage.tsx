@@ -359,12 +359,22 @@ export function PaymentPage({
         order_id: orderRes.orderId,
         handler: async (response: any) => {
           try {
-            // Verify payment
-            await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
+            // Verify payment with retry
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                break; // success
+              } catch (verifyErr: any) {
+                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
             
             // Apply coupon if used
             if (appliedCoupon) {

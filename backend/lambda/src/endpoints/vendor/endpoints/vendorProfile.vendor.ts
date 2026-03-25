@@ -768,6 +768,24 @@ export function registerVendorProfileEndpoints(app: Hono) {
       // This handles both legacy pre-signed URLs (which may be expired) and new S3 keys
       const profilePhotoUrl = await regeneratePresignedUrl(vendor.profile_photo_url);
 
+      // ✅ SIMPLE TIER: fallback 'Basic', try to resolve from vendor_tiers, include 'tier' only
+      let tierName = 'Basic';
+      try {
+        const pref = (vendor.tier || 'Basic').trim();
+        const tierRes = await query(
+          `SELECT tier_name
+           FROM vendor_tiers
+           WHERE is_active = true
+             AND (LOWER(tier_name) = LOWER($1) OR is_default = true OR is_free_tier = true)
+           ORDER BY (LOWER(tier_name) = LOWER($1)) DESC, is_default DESC NULLS LAST, tier_level ASC
+           LIMIT 1`,
+          [pref || 'Basic']
+        ).catch(() => ({ rows: [] as any[] }));
+        if (tierRes.rows && tierRes.rows.length > 0 && tierRes.rows[0].tier_name) {
+          tierName = tierRes.rows[0].tier_name;
+        }
+      } catch {}
+
       return c.json({
         success: true,
         vendor: {
@@ -796,6 +814,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           createdAt: vendor.created_at,
           profilePhotoUrl: profilePhotoUrl, // ✅ Include regenerated photo URL
           availableForInstantTele: vendor.available_for_instant_tele ?? false, // ✅ Include instant tele availability
+          tier: tierName,
         }
       });
     } catch (error: any) {
@@ -1267,6 +1286,24 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       }
 
+      // ✅ SIMPLE TIER: fallback 'Basic', try to resolve from vendor_tiers, include 'tier' only
+      let tierName = 'Basic';
+      try {
+        const pref = (vendor.tier || 'Basic').trim();
+        const tierRes = await query(
+          `SELECT tier_name
+           FROM vendor_tiers
+           WHERE is_active = true
+             AND (LOWER(tier_name) = LOWER($1) OR is_default = true OR is_free_tier = true)
+           ORDER BY (LOWER(tier_name) = LOWER($1)) DESC, is_default DESC NULLS LAST, tier_level ASC
+           LIMIT 1`,
+          [pref || 'Basic']
+        ).catch(() => ({ rows: [] as any[] }));
+        if (tierRes.rows && tierRes.rows.length > 0 && tierRes.rows[0].tier_name) {
+          tierName = tierRes.rows[0].tier_name;
+        }
+      } catch {}
+
       return c.json({
         success: true,
         vendor: {
@@ -1301,6 +1338,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           allowedServiceStyles: vendorConfiguration 
             ? (roleConfig?.serviceStyles?.[vendorConfiguration] || [])
             : [],
+          tier: tierName, // expose simple tier name from vendor_tiers
         },
       });
     } catch (error: any) {

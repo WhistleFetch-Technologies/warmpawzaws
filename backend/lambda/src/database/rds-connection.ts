@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Pool, PoolClient, QueryResult } from 'pg';
+import type { Pool, PoolClient, QueryResult } from 'pg';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 // ============================================================================
@@ -86,6 +86,19 @@ async function fetchDbCredentials(): Promise<void> {
 // ============================================================================
 
 let pool: Pool | null = null;
+let pgModulePromise: Promise<any> | null = null;
+
+/**
+ * Load 'pg' module in an ESM-safe way.
+ * Node 20 + ESM can error if CommonJS paths are required at init time.
+ * Dynamic import defers resolution and allows the bundler/runtime to pick the right entry.
+ */
+async function getPgModule(): Promise<any> {
+  if (!pgModulePromise) {
+    pgModulePromise = import('pg');
+  }
+  return pgModulePromise;
+}
 
 /**
  * Get or create the PostgreSQL connection pool
@@ -133,7 +146,8 @@ export async function getRdsPool(): Promise<Pool> {
       console.log('[DB] Using RDS Proxy - statement_timeout disabled (not supported)');
     }
     
-    pool = new Pool(poolConfig);
+    const { Pool: PgPool } = await getPgModule();
+    pool = new PgPool(poolConfig) as Pool;
 
     // Handle pool errors
     pool.on('error', (err) => {
@@ -693,6 +707,5 @@ export function handleDbError(error: any): never {
 // EXPORTS
 // ============================================================================
 
-export { Pool, PoolClient, QueryResult };
-export type { Pool as PoolType, PoolClient as PoolClientType };
+export type { Pool as PoolType, PoolClient as PoolClientType, QueryResult };
 

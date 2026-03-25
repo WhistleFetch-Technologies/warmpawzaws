@@ -1321,7 +1321,7 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
                               `vendor-${identity.phone}@warmpawz.app`;
 
             // Fetch default tier from vendor_tiers table (fallback to 'Bronze')
-            let defaultTierName = 'Bronze';
+            let defaultTierName = 'Basic';
             try {
               const tierResult = await query(
                 `SELECT tier_name 
@@ -1445,9 +1445,14 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
             const insertResult = await query(
               `INSERT INTO vendors (
-                id, phone, email, owner_name, business_name, role_id, status, vendor_type,
-                city, state, address, pincode, tier, commission_percentage, is_active, is_deleted, metadata, created_at, approved_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, $13, true, false, '{}'::jsonb, NOW(), NOW())
+                id, phone, email, owner_name, business_name, role_id, status,
+                city, state, address, pincode, tier, commission_percentage,
+                is_active, metadata, created_at, approved_at
+              ) VALUES (
+                $1, $2, $3, $4, $5, $6, 'approved',
+                $7, $8, $9, $10, $11, $12,
+                true, '{}'::jsonb, NOW(), NOW()
+              )
               RETURNING id`,
               [
                 finalVendorId,
@@ -1455,8 +1460,7 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
                 vendorEmail,
                 formData.contactPersonName || formData.fullName || formData.businessName || 'Vendor',
                 formData.businessName || formData.contactPersonName || 'Business',
-                identity.selected_role_id || identity.role_id,
-                identity.vendor_type || formData.vendorType || formData.vendor_type || 'business',
+                (identity.selected_role_id || identity.role_id),
                 formData.city || 'Unknown',
                 formData.state || 'Unknown',
                 formData.address || 'Unknown',

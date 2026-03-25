@@ -1,0 +1,19 @@
+INSERT INTO loyalty_segments (id, segment_name, segment_type, description, criteria, match_type, is_active, priority, created_at, updated_at) VALUES
+('0b6a87ef-58d7-48d4-8143-9d09da551c25','Medicine Buyers','customer','Customers who purchase medicines','{"service_categories": ["Medicine"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('e85d9769-41e0-46a9-a654-062ca005f583','Grooming Service Users','customer','Customers who book grooming services','{"service_categories": ["Grooming"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('95e019f4-f0c4-4d00-872b-28ad5ba9cd31','Vet Consultation Users','customer','Customers who book vet consultations','{"service_categories": ["Veterinary", "Consultation"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('bbe51204-da88-4f7f-88d8-3c9e1decd819','Pet Food Buyers','customer','Customers who purchase pet food','{"service_categories": ["Pet Food", "Food"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('a264a018-0d39-499c-81f5-2f957e791039','Insurance Buyers','customer','Customers who purchase pet insurance','{"service_categories": ["Insurance"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('c4b52eeb-dba1-4d67-b137-493cac08a1e3','Gold Tier Customers','customer','Gold tier loyalty customers','{"customer_tiers": ["gold"]}','any', true, 150,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('c25aadb3-36ff-404e-8017-7efc15dfff3c','Platinum Tier Customers','customer','Platinum tier loyalty customers','{"customer_tiers": ["platinum"]}','any', true, 150,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('ed6276c3-9f11-443d-a0a1-73f405975329','First Time Buyers','customer','Customers making their first purchase','{"first_purchase": true}','all', true, 200,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('136b56d2-5a21-46f1-ae73-c8a21df50fb3','Birthday Month Customers','customer','Customers with pets having birthday this month','{"birthday_month": true}','all', true, 200,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('bce44470-b6ea-4450-9264-eb0dd8043cea','Regular Customers','customer','Customers with 5+ purchases','{"purchase_history": {"min_purchases": 5}}','all', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('fef5897b-ac33-4294-8235-1c55d86c45a5','High Value Customers','customer','Customers with ₹10,000+ lifetime spend','{"purchase_history": {"min_amount": 10000}}','all', true, 150,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('7459414e-7813-443f-b47c-d38253c465a1','Doorstep Service Users','customer','Customers who use doorstep services','{"service_types": ["at_home"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('5ab7b5a0-956e-40f7-ae17-c2e0aac66822','In-Clinic Service Users','customer','Customers who use in-clinic services','{"service_types": ["at_vendor"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('37fe0790-325f-4cd5-8107-7f41b4c6b675','Online Service Users','customer','Customers who use online services','{"service_types": ["online"]}','any', true, 100,'2026-01-13 14:57:50.993708+05:30','2026-01-13 14:57:50.993708+05:30'),
+('587baf5c-50ac-406a-9142-03c0c229729a','Test Segment E2E','customer',NULL,'{}','all', true, 100,'2026-01-13 15:04:07.149105+05:30','2026-01-13 15:04:07.149105+05:30'),
+('66b01c3b-1ae2-4356-8903-f0e5a0a90658','Test Customers - All','customer','Test segment for E2E testing - matches all customers','{"service_categories": []}','all', true, 100,'2026-01-13 15:04:13.538032+05:30','2026-01-13 15:04:13.538032+05:30')
+ON CONFLICT (id) DO NOTHING;
+
