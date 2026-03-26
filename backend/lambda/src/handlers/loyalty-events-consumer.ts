@@ -1,5 +1,6 @@
 import type { SQSHandler, SQSRecord, SQSBatchItemFailure } from 'aws-lambda';
 import { query, insert } from '../database/rds-connection';
+import { loyaltyPointsService } from 'src/lib/services/loyalty&reward/loyalty-points-service';
 
 // Avoid circular import at module init by dynamic import inside handler for heavy deps.
 
@@ -62,7 +63,6 @@ export const handler: SQSHandler = async (event) => {
 					return;
 				}
 
-				const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
 
 				const customerId = evt.entity.type === 'vendor' ? undefined : evt.entity.id;
 				const vendorId = evt.entity.type === 'vendor' ? evt.entity.id : undefined;

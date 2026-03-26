@@ -15,6 +15,42 @@ import { BaseHandler } from 'src/handler/base-handler-enhanced';
 // LOYALTY ACTION RULES MANAGEMENT
 // ============================================================================
 
+async function validateSegmentConditions(
+  userType: 'customer' | 'vendor' | 'both',
+  conditions: any
+): Promise<string | null> {
+  const segmentIds: string[] | undefined = conditions?.segment_ids;
+  if (!Array.isArray(segmentIds) || segmentIds.length === 0) {
+    return null;
+  }
+
+  const uniqueSegmentIds = Array.from(new Set(segmentIds.filter(Boolean)));
+  const segmentRows = await query(
+    `SELECT id::text AS id, segment_type, is_active
+     FROM loyalty_segments
+     WHERE id = ANY($1::uuid[])`,
+    [uniqueSegmentIds]
+  );
+
+  if (segmentRows.rows.length !== uniqueSegmentIds.length) {
+    return 'One or more selected segments do not exist';
+  }
+
+  for (const seg of segmentRows.rows as Array<{ id: string; segment_type: string; is_active: boolean }>) {
+    if (!seg.is_active) {
+      return `Selected segment ${seg.id} is inactive`;
+    }
+    if (userType === 'customer' && !['customer', 'both'].includes(seg.segment_type)) {
+      return `Segment ${seg.id} is not compatible with customer rules`;
+    }
+    if (userType === 'vendor' && !['vendor', 'both'].includes(seg.segment_type)) {
+      return `Segment ${seg.id} is not compatible with vendor rules`;
+    }
+  }
+
+  return null;
+}
+
 class GetLoyaltyActionRulesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
@@ -134,6 +170,11 @@ class CreateLoyaltyActionRuleHandler extends BaseHandler {
         return this.error(`points_type must be one of: ${validPointsTypes.join(', ')}`, 400);
       }
 
+      const segmentValidationError = await validateSegmentConditions(user_type, conditions);
+      if (segmentValidationError) {
+        return this.error(segmentValidationError, 400);
+      }
+
       // Check if action_name already exists
       const existing = await select('loyalty_action_rules', { action_name });
       if (existing.length > 0) {
@@ -210,6 +251,13 @@ class UpdateLoyaltyActionRuleHandler extends BaseHandler {
         if (!validPointsTypes.includes(body.points_type)) {
           return this.error(`points_type must be one of: ${validPointsTypes.join(', ')}`, 400);
         }
+      }
+
+      const effectiveUserType = (body.user_type || existing[0].user_type) as 'customer' | 'vendor' | 'both';
+      const effectiveConditions = body.conditions !== undefined ? body.conditions : existing[0].conditions;
+      const segmentValidationError = await validateSegmentConditions(effectiveUserType, effectiveConditions);
+      if (segmentValidationError) {
+        return this.error(segmentValidationError, 400);
       }
 
       // Check action_name uniqueness if being updated

@@ -83,7 +83,7 @@ export class LoyaltyPointsService {
       const finalPoints = await this.applyMultipliers(rule, points, params);
 
       // Award points and auto-convert to wallet
-      return await withTransaction(async (client) => {
+      const awardResult = await withTransaction(async (client) => {
         // Get or create loyalty profile
         const userId = params.customerId || params.vendorId;
         if (!userId) {
@@ -101,15 +101,22 @@ export class LoyaltyPointsService {
           profile = await select('customer_loyalty_points', { customer_id: userId });
         }
 
-        // Create loyalty transaction
-        await insert('loyalty_transactions', {
-          customer_id: userId,
+        // Create loyalty transaction – use the correct entity column
+        const txnRow: Record<string, any> = {
           transaction_type: 'earned',
           points: finalPoints,
           reference_type: params.referenceType || params.actionName,
           reference_id: params.referenceId || null,
           description: params.description || `Earned ${finalPoints} points for ${params.actionName}`,
-        });
+        };
+        if (params.vendorId && !params.customerId) {
+          txnRow.vendor_id = params.vendorId;
+          txnRow.customer_id = null;
+        } else {
+          txnRow.customer_id = params.customerId || userId;
+          txnRow.vendor_id = null;
+        }
+        await insert('loyalty_transactions', txnRow);
 
         // Update loyalty profile
         await client.query(
@@ -124,6 +131,80 @@ export class LoyaltyPointsService {
         // Auto-convert to wallet (100 points = 1 rupee)
         const conversionRate = 100; // 100 points = 1 rupee
         const walletAmount = Math.round((finalPoints / conversionRate) * 100) / 100; // Round to 2 decimal places
+
+        // Vendor wallet flow
+        if (params.vendorId && !params.customerId) {
+          let wallets = await select('vendor_wallets', { vendor_id: userId });
+          if (wallets.length === 0) {
+            try {
+              await insert('vendor_wallets', {
+                vendor_id: userId,
+                balance: 0,
+                currency: 'INR',
+              });
+            } catch (error: any) {
+              if (error.message?.includes('currency') || error.message?.includes('column')) {
+                await insert('vendor_wallets', {
+                  vendor_id: userId,
+                  balance: 0,
+                });
+              } else {
+                throw error;
+              }
+            }
+            wallets = await select('vendor_wallets', { vendor_id: userId });
+          }
+
+          const wallet = wallets[0];
+          await client.query(
+            `UPDATE vendor_wallets
+             SET balance = balance + $1,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [walletAmount, wallet.id]
+          );
+
+          const balanceAfter = await client.query(
+            `SELECT balance FROM vendor_wallets WHERE id = $1`,
+            [wallet.id]
+          );
+          const newBalance = parseFloat(balanceAfter.rows[0]?.balance || '0');
+
+          try {
+            await insert('vendor_wallet_transactions', {
+              wallet_id: wallet.id,
+              vendor_id: userId,
+              transaction_type: 'credit',
+              amount: walletAmount,
+              balance_after: newBalance,
+              reference_type: params.referenceType || params.actionName,
+              reference_id: params.referenceId || null,
+              description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`,
+              source: 'loyalty_points',
+            });
+          } catch (error: any) {
+            if (error.message?.includes('source') || error.message?.includes('column')) {
+              await insert('vendor_wallet_transactions', {
+                wallet_id: wallet.id,
+                vendor_id: userId,
+                transaction_type: 'credit',
+                amount: walletAmount,
+                balance_after: newBalance,
+                reference_type: params.referenceType || params.actionName,
+                reference_id: params.referenceId || null,
+                description: `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`,
+              });
+            } else {
+              throw error;
+            }
+          }
+
+          console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount} to vendor wallet) for action: ${params.actionName}`);
+          return {
+            points: finalPoints,
+            walletCredited: walletAmount,
+          };
+        }
 
         // Get or create wallet
         let wallets = await select('customer_wallets', { customer_id: userId });
@@ -201,9 +282,48 @@ export class LoyaltyPointsService {
           walletCredited: walletAmount,
         };
       });
+
+      // Send in-app notification after successful award (non-blocking).
+      // This should never fail the loyalty transaction.
+      if (awardResult.points > 0) {
+        await this.createPointsEarnedNotification(params, awardResult.points);
+      }
+
+      return awardResult;
     } catch (error: any) {
       console.error('Error awarding loyalty points:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Create in-app notification for points earned.
+   * Runs outside award transaction and is intentionally non-blocking.
+   */
+  private async createPointsEarnedNotification(params: AwardPointsParams, points: number): Promise<void> {
+    try {
+      const recipientId = params.customerId || params.vendorId;
+      if (!recipientId) return;
+
+      const recipientType = params.vendorId && !params.customerId ? 'vendor' : 'customer';
+      const title = 'Loyalty Points Credited';
+      const message = `You received ${points} points for ${params.actionName}.`;
+
+      await insert('notifications', {
+        recipient_type: recipientType,
+        recipient_id: recipientId,
+        notification_type: 'loyalty_points_earned',
+        title,
+        message,
+        channels: {
+          inApp: true,
+          push: true,
+          email: false,
+          sms: false,
+        },
+      });
+    } catch (error: any) {
+      console.warn('[LOYALTY] Notification failed (non-blocking):', error?.message || error);
     }
   }
 
@@ -338,9 +458,14 @@ export class LoyaltyPointsService {
             return false;
           }
         } else if (params.vendorId) {
-          // Vendor segment matching (if needed)
-          console.log(`[Rule Engine] Vendor segment matching not yet implemented`);
-          return false;
+          const belongsToSegments = await loyaltySegmentationService.vendorBelongsToSegments(
+            params.vendorId,
+            conditions.segment_ids
+          );
+          if (!belongsToSegments) {
+            console.log(`[Rule Engine] Segment mismatch: rule requires segments ${conditions.segment_ids}, vendor does not belong`);
+            return false;
+          }
         } else {
           console.log(`[Rule Engine] Rule requires segments but no customer/vendor ID provided`);
           return false;
@@ -541,6 +666,10 @@ export class LoyaltyPointsService {
 
   /**
    * Check frequency limits
+   *
+   * Uses description pattern to reliably match by actionName since
+   * reference_type may differ from actionName (e.g., 'diagnostic' vs 'test_xyz').
+   * The description is always set to "Earned N points for <actionName>" at insert.
    */
   private async checkFrequencyLimit(rule: LoyaltyActionRule, params: AwardPointsParams): Promise<boolean> {
     try {
@@ -550,41 +679,78 @@ export class LoyaltyPointsService {
 
       const userId = params.customerId || params.vendorId;
       if (!userId) return false;
+      const isVendorContext = !!params.vendorId && !params.customerId;
+      const primaryEntityColumn = isVendorContext ? 'vendor_id' : 'customer_id';
+      const fallbackEntityColumn = isVendorContext ? 'customer_id' : 'vendor_id';
+
+      // Match on description which always ends with the actionName
+      // Handles both "Action <name>" (consumer) and "Earned N points for <name>" (direct)
+      const descPattern = `% ${params.actionName}`;
+
+      const queryFrequencyCount = async (entityColumn: string, periodSql?: string): Promise<number> => {
+        const periodClause = periodSql ? ` AND created_at >= ${periodSql}` : '';
+        const result = await query(
+          `SELECT COUNT(*) as count FROM loyalty_transactions
+           WHERE ${entityColumn} = $1
+             AND transaction_type = 'earned'
+             AND description LIKE $2${periodClause}`,
+          [userId, descPattern]
+        );
+        return parseInt(result.rows[0]?.count || '0', 10);
+      };
+
+      const getFrequencyCount = async (periodSql?: string): Promise<number> => {
+        try {
+          return await queryFrequencyCount(primaryEntityColumn, periodSql);
+        } catch (error: any) {
+          const message = String(error?.message || '');
+          const missingPrimaryColumn =
+            message.includes(`column "${primaryEntityColumn}" does not exist`) ||
+            message.includes(`column ${primaryEntityColumn} does not exist`);
+          if (!missingPrimaryColumn) {
+            throw error;
+          }
+          // Some environments still store vendor rewards against customer_id.
+          // Fallback keeps old data readable while supporting vendor_id-first schemas.
+          return await queryFrequencyCount(fallbackEntityColumn, periodSql);
+        }
+      };
 
       if (rule.frequency_type === 'one_time') {
-        // Check if already earned
-        const existing = await query(
-          `SELECT COUNT(*) as count FROM loyalty_transactions
-           WHERE customer_id = $1
-             AND reference_type = $2
-             AND transaction_type = 'earned'`,
-          [userId, params.actionName]
-        );
-        return parseInt(existing.rows[0]?.count || '0', 10) === 0;
+        const alreadyEarned = (await getFrequencyCount()) > 0;
+        if (alreadyEarned) {
+          console.log(`[Frequency] one_time: user ${userId} already earned for action ${params.actionName}`);
+        }
+        return !alreadyEarned;
       }
 
       if (rule.frequency_type === 'monthly_limit' && rule.frequency_limit) {
-        const count = await query(
-          `SELECT COUNT(*) as count FROM loyalty_transactions
-           WHERE customer_id = $1
-             AND reference_type = $2
-             AND transaction_type = 'earned'
-             AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
-          [userId, params.actionName]
-        );
-        return parseInt(count.rows[0]?.count || '0', 10) < rule.frequency_limit;
+        const count = await getFrequencyCount(`DATE_TRUNC('month', CURRENT_DATE)`);
+        return count < rule.frequency_limit;
       }
 
       if (rule.frequency_type === 'yearly_limit' && rule.frequency_limit) {
-        const count = await query(
-          `SELECT COUNT(*) as count FROM loyalty_transactions
-           WHERE customer_id = $1
-             AND reference_type = $2
-             AND transaction_type = 'earned'
-             AND created_at >= DATE_TRUNC('year', CURRENT_DATE)`,
-          [userId, params.actionName]
-        );
-        return parseInt(count.rows[0]?.count || '0', 10) < rule.frequency_limit;
+        const count = await getFrequencyCount(`DATE_TRUNC('year', CURRENT_DATE)`);
+        return count < rule.frequency_limit;
+      }
+
+      if (rule.frequency_type === 'recurring') {
+        // If recurring has an explicit limit+period, enforce it as a rolling period cap.
+        if (rule.frequency_limit && rule.frequency_period) {
+          const periodSqlMap: Record<string, string> = {
+            day: `DATE_TRUNC('day', CURRENT_DATE)`,
+            week: `DATE_TRUNC('week', CURRENT_DATE)`,
+            month: `DATE_TRUNC('month', CURRENT_DATE)`,
+            year: `DATE_TRUNC('year', CURRENT_DATE)`,
+          };
+          const periodSql = periodSqlMap[rule.frequency_period];
+          if (periodSql) {
+            const count = await getFrequencyCount(periodSql);
+            return count < rule.frequency_limit;
+          }
+        }
+        // Backward-compatible default recurring behavior: allow.
+        return true;
       }
 
       return true;

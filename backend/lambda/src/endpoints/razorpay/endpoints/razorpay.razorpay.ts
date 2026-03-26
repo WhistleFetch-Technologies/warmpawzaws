@@ -1522,10 +1522,22 @@ export function registerRazorpayEndpoints(app: Hono) {
   app.post('/razorpay/verify-payment', async (c) => {
     // ✅ FIX: Parse body from Hono context FIRST
     const requestBody = await c.req.json().catch(() => ({}));
+    console.log('📥 [VERIFY-PAYMENT] Received verify-payment request:', {
+      razorpay_order_id: requestBody?.razorpay_order_id,
+      razorpay_payment_id: requestBody?.razorpay_payment_id,
+      has_signature: !!requestBody?.razorpay_signature,
+      timestamp: new Date().toISOString(),
+    });
     const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await verifyHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const responseBody = JSON.parse(result.body);
+    console.log('📤 [VERIFY-PAYMENT] Response:', {
+      statusCode: result.statusCode,
+      success: responseBody?.success,
+      error: responseBody?.error,
+    });
+    return c.json(responseBody, result.statusCode);
   });
 
   app.post('/razorpay/webhook', async (c) => {

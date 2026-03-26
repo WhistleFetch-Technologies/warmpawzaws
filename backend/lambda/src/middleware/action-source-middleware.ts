@@ -79,15 +79,16 @@ function getByPath(obj: any, path: string) {
 	return path.split('.').reduce((acc: any, key: string) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj);
 }
 
-function resolveDotPath(expr: string, ctx: { res: any; req: any; jwt: any }) {
+function resolveDotPath(expr: string, ctx: { res: any; req: any; jwt: any; param?: any }) {
 	const t = (expr || '').trim();
 	if (!t.startsWith('$.')) return undefined;
+	if (t.startsWith('$.param.')) return getByPath(ctx.param || {}, t.substring('$.param.'.length));
 	if (t.startsWith('$.jwt.')) return getByPath(ctx.jwt, t.substring('$.jwt.'.length));
 	if (t.startsWith('$.body.')) return getByPath(ctx.req, t.substring('$.body.'.length));
 	return getByPath(ctx.res, t.substring('$.'.length));
 }
 
-function resolveExpr(expr: string | null | undefined, ctx: { res: any; req: any; jwt: any }) {
+function resolveExpr(expr: string | null | undefined, ctx: { res: any; req: any; jwt: any; param?: any }) {
 	if (!expr || typeof expr !== 'string') return undefined;
 	const parts = expr.split('||').map(s => s.trim()).filter(Boolean);
 	for (const p of parts) {
@@ -182,11 +183,26 @@ export function actionSourceMiddleware() {
 				const claims = event?.requestContext?.authorizer?.claims || {};
 				Object.assign(jwt, claims);
 			} catch { /* ignore */ }
-			console.log('jwt--------------------->', jwt);
-			const matched = candidates.find(m => evalPredicate(m.success_predicate, responseJson));
-			if (!matched) return;
-			console.log('matched--------------------->', matched);
-			const ctx = { res: responseJson, req: requestJson, jwt };
+		console.log('jwt--------------------->', jwt);
+		// Extract URL path parameters by matching the route pattern against actual path
+		const param: any = {};
+		try {
+			const matched0 = candidates[0];
+			if (matched0) {
+				const patternParts = matched0.route_pattern.split('/');
+				const pathParts = path.split('/');
+				for (let i = 0; i < patternParts.length; i++) {
+					if (patternParts[i].startsWith(':') && pathParts[i]) {
+						param[patternParts[i].substring(1)] = pathParts[i];
+					}
+				}
+			}
+		} catch { /* ignore */ }
+		console.log('param--------------------->', param);
+		const matched = candidates.find(m => evalPredicate(m.success_predicate, responseJson));
+		if (!matched) return;
+		console.log('matched--------------------->', matched);
+		const ctx = { res: responseJson, req: requestJson, jwt, param };
 			const entityId = String(resolveExpr(matched.entity_resolver, ctx) || '');
 			if (!entityId) return;
 			console.log('entityId--------------------->', entityId);

@@ -842,6 +842,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         },
         modal: {
           ondismiss: () => {
+            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
             setProcessing(false);
           },
         },
@@ -861,6 +862,20 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       
       try {
         const razorpay = new window.Razorpay(options);
+        // ✅ Listen for payment failures (these don't trigger the handler callback)
+        razorpay.on('payment.failed', (resp: any) => {
+          console.error('❌ [RAZORPAY] Payment failed event:', {
+            code: resp?.error?.code,
+            description: resp?.error?.description,
+            source: resp?.error?.source,
+            step: resp?.error?.step,
+            reason: resp?.error?.reason,
+            orderId: resp?.error?.metadata?.order_id,
+            paymentId: resp?.error?.metadata?.payment_id,
+          });
+          alert(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
+          setProcessing(false);
+        });
         razorpay.open();
         console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
       } catch (openError: any) {

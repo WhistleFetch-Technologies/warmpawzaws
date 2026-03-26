@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { openRazorpayCheckout } from '@/lib/razorpay-utils';
+import { openRazorpayCheckout } from '@/lib/razorpay/razorpay-utils';
 
 interface UsePharmacyPaymentOptions {
   onPaymentSuccess?: () => void;
@@ -32,7 +32,7 @@ export const usePharmacyPayment = (options: UsePharmacyPaymentOptions = {}) => {
         throw new Error('Failed to create payment order');
       }
 
-      // Open Razorpay checkout
+      // Open Razorpay checkout 
       await openRazorpayCheckout({
         orderId: paymentRes.orderId,
         amount: paymentRes.amount || amount,
