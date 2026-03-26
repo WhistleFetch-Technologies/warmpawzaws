@@ -74,6 +74,8 @@ interface TeleConsultationRouterProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  /** When true (e.g. `?service=tele` or Book Now from tele promos), skip mode selection and open instant vet list. */
+  skipModeSelection?: boolean;
 }
 
 type FlowStep =
@@ -778,8 +780,8 @@ function CallingVendorScreen({
 // MAIN COMPONENT
 // ============================================================================
 
-export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsultationRouterProps) {
-  const [step, setStep] = useState<FlowStep>('mode-selection');
+export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSelection }: TeleConsultationRouterProps) {
+  const [step, setStep] = useState<FlowStep>(skipModeSelection ? 'instant-vendor-list' : 'mode-selection');
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -787,7 +789,8 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
 
   // Instant flow (available-now → vendor → service → pet → calling → payment)
   const [availableNowVendors, setAvailableNowVendors] = useState<AvailableNowVendor[]>([]);
-  const [loadingAvailableNow, setLoadingAvailableNow] = useState(false);
+  const [loadingAvailableNow, setLoadingAvailableNow] = useState(!!skipModeSelection);
+  const deepLinkInstantFetchRef = useRef(false);
   const [selectedInstantVendor, setSelectedInstantVendor] = useState<AvailableNowVendor | null>(null);
   const [vendorTeleServices, setVendorTeleServices] = useState<PlatformService[]>([]);
   const [loadingVendorServices, setLoadingVendorServices] = useState(false);
@@ -886,7 +889,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     setStep('provider-list');
   };
 
-  const handleSelectInstant = async () => {
+  const loadInstantVendorsAndGo = useCallback(async (revertToModeOnError: boolean) => {
     setLoadingAvailableNow(true);
     setAvailableNowVendors([]);
     setSelectedInstantVendor(null);
@@ -899,9 +902,20 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     } catch (err) {
       console.error('Error loading available-now vets:', err);
       toast.error('Could not load available vets. Try again.');
+      if (revertToModeOnError) setStep('mode-selection');
     } finally {
       setLoadingAvailableNow(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!skipModeSelection || deepLinkInstantFetchRef.current) return;
+    deepLinkInstantFetchRef.current = true;
+    void loadInstantVendorsAndGo(true);
+  }, [skipModeSelection, loadInstantVendorsAndGo]);
+
+  const handleSelectInstant = () => {
+    void loadInstantVendorsAndGo(false);
   };
 
   const handleSelectProvider = (provider: Provider) => {

@@ -453,6 +453,14 @@ export default function ProductDetailClient() {
           <div className="space-y-4">
             {/* Main Image */}
             <div className="aspect-square bg-white rounded-2xl border border-slate-100 overflow-hidden flex items-center justify-center relative">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="absolute top-3 left-3 z-20 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
+              </button>
               {product.images && product.images.length > 0 ? (
                 <img 
                   src={product.images[selectedImage]} 
@@ -465,7 +473,7 @@ export default function ProductDetailClient() {
               
               {/* Discount Badge */}
               {discount > 0 && (
-                <div className="absolute top-4 left-4 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg">
+                <div className="absolute top-3 left-14 z-10 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg lg:top-4 lg:left-4">
                   {discount}% OFF
                 </div>
               )}

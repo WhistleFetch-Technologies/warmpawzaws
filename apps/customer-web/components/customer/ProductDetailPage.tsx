@@ -224,7 +224,15 @@ export function ProductDetailPage({
 
         {/* Image Gallery */}
         <div className="relative">
-          <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center overflow-hidden">
+          <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center overflow-hidden relative">
+            <button
+              type="button"
+              onClick={onBack}
+              className="absolute top-3 left-3 z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200/90 bg-white/95 text-gray-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
+            </button>
             {typeof productImages[selectedImageIndex] === 'string' && productImages[selectedImageIndex].startsWith('http') ? (
               <img 
                 src={productImages[selectedImageIndex]} 
@@ -257,7 +265,7 @@ export function ProductDetailPage({
           )}
 
           {discount > 0 && (
-            <Badge className="absolute top-4 left-4 bg-red-500 text-white">
+            <Badge className="absolute top-3 left-14 z-20 bg-red-500 text-white">
               {discount}% OFF
             </Badge>
           )}

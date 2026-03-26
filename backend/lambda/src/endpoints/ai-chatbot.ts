@@ -19,8 +19,252 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { invokeBedrock } from '../utils/bedrock-client';
 import { withRetry } from '../utils/error-recovery';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+
+const SYMPTOM_STOPWORDS = new Set([
+  'the', 'and', 'for', 'pet', 'dog', 'cat', 'puppy', 'kitten', 'has', 'have', 'been', 'with', 'from', 'that', 'this',
+  'please', 'help', 'she', 'her', 'his', 'him', 'they', 'them', 'our', 'your', 'not', 'are', 'was', 'but',
+]);
+
+function symptomSearchTerms(text: string): string[] {
+  const raw = text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !SYMPTOM_STOPWORDS.has(w));
+  return [...new Set(raw)].slice(0, 6);
+}
+
+function inferBookingCategoryFromText(msg: string): string {
+  const m = msg.toLowerCase();
+  if (/\b(groom|bath|trim|haircut)\b/.test(m)) return 'grooming';
+  if (/\b(walk|walker)\b/.test(m)) return 'walker';
+  if (/\b(train|trainer|behavior)\b/.test(m)) return 'training';
+  if (/\b(board|boarding|kennel)\b/.test(m)) return 'boarding';
+  if (/\b(vet|veterinar|doctor|clinic|tele\s*consult|consultation)\b/.test(m)) return 'vet';
+  if (/\b(pharmacy|medicine|medication)\b/.test(m)) return 'pharmacy';
+  return '';
+}
+
+function normalizeCustomerBookingUrl(serviceType: string, bookingQuery: string): string {
+  const cat = inferBookingCategoryFromText(bookingQuery) || serviceType || 'vet';
+  const q = encodeURIComponent(bookingQuery.trim().slice(0, 120));
+  const safeCat = ['vet', 'grooming', 'training', 'boarding', 'walker', 'pharmacy', 'cafe', 'resort'].includes(cat)
+    ? cat
+    : 'vet';
+  return `/search?category=${safeCat}&q=${q}`;
+}
+
+/** Match problem-grid specializations + sample providers for symptom text (DB-backed). */
+async function lookupCareForSymptoms(symptomsText: string): Promise<{
+  specializations: Array<{ id: string; name: string; categoryId: string; matchedSymptom?: string }>;
+  vendors: Array<{ id: string; businessName: string; city?: string; roleName?: string }>;
+}> {
+  const terms = symptomSearchTerms(symptomsText);
+  const fallback = symptomsText.trim();
+  const searchTerms = terms.length > 0 ? terms : fallback.length >= 2 ? [fallback.slice(0, 48)] : [];
+  if (searchTerms.length === 0) {
+    return { specializations: [], vendors: [] };
+  }
+
+  const conditions: string[] = [];
+  const params: string[] = [];
+  let p = 1;
+  for (const t of searchTerms) {
+    conditions.push(
+      `(ss.symptom_name ILIKE $${p} OR ss.symptom_display_name ILIKE $${p} OR $${p + 1} = ANY(ss.symptom_keywords))`
+    );
+    params.push(`%${t}%`, t.toLowerCase());
+    p += 2;
+  }
+
+  const specSql = `
+    SELECT DISTINCT 
+      sm.specialization_id,
+      sm.name,
+      sm.display_name,
+      sm.category_id,
+      sm.applicable_roles,
+      ss.symptom_name as matched_symptom
+    FROM specialization_master sm
+    JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id
+    WHERE sm.is_active = true 
+      AND sm.show_in_problem_grid = true
+      AND ss.is_active = true
+      AND (${conditions.join(' OR ')})
+    ORDER BY sm.display_order NULLS LAST, sm.name
+    LIMIT 15
+  `;
+
+  const specRes = await query(specSql, params).catch(() => ({ rows: [] as any[] }));
+  const rows = specRes.rows || [];
+
+  const specializations = rows.map((row: any) => ({
+    id: row.specialization_id,
+    name: row.display_name || row.name,
+    categoryId: String(row.category_id || '').toLowerCase(),
+    matchedSymptom: row.matched_symptom,
+  }));
+
+  const roleNames = new Set<string>();
+  for (const row of rows) {
+    const ar = row.applicable_roles;
+    if (Array.isArray(ar)) {
+      ar.forEach((r: string) => {
+        if (r) roleNames.add(String(r).toLowerCase());
+      });
+    } else if (typeof ar === 'string') {
+      try {
+        const parsed = JSON.parse(ar);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((r: string) => {
+            if (r) roleNames.add(String(r).toLowerCase());
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const cat = String(row.category_id || '').toLowerCase();
+    if (cat === 'veterinary' || cat === 'vet') {
+      ['vet_solo', 'veterinarian', 'veterinary_clinic', 'vet_clinic'].forEach((r) => roleNames.add(r));
+    }
+    if (cat === 'grooming') roleNames.add('groomer_solo');
+    if (cat === 'training') roleNames.add('trainer_solo');
+    if (cat === 'walking' || cat === 'walker') roleNames.add('walker');
+  }
+  if (roleNames.size === 0) {
+    roleNames.add('vet_solo');
+  }
+
+  const vendorSql = `
+    SELECT v.id, v.business_name, v.city, r.name as role_name
+    FROM vendors v
+    INNER JOIN roles r ON v.role_id = r.id
+    WHERE v.status = 'approved' AND v.is_active = true
+      AND LOWER(r.name) = ANY($1::text[])
+    ORDER BY v.created_at DESC
+    LIMIT 12
+  `;
+  const roleList = [...roleNames];
+  let vendRes = await query(vendorSql, [roleList]).catch(() => ({ rows: [] as any[] }));
+  let vendors = (vendRes.rows || []).map((v: any) => ({
+    id: v.id,
+    businessName: v.business_name,
+    city: v.city,
+    roleName: v.role_name,
+  }));
+
+  if (vendors.length === 0) {
+    vendRes = await query(
+      `SELECT v.id, v.business_name, v.city, r.name as role_name
+       FROM vendors v
+       INNER JOIN roles r ON v.role_id = r.id
+       WHERE v.status = 'approved' AND v.is_active = true
+         AND LOWER(r.name) LIKE '%vet%'
+       ORDER BY v.created_at DESC
+       LIMIT 8`,
+      []
+    ).catch(() => ({ rows: [] as any[] }));
+    vendors = (vendRes.rows || []).map((v: any) => ({
+      id: v.id,
+      businessName: v.business_name,
+      city: v.city,
+      roleName: v.role_name,
+    }));
+  }
+
+  return { specializations, vendors };
+}
+
+function appendSymptomCareToResponse(
+  baseResponse: string,
+  specs: Array<{ name: string; matchedSymptom?: string }>,
+  vendors: Array<{ businessName: string; city?: string }>
+): string {
+  const lines: string[] = [baseResponse.trim()];
+  if (specs.length > 0) {
+    lines.push('\n\n**Related care areas on Warmpawz**');
+    specs.slice(0, 8).forEach((s) => {
+      const hint = s.matchedSymptom ? ` (matched: ${s.matchedSymptom})` : '';
+      lines.push(`• ${s.name}${hint}`);
+    });
+  }
+  if (vendors.length > 0) {
+    lines.push('\n**Providers you can book**');
+    vendors.slice(0, 8).forEach((v) => {
+      const loc = v.city ? ` — ${v.city}` : '';
+      lines.push(`• ${v.businessName}${loc}`);
+    });
+    lines.push('\nTap **Find Vet Clinic** or open Search to pick a provider and complete booking.');
+  } else if (specs.length > 0) {
+    lines.push('\nUse **Find Vet Clinic** or Search to see providers for these services.');
+  }
+  return lines.join('\n');
+}
+
+/** Services + offering vendors for booking assist. */
+async function lookupBookingContext(bookingQuery: string): Promise<{
+  services: Array<{ id: string; name: string; serviceStyle?: string }>;
+  vendors: Array<{ id: string; businessName: string; city?: string }>;
+}> {
+  const q = bookingQuery.trim().slice(0, 120);
+  if (!q) return { services: [], vendors: [] };
+
+  const servRes = await query(
+    `SELECT id, name, service_style FROM services 
+     WHERE is_active = true AND name ILIKE $1 
+     ORDER BY created_at DESC NULLS LAST LIMIT 10`,
+    [`%${q}%`]
+  ).catch(() => ({ rows: [] as any[] }));
+
+  const services = (servRes.rows || []).map((s: any) => ({
+    id: s.id,
+    name: s.name,
+    serviceStyle: s.service_style,
+  }));
+
+  const ids = services.map((s) => s.id).filter(Boolean);
+  let vendors: Array<{ id: string; businessName: string; city?: string }> = [];
+  if (ids.length > 0) {
+    const vRes = await query(
+      `SELECT DISTINCT v.id, v.business_name, v.city
+       FROM vendors v
+       INNER JOIN vendor_services vs ON vs.vendor_id = v.id AND vs.is_enabled = true
+       WHERE v.status = 'approved' AND v.is_active = true
+         AND vs.service_id = ANY($1::uuid[])
+         AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+       ORDER BY v.created_at DESC
+       LIMIT 10`,
+      [ids]
+    ).catch(() => ({ rows: [] as any[] }));
+    vendors = (vRes.rows || []).map((v: any) => ({
+      id: v.id,
+      businessName: v.business_name,
+      city: v.city,
+    }));
+  }
+
+  return { services, vendors };
+}
+
+function appendBookingContextToResponse(
+  baseResponse: string,
+  services: Array<{ name: string }>,
+  vendors: Array<{ businessName: string; city?: string; id: string }>
+): string {
+  const lines: string[] = [baseResponse.trim()];
+  if (services.length > 0) {
+    lines.push('\n\n**Matching services in our catalog**');
+    services.slice(0, 8).forEach((s) => lines.push(`• ${s.name}`));
+  }
+  if (vendors.length > 0) {
+    lines.push('\n**Providers offering these services**');
+    vendors.slice(0, 8).forEach((v) => {
+      const loc = v.city ? ` — ${v.city}` : '';
+      lines.push(`• ${v.businessName}${loc}`);
+    });
+  }
+  return lines.join('\n');
+}
 
 export function registerAIChatbotEndpoints(app: Hono) {
   /**
@@ -212,11 +456,43 @@ IMPORTANT RULES:
           responseText = "I can help you with shopping! You can browse our products in the Shop section. What are you looking for?";
           confidence = 0.8;
           suggestedActions = ['Browse Shop', 'View Cart'];
+        } else if (
+          (/\b(where|location|address|located|locat|near|nearby|area|city)\b/.test(lowerMessage) &&
+            /\b(you|warmpawz|clinic|vet|office|center|centre|store|shop|based|hq|head)\b/.test(lowerMessage)) ||
+          (/\bwhere\b/.test(lowerMessage) && /\blocat/.test(lowerMessage))
+        ) {
+          intent = 'knowledge';
+          responseText =
+            "Warmpawz lists pet care providers (vets, groomers, and more) in the app — we do not have a single physical storefront. Open Search or Vet Care to find clinics and book a provider near you.";
+          confidence = 0.88;
+          suggestedActions = ['Find Vet Clinic', 'Search Providers'];
+        } else if (
+          /\b(change|update|edit|correct|wrong)\b/.test(lowerMessage) &&
+          /\b(name|profile|account|phone|email)\b/.test(lowerMessage)
+        ) {
+          intent = 'support';
+          responseText =
+            "You can update your profile details from the Profile / Settings section. Open Profile from the bottom menu, then edit your name or contact information.";
+          confidence = 0.88;
+          suggestedActions = ['Open Settings'];
+        } else if (/\b(hi|hello|hey|hii)\b/.test(lowerMessage) && lowerMessage.length < 40) {
+          intent = 'general';
+          responseText =
+            "Hi! I'm the Warmpawz assistant. Ask me about pet care, bookings, or symptoms — or use the **Symptoms** and **Booking** tabs above for guided help.";
+          confidence = 0.9;
+          suggestedActions = ['Find Vet Clinic', 'Browse Services'];
+        } else if (/\b(help|support|agent|human|talk to someone)\b/.test(lowerMessage)) {
+          intent = 'support';
+          responseText =
+            "I can help with common questions here. For account or order issues, contact our support team from Help & Support.";
+          confidence = 0.85;
+          suggestedActions = ['Contact Support', 'Browse Services'];
         } else {
           intent = 'support';
-          responseText = "I'm here to help! How can I assist you today? I can help with bookings, pet care questions, orders, or connect you with a support agent if needed.";
-          confidence = 0.6;
-          suggestedActions = ['Get Help', 'Contact Support'];
+          responseText =
+            "I'm not sure I understood that. Try rephrasing, or use **Symptoms** for health concerns and **Booking** to find a service. You can also search providers or contact support.";
+          confidence = 0.72;
+          suggestedActions = ['Search Providers', 'Contact Support', 'Browse Services'];
         }
       }
 
@@ -363,6 +639,19 @@ OUTPUT FORMAT (JSON only):
         };
       }
 
+      let matchedSpecs: Array<{ id: string; name: string; categoryId: string; matchedSymptom?: string }> = [];
+      let matchedVendors: Array<{ id: string; businessName: string; city?: string; roleName?: string }> = [];
+      try {
+        const care = await lookupCareForSymptoms(symptoms);
+        matchedSpecs = care.specializations;
+        matchedVendors = care.vendors;
+        if (matchedSpecs.length > 0 || matchedVendors.length > 0) {
+          analysis.response = appendSymptomCareToResponse(analysis.response || '', matchedSpecs, matchedVendors);
+        }
+      } catch (e) {
+        console.warn('Symptom catalog lookup failed', e);
+      }
+
       // Save symptoms check
       try {
         await insert('symptoms_checks', {
@@ -382,6 +671,8 @@ OUTPUT FORMAT (JSON only):
       return c.json({
         success: true,
         ...analysis,
+        matchedServices: matchedSpecs.map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId })),
+        suggestedProviders: matchedVendors,
       });
     } catch (error: any) {
       console.error('Error in symptoms checker:', error);
@@ -476,9 +767,40 @@ OUTPUT FORMAT (JSON only):
         };
       }
 
+      let catalogServices: Array<{ id: string; name: string; serviceStyle?: string }> = [];
+      let catalogVendors: Array<{ id: string; businessName: string; city?: string }> = [];
+      try {
+        const ctx = await lookupBookingContext(bookingQuery);
+        catalogServices = ctx.services;
+        catalogVendors = ctx.vendors;
+        if (catalogServices.length > 0 || catalogVendors.length > 0) {
+          assistance.response = appendBookingContextToResponse(
+            assistance.response || '',
+            catalogServices,
+            catalogVendors
+          );
+          if (!assistance.suggestedServices?.length && catalogServices.length > 0) {
+            assistance.suggestedServices = catalogServices.map((s) => s.name);
+          }
+        }
+      } catch (e) {
+        console.warn('Booking catalog lookup failed', e);
+      }
+
+      const st = String(assistance.serviceType || '').toLowerCase();
+      const normalizedUrl = normalizeCustomerBookingUrl(st, bookingQuery);
+      if (!assistance.bookingUrl || assistance.bookingUrl === '/book' || !String(assistance.bookingUrl).startsWith('/')) {
+        assistance.bookingUrl = normalizedUrl;
+      }
+      if (!assistance.nextSteps?.length) {
+        assistance.nextSteps = ['Continue to booking', 'Browse Services'];
+      }
+
       return c.json({
         success: true,
         ...assistance,
+        catalogServices,
+        suggestedProviders: catalogVendors,
       });
     } catch (error: any) {
       console.error('Error in booking assist:', error);

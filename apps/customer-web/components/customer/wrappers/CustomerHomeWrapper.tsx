@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
@@ -65,6 +65,7 @@ import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { useNotificationService } from '../useNotificationService';
 import { toast } from 'sonner';
 import { useCart } from '@/context/CartContext';
@@ -254,6 +255,8 @@ type ScreenType =
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
   const router = useRouter();
+  const pathname = usePathname() || '/';
+  const searchParams = useSearchParams();
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -275,10 +278,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedShopCategory, setSelectedShopCategory] = useState<string | undefined>(undefined);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
+  /** Screen to return to when leaving My Pets (embedded list), if opened via navigateToPets */
+  const [screenBeforePets, setScreenBeforePets] = useState<ScreenType | null>(null);
   const [selectedAddressFromBook, setSelectedAddressFromBook] = useState<any>(null); // Address selected in address book (return to provider profile)
   const [trackingBookingId, setTrackingBookingId] = useState<string | null>(null); // ✅ GPS Tracking booking ID
   const [videoCallData, setVideoCallData] = useState<{ bookingId: string; meetingId?: string } | null>(null); // ✅ Video call data
   const [instantConnectingBookingId, setInstantConnectingBookingId] = useState<string | null>(null); // Instant tele: after payment, show connecting then video
+  /** `?service=tele` / Book Now: skip TeleConsultationRouter mode selection → instant vet list */
+  const [teleSkipModeSelection, setTeleSkipModeSelection] = useState(false);
   const [prescriptionOrderData, setPrescriptionOrderData] = useState<{ prescriptionId?: string; prescriptionUrl?: string } | null>(null); // ✅ Pharmacy order from My Bookings prescription
   const [currentPharmacyOrderId, setCurrentPharmacyOrderId] = useState<string | null>(null); // ✅ After PharmacyOrderFlow completes
   const { addToCart } = useCart();
@@ -336,6 +343,38 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   }, [phone]);
 
+  const syncTeleConsultUrl = useCallback(
+    (includeServiceTele: boolean) => {
+      if (typeof window === 'undefined') return;
+      const sp = new URLSearchParams(window.location.search);
+      if (includeServiceTele) sp.set('service', 'tele');
+      else sp.delete('service');
+      const qs = sp.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname]
+  );
+
+  // Deep link: /?service=tele → full-page tele booking with instant auto-pay (re-run when query string changes)
+  const homeTeleSearchKey = searchParams.toString();
+  useEffect(() => {
+    const sp = new URLSearchParams(homeTeleSearchKey);
+    if (sp.get('service') !== 'tele') return;
+    const url = buildTeleInstantAutoPayBookingUrl();
+    console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
+    router.replace(url);
+  }, [router, homeTeleSearchKey]);
+
+  const prevScreenForTeleRef = useRef<ScreenType | null>(null);
+  useEffect(() => {
+    const prev = prevScreenForTeleRef.current;
+    if (prev === 'vet-tele-consultation' && currentScreen !== 'vet-tele-consultation') {
+      setTeleSkipModeSelection(false);
+      syncTeleConsultUrl(false);
+    }
+    prevScreenForTeleRef.current = currentScreen;
+  }, [currentScreen, syncTeleConsultUrl]);
+
   // Notification Service logic... (kept same as original)
   useNotificationService({
     phone: phone,
@@ -376,8 +415,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleProfileClick = () => setUserSidebarOpen(true);
   const handleViewCustomerProfile = () => { setUserSidebarOpen(false); setCurrentScreen('customer-profile'); };
   /** Blue chevron on home pet chip → view/edit pet (not booking sessions quick view). */
-  const handlePetClick = (petId: string) => { setSelectedPetId(petId); setCurrentScreen('pet-details'); };
-  const handleViewPetProfile = (petData: any) => { setSelectedPetData(petData); setSelectedPetId(petData.id); setCurrentScreen('pet-profile'); };
+  const handlePetClick = (petId: string) => {
+    setPreviousScreen(currentScreen);
+    setSelectedPetId(petId);
+    setCurrentScreen('pet-details');
+  };
+  const handleViewPetProfile = (petData: any) => {
+    setPreviousScreen(currentScreen);
+    setSelectedPetData(petData);
+    setSelectedPetId(petData.id);
+    setCurrentScreen('pet-profile');
+  };
   
   const handleViewFullPetProfile = async () => {
     if (!selectedPetId) return;
@@ -400,7 +448,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleNavigateToService = (service: string, _data?: any) => {
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
-    else if (service === 'vet-tele-consultation') setCurrentScreen('vet-tele-consultation');
+    else if (service === 'vet-tele-consultation') {
+      const url = buildTeleInstantAutoPayBookingUrl({
+        serviceId: _data?.serviceId,
+        vendorId: _data?.vendorId,
+        petId: _data?.petId,
+        roleId: _data?.roleId,
+        category: _data?.category,
+      });
+      console.log('[CustomerHomeWrapper] vet-tele-consultation → tele instant auto-pay URL (no in-app tele router):', url, _data);
+      router.push(url);
+      return;
+    }
     else if (service === 'grooming') setCurrentScreen('grooming');
     else if (service === 'training') setCurrentScreen('training');
     else if (service === 'boarding') setCurrentScreen('boarding');
@@ -453,7 +512,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'vet-clinic-profile') setCurrentScreen('vet-clinic-profile');
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'vet-services-by-style') setCurrentScreen('vet-services-by-style');
-    else if (screen === 'vet-tele-consultation') setCurrentScreen('vet-tele-consultation');
+    else if (screen === 'vet-tele-consultation') {
+      const url = buildTeleInstantAutoPayBookingUrl({
+        serviceId: data?.serviceId,
+        vendorId: data?.vendorId,
+        petId: data?.petId,
+        roleId: data?.roleId,
+        category: data?.category,
+      });
+      console.log('[CustomerHomeWrapper] handleVetNavigate vet-tele → tele instant auto-pay URL:', url, data);
+      router.push(url);
+      return;
+    }
     else if (screen === 'vet-home-visit') setCurrentScreen('vet-home-visit');
     else if (screen === 'pharmacy') {
       console.log('🔵 [handleVetNavigate] Setting pharmacy landing (Medicine)');
@@ -462,9 +532,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'pharmacy_store') {
       setCurrentScreen('pharmacy_store');
     }
-    else if (screen === 'lab-diagnostics' || screen === 'lab-tests' || screen === 'diagnostics' || screen === 'lab') {
+    else if (
+      screen === 'lab-diagnostics' ||
+      screen === 'lab-tests' ||
+      screen === 'diagnostics' ||
+      screen === 'lab' ||
+      screen === 'vet-lab-tests'
+    ) {
       console.log('🔵 [handleVetNavigate] Setting lab-diagnostics screen');
       setCurrentScreen('lab-diagnostics');
+    }
+    else if (screen === 'my-bookings' || screen === 'bookings') {
+      setCurrentScreen('my-bookings');
     }
     else if (screen === 'home') { 
       setCurrentScreen('home'); 
@@ -527,6 +606,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
 
   const handleBottomNav = (screen: string) => {
     if (screen === 'home') {
+      setScreenBeforePets(null);
       setCurrentScreen('home');
       setSelectedPetId(null);
       setSelectedBookingId(null);
@@ -545,6 +625,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleBack = () => {
+    setScreenBeforePets(null);
     setCurrentScreen('home');
     setSelectedPetId(null);
     setSelectedBookingId(null);
@@ -553,6 +634,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setSelectedVendorId(undefined);
     setSelectedProblem(null);
     setCurrentServiceType(null);
+  };
+
+  const navigateToPets = () => {
+    setScreenBeforePets(currentScreen);
+    setCurrentScreen('pets');
+  };
+
+  const handleBackFromPets = () => {
+    if (screenBeforePets != null) {
+      setCurrentScreen(screenBeforePets);
+      setScreenBeforePets(null);
+      return;
+    }
+    handleBack();
   };
 
   const handlePetDeleted = () => {
@@ -673,17 +768,6 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           phone={phone}
           refreshKey={refreshKey}
           onNavigate={(screen, data) => {
-            // ✅ FIX: Handle Complete Health Package "Book Now" - navigate directly to vet-booking
-            if (screen === 'vet-booking' && (data?.packageId === 'complete-health-package' || data?.filter === 'packages')) {
-              setVetServiceData({
-                packageId: data.packageId,
-                serviceName: data.serviceName || 'Complete Health Package',
-                filter: 'packages',
-              });
-              setCurrentScreen('vet-booking');
-              return;
-            }
-            
             // ✅ Handle order-tracking: meal vs ecommerce/pharmacy (Phase 5)
             if (screen === 'order-tracking') {
               const orderId = data?.orderId;
@@ -815,10 +899,50 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       </CustomerScreenWrapper>
     );
   }
-  if (currentScreen === 'pet-profile' && selectedPetData) return <PetProfile phone={phone} petId={selectedPetData.id} petName={selectedPetData.name} petType={selectedPetData.type} petBreed={selectedPetData.breed} petAge={selectedPetData.age} petGender={selectedPetData.gender} petImage={selectedPetData.image} onBack={handleBack} />;
+  if (currentScreen === 'pet-profile' && selectedPetData)
+    return (
+      <PetProfile
+        phone={phone}
+        petId={selectedPetData.id}
+        petName={selectedPetData.name}
+        petType={selectedPetData.type}
+        petBreed={selectedPetData.breed}
+        petAge={selectedPetData.age}
+        petGender={selectedPetData.gender}
+        petImage={selectedPetData.image}
+        onBack={() => {
+          if (previousScreen) {
+            setCurrentScreen(previousScreen);
+            setPreviousScreen(null);
+            return;
+          }
+          handleBack();
+        }}
+      />
+    );
   if (currentScreen === 'booking-details' && selectedBookingId && selectedPetId) return <PetBookingDetails bookingId={selectedBookingId} petId={selectedPetId} phone={phone} onBack={handleBack} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'pet-quick' && selectedPetId) return <PetQuickView petId={selectedPetId} phone={phone} onBack={handleBack} onViewFullProfile={handleViewFullPetProfile} />;
-  if (currentScreen === 'pet-details' && selectedPetId) return <CustomerPetDetails phone={phone} petId={selectedPetId} onBack={handleBack} onViewBooking={handleViewBooking} onDelete={handlePetDeleted} onViewPetProfile={(petData: any) => { setSelectedPetData(petData); setCurrentScreen('pet-profile-dashboard'); }} />;
+  if (currentScreen === 'pet-details' && selectedPetId)
+    return (
+      <CustomerPetDetails
+        phone={phone}
+        petId={selectedPetId}
+        onBack={() => {
+          if (previousScreen) {
+            setCurrentScreen(previousScreen);
+            setPreviousScreen(null);
+            return;
+          }
+          handleBack();
+        }}
+        onViewBooking={handleViewBooking}
+        onDelete={handlePetDeleted}
+        onViewPetProfile={(petData: any) => {
+          setSelectedPetData(petData);
+          setCurrentScreen('pet-profile-dashboard');
+        }}
+      />
+    );
   if (currentScreen === 'pet-profile-dashboard' && selectedPetData)
     return (
       <PetProfileDashboard
@@ -947,6 +1071,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     return renderScreenWithLayout('vet-tele-consultation',
       <TeleConsultationRouter 
         phone={phone} 
+        skipModeSelection={teleSkipModeSelection}
         onBack={() => setCurrentScreen('vet')} 
         onNavigate={(screen, data) => {
           // Handle navigation from TeleConsultationRouter
@@ -970,6 +1095,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             setCurrentScreen('add-pet');
           } else if (screen === 'payment') {
             // Handle payment navigation - go directly to payment page with booking data
+            setPreviousScreen('vet-tele-consultation');
             setPaymentData(data);
             setCurrentScreen('payment');
           } else {
@@ -991,6 +1117,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           // Handle navigation from HomeVisitRouter
           if (screen === 'payment') {
             // Handle payment navigation - go directly to payment page with booking data
+            setPreviousScreen('vet-home-visit');
             setPaymentData(data);
             setCurrentScreen('payment');
           } else if (screen === 'add-pet') {
@@ -1032,9 +1159,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     const duration = bookingData.totalDuration ?? firstService?.duration ?? bookingData?.duration;
     const serviceName = firstService?.name || firstService?.serviceName || firstService?.service_name || bookingData.serviceName || 'Service';
     
-    return (
+    return renderScreenWithLayout(
+      'payment',
       <UniversalPaymentPage
         type="booking"
+        layoutVariant="appShell"
         bookingId={bookingData.bookingId}
         vendorId={bookingData.vendorId || bookingData.provider?.id || ''}
         vendorName={bookingData.provider?.name || bookingData.vendorName || 'Service Provider'}
@@ -1061,7 +1190,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             setCurrentScreen(previousScreen || 'nutritionist-tele');
             setPreviousScreen(null);
           } else if (bookingData.flowType === 'tele-scheduled' || bookingData.flowType === 'tele-instant' || bookingData.flowType === 'tele-queue-accepted') {
-            setCurrentScreen('vet-tele-consultation');
+            setCurrentScreen(previousScreen || 'vet-tele-consultation');
+            setPreviousScreen(null);
           } else if (bookingData.flowType === 'home-visit') {
             setCurrentScreen('vet-home-visit');
           } else {
@@ -1082,7 +1212,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           setCurrentScreen('my-bookings');
           toast.success('Booking confirmed successfully!');
         }}
-      />
+      />,
+      { title: 'Payment', subtitle: 'Secure checkout', showBackButton: false, skipHeader: true }
     );
   }
   // ✅ Instant tele: connecting screen (after payment) → auto-join video call after 3s
@@ -1411,7 +1542,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
               setPreviousScreen('nutritionist-tele');
               setCurrentScreen('video-call');
             } else if (screen === 'add-pet' || screen === 'pets') {
-              setCurrentScreen('pets');
+              navigateToPets();
             } else if (screen === 'nutritionist-booking') {
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceId || 'pet_nutritionist', nutritionist: data?.nutritionist });
               setPreviousScreen('nutritionist-tele');
@@ -1479,7 +1610,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
               setCurrentScreen('create-booking');
             } else if (screen === 'pets') {
-              setCurrentScreen('pets');
+              navigateToPets();
             } else if (screen === 'problem_grid') {
               setCurrentServiceType('pet_nutritionist');
               setCurrentScreen('problem_grid');
@@ -1520,7 +1651,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
               });
               setCurrentScreen('nutritionist-booking');
             } else if (screen === 'pets') {
-              setCurrentScreen('pets');
+              navigateToPets();
             } else {
               handleBack();
             }
@@ -1549,7 +1680,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType, mealPlanId: data?.mealPlanId });
               setCurrentScreen('create-booking');
             } else if (screen === 'pets') {
-              setCurrentScreen('pets');
+              navigateToPets();
             } else {
               setCurrentScreen(screen as any);
             }
@@ -2066,13 +2197,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 
     phone={phone} 
-    onBack={handleBack} 
+    onBack={handleBackFromPets} 
     onNavigate={(screen, data) => {
       if (screen === 'pet-details') {
         if (!data?.petId) {
           console.error('Pet ID is missing in navigation data');
           return;
         }
+        setPreviousScreen('pets');
         setSelectedPetId(data.petId);
         setCurrentScreen('pet-details');
       }
