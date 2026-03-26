@@ -32,13 +32,33 @@ export const handler: SQSHandler = async (event) => {
 		event.Records.map(async (rec) => {
 			try {
 				const evt = parseEventFromRecord(rec);
-				if (!evt || evt.eventType !== 'ActionOccurred' || !evt.eventId) {
+				if (!evt) {
+					console.warn('[LOYALTY CONSUMER] skip: unable to parse event', {
+						messageId: rec.messageId,
+						bodyStart: rec.body?.slice(0, 200),
+					});
+					return;
+				}
+				if (evt.eventType !== 'ActionOccurred' || !evt.eventId) {
+					console.warn('[LOYALTY CONSUMER] skip: not ActionOccurred or missing eventId', {
+						eventType: (evt as any)?.eventType,
+						eventId: (evt as any)?.eventId,
+					});
 					return;
 				}
 
+				console.info('[LOYALTY CONSUMER] parsed event', {
+					eventId: evt.eventId,
+					actionName: evt.actionName,
+					entity: evt.entity,
+					reference: evt.reference,
+				});
+
 				// Idempotency
+				console.info('[LOYALTY CONSUMER] idempotency check', { eventId: evt.eventId });
 				const seen = await query(`SELECT 1 FROM processed_events WHERE event_id = $1 LIMIT 1`, [evt.eventId]);
 				if (seen.rowCount > 0) {
+					console.info('[LOYALTY CONSUMER] already processed', { eventId: evt.eventId });
 					return;
 				}
 
@@ -48,6 +68,14 @@ export const handler: SQSHandler = async (event) => {
 				const vendorId = evt.entity.type === 'vendor' ? evt.entity.id : undefined;
 
 				try {
+					console.info('[LOYALTY CONSUMER] awarding points', {
+						eventId: evt.eventId,
+						customerId,
+						vendorId,
+						actionName: evt.actionName,
+						amount: evt.amount,
+						reference: evt.reference,
+					});
 					await loyaltyPointsService.awardPoints({
 						customerId,
 						vendorId,
@@ -68,9 +96,20 @@ export const handler: SQSHandler = async (event) => {
 					if (!isDup) {
 						throw awardErr;
 					}
+					console.info('[LOYALTY CONSUMER] award deduplicated (treated as success)', {
+						eventId: evt.eventId,
+						message: msg.slice(0, 180),
+					});
 				}
 
 				// Mark processed on success
+				console.info('[LOYALTY CONSUMER] inserting processed_events', {
+					eventId: evt.eventId,
+					actionName: evt.actionName,
+					entityType: evt.entity.type,
+					entityId: evt.entity.id,
+					reference: evt.reference,
+				});
 				await insert('processed_events', {
 					event_id: evt.eventId,
 					action_name: evt.actionName,
@@ -79,8 +118,19 @@ export const handler: SQSHandler = async (event) => {
 					reference_type: evt.reference?.type || null,
 					reference_id: evt.reference?.id || null,
 				});
+				console.info('[LOYALTY CONSUMER] processed OK', { eventId: evt.eventId });
 			} catch (err) {
-				console.error('[LOYALTY CONSUMER] record failed:', rec.messageId, err);
+				let parsedEventId: string | undefined;
+				try {
+					const b = JSON.parse(rec.body);
+					parsedEventId = b?.detail?.eventId || b?.eventId;
+				} catch {
+					parsedEventId = undefined;
+				}
+				console.error('[LOYALTY CONSUMER] record failed:', rec.messageId, {
+					eventId: parsedEventId,
+					bodyStart: rec.body?.slice(0, 200),
+				}, err);
 				failures.push({ itemIdentifier: rec.messageId });
 			}
 		})

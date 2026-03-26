@@ -809,14 +809,24 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
               has_signature: !!response.razorpay_signature,
             });
 
-            // ✅ FIX: Use /razorpay/verify-payment endpoint with snake_case fields (same as UniversalPaymentPage)
+            // ✅ FIX: Use /razorpay/verify-payment endpoint with retry
             console.log('🔄 [RAZORPAY] Verifying payment...');
-            await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-            console.log('✅ [RAZORPAY] Payment verified successfully');
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}`);
+                break;
+              } catch (verifyErr: any) {
+                console.error(`❌ [VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
             setStep('confirmed');
           } catch (err: any) {
             console.error('❌ [PAYMENT] Verification failed:', err);

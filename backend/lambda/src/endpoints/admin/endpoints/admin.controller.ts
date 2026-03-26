@@ -291,7 +291,9 @@ class ListVendorsHandler extends BaseHandler {
       console.log('[ListVendors] Filters:', { status, search, category, role, vendorType, city, tier, isActive });
 
       // Build dynamic WHERE clause
-      let whereConditions: string[] = ['1=1'];
+      let whereConditions: string[] = [
+        "(v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')"
+      ];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -602,12 +604,56 @@ export function registerAdminEndpoints(app: Hono) {
   const { setupWebhookRoutes } = require('../../webhooks');
   setupWebhookRoutes(app);
 
+  // Diagnostic endpoint: always returns success for testing the event pipeline
+  app.post('/diagnostic/success', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json({
+      success: true,
+      data: { ping: 'ok', echo: body },
+      meta: { timestamp: new Date().toISOString() }
+    }, 200);
+  });
+
   app.get('/admin/vendors/stats', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
+
+  // ============================================================================
+  // LOYALTY / ACTIONS - Utility endpoint to fetch distinct action names
+  // ============================================================================
+  app.get('/admin/loyalty/actions', async (c) => {
+    try {
+      const search = (c.req.query('search') || '').trim();
+      const limitParam = c.req.query('limit') || '100';
+      const limit = Math.min(parseInt(limitParam, 10) || 100, 500);
+
+      const params: any[] = [];
+      let idx = 1;
+
+      const sql = `
+        SELECT DISTINCT action_name
+        FROM loyalty_action_rules
+        ${search ? `WHERE action_name ILIKE $${idx++}` : ''}
+        ORDER BY action_name
+        LIMIT $${idx}
+      `;
+      if (search) params.push(`%${search}%`);
+      params.push(limit);
+
+      const res = await query(sql, params);
+      const actions = (res.rows || [])
+        .map((r: any) => r?.action_name)
+        .filter((v: any) => typeof v === 'string' && v.length > 0);
+
+      return c.json({ success: true, actions });
+    } catch (err: any) {
+      console.error('[Admin] Failed to fetch loyalty action names:', err);
+      return c.json({ success: false, error: 'Failed to fetch actions' }, 500);
+    }
+  });
 
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
@@ -916,6 +962,7 @@ export function registerAdminEndpoints(app: Hono) {
 
   // Frontend compatibility: /admin/vendor/application/:applicationId/approve
   app.post('/admin/vendor/application/:applicationId/approve', async (c) => {
+    console.log('admin/vendor/application/:applicationId/approve--------------------->');
     // SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
@@ -1090,20 +1137,39 @@ export function registerAdminEndpoints(app: Hono) {
             // Continue with fallback tier
           }
 
-          const insertResult = await query(
+          try {
+            // Debug: log live vendors columns to ensure schema alignment
+            try {
+              const cols = await query(
+                `SELECT column_name 
+                 FROM information_schema.columns 
+                 WHERE table_name='vendors' 
+                 ORDER BY ordinal_position`
+              );
+              console.log('[DEBUG][ADMIN APPROVE] vendors columns:', (cols.rows || []).map((r: any) => r.column_name));
+            } catch (colErr) {
+              console.warn('[DEBUG][ADMIN APPROVE] Could not fetch vendors columns:', (colErr as Error).message);
+            }
+
+            console.log('[DEBUG][ADMIN APPROVE] Inserting vendor with columns: id, phone, email, owner_name, business_name, role_id, status, city, state, address, pincode, tier, commission_percentage, is_active, metadata, created_at, approved_at');
+            const insertResult = await query(
             `INSERT INTO vendors (
-              id, phone, email, owner_name, business_name, role_id, status, vendor_type,
-              city, state, address, pincode, tier, commission_percentage, is_active, is_deleted, metadata, created_at, approved_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, $13, $14, true, false, '{}'::jsonb, NOW(), NOW())
+              id, phone, email, owner_name, business_name, role_id, status,
+              city, state, address, pincode, tier, commission_percentage,
+              is_active, metadata, created_at, approved_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, 'approved',
+              $7, $8, $9, $10, $11, $12,
+              true, '{}'::jsonb, NOW(), NOW()
+            )
             RETURNING id`,
             [
-              finalVendorId, // ✅ Use the final (unique) vendor ID
+              finalVendorId,
               identity.phone,
               vendorEmail,
               formData.contactPersonName || formData.businessName || 'Vendor',
               formData.businessName || formData.contactPersonName || 'Business',
-              identity.role_id || identity.selected_role_id, // ✅ role_id (UUID)
-              identity.vendor_type || 'solo', // ✅ vendor_type
+              (identity.role_id || identity.selected_role_id),
               formData.city || 'Unknown',
               formData.state || 'Unknown',
               formData.address || 'Unknown',
@@ -1111,8 +1177,12 @@ export function registerAdminEndpoints(app: Hono) {
               defaultTierName,
               defaultCommission
             ]
-          );
-          vendorId = insertResult.rows[0].id;
+            );
+            vendorId = insertResult.rows[0].id;
+          } catch (insErr) {
+            console.error('[DEBUG][ADMIN APPROVE] INSERT failed:', (insErr as Error).message);
+            throw insErr;
+          }
 
           //Immediately verify vendor was created correctly
           const verifyVendor = await query(

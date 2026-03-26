@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
 
 const logoImage = '/logo.png';
 
@@ -33,6 +37,24 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const [showReferralInput, setShowReferralInput] = useState(false);
   const [referralApplied, setReferralApplied] = useState(false);
   const otpInputRef = useRef<HTMLInputElement>(null);
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+
+  const openLegal = (t: PlatformPolicyType) => {
+    setLegalDialogType(t);
+    setLegalDialogOpen(true);
+  };
+
+  const legalDialog = (
+    <PlatformLegalPolicyDialog
+      open={legalDialogOpen}
+      onOpenChange={(o) => {
+        setLegalDialogOpen(o);
+        if (!o) setLegalDialogType(null);
+      }}
+      policyType={legalDialogType}
+    />
+  );
   
   // Update cooldown countdown timer
   useEffect(() => {
@@ -498,6 +520,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
   if (pendingApproval) {
     return (
+      <Fragment>
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
           <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -522,6 +545,8 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </Button>
         </div>
       </div>
+      {legalDialog}
+      </Fragment>
     );
   }
 
@@ -532,6 +557,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       : `${countryCode} ${phoneNumber}`;
 
     return (
+      <Fragment>
       <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
 
 
@@ -637,12 +663,15 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </div>
         </div>
       </div>
+      {legalDialog}
+      </Fragment>
     );
   }
 
   // PHONE NUMBER ENTRY SCREEN
   if (isSignUp && currentStep === 1 && !showOtpScreen) {
     return (
+      <Fragment>
       <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
         {/* Status Bar */}
         <div className="px-6 pt-3 pb-2 flex justify-between items-center">
@@ -786,9 +815,21 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           <div className="mt-8 space-y-4 text-center">
             <p className="text-sm text-gray-600">
               By continuing, you agree to our{' '}
-              <a href="#" className="text-[#FF8C42] underline">Terms of Service</a>
+              <button
+                type="button"
+                onClick={() => openLegal('vendor_terms_of_service')}
+                className="text-[#FF8C42] underline"
+              >
+                Vendor Terms of Service
+              </button>
               {' '}and{' '}
-              <a href="#" className="text-[#FF8C42] underline">Privacy Policy</a>
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className="text-[#FF8C42] underline"
+              >
+                Privacy Policy
+              </button>
             </p>
             
             <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
@@ -810,12 +851,15 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </div>
         </div>
       </div>
+      {legalDialog}
+      </Fragment>
     );
   }
 
   if (!isSignUp) {
     // Sign In Screen
     return (
+      <Fragment>
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-xl p-8">
@@ -887,14 +931,36 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 New vendor? Register here
               </button>
             </div>
+
+            <p className="text-center text-sm text-gray-500 mt-6">
+              By signing in, you agree to our{' '}
+              <button
+                type="button"
+                onClick={() => openLegal('vendor_terms_of_service')}
+                className="text-[#FF8C42] hover:underline font-medium"
+              >
+                Vendor Terms of Service
+              </button>
+              {' '}and{' '}
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className="text-[#FF8C42] hover:underline font-medium"
+              >
+                Privacy Policy
+              </button>
+            </p>
           </div>
         </div>
       </div>
+      {legalDialog}
+      </Fragment>
     );
   }
 
   // Multi-step Registration Form (Steps 2+)
   return (
+    <Fragment>
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white py-8 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl p-8">
@@ -1154,7 +1220,29 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                     }
                   />
                   <Label htmlFor="terms" className="text-sm leading-tight cursor-pointer">
-                    I agree to the terms and conditions and confirm that all information provided is accurate
+                    I agree to the{' '}
+                    <button
+                      type="button"
+                      className="text-[#FF8C42] underline font-medium"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openLegal('vendor_terms_of_service');
+                      }}
+                    >
+                      Vendor Terms of Service
+                    </button>
+                    ,{' '}
+                    <button
+                      type="button"
+                      className="text-[#FF8C42] underline font-medium"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openLegal('privacy_policy');
+                      }}
+                    >
+                      Privacy Policy
+                    </button>
+                    , and confirm that all information provided is accurate
                   </Label>
                 </div>
               </div>
@@ -1211,5 +1299,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         </div>
       </div>
     </div>
+    {legalDialog}
+    </Fragment>
   );
 }

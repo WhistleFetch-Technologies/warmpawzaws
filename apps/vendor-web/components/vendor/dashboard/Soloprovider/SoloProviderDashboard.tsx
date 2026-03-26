@@ -37,7 +37,6 @@ import {
   Monitor,
   User,
   TrendingUp,
-  FileText,
   Gift,
   Heart,
   MapPin,
@@ -45,6 +44,7 @@ import {
   X,
   Briefcase,
   ClipboardList,
+  Shield,
   Badge,
   Navigation,
   Map,
@@ -672,10 +672,21 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         </div>
 
         {/* Additional Capabilities Section - hidden for pharmacy */}
-        {!isPharmacy && (capabilities.progress_tracking || capabilities.distance_pricing || capabilities.counseling) && (
+        {!isPharmacy && (capabilities.progress_tracking || capabilities.distance_pricing || capabilities.counseling || hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
+              {hasVendorRole(vendorData, ['pet_insurance', 'insurance']) && (
+                <button
+                  type="button"
+                  onClick={() => router.push('/insurance/policies')}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                  title="Issued policies, plans, and claims"
+                >
+                  <Shield className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Pet policies</span>
+                </button>
+              )}
               {capabilities.progress_tracking && (
                 <button
                   onClick={() => router.push('/training/progress')}

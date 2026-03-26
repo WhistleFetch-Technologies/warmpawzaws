@@ -401,16 +401,31 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         });
       } else {
         // ✅ bookingId is REQUIRED - booking should already exist
-        await insert('payments', {
-          booking_id: bookingId,
-          customer_id: customerIdFinal,
-          vendor_id: vendorIdFinal,
-          razorpay_order_id: razorpayOrder.id,
-          amount: Number(amount),
-          currency: currency,
-          payment_method: 'razorpay',
-          payment_status: 'pending',
-        });
+        // ✅ FIX: Upsert – if an orphan payment already exists for this booking (from /payments/create),
+        //    update it with the razorpay_order_id instead of creating a duplicate.
+        const existingPayment = await query(
+          `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'pending' AND razorpay_order_id IS NULL ORDER BY created_at DESC LIMIT 1`,
+          [bookingId]
+        );
+
+        if (existingPayment.rows.length > 0) {
+          console.log(`[RAZORPAY-CREATE-ORDER] Reusing existing orphan payment ${existingPayment.rows[0].id} for booking ${bookingId}`);
+          await query(
+            `UPDATE payments SET razorpay_order_id = $1, amount = $2, currency = $3, updated_at = NOW() WHERE id = $4`,
+            [razorpayOrder.id, Number(amount), currency, existingPayment.rows[0].id]
+          );
+        } else {
+          await insert('payments', {
+            booking_id: bookingId,
+            customer_id: customerIdFinal,
+            vendor_id: vendorIdFinal,
+            razorpay_order_id: razorpayOrder.id,
+            amount: Number(amount),
+            currency: currency,
+            payment_method: 'razorpay',
+            payment_status: 'pending',
+          });
+        }
       }
 
       return this.success({
@@ -772,67 +787,55 @@ class VerifyPaymentHandler extends BaseHandler {
       return this.success(result);
     } catch (error: any) {
       console.error('[PAYMENT-VERIFY] Verification error:', error);
-      
-      // ✅ CRITICAL: Only rollback if payment verification failed (payment_status is still 'pending')
-      // If transaction already committed (payment_status = 'completed'), don't delete booking
+
+      // ✅ CRITICAL: This catch block runs AFTER signature verification passed.
+      // The customer has genuinely paid money on Razorpay. We must NEVER delete the
+      // booking or payment. The Razorpay webhook (payment.captured) will act as a
+      // safety net and mark the booking as paid when it fires.
       const body = this.parseBody(context.event);
       const orderId = body?.razorpay_order_id;
-      
+      const paymentId = body?.razorpay_payment_id;
+
       if (orderId) {
         try {
-          await withTransaction(async (client) => {
-            const { rows: payments } = await client.query(
-              `SELECT booking_id, payment_status FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
-              [orderId]
-            );
+          // Attempt to mark the payment as completed even if the main transaction failed.
+          // This ensures the webhook can match it and the booking won't be orphaned.
+          await query(
+            `UPDATE payments SET 
+              payment_status = 'completed',
+              razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
+              completed_at = COALESCE(completed_at, NOW()),
+              updated_at = NOW()
+            WHERE razorpay_order_id = $2 AND payment_status = 'pending'`,
+            [paymentId || null, orderId]
+          );
 
-            if (payments.length > 0) {
-              const payment = payments[0];
-              
-              // ✅ Only delete booking if payment_status is still 'pending' (payment didn't succeed)
-              if (payment.payment_status === 'pending' && payment.booking_id) {
-                // Delete booking (rollback)
-                await client.query(
-                  `DELETE FROM bookings WHERE id = $1`,
-                  [payment.booking_id]
-                );
-                console.log('[PAYMENT-VERIFY] ❌ Payment verification failed - booking rolled back:', payment.booking_id);
-                
-                // Delete payment record
-                await client.query(
-                  `DELETE FROM payments WHERE razorpay_order_id = $1`,
-                  [orderId]
-                );
-                console.log('[PAYMENT-VERIFY] ❌ Payment verification failed - payment record deleted');
-              } else if (payment.payment_status === 'completed') {
-                // ✅ Payment already succeeded - don't delete booking
-                console.log('[PAYMENT-VERIFY] ⚠️ Error occurred but payment already succeeded (status: completed), skipping rollback');
-              } else {
-                // Payment status is something else (partial, failed, etc.) - still rollback
-                if (payment.booking_id) {
-                  await client.query(
-                    `DELETE FROM bookings WHERE id = $1`,
-                    [payment.booking_id]
-                  );
-                  console.log('[PAYMENT-VERIFY] ❌ Payment verification failed - booking rolled back (status:', payment.payment_status, ')');
-                }
-                await client.query(
-                  `DELETE FROM payments WHERE razorpay_order_id = $1`,
-                  [orderId]
-                );
-              }
-            }
-          });
-        } catch (rollbackError: any) {
-          console.error('[PAYMENT-VERIFY] Error during rollback:', rollbackError);
-          // Continue to return error even if rollback fails
+          // Try to update the booking too (best-effort)
+          const { rows: paymentRows } = await query(
+            `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 LIMIT 1`,
+            [orderId]
+          );
+          if (paymentRows.length > 0 && paymentRows[0].booking_id) {
+            await query(
+              `UPDATE bookings SET 
+                payment_status = 'paid',
+                status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+                updated_at = NOW()
+              WHERE id = $1 AND payment_status != 'paid'`,
+              [paymentRows[0].booking_id]
+            );
+            console.log('[PAYMENT-VERIFY] ⚠️ Main transaction failed but best-effort update succeeded for booking:', paymentRows[0].booking_id);
+          }
+        } catch (recoveryError: any) {
+          // Recovery also failed — the webhook will handle it
+          console.error('[PAYMENT-VERIFY] ⚠️ Recovery update also failed (webhook will handle):', recoveryError?.message);
         }
       }
-      
+
       if (error.message) {
-        return this.error(`Payment verification failed: ${error.message}. Booking has been cancelled.`, 500);
+        return this.error(`Payment verification encountered an error: ${error.message}. Your payment is safe — your booking will be confirmed shortly.`, 500);
       }
-      return this.error('Payment verification failed. Booking has been cancelled. Please try again or contact support.', 500);
+      return this.error('Payment verification encountered an error. Your payment is safe — your booking will be confirmed shortly.', 500);
     }
   }
 }
@@ -874,61 +877,118 @@ class RazorpayWebhookHandler extends BaseHandler {
 
     // Handle different event types
     if (event === 'payment.captured') {
-      const payment = payload_data.payment.entity;
-      
-      // ✅ SQL: Update payment
-      await update(
-        'payments',
-        { razorpay_payment_id: payment.id },
-        {
-          payment_status: 'completed',
-          completed_at: new Date(),
-        }
-      );
+      const paymentEntity = payload_data.payment.entity;
+      const razorpayPaymentId = paymentEntity.id;
+      const razorpayOrderId = paymentEntity.order_id; // Always present in Razorpay payment entity
 
-      // Update booking
-      const payments = await select('payments', { razorpay_payment_id: payment.id });
-      if (payments.length > 0) {
-        const paymentRecord = payments[0];
-        let shouldNotify = false;
-        let previousStatus: string | null = null;
-        if (paymentRecord.booking_id) {
-          const bookingRows = await select('bookings', { id: paymentRecord.booking_id });
-          if (bookingRows.length > 0) {
-            const booking = bookingRows[0];
-            previousStatus = booking.status || null;
-            shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
-          }
-        }
+      let paymentRecord: any = null;
+      let bookingToNotify: string | null = null;
+      let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
 
-        await update(
-          'bookings',
-          { id: paymentRecord.booking_id },
-          { payment_status: 'paid', status: 'confirmed' }
+      // ✅ FIX: Use transaction with fallback lookup (razorpay_payment_id → razorpay_order_id)
+      // Previously only looked up by razorpay_payment_id, which is NULL until verify-payment runs.
+      // If verify-payment never fires (user closes browser, network error), the webhook must still work.
+      await withTransaction(async (client) => {
+        // Try razorpay_payment_id first (set by verify-payment if it ran)
+        let result = await client.query(
+          `SELECT * FROM payments WHERE razorpay_payment_id = $1 FOR UPDATE`,
+          [razorpayPaymentId]
         );
 
-        if (previousStatus && previousStatus !== 'confirmed') {
-          await logBookingStatusChange(
-            paymentRecord.booking_id,
-            previousStatus,
-            'confirmed',
-            'system',
-            'system',
-            'Payment captured (webhook)'
+        // Fallback: razorpay_order_id (always set by /razorpay/create-order)
+        if (result.rows.length === 0 && razorpayOrderId) {
+          result = await client.query(
+            `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+            [razorpayOrderId]
           );
         }
 
-        if (shouldNotify) {
-          await notifyBookingCreated(paymentRecord.booking_id, context.requestId);
+        if (result.rows.length === 0) {
+          console.warn(`[RAZORPAY-WEBHOOK] Payment not found for payment_id=${razorpayPaymentId}, order_id=${razorpayOrderId}`);
+          return;
         }
 
-        // ✅ Trigger automatic settlement if marketplace mode is enabled
+        paymentRecord = result.rows[0];
+
+        // Update payment: mark completed, fill razorpay_payment_id if missing
+        await client.query(
+          `UPDATE payments SET 
+            payment_status = 'completed',
+            razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
+            completed_at = COALESCE(completed_at, NOW()),
+            updated_at = NOW()
+          WHERE id = $2`,
+          [razorpayPaymentId, paymentRecord.id]
+        );
+
+        // Update booking if linked
+        if (paymentRecord.booking_id) {
+          const { rows: bookingRows } = await client.query(
+            `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+            [paymentRecord.booking_id]
+          );
+
+          if (bookingRows.length > 0) {
+            const booking = bookingRows[0];
+            const previousStatus = booking.status || null;
+            const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
+
+            await client.query(
+              `UPDATE bookings SET 
+                payment_status = 'paid',
+                status = 'confirmed',
+                updated_at = NOW()
+              WHERE id = $1`,
+              [paymentRecord.booking_id]
+            );
+
+            if (previousStatus !== 'confirmed') {
+              bookingStatusChange = { bookingId: paymentRecord.booking_id, from: previousStatus, to: 'confirmed' };
+            }
+            if (shouldNotify) {
+              bookingToNotify = paymentRecord.booking_id;
+            }
+          }
+        }
+
+        // Update pharmacy order if linked
+        if (paymentRecord.pharmacy_order_id) {
+          await client.query(
+            `UPDATE pharmacy_orders SET 
+              payment_status = 'paid',
+              razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
+              status = 'payment_confirmed',
+              updated_at = NOW()
+            WHERE id = $2 AND payment_status != 'paid'`,
+            [razorpayPaymentId, paymentRecord.pharmacy_order_id]
+          );
+        }
+      });
+
+      // Post-transaction: logging, notifications, settlements
+      if (bookingStatusChange) {
+        await logBookingStatusChange(
+          bookingStatusChange.bookingId,
+          bookingStatusChange.from,
+          bookingStatusChange.to,
+          'system',
+          'system',
+          'Payment captured (webhook)'
+        ).catch((e) => console.error('[RAZORPAY-WEBHOOK] Audit log failed:', e));
+      }
+
+      if (bookingToNotify) {
+        await notifyBookingCreated(bookingToNotify, context.requestId)
+          .catch((e) => console.error('[RAZORPAY-WEBHOOK] Notification failed:', e));
+      }
+
+      // ✅ Trigger automatic settlement if marketplace mode is enabled
+      if (paymentRecord?.booking_id) {
         try {
           const vendors = await select('vendors', { id: paymentRecord.vendor_id });
           const vendor = vendors.length > 0 ? vendors[0] : null;
           
           if (vendor?.razorpay_account_id && vendor.bank_verified) {
-            // Queue automatic settlement
             const { sendToSQS } = await import('../../../utils/aws-clients');
             await sendToSQS('settlement-queue', {
               type: 'auto_settle_booking',

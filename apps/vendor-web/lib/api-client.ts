@@ -84,7 +84,18 @@ export function getApiBaseUrl(): string {
   }
   
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
+    const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+    // Guard against accidental localhost build env leaking into deployed hosts.
+    if (typeof window !== 'undefined' && window.location) {
+      const host = window.location.hostname || '';
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host.includes('localhost');
+      const envIsLocalhost = envBase.includes('localhost') || envBase.includes('127.0.0.1');
+      if (!(envIsLocalhost && !isLocalhost)) {
+        return envBase;
+      }
+    } else {
+      return envBase;
+    }
   }
   
   // ✅ FIX: Use environment-aware API Gateway selection (no hardcoded fallback)
@@ -140,6 +151,12 @@ export class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    // Re-resolve base URL at call time so deploy-time runtime config always wins,
+    // even if the client instance was created before runtime-config.js executed.
+    const resolvedBaseUrl = getApiBaseUrl();
+    if (resolvedBaseUrl && resolvedBaseUrl !== this.baseUrl) {
+      this.baseUrl = resolvedBaseUrl;
+    }
     if (!this.baseUrl) {
       throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
     }

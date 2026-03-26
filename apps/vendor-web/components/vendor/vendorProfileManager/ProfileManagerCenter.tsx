@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
-import { isSoloVendor, isCenterRole, getVendorRoleName } from '@/lib/vendor-utils';
+import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole } from '@/lib/vendor-utils';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
@@ -26,7 +26,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   const soloByData = isSoloVendor(vendorData);
   const roleNameOrId = vendorData?.roleName || vendorData?.roleId || getVendorRoleName(vendorData) || '';
   const isCenterRoleType = isCenterRole(roleNameOrId);
-  const showAmenitiesAndSpecialtyTabs = !soloByData || isCenterRoleType;
+  const isPetInsuranceVendor = hasVendorRole(vendorData, ['pet_insurance', 'insurance']);
+  const showAmenitiesAndSpecialtyTabs = !isPetInsuranceVendor && (!soloByData || isCenterRoleType);
 
   // ✅ FIX: If tabs are hidden and user had amenities/specialty selected, redirect to basic
   const [activeTab, setActiveTab] = useState<'basic' | 'availability' | 'amenities' | 'specialization'>('basic');

@@ -206,14 +206,25 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
         order_id: orderResponse.orderId,
         handler: async (response: any) => {
           try {
-            // Verify payment
-            const verifyResponse = await apiClient.post<any>('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
+            // Verify payment with retry
+            let verifyResponse: any = null;
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                verifyResponse = await apiClient.post<any>('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                break;
+              } catch (verifyErr: any) {
+                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
 
-            if (verifyResponse.success) {
+            if (verifyResponse?.success) {
               // Credit wallet
               await apiClient.post<any>(`/wallet/${customerId}/credit`, {
                 amount: amount,

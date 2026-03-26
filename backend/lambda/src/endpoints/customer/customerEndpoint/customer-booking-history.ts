@@ -77,6 +77,46 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
 
       const bookings = await query(bookingQuery, params);
 
+      // ✅ PAYMENT RECONCILIATION: Check pending bookings against completed payments
+      const pendingBookings = bookings.rows.filter(
+        (b: any) => b.payment_status !== 'paid' && ['pending', 'pending_payment'].includes(b.status)
+      );
+
+      if (pendingBookings.length > 0) {
+        try {
+          const pendingIds = pendingBookings.map((b: any) => b.id);
+          const completedPayments = await query(
+            `SELECT DISTINCT booking_id FROM payments WHERE booking_id = ANY($1) AND payment_status = 'completed'`,
+            [pendingIds]
+          );
+          const paidBookingIds = new Set(completedPayments.rows.map((p: any) => p.booking_id));
+
+          if (paidBookingIds.size > 0) {
+            console.log(`[BOOKINGS-RECONCILE] Reconciling ${paidBookingIds.size} bookings with completed payments`);
+            for (const bookingId of paidBookingIds) {
+              query(
+                `UPDATE bookings SET 
+                   payment_status = 'paid',
+                   status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+                   updated_at = NOW()
+                 WHERE id = $1 AND payment_status != 'paid'`,
+                [bookingId]
+              ).catch((err: any) => console.error(`[BOOKINGS-RECONCILE] Update failed for ${bookingId}:`, err));
+            }
+            for (const row of bookings.rows) {
+              if (paidBookingIds.has(row.id)) {
+                row.payment_status = 'paid';
+                if (row.status === 'pending' || row.status === 'pending_payment') {
+                  row.status = 'confirmed';
+                }
+              }
+            }
+          }
+        } catch (reconcileErr: any) {
+          console.error('[BOOKINGS-RECONCILE] Error:', reconcileErr);
+        }
+      }
+
       // Get statistics
       const statsQuery = await query(
         `SELECT 

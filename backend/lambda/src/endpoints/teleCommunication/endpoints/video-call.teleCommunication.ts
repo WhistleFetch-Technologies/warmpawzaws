@@ -372,6 +372,16 @@ class JoinMeetingHandler extends BaseHandler {
 
       const booking = bookings[0] as any;
 
+      // ✅ Block joining if booking is cancelled or completed
+      const nonJoinableStatuses = ['cancelled', 'completed', 'no_show', 'expired'];
+      if (nonJoinableStatuses.includes(booking.status)) {
+        vidlog('join', 'blocked-non-joinable-status', { bookingId, status: booking.status }, cid);
+        return this.error(
+          `Cannot join call — booking is ${booking.status}. Please create a new booking.`,
+          400
+        );
+      }
+
       // ✅ CRITICAL FIX: Don't change status to IN_PROGRESS for instant tele consultations
       // that are CONFIRMED but payment is still PENDING.
       // The status should remain CONFIRMED until payment is completed.
