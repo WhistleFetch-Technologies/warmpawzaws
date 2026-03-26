@@ -88,6 +88,10 @@ export function navigateWhatsNewFromFullPage(router: AppRouter, announcement: Wh
     router.push('/subscriptions');
     return;
   }
+  if (type === 'feature' || announcement.id === 'ai') {
+    router.push('/chat');
+    return;
+  }
 
   const raw = String(announcement.ctaLink || '').trim();
   if (!raw) return;

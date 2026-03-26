@@ -29,6 +29,7 @@ import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { ProfessionalProfile, ProfessionalProfileManagerProps } from './constants/interface';
 import { parseSpecializations } from './constants/helpers';
+import { hasVendorRole } from '@/lib/vendor-utils';
 
 // ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
 // This ensures specializations are always up-to-date and role-specific based on admin configuration
@@ -74,6 +75,13 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   });
   const [hasChanges, setHasChanges] = useState(false);
 
+  const isPetInsuranceProfile = hasVendorRole(
+    {
+      roleId: roleId || initialProfile?.roleId || initialProfile?.role_id,
+      roleName: profile.role_name || vendorRoleName,
+    },
+    ['pet_insurance', 'insurance']
+  );
 
   useEffect(() => {
     loadProfile();
@@ -181,7 +189,9 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     if (!profile.email.trim()) errors.email = 'Email is required';
     if (!profile.photo_url) errors.photo_url = 'Profile photo is recommended for better visibility to customers';
     if (!profile.qualifications?.trim()) errors.qualifications = 'Qualifications help customers trust your expertise';
-    if (profile.specializations.length === 0) errors.specializations = 'Select at least one specialization';
+    if (!isPetInsuranceProfile && profile.specializations.length === 0) {
+      errors.specializations = 'Select at least one specialization';
+    }
     if (!profile.address.trim()) errors.address = 'Address is required';
     if (!profile.city.trim()) errors.city = 'City is required';
 
@@ -215,7 +225,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           longitude: profile.longitude,
           description: profile.description,
           qualifications: profile.qualifications,
-          specializations: JSON.stringify(profile.specializations), // Store as JSON array
+          specializations: JSON.stringify(isPetInsuranceProfile ? [] : profile.specializations),
           experience_years: profile.experience_years,
           service_area: profile.service_area,
           operating_hours: profile.operating_hours,
@@ -240,10 +250,9 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const calculateCompletion = () => {
     let filled = 0;
     // ✅ Updated to match ALL fields that can be filled in the Professional Profile form
-    // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations, 
+    // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations (optional for pet insurance),
     //                     experience_years, address, city, state, pincode, service_area, description
-    // Total: 13 fields - when all are filled, should be 100%
-    let total = 13;
+    let total = isPetInsuranceProfile ? 12 : 13;
 
     // ✅ FIX: Check each field with proper validation
     // 1. Profile Photo
@@ -261,8 +270,15 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     // 5. Qualifications
     if (profile.qualifications && profile.qualifications.trim()) filled++;
 
-    // 6. Specializations (must have at least 1)
-    if (profile.specializations && Array.isArray(profile.specializations) && profile.specializations.length > 0) filled++;
+    // 6. Specializations (must have at least 1, except pet insurance)
+    if (
+      !isPetInsuranceProfile &&
+      profile.specializations &&
+      Array.isArray(profile.specializations) &&
+      profile.specializations.length > 0
+    ) {
+      filled++;
+    }
 
     // 7. Experience Years (can be 0, so check if defined)
     if (profile.experience_years !== null && profile.experience_years !== undefined) filled++;
@@ -308,7 +324,6 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     console.log(`  description: ${!!profile.description && profile.description.trim() ? '✅' : '❌'} (value: '${(profile.description || '').substring(0, 30)}...')`);
     console.log(`[ProfileCompletion] ===========================================`);
 
-    // ✅ FIX: If all 13 fields are filled, ensure it returns exactly 100%
     if (filled === total) {
       return 100;
     }
@@ -530,35 +545,37 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                 )}
               </div>
 
-              {/* Specializations - Using SpecializationSelector for role-specific specializations from database */}
-              <div>
-                <Label className="mb-3 block">
-                  Specializations * <span className="text-xs text-gray-500">(Select at least one)</span>
-                </Label>
-                {!roleId ? (
-                  <div className="p-4 border border-red-200 rounded-lg bg-red-50">
-                    <p className="text-red-600 text-sm">
-                      ⚠️ Vendor role not found. Cannot load specializations. Please contact support.
-                    </p>
-                  </div>
-                ) : (
-                  <SpecializationSelector
-                    roleId={roleId}
-                    selected={profile.specializations}
-                    onChange={(specIds) => {
-                      setProfile(prev => ({ ...prev, specializations: specIds }));
-                      setHasChanges(true);
-                      if (specIds.length > 0) {
-                        setFormErrors(prev => ({ ...prev, specializations: '' }));
-                      }
-                    }}
-                    isSoloProvider={true} // ✅ FIX: ProfessionalProfileManager is for solo providers
-                  />
-                )}
-                {formErrors.specializations && (
-                  <p className="text-red-500 text-xs mt-2">{formErrors.specializations}</p>
-                )}
-              </div>
+              {/* Specializations — not used for pet insurance */}
+              {!isPetInsuranceProfile && (
+                <div>
+                  <Label className="mb-3 block">
+                    Specializations * <span className="text-xs text-gray-500">(Select at least one)</span>
+                  </Label>
+                  {!roleId ? (
+                    <div className="p-4 border border-red-200 rounded-lg bg-red-50">
+                      <p className="text-red-600 text-sm">
+                        ⚠️ Vendor role not found. Cannot load specializations. Please contact support.
+                      </p>
+                    </div>
+                  ) : (
+                    <SpecializationSelector
+                      roleId={roleId}
+                      selected={profile.specializations}
+                      onChange={(specIds) => {
+                        setProfile(prev => ({ ...prev, specializations: specIds }));
+                        setHasChanges(true);
+                        if (specIds.length > 0) {
+                          setFormErrors(prev => ({ ...prev, specializations: '' }));
+                        }
+                      }}
+                      isSoloProvider={true}
+                    />
+                  )}
+                  {formErrors.specializations && (
+                    <p className="text-red-500 text-xs mt-2">{formErrors.specializations}</p>
+                  )}
+                </div>
+              )}
 
               {/* Professional Bio */}
               <div>

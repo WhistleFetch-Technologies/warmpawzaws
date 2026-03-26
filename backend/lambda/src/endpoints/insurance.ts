@@ -15,10 +15,106 @@
  * ============================================================================
  */
 
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+
+function toMaybeNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Prefer a positive premium; many legacy rows only populated monthly_premium (019) */
+function pickDisplayedPremium(row: Record<string, unknown>): number {
+  const candidates = [
+    toMaybeNum(row.premium_monthly),
+    toMaybeNum(row.monthly_premium),
+    toMaybeNum(row.premium),
+    toMaybeNum((row as { premiumMonthly?: unknown }).premiumMonthly),
+    toMaybeNum((row as { monthlyPremium?: unknown }).monthlyPremium),
+  ];
+  for (const n of candidates) {
+    if (n != null && n > 0) return n;
+  }
+  for (const n of candidates) {
+    if (n != null) return n;
+  }
+  return 0;
+}
+
+function parseCoverageDetailsJson(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw);
+      return typeof o === 'object' && o !== null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/** Normalize row for vendor GET so UI always gets premium, deductible, coverage_details */
+function shapeVendorInsurancePlanRow(r: Record<string, unknown>): Record<string, unknown> {
+  const cd = parseCoverageDetailsJson(r.coverage_details);
+  const premium = pickDisplayedPremium(r);
+  const deductible = toMaybeNum(r.deductible) ?? 0;
+  const coverageAmount =
+    toMaybeNum(r.coverage_amount) ??
+    toMaybeNum((r as { coverageAmount?: unknown }).coverageAmount) ??
+    0;
+
+  return {
+    ...r,
+    coverage_details: cd,
+    premium_monthly: premium,
+    monthly_premium: premium,
+    deductible,
+    coverage_amount: coverageAmount,
+  };
+}
+
+/** Merge vendor UI fields into coverage_details JSONB */
+function buildInsuranceCoverageDetails(
+  planData: Record<string, unknown>,
+  previous: Record<string, unknown> | null
+): Record<string, unknown> {
+  const prev = previous && typeof previous === 'object' ? { ...previous } : {};
+  const features = planData.features !== undefined
+    ? (Array.isArray(planData.features) ? planData.features : [])
+    : Array.isArray(prev.features)
+      ? prev.features
+      : [];
+  const pet_types = planData.pet_types !== undefined
+    ? (Array.isArray(planData.pet_types) ? planData.pet_types : [])
+    : Array.isArray(prev.pet_types)
+      ? prev.pet_types
+      : [];
+  const out: Record<string, unknown> = { ...prev, features, pet_types };
+  if (planData.age_min !== undefined) out.age_min = planData.age_min;
+  if (planData.age_max !== undefined) out.age_max = planData.age_max;
+  return out;
+}
+
+/** Migration 019: plan_type CHECK (accident_only | time_limited | maximum_benefit | lifetime) */
+function legacyInsurancePlanType(raw: unknown): string {
+  const t = String(raw ?? 'lifetime')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  const allowed = new Set(['accident_only', 'time_limited', 'maximum_benefit', 'lifetime']);
+  if (allowed.has(t)) return t;
+  if (t.includes('comprehen')) return 'lifetime';
+  if (t.includes('accident')) return 'accident_only';
+  if (t.includes('time') && t.includes('limit')) return 'time_limited';
+  if (t.includes('maximum') || t.includes('max_benefit')) return 'maximum_benefit';
+  return 'lifetime';
+}
 
 export function registerInsuranceEndpoints(app: Hono) {
   /**
@@ -40,7 +136,7 @@ export function registerInsuranceEndpoints(app: Hono) {
       let paramIndex = 1;
 
       if (type) {
-        plansQuery += ` AND type = $${paramIndex}`;
+        plansQuery += ` AND (coverage_type = $${paramIndex} OR plan_type = $${paramIndex})`;
         params.push(type);
         paramIndex++;
       }
@@ -52,12 +148,12 @@ export function registerInsuranceEndpoints(app: Hono) {
       }
 
       if (maxPremium < 999999) {
-        plansQuery += ` AND monthly_premium <= $${paramIndex}`;
+        plansQuery += ` AND COALESCE(monthly_premium, premium_monthly) <= $${paramIndex}`;
         params.push(maxPremium);
         paramIndex++;
       }
 
-      plansQuery += ` ORDER BY monthly_premium ASC`;
+      plansQuery += ` ORDER BY COALESCE(monthly_premium, premium_monthly) ASC NULLS LAST`;
 
       const plans = await query(plansQuery, params).catch(() => ({ rows: [] }));
 
@@ -102,7 +198,7 @@ export function registerInsuranceEndpoints(app: Hono) {
 
       // Calculate premium (simplified - can be enhanced)
       const petAge = pet.age_years || 0;
-      let premium = parseFloat(plan.monthly_premium || '0');
+      let premium = parseFloat(String(plan.premium_monthly ?? plan.monthly_premium ?? '0'));
       if (petAge > 8) premium *= 1.6;
       else if (petAge > 5) premium *= 1.3;
 
@@ -147,7 +243,10 @@ export function registerInsuranceEndpoints(app: Hono) {
       const { customerId } = c.req.param();
 
       const policies = await query(
-        `SELECT p.*, pl.name as plan_name, pl.provider, pl.type as plan_type
+        `SELECT p.*,
+                COALESCE(pl.plan_name, pl.name) AS plan_name,
+                pl.provider,
+                COALESCE(pl.coverage_type, pl.plan_type) AS plan_type
          FROM insurance_policies p
          INNER JOIN insurance_plans pl ON p.plan_id = pl.id
          WHERE p.customer_id = $1
@@ -267,8 +366,9 @@ export function registerInsuranceEndpoints(app: Hono) {
            c.phone as customer_phone
          FROM insurance_claims ic
          INNER JOIN insurance_policies ip ON ic.policy_id = ip.id
+         INNER JOIN insurance_plans ipl ON ip.plan_id = ipl.id
          LEFT JOIN customers c ON ip.customer_id = c.id
-         WHERE ic.vendor_id = $1 OR ip.vendor_id = $1
+         WHERE ipl.vendor_id = $1
          ORDER BY ic.created_at DESC`,
         [vendorId]
       ).catch(() => ({ rows: [] }));
@@ -292,12 +392,17 @@ export function registerInsuranceEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
+      // Policies are tied to plans; filter by issuing vendor via plan.vendor_id (not p.vendor_id).
       const policies = await query(
-        `SELECT p.*, pl.name as plan_name, pl.provider, c.full_name as customer_name
+        `SELECT p.*,
+                ipl.plan_name AS plan_name,
+                c.full_name AS customer_name,
+                pt.name AS pet_name
          FROM insurance_policies p
-         INNER JOIN insurance_plans pl ON p.plan_id = pl.id
+         INNER JOIN insurance_plans ipl ON p.plan_id = ipl.id
          LEFT JOIN customers c ON p.customer_id = c.id
-         WHERE p.vendor_id = $1
+         LEFT JOIN pets pt ON p.pet_id = pt.id
+         WHERE ipl.vendor_id = $1
          ORDER BY p.created_at DESC`,
         [vendorId]
       ).catch(() => ({ rows: [] }));
@@ -332,10 +437,14 @@ export function registerInsuranceEndpoints(app: Hono) {
         [vendorId]
       ).catch(() => ({ rows: [] }));
 
+      const shaped = (plans.rows || []).map((row: Record<string, unknown>) =>
+        shapeVendorInsurancePlanRow(row)
+      );
+
       return c.json({
         success: true,
-        plans: plans.rows,
-        total: plans.rows.length,
+        plans: shaped,
+        total: shaped.length,
       });
     } catch (error: any) {
       console.error('Error fetching vendor plans:', error);
@@ -352,17 +461,45 @@ export function registerInsuranceEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const planData = await c.req.json();
 
+      const legacyPlanId =
+        planData.plan_id != null && String(planData.plan_id).trim() !== ''
+          ? String(planData.plan_id).trim()
+          : randomUUID();
+
+      const monthly =
+        Number(planData.price ?? planData.premium ?? planData.premium_monthly ?? 0) || 0;
+      const yearly =
+        Number(planData.premium_yearly ?? 0) || (monthly ? monthly * 12 : 0) || 0;
+      const deductibleNum =
+        parseFloat(String(planData.deductible ?? '0').replace(/[^0-9.]/g, '')) || 0;
+      const coverageAmount = parseFloat(
+        String(planData.coverage || planData.coverage_amount || '50000').replace(/[^0-9.]/g, '')
+      );
+
+      const coverage_details = buildInsuranceCoverageDetails(planData as Record<string, unknown>, null);
+
       const plan = await insert('insurance_plans', {
+        // Legacy 019: plan_id TEXT NOT NULL (separate from UUID primary key id)
+        plan_id: legacyPlanId,
         vendor_id: vendorId,
         plan_name: planData.name || planData.plan_name,
         description: planData.description,
         coverage_type: planData.coverageType || planData.coverage_type || 'basic',
-        coverage_amount: parseFloat(String(planData.coverage || planData.coverage_amount || '50000').replace(/[^0-9.]/g, '')),
-        premium_monthly: planData.price || planData.premium_monthly,
-        premium_yearly: planData.premium_yearly || (planData.price ? planData.price * 12 : 0),
-        coverage_details: { features: planData.features || [] },
+        coverage_amount: coverageAmount,
+        premium_monthly: monthly || Number(planData.premium_monthly) || 0,
+        premium_yearly: yearly,
+        coverage_details,
         waiting_period_days: parseInt(planData.waitingPeriod || planData.waiting_period_days || '30', 10),
         is_active: planData.isActive !== false,
+        // Legacy 019 NOT NULL columns (no UI field for provider / 019 plan_type)
+        provider: String(planData.provider || 'Vendor').trim() || 'Vendor',
+        plan_type: legacyInsurancePlanType(
+          planData.planType || planData.plan_type || planData.category || 'comprehensive'
+        ),
+        coverage: {},
+        monthly_premium: monthly,
+        annual_premium: yearly || monthly * 12,
+        deductible: deductibleNum,
       });
 
       return c.json({
@@ -385,21 +522,64 @@ export function registerInsuranceEndpoints(app: Hono) {
       const { vendorId, planId } = c.req.param();
       const planData = await c.req.json();
 
-      const updated = await update('insurance_plans', 
-        { id: planId },
-        {
-          plan_name: planData.name || planData.plan_name,
-          description: planData.description,
-          coverage_type: planData.coverageType || planData.coverage_type,
-          coverage_amount: planData.coverage ? parseFloat(String(planData.coverage).replace(/[^0-9.]/g, '')) : undefined,
-          premium_monthly: planData.price || planData.premium_monthly,
-          premium_yearly: planData.premium_yearly,
-          coverage_details: planData.features ? { features: planData.features } : undefined,
-          waiting_period_days: planData.waitingPeriod ? parseInt(planData.waitingPeriod, 10) : undefined,
-          is_active: planData.isActive,
-          updated_at: new Date().toISOString(),
-        }
+      const existing = await query(
+        `SELECT coverage_details FROM insurance_plans WHERE id = $1::uuid AND vendor_id = $2::uuid`,
+        [planId, vendorId]
       );
+      if (!existing.rows?.length) {
+        return c.json({ success: false, error: 'Plan not found' }, 404);
+      }
+
+      const prevDetails = existing.rows[0].coverage_details as Record<string, unknown> | null;
+      const coverage_details = buildInsuranceCoverageDetails(planData as Record<string, unknown>, prevDetails);
+
+      const premiumMonthly =
+        planData.premium !== undefined || planData.price !== undefined || planData.premium_monthly !== undefined
+          ? Number(planData.premium ?? planData.price ?? planData.premium_monthly ?? 0) || 0
+          : undefined;
+      const premiumYearly =
+        planData.premium_yearly !== undefined
+          ? Number(planData.premium_yearly)
+          : premiumMonthly !== undefined
+            ? premiumMonthly * 12
+            : undefined;
+
+      const coverageAmount =
+        planData.coverage_amount !== undefined || planData.coverage !== undefined
+          ? parseFloat(
+              String(planData.coverage_amount ?? planData.coverage ?? '0').replace(/[^0-9.]/g, '')
+            )
+          : undefined;
+
+      const deductibleNum =
+        planData.deductible !== undefined && planData.deductible !== null
+          ? parseFloat(String(planData.deductible).replace(/[^0-9.]/g, '')) || 0
+          : undefined;
+
+      const updated = await update('insurance_plans', { id: planId, vendor_id: vendorId }, {
+        plan_name: planData.name || planData.plan_name,
+        description: planData.description,
+        coverage_type: planData.coverageType || planData.coverage_type,
+        coverage_amount: coverageAmount,
+        premium_monthly: premiumMonthly,
+        premium_yearly: premiumYearly,
+        monthly_premium: premiumMonthly,
+        annual_premium: premiumYearly,
+        deductible: deductibleNum,
+        coverage_details,
+        waiting_period_days:
+          planData.waitingPeriod !== undefined
+            ? parseInt(String(planData.waitingPeriod), 10)
+            : planData.waiting_period_days !== undefined
+              ? parseInt(String(planData.waiting_period_days), 10)
+              : undefined,
+        is_active: planData.isActive,
+        plan_type:
+          planData.plan_type !== undefined || planData.planType !== undefined
+            ? legacyInsurancePlanType(planData.plan_type ?? planData.planType)
+            : undefined,
+        updated_at: new Date().toISOString(),
+      });
 
       return c.json({
         success: true,
@@ -462,7 +642,8 @@ export function registerInsuranceEndpoints(app: Hono) {
         `SELECT COUNT(*) as count FROM insurance_claims ic
          JOIN insurance_policies ip ON ic.policy_id = ip.id
          JOIN insurance_plans ipl ON ip.plan_id = ipl.id
-         WHERE ipl.vendor_id = $1 AND ic.status = 'pending'`,
+         WHERE ipl.vendor_id = $1
+           AND ic.status IN ('pending', 'submitted', 'under_review')`,
         [vendorId]
       ).catch(() => ({ rows: [{ count: 0 }] }));
 
@@ -555,9 +736,16 @@ export function registerInsuranceEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
 
       const policies = await query(
-        `SELECT * FROM insurance_plans
-         WHERE vendor_id = $1
-         ORDER BY created_at DESC`,
+        `SELECT p.*,
+                ipl.plan_name AS plan_name,
+                c.full_name AS customer_name,
+                pt.name AS pet_name
+         FROM insurance_policies p
+         INNER JOIN insurance_plans ipl ON p.plan_id = ipl.id
+         LEFT JOIN customers c ON p.customer_id = c.id
+         LEFT JOIN pets pt ON p.pet_id = pt.id
+         WHERE ipl.vendor_id = $1
+         ORDER BY p.created_at DESC`,
         [vendorId]
       ).catch(() => ({ rows: [] }));
 
@@ -581,17 +769,41 @@ export function registerInsuranceEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const policyData = await c.req.json();
 
+      const legacyPlanId =
+        policyData.plan_id != null && String(policyData.plan_id).trim() !== ''
+          ? String(policyData.plan_id).trim()
+          : randomUUID();
+
+      const monthly = Number(policyData.price ?? policyData.premium ?? policyData.premium_monthly ?? 0) || 0;
+      const yearly =
+        policyData.period === 'year'
+          ? monthly
+          : monthly * 12 || Number(policyData.premium_yearly ?? 0) || 0;
+      const deductibleNum =
+        parseFloat(String(policyData.deductible ?? '0').replace(/[^0-9.]/g, '')) || 0;
+
+      const coverage_details = buildInsuranceCoverageDetails(policyData as Record<string, unknown>, null);
+
       const plan = await insert('insurance_plans', {
+        plan_id: legacyPlanId,
         vendor_id: vendorId,
         plan_name: policyData.name,
         description: policyData.description,
         coverage_type: policyData.coverage || 'basic',
         coverage_amount: parseFloat(policyData.coverage?.replace(/[^0-9.]/g, '') || '50000'),
-        premium_monthly: policyData.price,
-        premium_yearly: policyData.period === 'year' ? policyData.price : policyData.price * 12,
-        coverage_details: { features: policyData.features || [] },
-        waiting_period_days: parseInt(policyData.deductible || '30', 10),
+        premium_monthly: monthly,
+        premium_yearly: yearly,
+        coverage_details,
+        waiting_period_days: parseInt(policyData.waitingPeriod || policyData.waiting_period_days || '30', 10),
         is_active: true,
+        provider: String(policyData.provider || 'Vendor').trim() || 'Vendor',
+        plan_type: legacyInsurancePlanType(
+          policyData.planType || policyData.plan_type || policyData.category || 'comprehensive'
+        ),
+        coverage: {},
+        monthly_premium: monthly,
+        annual_premium: yearly || monthly * 12,
+        deductible: deductibleNum,
       });
 
       return c.json({

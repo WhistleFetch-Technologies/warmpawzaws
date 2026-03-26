@@ -5,6 +5,7 @@ import { ArrowLeft, AlertTriangle, Phone, MapPin, Clock, Stethoscope } from 'luc
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 
 interface EmergencyBookingPageProps {
@@ -63,7 +64,7 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
   const handleBookEmergency = async (vetId: string) => {
     try {
       // Get customer ID
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         toast.error('Please login to create emergency booking');
         return;

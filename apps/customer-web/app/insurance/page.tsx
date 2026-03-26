@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES
@@ -101,7 +102,7 @@ export default function InsurancePage() {
       setError(null);
       
       // Get customer ID from localStorage
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       
       const requests: Promise<any>[] = [apiClient.get<any>('/insurance/plans')];
       
@@ -145,7 +146,7 @@ export default function InsurancePage() {
     if (!confirm('Purchase this insurance plan?')) return;
     
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       await apiClient.post('/insurance/policies', { planId, customerId });
       setSuccess('Insurance policy purchased successfully!');
       loadData();

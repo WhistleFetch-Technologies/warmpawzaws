@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId, isCustomerDatabaseUuid, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,18 +46,6 @@ type MatchProfile = {
 
 type MyPet = { id: string; name?: string; species?: string; breed?: string; gender?: string };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function readStoredCustomerId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const a = localStorage.getItem('customerId');
-  const b = localStorage.getItem('warmpawz_customer_id');
-  for (const v of [a, b]) {
-    if (v && UUID_RE.test(v)) return v;
-  }
-  return null;
-}
-
 export function MatingDatingHub(props: MatingDatingHubProps) {
   const [profiles, setProfiles] = useState<MatchProfile[]>([]);
   const [myPets, setMyPets] = useState<MyPet[]>([]);
@@ -67,8 +56,8 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterBreed, setFilterBreed] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(() => {
-    if (props.customerId && UUID_RE.test(props.customerId)) return props.customerId;
-    return readStoredCustomerId();
+    if (props.customerId && isCustomerDatabaseUuid(props.customerId)) return props.customerId;
+    return typeof window !== 'undefined' ? getResolvedCustomerId() : null;
   });
   const [fromPetId, setFromPetId] = useState<string>('');
   const [requestMessage, setRequestMessage] = useState('');
@@ -77,11 +66,11 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
   const phone = props.customerPhone || props.phone;
 
   const resolveCustomerId = useCallback(async () => {
-    if (props.customerId && UUID_RE.test(props.customerId)) {
+    if (props.customerId && isCustomerDatabaseUuid(props.customerId)) {
       setCustomerId(props.customerId);
       return props.customerId;
     }
-    const stored = readStoredCustomerId();
+    const stored = getResolvedCustomerId();
     if (stored) {
       setCustomerId(stored);
       return stored;
@@ -90,14 +79,11 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
     try {
       const res = await apiClient.get<any>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
       const id = res?.profile?.id || res?.id || res?.customer?.id;
-      if (id && UUID_RE.test(String(id))) {
-        setCustomerId(String(id));
-        try {
-          localStorage.setItem('customerId', String(id));
-        } catch {
-          /* ignore */
-        }
-        return String(id);
+      if (id && isCustomerDatabaseUuid(String(id))) {
+        const sid = String(id).trim();
+        setCustomerId(sid);
+        persistCustomerDatabaseId(sid);
+        return sid;
       }
     } catch {
       /* profile route may vary; ignore */

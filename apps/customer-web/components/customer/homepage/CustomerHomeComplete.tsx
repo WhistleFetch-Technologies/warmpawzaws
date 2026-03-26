@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
+import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
@@ -28,8 +30,12 @@ import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
 import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
-import { adoptionOptions, serviceBaseOnpincode } from './constants/helpers';
+import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import { getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
+import { toast } from 'sonner';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -210,6 +216,62 @@ export function CustomerHomeComplete({
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
+
+  /** Featured providers, Adoption & Breeding rows, Premium Pet Food — shared spotlight navigation. */
+  const navigateFromFeaturedVendorMeta = useCallback(
+    (v: Record<string, unknown>, extraNavigateData?: Record<string, unknown>) => {
+      const dest = resolveFeaturedVendorDestination(v);
+      const rawId = v.vendorId ?? v.vendor_id;
+      const base =
+        rawId != null && String(rawId).trim() !== ''
+          ? { vendorId: String(rawId) }
+          : undefined;
+      const data =
+        extraNavigateData != null && Object.keys(extraNavigateData).length > 0
+          ? { ...base, ...extraNavigateData }
+          : base;
+
+      if (dest.kind === 'external') {
+        window.location.assign(dest.url);
+        return;
+      }
+      if (dest.kind === 'router') {
+        const path = dest.path.startsWith('/') ? dest.path : `/${dest.path}`;
+        router.push(path);
+        return;
+      }
+      onNavigate?.(dest.screen, data);
+    },
+    [onNavigate, router]
+  );
+
+  /** Single entry for home CTAs: internal screens → onNavigate; paths → router; http(s) / mailto / tel → window. */
+  const handleNavigation = useCallback(
+    (dest: string, data?: Parameters<NonNullable<CustomerHomeCompleteProps['onNavigate']>>[1]) => {
+      const d = (dest ?? '').trim();
+      if (!d) return;
+      if (/^https?:\/\//i.test(d) || d.startsWith('//')) {
+        const url = d.startsWith('//') ? `https:${d}` : d;
+        window.location.assign(url);
+        return;
+      }
+      if (/^(mailto:|tel:)/i.test(d)) {
+        window.location.href = d;
+        return;
+      }
+      if (d.startsWith('/')) {
+        router.push(d);
+        return;
+      }
+      onNavigate?.(d, data);
+    },
+    [onNavigate, router]
+  );
+
+  const whatsNewAnnouncements = useMemo(
+    () => buildWhatsNewAnnouncements(dynamicAnnouncements),
+    [dynamicAnnouncements]
+  );
 
   // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
   const {
@@ -1172,6 +1234,7 @@ export function CustomerHomeComplete({
   // ✅ FIX: Remove dummy articles - show only admin-created articles
   const articles = dynamicArticles.map((a: any) => ({
     id: a.id,
+    slug: a.slug,
     title: a.title,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
@@ -1202,7 +1265,7 @@ export function CustomerHomeComplete({
                 className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
               >
                 {userProfilePhoto ? (
-                  <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                  <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
                     {userData.name.charAt(0).toUpperCase()}
@@ -1214,30 +1277,19 @@ export function CustomerHomeComplete({
                   <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
                   <span className="text-base" role="img" aria-label="wave">👋</span>
                 </div>
-                <p className="text-white/65 text-xs font-normal tracking-wide">Explore WarmPawz Services</p>
+                <p className="text-white/65 text-xs font-normal tracking-wide">Explore Warmpawz Services</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
               {/* Wallet Icon - Gold coin style with balance */}
               <WalletIcon
                 customerPhone={phone}
-                onClick={() => onNavigate && onNavigate('wallet')}
+                onClick={() => handleNavigation('wallet')}
                 size="sm"
                 showBalance={true}
               />
               <button
-                onClick={() => onNavigate && onNavigate('cart')}
-                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
-              >
-                <ShoppingCart className="w-[18px] h-[18px] text-white" />
-                {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-[18px] h-[18px] flex items-center justify-center font-bold shadow-sm">
-                    {itemCount}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => onNavigate?.('wishlist')}
+                onClick={() => handleNavigation('wishlist')}
                 className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
                 aria-label="Wishlist"
               >
@@ -1264,7 +1316,7 @@ export function CustomerHomeComplete({
                           }`}
                       >
                         {pet.photo || pet.image ? (
-                          <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                          <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
                         ) : (
                           pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
                         )}
@@ -1277,9 +1329,13 @@ export function CustomerHomeComplete({
                     {/* Edit/View Button - Only show for selected pet */}
                     {selectedPet?.id === pet.id && (
                       <button
-                        onClick={() => onPetClick && onPetClick(pet.id)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPetClick?.(pet.id);
+                        }}
                         className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
-                        title="View/Edit Pet Profile"
+                        title="View / edit pet"
                       >
                         <ChevronRight className="w-2.5 h-2.5 text-white" />
                       </button>
@@ -1366,12 +1422,17 @@ export function CustomerHomeComplete({
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={phone}
+            onSearch={(searchQuery) => {
+              if (searchQuery?.trim()) {
+                router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+              }
+            }}
             onResultSelect={(result) => {
               console.log('Search result selected:', result);
               if (result.type === 'symptom') {
                 // Symptom search: drive to problem_grid_flow with specialization so user picks service style then books
                 const d = result.data || {};
-                onNavigate?.('services_by_problem', {
+                handleNavigation('services_by_problem', {
                   problemId: d.specializationId || result.id,
                   problemTitle: d.name || 'Consult',
                   roleId: d.roleId || 'vet_solo',
@@ -1387,12 +1448,12 @@ export function CustomerHomeComplete({
 
                 const category = result.category || result.data?.serviceType || result.data?.category || '';
                 const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
-                onNavigate?.(targetScreen);
+                handleNavigation(targetScreen);
               } else if (result.type === 'product') {
-                onNavigate?.('shop');
+                handleNavigation('shop');
               } else if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
                 const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
-                onNavigate?.(serviceType);
+                handleNavigation(serviceType);
               }
             }}
           />
@@ -1403,7 +1464,7 @@ export function CustomerHomeComplete({
           <div className="px-4 flex items-center justify-between mb-2">
             <h2 className="text-gray-900 text-sm font-semibold">What&apos;s your pet needs?</h2>
             <button
-              onClick={() => onNavigate?.('problem_grid')}
+              onClick={() => handleNavigation('problem_grid')}
               className="text-[11px] text-[#FF8C42] font-medium"
             >
               View All
@@ -1411,7 +1472,7 @@ export function CustomerHomeComplete({
           </div>
           <ProblemGridNavigation
             onProblemSelect={(problemId, problem) => {
-              onNavigate?.('services_by_problem', {
+              handleNavigation('services_by_problem', {
                 problemId,
                 problemTitle: problem?.title || (problem as any)?.name || 'Service',
                 roleId: (problem as any)?.roleId || (problem as any)?.vendorType,
@@ -1446,8 +1507,8 @@ export function CustomerHomeComplete({
                             source: 'home_carousel'
                           }).catch(() => { }); // Silent fail for tracking
                         }
-                        // Navigate
-                        banner.ctaLink && onNavigate?.(banner.ctaLink);
+                        // Navigate (screen id, path, or external URL)
+                        banner.ctaLink && handleNavigation(String(banner.ctaLink));
                       }}
                     >
                       {banner.ctaText || 'Claim Now'}
@@ -1481,7 +1542,7 @@ export function CustomerHomeComplete({
             </div>
             <div className="flex-1 h-px bg-gray-100"></div>
             <button
-              onClick={() => onNavigate?.('shop')}
+              onClick={() => handleNavigation('shop')}
               className="text-xs text-[#FF8C42] font-medium"
             >
               View All
@@ -1500,7 +1561,7 @@ export function CustomerHomeComplete({
             ].map((category) => (
               <button
                 key={category.id}
-                onClick={() => onNavigate?.('shop', { category: category.id })}
+                onClick={() => handleNavigation('shop', { category: category.id })}
                 className="flex-shrink-0 flex flex-col items-center gap-1 group"
               >
                 <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all">
@@ -1525,7 +1586,7 @@ export function CustomerHomeComplete({
               return (
                 <button
                   key={service.screen || index}
-                  onClick={() => onNavigate?.(service.screen)}
+                  onClick={() => handleNavigation(service.screen)}
                   className="flex flex-col items-center gap-1 group"
                 >
                   <div className={`w-11 h-11 ${service.color} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm`}>
@@ -1546,7 +1607,7 @@ export function CustomerHomeComplete({
               <h2 className="text-black font-semibold">Grooming Services</h2>
             </div>
             <button
-              onClick={() => onNavigate?.('grooming')}
+              onClick={() => handleNavigation('grooming')}
               className="text-xs text-[#FF8C42] font-medium flex items-center gap-1"
             >
               View All <ChevronRight className="w-4 h-4" />
@@ -1559,7 +1620,7 @@ export function CustomerHomeComplete({
                 <div
                   key={index}
                   className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => onNavigate?.('grooming')}
+                  onClick={() => handleNavigation('grooming')}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
@@ -1578,7 +1639,7 @@ export function CustomerHomeComplete({
                       className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium hover:bg-[#FF7A2E] transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNavigate?.('grooming');
+                        handleNavigation('grooming');
                       }}
                     >
                       Book Now
@@ -1598,7 +1659,7 @@ export function CustomerHomeComplete({
               <h2 className="text-black font-semibold">Veterinary Care</h2>
             </div>
             <button
-              onClick={() => onNavigate?.('vet')}
+              onClick={() => handleNavigation('vet')}
               className="text-xs text-blue-600 font-medium flex items-center gap-1"
             >
               View All <ChevronRight className="w-4 h-4" />
@@ -1612,24 +1673,7 @@ export function CustomerHomeComplete({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('📞 [Tele Consultation] Button clicked, onNavigate:', !!onNavigate);
-                if (onNavigate) {
-                  try {
-                    onNavigate('vet-tele-consultation');
-                  } catch (error) {
-                    console.error('❌ [Tele Consultation] Navigation error:', error);
-                    // Fallback: try to navigate using window location
-                    if (typeof window !== 'undefined') {
-                      window.location.href = '/vet-tele-consultation';
-                    }
-                  }
-                } else {
-                  console.error('❌ [Tele Consultation] onNavigate is not defined');
-                  // Fallback: try to navigate using window location or router
-                  if (typeof window !== 'undefined') {
-                    window.location.href = '/vet-tele-consultation';
-                  }
-                }
+                handleNavigation('vet-tele-consultation');
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -1647,7 +1691,7 @@ export function CustomerHomeComplete({
               <p className="text-blue-600 font-medium text-sm pointer-events-none">₹299</p>
             </button>
             <button
-              onClick={() => onNavigate?.('vet')}
+              onClick={() => handleNavigation('vet')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
               <div className="w-10 h-10 mx-auto mb-2 bg-green-100 rounded-xl flex items-center justify-center">
@@ -1657,7 +1701,7 @@ export function CustomerHomeComplete({
               <p className="text-blue-600 font-medium text-sm">₹599</p>
             </button>
             <button
-              onClick={() => onNavigate?.('vet')}
+              onClick={() => handleNavigation('vet')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
               <div className="w-10 h-10 mx-auto mb-2 bg-purple-100 rounded-xl flex items-center justify-center">
@@ -1677,7 +1721,7 @@ export function CustomerHomeComplete({
               <h2 className="text-black font-semibold">Hot Deals</h2>
             </div>
             <button
-              onClick={() => onNavigate?.('shop')}
+              onClick={() => handleNavigation('shop')}
               className="text-xs text-pink-600 font-medium flex items-center gap-1"
             >
               Shop All <ChevronRight className="w-4 h-4" />
@@ -1709,7 +1753,7 @@ export function CustomerHomeComplete({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNavigate?.('shop');
+                        handleNavigation('shop');
                       }}
                       className="w-full bg-[#FF8C42] text-white py-2 rounded-lg text-xs font-medium mt-2"
                     >
@@ -1749,7 +1793,7 @@ export function CustomerHomeComplete({
                   <button
                     onClick={() => {
                       // ✅ FIX: Navigate directly to vet booking flow with package filter
-                      onNavigate?.('vet-booking', {
+                      handleNavigation('vet-booking', {
                         packageId: 'complete-health-package',
                         serviceName: 'Complete Health Package',
                         filter: 'packages'
@@ -1765,7 +1809,7 @@ export function CustomerHomeComplete({
 
             {/* Training */}
             <button
-              onClick={() => onNavigate?.('training')}
+              onClick={() => handleNavigation('training')}
               className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100 text-left hover:shadow-lg transition-all"
             >
               <GraduationCap className="w-8 h-8 text-indigo-600 mb-2" />
@@ -1776,7 +1820,7 @@ export function CustomerHomeComplete({
 
             {/* Boarding */}
             <button
-              onClick={() => onNavigate?.('boarding')}
+              onClick={() => handleNavigation('boarding')}
               className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4 border border-cyan-100 text-left hover:shadow-lg transition-all"
             >
               <HomeIcon className="w-8 h-8 text-cyan-600 mb-2" />
@@ -1787,7 +1831,7 @@ export function CustomerHomeComplete({
 
             {/* Insurance */}
             <button
-              onClick={() => onNavigate?.('insurance')}
+              onClick={() => handleNavigation('insurance')}
               className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100 text-left hover:shadow-lg transition-all"
             >
               <Shield className="w-8 h-8 text-green-600 mb-2" />
@@ -1798,7 +1842,7 @@ export function CustomerHomeComplete({
 
             {/* Walker */}
             <button
-              onClick={() => onNavigate?.('walker')}
+              onClick={() => handleNavigation('walker')}
               className="bg-gradient-to-br from-lime-50 to-green-50 rounded-2xl p-4 border border-lime-100 text-left hover:shadow-lg transition-all"
             >
               <Dog className="w-8 h-8 text-lime-600 mb-2" />
@@ -1817,75 +1861,28 @@ export function CustomerHomeComplete({
               <h2 className="text-black font-semibold">What's New</h2>
             </div>
             <button
-              onClick={() => onNavigate?.('services')}
+              type="button"
+              onClick={() => handleNavigation('whats-new')}
               className="text-xs text-[#FF8C42] font-medium"
             >
-              See All
+              See all
             </button>
           </div>
-          <div className="px-6 space-y-3">
-            {/* Render dynamic announcements if available */}
-            {((dynamicAnnouncements.length > 0 ? dynamicAnnouncements : [
-              { id: 'ai', title: 'AI Pet Assistant', subtitle: 'Get instant answers about pet care', badgeText: 'NEW', badgeColor: 'green', icon: '🤖', announcementType: 'feature' },
-              { id: 'sos', title: 'Emergency Ambulance', subtitle: 'Instant location-based dispatch', badgeText: 'SOS', badgeColor: 'red', icon: '📞', ctaText: 'SOS ALERT', ctaLink: 'ambulance', announcementType: 'emergency' },
-              { id: 'premium', title: 'WarmPawz Plus', subtitle: 'Unlimited services at best prices', badgeText: 'PREMIUM', badgeColor: 'purple', icon: '⭐', announcementType: 'premium' },
-            ])).map((announcement: any) => {
-              const isEmergency = announcement.announcementType === 'emergency';
-              const isPremium = announcement.announcementType === 'premium';
-              const bgGradient = isEmergency
-                ? 'from-red-50 to-orange-50 border-red-100'
-                : isPremium
-                  ? 'from-purple-50 to-indigo-50 border-purple-100'
-                  : 'from-orange-50 to-pink-50 border-orange-100';
-              const iconGradient = isEmergency
-                ? 'from-red-500 to-orange-500'
-                : isPremium
-                  ? 'from-purple-500 to-indigo-500'
-                  : 'from-[#FF8C42] to-[#FF6B35]';
-              const badgeColor = announcement.badgeColor === 'red' ? 'bg-red-500'
-                : announcement.badgeColor === 'purple' ? 'bg-purple-500'
-                  : announcement.badgeColor === 'blue' ? 'bg-blue-500'
-                    : 'bg-green-500';
-              const IconComponent = isEmergency ? Phone : isPremium ? Star : Bot;
-
-              return (
-                <div
-                  key={announcement.id}
-                  className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4`}
-                  onClick={() => !isEmergency && announcement.ctaLink && onNavigate?.(announcement.ctaLink)}
-                >
-                  <div className={`w-16 h-16 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg ${isEmergency ? 'animate-pulse' : ''}`}>
-                    {announcement.icon ? (
-                      <span className="text-2xl">{announcement.icon}</span>
-                    ) : (
-                      <IconComponent className="w-8 h-8" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-xs ${badgeColor} text-white px-2 py-0.5 rounded-full font-medium ${isEmergency ? 'font-bold animate-pulse' : ''}`}>
-                        {announcement.badgeText || 'NEW'}
-                      </span>
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-800 mb-1">{announcement.title}</h3>
-                    <p className="text-xs text-gray-600">{announcement.subtitle}</p>
-                  </div>
-                  {isEmergency && announcement.ctaText ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigate?.(announcement.ctaLink || 'ambulance');
-                      }}
-                      className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
-                    >
-                      {announcement.ctaText}
-                    </button>
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  )}
-                </div>
-              );
-            })}
+          <div className="px-6">
+            <WhatsNewAnnouncementList
+              announcements={whatsNewAnnouncements}
+              interactionMode="hub"
+              onRowPress={(a) => {
+                if (a.announcementType === 'emergency') return;
+                // AI Pet Assistant: open chat widget
+                if (a.id === 'ai' || (a.announcementType === 'feature' && !a.ctaLink?.trim())) {
+                  setShowAIChat(true);
+                  return;
+                }
+                navigateWhatsNewFromFullPage(router, a, 'row');
+              }}
+              onSosPress={(a) => handleNavigation(a.ctaLink?.trim() || 'ambulance')}
+            />
           </div>
         </div>
 
@@ -1896,12 +1893,12 @@ export function CustomerHomeComplete({
             phone={phone}
             hotDeals={displayHotDeals}
             banners={dynamicBanners}
-            onNavigate={onNavigate}
+            onNavigate={handleNavigation}
           />
           <div className="mt-4 pt-4 border-t border-gray-100">
             <TrendingProblems
               onProblemSelect={(problemId, title) => {
-                onNavigate?.('services_by_problem', { problemId, problemTitle: title });
+                handleNavigation('services_by_problem', { problemId, problemTitle: title });
               }}
               limit={5}
             />
@@ -1923,10 +1920,7 @@ export function CustomerHomeComplete({
                 <button
                   key={v.id}
                   type="button"
-                  onClick={() => {
-                    const target = v.ctaLink || (v.roleId ? 'vet' : 'grooming');
-                    onNavigate?.(target, v.vendorId ? { vendorId: v.vendorId } : undefined);
-                  }}
+                  onClick={() => navigateFromFeaturedVendorMeta(v)}
                   className="flex-shrink-0 w-36 bg-white rounded-2xl border border-gray-200 p-4 text-left shadow-sm hover:shadow-md hover:border-amber-200 transition-all"
                 >
                   <div className="w-full aspect-square rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 mb-3 overflow-hidden">
@@ -1960,7 +1954,12 @@ export function CustomerHomeComplete({
           </div>
           <div className="px-6 space-y-3">
             {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, certifiedBreeders: adoptionStats.certifiedBreeders, rehomingListings: adoptionStats.rehomingListings }).map((option, index) => (
-              <div key={index} className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-4 border border-red-100 flex items-center justify-between">
+              <button
+                key={index}
+                type="button"
+                onClick={() => navigateFromFeaturedVendorMeta(option.navMeta)}
+                className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-4 border border-red-100 flex items-center justify-between w-full text-left"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
                     <option.Icon className="w-6 h-6 text-red-500" />
@@ -1974,7 +1973,7 @@ export function CustomerHomeComplete({
                   <p className="text-xs font-medium text-red-600 mb-1">{option.count}</p>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -1989,13 +1988,15 @@ export function CustomerHomeComplete({
             <p className="text-xs text-gray-600">Trusted brands & vendors</p>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {[
-              { name: 'Royal Canin', discount: '25% OFF', Icon: Star },
-              { name: 'Pedigree', discount: '30% OFF', Icon: Bone },
-              { name: 'Drools', discount: '20% OFF', Icon: Bone },
-              { name: 'Whiskas', discount: '15% OFF', Icon: Cat },
-            ].map((vendor, index) => (
-              <div key={index} className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center">
+            {petFoodSpotlightBrands().map((vendor, index) => (
+              <button
+                key={index}
+                type="button"
+                onClick={() =>
+                  navigateFromFeaturedVendorMeta(vendor.navMeta, { category: 'food' })
+                }
+                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center"
+              >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">
                   <vendor.Icon className="w-6 h-6 text-yellow-600" />
                 </div>
@@ -2003,7 +2004,7 @@ export function CustomerHomeComplete({
                 <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full font-bold">
                   {vendor.discount}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -2016,8 +2017,12 @@ export function CustomerHomeComplete({
                 <BookOpen className="w-5 h-5 text-teal-600" />
                 <h2 className="text-black font-semibold">Pet Care Articles</h2>
               </div>
-              <button className="text-xs text-teal-600 font-medium flex items-center gap-1">
-                Read More <ChevronRight className="w-4 h-4" />
+              <button
+                type="button"
+                onClick={() => handleNavigation('articles')}
+                className="text-xs text-teal-600 font-medium flex items-center gap-1"
+              >
+                Read more <ChevronRight className="w-4 h-4" />
               </button>
             </div>
             <div className="px-6 space-y-3">
@@ -2025,11 +2030,13 @@ export function CustomerHomeComplete({
                 <button
                   key={article.id || index}
                   onClick={() => {
-                    // ✅ FIX: Navigate to article detail page
-                    if (article.url) {
+                    // ✅ FIX: Navigate to content page by slug
+                    if (article.slug) {
+                      router.push(`/content/${article.slug}`);
+                    } else if (article.url) {
                       window.open(article.url, '_blank');
                     } else {
-                      onNavigate?.('article-detail', { articleId: article.id, article });
+                      handleNavigation('article-detail', { articleId: article.id, article: { id: article.id, slug: article.slug } });
                     }
                   }}
                   className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm hover:shadow-md transition-shadow text-left"
@@ -2059,38 +2066,54 @@ export function CustomerHomeComplete({
         <div className="px-6 mb-6">
           <h2 className="text-black font-semibold mb-4">More Services</h2>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-2xl p-4 border border-rose-100">
+            <button
+              type="button"
+              onClick={() => handleNavigation('mating-dating-hub')}
+              className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-2xl p-4 border border-rose-100 text-left hover:shadow-md transition-shadow w-full"
+            >
               <Users className="w-8 h-8 text-rose-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Mating & Dating</h3>
               <p className="text-xs text-gray-600 mb-3">Find perfect match for your pet</p>
-              <button className="text-xs text-rose-600 font-medium flex items-center gap-1">
+              <span className="text-xs text-rose-600 font-medium inline-flex items-center gap-1">
                 Explore <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-            <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4 border border-cyan-100">
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavigation('insurance')}
+              className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4 border border-cyan-100 text-left hover:shadow-md transition-shadow w-full"
+            >
               <Shield className="w-8 h-8 text-cyan-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Insurance</h3>
               <p className="text-xs text-gray-600 mb-3">Protect your furry friend</p>
-              <button className="text-xs text-cyan-600 font-medium flex items-center gap-1">
+              <span className="text-xs text-cyan-600 font-medium inline-flex items-center gap-1">
                 Get Quote <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100">
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavigation('walker')}
+              className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100 text-left hover:shadow-md transition-shadow w-full"
+            >
               <Dog className="w-8 h-8 text-green-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Dog Walkers</h3>
               <p className="text-xs text-gray-600 mb-3">Trusted & verified walkers</p>
-              <button className="text-xs text-green-600 font-medium flex items-center gap-1">
+              <span className="text-xs text-green-600 font-medium inline-flex items-center gap-1">
                 Book Now <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-2xl p-4 border border-amber-100">
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavigation('cafes')}
+              className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-2xl p-4 border border-amber-100 text-left hover:shadow-md transition-shadow w-full"
+            >
               <Coffee className="w-8 h-8 text-amber-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Cafes</h3>
               <p className="text-xs text-gray-600 mb-3">Pet-friendly dining spots</p>
-              <button className="text-xs text-amber-600 font-medium flex items-center gap-1">
+              <span className="text-xs text-amber-600 font-medium inline-flex items-center gap-1">
                 Find Cafes <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
+              </span>
+            </button>
           </div>
         </div>
 
@@ -2117,7 +2140,11 @@ export function CustomerHomeComplete({
                     Behavior Correction - ₹3,499
                   </li>
                 </ul>
-                <button className="mt-4 bg-white text-purple-600 px-5 py-2.5 rounded-full text-sm font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleNavigation('training')}
+                  className="mt-4 bg-white text-purple-600 px-5 py-2.5 rounded-full text-sm font-medium"
+                >
                   View Programs
                 </button>
               </div>
@@ -2146,7 +2173,11 @@ export function CustomerHomeComplete({
                     <p className="text-xs text-white/80">250+ reviews</p>
                   </div>
                 </div>
-                <button className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleNavigation('boarding')}
+                  className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium"
+                >
                   Book Boarding
                 </button>
               </div>
@@ -2163,10 +2194,33 @@ export function CustomerHomeComplete({
               Our support team is available 24/7 for you
             </p>
             <div className="flex gap-3">
-              <button className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
+              <button
+                type="button"
+                className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 active:opacity-90"
+                onClick={() => {
+                  try {
+                    window.location.href = getSupportTelHref();
+                  } catch {
+                    toast.error('Could not start call. Try Help & Support from your profile.');
+                  }
+                }}
+              >
                 <Phone className="w-4 h-4" /> Call Us
               </button>
-              <button className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
+              <button
+                type="button"
+                className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 active:opacity-90"
+                onClick={() => {
+                  try {
+                    if (typeof window !== 'undefined') {
+                      sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, 'contact');
+                    }
+                    handleNavigation('support_help', { initialTab: 'contact' });
+                  } catch {
+                    toast.error('Could not open support. Please try again.');
+                  }
+                }}
+              >
                 <Video className="w-4 h-4" /> Live Chat
               </button>
             </div>
@@ -2178,12 +2232,20 @@ export function CustomerHomeComplete({
       {!hideHeaderFooter && !showAddPetModal && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-40">
           <div className="flex items-center justify-around">
-            <button className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              className="flex flex-col items-center gap-1"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+            >
               <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
               <span className="text-xs font-medium text-[#FF8C42]">Home</span>
             </button>
             <button
-              onClick={() => onNavigate && onNavigate('cart')}
+              onClick={() => handleNavigation('cart')}
               className="flex flex-col items-center gap-1 relative"
             >
               <div className="relative">
@@ -2197,7 +2259,7 @@ export function CustomerHomeComplete({
               <span className="text-xs text-gray-400">Cart</span>
             </button>
             <button
-              onClick={() => onNavigate && onNavigate('my-bookings')}
+              onClick={() => handleNavigation('my-bookings')}
               className="flex flex-col items-center gap-1"
             >
               <Calendar className="w-6 h-6 text-gray-400" />
@@ -2296,9 +2358,8 @@ export function CustomerHomeComplete({
       <UnifiedAppointmentTracker
         customerPhone={phone}
         onJoinCall={(bookingId, meetingId) => {
-          if (onNavigate) {
-            onNavigate('video-call', { bookingId, meetingId });
-          } else {
+          handleNavigation('video-call', { bookingId, meetingId });
+          if (!onNavigate) {
             // ✅ FIX: Use router.push with path format for CloudFront compatibility
             const queryParams = new URLSearchParams();
             if (phone) {
@@ -2319,13 +2380,13 @@ export function CustomerHomeComplete({
             setChatFromNotification({ isOpen: true, bookingId, vendorName, vendorPhoto });
           } catch {
             if (onViewBooking) onViewBooking(bookingId);
-            else if (onNavigate) onNavigate('my-bookings', { bookingId });
+            else handleNavigation('my-bookings', { bookingId });
           }
         }}
         onCallProvider={(phone) => {
           window.open(`tel:${phone}`, '_self');
         }}
-        onNavigate={onNavigate}
+        onNavigate={handleNavigation}
         className={hideHeaderFooter ? 'bottom-6' : 'bottom-24'} // Adjust position based on footer
       />
 
@@ -2338,18 +2399,15 @@ export function CustomerHomeComplete({
           }}
           onTrack={(bookingId) => {
             // ✅ FIX: Navigate to dedicated GPS tracking screen for better experience
-            if (onNavigate) {
-              onNavigate('gps-tracking', { bookingId });
-            } else {
-              // Fallback: navigate directly to tracking page
+            handleNavigation('gps-tracking', { bookingId });
+            if (!onNavigate) {
               window.location.href = `/tracking/${bookingId}`;
             }
           }}
           onJoinCall={(bookingId, meetingId) => {
             // ✅ NEW: For tele consultations, navigate to video call
-            if (onNavigate) {
-              onNavigate('video-call', { bookingId, meetingId });
-            } else {
+            handleNavigation('video-call', { bookingId, meetingId });
+            if (!onNavigate) {
               // ✅ FIX: Use router.push with path format for CloudFront compatibility
               const queryParams = new URLSearchParams();
               if (phone) {
@@ -2373,8 +2431,10 @@ export function CustomerHomeComplete({
               setChatFromNotification({ isOpen: true, bookingId, vendorName, vendorPhoto });
             } catch {
               if (onViewBooking) onViewBooking(bookingId);
-              else if (onNavigate) onNavigate('my-bookings', { bookingId });
-              else window.location.href = `/bookings/${bookingId}`;
+              else {
+                handleNavigation('my-bookings', { bookingId });
+                if (!onNavigate) window.location.href = `/bookings/${bookingId}`;
+              }
             }
           }}
           onDismiss={() => {
@@ -2426,9 +2486,8 @@ export function CustomerHomeComplete({
             });
           }}
           onStartCall={(bookingId, meetingId) => {
-            if (onNavigate) {
-              onNavigate('video-call', { bookingId, meetingId });
-            } else {
+            handleNavigation('video-call', { bookingId, meetingId });
+            if (!onNavigate) {
               // ✅ FIX: Use router.push with path format for CloudFront compatibility
               const queryParams = new URLSearchParams();
               if (phone) {
@@ -2456,9 +2515,8 @@ export function CustomerHomeComplete({
           serviceName={incomingCall.serviceName}
           petName={incomingCall.petName}
           onAccept={(bookingId, meetingId) => {
-            if (onNavigate) {
-              onNavigate('video-call', { bookingId, meetingId });
-            } else {
+            handleNavigation('video-call', { bookingId, meetingId });
+            if (!onNavigate) {
               // ✅ FIX: Use router.push with path format for CloudFront compatibility
               const queryParams = new URLSearchParams();
               if (phone) {
@@ -2490,9 +2548,8 @@ export function CustomerHomeComplete({
           vendorPhoto={chatFromNotification.vendorPhoto}
           onClose={() => setChatFromNotification(null)}
           onStartVideoCall={(bookingId) => {
-            if (onNavigate) {
-              onNavigate('video-call', { bookingId });
-            } else {
+            handleNavigation('video-call', { bookingId });
+            if (!onNavigate) {
               // ✅ FIX: Use router.push with path format for CloudFront compatibility
               const queryParams = new URLSearchParams();
               if (phone) {
@@ -2516,9 +2573,8 @@ export function CustomerHomeComplete({
           onClose={() => setActiveOrderTracking(null)}
           onTrackLive={() => {
             const orderId = activeOrderTracking.id || activeOrderTracking.orderId;
-            if (onNavigate) {
-              onNavigate('order-tracking', { orderId, orderType: activeOrderTracking.orderType });
-            } else {
+            handleNavigation('order-tracking', { orderId, orderType: activeOrderTracking.orderType });
+            if (!onNavigate) {
               window.location.href = `/track/${orderId}`;
             }
           }}

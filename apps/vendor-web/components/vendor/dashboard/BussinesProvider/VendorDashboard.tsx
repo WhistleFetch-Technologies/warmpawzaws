@@ -971,10 +971,23 @@ export function VendorDashboard({
           capabilities.controlled_substances ||
           capabilities.prescription ||
           capabilities.prescription_verification ||
-          capabilities.delivery) && (
+          capabilities.delivery ||
+          hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
             <div className="p-4 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
               <div className="grid grid-cols-3 gap-2">
+                {hasVendorRole(vendorData, ['pet_insurance', 'insurance']) && (
+                  <button
+                    type="button"
+                    onClick={() => router.push('/insurance/policies')}
+                    className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                    title="Issued policies, plans, and claims"
+                  >
+                    <Shield className="w-6 h-6 text-indigo-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Pet policies</span>
+                  </button>
+                )}
+
                 {/* Gallery Management */}
                 {onNavigateToGallery && capabilities.gallery && (
                   <button
@@ -1211,16 +1224,19 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* ✅ NEW: Policy Management */}
-                {onNavigateToPolicyManagement && capabilities.policy_management && (
-                  <button
-                    onClick={onNavigateToPolicyManagement}
-                    className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
-                  >
-                    <Shield className="w-6 h-6 text-cyan-600 mb-1" />
-                    <span className="text-xs font-medium text-gray-900">Policies</span>
-                  </button>
-                )}
+                {/* Policy management — hidden for pet insurance (no platform policy wiring in vendor app) */}
+                {!hasVendorRole(vendorData, ['pet_insurance', 'insurance']) &&
+                  onNavigateToPolicyManagement &&
+                  capabilities.policy_management && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToPolicyManagement}
+                      className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
+                    >
+                      <Shield className="w-6 h-6 text-cyan-600 mb-1" />
+                      <span className="text-xs font-medium text-gray-900">Policies</span>
+                    </button>
+                  )}
 
                 {/* ✅ NEW: Distance Pricing */}
                 {onNavigateToDistancePricing && capabilities.distance_pricing && (

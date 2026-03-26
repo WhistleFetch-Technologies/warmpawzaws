@@ -8,6 +8,8 @@ import {
   CreditCard, MapPin, Check, Clock, Gift, Percent
 } from 'lucide-react';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
+import { canonicalProductId } from '@/lib/product-id';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES
@@ -112,12 +114,8 @@ export default function ShopPage() {
                    '';
       setCustomerPhone(phone);
       
-      const id = localStorage.getItem('customer_id') || 
-                 sessionStorage.getItem('customer_id') ||
-                 localStorage.getItem('customerId') ||
-                 sessionStorage.getItem('customerId') ||
-                 undefined;
-      setCustomerId(id || undefined);
+      const id = getResolvedCustomerId() || undefined;
+      setCustomerId(id);
     }
   };
 
@@ -135,18 +133,40 @@ export default function ShopPage() {
         apiClient.get<any>('/ecommerce/categories'),
       ]);
       
-      // Map API response to Product interface (stock_quantity -> stock)
-      const productsData = ((productsRes as any)?.products || []).map((p: any) => ({
-        ...p,
-        stock: p.stock_quantity || p.stock || 0,
-        price: parseFloat(p.price) || 0,
-        original_price: p.original_price ? parseFloat(p.original_price) : undefined,
-        rating: p.rating || 4.5,
-        review_count: p.review_count || 0,
-        images: p.images || [],
-        emoji: p.emoji || '🐾',
-      }));
-      setProducts(productsData);
+      // Map API response to Product interface (stock_quantity -> stock); stable id for links / cart / wishlist
+      const rawList = (productsRes as any)?.products || [];
+      const productsData = rawList.map((p: any) => {
+        const id = canonicalProductId(p);
+        if (!id && typeof console !== 'undefined' && console.warn) {
+          console.warn('[shop] product row missing canonical id', {
+            keys: p && typeof p === 'object' ? Object.keys(p) : [],
+            sample: p,
+          });
+        }
+        const compareOrOriginal = p.original_price ?? p.compare_at_price;
+        return {
+          ...p,
+          id,
+          stock: p.stock_quantity || p.stock || 0,
+          price: parseFloat(p.price) || 0,
+          original_price:
+            compareOrOriginal != null && String(compareOrOriginal) !== ''
+              ? parseFloat(String(compareOrOriginal))
+              : undefined,
+          rating: p.rating || 4.5,
+          review_count: p.review_count || 0,
+          images: p.images || [],
+          emoji: p.emoji || '🐾',
+        };
+      });
+      if (rawList.length > 0 && typeof console !== 'undefined' && console.log) {
+        const first = rawList[0];
+        console.log('[shop] catalog sample', {
+          firstRowKeys: first && typeof first === 'object' ? Object.keys(first) : [],
+          canonicalId: canonicalProductId(first),
+        });
+      }
+      setProducts(productsData.filter((p: Product) => Boolean(p.id)));
       setCategories((categoriesRes as any)?.categories || []);
     } catch (err: any) {
       console.error('Error loading shop:', err);
@@ -925,27 +945,65 @@ export default function ShopPage() {
 function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAddToCart: () => void; inCart: boolean }) {
   const [isWishlisted, setIsWishlisted] = React.useState(false);
 
-  React.useEffect(() => {
-    // Check wishlist status
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    setIsWishlisted(wishlist.includes(product.id));
-  }, [product.id]);
+  const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
 
-  const toggleWishlist = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  React.useEffect(() => {
     const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    if (isWishlisted) {
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist.filter((id: string) => id !== product.id)));
+    setIsWishlisted(wishlist.some((id: string) => String(id) === String(wishlistPid)));
+  }, [wishlistPid]);
+
+  const toggleWishlist = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const pid = wishlistPid;
+    if (!pid) {
+      console.warn('[wishlist] shop card: missing product id', { product });
+      return;
+    }
+    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    const customerId = getResolvedCustomerId();
+    const wasInList = isWishlisted;
+
+    console.log('[wishlist] shop card toggle', { productId: pid, customerId, wasInList });
+
+    if (wasInList) {
+      localStorage.setItem(
+        'warmpawz_wishlist',
+        JSON.stringify(wishlist.filter((id: string) => String(id) !== String(pid)))
+      );
       setIsWishlisted(false);
     } else {
-      wishlist.push(product.id);
+      if (!wishlist.some((id: string) => String(id) === String(pid))) {
+        wishlist.push(pid);
+      }
       localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
       setIsWishlisted(true);
+    }
+
+    if (customerId) {
+      const action = wasInList ? 'remove' : 'add';
+      try {
+        const res = await apiClient.post<any>(`/customer/${customerId}/wishlist`, {
+          productId: pid,
+          action,
+        });
+        console.log('[wishlist] shop POST response', { productId: pid, customerId, res });
+        if (action === 'add') {
+          const verify = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
+          console.log('[wishlist] shop GET verify', {
+            customerId,
+            itemCount: verify?.wishlist?.items?.length ?? 0,
+          });
+        }
+      } catch (err) {
+        console.error('[wishlist] shop POST failed', { productId: pid, customerId, err });
+      }
+    } else {
+      console.warn('[wishlist] shop: no customerId; local only', { productId: pid });
     }
   };
 
   const handleCardClick = () => {
-    window.location.href = `/shop/${product.id}`;
+    window.location.href = `/shop/${wishlistPid}`;
   };
 
   const discount = product.original_price && product.original_price > product.price

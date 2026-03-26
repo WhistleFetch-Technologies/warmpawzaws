@@ -405,6 +405,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'training') setCurrentScreen('training');
     else if (service === 'boarding') setCurrentScreen('boarding');
     else if (service === 'adoption') setCurrentScreen('adoption');
+    else if (service === 'adoption_questionnaire') setCurrentScreen('adoption_questionnaire');
     else if (service === 'sunset') setCurrentScreen('sunset');
     else if (service === 'insurance') setCurrentScreen('insurance');
     else if (service === 'cafes') setCurrentScreen('cafes');
@@ -513,7 +514,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (path === 'home') setCurrentScreen('home');
     else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
-    else if (path === 'account/wallet') setCurrentScreen('wallet');
+    else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'account/settings') {

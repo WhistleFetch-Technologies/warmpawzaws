@@ -34,6 +34,7 @@ const SLUG_TO_SCREEN: Record<string, string> = {
   home_services: 'home-service-selection',
   cafes: 'cafes',
   adoption: 'adoption',
+  rehoming: 'adoption_questionnaire',
   sunset: 'sunset',
   resort: 'resort',
   holiday: 'holiday',
@@ -152,4 +153,63 @@ export function resolvePromotionDestination(
   if (SLUG_TO_SCREEN[ctx]) return SLUG_TO_SCREEN[ctx];
 
   return 'home';
+}
+
+/** Role ids from `spotlight_offers.role_id` (admin seed) → CustomerHomeWrapper screen ids */
+const ROLE_ID_TO_SCREEN: Record<string, string> = {
+  veterinarian: 'vet',
+  vet: 'vet',
+  groomer: 'grooming',
+  boarder: 'boarding',
+  trainer: 'training',
+};
+
+export type FeaturedVendorNavResult =
+  | { kind: 'screen'; screen: string }
+  | { kind: 'router'; path: string }
+  | { kind: 'external'; url: string };
+
+/**
+ * Map home "Featured providers" spotlight row to navigation.
+ * Admin `cta_link` is often stored as `/vet`, `/grooming`, `/boarding` — those must map to
+ * screen ids (`vet`, `grooming`, …), not passed through as `/vet` (which would fall through
+ * in handleNavigateToService and appear as a no-op).
+ */
+export function resolveFeaturedVendorDestination(v: Record<string, unknown>): FeaturedVendorNavResult {
+  const ctaRaw = (v.ctaLink ?? v.cta_link ?? '') as string;
+  const cta = String(ctaRaw ?? '').trim();
+
+  if (/^https?:\/\//i.test(cta)) {
+    return { kind: 'external', url: cta };
+  }
+
+  if (cta) {
+    const pathOnly = cta.split('?')[0].split('#')[0].trim();
+    if (pathOnly.startsWith('/')) {
+      const seg = pathOnly.replace(/^\/+/, '').split('/').filter(Boolean)[0];
+      if (seg) {
+        const n = norm(seg);
+        if (SLUG_TO_SCREEN[n]) return { kind: 'screen', screen: SLUG_TO_SCREEN[n] };
+        return { kind: 'router', path: pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}` };
+      }
+    } else {
+      const n = norm(pathOnly.split('/')[0]);
+      if (SLUG_TO_SCREEN[n]) return { kind: 'screen', screen: SLUG_TO_SCREEN[n] };
+    }
+  }
+
+  const svc = (v.serviceCategory ?? v.service_category ?? '') as string;
+  if (svc) {
+    const n = norm(svc);
+    if (SLUG_TO_SCREEN[n]) return { kind: 'screen', screen: SLUG_TO_SCREEN[n] };
+  }
+
+  const role = (v.roleId ?? v.role_id ?? '') as string;
+  if (role) {
+    const n = norm(role);
+    if (ROLE_ID_TO_SCREEN[n]) return { kind: 'screen', screen: ROLE_ID_TO_SCREEN[n] };
+    if (SLUG_TO_SCREEN[n]) return { kind: 'screen', screen: SLUG_TO_SCREEN[n] };
+  }
+
+  return { kind: 'screen', screen: 'grooming' };
 }

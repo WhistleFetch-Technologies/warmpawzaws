@@ -386,6 +386,8 @@ export async function insert(
     'no_show_policy',
     'setting_value',             // admin_settings
     'attachments',               // support_tickets (URLs / metadata array)
+    'documents',                 // insurance_claims, insurance_policies JSONB arrays
+    'coverage',                  // insurance_plans.coverage (019 legacy JSONB)
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -395,7 +397,8 @@ export async function insert(
            key.endsWith('_metadata') || 
            key.endsWith('_payload') ||
            key.endsWith('_data') ||
-           key.endsWith('_settings');
+           key.endsWith('_settings') ||
+           key.endsWith('_details');
   };
   
   // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
@@ -463,6 +466,7 @@ export async function update(
     'no_show_policy',
     'setting_value',   // admin_settings
     'attachments',     // support_tickets
+    'documents',       // insurance_claims, insurance_policies JSONB arrays
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -472,7 +476,8 @@ export async function update(
            key.endsWith('_metadata') || 
            key.endsWith('_payload') ||
            key.endsWith('_data') ||
-           key.endsWith('_settings');
+           key.endsWith('_settings') ||
+           key.endsWith('_details');
   };
 
   // Build SET clause

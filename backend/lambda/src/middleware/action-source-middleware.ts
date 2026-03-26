@@ -54,23 +54,20 @@ function pathToRegex(pattern: string): RegExp {
 }
 
 async function getMappings(): Promise<Record<string, ActionSource[]>> {
-	console.log('getMappings--------------------->');
 	const now = Date.now();
 	if (now - cache.at < CACHE_TTL_MS && Object.keys(cache.byMethod).length > 0) return cache.byMethod;
 
 	const res = await query(
 		`SELECT * FROM action_sources WHERE enabled = true ORDER BY priority DESC, updated_at DESC`
 	);
-	console.log('res--------------------->', res.rows);
+	const rows = Array.isArray(res) ? res : (res as any).rows || [];
 	const byMethod: Record<string, ActionSource[]> = {};
-	for (const row of res.rows as ActionSource[]) {
+	for (const row of rows as ActionSource[]) {
 		const method = (row.method || 'POST').toUpperCase();
 		(byMethod[method] ||= []).push(row);
 	}
-	console.log('byMethod--------------------->', byMethod);
 
 	cache = { at: now, byMethod };
-	console.log('cache--------------------->', cache);
 	return byMethod;
 }
 
@@ -145,78 +142,69 @@ export function actionSourceMiddleware() {
 
 		try {
 			const method = (c.req.method || 'POST').toUpperCase();
-			console.log('method--------------------->', method);
 			const path = c.req.path || c.req.url || '/';
 			const status = c.res.status || 200;
-			console.log('status--------------------->', status);
 			const mappingsByMethod = await getMappings();
-			console.log('mappingsByMethod--------------------->', mappingsByMethod, method, mappingsByMethod[method]);
 			const candidates = (mappingsByMethod[method] || []).filter(m => {
-				console.log('m--------------------->', m);
 				if (status < (m.status_min ?? 200) || status > (m.status_max ?? 299)) return false;
-				console.log('pathToRegex(m.route_pattern).test(path)--------------------->', pathToRegex(m.route_pattern).test(path));
 				return pathToRegex(m.route_pattern).test(path);
 			});
-			console.log('candidates.length--------------------->', candidates.length);
 			if (candidates.length === 0) return;
-			console.log('candidates--------------------->', candidates);
-			// Response JSON
+
+			// Response JSON — always clone to avoid consuming the original body
 			let responseJson: any = {};
 			try {
-				const clone = c.res.clone?.() ?? c.res;
-				const txt = await clone.text?.();
-				responseJson = txt ? JSON.parse(txt) : {};
+				if (typeof c.res?.clone === 'function') {
+					const clone = c.res.clone();
+					const txt = await clone.text();
+					responseJson = txt ? JSON.parse(txt) : {};
+				}
 			} catch {
-				// ignore non-JSON
+				// ignore non-JSON or clone failures
 			}
-			console.log('responseJson--------------------->', responseJson);
-			// Request JSON
+
 			let requestJson: any = {};
 			try {
 				requestJson = c.env?.parsedBody || {};
 			} catch { /* ignore */ }
-			console.log('requestJson--------------------->', requestJson);
-			// JWT claims (optional)
+
 			const jwt: any = {};
 			try {
 				const event = c.env?.event;
 				const claims = event?.requestContext?.authorizer?.claims || {};
 				Object.assign(jwt, claims);
 			} catch { /* ignore */ }
-		console.log('jwt--------------------->', jwt);
-		// Extract URL path parameters by matching the route pattern against actual path
-		const param: any = {};
-		try {
-			const matched0 = candidates[0];
-			if (matched0) {
-				const patternParts = matched0.route_pattern.split('/');
+
+			const matched = candidates.find(m => evalPredicate(m.success_predicate, responseJson));
+			if (!matched) return;
+
+			// Extract URL path params from the matched route pattern.
+			const param: any = {};
+			try {
+				const patternParts = (matched.route_pattern || '').split('/');
 				const pathParts = path.split('/');
 				for (let i = 0; i < patternParts.length; i++) {
 					if (patternParts[i].startsWith(':') && pathParts[i]) {
 						param[patternParts[i].substring(1)] = pathParts[i];
 					}
 				}
-			}
-		} catch { /* ignore */ }
-		console.log('param--------------------->', param);
-		const matched = candidates.find(m => evalPredicate(m.success_predicate, responseJson));
-		if (!matched) return;
-		console.log('matched--------------------->', matched);
-		const ctx = { res: responseJson, req: requestJson, jwt, param };
+			} catch { /* ignore */ }
+
+			const ctx = { res: responseJson, req: requestJson, jwt, param };
 			const entityId = String(resolveExpr(matched.entity_resolver, ctx) || '');
 			if (!entityId) return;
-			console.log('entityId--------------------->', entityId);
+
 			const entityType = (matched.entity_type || 'auto') as 'customer' | 'vendor' | 'auto';
 			const amountVal = resolveExpr(matched.amount_resolver || undefined, ctx);
 			const referenceId = resolveExpr(matched.reference_id_resolver || undefined, ctx);
-			console.log('referenceId--------------------->', referenceId);
+
 			const metadata: Json = {};
 			if (matched.metadata_resolvers && typeof matched.metadata_resolvers === 'object') {
 				for (const [k, v] of Object.entries(matched.metadata_resolvers)) {
 					metadata[k] = resolveExpr(String(v), ctx);
 				}
 			}
-			console.log('metadata--------------------->', metadata);
+
 			const evt: EventPayload = {
 				eventId: randomUUID(),
 				eventType: 'ActionOccurred',
@@ -228,16 +216,13 @@ export function actionSourceMiddleware() {
 				reference: matched.reference_type ? { type: matched.reference_type, id: referenceId ? String(referenceId) : undefined } : undefined,
 				metadata,
 			};
-			console.log('evt--------------------->', evt);
-			console.log('matched.dry_run--------------------->', matched.dry_run);
+
 			if (matched.dry_run) {
 				console.log('[ActionOccurred][dry-run]', JSON.stringify(evt).substring(0, 800));
 				return;
 			}
-			console.log('publishActionOccurred--------------------->');
 			await publishActionOccurred(evt);
 		} catch (e: any) {
-			console.warn('[action-source-middleware] error (non-blocking):', e?.message || e);
 			// Never block or alter the response
 		}
 	};

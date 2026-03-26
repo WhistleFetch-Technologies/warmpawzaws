@@ -554,6 +554,10 @@ registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);
 registerSmsNotificationEndpoints(app);
+// Platform legal policies: GET /vendor/policies, /public/policies, admin CRUD.
+// Must register BEFORE registerVendorProfileEndpoints — that module ends with GET /vendor/:vendorId,
+// which otherwise matches /vendor/policies (vendorId = "policies") and returns no policies[].
+app.route('/', platformPoliciesApp);
 registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
@@ -628,9 +632,6 @@ registerReturnsEnhancedEndpoints(app); // Complete return/refund management
 registerFeeConfigEndpoints(app); // Platform and convenience fee configuration
 registerKYCVerificationEndpoints(app); // KYC verification (Aadhaar OTP, PAN, GST)
 registerSpecializationMasterEndpoints(app); // Specialization master (problem grid, vendor specializations)
-
-// Platform policies (Legal agreements, T&C)
-app.route('/', platformPoliciesApp);
 
 // 404 handler - CRITICAL: Must include CORS headers
 app.notFound((c) => {

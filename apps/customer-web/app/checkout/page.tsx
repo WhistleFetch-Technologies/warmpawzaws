@@ -7,6 +7,7 @@ import {
   Truck, Shield, Tag, Plus, ChevronRight, AlertCircle, Package
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 
@@ -90,7 +91,7 @@ export default function CheckoutPage() {
   const loadCheckoutData = async () => {
     try {
       setLoading(true);
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       
       // Load cart from localStorage
       const savedCart = localStorage.getItem('warmpawz_cart');
@@ -171,7 +172,7 @@ export default function CheckoutPage() {
     }
 
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       const result = await apiClient.post<{ address?: Address }>(`/customer/${customerId}/addresses`, newAddress);
       
       if (result.address) {
@@ -193,7 +194,7 @@ export default function CheckoutPage() {
 
     try {
       setSubmitting(true);
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       const selectedAddress = addresses.find(a => a.id === selectedAddressId);
 
       const orderData = {
@@ -251,7 +252,7 @@ export default function CheckoutPage() {
       const razorpayOrder = await apiClient.post<{ orderId: string; keyId: string; amount: number; currency: string }>('/razorpay/create-order', {
         bookingId: orderId,
         amount,
-        customerId: localStorage.getItem('customerId'),
+        customerId: getResolvedCustomerId(),
       });
 
       if (!razorpayOrder?.orderId) {

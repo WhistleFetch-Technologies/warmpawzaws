@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight } from 'lucide-react';
+import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 
@@ -85,7 +85,7 @@ export function EnhancedSearchBar({
           history
             .map((h: any) => String(h.query || h.text || h || ''))
             .filter(q => q) // Remove empty strings
-            .slice(0, 5)
+            .slice(0, 15)
         );
         return;
       } catch (error) {
@@ -103,10 +103,24 @@ export function EnhancedSearchBar({
           (Array.isArray(parsed) ? parsed : [])
             .map(item => String(item || ''))
             .filter(q => q)
-            .slice(0, 10)
+            .slice(0, 15)
         );
       } catch (err) {
         console.error('Error loading recent searches from localStorage:', err);
+      }
+    }
+  };
+
+  const clearAllHistory = async () => {
+    setRecentSearches([]);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('warmpawz_recent_searches');
+      if (customerId) {
+        try {
+          await apiClient.delete(`/customer/${customerId}/search-history`);
+        } catch {
+          // ignore
+        }
       }
     }
   };
@@ -273,8 +287,8 @@ export function EnhancedSearchBar({
   };
 
   const saveSearch = async (searchQuery: string) => {
-    // Save to localStorage
-    const updated = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 10);
+    // Save to localStorage (same key as /search page; limit 15)
+    const updated = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 15);
     setRecentSearches(updated);
     localStorage.setItem('warmpawz_recent_searches', JSON.stringify(updated));
 
@@ -329,8 +343,8 @@ export function EnhancedSearchBar({
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
-      <form onSubmit={handleSubmit}>
-        <div className="relative">
+      <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
@@ -358,6 +372,12 @@ export function EnhancedSearchBar({
             </button>
           )}
         </div>
+        <button
+          type="submit"
+          className="shrink-0 px-5 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors shadow-sm"
+        >
+          Search
+        </button>
       </form>
 
       {/* Dropdown - Only show when there's content to display */}
@@ -373,9 +393,19 @@ export function EnhancedSearchBar({
           {/* Recent Searches */}
           {!loading && showRecentSearches && (
             <div className="p-2 border-b border-gray-100">
-              <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
-                Recent Searches
-              </h3>
+              <div className="flex items-center justify-between px-3 py-2">
+                <h3 className="text-xs uppercase tracking-wide text-gray-500">
+                  Recent Searches
+                </h3>
+                <button
+                  type="button"
+                  onClick={clearAllHistory}
+                  className="text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear all
+                </button>
+              </div>
               {recentSearches.map((term, idx) => (
                 <button
                   key={idx}
