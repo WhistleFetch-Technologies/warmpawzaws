@@ -30,8 +30,19 @@ async function adaptAndHandle(handler: BaseHandler, c: HonoContext): Promise<Res
   if (!event) {
     return c.json({ error: 'Missing event in context' }, 500);
   }
+  const paramPolicyType = c.req.param('policyType');
+  const eventWithParams =
+    paramPolicyType !== undefined && paramPolicyType !== ''
+      ? {
+          ...event,
+          pathParameters: {
+            ...(event.pathParameters || {}),
+            policyType: paramPolicyType,
+          },
+        }
+      : event;
   const handlerContext: HandlerContext = {
-    event,
+    event: eventWithParams,
     context: {} as LambdaContext,
   };
   const response: HandlerResponse = await handler.handle(handlerContext);
@@ -328,7 +339,7 @@ class GetPlatformPoliciesHandler extends BaseHandler {
           updated_by
         FROM platform_policies
         WHERE is_active = true
-        AND policy_type IN ('vendor_terms_of_service', 'customer_terms_of_service', 'privacy_policy', 'terms_of_service')
+        AND policy_type IN ('vendor_onboarding_agreement', 'vendor_terms_of_service', 'customer_terms_of_service', 'privacy_policy', 'terms_of_service')
         ORDER BY 
           CASE 
             WHEN policy_type = 'terms_of_service' THEN 'vendor_terms_of_service'
@@ -368,14 +379,8 @@ class GetPlatformPoliciesHandler extends BaseHandler {
       }));
 
       // ✅ FIX: Deduplicate by policyType - keep only the latest version (highest version, then most recent updated_at)
-      // ✅ FIX: Also filter out vendor_onboarding_agreement (not needed in admin UI)
       const policyMap = new Map<string, typeof normalizedPolicies[0]>();
       for (const policy of normalizedPolicies) {
-        // Skip vendor_onboarding_agreement - not needed in admin UI
-        if (policy.policyType === 'vendor_onboarding_agreement') {
-          continue;
-        }
-        
         const existing = policyMap.get(policy.policyType);
         if (!existing) {
           policyMap.set(policy.policyType, policy);
@@ -474,8 +479,13 @@ class SavePlatformPolicyHandler extends BaseHandler {
       return this.error('Policy type and content are required', 400);
     }
 
-    // ✅ FIX: Only allow saving the three allowed policy types (exclude vendor_onboarding_agreement)
-    const allowedPolicyTypes = ['vendor_terms_of_service', 'customer_terms_of_service', 'privacy_policy'];
+    // Admin LegalPoliciesManager also edits vendor_onboarding_agreement — persist it for onboarding UIs.
+    const allowedPolicyTypes = [
+      'vendor_onboarding_agreement',
+      'vendor_terms_of_service',
+      'customer_terms_of_service',
+      'privacy_policy',
+    ];
     // Also allow legacy 'terms_of_service' for migration
     if (!allowedPolicyTypes.includes(policyType) && policyType !== 'terms_of_service') {
       return this.error(`Policy type '${policyType}' is not allowed. Allowed types: ${allowedPolicyTypes.join(', ')}`, 400);
@@ -821,16 +831,95 @@ class SavePlatformPolicyHandler extends BaseHandler {
 // GET POLICY FOR VENDOR (Public - for vendor onboarding)
 // ============================================================================
 
+/**
+ * Resolve ?all? vs single policy type.
+ * - Path: /vendor/policies/:policyType or /public/policies/:policyType (when API routes include it).
+ * - Query: GET /public/policies?policyType=customer_terms_of_service — works when API Gateway only
+ *   registers an exact route for /public/policies (subpaths return 404 at the gateway).
+ */
+function inferPublicPolicyTypeFromEvent(event: HandlerContext['event']): string {
+  const qs = (event as any).queryStringParameters;
+  if (qs && typeof qs === 'object') {
+    const q =
+      (typeof qs.policyType === 'string' && qs.policyType) ||
+      (typeof qs.type === 'string' && qs.type);
+    if (q != null && String(q).trim() !== '' && String(q).trim().toLowerCase() !== 'all') {
+      return String(q).trim();
+    }
+  }
+
+  const pathParams = (event as any).pathParameters;
+  const fromParam = pathParams?.policyType;
+  if (fromParam != null && String(fromParam).trim() !== '') {
+    return String(fromParam).trim();
+  }
+  const proxy = pathParams?.proxy;
+  if (typeof proxy === 'string') {
+    const m = proxy.match(/(?:^|\/)policies\/([a-zA-Z0-9_]+)\/?$/);
+    if (m?.[1]) return m[1];
+  }
+  const rawPath =
+    (event as any).rawPath ||
+    (event as any).path ||
+    (event as any).requestContext?.http?.path ||
+    (event as any).requestContext?.resourcePath ||
+    '';
+  const m2 = rawPath.match(/\/policies\/([a-zA-Z0-9_]+)\/?$/);
+  if (m2?.[1]) return m2[1];
+  return 'all';
+}
+
+/** Keep one row per normalized policy_type (prefer higher version). */
+function dedupePublicPoliciesByType(rows: any[]): any[] {
+  const byType = new Map<string, any>();
+  for (const row of rows) {
+    const t = row.policy_type ?? row.policyType;
+    if (!t || typeof t !== 'string') continue;
+    const cur = byType.get(t);
+    const v = row.version || 0;
+    const curV = cur?.version || 0;
+    if (!cur || v > curV) {
+      byType.set(t, row);
+    }
+  }
+  return Array.from(byType.values());
+}
+
+/** For `all`, ensure vendor + customer + privacy policies exist (DB + defaults). */
+function mergeAllPublicPolicyDefaults(policies: any[]): any[] {
+  const merged = dedupePublicPoliciesByType(policies);
+  const types = new Set(
+    merged.map((p: any) => (p.policy_type ?? p.policyType) as string).filter(Boolean)
+  );
+  const add = (type: string, title: string, content: string) => {
+    if (!types.has(type)) {
+      merged.push({
+        policy_type: type,
+        title,
+        content,
+        version: 1,
+        updated_at: new Date(),
+      });
+      types.add(type);
+    }
+  };
+  add('vendor_onboarding_agreement', 'Vendor Onboarding Agreement', DEFAULT_VENDOR_ONBOARDING_AGREEMENT);
+  add('vendor_terms_of_service', 'Vendor Terms of Service', DEFAULT_VENDOR_TERMS_OF_SERVICE);
+  add('customer_terms_of_service', 'Customer Terms of Service', DEFAULT_CUSTOMER_TERMS_OF_SERVICE);
+  add('privacy_policy', 'Privacy Policy', DEFAULT_PRIVACY_POLICY);
+  return merged;
+}
+
 class GetVendorPolicyHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const policyType = context.event.pathParameters?.policyType || 'all';
+    const policyType = inferPublicPolicyTypeFromEvent(context.event);
 
     try {
       let policiesResult: any;
       let policies: any[];
 
       if (policyType === 'all') {
-        // ✅ MIGRATION: Include both legacy 'terms_of_service' and new 'vendor_terms_of_service'
+        // ✅ MIGRATION: Include legacy 'terms_of_service' + all portal legal docs for public clients
         policiesResult = await query(`
           SELECT 
             CASE 
@@ -846,7 +935,13 @@ class GetVendorPolicyHandler extends BaseHandler {
             updated_at
           FROM platform_policies
           WHERE is_active = true
-          AND policy_type IN ('vendor_onboarding_agreement', 'vendor_terms_of_service', 'terms_of_service')
+          AND policy_type IN (
+            'vendor_onboarding_agreement',
+            'vendor_terms_of_service',
+            'terms_of_service',
+            'customer_terms_of_service',
+            'privacy_policy'
+          )
         `);
       } else {
         // ✅ MIGRATION: Handle legacy 'terms_of_service' -> 'vendor_terms_of_service'
@@ -880,9 +975,14 @@ class GetVendorPolicyHandler extends BaseHandler {
       // ✅ FIX: Extract rows from query result
       policies = Array.isArray(policiesResult) ? policiesResult : (policiesResult as any).rows || [];
 
-      // Return defaults if no policies found
-      if (policies.length === 0) {
-        if (policyType === 'all' || policyType === 'vendor_onboarding_agreement') {
+      /** So clients can tell admin DB content vs in-code templates / error path */
+      let dbRowCountBeforeMerge = policies.length;
+
+      if (policyType === 'all') {
+        policies = mergeAllPublicPolicyDefaults(policies);
+      } else if (policies.length === 0) {
+        // Single-type fetch: return defaults if nothing in DB
+        if (policyType === 'vendor_onboarding_agreement') {
           policies.push({
             policy_type: 'vendor_onboarding_agreement',
             title: 'Vendor Onboarding Agreement',
@@ -891,17 +991,16 @@ class GetVendorPolicyHandler extends BaseHandler {
             updated_at: new Date(),
           });
         }
-        if (policyType === 'all' || policyType === 'vendor_terms_of_service' || policyType === 'terms_of_service') {
-          // Support legacy 'terms_of_service' for backward compatibility
+        if (policyType === 'vendor_terms_of_service' || policyType === 'terms_of_service') {
           policies.push({
-            policy_type: policyType === 'terms_of_service' ? 'terms_of_service' : 'vendor_terms_of_service',
+            policy_type: 'vendor_terms_of_service',
             title: 'Vendor Terms of Service',
             content: DEFAULT_VENDOR_TERMS_OF_SERVICE,
             version: 1,
             updated_at: new Date(),
           });
         }
-        if (policyType === 'all' || policyType === 'customer_terms_of_service') {
+        if (policyType === 'customer_terms_of_service') {
           policies.push({
             policy_type: 'customer_terms_of_service',
             title: 'Customer Terms of Service',
@@ -910,7 +1009,7 @@ class GetVendorPolicyHandler extends BaseHandler {
             updated_at: new Date(),
           });
         }
-        if (policyType === 'all' || policyType === 'privacy_policy') {
+        if (policyType === 'privacy_policy') {
           policies.push({
             policy_type: 'privacy_policy',
             title: 'Privacy Policy',
@@ -922,21 +1021,29 @@ class GetVendorPolicyHandler extends BaseHandler {
       }
 
       const normalizedPolicies = policies.map((p: any) => ({
-        policyType: p.policy_type,
+        policyType: p.policy_type ?? p.policyType,
         title: p.title,
         content: p.content,
         version: p.version || 1,
-        lastUpdated: p.updated_at,
+        lastUpdated: p.updated_at ?? p.lastUpdated,
       }));
+
+      const meta: Record<string, unknown> = {};
+      if (policyType === 'all' && dbRowCountBeforeMerge === 0) {
+        meta.policySource = 'defaults_only';
+      }
 
       return this.success({
         policies: normalizedPolicies,
+        ...meta,
       });
     } catch (error: any) {
       console.error('Error fetching vendor policies:', error);
       
       // Return defaults on error
       return this.success({
+        policySource: 'error_fallback',
+        isDefault: true,
         policies: [
           {
             policyType: 'vendor_onboarding_agreement',
@@ -995,6 +1102,10 @@ app.get('/vendor/policies/:policyType', async (c) => {
 
 // Also expose under /public for unauthenticated access
 app.get('/public/policies', async (c) => {
+  return adaptAndHandle(new GetVendorPolicyHandler(), c);
+});
+
+app.get('/public/policies/:policyType', async (c) => {
   return adaptAndHandle(new GetVendorPolicyHandler(), c);
 });
 

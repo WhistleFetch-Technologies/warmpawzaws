@@ -1,9 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
 
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
@@ -37,6 +41,24 @@ function AuthPageContent() {
   const [showReferralModal, setShowReferralModal] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const [referralApplied, setReferralApplied] = useState(false);
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+
+  const openLegal = (t: PlatformPolicyType) => {
+    setLegalDialogType(t);
+    setLegalDialogOpen(true);
+  };
+
+  const legalDialog = (
+    <PlatformLegalPolicyDialog
+      open={legalDialogOpen}
+      onOpenChange={(o) => {
+        setLegalDialogOpen(o);
+        if (!o) setLegalDialogType(null);
+      }}
+      policyType={legalDialogType}
+    />
+  );
 
   // UAT_MODE must be computed at runtime (after hydration) for static exports
   const [UAT_MODE, setUatMode] = useState(false);
@@ -346,6 +368,7 @@ function AuthPageContent() {
   // OTP VERIFICATION SCREEN
   if (otpSent) {
     return (
+      <Fragment>
       <div className="min-h-screen flex justify-center bg-[#FF8C42]">
         {/* Centered Container */}
         <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
@@ -481,6 +504,25 @@ function AuthPageContent() {
                 </div>
               </div>
 
+              <p className="text-center text-sm text-gray-500 mt-6 px-2">
+                By continuing, you agree to our{' '}
+                <button
+                  type="button"
+                  onClick={() => openLegal('customer_terms_of_service')}
+                  className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium"
+                >
+                  Customer Terms of Service
+                </button>
+                {' '}and{' '}
+                <button
+                  type="button"
+                  onClick={() => openLegal('privacy_policy')}
+                  className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium"
+                >
+                  Privacy Policy
+                </button>
+              </p>
+
               {/* Footer with Version Info */}
               <div className="mt-auto pt-10 text-center space-y-1">
                 <p className="text-gray-400 text-xs">WARMPAWZ Provider v2.1.0</p>
@@ -490,11 +532,14 @@ function AuthPageContent() {
           </div>
         </div>
       </div>
+      {legalDialog}
+      </Fragment>
     );
   }
 
   // PHONE NUMBER ENTRY SCREEN
   return (
+    <Fragment>
     <div className="min-h-screen flex justify-center bg-[#FF8C42]">
       {/* Centered Container */}
       <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
@@ -668,9 +713,21 @@ function AuthPageContent() {
             {/* Terms Footer */}
             <p className="text-center text-sm text-gray-500 mt-6">
               By continuing, you agree to our{' '}
-              <a href="#" className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Terms of Service</a>
+              <button
+                type="button"
+                onClick={() => openLegal('customer_terms_of_service')}
+                className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors"
+              >
+                Customer Terms of Service
+              </button>
               {' '}and{' '}
-              <a href="#" className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Privacy Policy</a>
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors"
+              >
+                Privacy Policy
+              </button>
             </p>
 
             {/* Already have account */}
@@ -692,6 +749,8 @@ function AuthPageContent() {
       {/* Referral Code Modal Overlay - Alternative full-screen modal */}
       {/* This can be enabled if you prefer a modal approach */}
     </div>
+    {legalDialog}
+    </Fragment>
   );
 }
 

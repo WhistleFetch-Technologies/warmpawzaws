@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * RDS Data API Utilities for Dev Environment
- * 
- * Connects to dev RDS using AWS RDS Data API via AWS CLI
- * No direct database connection or VPN needed
+ *
+ * Connects to dev RDS using AWS RDS Data API (@aws-sdk/client-rds-data).
+ * Uses the SDK (not CLI file://) so Windows paths with 8.3 names do not break.
  * 
  * Usage:
  *   const { getClusterInfo, executeSQL, parseRecord, parseRecords } = require('./rds-data-api-utils-dev');
@@ -16,13 +16,182 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { RDSDataClient, ExecuteStatementCommand } = require('@aws-sdk/client-rds-data');
 
 const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
 const REGION = process.env.AWS_REGION || 'ap-south-1';
 const CLUSTER_IDENTIFIER = `warmpawz-${ENVIRONMENT}-cluster`;
 const SECRET_NAME = `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
 const DATABASE_NAME = 'warmpawz';
+
+let rdsDataClient = null;
+function getRdsDataClient() {
+  if (!rdsDataClient) {
+    rdsDataClient = new RDSDataClient({ region: REGION });
+  }
+  return rdsDataClient;
+}
+
+/**
+ * Strip SQL line comments and block comments without touching string or dollar-quoted literals.
+ */
+function stripSqlComments(sql) {
+  let out = '';
+  let i = 0;
+  let state = 'code'; // code | squote | dollar
+  let dollarTag = '';
+
+  while (i < sql.length) {
+    const c = sql[i];
+    const next = sql[i + 1];
+
+    if (state === 'code') {
+      if (c === '-' && next === '-') {
+        i += 2;
+        while (i < sql.length && sql[i] !== '\n') i++;
+        if (i < sql.length) {
+          out += '\n';
+          i++;
+        }
+        continue;
+      }
+      if (c === '/' && next === '*') {
+        i += 2;
+        while (i < sql.length - 1 && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
+        i += 2;
+        out += '\n';
+        continue;
+      }
+      if (c === "'") {
+        state = 'squote';
+        out += c;
+        i++;
+        continue;
+      }
+      if (c === '$') {
+        const rest = sql.slice(i);
+        const m = rest.match(/^\$([a-zA-Z_]*)\$/);
+        if (m) {
+          dollarTag = m[1];
+          state = 'dollar';
+          out += m[0];
+          i += m[0].length;
+          continue;
+        }
+      }
+      out += c;
+      i++;
+      continue;
+    }
+
+    if (state === 'squote') {
+      out += c;
+      if (c === "'" && next === "'") {
+        out += next;
+        i += 2;
+        continue;
+      }
+      if (c === "'") {
+        state = 'code';
+      }
+      i++;
+      continue;
+    }
+
+    if (state === 'dollar') {
+      const close = '$' + dollarTag + '$';
+      if (sql.slice(i, i + close.length) === close) {
+        out += close;
+        i += close.length;
+        state = 'code';
+        continue;
+      }
+      out += c;
+      i++;
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Split a PostgreSQL script on semicolons outside strings and dollar-quoted blocks
+ * (so DO $$ ... END $$; stays one statement).
+ */
+function splitPostgresStatements(sql) {
+  const clean = stripSqlComments(sql);
+  const statements = [];
+  let buf = '';
+  let i = 0;
+  let state = 'code';
+  let dollarTag = '';
+
+  while (i < clean.length) {
+    const c = clean[i];
+    const next = clean[i + 1];
+
+    if (state === 'code') {
+      if (c === "'") {
+        state = 'squote';
+        buf += c;
+        i++;
+        continue;
+      }
+      if (c === '$') {
+        const rest = clean.slice(i);
+        const m = rest.match(/^\$([a-zA-Z_]*)\$/);
+        if (m) {
+          dollarTag = m[1];
+          state = 'dollar';
+          buf += m[0];
+          i += m[0].length;
+          continue;
+        }
+      }
+      if (c === ';') {
+        const t = buf.trim();
+        if (t.length > 0) statements.push(t);
+        buf = '';
+        i++;
+        continue;
+      }
+      buf += c;
+      i++;
+      continue;
+    }
+
+    if (state === 'squote') {
+      buf += c;
+      if (c === "'" && next === "'") {
+        buf += next;
+        i += 2;
+        continue;
+      }
+      if (c === "'") {
+        state = 'code';
+      }
+      i++;
+      continue;
+    }
+
+    if (state === 'dollar') {
+      const close = '$' + dollarTag + '$';
+      if (clean.slice(i, i + close.length) === close) {
+        buf += close;
+        i += close.length;
+        state = 'code';
+        continue;
+      }
+      buf += c;
+      i++;
+      continue;
+    }
+  }
+
+  const tail = buf.trim();
+  if (tail.length > 0) statements.push(tail);
+  return statements;
+}
 
 // Cache for cluster info
 let cachedClusterInfo = null;
@@ -96,75 +265,38 @@ async function getClusterInfo() {
  */
 async function executeSQL(sql, expectResult = false) {
   const clusterInfo = await getClusterInfo();
-  
-  // Write SQL to temporary file to avoid shell escaping issues
-  const tempFile = path.join(os.tmpdir(), `rds-query-${Date.now()}.sql`);
-  
+  const client = getRdsDataClient();
+
+  console.log('⚙️  Executing SQL...');
+  if (sql.length > 200) {
+    console.log(`   SQL preview: ${sql.substring(0, 200)}...`);
+  } else {
+    console.log(`   SQL: ${sql}`);
+  }
+
   try {
-    fs.writeFileSync(tempFile, sql, 'utf8');
-    
-    // Build AWS CLI command
-    const command = [
-      'aws rds-data execute-statement',
-      `--resource-arn "${clusterInfo.clusterArn}"`,
-      `--secret-arn "${clusterInfo.secretArn}"`,
-      `--database "${DATABASE_NAME}"`,
-      `--sql "file://${tempFile}"`,
-      `--region ${REGION}`,
-      '--output json'
-    ].join(' ');
-    
-    console.log('⚙️  Executing SQL...');
-    if (sql.length > 200) {
-      console.log(`   SQL preview: ${sql.substring(0, 200)}...`);
-    } else {
-      console.log(`   SQL: ${sql}`);
-    }
-    
-    const resultJson = execSync(command, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true
-    });
-    
-    const result = JSON.parse(resultJson);
-    
-    if (result.errorMessage) {
-      throw new Error(`RDS Data API error: ${result.errorMessage}`);
-    }
-    
+    const result = await client.send(
+      new ExecuteStatementCommand({
+        resourceArn: clusterInfo.clusterArn,
+        secretArn: clusterInfo.secretArn,
+        database: DATABASE_NAME,
+        sql,
+        ...(expectResult ? { formatRecordsAs: 'JSON' } : {})
+      })
+    );
+
     if (expectResult && result.records) {
       console.log(`   ✅ Query executed successfully (${result.records.length} records)`);
     } else {
       console.log(`   ✅ Statement executed successfully`);
     }
-    
+
     return result;
   } catch (error) {
     console.error('❌ SQL execution failed:');
-    
-    // Try to parse error message from stderr or response
-    if (error.stderr) {
-      try {
-        const errorObj = JSON.parse(error.stderr);
-        if (errorObj.errorMessage) {
-          console.error(`   Error: ${errorObj.errorMessage}`);
-        } else {
-          console.error(`   Error: ${error.stderr}`);
-        }
-      } catch (e) {
-        console.error(`   Error: ${error.stderr || error.message}`);
-      }
-    } else {
-      console.error(`   Error: ${error.message}`);
-    }
-    
+    const msg = error.message || String(error);
+    console.error(`   Error: ${msg}`);
     throw error;
-  } finally {
-    // Clean up temp file
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
   }
 }
 
@@ -262,6 +394,8 @@ module.exports = {
   parseRecords,
   query,
   executeSQLFile,
+  stripSqlComments,
+  splitPostgresStatements,
   ENVIRONMENT,
   REGION,
   CLUSTER_IDENTIFIER,

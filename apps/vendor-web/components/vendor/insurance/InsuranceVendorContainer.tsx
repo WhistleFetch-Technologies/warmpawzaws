@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Shield, FileText, Users, TrendingUp, CheckCircle2, X, Edit, Trash2, Eye, EyeOff } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, Shield, FileText, TrendingUp, CheckCircle2, X, Edit, Trash2, Eye, EyeOff, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -33,7 +34,77 @@ interface InsurancePlan {
   minAge?: number;
 }
 
+function toMaybeNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function pickPrice(row: Record<string, unknown>): number {
+  const candidates = [
+    toMaybeNum(row.price),
+    toMaybeNum(row.premium_monthly),
+    toMaybeNum(row.monthly_premium),
+    toMaybeNum(row.premium),
+  ];
+  for (const n of candidates) {
+    if (n != null && n > 0) return n;
+  }
+  for (const n of candidates) {
+    if (n != null) return n;
+  }
+  return 0;
+}
+
+/** GET /vendor/.../insurance/plans returns DB rows — normalize for UI */
+function normalizeVendorInsurancePlan(row: Record<string, unknown>): InsurancePlan {
+  let details: { features?: string[] } = {};
+  const rawCd = row.coverage_details;
+  if (rawCd && typeof rawCd === 'object' && !Array.isArray(rawCd)) {
+    details = rawCd as { features?: string[] };
+  } else if (typeof rawCd === 'string') {
+    try {
+      const p = JSON.parse(rawCd);
+      if (p && typeof p === 'object' && !Array.isArray(p)) details = p as { features?: string[] };
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const features = Array.isArray(row.features)
+    ? (row.features as string[])
+    : Array.isArray(details?.features)
+      ? details.features!
+      : [];
+
+  const price = pickPrice(row);
+  const coverage =
+    toMaybeNum(row.coverage) ?? toMaybeNum(row.coverage_amount) ?? toMaybeNum(row.coverageAmount) ?? 0;
+
+  return {
+    id: row.id != null ? String(row.id) : undefined,
+    name: String(row.name ?? row.plan_name ?? 'Plan'),
+    description: String(row.description ?? ''),
+    price,
+    period: row.period === 'year' ? 'year' : 'month',
+    coverage,
+    deductible: toMaybeNum(row.deductible) ?? 0,
+    features,
+    isPublished: Boolean(row.isPublished ?? row.is_published ?? row.is_active),
+    category: row.category != null ? String(row.category) : undefined,
+    waitingPeriod:
+      row.waitingPeriod != null
+        ? Number(row.waitingPeriod)
+        : row.waiting_period_days != null
+          ? Number(row.waiting_period_days)
+          : undefined,
+    maxAge: row.maxAge != null ? Number(row.maxAge) : row.max_age != null ? Number(row.max_age) : undefined,
+    minAge: row.minAge != null ? Number(row.minAge) : row.min_age != null ? Number(row.min_age) : undefined,
+  };
+}
+
 export function InsuranceVendorContainer({ vendorId, vendorData, onBack }: InsuranceVendorContainerProps) {
+  const router = useRouter();
   const [plans, setPlans] = useState<InsurancePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -71,7 +142,8 @@ export function InsuranceVendorContainer({ vendorId, vendorData, onBack }: Insur
     try {
       setLoading(true);
       const response = await apiClient.get<any>(`/vendor/${vendorId}/insurance/plans`);
-      const plansList = response.plans || response.services || [];
+      const raw = response.plans || response.services || [];
+      const plansList = Array.isArray(raw) ? raw.map((r) => normalizeVendorInsurancePlan(r as Record<string, unknown>)) : [];
       setPlans(plansList);
     } catch (error: any) {
       console.error('Error loading plans:', error);
@@ -223,18 +295,30 @@ export function InsuranceVendorContainer({ vendorId, vendorData, onBack }: Insur
             <h1 className="text-3xl font-bold text-gray-900">Insurance Policy Management</h1>
             <p className="text-gray-600 mt-1">Create and manage insurance plans for pets</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-2 justify-end">
             {onBack && (
               <Button variant="outline" onClick={onBack}>
                 ← Back
               </Button>
             )}
+            <Button variant="outline" onClick={() => router.push('/insurance/policies')}>
+              <Shield className="w-4 h-4 mr-2" />
+              Issued policies
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/insurance/claims')}>
+              <ClipboardList className="w-4 h-4 mr-2" />
+              Claims
+            </Button>
             <Button onClick={() => { resetForm(); setEditingPlan(null); setShowCreateModal(true); }} className="bg-orange-500 hover:bg-orange-600">
               <Plus className="w-4 h-4 mr-2" />
               Create Plan
             </Button>
           </div>
         </div>
+
+        <p className="text-sm text-gray-600 mb-4">
+          Use <strong>Issued policies</strong> to track customer coverage, consent checkpoints, and lifecycle status. Plans you create here are what customers can buy.
+        </p>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
