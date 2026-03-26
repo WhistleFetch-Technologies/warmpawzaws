@@ -5,18 +5,17 @@
  * Phase 3: AI Chatbot Integration
  */
 
-'use client';
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { X, Send, Bot, User, AlertCircle } from 'lucide-react';
-import { apiClient, aiChatbotApi, supportCrmApi } from '@/lib/api-client';
+import { aiChatbotApi } from '@/lib/api-client';
 
 interface AIChatbotWidgetProps {
   customerId?: string;
   customerPhone?: string;
   petId?: string;
   onClose?: () => void;
-  onNavigate?: (path: string) => void;
+  onNavigate?: (dest: string, data?: any) => void;
 }
 
 interface Message {
@@ -27,6 +26,8 @@ interface Message {
   intent?: string;
   suggestedActions?: string[];
   requiresAgent?: boolean;
+  /** When set, "Continue to booking" uses this path */
+  bookingUrl?: string;
 }
 
 export function AIChatbotWidget({
@@ -36,6 +37,23 @@ export function AIChatbotWidget({
   onClose,
   onNavigate,
 }: AIChatbotWidgetProps) {
+  const router = useRouter();
+  const lastBookingUrlRef = useRef<string | null>(null);
+
+  const goTo = useCallback(
+    (dest: string) => {
+      const d = (dest || '').trim();
+      if (!d) return;
+      if (d.startsWith('/')) {
+        if (onNavigate) onNavigate(d);
+        else router.push(d);
+      } else if (onNavigate) {
+        onNavigate(d);
+      }
+    },
+    [onNavigate, router]
+  );
+
   // Widget is always open when rendered - parent controls visibility via conditional rendering
   const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<Message[]>([
@@ -71,6 +89,10 @@ export function AIChatbotWidget({
     setInputText('');
     setSending(true);
 
+    if (mode !== 'booking') {
+      lastBookingUrlRef.current = null;
+    }
+
     try {
       let response: any;
       
@@ -88,16 +110,12 @@ export function AIChatbotWidget({
           content: response.response || 'I understand your concern. Please consult with a veterinarian for proper diagnosis.',
           timestamp: new Date().toISOString(),
           intent: 'symptoms',
-          suggestedActions: response.vetBookingSuggested ? ['Find Vet Clinic', 'Book Consultation'] : [],
+          suggestedActions: response.vetBookingSuggested
+            ? ['Find Vet Clinic', 'Book Consultation', 'Search Providers']
+            : ['Search Providers', 'Browse Services'],
         };
         
         setMessages(prev => [...prev, botMessage]);
-        
-        if (response.shouldSeeVet && response.vetBookingSuggested && onNavigate) {
-          setTimeout(() => {
-            onNavigate('/search?category=vet');
-          }, 1000);
-        }
       } else if (mode === 'booking') {
         response = await aiChatbotApi.bookingAssist({
           query: messageText,
@@ -106,22 +124,30 @@ export function AIChatbotWidget({
           petId,
         });
         
+        const bookingPath =
+          typeof response.bookingUrl === 'string' && response.bookingUrl.startsWith('/')
+            ? response.bookingUrl
+            : '/search';
+        lastBookingUrlRef.current = bookingPath;
+
+        const stepLabels = Array.isArray(response.nextSteps)
+          ? response.nextSteps.filter((s: unknown) => typeof s === 'string' && s.trim())
+          : [];
+        const suggestedActions = Array.from(
+          new Set([...stepLabels, 'Continue to booking', 'Browse Services'])
+        );
+
         const botMessage: Message = {
           id: `bot-${Date.now()}`,
           type: 'bot',
           content: response.response || "I'd be happy to help you book a service!",
           timestamp: new Date().toISOString(),
           intent: 'booking',
-          suggestedActions: response.nextSteps || [],
+          suggestedActions,
+          bookingUrl: bookingPath,
         };
         
         setMessages(prev => [...prev, botMessage]);
-        
-        if (response.bookingUrl && onNavigate) {
-          setTimeout(() => {
-            onNavigate(response.bookingUrl || '/book');
-          }, 1000);
-        }
       } else {
         response = await aiChatbotApi.chat({
           message: messageText,
@@ -197,14 +223,88 @@ export function AIChatbotWidget({
   };
 
   const handleSuggestedAction = (action: string) => {
-    if (!onNavigate) return;
-    
-    if (action.includes('Vet') || action.includes('Clinic')) {
-      onNavigate('/search?category=vet');
-    } else if (action.includes('Book')) {
-      onNavigate('/book');
-    } else if (action.includes('Shop')) {
-      onNavigate('/shop');
+    const a = action.toLowerCase();
+
+    if (a === 'continue to booking' && lastBookingUrlRef.current) {
+      goTo(lastBookingUrlRef.current);
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('vet') || a.includes('clinic') || (a.includes('consultation') && !a.includes('tele'))) {
+      goTo('/search?category=vet');
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('search') && a.includes('provider')) {
+      goTo('/search');
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('browse') && a.includes('service')) {
+      goTo('/search');
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('book') || a.includes('slot') || a.includes('select service')) {
+      if (lastBookingUrlRef.current) {
+        goTo(lastBookingUrlRef.current);
+      } else {
+        goTo('/search');
+      }
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('shop') || (a.includes('browse') && a.includes('shop'))) {
+      goTo('/shop');
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('cart')) {
+      goTo('/cart');
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('contact') && a.includes('support')) {
+      if (onNavigate) {
+        onNavigate('support_help', { initialTab: 'contact' });
+      } else {
+        goTo('/settings');
+      }
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('get help') || a === 'help') {
+      if (onNavigate) {
+        onNavigate('support_help', {});
+      } else {
+        goTo('/settings');
+      }
+      setIsOpen(false);
+      onClose?.();
+      return;
+    }
+
+    if (a.includes('open') && a.includes('setting')) {
+      goTo('/settings');
+      setIsOpen(false);
+      onClose?.();
+      return;
     }
   };
 
@@ -254,6 +354,13 @@ export function AIChatbotWidget({
             <X className="w-5 h-5" />
           </button>
         </div>
+        <p className="text-[11px] text-white/85 leading-snug pr-10">
+          {mode === 'symptoms' &&
+            'Describe symptoms — we match care areas from our catalog and suggest providers you can book.'}
+          {mode === 'booking' &&
+            'Say the service you want — we match catalog services and providers, then use the buttons to continue.'}
+          {mode === 'chat' && 'Ask anything about the app, orders, or pet care. Use buttons below the reply when shown.'}
+        </p>
       </div>
 
       {/* Messages */}

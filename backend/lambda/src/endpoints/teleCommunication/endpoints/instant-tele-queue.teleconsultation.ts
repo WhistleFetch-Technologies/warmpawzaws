@@ -227,9 +227,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         notes,
       } = body;
 
-      if (!customerId || !vendorId || !petId || !serviceId) {
+      if (!customerId || !vendorId || !serviceId) {
         return c.json({
-          error: 'customerId, vendorId, petId, and serviceId are required',
+          error: 'customerId, vendorId, and serviceId are required',
         }, 400);
       }
 
@@ -391,7 +391,7 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       `, [
         customerId,
         vendorId,
-        petId,
+        petId ?? null,
         resolvedServiceId,
         position,
         symptoms || null,

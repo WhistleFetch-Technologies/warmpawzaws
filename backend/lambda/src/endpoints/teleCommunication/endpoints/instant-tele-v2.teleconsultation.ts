@@ -53,8 +53,8 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
       if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
         return c.json({ success: false, error: 'Payment verification data required' }, 400);
       }
-      if (!vendorId || !customerId || !petId || !serviceId) {
-        return c.json({ success: false, error: 'vendorId, customerId, petId, serviceId required' }, 400);
+      if (!vendorId || !customerId || !serviceId) {
+        return c.json({ success: false, error: 'vendorId, customerId, serviceId required' }, 400);
       }
 
       const config = await getRazorpayConfig();
@@ -92,7 +92,7 @@ export function registerInstantTeleV2Endpoints(app: Hono) {
         customer_id: customerId,
         vendor_id: vendorId,
         staff_id: null,
-        pet_id: petId,
+        pet_id: petId ?? null,
         service_id: serviceId,
         service_type: 'tele',
         booking_date: today,

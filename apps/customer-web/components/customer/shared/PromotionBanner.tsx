@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { resolvePromotionDestination } from '@/lib/promotion-navigation';
+import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 
 interface Promotion {
   id: string;
@@ -138,10 +139,21 @@ export function PromotionBanner({
     }
     const screen = resolvePromotionDestination(promo as Record<string, unknown>, service);
     if (onNavigate) {
-      onNavigate(screen, { promotionId: promo.id });
+      onNavigate(screen, {
+        promotionId: promo.id,
+        ...(screen === 'vet-tele-consultation'
+          ? { service: 'tele' as const, directTelePay: true as const }
+          : {}),
+      });
       return;
     }
     if (typeof window !== 'undefined') {
+      if (screen === 'vet-tele-consultation') {
+        const path = buildTeleInstantAutoPayBookingUrl();
+        console.log('[PromotionBanner] no onNavigate → tele instant pay', path);
+        window.location.href = `${window.location.origin}${path}`;
+        return;
+      }
       window.location.href = `/?promotion=${encodeURIComponent(promo.id)}&target=${encodeURIComponent(screen)}`;
     }
   };

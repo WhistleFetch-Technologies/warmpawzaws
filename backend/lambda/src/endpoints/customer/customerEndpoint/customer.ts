@@ -169,17 +169,38 @@ class AddPetHandler extends BaseHandler {
 
     this.validateRequired(body, ['name', 'species', 'breed']);
 
-    // ✅ SQL: Create pet
+    const ageUnit = body.ageUnit || body.age_unit;
+    let age_years: number | null = null;
+    let age_months: number | null = null;
+    if (body.age != null && body.age !== '') {
+      const n = parseInt(String(body.age), 10);
+      if (!Number.isNaN(n)) {
+        if (ageUnit === 'months' || ageUnit === 'month') age_months = n;
+        else age_years = n;
+      }
+    }
+    const w =
+      body.weight_kg != null && body.weight_kg !== ''
+        ? parseFloat(String(body.weight_kg))
+        : body.weight != null && body.weight !== ''
+          ? parseFloat(String(body.weight))
+          : null;
+    const weight_kg = w != null && !Number.isNaN(w) ? w : null;
+
     const petData = {
       customer_id: customerId,
       name: body.name,
       species: body.species,
       breed: body.breed,
-      age: body.age,
-      gender: body.gender,
-      weight: body.weight,
-      color: body.color,
-      medical_history: body.medicalHistory || [],
+      age_years,
+      age_months,
+      gender: body.gender || null,
+      weight_kg,
+      color: body.color || null,
+      medical_history:
+        body.medicalHistory != null && typeof body.medicalHistory === 'object' && !Array.isArray(body.medicalHistory)
+          ? body.medicalHistory
+          : {},
     };
 
     const pets = await insert('pets', petData);

@@ -2,7 +2,9 @@
 
 import React, { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Search } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, Calendar, Home, Search, User } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
@@ -21,7 +23,13 @@ interface SearchResult {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading search...</div>}>
+    <Suspense
+      fallback={
+        <div className="mx-auto flex min-h-[100dvh] w-full max-w-md items-center justify-center bg-gradient-to-b from-orange-50/90 to-amber-50/80 text-sm text-gray-600">
+          Loading search…
+        </div>
+      }
+    >
       <SearchContent />
     </Suspense>
   );
@@ -166,76 +174,103 @@ function SearchContent() {
     performSearch();
   };
 
+  const mainBottomPad =
+    'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
-      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="mb-4">
-            {/* ✅ FIX: Match consistency - text-2xl font-bold */}
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">Search Services</h1>
-            <p className="text-sm text-gray-500">Find vendors and services for your pets</p>
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+      {/* App shell: fixed top block (no wide desktop layout) */}
+      <div className="shrink-0 border-b border-orange-200/80 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md supports-[backdrop-filter]:bg-white/85">
+        <div className="relative flex h-14 items-center justify-center px-2">
+          <div className="absolute left-1 top-1/2 -translate-y-1/2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 shrink-0 text-gray-800"
+              onClick={() => router.push('/')}
+              aria-label="Go to home"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
           </div>
-          <form onSubmit={handleSearch} className="flex gap-3">
-            <a href="/" className="p-2 hover:bg-gray-100 rounded-full">
-              <span className="text-2xl">←</span>
-            </a>
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={query}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
-                placeholder="Search for services, vendors..."
-                className="w-full px-4 py-3 pl-12 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-500"
-              />
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl">🔍</span>
-            </div>
-            <button
+          <h1 className="pointer-events-none max-w-[65%] truncate text-center text-lg font-bold tracking-tight text-gray-900">
+            Search
+          </h1>
+        </div>
+        <p className="px-4 pb-2 text-center text-xs leading-snug text-gray-500">
+          Find vendors and services for your pets
+        </p>
+
+        <form onSubmit={handleSearch} className="px-4 pb-3">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-400"
+              aria-hidden
+            />
+            <input
+              type="search"
+              enterKeyHint="search"
+              value={query}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
+              placeholder="Services, vendors…"
+              className="h-11 w-full rounded-2xl border border-gray-200 bg-white py-2 pl-10 pr-12 text-[15px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/25"
+            />
+            <Button
               type="submit"
-              className="px-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition flex items-center justify-center gap-2 font-medium"
+              size="icon"
+              className="absolute right-1 top-1/2 h-9 w-9 -translate-y-1/2 rounded-xl bg-[#FF8C42] text-white hover:bg-[#FF7A2E]"
+              aria-label="Search"
             >
-              <Search className="w-5 h-5" />
-              Search
-            </button>
-          </form>
+              <Search className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+
+        <div className="-mx-0 border-t border-orange-100/80 bg-white/80 pb-3 pt-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            className="flex gap-2 overflow-x-auto overscroll-x-contain px-4 pb-1 pt-0.5 touch-pan-x"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setCategory(cat.id)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition active:scale-[0.98] ${
+                  category === cat.id
+                    ? 'bg-[#FF8C42] text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <span className="text-base leading-none" aria-hidden>
+                  {cat.icon}
+                </span>
+                <span>{cat.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Category Tabs */}
-      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-[120px] z-40 overflow-x-auto">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex gap-3">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCategory(cat.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition ${
-                category === cat.id
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <span>{cat.icon}</span>
-              <span>{cat.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Results */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      {/* Results — scrolls under header; padding for tab bar + home indicator */}
+      <main className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 ${mainBottomPad}`}>
         {showVendorServices && vendorIdParam ? (
           // Show vendor services
           <div>
-            <div className="mb-4">
-              <button
+            <div className="mb-3">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 -ml-2 gap-1 px-2 text-[#FF8C42] hover:text-[#E67A35]"
                 onClick={() => {
                   setShowVendorServices(false);
                   router.push('/search');
                 }}
-                className="text-orange-500 hover:underline"
               >
-                ← Back to search
-              </button>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
             </div>
             {loading ? (
               <div className="text-center py-12">
@@ -248,7 +283,7 @@ function SearchContent() {
               </div>
             ) : (
               <div className="space-y-6">
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 gap-3">
                   {vendorServices.map((service: any) => (
                     <a
                       key={service.id}
@@ -292,13 +327,17 @@ function SearchContent() {
             </button>
           </div>
         ) : results.length === 0 ? (
-          <div className="text-center py-12">
-            <span className="text-6xl">🔍</span>
-            <h2 className="mt-4 text-xl font-semibold text-gray-900">No results found</h2>
-            <p className="text-gray-500 mt-2">Try adjusting your search or category</p>
+          <div className="flex min-h-[45vh] flex-col items-center justify-center px-2 py-10 text-center">
+            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-orange-100">
+              <Search className="h-10 w-10 text-[#FF8C42]" strokeWidth={1.75} />
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900">No results found</h2>
+            <p className="mt-2 max-w-[260px] text-sm text-gray-500">
+              Try a different keyword or pick another category.
+            </p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-3">
             {results.map((result) => (
               <a
                 key={`${result.type}-${result.id}`}
@@ -318,7 +357,7 @@ function SearchContent() {
                 }}
                 className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
               >
-                <div className="h-40 bg-gradient-to-br from-orange-100 to-amber-100 flex items-center justify-center text-6xl">
+                <div className="flex h-32 items-center justify-center bg-gradient-to-br from-orange-100 to-amber-100 text-5xl">
                   {result.category === 'vet' ? '🏥' :
                    result.category === 'grooming' ? '✂️' :
                    result.category === 'training' ? '🎓' :
@@ -356,23 +395,25 @@ function SearchContent() {
         )}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
-        <div className="max-w-7xl mx-auto flex justify-around py-3">
+      {/* Bottom tab bar — aligned with phone shell */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200/90 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
+        <div className="mx-auto flex w-full max-w-md items-stretch justify-between gap-0 px-1 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2">
           {[
-            { icon: '🏠', label: 'Home', href: '/' },
-            { icon: '🔍', label: 'Search', href: '/search', active: true },
-            { icon: '📅', label: 'Bookings', href: '/bookings' },
-            { icon: '👤', label: 'Profile', href: '/profile' },
-          ].map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              className={`flex flex-col items-center ${item.active ? 'text-orange-500' : 'text-gray-500'}`}
+            { Icon: Home, label: 'Home', href: '/' },
+            { Icon: Search, label: 'Search', href: '/search', active: true },
+            { Icon: Calendar, label: 'Bookings', href: '/bookings' },
+            { Icon: User, label: 'Profile', href: '/profile' },
+          ].map(({ Icon, label, href, active }) => (
+            <Link
+              key={label}
+              href={href}
+              className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 transition-colors ${
+                active ? 'text-[#FF8C42]' : 'text-gray-500 active:text-gray-700'
+              }`}
             >
-              <span className="text-2xl">{item.icon}</span>
-              <span className="text-xs mt-1">{item.label}</span>
-            </a>
+              <Icon className="h-5 w-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
+              <span className="max-w-full truncate text-[10px] font-medium leading-tight">{label}</span>
+            </Link>
           ))}
         </div>
       </nav>

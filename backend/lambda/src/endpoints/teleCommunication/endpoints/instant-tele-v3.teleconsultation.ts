@@ -180,7 +180,54 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         console.error('[instant-tele-v2] available-now query error:', err);
         return { rows: [] };
       });
-      const rows = (result as any).rows || [];
+      let rows = (result as any).rows || [];
+
+      // When no vet matches the current tele time window, still return vets who offer
+      // instant tele + published tele services so direct-pay can open UniversalPaymentPage.
+      if (rows.length === 0) {
+        console.warn('[instant-tele-v3] available-now: strict window empty, using fallback (any instant-tele vet with tele service)');
+        const fb = await query(
+          `
+        SELECT DISTINCT
+            v.id AS vendor_id,
+            COALESCE(v.business_name, v.owner_name, 'Vet') AS vendor_name,
+            photo.profile_photo_url AS photo,
+            v.phone,
+            v.city,
+            v.address
+        FROM vendors v
+        INNER JOIN vendor_identity vi ON vi.vendor_id = v.id
+        INNER JOIN roles r ON r.id = vi.selected_role_id AND r.is_active = true
+        LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
+        LEFT JOIN LATERAL (
+            SELECT doc->>'url' AS profile_photo_url
+            FROM jsonb_array_elements(voa.uploaded_documents) AS doc
+            WHERE doc->>'type' = 'profilePhoto'
+            LIMIT 1
+        ) photo ON true
+        WHERE v.is_active = true
+          AND (v.status = 'approved' OR v.status IS NULL OR v.status = 'active')
+          AND v.is_deleted = false
+          AND v.available_for_instant_tele = true
+          AND LOWER(r.name) = ANY($1::text[])
+          AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id
+              AND vs.service_style = 'tele'
+              AND vs.is_enabled = true
+              AND COALESCE(vs.publish_status, 'published') IN ('published', 'auto_published')
+          )
+        ORDER BY v.business_name
+        LIMIT 20
+        `,
+          [VET_ROLE_NAMES.map((r) => r.toLowerCase())]
+        ).catch((err) => {
+          console.error('[instant-tele-v3] available-now fallback query error:', err);
+          return { rows: [] };
+        });
+        rows = (fb as any).rows || [];
+      }
+
       const vendors = await Promise.all(
         rows.map(async (r: any) => ({
           vendorId: r.vendor_id,
