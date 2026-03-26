@@ -37,22 +37,24 @@ type PoliciesApiResponse = {
   policySource?: 'defaults_only' | 'error_fallback';
 };
 
-function isPoliciesArray(res: unknown): res is PoliciesApiResponse {
-  if (!res || typeof res !== 'object') return false;
-  const p = (res as PoliciesApiResponse).policies;
-  return Array.isArray(p) && p.length > 0;
+function extractPolicies(res: unknown): PlatformPolicyRow[] | null {
+  if (!res || typeof res !== 'object') return null;
+  const obj = res as any;
+  if (Array.isArray(obj.policies) && obj.policies.length > 0) return obj.policies;
+  if (obj.data && Array.isArray(obj.data.policies) && obj.data.policies.length > 0) return obj.data.policies;
+  return null;
 }
 
 function pickFromResponse(
   res: PoliciesApiResponse | null | undefined,
   requested: PlatformPolicyTypeKey
 ): { row: PlatformPolicyRow; res: PoliciesApiResponse } | null {
-  if (!res || !isPoliciesArray(res)) return null;
-  const list = res.policies!;
+  const list = extractPolicies(res);
+  if (!list) return null;
   const row = list.find((x) => policyRowMatchesRequested(x, requested));
   const content = row?.content;
   if (!row || typeof content !== 'string' || !content.trim()) return null;
-  return { row, res };
+  return { row, res: res! };
 }
 
 async function tryGetJson<T>(
@@ -82,8 +84,9 @@ export async function fetchPlatformPolicyDocument(
 
   let best: { row: PlatformPolicyRow; res: PoliciesApiResponse } | null = null;
 
-  for (const path of paths) {
-    const res = await tryGetJson<PoliciesApiResponse>(getJson, path);
+  for (const p of paths) {
+    const res = await tryGetJson<PoliciesApiResponse>(getJson, p);
+    console.log('[policy-client] GET', p, '→ types:', (res as any)?.policies?.map?.((x: any) => x.policyType || x.policy_type) ?? 'none');
     const picked = pickFromResponse(res, requested);
     if (picked) {
       best = picked;
@@ -92,6 +95,7 @@ export async function fetchPlatformPolicyDocument(
   }
 
   if (!best) {
+    console.warn('[policy-client] No matching policy for', requested);
     return { ok: false, error: 'No policies are available right now.' };
   }
 

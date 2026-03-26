@@ -177,7 +177,9 @@ export function DynamicVendorOnboardingForm({
     try {
       setLoadingPolicies(true);
       const response = await apiClient.get<any>('/public/policies');
-      const list = Array.isArray(response?.policies) ? response.policies : [];
+      const raw = response?.policies ?? response?.data?.policies;
+      const list = Array.isArray(raw) ? raw : [];
+      console.log('[vendor-onboarding] Fetched policies:', list.length, 'types:', list.map((p: any) => p.policyType).join(','));
 
       if (list.length > 0) {
         const vendorAgreement = list.find((p: any) => p.policyType === 'vendor_onboarding_agreement');

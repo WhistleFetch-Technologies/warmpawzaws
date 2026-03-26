@@ -31,25 +31,37 @@ async function adaptAndHandle(handler: BaseHandler, c: HonoContext): Promise<Res
     return c.json({ error: 'Missing event in context' }, 500);
   }
   const paramPolicyType = c.req.param('policyType');
-  const eventWithParams =
-    paramPolicyType !== undefined && paramPolicyType !== ''
+
+  // Build queryStringParameters from Hono's parsed query (covers local serverless-offline
+  // where the original Lambda event may not carry queryStringParameters).
+  const honoQuery: Record<string, string> = {};
+  const url = new URL(c.req.url);
+  url.searchParams.forEach((v, k) => { honoQuery[k] = v; });
+
+  const mergedQS =
+    Object.keys(honoQuery).length > 0
+      ? { ...((event as any).queryStringParameters || {}), ...honoQuery }
+      : (event as any).queryStringParameters;
+
+  const eventWithParams: any = {
+    ...event,
+    queryStringParameters: mergedQS,
+    ...(paramPolicyType !== undefined && paramPolicyType !== ''
       ? {
-          ...event,
           pathParameters: {
             ...(event.pathParameters || {}),
             policyType: paramPolicyType,
           },
         }
-      : event;
+      : {}),
+  };
+
   const handlerContext: HandlerContext = {
     event: eventWithParams,
     context: {} as LambdaContext,
   };
   const response: HandlerResponse = await handler.handle(handlerContext);
-  return c.body(response.body, response.statusCode as 200, {
-    'Content-Type': 'application/json',
-    ...(response.headers || {}),
-  });
+  return c.json(JSON.parse(response.body), response.statusCode as 200);
 }
 
 // ============================================================================
@@ -913,6 +925,7 @@ function mergeAllPublicPolicyDefaults(policies: any[]): any[] {
 class GetVendorPolicyHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const policyType = inferPublicPolicyTypeFromEvent(context.event);
+    console.log('[PUBLIC-POLICIES] Resolved policyType:', policyType, '| qs:', JSON.stringify((context.event as any).queryStringParameters || {}));
 
     try {
       let policiesResult: any;
@@ -974,6 +987,7 @@ class GetVendorPolicyHandler extends BaseHandler {
 
       // ✅ FIX: Extract rows from query result
       policies = Array.isArray(policiesResult) ? policiesResult : (policiesResult as any).rows || [];
+      console.log('[PUBLIC-POLICIES] DB rows:', policies.length, '| types:', policies.map((p: any) => p.policy_type || p.policyType).join(','));
 
       /** So clients can tell admin DB content vs in-code templates / error path */
       let dbRowCountBeforeMerge = policies.length;
@@ -1070,7 +1084,6 @@ class GetVendorPolicyHandler extends BaseHandler {
             version: 1,
           },
         ],
-        isDefault: true,
       });
     }
   }

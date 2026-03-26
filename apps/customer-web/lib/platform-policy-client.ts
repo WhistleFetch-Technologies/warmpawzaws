@@ -40,22 +40,26 @@ type PoliciesApiResponse = {
   policySource?: 'defaults_only' | 'error_fallback';
 };
 
-function isPoliciesArray(res: unknown): res is PoliciesApiResponse {
-  if (!res || typeof res !== 'object') return false;
-  const p = (res as PoliciesApiResponse).policies;
-  return Array.isArray(p) && p.length > 0;
+function extractPolicies(res: unknown): PlatformPolicyRow[] | null {
+  if (!res || typeof res !== 'object') return null;
+  const obj = res as any;
+  // Direct: { policies: [...] }
+  if (Array.isArray(obj.policies) && obj.policies.length > 0) return obj.policies;
+  // Nested: { data: { policies: [...] } }
+  if (obj.data && Array.isArray(obj.data.policies) && obj.data.policies.length > 0) return obj.data.policies;
+  return null;
 }
 
 function pickFromResponse(
   res: PoliciesApiResponse | null | undefined,
   requested: PlatformPolicyTypeKey
 ): { row: PlatformPolicyRow; res: PoliciesApiResponse } | null {
-  if (!res || !isPoliciesArray(res)) return null;
-  const list = res.policies!;
+  const list = extractPolicies(res);
+  if (!list) return null;
   const row = list.find((x) => policyRowMatchesRequested(x, requested));
   const content = row?.content;
   if (!row || typeof content !== 'string' || !content.trim()) return null;
-  return { row, res };
+  return { row, res: res! };
 }
 
 /**
@@ -80,25 +84,25 @@ export async function fetchPlatformPolicyDocument(
   | { ok: true; title: string; content: string; notice?: string }
   | { ok: false; error: string }
 > {
-  // List first. For a single doc, use ?policyType= — many API Gateway setups only register an exact
-  // GET /public/policies route, so /public/policies/customer_terms_of_service returns 404 at the gateway.
   const listPath = '/public/policies';
   const singleByQuery = `/public/policies?policyType=${encodeURIComponent(requested)}`;
 
   let best: { row: PlatformPolicyRow; res: PoliciesApiResponse } | null = null;
 
-  const fromList = pickFromResponse(await tryGetJson<PoliciesApiResponse>(getJson, listPath), requested);
+  const listRes = await tryGetJson<PoliciesApiResponse>(getJson, listPath);
+  console.log('[policy-client] GET /public/policies → types:', (listRes as any)?.policies?.map?.((p: any) => p.policyType || p.policy_type) ?? 'none', '| policySource:', (listRes as any)?.policySource);
+  const fromList = pickFromResponse(listRes, requested);
   if (fromList) best = fromList;
 
   if (!best) {
-    const fromSingle = pickFromResponse(
-      await tryGetJson<PoliciesApiResponse>(getJson, singleByQuery),
-      requested
-    );
+    const singleRes = await tryGetJson<PoliciesApiResponse>(getJson, singleByQuery);
+    console.log('[policy-client] GET', singleByQuery, '→ types:', (singleRes as any)?.policies?.map?.((p: any) => p.policyType || p.policy_type) ?? 'none');
+    const fromSingle = pickFromResponse(singleRes, requested);
     if (fromSingle) best = fromSingle;
   }
 
   if (!best) {
+    console.warn('[policy-client] No matching policy for', requested);
     return { ok: false, error: 'No policies are available right now.' };
   }
 
