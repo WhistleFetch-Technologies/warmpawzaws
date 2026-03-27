@@ -39,6 +39,15 @@ import { PolicyHelpButton } from "@/components/PolicyHelpButton";
 
 type DeliveryType = "last_mile" | "intercity" | "pan_india" | "hyperlocal";
 
+/** Stored as logistics_partners.partner_type (delivery mode or integrated carrier). */
+type LogisticsPartnerType =
+	| DeliveryType
+	| "shiprocket"
+	| "delhivery"
+	| "dunzo"
+	| "pidge"
+	| "other";
+
 interface PricingRule {
 	baseFee: number;
 	perKm: number;
@@ -49,8 +58,10 @@ interface PricingRule {
 interface LogisticsPartner {
 	id: string;
 	name: string;
-	type: DeliveryType;
+	type: LogisticsPartnerType;
 	enabled: boolean;
+	/** Pidge / custom integrations: API host (no trailing slash). */
+	baseUrl?: string;
 	apiEndpoint: string;
 	apiKey: string;
 	regions: string[];
@@ -63,6 +74,7 @@ const DEFAULT_PARTNER: LogisticsPartner = {
 	name: "",
 	type: "last_mile",
 	enabled: true,
+	baseUrl: "",
 	apiEndpoint: "",
 	apiKey: "",
 	regions: [],
@@ -92,6 +104,15 @@ const DELIVERY_TYPES: { value: DeliveryType; label: string }[] = [
 	{ value: "pan_india", label: "Pan India (Courier)" },
 ];
 
+const INTEGRATION_PARTNER_TYPES: { value: LogisticsPartnerType; label: string }[] =
+	[
+		{ value: "delhivery", label: "Delhivery (integration)" },
+		{ value: "dunzo", label: "Dunzo (integration)" },
+		{ value: "pidge", label: "Pidge (integration)" },
+		{ value: "shiprocket", label: "Shiprocket (integration)" },
+		{ value: "other", label: "Other / custom" },
+	];
+
 export function LogisticsSettings() {
 	const [partners, setPartners] = useState<LogisticsPartner[]>([]);
 	const [isModalOpen, setIsModalOpen] = useState(false);
@@ -111,6 +132,7 @@ export function LogisticsSettings() {
 				const migratedPartners = (res.partners || []).map((p: any) => ({
 					...DEFAULT_PARTNER,
 					...p,
+					baseUrl: p.baseUrl ?? "",
 					pricing: { ...DEFAULT_PARTNER.pricing, ...(p.pricing || {}) },
 				}));
 				setPartners(migratedPartners);
@@ -274,15 +296,20 @@ export function LogisticsSettings() {
 							<Label>Delivery Type</Label>
 							<Select
 								value={currentPartner.type}
-								onValueChange={(v: DeliveryType) =>
+								onValueChange={(v: LogisticsPartnerType) =>
 									setCurrentPartner({ ...currentPartner, type: v })
 								}
 							>
 								<SelectTrigger>
-									<SelectValue />
+									<SelectValue placeholder="Select delivery mode or carrier" />
 								</SelectTrigger>
 								<SelectContent>
 									{DELIVERY_TYPES.map((t) => (
+										<SelectItem key={t.value} value={t.value}>
+											{t.label}
+										</SelectItem>
+									))}
+									{INTEGRATION_PARTNER_TYPES.map((t) => (
 										<SelectItem key={t.value} value={t.value}>
 											{t.label}
 										</SelectItem>
@@ -291,8 +318,32 @@ export function LogisticsSettings() {
 							</Select>
 						</div>
 
+						{currentPartner.type === "pidge" && (
+							<div className="space-y-2">
+								<Label>API base URL</Label>
+								<Input
+									value={currentPartner.baseUrl || ""}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+										setCurrentPartner({
+											...currentPartner,
+											baseUrl: e.target.value,
+										})
+									}
+									placeholder="https://api.pidge.in (or value from Pidge)"
+									className="font-mono text-sm"
+								/>
+								<p className="text-xs text-muted-foreground">
+									Used for POST /v1.0/store/channel/vendor/login. Override with PIDGE_API_BASE on the server if unset.
+								</p>
+							</div>
+						)}
+
 						<div className="space-y-2">
-							<Label>API Endpoint</Label>
+							<Label>
+								{currentPartner.type === "pidge"
+									? "Vendor username"
+									: "API Endpoint"}
+							</Label>
 							<Input
 								value={currentPartner.apiEndpoint}
 								onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -301,13 +352,21 @@ export function LogisticsSettings() {
 										apiEndpoint: e.target.value,
 									})
 								}
-								placeholder="https://api.partner.com/v1"
+								placeholder={
+									currentPartner.type === "pidge"
+										? "Pidge vendor username"
+										: "https://api.partner.com/v1"
+								}
 								className="font-mono text-sm"
 							/>
 						</div>
 
 						<div className="space-y-2">
-							<Label>API Key</Label>
+							<Label>
+								{currentPartner.type === "pidge"
+									? "Vendor password"
+									: "API Key"}
+							</Label>
 							<Input
 								type="password"
 								value={currentPartner.apiKey}
