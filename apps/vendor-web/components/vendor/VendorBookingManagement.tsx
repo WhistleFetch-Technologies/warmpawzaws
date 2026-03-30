@@ -83,6 +83,67 @@ interface TimeSlot {
   time: string;
   available: boolean;
   booked?: boolean;
+  isPast?: boolean;
+  serviceType?: string;
+}
+
+interface BreakWindow {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
+function timeToMinutes(timeStr: string): number {
+  const normalized = (timeStr || '').trim();
+  const parts = normalized.split(':');
+  const hours = parseInt(parts[0] || '0', 10);
+  const minutes = parseInt(parts[1] || '0', 10);
+  return (hours * 60) + minutes;
+}
+
+function normalizeBookingTimeTo24h(rawTime: string): string | null {
+  if (!rawTime || typeof rawTime !== 'string') return null;
+  const trimmed = rawTime.trim();
+  if (!trimmed) return null;
+
+  // Format like "10:00 AM"
+  const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10);
+    const minute = parseInt(ampmMatch[2], 10);
+    const period = ampmMatch[3].toUpperCase();
+    if (period === 'PM' && hour < 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  // Formats like "10:00", "10:00:00", "10:00:00.123"
+  const hhmmssMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+  if (hhmmssMatch) {
+    const hour = parseInt(hhmmssMatch[1], 10);
+    const minute = parseInt(hhmmssMatch[2], 10);
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+function format24hTo12hLabel(time24: string): string {
+  const normalized = normalizeBookingTimeTo24h(time24);
+  if (!normalized) return time24;
+  const [hh, mm] = normalized.split(':').map((v) => parseInt(v, 10));
+  const period = hh >= 12 ? 'PM' : 'AM';
+  const hour12 = hh % 12 || 12;
+  return `${hour12}:${String(mm).padStart(2, '0')} ${period}`;
+}
+
+function normalizeServiceType(raw: string | undefined): string {
+  const v = (raw || '').toLowerCase().trim();
+  if (!v) return 'other';
+  if (v === 'at_center' || v === 'at_clinic' || v === 'at_vendor') return 'at_center';
+  if (v === 'at_home' || v === 'home_visit' || v === 'home_service') return 'at_home';
+  if (v === 'tele' || v === 'video_consultation' || v === 'tele_consultation' || v === 'online') return 'tele';
+  return v;
 }
 
 /** Format DB time (e.g. "10:00:00" or "10:00") to 12h (e.g. "10:00 AM") */
@@ -199,54 +260,118 @@ export function VendorBookingManagement({
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [prescriptionBookingId, setPrescriptionBookingId] = useState<string | null>(null);
 
-  // ✅ FIX: Load time slots from vendor operating hours and actual bookings
-  const generateTimeSlots = (operatingHours?: any, existingBookings?: Booking[]): TimeSlot[] => {
-    const slots: TimeSlot[] = [];
-    
-    // Get operating hours for selected date
+  /**
+   * Build time-slot chips purely from vendor availability API response.
+   * No fallback. No assumptions. Only real data.
+   *
+   * 1. Filter availability windows to the selected day-of-week.
+   * 2. Find the smallest startTime across all windows → that is the real day start.
+   * 3. Generate 30-min slots within each window.
+   * 4. Exclude break windows.
+   * 5. For today, skip slots whose time has already passed.
+   * 6. Mark booked slots from actual bookings.
+   * 7. Return sorted chronologically (earliest first).
+   */
+  const buildSlotsFromAvailability = (
+    availabilitySlots: any[] = [],
+    breaks: any[] = [],
+    existingBookings: Booking[] = []
+  ): TimeSlot[] => {
     const selectedDateObj = new Date(selectedDate);
-    const dayOfWeek = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-    
-    let startHour = 9;
-    let endHour = 18;
-    
-    // Use operating hours if available
-    if (operatingHours && operatingHours[dayOfWeek]) {
-      const dayHours = operatingHours[dayOfWeek];
-      if (dayHours.isOpen && dayHours.open && dayHours.close) {
-        const [openH] = dayHours.open.split(':').map(Number);
-        const [closeH] = dayHours.close.split(':').map(Number);
-        startHour = openH;
-        endHour = closeH;
-      } else if (!dayHours.isOpen) {
-        // Clinic closed on this day
-        return [];
-      }
-    }
-    
-    // Generate slots with 30-minute intervals
-    for (let hour = startHour; hour < endHour; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-        
-        // Check if this slot is booked
-        const isBooked = existingBookings?.some(b => {
-          const bookingTime = b.time.replace(/\s*(AM|PM)/, '');
-          return bookingTime === timeStr;
-        }) || false;
-        
-        slots.push({
-          time: timeStr,
-          available: !isBooked,
-          booked: isBooked
+    const dayOfWeek = selectedDateObj.getDay(); // 0=Sun..6=Sat
+    const isToday = selectedDate === new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const nowMinutes = isToday ? (now.getHours() * 60) + now.getMinutes() : 0;
+
+    // 1. Get enabled windows for selected day
+    const windowsForDay = availabilitySlots
+      .filter((s: any) => Number(s?.dayOfWeek) === dayOfWeek && s?.isEnabled !== false)
+      .map((s: any) => ({
+        start: (s.startTime || '').toString().substring(0, 5),
+        end:   (s.endTime   || '').toString().substring(0, 5),
+        serviceType: normalizeServiceType(
+          (Array.isArray(s.serviceStyles) && s.serviceStyles.length > 0 ? s.serviceStyles[0] : s.serviceType) || ''
+        ),
+      }))
+      .filter((w) => /^\d{2}:\d{2}$/.test(w.start) && /^\d{2}:\d{2}$/.test(w.end));
+
+    if (windowsForDay.length === 0) return [];
+
+    // 2. Collect break ranges for this day
+    const breakRanges = breaks
+      .filter((b: any) => Number(b?.dayOfWeek) === dayOfWeek)
+      .map((b: any) => ({
+        start: timeToMinutes((b.startTime || '').toString().substring(0, 5)),
+        end:   timeToMinutes((b.endTime   || '').toString().substring(0, 5)),
+      }));
+    const isInBreak = (m: number) => breakRanges.some((br) => m >= br.start && m < br.end);
+
+    // 3. Booked times set (normalised to HH:MM)
+    const bookedTimeSet = new Set(
+      existingBookings
+        .filter((b) => !['cancelled', 'no_show'].includes((b.status || '').toLowerCase()))
+        .map((b) => normalizeBookingTimeTo24h(b.time))
+        .filter((t): t is string => !!t)
+    );
+
+    // 4. Generate 30-min slots from each window, skip breaks only.
+    //    Past slots are kept but marked isPast so they render before future ones.
+    const slotMap = new Map<string, { order: number; slot: TimeSlot }>(); // key = type + minutes
+    for (const w of windowsForDay) {
+      const startM = timeToMinutes(w.start);
+      const endM   = timeToMinutes(w.end);
+      for (let m = startM; m < endM; m += 30) {
+        if (isInBreak(m)) continue;              // skip breaks
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        const time = `${hh}:${mm}`;
+        const isPast = isToday && m < nowMinutes;
+        const isBooked = bookedTimeSet.has(time);
+        const key = `${w.serviceType}:${m}`;
+        slotMap.set(key, {
+          order: m,
+          slot: {
+            time,
+            available: isPast ? false : !isBooked,
+            booked: isBooked,
+            isPast,
+            serviceType: w.serviceType,
+          },
         });
       }
     }
-    
-    return slots;
+
+    // 5. Return sorted by time (ascending)
+    return Array.from(slotMap.values())
+      .sort((a, b) => a.order - b.order)
+      .map((entry) => entry.slot);
   };
 
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [breakWindows, setBreakWindows] = useState<BreakWindow[]>([]);
+  const selectedDayOfWeek = new Date(selectedDate).getDay();
+  const slotTypeOrder = ['at_center', 'at_home', 'tele', 'other'];
+  const slotTypeLabelMap: Record<string, string> = {
+    at_center: 'At Center',
+    at_home: 'At Home',
+    tele: 'Tele',
+    other: 'Other',
+  };
+  const groupedSlotsByType = slotTypeOrder
+    .map((type) => ({
+      type,
+      label: slotTypeLabelMap[type] || type,
+      slots: timeSlots.filter((slot) => (slot.serviceType || 'other') === type),
+    }))
+    .filter((group) => group.slots.length > 0);
+  const breakWindowsForDay = breakWindows
+    .filter((b) => b.dayOfWeek === selectedDayOfWeek)
+    .map((b) => ({
+      start: (b.startTime || '').toString().substring(0, 5),
+      end: (b.endTime || '').toString().substring(0, 5),
+    }))
+    .filter((b) => /^\d{2}:\d{2}$/.test(b.start) && /^\d{2}:\d{2}$/.test(b.end))
+    .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
 
   useEffect(() => {
     loadBookings();
@@ -276,7 +401,7 @@ export function VendorBookingManagement({
         vendorId
       });
       
-      // ✅ FIX: Load both bookings and operating hours
+      // Load bookings and vendor-configured availability in parallel
       // Use startDate for week/month filters, date for today filter
       let dateParam = '';
       if (activeFilter === 'today') {
@@ -287,9 +412,9 @@ export function VendorBookingManagement({
         dateParam = `startDate=${selectedDate}`;
       }
       
-      const [bookingsData, facilityData] = await Promise.all([
+      const [bookingsData, availabilityData] = await Promise.all([
         apiClient.get(`/vendor/bookings/${vendorId}?${dateParam}&filter=all`) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/facility`).catch(() => null) as Promise<any>
+        apiClient.get(`/vendor/${vendorId}/availability`).catch(() => null) as Promise<any>
       ]);
 
       if (bookingsData && bookingsData.success) {
@@ -387,19 +512,23 @@ export function VendorBookingManagement({
           totalBookings: mappedBookings.length
         });
         
-        // ✅ FIX: Load operating hours and regenerate time slots based on real data
-        let operatingHours = null;
-        if (facilityData && facilityData.facility && facilityData.facility.operatingHours) {
-          operatingHours = facilityData.facility.operatingHours;
-        }
-        
-        // Generate time slots based on operating hours and existing bookings
-        const newSlots = generateTimeSlots(operatingHours, mappedBookings);
+        // Build slots purely from vendor availability API — no fallback, no assumptions.
+        const availabilitySlots = availabilityData?.availability?.slots || [];
+        const availabilityBreaks = availabilityData?.availability?.breaks || [];
+        const newSlots = buildSlotsFromAvailability(availabilitySlots, availabilityBreaks, mappedBookings);
         setTimeSlots(newSlots);
+        setBreakWindows(
+          availabilityBreaks.map((b: any) => ({
+            dayOfWeek: Number(b?.dayOfWeek),
+            startTime: (b?.startTime || '').toString(),
+            endTime: (b?.endTime || '').toString(),
+          }))
+        );
       } else {
         console.error('Failed to load bookings:', bookingsData);
         setBookings([]);
         setTimeSlots([]);
+        setBreakWindows([]);
         // ✅ FIX: Reset stats to 0 when no bookings are found for the selected period
         setStats({
           calls: 0,
@@ -411,6 +540,7 @@ export function VendorBookingManagement({
       console.error('Error loading bookings:', error);
       setBookings([]);
       setTimeSlots([]);
+      setBreakWindows([]);
       // ✅ FIX: Reset stats to 0 on error
       setStats({
         calls: 0,
@@ -1204,25 +1334,47 @@ export function VendorBookingManagement({
             <div className="p-4 bg-white border-t border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Available Time Slots</h3>
               
-              <div className="grid grid-cols-4 gap-2">
-                {timeSlots.map((slot, index) => (
-                  <button
-                    key={index}
-                    className={`p-3 rounded-lg text-sm font-medium transition-all ${
-                      slot.booked
-                        ? 'bg-pink-100 text-pink-700 border border-pink-200'
-                        : slot.available
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                        : 'bg-gray-100 text-gray-400 border border-gray-200'
-                    }`}
-                    disabled={!slot.available && !slot.booked}
-                  >
-                    {slot.time}
-                  </button>
-                ))}
-              </div>
+              {groupedSlotsByType.map((group) => (
+                <div key={group.type} className="mb-4 last:mb-0">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">{group.label}</h4>
+                  <div className="grid grid-cols-4 gap-2">
+                    {group.slots.map((slot, index) => (
+                      <button
+                        key={`${group.type}-${slot.time}-${index}`}
+                        className={`p-3 rounded-lg text-sm font-medium transition-all ${
+                          slot.isPast
+                            ? 'bg-gray-100 text-gray-400 border border-gray-200 opacity-60'
+                            : slot.booked
+                            ? 'bg-pink-100 text-pink-700 border border-pink-200'
+                            : slot.available
+                            ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200'
+                        }`}
+                        disabled={slot.isPast || (!slot.available && !slot.booked)}
+                      >
+                        {format24hTo12hLabel(slot.time)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {breakWindowsForDay.length > 0 && (
+                <div className="mb-4 last:mb-0">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">Break</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {breakWindowsForDay.map((br, index) => (
+                      <div
+                        key={`break-${br.start}-${br.end}-${index}`}
+                        className="p-3 rounded-lg text-sm font-medium bg-gray-100 text-gray-500 border border-gray-200"
+                      >
+                        {format24hTo12hLabel(br.start)} - {format24hTo12hLabel(br.end)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
-              <div className="flex items-center gap-4 mt-4 text-xs text-gray-600">
+              <div className="flex items-center gap-4 mt-4 text-xs text-gray-600 flex-wrap">
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 bg-blue-100 border border-blue-200 rounded"></div>
                   <span>Available</span>
@@ -1232,8 +1384,8 @@ export function VendorBookingManagement({
                   <span>Booked</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div>
-                  <span>Unavailable</span>
+                  <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded opacity-60"></div>
+                  <span>Past</span>
                 </div>
               </div>
             </div>

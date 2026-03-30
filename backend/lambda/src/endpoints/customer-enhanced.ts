@@ -223,24 +223,7 @@ class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
 
       const pets = await insert('pets', petData);
 
-      // Check if this is the first pet (complete profile bonus)
-      const existingPets = await select('pets', { customer_id: customerId });
-      if (existingPets.length === 1) {
-        // First pet - award complete profile bonus (100 points)
-        try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-          await loyaltyPointsService.awardPoints({
-            customerId,
-            actionName: 'complete_pet_profile',
-            referenceType: 'pet_profile',
-            referenceId: pets[0].id,
-            description: 'Complete pet profile bonus',
-          });
-        } catch (loyaltyError) {
-          console.error('Error awarding complete profile bonus:', loyaltyError);
-          // Don't fail pet creation if loyalty points fail
-        }
-      }
+      // First-pet / profile loyalty: handled by action_sources → loyalty-events-consumer (not inline here).
 
       return this.success({ pet: pets[0] }, requestId);
     } catch (error: any) {

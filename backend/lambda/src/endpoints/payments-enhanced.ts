@@ -447,40 +447,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Log initial status
       await logPaymentStatusChange(payment.id, null, payment.payment_status);
 
-      // Award loyalty points for payment (if completed)
-      if (payment.payment_status === 'completed' && customerId) {
-        try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
-          
-          // Determine action based on booking type
-          let actionName = 'book_service';
-          if (booking.service_id) {
-            const services = await select('services', { id: booking.service_id });
-            if (services.length > 0) {
-              const serviceName = services[0].name?.toLowerCase() || '';
-              if (serviceName.includes('grooming')) {
-                actionName = 'book_grooming';
-              } else if (serviceName.includes('vet') || serviceName.includes('consultation')) {
-                actionName = 'book_vet_consultation';
-              } else if (serviceName.includes('nutrition')) {
-                actionName = 'book_nutrition_consultation';
-              }
-            }
-          }
-
-          await loyaltyPointsService.awardPoints({
-            customerId,
-            actionName,
-            amount: amount,
-            referenceType: 'payment',
-            referenceId: payment.id,
-            description: `Payment for booking ${bookingId}`,
-          });
-        } catch (loyaltyError) {
-          console.error('Error awarding loyalty points:', loyaltyError);
-          // Don't fail payment if loyalty points fail
-        }
-      }
+      // Payment/booking loyalty for customer: handled by action_sources → loyalty-events-consumer (not inline here).
 
       // Publish event
       try {

@@ -657,9 +657,13 @@ export function registerVendorOnboardingFixes(app: Hono) {
       if (!application || !application.rows || application.rows.length === 0) {
         // Try to find by vendor_id in vendors table
         const vendorRecord = await query(
-          `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
+          `SELECT v.*, vi.phone as vi_phone, va.id as application_id, va.status as app_status, va.submitted_at
            FROM vendors v
-           LEFT JOIN vendor_identity vi ON v.phone = vi.phone
+           LEFT JOIN LATERAL (
+             SELECT id, phone FROM vendor_identity
+             WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+             ORDER BY created_at DESC LIMIT 1
+           ) vi ON true
            LEFT JOIN vendor_onboarding_applications va ON vi.id = va.vendor_identity_id
            WHERE v.id = $1
            ORDER BY va.created_at DESC

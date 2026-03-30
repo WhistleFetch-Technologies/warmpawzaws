@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { getRazorpayClient } from '../utils/payments/razorpay-client';
-import { publishNotification, sendToSQS } from '../utils/aws-clients';
+import { publishNotification, sendToSQS } from '../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import crypto from 'crypto';
