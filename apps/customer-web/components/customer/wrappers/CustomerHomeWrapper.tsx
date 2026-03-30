@@ -612,6 +612,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
+    else if (path === 'appointments' || path === 'account/appointments') setCurrentScreen('my-bookings');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'account/settings') {

@@ -12,7 +12,10 @@ import {
 import { BookingDetailModal } from './BookingDetailModal';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
-import { validateEmail } from '@/lib/validation';
+import { validateEmail, cleanPhone } from '@/lib/validation';
+import { coerceCustomerBookingListRow, extractBookingsArray, titleCaseBookingLabel } from '@/lib/customer-booking-normalize';
+import { houseNoFloorFromProfilePayload } from '@/lib/normalize-customer-profile-api';
+import { inferCityStateFromCommaAddress, mergeStreetAddressLineOnly } from '@/lib/profile-address-format';
 
 interface UserProfile {
   firstName: string;
@@ -21,6 +24,10 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  houseNo: string;
+  floor: string;
+  city?: string;
+  state?: string;
   photo?: string;
 }
 
@@ -80,27 +87,39 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile?phone=${phone}`);
+      const result = await apiClient.get<{ profile?: UserProfile & Record<string, unknown> }>(
+        `/customer/profile?phone=${phone}`
+      );
+      console.log('Profile API response:', result);
       if (result.profile) {
-        setProfile({
+        const raw = result.profile as Record<string, unknown>;
+        const street =
+          typeof result.profile.address === 'string'
+            ? result.profile.address
+            : '';
+        const addressLine = mergeStreetAddressLineOnly({
+          address: street,
+          city: result.profile.city,
+          state: result.profile.state,
+        });
+        const { houseNo, floor } = houseNoFloorFromProfilePayload(raw);
+        const { city: ic, state: ist } = inferCityStateFromCommaAddress(addressLine);
+        const next: UserProfile = {
           firstName: result.profile.firstName || '',
           lastName: result.profile.lastName || '',
           email: result.profile.email || '',
           phone: result.profile.phone || phone,
-          address: result.profile.address || '',
+          address: addressLine,
           pincode: result.profile.pincode || '',
-          photo: result.profile.photo || ''
-        });
+          houseNo,
+          floor,
+          city: ic ?? result.profile.city,
+          state: ist ?? result.profile.state,
+          photo: result.profile.photo || '',
+        };
+        setProfile(next);
         setPhotoPreview(result.profile.photo || '');
-        setOriginalProfile({
-          firstName: result.profile.firstName || '',
-          lastName: result.profile.lastName || '',
-          email: result.profile.email || '',
-          phone: result.profile.phone || phone,
-          address: result.profile.address || '',
-          pincode: result.profile.pincode || '',
-          photo: result.profile.photo || ''
-        });
+        setOriginalProfile({ ...next });
       } else {
         setProfile({
           firstName: '',
@@ -109,7 +128,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           phone: phone,
           address: '',
           pincode: '',
-          photo: ''
+          houseNo: '',
+          floor: '',
+          photo: '',
         });
       }
     } catch (error) {
@@ -121,7 +142,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
         phone: phone,
         address: '',
         pincode: '',
-        photo: ''
+        houseNo: '',
+        floor: '',
+        photo: '',
       });
     } finally {
       setLoading(false);
@@ -132,7 +155,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
     try {
       setLoadingBookings(true);
       const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${phone}`);
-      setBookings(result.bookings || []);
+      const raw = extractBookingsArray(result);
+      setBookings(raw.map(coerceCustomerBookingListRow) as Booking[]);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -209,10 +233,41 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
 
     setSaving(true);
     try {
-      await apiClient.post('/customer/profile', {
-        phone: phone,
-        profile: profile,
+      const phoneForApi = cleanPhone(phone) || cleanPhone(profile.phone);
+      if (!phoneForApi) {
+        alert('Invalid phone number. Please sign in again.');
+        return;
+      }
+      const houseNo = (profile.houseNo ?? '').trim();
+      const floor = (profile.floor ?? '').trim();
+      const addr = profile.address.trim();
+      const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
+      const profileForApi: UserProfile = {
+        ...profile,
+        address: addr,
+        city: inferredCity ?? profile.city,
+        state: inferredState ?? profile.state,
+        houseNo,
+        floor,
+        pincode: String(profile.pincode).replace(/\D/g, '').slice(0, 6),
+      };
+      console.log('Sending profile update:', { houseNo, floor });
+      const postRes = await apiClient.post<{ profile?: Record<string, unknown> }>('/customer/profile', {
+        phone: phoneForApi,
+        profile: profileForApi,
       });
+      if (postRes?.profile) {
+        const { houseNo: resHouse, floor: resFloor } = houseNoFloorFromProfilePayload(postRes.profile);
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                houseNo: resHouse,
+                floor: resFloor,
+              }
+            : null
+        );
+      }
 
       // Show success message
       alert('✅ Profile updated successfully!');
@@ -382,14 +437,14 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <h3 className="font-bold text-gray-800 mb-1">
-                              {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
+                              {titleCaseBookingLabel(booking.serviceType, 'Booking')} Service
                             </h3>
                             <p className="text-sm text-gray-600">
                               {booking.petName} • {booking.vendorName}
                             </p>
                           </div>
                           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
-                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                            {titleCaseBookingLabel(booking.status, 'Pending')}
                           </span>
                         </div>
 
@@ -601,7 +656,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                           setProfile(prev => {
                             if (!prev) return null;
                             const updated: UserProfile = { ...prev, address };
-                            if (components?.pincode) updated.pincode = components.pincode;
+                            if (components?.pincode != null && String(components.pincode).trim() !== '') {
+                              updated.pincode = String(components.pincode).replace(/\D/g, '').slice(0, 6);
+                            }
                             return updated;
                           });
                         }}
@@ -611,6 +668,40 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                       />
                     ) : (
                       <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.address}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">House No / Flat No</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={profile.houseNo}
+                        onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+                        placeholder="e.g., A-101, Flat 12B"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                      />
+                    ) : (
+                      <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                        {profile.houseNo?.trim() || '-'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">Floor</label>
+                    {editMode ? (
+                      <input
+                        type="text"
+                        value={profile.floor}
+                        onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+                        placeholder="e.g., 1st Floor"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                      />
+                    ) : (
+                      <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                        {profile.floor?.trim() || '-'}
+                      </p>
                     )}
                   </div>
 

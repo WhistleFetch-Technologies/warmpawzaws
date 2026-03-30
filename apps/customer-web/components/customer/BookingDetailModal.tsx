@@ -226,9 +226,15 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         }
       }
       
+      const normalizedStatus =
+        rawBooking.status ?? rawBooking.booking_status ?? rawBooking.bookingStatus ?? 'pending';
+      const normalizedId = rawBooking.id ?? rawBooking.bookingId ?? bookingId;
+
       // ✅ FIX: Transform enriched booking data to flat fields the UI expects
       const bookingData = {
         ...rawBooking,
+        id: normalizedId,
+        status: normalizedStatus,
         // Service fields - for diagnostics, use test names instead of service name
         serviceName: (isDiagnostic && diagnosticTestNames.length > 0)
           ? diagnosticTestNames.join(', ') // Use test names for diagnostics
@@ -479,10 +485,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             <div className="flex items-center justify-between">
               <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
                 {booking.status === 'in_progress' ? 'In Progress' : 
-                 booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                 (String(booking.status || 'pending').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))}
               </span>
               <span className="text-sm text-gray-600">
-                Booking #{booking.id.slice(0, 8)}
+                Booking #{(String(booking.id || bookingId)).slice(0, 8)}
               </span>
             </div>
 
@@ -953,7 +959,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                     try {
                       const apiBaseUrl = apiClient['baseUrl'] || process.env.NEXT_PUBLIC_API_BASE_URL || '';
                       const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
-                      const url = `${apiBaseUrl}/bookings/${booking.id}/invoice`;
+                      const url = `${apiBaseUrl}/bookings/${booking.id || bookingId}/invoice`;
                       
                       const response = await fetch(url, {
                         headers: {
@@ -969,7 +975,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                       const downloadUrl = window.URL.createObjectURL(blob);
                       const link = document.createElement('a');
                       link.href = downloadUrl;
-                      link.download = `invoice-${booking.id.slice(0, 8)}.pdf`;
+                      link.download = `invoice-${String(booking.id || bookingId).slice(0, 8)}.pdf`;
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
@@ -1109,7 +1115,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               })() && (
                 <Button
                   onClick={() => {
-                    onNavigate?.('diagnostics-reports', { bookingId: booking.id });
+                    onNavigate?.('diagnostics-reports', { bookingId: booking.id || bookingId });
                     onClose();
                   }}
                   className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors mb-3"
@@ -1126,7 +1132,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                ['scheduled', 'sample_collected'].includes(booking.status) && (
                 <Button
                   onClick={() => {
-                    onNavigate?.('sample-collection-tracking', { bookingId: booking.id });
+                    onNavigate?.('sample-collection-tracking', { bookingId: booking.id || bookingId });
                     onClose();
                   }}
                   className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"

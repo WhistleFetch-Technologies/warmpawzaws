@@ -394,6 +394,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
+    else if (path === 'appointments' || path === 'account/appointments') navigateToScreen('my-bookings');
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'account/settings') toast.info('Settings not available.');

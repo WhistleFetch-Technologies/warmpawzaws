@@ -23,7 +23,7 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../../handler/base-handler-enhanced';
-import { query, select, insert, update } from '../../../database/rds-connection';
+import { query, select, insert, update, updateCustomersCompatible } from '../../../database/rds-connection';
 import {
   UpdateCustomerProfileRequestSchema,
   AddPetRequestSchema,
@@ -112,6 +112,13 @@ class GetCustomerByPhoneHandlerEnhanced extends BaseHandlerEnhanced {
   }
 }
 
+function readHouseNoFromFlexibleBody(b: Record<string, any>): string | null {
+  const v = b.houseNo ?? b.house_no ?? b.HouseNo;
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
 class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const customerId = context.event.pathParameters?.customerId;
@@ -122,11 +129,22 @@ class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
-    const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
-    const hasFloorInPut = 'floor' in body;
+    const hasHouseNoInPut = ['houseNo', 'house_no', 'HouseNo'].some((k) =>
+      Object.prototype.hasOwnProperty.call(body, k)
+    );
+    const hasFloorInPut = ['floor', 'Floor'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
+
+    const bodyForZod = { ...body } as Record<string, any>;
+    const src = body as any;
+    if (bodyForZod.houseNo === undefined && bodyForZod.house_no === undefined && src.HouseNo !== undefined) {
+      bodyForZod.houseNo = src.HouseNo;
+    }
+    if (bodyForZod.floor === undefined && src.Floor !== undefined) {
+      bodyForZod.floor = src.Floor;
+    }
 
     // Validate request with Zod schema
-    const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
+    const validationResult = UpdateCustomerProfileRequestSchema.safeParse(bodyForZod);
     if (!validationResult.success) {
       return this.error(
         'Validation failed',
@@ -139,19 +157,6 @@ class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
 
     try {
       const profileData = validationResult.data;
-      const addrStr =
-        profileData.address !== undefined && profileData.address !== null
-          ? String(profileData.address).trim()
-          : '';
-      if (addrStr.length > 0 && hasHouseNoInPut && !profileData.houseNo?.trim()) {
-        return this.error(
-          'House / flat number is required when address is provided',
-          400,
-          'VALIDATION_ERROR',
-          { field: 'houseNo' },
-          requestId
-        );
-      }
 
       const updateData: any = {
         updated_at: new Date(),
@@ -166,13 +171,16 @@ class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
       if (profileData.state) updateData.state = profileData.state;
       if (profileData.photo) updateData.profile_photo_url = profileData.photo;
       if (hasHouseNoInPut) {
-        updateData.house_no = profileData.houseNo?.trim() || null;
+        updateData.house_no = readHouseNoFromFlexibleBody(body as Record<string, any>);
       }
       if (hasFloorInPut) {
-        updateData.floor = profileData.floor?.trim() || null;
+        const fl = (body as any).floor ?? (body as any).Floor;
+        if (fl !== undefined && fl !== null) {
+          updateData.floor = String(fl).trim() || null;
+        }
       }
 
-      await update('customers', { id: customerId }, updateData);
+      await updateCustomersCompatible({ id: customerId }, updateData);
 
       // Get updated customer
       const customers = await select('customers', { id: customerId });
@@ -182,8 +190,8 @@ class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         message: 'Customer updated successfully',
         customer: {
           ...row,
-          houseNo: row.house_no ?? null,
-          floor: row.floor ?? null,
+          houseNo: row.house_no ?? row.houseno ?? row.HouseNo ?? null,
+          floor: row.floor ?? row.Floor ?? null,
         },
       }, requestId);
     } catch (error: any) {

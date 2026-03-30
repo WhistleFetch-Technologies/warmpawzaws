@@ -553,6 +553,60 @@ export async function update(
 }
 
 /**
+ * UPDATE customers: some RDS instances have snake_case `house_no` (migration 618), others only legacy
+ * `houseno` (PostgreSQL lowercases unquoted "houseNo" in older DDL). Retry with `houseno` when needed.
+ */
+/** Best-effort: keep legacy `houseno` in sync when main UPDATE used `house_no`. */
+async function syncCustomerHousenoLegacy(filters: Record<string, any>, houseValue: unknown): Promise<void> {
+  const id = filters?.id;
+  const v = houseValue != null ? String(houseValue).trim() : '';
+  if (!id || v === '') return;
+  try {
+    await query(`UPDATE customers SET houseno = $1 WHERE id = $2::uuid`, [v, id]);
+  } catch {
+    /* houseno column may not exist */
+  }
+}
+
+/** Best-effort: keep `house_no` in sync when main UPDATE used legacy `houseno`. */
+async function syncCustomerHouseNoSnake(filters: Record<string, any>, houseValue: unknown): Promise<void> {
+  const id = filters?.id;
+  const v = houseValue != null ? String(houseValue).trim() : '';
+  if (!id || v === '') return;
+  try {
+    await query(`UPDATE customers SET house_no = $1 WHERE id = $2::uuid`, [v, id]);
+  } catch {
+    /* house_no column may not exist */
+  }
+}
+
+export async function updateCustomersCompatible(
+  filters: Record<string, any>,
+  data: Record<string, any>
+): Promise<any[]> {
+  try {
+    const rows = await update('customers', filters, data);
+    if (Object.prototype.hasOwnProperty.call(data, 'house_no')) {
+      await syncCustomerHousenoLegacy(filters, data.house_no);
+    }
+    return rows;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const missingHouseNoCol = msg.includes('house_no') && msg.includes('does not exist');
+    if (!missingHouseNoCol || !Object.prototype.hasOwnProperty.call(data, 'house_no')) {
+      throw err;
+    }
+    const copy = { ...data };
+    const v = copy.house_no;
+    delete copy.house_no;
+    copy.houseno = v;
+    const rows = await update('customers', filters, copy);
+    await syncCustomerHouseNoSnake(filters, copy.houseno);
+    return rows;
+  }
+}
+
+/**
  * Execute a DELETE query
  */
 export async function deleteRows(

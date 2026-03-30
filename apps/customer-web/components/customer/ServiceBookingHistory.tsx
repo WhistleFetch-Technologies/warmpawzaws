@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { BookingDetailModal } from './BookingDetailModal';
+import {
+  extractBookingsArray,
+  normalizeServiceHistoryBooking,
+  titleCaseBookingLabel,
+} from '@/lib/customer-booking-normalize';
 
 interface ServiceBookingHistoryProps {
   phone: string;
@@ -47,21 +52,25 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
       setLoading(true);
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       
-      const data = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${cleanPhone}&serviceType=${serviceType}`);
-      
-      // Filter bookings by service type
-      const serviceBookings = (data.bookings || []).filter((b: Booking) => 
-        b.serviceType === serviceType
+      const data = await apiClient.get<{ bookings?: Booking[] }>(
+        `/customer/bookings?phone=${cleanPhone}&serviceType=${serviceType}`
       );
-      
-      // Sort by date (newest first)
+
+      const raw = extractBookingsArray(data);
+      const normalized = raw.map(normalizeServiceHistoryBooking).filter((b) => b.id);
+      const st = String(serviceType).toLowerCase();
+      const serviceBookings = normalized.filter((b) => {
+        const bt = String(b.serviceType).toLowerCase();
+        return bt === st || bt.includes(st) || st.includes(bt);
+      });
+
       serviceBookings.sort((a: Booking, b: Booking) => {
         const dateA = new Date(a.scheduledDate || a.createdAt);
         const dateB = new Date(b.scheduledDate || b.createdAt);
         return dateB.getTime() - dateA.getTime();
       });
-      
-      setBookings(serviceBookings);
+
+      setBookings(serviceBookings as Booking[]);
       console.log(`✅ Loaded ${serviceBookings.length} ${serviceType} bookings`);
     } catch (error) {
       console.error('Error loading service bookings:', error);
@@ -222,10 +231,9 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
                   {/* Status Badge */}
                   <div className="flex items-center justify-between mb-3">
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(booking.status)}`}>
-                      {booking.status === 'in_progress' ? 'In Progress' : 
-                       booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                      {booking.status === 'in_progress' ? 'In Progress' : titleCaseBookingLabel(booking.status, 'Pending')}
                     </span>
-                    <span className="text-xs text-gray-500">#{booking.id.slice(-6)}</span>
+                    <span className="text-xs text-gray-500">#{String(booking.id).slice(-6)}</span>
                   </div>
 
                   {/* Service Info */}

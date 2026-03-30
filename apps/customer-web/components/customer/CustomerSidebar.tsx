@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Star, ChevronRight, User, Heart, Settings, LogOut, FileText, Package, Gift, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { coerceCustomerBookingListRow, extractBookingsArray, titleCaseBookingLabel } from '@/lib/customer-booking-normalize';
 
 interface Booking {
   id: string;
@@ -70,7 +71,8 @@ export function CustomerSidebar({
     try {
       setLoading(true);
       const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${phone}`);
-      setBookings(result.bookings || []);
+      const raw = extractBookingsArray(result);
+      setBookings(raw.map(coerceCustomerBookingListRow) as Booking[]);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -185,14 +187,14 @@ export function CustomerSidebar({
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <h3 className="font-bold text-gray-800 mb-1">
-                              {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
+                              {titleCaseBookingLabel(booking.serviceType, 'Booking')} Service
                             </h3>
                             <p className="text-sm text-gray-600">
                               {booking.petName} • {booking.vendorName}
                             </p>
                           </div>
                           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
-                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                            {titleCaseBookingLabel(booking.status, 'Pending')}
                           </span>
                         </div>
 

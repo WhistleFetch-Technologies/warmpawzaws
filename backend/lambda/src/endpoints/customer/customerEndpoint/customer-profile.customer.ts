@@ -16,24 +16,205 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, query, insert } from '../../../database/rds-connection';
+import { select, update, updateCustomersCompatible, query, insert } from '../../../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 
+/** Remove control / BOM chars that break inputs (e.g. "orange blocks" in floor field). */
+function sanitizeProfileDetailText(v: unknown): string {
+  if (v == null) return '';
+  return String(v)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFEFF\uFFFE\uFFFF]/g, '')
+    .trim();
+}
+
+/**
+ * Prefer first non-empty house / flat: customers row (house_no, houseno, flat*, etc.), then every saved
+ * customer_addresses row in default-first order. `??` would wrongly skip empty strings on legacy fields.
+ */
+function pickHouseNoFromCustomerAndAddr(customer: any, allAddresses?: any[] | null): string | null {
+  const customerParts = [
+    customer?.house_no,
+    customer?.houseno,
+    customer?.houseNo,
+    customer?.HouseNo,
+    customer?.flat_no,
+    customer?.flatNo,
+    customer?.flatno,
+    customer?.FlatNo,
+  ];
+  for (const p of customerParts) {
+    const s = sanitizeProfileDetailText(p);
+    if (s !== '') return s;
+  }
+  if (Array.isArray(allAddresses)) {
+    for (const addr of allAddresses) {
+      const addrParts = [
+        addr?.houseNo,
+        addr?.house_no,
+        addr?.flatNo,
+        addr?.flat_no,
+        addr?.flatno,
+      ];
+      for (const p of addrParts) {
+        const s = sanitizeProfileDetailText(p);
+        if (s !== '') return s;
+      }
+    }
+  }
+  return null;
+}
+
+function pickFloorFromCustomerAndAddr(customer: any, allAddresses?: any[] | null): string | null {
+  const customerParts = [customer?.floor, customer?.Floor];
+  for (const p of customerParts) {
+    const s = sanitizeProfileDetailText(p);
+    if (s !== '') return s;
+  }
+  if (Array.isArray(allAddresses)) {
+    for (const addr of allAddresses) {
+      const addrParts = [addr?.floor, addr?.Floor, addr?.floor_no, addr?.floorNo];
+      for (const p of addrParts) {
+        const s = sanitizeProfileDetailText(p);
+        if (s !== '') return s;
+      }
+    }
+  }
+  return null;
+}
+
 /** Map DB row to API profile with camelCase address detail fields */
-function withProfileAddressFields(row: Record<string, any> | null | undefined) {
+function withProfileAddressFields(
+  row: Record<string, any> | null | undefined,
+  allAddresses?: any[] | null
+) {
   if (!row) return row;
+  const houseNo = pickHouseNoFromCustomerAndAddr(row, allAddresses);
+  const floor = pickFloorFromCustomerAndAddr(row, allAddresses);
   return {
     ...row,
-    houseNo: row.house_no ?? null,
-    floor: row.floor ?? null,
+    houseNo: houseNo ?? '',
+    floor: floor ?? '',
   };
 }
 
+/** Same shape as GET /customer/profile address rows (camelCase aliases for node-pg). */
+async function fetchCustomerAddressesOrdered(customerId: string): Promise<any[]> {
+  try {
+    const addressesResult = await query(
+      `SELECT 
+      id,
+      address_type as label,
+      full_name as name,
+      phone,
+      address_line1 as "addressLine1",
+      address_line2 as "addressLine2",
+      city,
+      state,
+      pincode,
+      landmark,
+      coordinates,
+      flat_no as "flatNo",
+      house_no as "houseNo",
+      floor,
+      street_name as "streetName",
+      apartment_name as "apartmentName",
+      is_default as "isDefault",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    FROM customer_addresses
+    WHERE customer_id = $1
+    ORDER BY is_default DESC, created_at DESC`,
+      [customerId]
+    );
+    return addressesResult.rows || [];
+  } catch {
+    return [];
+  }
+}
+
 function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits.slice(-10);
+  }
+  if (digits.length > 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
+function payloadHasHouseNoKey(o: unknown): boolean {
+  if (!o || typeof o !== 'object') return false;
+  return ['houseNo', 'house_no', 'HouseNo', 'flatNo', 'flat_no', 'flatno'].some((k) =>
+    Object.prototype.hasOwnProperty.call(o, k)
+  );
+}
+
+function payloadHasFloorKey(o: unknown): boolean {
+  if (!o || typeof o !== 'object') return false;
+  return ['floor', 'Floor'].some((k) => Object.prototype.hasOwnProperty.call(o, k));
+}
+
+/** Read house / flat number from coerced profile object (camel + snake + Pascal + legacy flat*). */
+function readHouseNoForDb(o: Record<string, unknown>): string | null {
+  const v =
+    o.houseNo ??
+    o.house_no ??
+    (o as any).HouseNo ??
+    o.flatNo ??
+    o.flat_no ??
+    (o as any).flatno;
+  if (v == null) return null;
+  const s = sanitizeProfileDetailText(v);
+  return s === '' ? null : s;
+}
+
+/** Coerce profile fields from clients (e.g. pincode as number from Google Places) before Zod validation. */
+function coerceProfileUpdateShape(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw };
+  const src = raw as any;
+  if (out.houseNo === undefined && out.house_no === undefined && src.HouseNo !== undefined) {
+    out.houseNo = src.HouseNo;
+  }
+  if (
+    out.houseNo === undefined &&
+    out.house_no === undefined &&
+    (src.flatNo !== undefined || src.flat_no !== undefined || src.flatno !== undefined)
+  ) {
+    out.houseNo = src.flatNo ?? src.flat_no ?? src.flatno;
+  }
+  if (out.floor === undefined && src.Floor !== undefined) {
+    out.floor = src.Floor;
+  }
+  if (out.pincode !== undefined && out.pincode !== null && out.pincode !== '') {
+    const digits = String(out.pincode).replace(/\D/g, '').slice(0, 6);
+    out.pincode = digits.length > 0 ? digits : undefined;
+  }
+  if (out.pincode === '' || out.pincode === undefined) {
+    delete out.pincode;
+  }
+  for (const key of [
+    'firstName',
+    'lastName',
+    'email',
+    'address',
+    'city',
+    'state',
+    'houseNo',
+    'house_no',
+    'flatNo',
+    'flat_no',
+    'floor',
+  ] as const) {
+    const v = out[key];
+    if (v != null && typeof v !== 'string') {
+      out[key] = String(v);
+    }
+  }
+  return out;
 }
 
 async function resolveCustomerId(identifier: string): Promise<string | null> {
@@ -182,6 +363,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       console.log('[profile/unified] Successfully fetched profile for customer:', customerId);
+      const addrRowsUnified = addresses.rows || [];
+      const unifiedHouseNo = pickHouseNoFromCustomerAndAddr(customer, addrRowsUnified);
+      const unifiedFloor = pickFloorFromCustomerAndAddr(customer, addrRowsUnified);
       return c.json({
         success: true,
         profile: {
@@ -189,6 +373,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           name: customer.full_name,
           email: customer.email,
           phone: customer.phone,
+          houseNo: unifiedHouseNo ?? '',
+          floor: unifiedFloor ?? '',
           status: customerStatus,
           onboarding_status: onboardingStatus,
           profile_completed: profileCompleted,
@@ -209,6 +395,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             state: addr.state,
             pincode: addr.pincode,
             landmark: addr.landmark,
+            houseNo: addr.house_no ?? addr.houseNo ?? '',
+            floor: addr.floor ?? '',
+            flatNo: addr.flat_no ?? addr.flatNo ?? '',
             isDefault: addr.is_default,
           })),
           orders: {
@@ -252,7 +441,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       try {
         // Get customer profile
         const customerResult = await query(
-          `SELECT * FROM customers WHERE phone = $1`,
+          `SELECT *, house_no AS "houseNo" FROM customers WHERE phone = $1`,
           [cleanPhone]
         );
         customers = customerResult.rows;
@@ -261,42 +450,25 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           return c.json({ error: 'Customer not found' }, 404);
         }
 
-        // Get addresses for this customer
-        const addressesResult = await query(
-          `SELECT 
-      id,
-      address_type as label,
-      full_name as name,
-      phone,
-      address_line1 as "addressLine1",
-      address_line2 as "addressLine2",
-      city,
-      state,
-      pincode,
-      landmark,
-      coordinates,
-      flat_no as "flatNo",
-      house_no as "houseNo",
-      floor,
-      street_name as "streetName",
-      apartment_name as "apartmentName",
-      is_default as "isDefault",
-      created_at as "createdAt",
-      updated_at as "updatedAt"
-    FROM customer_addresses
-    WHERE customer_id = $1
-    ORDER BY is_default DESC, created_at DESC`,
-          [customers[0].id]
-        );
-
-        customers[0].addresses = addressesResult.rows;
+        customers[0].addresses = await fetchCustomerAddressesOrdered(customers[0].id);
       } catch (error: any) {
         console.error('[profile] Error fetching customer by phone:', error);
         return c.json({ success: true, profile: null, _degraded: true }, 200);
       }
 
       const customer = customers[0];
-      const defaultAddr = customer.addresses?.[0] || null;
+      const addrList = customer.addresses || [];
+      const defaultAddr = addrList[0] || null;
+      const resolvedHouseNo = pickHouseNoFromCustomerAndAddr(customer, addrList);
+      const resolvedFloor = pickFloorFromCustomerAndAddr(customer, addrList);
+
+      console.log('[PROFILE GET ?phone] houseNo/floor for response:', {
+        houseNo: resolvedHouseNo,
+        floor: resolvedFloor,
+        db_house_no: customer.house_no,
+        db_floor: customer.floor,
+        db_houseno: customer.houseno,
+      });
 
       const fullName = (customer.full_name || '').trim();
       const nameParts = fullName.split(/\s+/).filter(Boolean);
@@ -353,8 +525,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           pincode: defaultAddr?.pincode || customer.pincode || null,
           city: defaultAddr?.city || customer.city || null,
           state: defaultAddr?.state || customer.state || null,
-          houseNo: customer.house_no ?? null,
-          floor: customer.floor ?? null,
+          houseNo: resolvedHouseNo ?? '',
+          floor: resolvedFloor ?? '',
           photo: profilePhoto,
           profile_photo_url: profilePhoto,
           status: customer.status,
@@ -386,12 +558,18 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      const customers = await select('customers', { id: customerId });
+      const idCustomerResult = await query(
+        `SELECT *, house_no AS "houseNo" FROM customers WHERE id = $1::uuid`,
+        [customerId]
+      );
+      const customers = idCustomerResult.rows || [];
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       const customer = customers[0];
+
+      const idAddrRows = await fetchCustomerAddressesOrdered(customerId);
 
       // Map backend fields to UI fields
       const nameParts = (customer.full_name || '').split(' ');
@@ -411,9 +589,18 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         addressData = customer.address;
       }
 
+      const idProfileHouseNo = pickHouseNoFromCustomerAndAddr(customer, idAddrRows);
+      const idProfileFloor = pickFloorFromCustomerAndAddr(customer, idAddrRows);
+      console.log('[PROFILE GET :identifier] houseNo/floor:', {
+        identifier,
+        houseNo: idProfileHouseNo,
+        floor: idProfileFloor,
+      });
+
       return c.json({
         success: true,
         profile: {
+          id: customer.id,
           firstName,
           lastName,
           email: customer.email || '',
@@ -422,8 +609,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           pincode: (customer as any).pincode || addressData.pincode || '',
           city: (customer as any).city || '',
           state: (customer as any).state || '',
-          houseNo: (customer as any).house_no ?? null,
-          floor: (customer as any).floor ?? null,
+          houseNo: idProfileHouseNo ?? '',
+          floor: idProfileFloor ?? '',
           photo: photoUrl || '',
         },
       });
@@ -446,33 +633,39 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       // Frontend sends: { phone, profile: { firstName, lastName, ... }, journeyType }
       // Backend expects: { firstName, lastName, ... }
       const rawProfilePayload = body.profile || body;
-      const hasHouseNoField =
-        typeof rawProfilePayload === 'object' &&
-        rawProfilePayload !== null &&
-        ('houseNo' in rawProfilePayload || 'house_no' in rawProfilePayload);
-      const hasFloorField =
-        typeof rawProfilePayload === 'object' && rawProfilePayload !== null && 'floor' in rawProfilePayload;
+      const rawForLog = rawProfilePayload as Record<string, unknown>;
+      console.log('[PROFILE POST] update request profile houseNo/floor:', {
+        houseNo: rawForLog?.houseNo ?? rawForLog?.house_no,
+        floor: rawForLog?.floor,
+      });
+      const coercedSource =
+        typeof rawProfilePayload === 'object' && rawProfilePayload !== null
+          ? coerceProfileUpdateShape(rawProfilePayload as Record<string, unknown>)
+          : {};
+      const hasHouseNoField = payloadHasHouseNoKey(rawProfilePayload);
+      const hasFloorField = payloadHasFloorKey(rawProfilePayload);
 
       // Clean the payload - remove empty strings for optional URL fields (photo)
       // and remove extra fields (phone) that aren't in the schema
       const profilePayload: Record<string, any> = {};
-      if (rawProfilePayload.firstName) profilePayload.firstName = rawProfilePayload.firstName;
-      if (rawProfilePayload.lastName) profilePayload.lastName = rawProfilePayload.lastName;
-      if (rawProfilePayload.email) profilePayload.email = rawProfilePayload.email;
-      if (rawProfilePayload.address) profilePayload.address = rawProfilePayload.address;
-      if (rawProfilePayload.pincode) profilePayload.pincode = rawProfilePayload.pincode;
-      if (rawProfilePayload.city) profilePayload.city = rawProfilePayload.city;
-      if (rawProfilePayload.state) profilePayload.state = rawProfilePayload.state;
-      const rawHouseNo = rawProfilePayload.houseNo ?? rawProfilePayload.house_no;
+      if (coercedSource.firstName) profilePayload.firstName = coercedSource.firstName;
+      if (coercedSource.lastName) profilePayload.lastName = coercedSource.lastName;
+      if (coercedSource.email) profilePayload.email = coercedSource.email;
+      if (coercedSource.address) profilePayload.address = coercedSource.address;
+      if (coercedSource.pincode) profilePayload.pincode = coercedSource.pincode;
+      if (coercedSource.city) profilePayload.city = coercedSource.city;
+      if (coercedSource.state) profilePayload.state = coercedSource.state;
+      const rawHouseNo = coercedSource.houseNo ?? coercedSource.house_no;
       if (rawHouseNo !== undefined && rawHouseNo !== null) {
-        profilePayload.houseNo = typeof rawHouseNo === 'string' ? rawHouseNo : String(rawHouseNo);
+        const hn = sanitizeProfileDetailText(rawHouseNo);
+        if (hn !== '') profilePayload.houseNo = hn;
       }
-      if (rawProfilePayload.floor !== undefined && rawProfilePayload.floor !== null) {
-        profilePayload.floor =
-          typeof rawProfilePayload.floor === 'string' ? rawProfilePayload.floor : String(rawProfilePayload.floor);
+      if (coercedSource.floor !== undefined && coercedSource.floor !== null) {
+        const fl = sanitizeProfileDetailText(coercedSource.floor);
+        if (fl !== '') profilePayload.floor = fl;
       }
-      if (rawProfilePayload.photo && rawProfilePayload.photo.startsWith('http')) {
-        profilePayload.photo = rawProfilePayload.photo;
+      if (coercedSource.photo && String(coercedSource.photo).startsWith('http')) {
+        profilePayload.photo = String(coercedSource.photo);
       }
 
       console.log('[PROFILE] Cleaned payload:', profilePayload);
@@ -513,17 +706,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       }
 
-      const addrPresentPost = !!(profileData.address && String(profileData.address).trim());
-      if (addrPresentPost && hasHouseNoField && !profileData.houseNo?.trim()) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'House / flat number is required',
-            details: { field: 'houseNo', message: 'Please enter your house or flat number' },
-          },
-        }, 400);
-      }
+      // House / flat number is optional; do not reject when address is present but houseNo is empty.
 
       // Get phone from body (required for POST endpoint)
       // Note: phone is not part of the validated schema, it comes from body directly
@@ -532,7 +715,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         return c.json({ error: 'Phone number is required' }, 400);
       }
 
-      const cleanPhone = normalizePhone(phone);
+      const cleanPhone = normalizePhone(String(phone));
 
       // ✅ Validate phone number - must be exactly 10 digits
       if (cleanPhone.length !== 10 || !/^\d{10}$/.test(cleanPhone)) {
@@ -632,11 +815,18 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (profileData.state) {
         updateData.state = profileData.state;
       }
-      if (hasHouseNoField) {
-        updateData.house_no = profileData.houseNo?.trim() || null;
+      const applyHouseNoPost =
+        hasHouseNoField || Object.prototype.hasOwnProperty.call(profilePayload, 'houseNo');
+      const applyFloorPost =
+        hasFloorField || Object.prototype.hasOwnProperty.call(profilePayload, 'floor');
+      if (applyHouseNoPost) {
+        updateData.house_no = readHouseNoForDb(coercedSource as Record<string, unknown>);
       }
-      if (hasFloorField) {
-        updateData.floor = profileData.floor?.trim() || null;
+      if (applyFloorPost) {
+        const fl = coercedSource.floor;
+        if (fl !== undefined && fl !== null) {
+          updateData.floor = sanitizeProfileDetailText(fl) || null;
+        }
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)
@@ -645,7 +835,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         delete updateData.preferences;
       }
 
-      const updated = await update('customers', { id: customerId }, updateData);
+      await updateCustomersCompatible({ id: customerId }, updateData);
+      const refreshedRows = await select('customers', { id: customerId });
+      const savedCustomer = refreshedRows[0];
+      if (!savedCustomer) {
+        return c.json({ error: 'Customer not found after update' }, 500);
+      }
 
       if (Object.keys(completionUpdates).length > 0 && customerId) {
         try {
@@ -662,10 +857,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       }
 
+      const postAddrRows = await fetchCustomerAddressesOrdered(customerId as string);
+      const outProfile = withProfileAddressFields(savedCustomer, postAddrRows);
+      console.log('[PROFILE POST] GET-style houseNo/floor after save:', {
+        houseNo: outProfile?.houseNo,
+        floor: outProfile?.floor,
+      });
+
       return c.json({
         success: true,
         message: 'Profile updated successfully',
-        profile: withProfileAddressFields(updated[0]),
+        profile: outProfile,
       });
     } catch (error: any) {
       console.error('Error updating customer profile:', error);
@@ -693,11 +895,16 @@ export function registerCustomerProfileEndpoints(app: Hono) {
 
       // Parse body from Hono request
       const body = await c.req.json().catch(() => ({}));
-      const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
-      const hasFloorInPut = 'floor' in body;
+      const normalizedBody = coerceProfileUpdateShape(body as Record<string, unknown>);
+      const hasHouseNoInPut = payloadHasHouseNoKey(body);
+      const hasFloorInPut = payloadHasFloorKey(body);
+      console.log('[PROFILE PUT] update request houseNo/floor:', {
+        houseNo: normalizedBody.houseNo ?? (body as any).house_no,
+        floor: normalizedBody.floor,
+      });
 
       // Validate request with Zod schema
-      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
+      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(normalizedBody);
       if (!validationResult.success) {
         return c.json({
           success: false,
@@ -731,17 +938,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       }
 
-      const addrStr = profileData.address !== undefined && profileData.address !== null ? String(profileData.address).trim() : '';
-      if (addrStr.length > 0 && hasHouseNoInPut && !profileData.houseNo?.trim()) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'House / flat number is required when address is provided',
-            details: { field: 'houseNo', message: 'Please enter your house or flat number' },
-          },
-        }, 400);
-      }
+      // House / flat number is optional for profile updates.
 
       const customerId = await resolveCustomerId(identifier);
       if (!customerId) {
@@ -788,11 +985,24 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (profileData.state) {
         updateData.state = profileData.state;
       }
-      if (hasHouseNoInPut) {
-        updateData.house_no = profileData.houseNo?.trim() || null;
+      const applyHouseNoPut =
+        hasHouseNoInPut ||
+        Object.prototype.hasOwnProperty.call(normalizedBody, 'houseNo') ||
+        Object.prototype.hasOwnProperty.call(normalizedBody, 'house_no') ||
+        Object.prototype.hasOwnProperty.call(normalizedBody, 'flatNo') ||
+        Object.prototype.hasOwnProperty.call(normalizedBody, 'flat_no');
+      const applyFloorPut =
+        hasFloorInPut ||
+        Object.prototype.hasOwnProperty.call(normalizedBody, 'floor') ||
+        Object.prototype.hasOwnProperty.call(normalizedBody, 'Floor');
+      if (applyHouseNoPut) {
+        updateData.house_no = readHouseNoForDb(normalizedBody);
       }
-      if (hasFloorInPut) {
-        updateData.floor = profileData.floor?.trim() || null;
+      if (applyFloorPut) {
+        const fl = normalizedBody.floor ?? (body as any).Floor;
+        if (fl !== undefined && fl !== null) {
+          updateData.floor = sanitizeProfileDetailText(fl) || null;
+        }
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)
@@ -801,7 +1011,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         delete updateData.preferences;
       }
 
-      const updated = await update('customers', { id: customerId }, updateData);
+      await updateCustomersCompatible({ id: customerId }, updateData);
+      const refreshedPut = await select('customers', { id: customerId });
+      const savedPut = refreshedPut[0];
+      if (!savedPut) {
+        return c.json({ error: 'Customer not found after update' }, 500);
+      }
 
       // Update profile completion and onboarding status
       if (Object.keys(completionUpdates).length > 0) {
@@ -821,10 +1036,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       }
 
+      const putAddrRows = await fetchCustomerAddressesOrdered(customerId);
+      const putOutProfile = withProfileAddressFields(savedPut, putAddrRows);
+      console.log('[PROFILE PUT] houseNo/floor after save:', {
+        houseNo: putOutProfile?.houseNo,
+        floor: putOutProfile?.floor,
+      });
+
       return c.json({
         success: true,
         message: 'Profile updated successfully',
-        profile: withProfileAddressFields(updated[0]),
+        profile: putOutProfile,
       });
     } catch (error: any) {
       console.error('Error updating customer profile:', error);

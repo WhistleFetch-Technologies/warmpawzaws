@@ -14,14 +14,18 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
-import { validateEmail } from '@/lib/validation';
+import { validateEmail, cleanPhone } from '@/lib/validation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
+import {
+  houseNoFloorFromProfilePayload,
+  normalizeCustomerProfileFields,
+} from '@/lib/normalize-customer-profile-api';
 import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
   PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
+import { coerceCustomerBookingListRow, extractBookingsArray, titleCaseBookingLabel } from '@/lib/customer-booking-normalize';
 
 interface UserProfile {
   firstName: string;
@@ -256,17 +260,17 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       const result = await apiClient.get<{ profile?: UserProfile & { name?: string; profile_photo_url?: string } }>(
         `/customer/profile?phone=${encodeURIComponent(phone)}`
       );
+      console.log('Profile API response:', result);
 
       if (result && result.profile) {
         const base = normalizeCustomerProfileFields(result.profile as any, phone);
-        const raw = result.profile as any;
+        const raw = result.profile as Record<string, unknown>;
         const addressLine = mergeStreetAddressLineOnly({
           address: base.address,
           city: base.city,
           state: base.state,
         });
-        const houseNo = String(raw.houseNo ?? raw.house_no ?? '').trim();
-        const floor = String(raw.floor ?? '').trim();
+        const { houseNo, floor } = houseNoFloorFromProfilePayload(raw);
         const { city: ic, state: ist } = inferCityStateFromCommaAddress(addressLine);
         const next: UserProfile = {
           firstName: base.firstName,
@@ -348,11 +352,6 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       return;
     }
 
-    if (!profile.houseNo?.trim()) {
-      alert('Please enter House No / Flat No');
-      return;
-    }
-
     if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
@@ -365,18 +364,46 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     setSaving(true);
     try {
+      const phoneForApi = cleanPhone(phone) || cleanPhone(profile.phone);
+      if (!phoneForApi) {
+        alert('Invalid phone number. Please sign in again.');
+        return;
+      }
       const addr = profile.address.trim();
       const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
+      const houseNo = (profile.houseNo ?? '').trim();
+      const floor = (profile.floor ?? '').trim();
       const payload: UserProfile = {
         ...profile,
         address: addr,
         city: inferredCity ?? profile.city,
         state: inferredState ?? profile.state,
-        houseNo: profile.houseNo.trim(),
-        floor: (profile.floor || '').trim(),
+        houseNo,
+        floor,
+        pincode: String(profile.pincode).replace(/\D/g, '').slice(0, 6),
+        phone: phoneForApi,
       };
-      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: payload });
+      console.log('Sending profile update:', { houseNo, floor });
+      const postRes = await apiClient.post<{
+        profile?: Record<string, unknown>;
+      }>(`/customer/profile?phone=${encodeURIComponent(phoneForApi)}`, {
+        phone: phoneForApi,
+        profile: payload,
+      });
+      let merged: UserProfile = payload;
+      if (postRes?.profile) {
+        const pr = postRes.profile as Record<string, unknown>;
+        const { houseNo: resHouse, floor: resFloor } = houseNoFloorFromProfilePayload(pr);
+        merged = {
+          ...payload,
+          houseNo: resHouse,
+          floor: resFloor,
+        };
+      }
       alert('✅ Profile updated successfully!');
+      setProfile(merged);
+      setOriginalProfile({ ...merged });
+      if (merged.photo) setPhotoPreview(merged.photo);
       await loadProfile();
       setEditMode(false);
     } catch (error: any) {
@@ -421,7 +448,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       setLoadingBookings(true);
       const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${encodeURIComponent(phone)}`);
       console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
-      setBookings(result.bookings || []);
+      const raw = extractBookingsArray(result);
+      setBookings(raw.map(coerceCustomerBookingListRow) as Booking[]);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -1007,19 +1035,19 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2.5">
-                        House No / Flat No <span className="text-red-500">*</span>
+                        House No / Flat No
                       </label>
                       {editMode ? (
                         <input
                           type="text"
-                          value={profile.houseNo}
+                          value={profile.houseNo ?? ''}
                           onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
                           placeholder="e.g., A-101, Flat 12B"
                           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
                       ) : (
                         <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
-                          {profile.houseNo?.trim() || '—'}
+                          {profile.houseNo?.trim() || '-'}
                         </p>
                       )}
                     </div>
@@ -1029,14 +1057,14 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                       {editMode ? (
                         <input
                           type="text"
-                          value={profile.floor}
+                          value={profile.floor ?? ''}
                           onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
                           placeholder="e.g., 1st Floor"
                           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
                       ) : (
                         <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
-                          {profile.floor?.trim() || '—'}
+                          {profile.floor?.trim() || '-'}
                         </p>
                       )}
                     </div>
@@ -1132,7 +1160,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-2">
                             <h4 className="font-bold text-gray-800">
-                              {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)}
+                              {titleCaseBookingLabel(booking.serviceType, 'Booking')}
                             </h4>
                             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                               {booking.status}
@@ -1927,10 +1955,6 @@ function AddressForm({ address, onSave, onCancel }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.houseNo?.trim()) {
-      alert('Please enter House No / Flat No');
-      return;
-    }
     onSave(formData);
   };
 
@@ -2076,14 +2100,13 @@ function AddressForm({ address, onSave, onCancel }: {
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-2.5">House No / Flat No *</label>
+        <label className="block text-xs font-semibold text-gray-500 mb-2.5">House No / Flat No</label>
         <input
           type="text"
           value={formData.houseNo}
           onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
           placeholder="e.g., A-101, Flat 12B"
           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-          required
         />
       </div>
 

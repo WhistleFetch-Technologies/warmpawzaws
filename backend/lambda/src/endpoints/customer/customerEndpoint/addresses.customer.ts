@@ -160,7 +160,7 @@ export function registerAddressEndpoints(app: Hono) {
           state: cust.state || '',
           pincode: cust.pincode || '',
           landmark: null,
-          houseNo: cust.house_no ?? undefined,
+          houseNo: cust.house_no ?? cust.houseno ?? undefined,
           floor: cust.floor ?? undefined,
           coordinates: null,
           isDefault: true,
@@ -530,9 +530,9 @@ export function registerAddressEndpoints(app: Hono) {
         return c.json({ error: 'name, phone, addressLine1, city, state, and pincode are required' }, 400);
       }
 
-      if (!String(houseNo || '').trim()) {
-        return c.json({ error: 'House / flat number is required' }, 400);
-      }
+      // House / flat optional — align with POST /customer/addresses and customer profile (house_no is nullable in DB).
+      const houseNoForDb =
+        houseNo != null && String(houseNo).trim() !== '' ? String(houseNo).trim() : null;
 
       // Resolve customer ID
       let customer = await select('customers', { id: customerId });
@@ -587,7 +587,7 @@ export function registerAddressEndpoints(app: Hono) {
         landmark: null,
         coordinates: finalCoordinates,
         flat_no: flatNo,
-        house_no: String(houseNo).trim(),
+        house_no: houseNoForDb,
         floor: floor,
         street_name: streetName,
         apartment_name: apartmentName,
@@ -629,13 +629,7 @@ export function registerAddressEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      const nextLine1 = updates.addressLine1 ?? updates.address_line1;
-      if (nextLine1 !== undefined && String(nextLine1).trim()) {
-        const hn = updates.houseNo ?? updates.house_no;
-        if (!String(hn || '').trim()) {
-          return c.json({ error: 'House / flat number is required' }, 400);
-        }
-      }
+      // House / flat optional on updates (same as profile / POST /customer/addresses).
 
       // If setting as default, unset all others
       if (updates.isDefault) {
