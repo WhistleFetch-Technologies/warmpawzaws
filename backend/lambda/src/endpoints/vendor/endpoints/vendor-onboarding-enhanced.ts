@@ -2112,7 +2112,8 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         }
       }
 
-      // Process vendor referral if metadata contains referral info
+      // Link vendor referral if metadata contains referral info.
+      // Reward is now action-source controlled (issued when referred vendor completes first booking).
       if (identity.metadata && identity.metadata.referral_code_id) {
         try {
           const { processVendorReferralSignup } = await import('../../../lib/services/referral-service');
@@ -2123,13 +2124,13 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
           });
           
           if (referralResult.success) {
-            console.log(`[VENDOR-ACTIVATION] ✅ Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
+            console.log(`[VENDOR-ACTIVATION] ✅ Vendor referral linked (reward via action-source on first booking completion)`);
           } else {
-            console.warn(`[VENDOR-ACTIVATION] Vendor referral processing failed: ${referralResult.error}`);
+            console.warn(`[VENDOR-ACTIVATION] Vendor referral linking failed: ${referralResult.error}`);
           }
         } catch (refError: any) {
-          console.error('[VENDOR-ACTIVATION] Error processing vendor referral:', refError);
-          // Don't fail activation if referral processing fails
+          console.error('[VENDOR-ACTIVATION] Error linking vendor referral:', refError);
+          // Don't fail activation if referral linking fails
         }
       }
 

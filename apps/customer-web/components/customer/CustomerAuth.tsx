@@ -45,13 +45,20 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
       console.log('🔐 Requesting OTP for:', `${countryCode}${cleanPhone}`);
       
-      const data = await apiClient.post('/auth/send-otp', { phone: `${countryCode}${cleanPhone}` }) as any;
+      const data = await apiClient.post('/auth/send-otp', {
+        phone: `${countryCode}${cleanPhone}`,
+        role: 'customer',
+      }) as any;
       console.log('✅ OTP sent:', data);
       
       if (data.uatMode) {
         toast.success('OTP: 123456 (UAT Testing Mode)', { duration: 5000 });
       } else {
         toast.success('OTP sent to your phone');
+      }
+
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
       }
       
       setShowOtpScreen(true);
@@ -73,29 +80,16 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       
       console.log('🔐 Verifying OTP for:', `${countryCode}${cleanPhone}`);
       
+      const ref = referralCode?.trim() ? referralCode.trim().toUpperCase() : '';
       const data = await apiClient.post('/auth/verify-otp', { 
         phone: `${countryCode}${cleanPhone}`, 
         otp: otpCode, 
         role: 'customer',
-        referralCode: referralCode || undefined
+        referralCode: ref || undefined
       }) as any;
       console.log('✅ OTP verified:', data);
-      
-      // Apply referral code if provided (for new users)
-      if (referralCode && data.isNewUser) {
-        try {
-          console.log('🎁 Applying referral code:', referralCode);
-          const referralData = await apiClient.post('/referrals/apply', {
-            referralCode: referralCode,
-            newUserId: data.customer.id,
-            userType: 'customer'
-          }) as any;
-          console.log('✅ Referral code applied:', referralData);
-          toast.success('Referral code applied! You\'ll earn bonus points!', { duration: 4000 });
-        } catch (refError: any) {
-          console.error('❌ Referral code error:', refError);
-          // Don't block signup if referral fails
-        }
+      if (ref) {
+        localStorage.setItem('pendingReferralCode', ref);
       }
       
       // Check if user has completed onboarding

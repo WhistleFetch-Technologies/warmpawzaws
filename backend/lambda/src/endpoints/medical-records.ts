@@ -21,7 +21,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { uploadToS3, generateS3Key } from '../utils/aws-clients';
+import { uploadToS3, generateS3Key } from '../utils/aws/aws-clients';
 
 // ============================================================================
 // TYPE DEFINITIONS
