@@ -7,8 +7,8 @@ set -euo pipefail
 echo "🚀 Deploying Lambda with updated endpoints..."
 
 # Configuration
-# Allow override via environment variable, default to warmpawz-api-dev-api (the active Lambda)
-LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-warmpawz-api-dev-api}"
+# Allow override via environment variable (dev default matches AWS account naming)
+LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-warmpawz-dev-api-handler}"
 AWS_REGION="ap-south-1"
 LAMBDA_ZIP="api-handler.zip"
 
