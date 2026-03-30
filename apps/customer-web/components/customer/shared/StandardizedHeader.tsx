@@ -28,8 +28,10 @@ interface StandardizedHeaderProps {
   onBack?: () => void;
   
   // Display options
-  title?: string; // Dynamic page title (default: greeting)
+  title?: string; // Page title (omit or leave empty for neutral shell title unless homeGreeting)
   subtitle?: string; // Dynamic subtitle
+  /** When true and title is empty, show "Hi, {name}!" (home-style). Default false so inner shells show a neutral title. */
+  homeGreeting?: boolean;
   showBackButton?: boolean; // Show back button (default: false for home)
   showPets?: boolean; // Show pet selector (default: true on home)
   
@@ -53,6 +55,7 @@ export function StandardizedHeader({
   onBack,
   title,
   subtitle,
+  homeGreeting = false,
   showBackButton = false,
   showPets = false,
   pets = [],
@@ -61,11 +64,10 @@ export function StandardizedHeader({
   itemCount = 0,
   customerPhone
 }: StandardizedHeaderProps) {
-  // Default title is greeting, or use provided title
-  // If title is provided, use it; otherwise show greeting with emoji on home screen only
-  const displayTitle = title || '';
-  const displaySubtitle = subtitle || '';
-  
+  const trimmedTitle = (title ?? '').trim();
+  const displaySubtitle = (subtitle ?? '').trim();
+  const neutralShellTitle = 'Warmpawz';
+
   const handleAddPet = () => {
     if (onAddPet) {
       onAddPet();
@@ -76,7 +78,7 @@ export function StandardizedHeader({
   const topRowMb = hasPetsRow ? 'mb-2' : 'mb-0';
 
   return (
-    <div className="w-full max-w-[430px] mx-auto bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-6 py-3">
+    <div className="mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
       {/* Top Row - Match footer height: compact py-3, same width */}
       <div className={`flex items-center justify-between ${topRowMb}`}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -103,18 +105,20 @@ export function StandardizedHeader({
           </button>
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-1">
-              {displayTitle ? (
-                <h1 className="text-white text-base font-semibold tracking-tight truncate">{displayTitle}</h1>
-              ) : (
+              {trimmedTitle ? (
+                <h1 className="text-white text-base font-semibold tracking-tight truncate">{trimmedTitle}</h1>
+              ) : homeGreeting ? (
                 <>
                   <h1 className="text-white text-base font-semibold tracking-tight truncate">Hi, {userName}!</h1>
                   <span className="text-sm" role="img" aria-label="wave">👋</span>
                 </>
+              ) : (
+                <h1 className="text-white text-base font-semibold tracking-tight truncate">{neutralShellTitle}</h1>
               )}
             </div>
             {displaySubtitle ? (
               <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">{displaySubtitle}</p>
-            ) : !displayTitle ? (
+            ) : homeGreeting && !trimmedTitle ? (
               <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">Explore Warmpawz Services</p>
             ) : null}
           </div>

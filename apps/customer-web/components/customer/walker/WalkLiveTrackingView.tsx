@@ -159,7 +159,7 @@ export function WalkLiveTrackingView({
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-100 flex flex-col max-w-customer mx-auto">
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-20">
         <div className="flex items-center justify-between p-4">

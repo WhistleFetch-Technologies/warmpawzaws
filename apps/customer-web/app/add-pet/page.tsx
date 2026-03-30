@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
+import AddPetClient from './AddPetClient';
 
-/** Deep link from payment / flows: open My Pets with add sheet. */
 export default function AddPetPage() {
-  redirect('/pets?openAdd=1');
+  return <AddPetClient />;
 }

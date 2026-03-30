@@ -8,6 +8,7 @@ import {
   Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 interface MealPlanOrder {
   id: string;
@@ -156,7 +157,7 @@ function MealPlanOrdersContent() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="mb-6">
           <button
-            onClick={() => router.back()}
+            onClick={() => goBackOrHome(router)}
             className="text-gray-600 hover:text-gray-900 mb-4 flex items-center gap-2"
           >
             ← Back

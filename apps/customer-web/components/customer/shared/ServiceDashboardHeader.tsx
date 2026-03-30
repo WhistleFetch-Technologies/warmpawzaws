@@ -55,9 +55,11 @@ export function ServiceDashboardHeader({
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
   
   return (
-    <div className="relative w-full max-w-md mx-auto">
+    <div className="relative mx-auto w-full max-w-customer">
       {/* Orange Header Background */}
-      <div className={`${headerGradient || headerColor} text-white px-4 pt-6 pb-8`}>
+      <div
+        className={`${headerGradient || headerColor} text-white pb-8 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
+      >
         {/* Top Row - Back Button and Service Info */}
         <div className="flex items-start gap-3 mb-4">
           {showBackButton && onBack && (

@@ -81,14 +81,17 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--color-white);
   color: var(--color-black);
+  overflow-x: clip;
 }
 
 /* Focus Visible - Accessibility */
@@ -150,8 +153,14 @@ body {
 
 .service-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 380px) {
+  .service-grid {
+    gap: 1rem;
+  }
 }
 
 /* ============================================================================

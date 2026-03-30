@@ -64,6 +64,7 @@ import { SupportHelpCenter } from '../SupportHelpCenter';
 import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
+import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { useNotificationService } from '../useNotificationService';
@@ -257,6 +258,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const router = useRouter();
   const pathname = usePathname() || '/';
   const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (pathname !== '/') return;
+    if (searchParams.get('service')) return;
+    if (!readProfileCompleted()) {
+      router.replace('/profile');
+      return;
+    }
+    if (!readOnboardingCompleted()) {
+      router.replace('/onboarding');
+    }
+  }, [pathname, searchParams, router]);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -718,8 +731,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
       >
-        {/* ✅ FIX: Mobile-optimized container matching CustomerHomeComplete (430px max-width) */}
-        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+        {/* Mobile-first shell: max-w-customer (fluid, see tailwind.config.js) */}
+        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           {/* ✅ FIX: Skip StandardizedHeader for service routers that use ServiceDashboardHeader (frame UI) */}
           {!options.skipHeader && (
             <StandardizedHeader
@@ -727,6 +740,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
               userProfilePhoto={userProfilePhoto}
               title={options.title}
               subtitle={options.subtitle}
+              homeGreeting={false}
               showBackButton={options.showBackButton ?? true}
               showPets={options.showPets ?? false}
               pets={pets}
@@ -1866,7 +1880,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }
   if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} />;
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
-  if (currentScreen === 'order_history') return <OrderHistoryPage onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'order_history') return <OrderHistoryPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
   if (currentScreen === 'address_book') return (
     <AddressBookPage
       phone={phone}
@@ -2002,7 +2016,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'grooming_center') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <GroomingServicesByStyle
             phone={phone}
             serviceStyle="at_center"
@@ -2018,7 +2032,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'grooming_home') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <GroomingServicesByStyle
             phone={phone}
             serviceStyle="at_home"
@@ -2078,7 +2092,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'training_center') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <UniversalServicesByStyle
             phone={phone}
             roleId="trainer"
@@ -2096,7 +2110,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'training_home') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <UniversalServicesByStyle
             phone={phone}
             roleId="trainer"
@@ -2346,18 +2360,24 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           else if (currentServiceType === 'sunset') setCurrentScreen('sunset');
           else if (currentServiceType === 'nutritionist' || currentServiceType === 'pet_nutritionist') setCurrentScreen('nutritionist');
           else if (currentServiceType === 'behaviorist') setCurrentScreen('behaviorist');
-          else {
-            // If opened from home page, go back to home
+          else if (pathname === '/services/all') {
+            router.push('/');
+          } else {
             setCurrentScreen('home');
           }
           setCurrentServiceType(null);
         }}
         onProblemSelect={(problem) => {
+          const p = problem as any;
+          const problemRole =
+            roleInfo.roleId === 'all'
+              ? (p.roleId || p.role_id || undefined)
+              : roleInfo.roleId;
           setSelectedProblem({ 
             id: problem.id || problem.problemId, 
             title: problem.displayName || problem.name || problem.title,
-            roleId: roleInfo.roleId === 'all' ? undefined : roleInfo.roleId,
-            allowedServiceStyles: (problem as any).allowedServiceStyles,
+            roleId: problemRole,
+            allowedServiceStyles: p.allowedServiceStyles,
           });
           // ✅ Route to ProblemGridFlowRouter for service style selection (only allowed styles shown)
           setCurrentScreen('problem_grid_flow');
@@ -2381,8 +2401,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         }}
         customerId={phone}
         onClose={() => {
-          // Go back to problem grid or home
           if (currentServiceType) {
+            setCurrentScreen('problem_grid');
+          } else if (pathname === '/services/all') {
             setCurrentScreen('problem_grid');
           } else {
             setCurrentScreen('home');

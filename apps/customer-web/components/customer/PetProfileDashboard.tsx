@@ -127,7 +127,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
   return (
     <>
       <header className="sticky top-0 z-20 px-2 py-3 bg-white border-b border-gray-100 shadow-sm">
-        <div className="grid grid-cols-3 items-center gap-1 max-w-[430px] mx-auto">
+        <div className="grid grid-cols-3 items-center gap-1 max-w-customer mx-auto">
           <div className="flex justify-start min-w-0">
             <button
               type="button"
@@ -378,7 +378,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
       )}
 
       {/* Home Indicator */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-[430px] mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-customer mx-auto">
         <div className="flex justify-center">
           <div className="w-32 h-1 bg-gray-300 rounded-full"></div>
         </div>

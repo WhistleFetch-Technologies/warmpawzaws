@@ -484,12 +484,24 @@ export function registerStorageEndpoints(app: Hono) {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const contentTypeFromExt: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        heic: 'image/heic',
+        heif: 'image/heif',
+      };
+      const contentType = file.type?.trim() || contentTypeFromExt[ext] || 'application/octet-stream';
+
       // Upload to S3
       await s3Client.send(new PutObjectCommand({
         Bucket: BUCKET_NAME,
         Key: fileName,
         Body: uint8Array,
-        ContentType: file.type,
+        ContentType: contentType,
       }));
 
       console.log('✅ Media uploaded successfully:', fileName);

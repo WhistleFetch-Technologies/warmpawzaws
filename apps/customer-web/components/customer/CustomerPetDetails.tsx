@@ -818,7 +818,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
       {/* Fixed Bottom Button */}
       {editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
           <Button
             onClick={handleSave}
             disabled={saving}
@@ -836,7 +836,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
       {/* Home Indicator (when not in edit mode) */}
       {!editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-[430px] mx-auto w-full">
+        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-customer mx-auto w-full">
           <div className="flex justify-center">
             <div className="w-32 h-1 bg-black rounded-full"></div>
           </div>

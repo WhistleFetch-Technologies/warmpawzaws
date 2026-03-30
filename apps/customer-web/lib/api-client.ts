@@ -209,6 +209,46 @@ export function isUatMode(): boolean {
 
 const UAT_MODE = isUatMode();
 
+/**
+ * Authorization and UAT headers for browser XMLHttpRequest uploads (e.g. multipart to /storage/upload-media).
+ * Keeps behavior aligned with ApiClient.request() so Cognito JWT and UAT phone flows work for uploads.
+ */
+export function getCustomerAuthHeadersForUpload(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const headers: Record<string, string> = {};
+
+  let token: string | null = null;
+  try {
+    const { getCognitoIdToken } = require('./cognito-auth');
+    token = getCognitoIdToken();
+  } catch {
+    /* cognito-auth optional in odd bundles */
+  }
+  if (!token) {
+    token = localStorage.getItem('authToken');
+  }
+
+  if (UAT_MODE && (!token || !String(token).startsWith('uat-token-'))) {
+    const customerPhone = localStorage.getItem('customerPhone');
+    if (customerPhone && customerPhone.length >= 10) {
+      token = token || `uat-token-customer-${customerPhone}-${Date.now()}`;
+    }
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (UAT_MODE) {
+    headers['X-UAT-Mode'] = 'true';
+    if (token && typeof token === 'string' && token.startsWith('uat-token-')) {
+      headers['X-UAT-Token'] = token;
+    }
+  }
+
+  return headers;
+}
+
 export class ApiClient {
   private _baseUrl: string;
 

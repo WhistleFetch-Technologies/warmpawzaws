@@ -481,6 +481,8 @@ registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/u
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
+// GET/POST /customer/orders MUST register before /customer/:customerId or "orders" is treated as a customer id → HTTP 404.
+registerCustomerOrdersEndpoints(app);
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
 registerSpecializedServiceFlows(app);
@@ -580,7 +582,6 @@ registerAdminAdvancedEndpoints(app);
 registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering
 registerCustomerAppointmentsEndpoints(app);
-registerCustomerOrdersEndpoints(app);
 registerVendorAnalyticsEndpoints(app);
 registerPetCafeEndpoints(app);
 registerVendorRadarEndpoints(app);

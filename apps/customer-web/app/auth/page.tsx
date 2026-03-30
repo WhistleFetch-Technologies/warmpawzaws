@@ -9,6 +9,12 @@ import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeS
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
 
+function setCustomerOnboardingCompleteFromAuth(value: 'true' | 'false'): void {
+  if (typeof window === 'undefined') return;
+  if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
+  localStorage.setItem('customerOnboardingComplete', value);
+}
+
 function AuthPageContent() {
   const router = useRouter();
   // For static export compatibility, use window.location.search directly instead of useSearchParams
@@ -154,23 +160,37 @@ function AuthPageContent() {
 
           const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
           const profileCompleted = profileResponse.profile.profile_completed;
+          const nameVal = profileResponse.profile.name || profileResponse.profile.full_name || '';
+          const hasRealName =
+            !!nameVal &&
+            String(nameVal).trim() !== '' &&
+            nameVal !== `Customer ${phone.replace(/\D/g, '').slice(-4)}`;
+          const hasProfileId = !!profileResponse.profile.id;
+          const backendFullyOnboarded =
+            onboardingStatus === 'COMPLETED' || profileCompleted === true;
+          const hasMeaningfulProfile = (hasProfileId && hasRealName) || false;
 
-          // Check for pets
+          if (backendFullyOnboarded) {
+            localStorage.setItem('profile_completed', 'true');
+            localStorage.setItem('onboarding_completed', 'true');
+            setCustomerOnboardingCompleteFromAuth('true');
+          } else if (hasMeaningfulProfile) {
+            localStorage.setItem('profile_completed', 'true');
+            setCustomerOnboardingCompleteFromAuth('false');
+          } else {
+            setCustomerOnboardingCompleteFromAuth('false');
+          }
+
           try {
             const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
             if (petsResponse?.pets?.length > 0) {
               localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-              localStorage.setItem('customerOnboardingComplete', 'true');
             }
           } catch { }
-
-          if (onboardingStatus === 'COMPLETED' || profileCompleted) {
-            localStorage.setItem('customerOnboardingComplete', 'true');
-          }
         }
       } catch {
         // New customer - will go through onboarding
-        localStorage.setItem('customerOnboardingComplete', 'false');
+        setCustomerOnboardingCompleteFromAuth('false');
       }
 
       setLoading(false);
@@ -244,87 +264,79 @@ function AuthPageContent() {
         sessionStorage.setItem('_warmpawz_just_logged_in', 'true'); // ✅ FIX: Prevent session clearing right after login
         console.log('✅ [Auth] sessionStorage flags set after OTP verification');
 
-        // Get customer profile and pets to check onboarding status
+        // Get customer profile; cache pets for app use without using pet count for routing
         try {
           const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
           console.log('✅ [Auth] Profile response:', profileResponse);
 
-          // Store customer state from database (not localStorage)
           if (profileResponse?.profile) {
             const profile = profileResponse.profile;
             const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
-            const profileCompleted = profile.profile_completed || profile.onboardingComplete || false;
+            const profileCompletedFlag = profile.profile_completed || profile.onboardingComplete || false;
             const nameVal = profile.name || profile.full_name || '';
-            const hasName = !!nameVal && String(nameVal).trim() !== '' && nameVal !== `Customer ${phone.slice(-4)}`;
+            const digits = phone.replace(/\D/g, '').slice(-10);
+            const hasName =
+              !!nameVal &&
+              String(nameVal).trim() !== '' &&
+              nameVal !== `Customer ${digits.slice(-4)}`;
             const hasBookings = (profile.bookings?.length || 0) > 0;
+            const hasProfileId = !!profile.id;
 
             console.log('📊 [Auth] Profile check:', {
               onboardingStatus,
-              profileCompleted,
+              profileCompleted: profileCompletedFlag,
               hasName,
               hasBookings,
-              name: profile.name || profile.full_name
             });
 
-            // Store in localStorage for CustomerApp to use
             localStorage.setItem('customerData', JSON.stringify(profile));
             localStorage.setItem('customerProfile', JSON.stringify(profile));
             persistCustomerDatabaseId(profile);
 
-            // Also check if customer has pets
-            let hasPets = false;
             try {
               const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
               if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
-                hasPets = true;
                 localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-                console.log('✅ [Auth] Found pets:', petsResponse.pets.length);
               }
             } catch (petError) {
-              console.warn('⚠️ [Auth] No pets found or error fetching pets:', petError);
-              // No pets yet - this is OK
+              console.warn('⚠️ [Auth] Pets fetch:', petError);
             }
 
-            // ✅ FIX: Customer is onboarded if: backend says COMPLETED, or has profile+name, or has usage (bookings/pets)
-            const isOnboarded = onboardingStatus === 'COMPLETED' ||
-              profileCompleted ||
-              (hasName && hasPets) ||
-              (hasName && profile.id) ||
-              (profile.id && hasBookings);
+            const backendFullyOnboarded =
+              onboardingStatus === 'COMPLETED' || profileCompletedFlag === true;
+            const hasMeaningfulProfile =
+              (hasProfileId && hasName) || (hasProfileId && hasBookings);
 
-            console.log('🎯 [Auth] Onboarding decision:', { isOnboarded, onboardingStatus, profileCompleted, hasName, hasPets });
-
-            if (isOnboarded) {
-              localStorage.setItem('customerOnboardingComplete', 'true');
-              localStorage.setItem('customerJourneyStage', 'have-pet');
-              console.log('✅ [Auth] Customer is onboarded - going to home');
-            } else if (hasName && !hasPets) {
-              // Has profile but no pets - skip to pet step
-              localStorage.setItem('customerOnboardingComplete', 'false');
-              localStorage.setItem('customerJourneyStage', 'have-pet');
-              localStorage.setItem('customerProfile', JSON.stringify(profile));
-              console.log('⚠️ [Auth] Customer has profile but no pets - showing pet profile');
+            if (backendFullyOnboarded) {
+              localStorage.setItem('profile_completed', 'true');
+              localStorage.setItem('onboarding_completed', 'true');
+              setCustomerOnboardingCompleteFromAuth('true');
+              console.log('✅ [Auth] Backend reports full onboarding complete');
+            } else if (hasMeaningfulProfile) {
+              localStorage.setItem('profile_completed', 'true');
+              setCustomerOnboardingCompleteFromAuth('false');
+              console.log('✅ [Auth] Profile saved — show onboarding choice');
             } else {
-              localStorage.setItem('customerOnboardingComplete', 'false');
-              console.log('🆕 [Auth] New customer - will show onboarding');
+              setCustomerOnboardingCompleteFromAuth('false');
+              console.log('🆕 [Auth] New customer — start at profile');
             }
           } else {
             console.warn('⚠️ [Auth] No profile in response:', profileResponse);
-            // Customer doesn't exist yet - will be created by backend on first profile access
-            localStorage.setItem('customerOnboardingComplete', 'false');
+            setCustomerOnboardingCompleteFromAuth('false');
           }
         } catch (profileError: any) {
           console.error('❌ [Auth] Error fetching profile:', profileError);
           // ✅ FIX: If profile fetch fails but customer exists, check localStorage for cached data
           const cachedProfile = localStorage.getItem('customerProfile');
           const cachedOnboarding = localStorage.getItem('customerOnboardingComplete');
+          const stageSelectionDone = localStorage.getItem('onboarding_completed') === 'true';
 
-          if (cachedProfile && cachedOnboarding === 'true') {
+          if (cachedProfile && (cachedOnboarding === 'true' || stageSelectionDone)) {
             console.log('✅ [Auth] Using cached profile data');
             // Keep existing onboarding status
           } else {
             // Customer doesn't exist yet - will be created by backend on first profile access
-            localStorage.setItem('customerOnboardingComplete', 'false');
+            setCustomerOnboardingCompleteFromAuth('false');
             console.log('🆕 [Auth] No cached profile - new customer');
           }
         }

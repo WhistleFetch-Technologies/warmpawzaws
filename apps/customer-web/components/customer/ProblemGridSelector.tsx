@@ -77,7 +77,45 @@ const getProblemIcon = (problemId: string, roleId: string): React.ReactNode => {
   const IconComponent = iconMap[problemId] || PawPrint;
   return <IconComponent className="w-6 h-6 text-[#FF8C42]" />;
 };
+
 import { apiClient } from '@/lib/api-client';
+import { PROBLEM_GRID_CATEGORY_TO_ROLE } from '@/lib/problem-grid-catalog-fallback';
+import {
+  GROOMING_NEEDS,
+  WALKING_NEEDS,
+  NUTRITIONIST_NEEDS,
+  TRAINING_GOALS,
+  BOARDING_NEEDS,
+  BEHAVIORAL_ISSUES,
+  VET_PROBLEMS,
+} from './ProblemGridSection';
+
+const DEFAULT_SERVICE_STYLES = ['at_home', 'at_center', 'tele'];
+
+/** Same catalog as home when APIs return nothing or legacy single "General Service". */
+function buildLocalAllProblemsFallback(): any[] {
+  const rows = (items: { id: string; name: string }[], roleId: string) =>
+    items
+      .filter((p) => p.id !== 'view_all')
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        displayName: p.name,
+        description: 'Select to find specialists',
+        roleId,
+        allowedServiceStyles: [...DEFAULT_SERVICE_STYLES],
+        keywords: [p.name.toLowerCase(), p.id.toLowerCase()],
+      }));
+  return [
+    ...rows(GROOMING_NEEDS, 'groomer'),
+    ...rows(WALKING_NEEDS, 'walker'),
+    ...rows(NUTRITIONIST_NEEDS, 'nutritionist'),
+    ...rows(TRAINING_GOALS, 'trainer'),
+    ...rows(BOARDING_NEEDS, 'boarding'),
+    ...rows(BEHAVIORAL_ISSUES, 'behaviorist'),
+    ...rows(VET_PROBLEMS, 'veterinarian'),
+  ];
+}
 
 interface ProblemGridSelectorProps {
   roleId: string;
@@ -110,24 +148,72 @@ export function ProblemGridSelector({
   const loadProblemGrid = async () => {
     try {
       setLoading(true);
-      // Use public endpoint since problem grid is shown to all users (no auth required)
-      const data = await apiClient.get<{ problems?: any[] }>(`/public/problems?roleId=${roleId}`);
-      setProblems(data.problems || []);
+      const isAll = String(roleId || '').toLowerCase() === 'all';
+      const data = await apiClient.get<{ problems?: any[] }>(
+        `/public/problems?roleId=${encodeURIComponent(roleId)}`
+      );
+      let list = Array.isArray(data.problems) ? data.problems : [];
+
+      if (isAll && list.length <= 1) {
+        try {
+          const pg = await apiClient.get<{ success?: boolean; problems?: any[] }>('/public/problem-grid');
+          if (pg?.success && Array.isArray(pg.problems) && pg.problems.length > 0) {
+            list = pg.problems
+              .filter((p: any) => p?.id && p?.name)
+              .map((p: any) => {
+                const cat = String(p.categoryId || '').toLowerCase();
+                const roleForRow = PROBLEM_GRID_CATEGORY_TO_ROLE[cat] || 'veterinarian';
+                const label = p.displayName || p.name;
+                return {
+                  id: p.id,
+                  name: p.name,
+                  displayName: label,
+                  description:
+                    typeof p.description === 'string' && p.description.trim()
+                      ? p.description
+                      : `Find ${label} specialists`,
+                  roleId: roleForRow,
+                  allowedServiceStyles:
+                    Array.isArray(p.allowedServiceStyles) && p.allowedServiceStyles.length > 0
+                      ? p.allowedServiceStyles
+                      : [...DEFAULT_SERVICE_STYLES],
+                  keywords: [String(p.name).toLowerCase(), String(p.id).toLowerCase()],
+                };
+              });
+          }
+        } catch {
+          /* use list from /public/problems */
+        }
+      }
+
+      if (isAll && list.length <= 1) {
+        list = buildLocalAllProblemsFallback();
+      }
+
+      setProblems(list);
     } catch (error) {
       console.error('Error loading problem grid:', error);
+      if (String(roleId || '').toLowerCase() === 'all') {
+        setProblems(buildLocalAllProblemsFallback());
+      } else {
+        setProblems([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredProblems = problems.filter(problem => {
+  const filteredProblems = problems.filter((problem) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
+    const name = (problem.name || problem.displayName || '').toLowerCase();
+    const display = (problem.displayName || '').toLowerCase();
     return (
-      problem.name.toLowerCase().includes(query) ||
-      (problem.displayName && problem.displayName.toLowerCase().includes(query)) ||
-      (problem.description && problem.description.toLowerCase().includes(query)) ||
-      (problem.keywords && problem.keywords.some((keyword: string) => keyword.toLowerCase().includes(query)))
+      name.includes(query) ||
+      display.includes(query) ||
+      (problem.description && String(problem.description).toLowerCase().includes(query)) ||
+      (problem.keywords &&
+        problem.keywords.some((keyword: string) => String(keyword).toLowerCase().includes(query)))
     );
   });
 
@@ -155,7 +241,9 @@ export function ProblemGridSelector({
                Find {roleName}
              </h1>
              <p className="text-white/80 text-sm">
-               Select your pet's health concern
+               {roleId === 'all'
+                 ? 'Browse grooming, walks, vet care, and more'
+                 : "Select your pet's health concern"}
              </p>
           </div>
         </div>

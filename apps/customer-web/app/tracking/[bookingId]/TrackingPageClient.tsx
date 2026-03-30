@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { Key, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { toast } from 'sonner';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 interface TrackingData {
   sessionId?: string;
@@ -844,7 +845,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
           <h2 className="text-xl font-bold text-gray-900 mb-2">Tracking Not Available</h2>
           <p className="text-gray-500 mb-4 text-sm">{error || 'Unable to load tracking data'}</p>
           <button
-            onClick={() => onBack ? onBack() : router.back()}
+            onClick={() => (onBack ? onBack() : goBackOrHome(router))}
             className="w-full px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition font-medium"
           >
             ← Go Back
@@ -860,7 +861,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
       <header className="bg-white shadow-sm sticky top-0 z-50 safe-area-top">
         <div className="px-4 py-3 flex items-center gap-3">
           <button 
-            onClick={() => onBack ? onBack() : router.back()} 
+            onClick={() => (onBack ? onBack() : goBackOrHome(router))} 
             className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

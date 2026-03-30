@@ -160,6 +160,8 @@ export function registerAddressEndpoints(app: Hono) {
           state: cust.state || '',
           pincode: cust.pincode || '',
           landmark: null,
+          houseNo: cust.house_no ?? undefined,
+          floor: cust.floor ?? undefined,
           coordinates: null,
           isDefault: true,
           createdAt: null,
@@ -515,7 +517,6 @@ export function registerAddressEndpoints(app: Hono) {
         city,
         state,
         pincode,
-        landmark,
         coordinates,
         isDefault = false,
       } = body;
@@ -527,6 +528,10 @@ export function registerAddressEndpoints(app: Hono) {
 
       if (!name || !phone || !addressLine1 || !city || !state || !pincode) {
         return c.json({ error: 'name, phone, addressLine1, city, state, and pincode are required' }, 400);
+      }
+
+      if (!String(houseNo || '').trim()) {
+        return c.json({ error: 'House / flat number is required' }, 400);
       }
 
       // Resolve customer ID
@@ -579,10 +584,10 @@ export function registerAddressEndpoints(app: Hono) {
         city: city,
         state: state,
         pincode: pincode,
-        landmark: landmark || null,
+        landmark: null,
         coordinates: finalCoordinates,
         flat_no: flatNo,
-        house_no: houseNo,
+        house_no: String(houseNo).trim(),
         floor: floor,
         street_name: streetName,
         apartment_name: apartmentName,
@@ -622,6 +627,14 @@ export function registerAddressEndpoints(app: Hono) {
       }
       if (customer.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const nextLine1 = updates.addressLine1 ?? updates.address_line1;
+      if (nextLine1 !== undefined && String(nextLine1).trim()) {
+        const hn = updates.houseNo ?? updates.house_no;
+        if (!String(hn || '').trim()) {
+          return c.json({ error: 'House / flat number is required' }, 400);
+        }
       }
 
       // If setting as default, unset all others

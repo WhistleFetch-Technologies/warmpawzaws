@@ -468,7 +468,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       />
 
       {/* Main Content */}
-      <div className="max-w-[430px] mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
+      <div className="max-w-customer mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
         {/* Phase 0.1: Promotion Banner Component */}
         <div className="mb-6">
           <PromotionBanner service="vet" maxPromotions={3} onNavigate={onNavigate} />
@@ -848,7 +848,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );

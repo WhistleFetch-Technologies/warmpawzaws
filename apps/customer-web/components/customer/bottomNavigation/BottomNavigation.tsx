@@ -40,8 +40,8 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 max-w-[430px] mx-auto">
-      <div className="flex items-center justify-around px-6 py-3">
+    <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="flex items-center justify-around px-4 py-3 sm:px-6">
         {/* Home Tab */}
         <button 
           onClick={() => handleNavClick('home')}
@@ -94,9 +94,9 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
         </button>
       </div>
       
-      {/* Home Indicator */}
-      <div className="flex justify-center pb-2">
-        <div className="w-32 h-1 bg-black rounded-full"></div>
+      {/* Optional home indicator — keep subtle on devices with safe area */}
+      <div className="flex justify-center pb-1 sm:pb-2">
+        <div className="h-1 w-28 rounded-full bg-black/10 sm:bg-black/20" aria-hidden />
       </div>
     </div>
   );

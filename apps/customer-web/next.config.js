@@ -78,7 +78,7 @@ const nextConfig = {
     return [];
   },
   
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
     // Configure webpack to resolve modules from packages/ui/node_modules
     // This ensures Next.js can find dependencies from the linked @warmpawz/ui package
     const uiNodeModulesPath = path.resolve(__dirname, '../../packages/ui/node_modules');
@@ -93,29 +93,26 @@ const nextConfig = {
       config.resolve.alias = {};
     }
     
-    // Optimize chunk splitting for better caching
-    if (!isServer) {
+    // Custom splitChunks with fixed names breaks Next dev chunk URLs; keep defaults in dev.
+    if (!isServer && !dev) {
       config.optimization = {
         ...config.optimization,
         splitChunks: {
           ...config.optimization?.splitChunks,
           cacheGroups: {
             ...config.optimization?.splitChunks?.cacheGroups,
-            // Separate vendor chunks for better caching
             vendor: {
               test: /[\\/]node_modules[\\/]/,
               name: 'vendors',
               chunks: 'all',
               priority: 10,
             },
-            // Separate framer-motion into its own chunk (large library)
             framer: {
               test: /[\\/]node_modules[\\/]framer-motion[\\/]/,
               name: 'framer-motion',
               chunks: 'all',
               priority: 20,
             },
-            // Separate radix-ui into its own chunk
             radix: {
               test: /[\\/]node_modules[\\/]@radix-ui[\\/]/,
               name: 'radix-ui',
