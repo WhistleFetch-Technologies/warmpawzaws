@@ -49,7 +49,7 @@ const SITTING_OPTIONS = [
     desc: "Multi-day in-home care",
     price: "₹1,499+",
     icon: Calendar,
-    iconWrap: "bg-sky-100 text-sky-600",
+    iconWrap: "bg-orange-100 text-[#FF8C42]",
   },
   {
     id: "drop_in",
@@ -179,37 +179,37 @@ export function PetSitterServiceRouter({
       const base =
         "/customer/discover-services?category=sitting&serviceStyle=at_home";
 
+      const extractProviderList = (payload: any): any[] => {
+        if (!payload || typeof payload !== "object") return [];
+        const inner = payload.data && typeof payload.data === "object" ? payload.data : payload;
+        return (
+          inner.vendors ||
+          inner.providers ||
+          inner.services ||
+          []
+        );
+      };
+
       const fetchSittersWithLocationSuffix = async (
         locSuffix: string
       ): Promise<any[]> => {
         let list: any[] = [];
 
         try {
-          const data = await apiClient.get<{
-            success?: boolean;
-            vendors?: any[];
-            providers?: any[];
-            services?: any[];
-          }>(`${base}&roleId=pet_sitter${locSuffix}${phoneParam}`);
-          list =
-            data.vendors ||
-            data.providers ||
-            data.services ||
-            [];
+          const data = await apiClient.get<Record<string, unknown>>(
+            `${base}&roleId=pet_sitter${locSuffix}${phoneParam}`
+          );
+          list = extractProviderList(data);
         } catch {
           list = [];
         }
 
         if (list.length === 0) {
           try {
-            const fallback = await apiClient.get<{
-              vendors?: any[];
-              providers?: any[];
-            }>(`${base}${locSuffix}${phoneParam}`);
-            list =
-              fallback.vendors ||
-              fallback.providers ||
-              [];
+            const fallback = await apiClient.get<Record<string, unknown>>(
+              `${base}${locSuffix}${phoneParam}`
+            );
+            list = extractProviderList(fallback);
           } catch {
             list = [];
           }
@@ -217,11 +217,10 @@ export function PetSitterServiceRouter({
 
         if (list.length === 0) {
           try {
-            const alt = await apiClient.get<{
-              vendors?: any[];
-              providers?: any[];
-            }>(`${base}&roleId=sitter${locSuffix}${phoneParam}`);
-            list = alt.vendors || alt.providers || [];
+            const alt = await apiClient.get<Record<string, unknown>>(
+              `${base}&roleId=sitter${locSuffix}${phoneParam}`
+            );
+            list = extractProviderList(alt);
           } catch {
             list = [];
           }
@@ -299,7 +298,7 @@ export function PetSitterServiceRouter({
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-sky-500" />
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
       </div>
     );
   }
@@ -326,7 +325,7 @@ export function PetSitterServiceRouter({
         stats={headerStats}
         onBack={onBack}
         showBackButton
-        headerColor="bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600"
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
       />
       <div className="flex-1 overflow-y-auto bg-white">
         <div className="bg-white px-4 pt-4">
@@ -337,9 +336,9 @@ export function PetSitterServiceRouter({
               onNavigate={onNavigate}
             />
 
-            <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50 p-4">
+            <div className="rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
               <div className="flex items-center gap-3">
-                <Home className="h-8 w-8 shrink-0 text-sky-600" />
+                <Home className="h-8 w-8 shrink-0 text-[#FF8C42]" />
                 <div>
                   <h3 className="font-semibold text-slate-900">
                     Care at your doorstep
@@ -354,21 +353,21 @@ export function PetSitterServiceRouter({
             {previousSitter && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <RefreshCw className="h-5 w-5 text-sky-600" />
+                  <RefreshCw className="h-5 w-5 text-[#FF8C42]" />
                   <h2 className="text-lg font-bold text-slate-900">
                     Book again
                   </h2>
                 </div>
-                <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50 p-4">
+                <div className="rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
                   <div className="flex items-center gap-4">
                     {previousSitter.photo ? (
                       <img
                         src={previousSitter.photo}
                         alt={previousSitter.name}
-                        className="h-16 w-16 rounded-xl border-2 border-sky-200 object-cover"
+                        className="h-16 w-16 rounded-xl border-2 border-orange-200 object-cover"
                       />
                     ) : (
-                      <div className="flex h-16 w-16 items-center justify-center rounded-xl border-2 border-sky-200 bg-sky-100 text-xl font-bold text-sky-700">
+                      <div className="flex h-16 w-16 items-center justify-center rounded-xl border-2 border-orange-200 bg-orange-100 text-xl font-bold text-[#FF8C42]">
                         {previousSitter.name?.charAt(0) || "S"}
                       </div>
                     )}
@@ -377,7 +376,7 @@ export function PetSitterServiceRouter({
                         {previousSitter.name}
                       </h3>
                       <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
-                        <Star className="h-4 w-4 fill-sky-500 text-sky-500" />{" "}
+                        <Star className="h-4 w-4 fill-[#FF8C42] text-[#FF8C42]" />{" "}
                         {previousSitter.rating}
                         <span>•</span>
                         <span>
@@ -387,7 +386,7 @@ export function PetSitterServiceRouter({
                       </div>
                     </div>
                     <Button
-                      className="shrink-0 bg-sky-600 text-white hover:bg-sky-700"
+                      className="shrink-0 bg-[#FF8C42] text-white hover:bg-[#FF7A35]"
                       onClick={() => goBook(previousSitter.id)}
                     >
                       Book
@@ -437,7 +436,7 @@ export function PetSitterServiceRouter({
                 {hubMode ? (
                   <button
                     type="button"
-                    className="flex items-center gap-1 text-sm font-medium text-sky-600"
+                    className="flex items-center gap-1 text-sm font-medium text-[#FF8C42]"
                     onClick={() => onNavigate?.("pet-sitter-facility")}
                   >
                     View all <ChevronRight className="h-4 w-4" />
@@ -470,7 +469,7 @@ export function PetSitterServiceRouter({
                           goBook(s.id || s.vendorId);
                         }
                       }}
-                      className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-sky-200"
+                      className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-[#FF8C42]/40"
                     >
                       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl font-bold text-slate-400">
                         {(s.businessName || s.name || "S").charAt(0)}
@@ -482,7 +481,7 @@ export function PetSitterServiceRouter({
                             `Sitter ${index + 1}`}
                         </h3>
                         <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                          <span className="flex items-center gap-1 font-bold text-sky-600">
+                          <span className="flex items-center gap-1 font-bold text-[#FF8C42]">
                             <Star className="h-3 w-3 fill-current" />
                             {s.rating || 4.7}
                           </span>

@@ -109,6 +109,79 @@ function validateBookingDate(bookingDate: string, bookingTime: string, minNotice
   return { valid: true };
 }
 
+/**
+ * Multi-night boarding / pet sitting: check-in time is informational for the stay window.
+ * Strict "min notice from now" on check-in clock time breaks for same-day check-in (esp. Lambda UTC vs user local).
+ */
+function validateMultiDayStayCheckInDates(
+  bookingDate: string,
+  bookingTime: string,
+  checkOutDate: string,
+  maxAdvanceDays: number
+): { valid: boolean; error?: string } {
+  const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+  if (!timeRegex.test(bookingTime)) {
+    return { valid: false, error: 'Invalid time format. Use HH:MM format' };
+  }
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  if (bookingDate < todayUtc) {
+    return { valid: false, error: 'Check-in date cannot be in the past' };
+  }
+  if (checkOutDate < bookingDate) {
+    return { valid: false, error: 'Check-out must be on or after check-in' };
+  }
+  const now = new Date();
+  const maxEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + maxAdvanceDays));
+  const maxStr = maxEnd.toISOString().slice(0, 10);
+  if (bookingDate > maxStr) {
+    return { valid: false, error: `Cannot book more than ${maxAdvanceDays} days in advance` };
+  }
+  return { valid: true };
+}
+
+/** Pet sitting: bill in 30-minute increments; list price applies to `baseMinutes` from vendor service. */
+const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+
+function normalizeBookingTimeForParse(t: string): string {
+  const s = String(t || '0:0').trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) return `${s}:00`;
+  return s;
+}
+
+function computePetSittingBilledMinutes(
+  bookingDate: string,
+  bookingTime: string,
+  checkOutDate: string,
+  checkOutTime: string
+): number {
+  const bt = normalizeBookingTimeForParse(bookingTime);
+  const ct = normalizeBookingTimeForParse(checkOutTime);
+  const start = new Date(`${bookingDate}T${bt}`).getTime();
+  let end = new Date(`${checkOutDate}T${ct}`).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  if (end <= start) {
+    end += 24 * 60 * 60 * 1000;
+  }
+  return Math.round((end - start) / 60000);
+}
+
+function computePetSittingPriceRupees(
+  unitPrice: number,
+  baseMinutes: number,
+  billedMinutes: number
+): number {
+  const up = Number.isFinite(unitPrice) ? Math.max(0, unitPrice) : 0;
+  let bm = Number.isFinite(baseMinutes) ? baseMinutes : 60;
+  if (bm < 15) bm = 60;
+  const mins = Math.max(0, billedMinutes);
+  if (mins < 1) return up;
+  const slots = Math.max(1, Math.ceil(mins / PET_SITTING_BILLING_SLOT_MINUTES));
+  const pricePerSlot = (up * PET_SITTING_BILLING_SLOT_MINUTES) / bm;
+  const proportional = Math.round(slots * pricePerSlot);
+  const floor = Math.min(up, Math.max(49, Math.round(up * 0.3)));
+  return Math.max(proportional, floor);
+}
+
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
@@ -179,6 +252,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petName,
       notes: notesFromSchema,
       packagePurchaseId,
+      checkOutDate: reqCheckOutDate,
+      checkOutTime: reqCheckOutTime,
+      flowVariant,
     } = validationResult.data;
 
     const amount = amountFromSchema ?? totalAmount;
@@ -224,7 +300,49 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Validate booking date/time (rule engine: booking_min_notice_hours)
     const bookingRules = await getDiscoveryRules('all', 'booking');
     const minNoticeHours = bookingRules.booking_min_notice_hours ?? 1;
-    const dateValidation = validateBookingDate(bookingDate, bookingTime, minNoticeHours);
+    const checkOutRaw = body.checkOutDate || body.check_out_date;
+    const clientTotalDurationMins = validationResult.data.totalDurationMinutes;
+    const hasTimedAtHomeVisit =
+      clientTotalDurationMins != null && Number(clientTotalDurationMins) > 0;
+    const flowVariantNorm = String(
+      flowVariant || (body as Record<string, unknown>).flow_variant || ''
+    )
+      .toLowerCase()
+      .replace(/-/g, '_');
+
+    const isMultiDayStay =
+      typeof checkOutRaw === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutRaw)) &&
+      String(checkOutRaw) > String(bookingDate);
+    /**
+     * Pet sitting / timed at_home visits must NOT use validateBookingDate: Lambda parses
+     * `new Date(`${date}T${time}`)` as UTC while the customer chose local wall time → false "past" errors.
+     * Use date-window validation only (same as multi-night boarding).
+     *
+     * Trigger relaxed rules when: multi-night stay, OR at_home pet sitting (flowVariant / flow_variant),
+     * OR at_home with client totalDurationMinutes (customer app only sends this for pet sitting today).
+     */
+    const useRelaxedAtHomeTimedBooking =
+      serviceType === 'at_home' &&
+      (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit);
+
+    const useMultiDayStayRules =
+      (isMultiDayStay && (serviceType === 'at_home' || serviceType === 'at_center')) ||
+      useRelaxedAtHomeTimedBooking;
+
+    const checkoutDateForRule =
+      typeof checkOutRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutRaw))
+        ? String(checkOutRaw)
+        : bookingDate;
+
+    const dateValidation = useMultiDayStayRules
+      ? validateMultiDayStayCheckInDates(
+          bookingDate,
+          bookingTime,
+          checkoutDateForRule,
+          MAX_ADVANCE_BOOKING_DAYS
+        )
+      : validateBookingDate(bookingDate, bookingTime, minNoticeHours);
     if (!dateValidation.valid) {
       return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
     }
@@ -439,6 +557,46 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
+    let petSittingServerBilledMinutes: number | null = null;
+    let petSittingServerTotalRupee: number | null = null;
+
+    if (
+      service &&
+      serviceType === 'at_home' &&
+      (!selectedServices || selectedServices.length === 0) &&
+      reqCheckOutDate &&
+      reqCheckOutTime &&
+      (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit)
+    ) {
+      const billed = computePetSittingBilledMinutes(
+        bookingDate,
+        bookingTime,
+        reqCheckOutDate,
+        reqCheckOutTime
+      );
+      if (billed < 15) {
+        return this.error(
+          'Pet sitting visit must be at least 15 minutes. Adjust your start and end time.',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      const unitPrice = Number(service.custom_price != null ? service.custom_price : service.price ?? 0);
+      let baseMins = Number(
+        service.custom_duration != null ? service.custom_duration : service.duration_minutes ?? 60
+      );
+      if (!Number.isFinite(baseMins) || baseMins < 15) {
+        baseMins = 60;
+      }
+      petSittingServerBilledMinutes = billed;
+      petSittingServerTotalRupee = computePetSittingPriceRupees(unitPrice, baseMins, billed);
+      console.log(
+        `[BOOKING] Pet sitting priced on server: ${billed} min → ₹${petSittingServerTotalRupee} (list ₹${unitPrice} per ${baseMins} min, ${PET_SITTING_BILLING_SLOT_MINUTES}-min slots)`
+      );
+    }
+
     // Get vendor's role to validate service availability
     let roleId: string | null = null;
     try {
@@ -554,8 +712,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         // ✅ FIX: Check overlap using ONLY service duration (no buffer blocking)
         // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
-        // Get booking duration
-        const bookingDuration = totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
+        // Get booking duration (pet sitting: exact visit length from check-in → check-out)
+        const bookingDuration =
+          petSittingServerBilledMinutes != null
+            ? petSittingServerBilledMinutes
+            : totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
         
         // Convert booking time to minutes
         const [bookingHour, bookingMin] = bookingTime.split(':').map(Number);
@@ -701,7 +862,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // ✅ FIX GAP PM-1: Check for active unlimited subscription
         let subscriptionId: string | null = null;
         let isSubscriptionBooking = false;
-        let finalAmount = amount || 0;
+        let finalAmount =
+          petSittingServerTotalRupee != null ? petSittingServerTotalRupee : (amount || 0);
         // ✅ Package booking: when packagePurchaseId provided, use package credit (0 payment)
         let isPackageBooking = false;
         let packagePurchaseIdToUse: string | null = null;
@@ -804,8 +966,13 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
         
         // ✅ Calculate final amounts considering multiple services
-        // Priority: 1. Package (free), 2. Subscription (free), 3. Selected services total, 4. Single service amount
-        const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : (amount || 0);
+        // Priority: 1. Package (free), 2. Subscription (free), 3. Selected services total, 4. Pet sitting (server), 5. Client amount
+        const calculatedBasePrice =
+          totalSelectedServicesAmount > 0
+            ? totalSelectedServicesAmount
+            : petSittingServerTotalRupee != null
+              ? petSittingServerTotalRupee
+              : (amount || 0);
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
         const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
         
@@ -1001,7 +1168,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           selected_services: selectedServices && selectedServices.length > 0 
             ? JSON.stringify(selectedServices) 
             : null,
-          total_duration_minutes: totalDurationMinutes || null,
+          total_duration_minutes:
+            petSittingServerBilledMinutes != null ? petSittingServerBilledMinutes : totalDurationMinutes || null,
           duration_minutes: bookingDuration,
           customer_phone: customerPhone || null,
           // address_id, delivery_latitude, delivery_longitude may not exist in prod

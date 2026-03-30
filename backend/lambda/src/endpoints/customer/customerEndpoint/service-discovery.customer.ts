@@ -1310,12 +1310,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const SITTER_ROLE_NAMES_LOWER = ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'];
 
       // Fetch only matching services (style + category; published/auto_published)
-      const fetchServices = async (vendorId: string, vendorRoleName?: string | null) => {
-        const rn = String(vendorRoleName || '').toLowerCase().trim();
-        const sitterRoleBypass =
-          sittingDiscoveryRelaxed &&
-          (SITTER_ROLE_NAMES_LOWER.includes(rn) ||
-            (rn.includes('sitter') && !rn.includes('babysitter')));
+      const fetchServices = async (vendorId: string, _vendorRoleName?: string | null) => {
+        /**
+         * Main vendor SQL already restricted rows to sitting (category/role). Do not require the same
+         * match again here — vendors with legacy/custom `roles.name` values were passing the EXISTS
+         * clause via `vs.category` but then dropped here with zero services (customer sees no sitters).
+         */
+        const sitterRoleBypass = sittingDiscoveryRelaxed;
 
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
@@ -1327,6 +1328,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
         `
             : '';
+        const styleMatchSql =
+          sitterRoleBypass && !isAtCenter
+            ? `(vs.service_style = ANY($2::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
+            : `vs.service_style = ANY($2::text[])`;
+        const enabledSql = sitterRoleBypass
+          ? `(vs.is_enabled = true OR vs.is_enabled IS NULL)`
+          : `vs.is_enabled = true`;
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
                  COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
@@ -1341,10 +1349,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            FROM vendor_services vs
            LEFT JOIN services s ON vs.service_id = s.id
            WHERE vs.vendor_id = $1
-             AND vs.service_style = ANY($2::text[])
+             AND ${styleMatchSql}
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
-             AND vs.is_enabled = true
+             AND ${enabledSql}
              AND (vs.publish_status IN ('published','auto_published')
                   OR vs.publish_status IS NULL)
           ORDER BY vs.price ASC
@@ -1481,6 +1489,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               AND va.service_type = ANY($1::text[])
           )`;
 
+      /**
+       * Service catalog seeds pet-sitting rows with category `boarding` (not `sitting`).
+       * Style is already restricted to at_home above, so boarding+at_home ≈ sitting catalog — without this,
+       * dev/prod sitters using default catalog rows vanish from Pet Sitting discovery.
+       */
+      const sittingCatalogCategoryOr =
+        sittingDiscoveryRelaxed
+          ? `OR LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'`
+          : '';
+
       const vendorServiceCategorySql =
         catTextExact.length + catUUIDs.length > 0
           ? sittingDiscoveryRelaxed
@@ -1490,6 +1508,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 OR LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
+                ${sittingCatalogCategoryOr}
               )`
             : `
               AND (
@@ -1498,6 +1517,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
               )`
           : '';
+
+      const vendorVsEnabledSql = sittingDiscoveryRelaxed
+        ? '(vs.is_enabled = true OR vs.is_enabled IS NULL)'
+        : 'vs.is_enabled = true';
+      const vendorVsStyleSql = sittingDiscoveryRelaxed
+        ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
+        : 'vs.service_style = ANY($1::text[])';
+      const vendorVsPublishSql = `(vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`;
 
       let vendorSql = `
         SELECT DISTINCT ON (v.id)
@@ -1518,8 +1545,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             SELECT 1
             FROM vendor_services vs
             WHERE vs.vendor_id = v.id
-              AND vs.is_enabled = true
-              AND vs.service_style = ANY($1::text[])
+              AND ${vendorVsEnabledSql}
+              AND ${vendorVsStyleSql}
+              AND ${vendorVsPublishSql}
               ${vendorServiceCategorySql}
           )
           ${availabilityRequiredSql}
@@ -3021,14 +3049,42 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LEFT JOIN services s ON vs.service_id = s.id
         LEFT JOIN service_catalog sc ON vs.service_id = sc.id
         WHERE vs.vendor_id = $1
-          AND vs.is_enabled = true
+          AND (vs.is_enabled = true OR vs.is_enabled IS NULL)
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
       `;
       const queryParams: any[] = [resolvedVendorId];
 
       if (category) {
+        const catLower = String(category).toLowerCase().trim().replace(/-/g, '_');
+        /** Pet sitting booking sends category=sitting; vendor rows often use "General" or "Pet Sitter" (no "sitting" substring). */
+        const sittingBookingCategoryRequest =
+          catLower === 'sitting' ||
+          catLower === 'pet_sitter' ||
+          catLower === 'sitter' ||
+          catLower === 'sitter_solo' ||
+          catLower === 'pet_sitting';
         queryParams.push(category);
-        servicesQuery += ` AND (LOWER(vs.category) = LOWER($${queryParams.length}) OR LOWER(vs.category) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
+        const catParam = queryParams.length;
+        if (sittingBookingCategoryRequest) {
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            OR (
+              (vs.service_style = 'at_home' OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')
+              AND EXISTS (
+                SELECT 1 FROM vendors v_sit
+                LEFT JOIN roles r_sit ON v_sit.role_id = r_sit.id
+                WHERE v_sit.id = vs.vendor_id
+                  AND (
+                    LOWER(REPLACE(TRIM(COALESCE(r_sit.display_name, r_sit.name, '')), ' ', '_')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
+                    OR (LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) LIKE '%sitter%' AND LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) NOT LIKE '%babysitter%')
+                    OR (r_sit.id IS NULL AND LOWER(COALESCE(v_sit.vendor_type, '')) LIKE '%sitter%')
+                  )
+              )
+            )
+          )`;
+        } else {
+          servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
+        }
       }
       if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);

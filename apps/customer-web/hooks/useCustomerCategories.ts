@@ -51,6 +51,9 @@ export const categoryIdToScreen: Record<string, string> = {
   breeder: 'breeder',
   relocation: 'relocation',
   holiday: 'holiday',
+  'pet-holiday': 'holiday',
+  pet_holiday: 'holiday',
+  pet_holiday_planner: 'holiday',
   sunset: 'sunset',
   insurance: 'insurance',
 };
@@ -115,6 +118,8 @@ export function useCustomerCategories() {
         'ambulance': 'Emergency Care',
         'nutritionist': 'Nutritionist',
         'insurance': 'Pet Insurance',
+        training: 'Trainer and Behaviourist',
+        'pet-sitter': 'Pet Sitter',
       };
 
       // ✅ FIX: Deduplicate by screen - keep first occurrence of each screen

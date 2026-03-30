@@ -70,7 +70,7 @@ export const quickServices = [
     { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'vet' },
     { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
     { icon: ShoppingBag, label: 'Pet Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
-    { icon: GraduationCapIcon, label: 'Trainer', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
+    { icon: GraduationCapIcon, label: 'Trainer and Behaviourist', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
 
     // HEALTHCARE SERVICES
     { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' },

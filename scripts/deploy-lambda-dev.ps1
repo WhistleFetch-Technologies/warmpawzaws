@@ -103,12 +103,16 @@ Write-Host "  Directory: $lambdaDir" -ForegroundColor Gray
 Set-Location $lambdaDir
 
 # Step 3: Build Lambda
+# Run via cmd.exe so esbuild/npm stderr (warnings) is not treated as a terminating error
+# when $ErrorActionPreference = 'Stop' (otherwise you get RemoteException and the script aborts).
 Write-Host "  Running: npm run build:bundle" -ForegroundColor Gray
-$buildOutput = npm run build:bundle 2>&1
+$buildProc = Start-Process -FilePath "cmd.exe" `
+    -ArgumentList "/c", "npm run build:bundle" `
+    -WorkingDirectory $lambdaDir `
+    -Wait -PassThru -NoNewWindow
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ❌ Build failed!" -ForegroundColor Red
-    Write-Host $buildOutput
+if ($buildProc.ExitCode -ne 0) {
+    Write-Host "  ❌ Build failed (exit code $($buildProc.ExitCode))!" -ForegroundColor Red
     exit 1
 }
 
