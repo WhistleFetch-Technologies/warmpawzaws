@@ -26,6 +26,7 @@ import { Hono } from 'hono';
 import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 
 /**
  * Helper to resolve phone to customer ID
@@ -247,9 +248,14 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         }
       }
 
-      bookingQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT 50`;
+      bookingQuery += ` ORDER BY b.created_at DESC, b.booking_date DESC, b.booking_time DESC LIMIT 50`;
 
       const bookings = await query(bookingQuery, params);
+
+      // ✅ PAYMENT RECONCILIATION (2 tiers):
+      //   Tier 1 – DB: pending booking with completed payment → mark paid
+      //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
+      await reconcileBookingPayments(bookings.rows);
 
       return c.json({
         success: true,

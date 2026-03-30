@@ -111,7 +111,7 @@ export function registerRewardsEndpoints(app: Hono) {
         const ruleResult = await query(
           `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
         );
-        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 500;
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 0;
         
         const pendingResult = await query(
           `SELECT COUNT(*) as count 
@@ -253,7 +253,7 @@ export function registerRewardsEndpoints(app: Hono) {
         const ruleResult = await query(
           `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
         );
-        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 500;
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 0;
         
         const pendingResult = await query(
           `SELECT COUNT(*) as count 

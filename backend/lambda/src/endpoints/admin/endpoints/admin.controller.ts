@@ -291,7 +291,9 @@ class ListVendorsHandler extends BaseHandler {
       console.log('[ListVendors] Filters:', { status, search, category, role, vendorType, city, tier, isActive });
 
       // Build dynamic WHERE clause
-      let whereConditions: string[] = ['1=1'];
+      let whereConditions: string[] = [
+        "(v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')"
+      ];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -399,7 +401,11 @@ class ListVendorsHandler extends BaseHandler {
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.created_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -411,7 +417,11 @@ class ListVendorsHandler extends BaseHandler {
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
 
@@ -602,12 +612,56 @@ export function registerAdminEndpoints(app: Hono) {
   const { setupWebhookRoutes } = require('../../webhooks');
   setupWebhookRoutes(app);
 
+  // Diagnostic endpoint: always returns success for testing the event pipeline
+  app.post('/diagnostic/success', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json({
+      success: true,
+      data: { ping: 'ok', echo: body },
+      meta: { timestamp: new Date().toISOString() }
+    }, 200);
+  });
+
   app.get('/admin/vendors/stats', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
+
+  // ============================================================================
+  // LOYALTY / ACTIONS - Utility endpoint to fetch distinct action names
+  // ============================================================================
+  app.get('/admin/loyalty/actions', async (c) => {
+    try {
+      const search = (c.req.query('search') || '').trim();
+      const limitParam = c.req.query('limit') || '100';
+      const limit = Math.min(parseInt(limitParam, 10) || 100, 500);
+
+      const params: any[] = [];
+      let idx = 1;
+
+      const sql = `
+        SELECT DISTINCT action_name
+        FROM loyalty_action_rules
+        ${search ? `WHERE action_name ILIKE $${idx++}` : ''}
+        ORDER BY action_name
+        LIMIT $${idx}
+      `;
+      if (search) params.push(`%${search}%`);
+      params.push(limit);
+
+      const res = await query(sql, params);
+      const actions = (res.rows || [])
+        .map((r: any) => r?.action_name)
+        .filter((v: any) => typeof v === 'string' && v.length > 0);
+
+      return c.json({ success: true, actions });
+    } catch (err: any) {
+      console.error('[Admin] Failed to fetch loyalty action names:', err);
+      return c.json({ success: false, error: 'Failed to fetch actions' }, 500);
+    }
+  });
 
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
@@ -916,6 +970,7 @@ export function registerAdminEndpoints(app: Hono) {
 
   // Frontend compatibility: /admin/vendor/application/:applicationId/approve
   app.post('/admin/vendor/application/:applicationId/approve', async (c) => {
+    console.log('admin/vendor/application/:applicationId/approve--------------------->');
     // SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
@@ -1090,20 +1145,39 @@ export function registerAdminEndpoints(app: Hono) {
             // Continue with fallback tier
           }
 
-          const insertResult = await query(
+          try {
+            // Debug: log live vendors columns to ensure schema alignment
+            try {
+              const cols = await query(
+                `SELECT column_name 
+                 FROM information_schema.columns 
+                 WHERE table_name='vendors' 
+                 ORDER BY ordinal_position`
+              );
+              console.log('[DEBUG][ADMIN APPROVE] vendors columns:', (cols.rows || []).map((r: any) => r.column_name));
+            } catch (colErr) {
+              console.warn('[DEBUG][ADMIN APPROVE] Could not fetch vendors columns:', (colErr as Error).message);
+            }
+
+            console.log('[DEBUG][ADMIN APPROVE] Inserting vendor with columns: id, phone, email, owner_name, business_name, role_id, status, city, state, address, pincode, tier, commission_percentage, is_active, metadata, created_at, approved_at');
+            const insertResult = await query(
             `INSERT INTO vendors (
-              id, phone, email, owner_name, business_name, role_id, status, vendor_type,
-              city, state, address, pincode, tier, commission_percentage, is_active, is_deleted, metadata, created_at, approved_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, $13, $14, true, false, '{}'::jsonb, NOW(), NOW())
+              id, phone, email, owner_name, business_name, role_id, status,
+              city, state, address, pincode, tier, commission_percentage,
+              is_active, metadata, created_at, approved_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, 'approved',
+              $7, $8, $9, $10, $11, $12,
+              true, '{}'::jsonb, NOW(), NOW()
+            )
             RETURNING id`,
             [
-              finalVendorId, // ✅ Use the final (unique) vendor ID
+              finalVendorId,
               identity.phone,
               vendorEmail,
               formData.contactPersonName || formData.businessName || 'Vendor',
               formData.businessName || formData.contactPersonName || 'Business',
-              identity.role_id || identity.selected_role_id, // ✅ role_id (UUID)
-              identity.vendor_type || 'solo', // ✅ vendor_type
+              (identity.role_id || identity.selected_role_id),
               formData.city || 'Unknown',
               formData.state || 'Unknown',
               formData.address || 'Unknown',
@@ -1111,8 +1185,12 @@ export function registerAdminEndpoints(app: Hono) {
               defaultTierName,
               defaultCommission
             ]
-          );
-          vendorId = insertResult.rows[0].id;
+            );
+            vendorId = insertResult.rows[0].id;
+          } catch (insErr) {
+            console.error('[DEBUG][ADMIN APPROVE] INSERT failed:', (insErr as Error).message);
+            throw insErr;
+          }
 
           //Immediately verify vendor was created correctly
           const verifyVendor = await query(
@@ -1297,21 +1375,22 @@ export function registerAdminEndpoints(app: Hono) {
       let referralProcessed = false;
 
       // Method 1: Check metadata (from signup)
+      // Admin approval should not mint referral rewards directly.
+      // It only links referral records; loyalty rewards are emitted via action_sources.
       if (updatedIdentity && updatedIdentity.metadata && updatedIdentity.metadata.referral_code_id) {
         try {
-          const { processVendorReferralSignup } = await import('../../../lib/services/referral-service');
-          const referralResult = await processVendorReferralSignup({
-            vendorId: vendorId,
-            referralCode: updatedIdentity.metadata.referral_code || '',
-            phone: updatedIdentity.phone || identity?.phone || '',
-          });
-
-          if (referralResult.success) {
-            console.log(`[ADMIN-APPROVAL] ✅ Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
+          const referralCodeId = updatedIdentity.metadata.referral_code_id;
+          const updateResult = await query(
+            `UPDATE vendor_referrals
+             SET referred_vendor_id = COALESCE($2, referred_vendor_id),
+                 status = CASE WHEN status = 'pending' THEN 'applied' ELSE status END,
+                 applied_at = COALESCE(applied_at, NOW()),
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [referralCodeId, vendorId]
+          );
+          console.log(`[ADMIN-APPROVAL] ✅ Linked referral from metadata (no reward mint): referral_id=${referralCodeId}, rows=${(updateResult as any).rowCount || 0}`);
             referralProcessed = true;
-          } else {
-            console.warn(`[ADMIN-APPROVAL] Vendor referral processing failed: ${referralResult.error}`);
-          }
         } catch (refError: any) {
           console.error('[ADMIN-APPROVAL] Error processing vendor referral:', refError);
         }
@@ -1342,19 +1421,7 @@ export function registerAdminEndpoints(app: Hono) {
 
           if (referralRecords.rows.length > 0) {
             const referralRecord = referralRecords.rows[0];
-            console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points, processing now...`);
-
-            // Award points directly to referrer
-            const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
-            const pointsResult = await loyaltyPointsService.awardPoints({
-              vendorId: referralRecord.referrer_vendor_id,
-              actionName: 'vendor_refer_friend',
-              referenceType: 'vendor_referral',
-              referenceId: referralRecord.id,
-              description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referralRecord.referral_code}`,
-            });
-
-            console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referralRecord.referrer_vendor_id}`);
+            console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points. Skipping direct reward (action-source controlled).`);
             referralProcessed = true;
           }
         } catch (refError: any) {
@@ -1403,20 +1470,10 @@ export function registerAdminEndpoints(app: Hono) {
             console.log(`[ADMIN-APPROVAL] Found existing referral record ${referral.id} for vendor ${vendorId}, processing...`);
             console.log(`[ADMIN-APPROVAL] Referral status: ${referral.status}, Referrer: ${referral.referrer_vendor_id}, Referred Vendor ID: ${referral.referred_vendor_id}, Has Points: ${hasPoints}`);
 
-            // Only award points if they don't exist yet
             if (!hasPoints) {
-              const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
-              const pointsResult = await loyaltyPointsService.awardPoints({
-                vendorId: referral.referrer_vendor_id,
-                actionName: 'vendor_refer_friend',
-                referenceType: 'vendor_referral',
-                referenceId: referral.id,
-                description: `Vendor referral: Admin approved vendor ${vendorId} (code: ${referral.referral_code})`,
-              });
-
-              console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer ${referral.referrer_vendor_id}`);
+              console.log(`[ADMIN-APPROVAL] Referral ${referral.id} has no points yet. Skipping direct award (action-source controlled).`);
             } else {
-              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}, skipping award but will update referral record`);
+              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}.`);
             }
 
             // CRITICAL: Always update referral record with the correct vendor ID and status
@@ -1425,8 +1482,7 @@ export function registerAdminEndpoints(app: Hono) {
             const updateResult = await query(
               `UPDATE vendor_referrals
                SET referred_vendor_id = $1,
-                   status = 'approved',
-                   approved_at = COALESCE(approved_at, NOW()),
+                   status = CASE WHEN status = 'pending' THEN 'applied' ELSE status END,
                    applied_at = COALESCE(applied_at, NOW()),
                    updated_at = NOW()
                WHERE id = $2`,
@@ -1481,23 +1537,8 @@ export function registerAdminEndpoints(app: Hono) {
             console.log(`[ADMIN-APPROVAL] Found existing referral record: ${referral.id}, processing...`);
             console.log(`[ADMIN-APPROVAL] Has points: ${hasPoints}, Current vendor_id: ${referral.referred_vendor_id}`);
 
-            // Award points if they don't exist
             if (!hasPoints) {
-              // Points not awarded yet - award them now
-              // Ensure vendor_refer_friend rule exists
-              const { loyaltyRulesInitService } = await import('../../../lib/services/loyalty-rules-init-service');
-              await loyaltyRulesInitService.initializeVendorReferralRules();
-
-              const { loyaltyPointsService } = await import('../../../lib/services/loyalty&reward/loyalty-points-service');
-              const pointsResult = await loyaltyPointsService.awardPoints({
-                vendorId: referral.referrer_vendor_id,
-                actionName: 'vendor_refer_friend',
-                referenceType: 'vendor_referral',
-                referenceId: referral.id,
-                description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referral.referral_code}`,
-              });
-
-              console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referral.referrer_vendor_id}`);
+              console.log(`[ADMIN-APPROVAL] Referral ${referral.id} has no points yet. Skipping direct award (action-source controlled).`);
             } else {
               console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}`);
             }
@@ -1507,8 +1548,7 @@ export function registerAdminEndpoints(app: Hono) {
             await query(
               `UPDATE vendor_referrals
                SET referred_vendor_id = $1,
-                   status = 'approved',
-                   approved_at = COALESCE(approved_at, NOW()),
+                   status = CASE WHEN status = 'pending' THEN 'applied' ELSE status END,
                    applied_at = COALESCE(applied_at, NOW()),
                    updated_at = NOW()
                WHERE id = $2`,

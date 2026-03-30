@@ -1078,6 +1078,154 @@ class GetWalletTransactionsHandler extends BaseHandler {
 }
 
 // ============================================================================
+// VENDOR WALLET HANDLERS
+// ============================================================================
+
+class GetVendorWalletHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const vendorId = context.event.pathParameters?.vendorId;
+
+    if (!vendorId) {
+      return this.error('Vendor ID is required', 400);
+    }
+
+    const wallet = await this.getOrCreateVendorWallet(vendorId);
+    const transactions = await this.getRecentVendorTransactions(vendorId);
+
+    const loyaltyCredits = transactions.filter((t) =>
+      t.description?.toLowerCase().includes('loyalty') || t.description?.toLowerCase().includes('points')
+    );
+    const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    return this.success({
+      success: true,
+      data: {
+        vendorId: wallet.vendor_id,
+        balance: parseFloat(wallet.balance || '0'),
+        currency: 'INR',
+        lastUpdated: wallet.updated_at,
+        recentTransactions: transactions,
+        loyaltyPointsConverted: totalLoyaltyCredits,
+        loyaltyTransactionsCount: loyaltyCredits.length,
+      },
+    });
+  }
+
+  private async getOrCreateVendorWallet(vendorId: string): Promise<any> {
+    try {
+      let wallets = await select('vendor_wallets', { vendor_id: vendorId });
+      if (wallets.length === 0) {
+        const result = await query(
+          `INSERT INTO vendor_wallets (vendor_id, balance)
+           VALUES ($1, 0)
+           ON CONFLICT (vendor_id) DO NOTHING
+           RETURNING *`,
+          [vendorId]
+        );
+        if (result.rows.length > 0) return result.rows[0];
+        wallets = await select('vendor_wallets', { vendor_id: vendorId });
+      }
+
+      if (wallets.length === 0) {
+        return {
+          vendor_id: vendorId,
+          balance: 0,
+          updated_at: new Date().toISOString(),
+        };
+      }
+
+      return wallets[0];
+    } catch (error: any) {
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        return {
+          vendor_id: vendorId,
+          balance: 0,
+          updated_at: new Date().toISOString(),
+        };
+      }
+      throw error;
+    }
+  }
+
+  private async getRecentVendorTransactions(vendorId: string): Promise<any[]> {
+    try {
+      const result = await query(
+        `SELECT id, transaction_type, amount, balance_after, description, created_at, reference_type, reference_id
+         FROM vendor_wallet_transactions
+         WHERE vendor_id = $1
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [vendorId]
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        type: row.transaction_type,
+        amount: parseFloat(row.amount),
+        balanceAfter: parseFloat(row.balance_after),
+        description: row.description,
+        timestamp: row.created_at,
+        referenceType: row.reference_type || null,
+        referenceId: row.reference_id || null,
+      }));
+    } catch (_error: any) {
+      return [];
+    }
+  }
+}
+
+class GetVendorWalletTransactionsHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const vendorId = context.event.pathParameters?.vendorId;
+    const limit = parseInt(context.event.queryStringParameters?.limit || '50');
+    const offset = parseInt(context.event.queryStringParameters?.offset || '0');
+
+    if (!vendorId) {
+      return this.error('Vendor ID is required', 400);
+    }
+
+    try {
+      const result = await query(
+        `SELECT id, transaction_type, amount, balance_after, reference_type, reference_id, description, created_at
+         FROM vendor_wallet_transactions
+         WHERE vendor_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [vendorId, Math.min(limit, 100), offset]
+      );
+
+      const transactions = result.rows.map((row) => ({
+        id: row.id,
+        type: row.transaction_type,
+        amount: parseFloat(row.amount),
+        balanceAfter: parseFloat(row.balance_after),
+        referenceType: row.reference_type,
+        referenceId: row.reference_id,
+        description: row.description,
+        timestamp: row.created_at,
+      }));
+
+      return this.success({
+        transactions,
+        count: transactions.length,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        return this.success({
+          transactions: [],
+          count: 0,
+          limit,
+          offset,
+          message: 'Vendor wallet transactions table not found',
+        });
+      }
+      throw error;
+    }
+  }
+}
+
+// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -1090,6 +1238,8 @@ export function registerWalletEndpoints(app: Hono) {
   const useWalletByPhoneHandler = new UseWalletByPhoneHandler();
   const getTransactionsHandler = new GetWalletTransactionsHandler();
   const getTransactionsByPhoneHandler = new GetTransactionsByPhoneHandler();
+  const getVendorWalletHandler = new GetVendorWalletHandler();
+  const getVendorTransactionsHandler = new GetVendorWalletTransactionsHandler();
 
   // =========================================================================
   // PHONE-BASED ENDPOINTS (for frontend compatibility)
@@ -1164,6 +1314,28 @@ export function registerWalletEndpoints(app: Hono) {
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result = await getTransactionsHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // =========================================================================
+  // VENDOR WALLET ENDPOINTS
+  // =========================================================================
+
+  // GET /vendor/wallet/:vendorId - Get vendor wallet by vendor UUID
+  app.get('/vendor/wallet/:vendorId', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: c.req.param('vendorId') };
+    const context = createLambdaContext();
+    const result = await getVendorWalletHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // GET /vendor/wallet/:vendorId/transactions - Get vendor wallet transactions
+  app.get('/vendor/wallet/:vendorId/transactions', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: c.req.param('vendorId') };
+    const context = createLambdaContext();
+    const result = await getVendorTransactionsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

@@ -58,8 +58,14 @@
       : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   }
 
-  // ✅ FIX: Priority: window.__NEXT_PUBLIC_API_BASE_URL__ → __API_BASE_URL__ → getApiGatewayUrl()
-  const apiBaseUrl = (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) ||
+  // ✅ Host mapping: force specific API by hostname when deployed
+  const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
+  const mappedByHost = {
+    'dev.admin.warmpawz.com': 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+  };
+  // Priority: host mapping → window.__NEXT_PUBLIC_API_BASE_URL__ → __API_BASE_URL__ → getApiGatewayUrl()
+  const apiBaseUrl = mappedByHost[host] ||
+                     (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) ||
                      (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') ||
                      getApiGatewayUrl();
 

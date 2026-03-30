@@ -196,6 +196,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
       const phone = c.req.query('phone');
       const roleIdParam = c.req.query('roleId');
       const vendorTypeParam = c.req.query('vendorType');
+      const vendorIdentityIdParam = c.req.query('vendorIdentityId');
       
       // Allow either phone or roleId to be provided
       if (!phone && !roleIdParam) {
@@ -206,15 +207,44 @@ export function registerVendorOnboardingFixes(app: Hono) {
       let vendorType = vendorTypeParam || 'business';
       let identity: any = null;
 
-      // If phone is provided, try to get vendor identity
-      if (phone) {
-        const identities = await select('vendor_identity', { phone });
-        if (identities.length > 0) {
-          identity = identities[0];
+      // If vendorIdentityId is provided, fetch that identity directly (primary/source of truth)
+      if (vendorIdentityIdParam) {
+        const byId = await query(
+          `SELECT *
+           FROM vendor_identity
+           WHERE id = $1::uuid
+             AND COALESCE(is_deleted, false) = false
+           LIMIT 1`,
+          [vendorIdentityIdParam]
+        );
+        if (byId.rows?.length) {
+          identity = byId.rows[0];
+        }
+      }
+
+      // If phone is provided and identity not set yet, get the most relevant active identity
+      if (!identity && phone) {
+        const result = await query(
+          `SELECT *
+           FROM vendor_identity vi
+           WHERE vi.phone = $1
+             AND COALESCE(vi.is_deleted, false) = false
+           ORDER BY 
+             (vi.onboarding_status IN ('ROLE_PENDING','FORM_PENDING','INIT')) DESC,
+             vi.updated_at DESC NULLS LAST,
+             vi.created_at DESC NULLS LAST
+           LIMIT 1`,
+          [phone]
+        );
+        if (result.rows?.length) {
+          identity = result.rows[0];
+        }
+      }
+
+      if (identity) {
           // Use identity values if available, fallback to query params
           selectedRoleId = identity.selected_role_id || roleIdParam;
           vendorType = identity.vendor_type || vendorTypeParam || 'business';
-        }
       }
 
       // If still no role ID, return default form schema
@@ -311,17 +341,19 @@ export function registerVendorOnboardingFixes(app: Hono) {
 
       // ✅ NEW: Import and merge KYC fields for the role (same as admin endpoint)
       try {
-        const { 
-          getKYCFieldsForRole, 
-          ROLE_KYC_CONFIGS, 
-          KYC_SECTIONS 
-        } = await import('../lib/kyc-form-fields');
+        // Load KYC helpers without static import to avoid build-time resolution issues
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const req = eval('require');
+        const mod = req('../../lib/kyc-form-fields');
+        const getKYCFieldsForRole = mod?.getKYCFieldsForRole;
+        const ROLE_KYC_CONFIGS = mod?.ROLE_KYC_CONFIGS || {};
+        const KYC_SECTIONS = mod?.KYC_SECTIONS || [];
         
         // Get KYC fields for this role and vendor type
-        let kycFields = getKYCFieldsForRole(roleName, vendorType as 'solo' | 'business');
+        let kycFields = getKYCFieldsForRole ? getKYCFieldsForRole(roleName, vendorType as 'solo' | 'business') : [];
         if (kycFields.length === 0) {
           // Try without vendor type
-          kycFields = getKYCFieldsForRole(roleName);
+          kycFields = getKYCFieldsForRole ? getKYCFieldsForRole(roleName) : [];
         }
         
         if (kycFields.length > 0) {
@@ -496,6 +528,17 @@ export function registerVendorOnboardingFixes(app: Hono) {
           });
           
           fields = Array.from(finalFieldsMap.values());
+
+          // ✅ STRICT SANITIZATION: Remove any generic placeholder fields (new_field/newfield/new-field)
+          const invalidPlaceholderNames = new Set(['new_field', 'newfield', 'new-field']);
+          const beforeSanitize = fields.length;
+          fields = fields.filter((f: any) => {
+            const fn = (f.fieldName || f.name || '').toLowerCase().trim();
+            return !invalidPlaceholderNames.has(fn);
+          });
+          if (fields.length !== beforeSanitize) {
+            console.log(`[FORM SCHEMA] Removed ${beforeSanitize - fields.length} generic placeholder field(s)`);
+          }
           
           console.log(`[FORM SCHEMA] Total fields after aggressive deduplication: ${fields.length} (IDs: ${seenIds.size}, FieldNames: ${seenFieldNames.size}, Semantic: ${seenSemanticKeys.size})`);
         }
@@ -503,6 +546,19 @@ export function registerVendorOnboardingFixes(app: Hono) {
         console.error('[FORM SCHEMA] Error loading KYC fields:', kycError?.message || kycError);
         // Continue with fields from database only
       }
+
+      // ✅ GLOBAL SANITIZATION: Always remove generic placeholders, even if KYC loading failed
+      try {
+        const invalidPlaceholderNames = new Set(['new_field', 'newfield', 'new-field']);
+        const before = fields.length;
+        fields = (fields || []).filter((f: any) => {
+          const fn = (f?.fieldName || f?.name || '').toLowerCase().trim();
+          return !invalidPlaceholderNames.has(fn);
+        });
+        if (before !== fields.length) {
+          console.log(`[FORM SCHEMA] (global) Removed ${before - fields.length} generic placeholder field(s)`);
+        }
+      } catch {}
 
       // Filter active fields only
       const activeFields = fields.filter((f: any) => f.isActive !== false);
@@ -525,13 +581,16 @@ export function registerVendorOnboardingFixes(app: Hono) {
       // ✅ NEW: Use KYC-aware section grouping if KYC fields were loaded
       let sections: any[];
       try {
-        const { ROLE_KYC_CONFIGS, KYC_SECTIONS } = await import('../lib/kyc-form-fields');
+        // Load KYC sections metadata without static import to avoid build-time resolution issues
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const req = eval('require');
+        const mod = req('../../lib/kyc-form-fields');
+        const ROLE_KYC_CONFIGS = mod?.ROLE_KYC_CONFIGS || {};
+        const KYC_SECTIONS = mod?.KYC_SECTIONS || [];
         const roleConfig = ROLE_KYC_CONFIGS[roleName] || 
                           ROLE_KYC_CONFIGS[`${roleName}_solo`] || 
                           ROLE_KYC_CONFIGS[`${roleName}_business`];
         const roleSections = roleConfig?.sections || KYC_SECTIONS;
-        
-        // Use KYC-aware section grouping
         sections = getSectionsFromFieldsWithKYC(activeFields, roleSections);
       } catch {
         // Fallback to basic section grouping
@@ -657,9 +716,13 @@ export function registerVendorOnboardingFixes(app: Hono) {
       if (!application || !application.rows || application.rows.length === 0) {
         // Try to find by vendor_id in vendors table
         const vendorRecord = await query(
-          `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
+          `SELECT v.*, vi.phone as vi_phone, va.id as application_id, va.status as app_status, va.submitted_at
            FROM vendors v
-           LEFT JOIN vendor_identity vi ON v.phone = vi.phone
+           LEFT JOIN LATERAL (
+             SELECT id, phone FROM vendor_identity
+             WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+             ORDER BY created_at DESC LIMIT 1
+           ) vi ON true
            LEFT JOIN vendor_onboarding_applications va ON vi.id = va.vendor_identity_id
            WHERE v.id = $1
            ORDER BY va.created_at DESC

@@ -104,6 +104,7 @@ const customExtensionResolvePlugin = {
   },
 };
 
+// Build API handler bundle
 esbuild.build({
   entryPoints: ['src/handler/index.ts'],
   bundle: true,
@@ -166,6 +167,51 @@ esbuild.build({
   
   // Error handling
 }).catch((error) => {
-  console.error('Build failed:', error);
+  console.error('Build failed (api handler):', error);
+  process.exit(1);
+});
+
+// Build Loyalty Events Consumer bundle
+esbuild.build({
+  entryPoints: ['src/handlers/loyalty-events-consumer.ts'],
+  bundle: true,
+  platform: 'node',
+  target: 'node18',
+  outfile: 'dist/loyalty-consumer.js',
+  plugins: [apiContractsResolvePlugin, customExtensionResolvePlugin],
+  external: [
+    '@aws-sdk/*',
+    'aws-lambda',
+    'pg-native',
+    '@opensearch-project/opensearch',
+    '@opensearch-project/opensearch/aws',
+    'firebase-admin',
+  ],
+  packages: 'bundle',
+  format: 'cjs',
+  sourcemap: !isProduction,
+  minify: isProduction,
+  nodePaths: [
+    path.resolve(__dirname, 'node_modules'),
+    path.resolve(__dirname, '../../node_modules'),
+    path.resolve(__dirname, '../../packages/api-contracts/dist'),
+  ],
+  alias: {
+    '@warmpawz/api-contracts': path.resolve(__dirname, '../../packages/api-contracts/dist/index.js'),
+    '@warmpawz/api-contracts/auth': path.resolve(__dirname, '../../packages/api-contracts/dist/auth.js'),
+    '@warmpawz/api-contracts/bookings': path.resolve(__dirname, '../../packages/api-contracts/dist/bookings.js'),
+    '@warmpawz/api-contracts/vendors': path.resolve(__dirname, '../../packages/api-contracts/dist/vendors.js'),
+    '@warmpawz/api-contracts/customers': path.resolve(__dirname, '../../packages/api-contracts/dist/customers.js'),
+    '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
+    '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
+    '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
+  },
+  logLevel: isProduction ? 'warning' : 'info',
+  color: true,
+}).catch((error) => {
+  console.error('Build failed (loyalty consumer):', error);
   process.exit(1);
 });

@@ -7,6 +7,7 @@
  * - Shiprocket status updates
  * - Delhivery status updates
  * - Dunzo delivery updates
+ * - Pidge store-channel status (ecommerce shipments + pharmacy/meal delivery_tracking)
  * 
  * Also handles auto-shipment creation and notifications
  * 
@@ -17,6 +18,13 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
+import {
+  getPidgeCredentials,
+  getPidgeOrderDefaults,
+  buildPidgeOrderPayloadFromSimplified,
+  pidgeCreateOrder,
+  extractPidgeOrderIdMap,
+} from '../lib/services/pidge-logistics';
 
 // Status mappings for different partners
 const SHIPROCKET_STATUS_MAP: Record<string, string> = {
@@ -45,6 +53,138 @@ const DELHIVERY_STATUS_MAP: Record<string, string> = {
   'Returned': 'returned',
   'Cancelled': 'cancelled',
 };
+
+/** Pidge fulfillment.status → internal shipment status (aligned with Shiprocket-style keys). */
+const PIDGE_FULFILLMENT_STATUS_MAP: Record<string, string> = {
+  CANCELLED: 'cancelled',
+  CREATED: 'awb_generated',
+  OUT_FOR_PICKUP: 'pickup_scheduled',
+  REACHED_PICKUP: 'pickup_scheduled',
+  PICKED_UP: 'picked_up',
+  IN_TRANSIT: 'in_transit',
+  OUT_FOR_DELIVERY: 'out_for_delivery',
+  REACHED_DELIVERY: 'out_for_delivery',
+  DELIVERED: 'delivered',
+  DISPOSED: 'delivered',
+  UNDELIVERED: 'out_for_delivery',
+  RTO_OUT_FOR_DELIVERY: 'rto_initiated',
+  RTO_UNDELIVERED: 'rto_initiated',
+  RTO_DELIVERED: 'returned',
+  LOST: 'lost',
+  DAMAGED: 'damaged',
+};
+
+/** Pidge parent order status (lowercase) when fulfillment block missing. */
+const PIDGE_PARENT_STATUS_MAP: Record<string, string> = {
+  pending: 'pending',
+  fulfilled: 'in_transit',
+  completed: 'delivered',
+  cancelled: 'cancelled',
+};
+
+/** shipments.status CHECK (legacy) allows only these values in many DBs. */
+function coercePidgeStatusForShipmentsTable(status: string): string {
+  const allowed = new Set([
+    'created',
+    'awb_generated',
+    'picked_up',
+    'in_transit',
+    'delivered',
+    'returned',
+    'cancelled',
+  ]);
+  if (allowed.has(status)) return status;
+  const map: Record<string, string> = {
+    pending: 'created',
+    pickup_scheduled: 'awb_generated',
+    out_for_delivery: 'in_transit',
+    unknown: 'in_transit',
+    rto_initiated: 'returned',
+    lost: 'cancelled',
+    damaged: 'cancelled',
+  };
+  return map[status] || 'in_transit';
+}
+
+/** Map Pidge fulfillment-derived status to delivery_tracking.status (hyperlocal). */
+function mapPidgeNormalizedToDeliveryTrackingStatus(normalized: string): string {
+  switch (normalized) {
+    case 'delivered':
+      return 'delivered';
+    case 'picked_up':
+      return 'picked_up';
+    case 'cancelled':
+      return 'failed';
+    case 'in_transit':
+    case 'out_for_delivery':
+    case 'unknown':
+      return 'on_the_way';
+    default:
+      return 'heading_to_pickup';
+  }
+}
+
+/** Map Pidge status to pharmacy_orders / meal_orders status when applicable. */
+function mapPidgeNormalizedToPharmacyMealOrderStatus(normalized: string): string | null {
+  switch (normalized) {
+    case 'delivered':
+      return 'delivered';
+    case 'picked_up':
+      return 'picked_up';
+    case 'cancelled':
+      return 'cancelled';
+    case 'in_transit':
+    case 'out_for_delivery':
+    case 'unknown':
+      return 'on_the_way';
+    case 'awb_generated':
+    case 'pickup_scheduled':
+    case 'pending':
+      return 'ready_for_pickup';
+    default:
+      return null;
+  }
+}
+
+function buildHyperlocalLineItemsForPidge(orderType: string, order: any): Record<string, unknown>[] {
+  if (orderType === 'pharmacy') {
+    let raw = order.items;
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw || '[]');
+      } catch {
+        raw = [];
+      }
+    }
+    const arr = Array.isArray(raw) ? raw : [];
+    if (arr.length === 0) {
+      return [
+        {
+          name: 'Pharmacy order',
+          sku: 'pharmacy',
+          quantity: 1,
+          price: Number(order.subtotal || order.total_amount || 0),
+        },
+      ];
+    }
+    return arr.map((it: Record<string, unknown>) => ({
+      name: String(it.medicine_name || it.name || it.product_name || 'Item'),
+      sku: String(it.sku || it.id || ''),
+      quantity: Number(it.quantity ?? 1) || 1,
+      price: Number(it.unit_price ?? it.price ?? it.total ?? 0),
+    }));
+  }
+
+  const qty = Number(order.quantity || 1) || 1;
+  return [
+    {
+      name: 'Meal order',
+      sku: String(order.meal_plan_id || 'meal'),
+      quantity: qty,
+      price: Number(order.subtotal || order.total_amount || 0),
+    },
+  ];
+}
 
 export function registerLogisticsWebhookEndpoints(app: Hono) {
   
@@ -349,6 +489,244 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
   });
 
   // ============================================================================
+  // PIDGE WEBHOOK (store channel — status / fulfillment updates)
+  // ============================================================================
+
+  /**
+   * GET /webhooks/pidge
+   * Dummy/reference URL helper: shows the path to register in Pidge as "client" webhook URL.
+   * Pidge will POST JSON to POST /webhooks/pidge (same keys as GET order API, not wrapped in data).
+   */
+  app.get('/webhooks/pidge', (c) => {
+    const base = (
+      process.env.PUBLIC_API_BASE_URL ||
+      process.env.API_BASE_URL ||
+      'https://YOUR_API_GATEWAY_OR_DOMAIN'
+    ).replace(/\/$/, '');
+    const clientUrl = `${base}/webhooks/pidge`;
+    return c.json({
+      ok: true,
+      message:
+        'Register clientUrl in Pidge (Channel integration → Webhook URL). For local dev use ngrok/cloudflared so Pidge can reach this host.',
+      clientUrl,
+      method: 'POST',
+      note: 'Optional: set PIDGE_WEBHOOK_BEARER_TOKEN on the server, then send Authorization: Bearer <same token> on webhook requests.',
+    });
+  });
+
+  /**
+   * POST /webhooks/pidge
+   * Ingest Pidge webhook payloads (Bearer optional if PIDGE_WEBHOOK_BEARER_TOKEN is unset).
+   */
+  app.post('/webhooks/pidge', async (c) => {
+    try {
+      const bearerSecret = process.env.PIDGE_WEBHOOK_BEARER_TOKEN;
+      if (bearerSecret) {
+        const auth = c.req.header('Authorization') || '';
+        const expected = `Bearer ${bearerSecret}`;
+        if (auth !== expected) {
+          return c.json({ error: 'Unauthorized' }, 401);
+        }
+      }
+
+      const payload = (await c.req.json()) as Record<string, unknown>;
+      console.log('[PIDGE WEBHOOK] Received:', JSON.stringify(payload).slice(0, 4000));
+
+      const pidgeId =
+        payload.id !== undefined && payload.id !== null ? String(payload.id) : '';
+      const referenceId =
+        payload.reference_id !== undefined && payload.reference_id !== null
+          ? String(payload.reference_id)
+          : '';
+
+      if (!pidgeId) {
+        return c.json({ error: 'Missing id' }, 400);
+      }
+
+      const fulfillment = (payload.fulfillment || {}) as Record<string, unknown>;
+      const ffStatus =
+        typeof fulfillment.status === 'string' ? fulfillment.status.toUpperCase() : '';
+      const parentStatus = String(payload.status || '').toLowerCase();
+
+      let normalizedStatus =
+        (ffStatus && PIDGE_FULFILLMENT_STATUS_MAP[ffStatus]) ||
+        PIDGE_PARENT_STATUS_MAP[parentStatus] ||
+        'unknown';
+
+      const logs = Array.isArray(fulfillment.logs) ? fulfillment.logs : [];
+      const lastLog = logs.length > 0 ? (logs[logs.length - 1] as Record<string, unknown>) : null;
+      const rider = (fulfillment.rider || lastLog?.rider) as Record<string, unknown> | undefined;
+      const lastLocation = lastLog?.location as Record<string, unknown> | undefined;
+
+      const trackCode =
+        typeof fulfillment.track_code === 'string' ? fulfillment.track_code : null;
+
+      let shipment: any = null;
+
+      const byShipment = await query(
+        `SELECT * FROM shipments 
+         WHERE logistics_partner = 'pidge' 
+           AND (shipment_id = $1 OR shipment_id::text = $1)
+         LIMIT 1`,
+        [pidgeId]
+      );
+      if (byShipment.rows.length > 0) {
+        shipment = byShipment.rows[0];
+      }
+
+      if (!shipment && referenceId) {
+        const byRef = await query(
+          `SELECT s.* FROM shipments s
+           INNER JOIN orders o ON o.id = s.order_id
+           WHERE s.logistics_partner = 'pidge'
+             AND (o.order_number = $1 OR o.id::text = $1 OR s.awb_code = $1)
+           LIMIT 1`,
+          [referenceId]
+        );
+        if (byRef.rows.length > 0) shipment = byRef.rows[0];
+      }
+
+      if (!shipment) {
+        const dtResult = await query(
+          `SELECT * FROM delivery_tracking
+           WHERE logistics_partner = 'pidge'
+             AND (external_task_id = $1 OR external_task_id::text = $1)
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [pidgeId]
+        );
+        if (dtResult.rows.length > 0) {
+          const tracking = dtResult.rows[0];
+          const dtStatus = mapPidgeNormalizedToDeliveryTrackingStatus(normalizedStatus);
+          const riderName =
+            rider && typeof rider.name === 'string' ? rider.name : undefined;
+          const riderPhone =
+            rider && (rider.mobile != null || rider.phone != null)
+              ? String(rider.mobile ?? rider.phone)
+              : undefined;
+
+          await update('delivery_tracking', { id: tracking.id }, {
+            status: dtStatus,
+            tracking_url: trackCode || tracking.tracking_url,
+            delivery_person_name: riderName || tracking.delivery_person_name,
+            delivery_person_phone: riderPhone || tracking.delivery_person_phone,
+            current_lat:
+              lastLocation && typeof lastLocation.latitude === 'number'
+                ? lastLocation.latitude
+                : tracking.current_lat,
+            current_lng:
+              lastLocation && typeof lastLocation.longitude === 'number'
+                ? lastLocation.longitude
+                : tracking.current_lng,
+            picked_up_at:
+              normalizedStatus === 'picked_up'
+                ? new Date().toISOString()
+                : tracking.picked_up_at,
+            delivered_at:
+              normalizedStatus === 'delivered'
+                ? new Date().toISOString()
+                : tracking.delivered_at,
+            updated_at: new Date().toISOString(),
+          });
+
+          const orderTable = tracking.pharmacy_order_id ? 'pharmacy_orders' : 'meal_orders';
+          const hyperlocalOrderId = tracking.pharmacy_order_id || tracking.meal_order_id;
+          const orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalizedStatus);
+          if (hyperlocalOrderId && orderStatus) {
+            await update(orderTable, { id: hyperlocalOrderId }, {
+              status: orderStatus,
+              updated_at: new Date().toISOString(),
+            });
+          }
+
+          return c.json({
+            success: true,
+            message: 'Pidge webhook processed (hyperlocal)',
+            deliveryTrackingId: tracking.id,
+            status: normalizedStatus,
+          });
+        }
+
+        console.warn('[PIDGE WEBHOOK] Shipment not found for:', { pidgeId, referenceId });
+        return c.json({ success: true, message: 'Shipment not found, ignored' });
+      }
+
+      const previousStatus = shipment.status;
+      const shipmentRowStatus = coercePidgeStatusForShipmentsTable(normalizedStatus);
+
+      await update('shipments', { id: shipment.id }, {
+        status: shipmentRowStatus,
+        awb_code: trackCode || shipment.awb_code,
+        current_location:
+          lastLocation &&
+          typeof lastLocation.latitude === 'number' &&
+          typeof lastLocation.longitude === 'number'
+            ? `${lastLocation.latitude},${lastLocation.longitude}`
+            : shipment.current_location,
+        delivered_at:
+          normalizedStatus === 'delivered' ? new Date().toISOString() : shipment.delivered_at,
+        picked_up_at:
+          normalizedStatus === 'picked_up' ? new Date().toISOString() : shipment.picked_up_at,
+        updated_at: new Date().toISOString(),
+      });
+
+      try {
+        const eventDesc =
+          (lastLog?.remark as string) ||
+          (lastLog?.status as string) ||
+          ffStatus ||
+          parentStatus ||
+          'update';
+        await insert('shipment_tracking_events', {
+          shipment_id: shipment.id,
+          event_type: (lastLog?.status as string) || ffStatus || parentStatus,
+          event_description: eventDesc,
+          location:
+            lastLocation &&
+            typeof lastLocation.latitude === 'number' &&
+            typeof lastLocation.longitude === 'number'
+              ? `${lastLocation.latitude},${lastLocation.longitude}`
+              : null,
+          event_time: lastLog?.timestamp
+            ? new Date(String(lastLog.timestamp)).toISOString()
+            : new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn(
+          '[PIDGE WEBHOOK] Failed to insert tracking event:',
+          err instanceof Error ? err.message : err
+        );
+      }
+
+      if (shipment.order_id) {
+        await updateOrderStatus(shipment.order_id, normalizedStatus).catch((e) => {
+          console.error('[PIDGE WEBHOOK] Error updating order:', e);
+        });
+      }
+
+      await sendShipmentNotification(shipment.order_id, normalizedStatus, previousStatus, {
+        awb: trackCode || undefined,
+        location:
+          rider && typeof rider.name === 'string'
+            ? `${rider.name}${rider.mobile ? ` (${rider.mobile})` : ''}`
+            : undefined,
+      }).catch((e) => {
+        console.error('[PIDGE WEBHOOK] Error sending notification:', e);
+      });
+
+      return c.json({
+        success: true,
+        message: 'Pidge webhook processed',
+        shipmentId: shipment.id,
+        status: normalizedStatus,
+      });
+    } catch (error: any) {
+      console.error('[PIDGE WEBHOOK] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
   // AUTO-SHIPMENT CREATION (Called after payment success)
   // ============================================================================
   
@@ -414,7 +792,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       const logisticsType = order.logistics_type || 'warmpawz'; // warmpawz, vendor, shiprocket, delhivery
 
       if (orderType === 'pharmacy' || orderType === 'meal') {
-        // For pharmacy/meal - use hyperlocal delivery (Dunzo or internal fleet)
+        // For pharmacy/meal - hyperlocal: Pidge when configured, else internal fleet
         return await createHyperlocalDelivery(c, {
           orderId,
           orderType,
@@ -1199,10 +1577,6 @@ async function createHyperlocalDelivery(c: any, params: {
   const { orderId, orderType, order, vendorId, customer, shippingAddress } = params;
 
   try {
-    // Check if Dunzo is configured
-    const settings = await select('platform_settings', { setting_key: 'platform:integrations:dunzo' });
-    const dunzoConfig = settings.length > 0 ? (settings[0].setting_value as any) : null;
-
     const orderTable = orderType === 'pharmacy' ? 'pharmacy_orders' : 'meal_orders';
     const orderIdField = orderType === 'pharmacy' ? 'pharmacy_order_id' : 'meal_order_id';
 
@@ -1220,34 +1594,147 @@ async function createHyperlocalDelivery(c: any, params: {
       });
     }
 
-    if (dunzoConfig?.enabled && dunzoConfig?.apiKey) {
-      // Create Dunzo task
-      // For now, create internal tracking and mark for Dunzo pickup
-      const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
-
-      const tracking = await insert('delivery_tracking', {
-        [orderIdField]: orderId,
-        logistics_partner_id: null, // Will be assigned when Dunzo picks up
-        status: 'pending_pickup',
-        delivery_otp: deliveryOtp,
-        metadata: { usesDunzo: true },
-      });
-
-      // Update order
-      await update(orderTable, { id: orderId }, {
-        status: 'ready_for_pickup',
-        logistics_type: 'dunzo',
-      });
-
-      return c.json({
-        success: true,
-        trackingId: tracking[0]?.id,
-        deliveryOtp,
-        message: 'Queued for Dunzo pickup',
-      });
+    let pidgeConfigured = false;
+    try {
+      await getPidgeCredentials();
+      pidgeConfigured = true;
+    } catch {
+      pidgeConfigured = false;
     }
 
-    // Use internal fleet or vendor delivery
+    if (pidgeConfigured) {
+      const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+      let pickupBlock: Record<string, unknown> = {
+        name: 'WarmPawz Partner',
+        mobile: '',
+        email: '',
+        address: {
+          address_line_1: '',
+          city: '',
+          state: '',
+          pincode: '',
+          country: 'India',
+        },
+      };
+
+      if (vendorId) {
+        const vendors = await select('vendors', { id: vendorId });
+        const v = vendors[0];
+        if (v) {
+          pickupBlock = {
+            name: String(v.business_name || v.owner_name || 'Store'),
+            mobile: String(v.phone || ''),
+            email: String(v.email || ''),
+            address: {
+              address_line_1: String(v.address || ''),
+              city: String(v.city || ''),
+              state: String(v.state || ''),
+              pincode: String(v.pincode || ''),
+              landmark: v.landmark ? String(v.landmark) : undefined,
+              country: 'India',
+              latitude: v.latitude != null ? Number(v.latitude) : undefined,
+              longitude: v.longitude != null ? Number(v.longitude) : undefined,
+            },
+          };
+        }
+      }
+
+      const addr = shippingAddress && typeof shippingAddress === 'object' ? shippingAddress : {};
+      const receiverBlock: Record<string, unknown> = {
+        name: String(
+          customer?.full_name || (addr as any).name || order.customer_phone || 'Customer'
+        ),
+        mobile: String(
+          customer?.phone || order.customer_phone || (addr as any).phone || ''
+        ),
+        email: String(customer?.email || (addr as any).email || ''),
+        address: {
+          address_line_1: String(
+            (addr as any).address ||
+              (addr as any).address_line_1 ||
+              (addr as any).line1 ||
+              ''
+          ),
+          city: String((addr as any).city || ''),
+          state: String((addr as any).state || ''),
+          pincode: String((addr as any).pincode || (addr as any).zip || ''),
+          country: String((addr as any).country || 'India'),
+          latitude:
+            (addr as any).lat ??
+            (addr as any).latitude ??
+            order.delivery_lat ??
+            order.customer_lat,
+          longitude:
+            (addr as any).lng ??
+            (addr as any).longitude ??
+            order.delivery_lng ??
+            order.customer_lng,
+        },
+      };
+
+      const totalAmount = parseFloat(String(order.total_amount ?? '0')) || 0;
+      const codAmount =
+        order.payment_method === 'cod' ? parseFloat(String(order.total_amount ?? '0')) || 0 : 0;
+      const sourceOrderId = String(order.order_number || orderId).trim();
+
+      const simplified: Record<string, unknown> = {
+        orderId: sourceOrderId,
+        sourceOrderId,
+        referenceId: sourceOrderId,
+        sender: pickupBlock,
+        pickup: pickupBlock,
+        receiver: receiverBlock,
+        delivery: receiverBlock,
+        items: buildHyperlocalLineItemsForPidge(orderType, order),
+        billAmount: totalAmount,
+        codAmount,
+      };
+
+      try {
+        const defaults = await getPidgeOrderDefaults();
+        const pidgePayload = buildPidgeOrderPayloadFromSimplified(simplified, defaults);
+        const { json } = await pidgeCreateOrder(pidgePayload);
+        const idMap = extractPidgeOrderIdMap(json);
+        const firstSource = Object.keys(idMap)[0];
+        const firstPidgeId = firstSource ? idMap[firstSource] : null;
+
+        if (firstPidgeId) {
+          const tracking = await insert('delivery_tracking', {
+            [orderIdField]: orderId,
+            logistics_partner_id: null,
+            external_task_id: firstPidgeId,
+            logistics_partner: 'pidge',
+            status: 'assigned',
+            delivery_otp: deliveryOtp,
+            metadata: {
+              usesPidge: true,
+              pidge_order_id: firstPidgeId,
+              reference_id: sourceOrderId,
+            },
+          });
+
+          await update(orderTable, { id: orderId }, {
+            status: 'ready_for_pickup',
+            logistics_type: 'pidge',
+          });
+
+          return c.json({
+            success: true,
+            trackingId: tracking[0]?.id,
+            deliveryOtp,
+            pidgeOrderId: firstPidgeId,
+            message: 'Pidge hyperlocal order created',
+          });
+        }
+
+        console.warn('[HYPERLOCAL PIDGE] Create succeeded but no order id in response data:', json);
+      } catch (pidgeErr: any) {
+        console.error('[HYPERLOCAL PIDGE] Create failed, falling back to internal fleet:', pidgeErr);
+      }
+    }
+
+    // Internal fleet or vendor delivery (Pidge not configured or create failed)
     const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
 
     const tracking = await insert('delivery_tracking', {

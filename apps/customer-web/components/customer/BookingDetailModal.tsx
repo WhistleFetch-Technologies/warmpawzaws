@@ -1019,21 +1019,19 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Upload Documents - Only for vet, diagnostics, nutritionist */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && (
-                <Button
-                  onClick={() => setShowPrescriptionHistory(true)}
-                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Upload className="w-5 h-5" />
-                  Upload Documents
-                  {(prescription || medicalRecords.length > 0) && (
-                    <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
-                      {medicalRecords.length + (prescription ? 1 : 0)} uploaded
-                    </span>
-                  )}
-                </Button>
-              )}
+              {/* Upload Documents - Always visible */}
+              <Button
+                onClick={() => setShowPrescriptionHistory(true)}
+                className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+              >
+                <Upload className="w-5 h-5" />
+                Upload Documents
+                {(prescription || medicalRecords.length > 0) && (
+                  <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
+                    {medicalRecords.length + (prescription ? 1 : 0)} uploaded
+                  </span>
+                )}
+              </Button>
 
               {/* Medical Records & Lab Reports - Only for vet/diagnostics/nutritionist */}
               {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && medicalRecords.length > 0 && (

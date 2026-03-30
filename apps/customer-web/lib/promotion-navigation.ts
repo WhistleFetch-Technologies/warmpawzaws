@@ -43,7 +43,9 @@ const SLUG_TO_SCREEN: Record<string, string> = {
   behaviourist: 'behaviorist',
   behaviorist: 'behaviorist',
   behavioral: 'behaviorist',
-  sitting: 'home-service-selection',
+  sitting: 'pet-sitter',
+  pet_sitter: 'pet-sitter',
+  'pet-sitter': 'pet-sitter',
 };
 
 /** Banner `service` prop values → same screen ids */
@@ -71,6 +73,9 @@ const CONTEXT_SERVICE_TO_SCREEN: Record<string, string> = {
   pharmacy: 'pharmacy',
   diagnostics: 'lab-diagnostics',
   'lab-diagnostics': 'lab-diagnostics',
+  sitting: 'pet-sitter',
+  pet_sitter: 'pet-sitter',
+  'pet-sitter': 'pet-sitter',
 };
 
 function norm(s: string): string {
@@ -178,6 +183,8 @@ const ROLE_ID_TO_SCREEN: Record<string, string> = {
   groomer: 'grooming',
   boarder: 'boarding',
   trainer: 'training',
+  pet_sitter: 'pet-sitter',
+  sitter: 'pet-sitter',
 };
 
 export type FeaturedVendorNavResult =

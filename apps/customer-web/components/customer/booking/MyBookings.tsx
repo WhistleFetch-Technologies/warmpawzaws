@@ -6,7 +6,7 @@ import {
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
   AlertCircle, RefreshCw, Eye, EyeOff, Package, ChevronRight,
   Key, XCircle, CalendarClock, Wallet, CreditCard, Phone, Star,
-  Navigation, MessageSquare
+  Navigation, MessageSquare, UtensilsCrossed,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
@@ -18,7 +18,6 @@ import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from '../BookingDetailModal';
 import { RateServiceModal } from '../RateServiceModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
-import { UtensilsCrossed } from 'lucide-react';
 
 interface BookingOccurrence {
   occurrenceId: string;
@@ -83,6 +82,11 @@ interface MyBookingsProps {
 
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
+  const effectivePhone =
+    phone ||
+    (typeof window !== 'undefined'
+      ? (localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '')
+      : '');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -96,7 +100,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const [cancellationReason, setCancellationReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [processing, setProcessing] = useState(false);
-  const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number } | null>(null);
+  const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number; source?: string; policyApplied?: boolean } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
 
@@ -105,6 +109,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
 
   useEffect(() => {
+    console.log('[MyBookings] init', {
+      phoneProp: phone,
+      effectivePhone,
+      hasPhone: Boolean(effectivePhone),
+    });
     loadBookings();
     // ✅ FIX: Load user profile for header display
     const loadUserProfile = async () => {
@@ -119,10 +128,10 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         console.error('[MyBookings] Error loading user profile:', error);
       }
     };
-    if (phone) {
+    if (effectivePhone) {
       loadUserProfile();
     }
-  }, [phone]);
+  }, [phone, effectivePhone]);
 
   useEffect(() => {
     if (initialBookingId && bookings.length > 0) {
@@ -136,7 +145,27 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<any>(`/customer/${phone}/bookings`);
+
+      if (!phone && !effectivePhone) {
+        console.warn('[MyBookings] No phone available; skipping bookings fetch');
+        setBookings([]);
+        return;
+      }
+
+      // Prefer phone-convenience endpoint (normalizes phone formats like +91 / 10-digit).
+      let result: any;
+      try {
+        result = await apiClient.get<any>(
+          `/customer/bookings?phone=${encodeURIComponent(effectivePhone)}`
+        );
+      } catch (primaryError) {
+        // Backward compatibility fallback for deployments where convenience route is unavailable.
+        console.warn('[MyBookings] Primary bookings endpoint failed, falling back:', primaryError);
+        result = await apiClient.get<any>(
+          `/customer/${encodeURIComponent(effectivePhone)}/bookings`
+        );
+      }
+
       const rawBookings = extractBookingsArray(result);
 
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
@@ -261,6 +290,13 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         };
       });
 
+      // Sort: most recent bookings first
+      mappedBookings.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
       setBookings(mappedBookings.filter((row) => row.bookingId));
     } catch (error) {
       console.error('Error loading bookings:', error);
@@ -281,7 +317,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const loadRefundPreview = async (booking: Booking) => {
     try {
       if (booking.paymentStatus !== 'paid') {
-        setEstimatedRefund({ percentage: 0, amount: 0 });
+        setEstimatedRefund({ percentage: 0, amount: 0, source: 'default', policyApplied: false });
         return;
       }
       const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.bookingId }) as any;
@@ -291,13 +327,15 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         setEstimatedRefund({
           percentage: refund.refundPercentage,
           amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
+          source: refund.source,
+          policyApplied: refund.policyApplied,
         });
       } else {
-        setEstimatedRefund({ percentage: 0, amount: 0 });
+        setEstimatedRefund({ percentage: 0, amount: 0, source: 'default', policyApplied: false });
       }
     } catch (error) {
       console.error('Error loading refund preview:', error);
-      setEstimatedRefund({ percentage: 0, amount: 0 });
+      setEstimatedRefund({ percentage: 0, amount: 0, source: 'default', policyApplied: false });
     }
   };
 
@@ -840,9 +878,17 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               <div className="mb-4 p-4 bg-blue-50 rounded-lg">
                 <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
                 <p className="text-sm text-blue-700">
-                  Based on our refund policy, you will receive{' '}
-                  <span className="font-semibold">{estimatedRefund.percentage}%</span> refund.
+                  {(estimatedRefund.policyApplied && estimatedRefund.source !== 'default')
+                    ? 'Refund as per policy'
+                    : 'Estimated refund'}{' '}
+                  <span className="font-semibold">{estimatedRefund.percentage}%</span>
                 </p>
+                {estimatedRefund.source && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Source: {(estimatedRefund.source || '').replace(/_/g, ' ')}
+                    {!estimatedRefund.policyApplied && ' (no policy configured)'}
+                  </p>
+                )}
                 <p className="text-lg font-bold text-blue-800 mt-1">
                   Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
                 </p>

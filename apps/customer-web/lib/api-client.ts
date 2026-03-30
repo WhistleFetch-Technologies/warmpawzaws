@@ -89,7 +89,7 @@ function getApiGatewayUrl(): string {
  * 1. window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx from env var)
  * 2. window.__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL (Next.js injected)
  * 3. process.env.NEXT_PUBLIC_API_BASE_URL (build-time)
- * 4. Default: http://localhost:3000
+ * 4. Default: environment-aware API Gateway (same as vendor-web) — avoids sending /public/* to the Next dev server (404)
  * 
  * Priority order for DEPLOYED (CloudFront):
  * 1. runtime-config.js (deploy-time, authoritative)
@@ -109,9 +109,8 @@ export function getApiBaseUrl(): string {
   
   let raw = '';
   
-  // LOCAL DEVELOPMENT: Prioritize environment variables over runtime config
-  // runtime-config.js detects localhost and intentionally doesn't set apiBaseUrl,
-  // allowing the environment variable (http://localhost:3000) to be used here.
+  // LOCAL DEVELOPMENT: Prioritize explicit API base env; otherwise call AWS API Gateway directly.
+  // Defaulting to localhost:3000 breaks routes like /public/policies/* (Next has no such page → 404).
   if (isLocalhost) {
     // 1. Check window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx from npm script)
     if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
@@ -125,9 +124,9 @@ export function getApiBaseUrl(): string {
     else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
       raw = process.env.NEXT_PUBLIC_API_BASE_URL;
     }
-    // 4. Default to localhost:3000 for local development (no fallback to AWS)
+    // 4. Fall back to API Gateway (matches vendor-web getApiBaseUrl)
     else {
-      raw = 'http://localhost:3000';
+      raw = getApiGatewayUrl();
     }
   } else {
     // When NOT on localhost (deployed environments like CloudFront):
@@ -163,13 +162,12 @@ export function getApiBaseUrl(): string {
   // Debug log in UAT mode
   if (typeof window !== 'undefined' && isUatMode()) {
     if (isLocalhost && !result) {
-      console.warn('⚠️ [UAT] API Base URL is invalid for localhost. Expected http://localhost:3000');
+      console.warn('⚠️ [UAT] API Base URL is empty for localhost; using API Gateway fallback');
     }
   }
   
-  // For localhost, return the result directly (no fallback to AWS)
   if (isLocalhost) {
-    return result || 'http://localhost:3000';
+    return result || getApiGatewayUrl();
   }
   
   // For non-localhost, use fallback to API Gateway
@@ -456,8 +454,8 @@ export class ApiClient {
           };
         }
         
-        // Handle 401 by clearing token and redirecting to auth
-        if (response.status === 401) {
+        // Handle 401 by clearing token and redirecting to auth (skip for unauthenticated public reads, e.g. legal policies on /auth)
+        if (response.status === 401 && !path.startsWith('/public/')) {
           if (typeof window !== 'undefined') {
             localStorage.removeItem('authToken');
             localStorage.removeItem('customerPhone');

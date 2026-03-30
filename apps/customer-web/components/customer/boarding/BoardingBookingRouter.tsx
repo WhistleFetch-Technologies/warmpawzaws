@@ -36,6 +36,8 @@ interface BoardingBookingRouterProps {
   serviceStyle?: string;
   price?: number;
   duration?: number;
+  /** When set, loads `sitting` vendor services and uses at-home booking semantics (no facility rooms). */
+  flowVariant?: "boarding" | "pet_sitting";
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -76,10 +78,17 @@ export function BoardingBookingRouter({
   serviceStyle,
   price,
   duration,
+  flowVariant = "boarding",
   onBack, 
   onNavigate, 
   onViewBooking 
 }: BoardingBookingRouterProps) {
+  const isPetSitting = flowVariant === "pet_sitting";
+  const apiCategory = isPetSitting ? "sitting" : "boarding";
+  const packageServiceType = isPetSitting ? "sitting" : "boarding";
+  const flowTitle = isPetSitting ? "Pet Sitting" : "Pet Boarding";
+  const priceSuffix = isPetSitting ? "/visit" : "/night";
+
   // Service context logic
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
@@ -94,7 +103,14 @@ export function BoardingBookingRouter({
   }, [serviceId, serviceType, serviceStyle, step, hasServiceContext]);
 
   const [loading, setLoading] = useState(false);
-  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'overnight');
+  const [selectedServiceType, setSelectedServiceType] = useState(() => {
+    if (serviceStyle && serviceStyle !== "sitting" && serviceStyle !== "boarding") {
+      return serviceStyle;
+    }
+    if (isPetSitting) return "overnight_sitting";
+    if (serviceType === "daycare") return "daycare";
+    return "overnight";
+  });
   const [checkInDate, setCheckInDate] = useState('');
   const [checkOutDate, setCheckOutDate] = useState('');
   const [checkInTime, setCheckInTime] = useState('10:00');
@@ -135,19 +151,68 @@ export function BoardingBookingRouter({
     { id: 'daycare', name: 'Day Care', icon: Sun, price: 499, duration: 480, desc: 'Daily care & supervision', color: 'orange' },
   ];
 
+  const defaultPetSittingOptions = [
+    { id: 'overnight_sitting', name: 'Overnight sitting', icon: Moon, price: 899, duration: 1440, desc: 'Sitter stays overnight at your home', color: 'indigo' },
+    { id: 'day_sitting', name: 'Day visits', icon: Sun, price: 549, duration: 480, desc: 'Scheduled daytime check-ins', color: 'orange' },
+    { id: 'extended_home', name: 'Extended home stay', icon: Calendar, price: 1499, duration: 2880, desc: 'Multi-day in-home care', color: 'sky' },
+    { id: 'drop_in', name: 'Drop-in visits', icon: Clock, price: 249, duration: 45, desc: 'Quick feeding & potty breaks', color: 'rose' },
+  ];
+
+  const pickVendorServiceIcon = (styleRaw: string | undefined) => {
+    const st = (styleRaw || '').toLowerCase();
+    if (st.includes('overnight') || st.includes('night')) return Moon;
+    if (st.includes('day')) return Sun;
+    if (st.includes('drop') || st.includes('visit') || st.includes('check')) return Clock;
+    if (st.includes('extend')) return Calendar;
+    return isPetSitting ? Home : Sun;
+  };
+
+  const pickVendorServiceColor = (styleRaw: string | undefined): string => {
+    const st = (styleRaw || '').toLowerCase();
+    if (st.includes('overnight') || st.includes('night')) return 'indigo';
+    if (st.includes('day')) return 'orange';
+    if (st.includes('extend')) return 'sky';
+    if (st.includes('drop') || st.includes('visit')) return 'rose';
+    return isPetSitting ? 'sky' : 'orange';
+  };
+
+  const fallbackDefaults = isPetSitting ? defaultPetSittingOptions : defaultServiceTypeOptions;
+
   const serviceOptions = vendorServices.length > 0 
-    ? vendorServices.map(s => ({
+    ? vendorServices.map(s => {
+        const styleVal = s.serviceStyle || s.service_style;
+        return {
         id: s.id || s.serviceId,
         serviceId: s.serviceId || s.service_id,
         name: s.serviceName || s.service_name || s.name,
         price: s.price || 0,
         duration: s.duration || 1440,
         desc: s.description || '',
-        serviceStyle: s.serviceStyle || s.service_style,
-        icon: s.serviceStyle === 'overnight' ? Moon : Sun,
-        color: s.serviceStyle === 'overnight' ? 'indigo' : 'orange',
-      }))
-    : defaultServiceTypeOptions;
+        serviceStyle: styleVal,
+        icon: pickVendorServiceIcon(styleVal),
+        color: pickVendorServiceColor(styleVal),
+      };
+      })
+    : fallbackDefaults;
+
+  const selectedServiceOption = serviceOptions.find((s) => s.id === selectedServiceType);
+
+  /** Day visits & drop-ins: one calendar day + start/end time for pricing. */
+  const sittingSameDay =
+    isPetSitting &&
+    (['day_sitting', 'drop_in'].includes(selectedServiceType) ||
+      (() => {
+        const n = (selectedServiceOption?.name || '').toLowerCase();
+        if (/overnight|extended|multi[\s-]?day/.test(n)) return false;
+        return /drop|day\s*visit|daytime|day visit/.test(n);
+      })());
+
+  /** Overnight / extended: separate check-in & check-out dates (nights). */
+  const sittingMultiNight =
+    isPetSitting &&
+    !sittingSameDay &&
+    (['overnight_sitting', 'extended_home'].includes(selectedServiceType) ||
+      /overnight|extended|multi[\s-]?day/.test((selectedServiceOption?.name || '').toLowerCase()));
 
   const generateDates = () => {
     const dates = [];
@@ -173,14 +238,37 @@ export function BoardingBookingRouter({
       loadVendorServices();
       loadRooms();
     }
-  }, [phone, vendorId]);
+  }, [phone, vendorId, apiCategory]);
+
+  useEffect(() => {
+    if (vendorServices.length === 0) return;
+    const ids = vendorServices
+      .map((s) => s.id || s.serviceId)
+      .filter(Boolean) as string[];
+    if (ids.length > 0 && !ids.includes(selectedServiceType)) {
+      setSelectedServiceType(ids[0]);
+    }
+  }, [vendorServices]);
+
+  useEffect(() => {
+    if (step !== 'datetime' || !isPetSitting || !sittingSameDay) return;
+    if (checkInDate) setCheckOutDate(checkInDate);
+  }, [step, isPetSitting, sittingSameDay, checkInDate]);
+
+  useEffect(() => {
+    if (step !== 'datetime' || !isPetSitting || sittingSameDay || !checkInDate) return;
+    if (checkOutDate && checkOutDate > checkInDate) return;
+    const next = new Date(checkInDate);
+    next.setDate(next.getDate() + 1);
+    setCheckOutDate(next.toISOString().split('T')[0]);
+  }, [step, isPetSitting, sittingSameDay, checkInDate, checkOutDate]);
 
   const loadVendorServices = async () => {
     if (!vendorId) return;
     
     try {
       setLoading(true);
-      const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=boarding`) as any;
+      const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=${apiCategory}`) as any;
       if (servicesResponse.success && servicesResponse.services) {
         setVendorServices(servicesResponse.services);
       }
@@ -193,7 +281,11 @@ export function BoardingBookingRouter({
 
   const loadRooms = async () => {
     if (!vendorId) return;
-    
+    if (isPetSitting) {
+      setRooms([]);
+      return;
+    }
+
     try {
       const roomsResponse = await apiClient.get(`/vendor/${vendorId}/rooms`) as any;
       if (roomsResponse.success && roomsResponse.rooms) {
@@ -268,7 +360,7 @@ export function BoardingBookingRouter({
     
     try {
       const response = await apiClient.get<any>(
-        `/packages/check-for-booking?customerId=${customerId}&vendorId=${vendorId}&serviceType=boarding`
+        `/packages/check-for-booking?customerId=${customerId}&vendorId=${vendorId}&serviceType=${packageServiceType}`
       );
 
       if (response?.hasActivePackage && response?.package) {
@@ -299,8 +391,27 @@ export function BoardingBookingRouter({
     setUsePackageSession(false);
   };
 
+  const parseLocalDateTime = (dateStr: string, timeStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [hh, mm] = (timeStr || '0:0').split(':').map(Number);
+    return new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0).getTime();
+  };
+
+  /** Minutes between check-in and check-out (handles next-day end when checkout time is after midnight). */
+  const getBilledMinutes = () => {
+    if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) return 0;
+    const start = parseLocalDateTime(checkInDate, checkInTime);
+    let end = parseLocalDateTime(checkOutDate, checkOutTime);
+    if (end <= start) {
+      if (sittingSameDay && checkInDate === checkOutDate) return 0;
+      end += 24 * 60 * 60 * 1000;
+    }
+    return Math.round((end - start) / 60000);
+  };
+
   const calculateNights = () => {
     if (!checkInDate || !checkOutDate) return 0;
+    if (isPetSitting && sittingSameDay && checkInDate === checkOutDate) return 0;
     const start = new Date(checkInDate);
     const end = new Date(checkOutDate);
     const diffTime = Math.abs(end.getTime() - start.getTime());
@@ -308,6 +419,23 @@ export function BoardingBookingRouter({
   };
 
   const calculateTotalPrice = () => {
+    const opt = selectedServiceOption;
+    const unitPrice = Number(opt?.price ?? price ?? 0);
+
+    if (isPetSitting && sittingSameDay) {
+      const baseMins = Math.max(15, Number(opt?.duration) || 60);
+      const mins = getBilledMinutes();
+      if (mins < 1) return unitPrice;
+      const proportional = unitPrice * (mins / baseMins);
+      const floor = Math.min(unitPrice, Math.max(49, Math.round(unitPrice * 0.3)));
+      return Math.max(Math.round(proportional), floor);
+    }
+
+    if (isPetSitting) {
+      const nights = Math.max(1, calculateNights());
+      return Math.round(nights * unitPrice);
+    }
+
     const nights = calculateNights();
     const basePrice = selectedRoom?.pricePerNight || price || 0;
     return nights * basePrice;
@@ -341,6 +469,14 @@ export function BoardingBookingRouter({
       return;
     }
 
+    if (isPetSitting && sittingSameDay) {
+      const bm = getBilledMinutes();
+      if (bm < 15) {
+        toast.error('Visit must be at least 15 minutes. Adjust start and end times.');
+        return;
+      }
+    }
+
     if (!customerId) {
       toast.error('Customer ID not found. Please try again.');
       return;
@@ -353,18 +489,26 @@ export function BoardingBookingRouter({
 
     setProcessing(true);
     try {
-      const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
-      let serviceIdValue = (selectedServiceOption as any)?.serviceId || 
-                          selectedVendorService?.serviceId || 
+      let serviceIdValue = (selectedServiceOption as any)?.serviceId ||
+                          selectedVendorService?.serviceId ||
                           serviceId;
 
-      // UUID validation
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      
-      if (!serviceIdValue || !uuidRegex.test(serviceIdValue)) {
-        toast.error('Service ID is required. Please select a boarding option.');
-        setProcessing(false);
-        return;
+
+      if (!serviceIdValue || !uuidRegex.test(String(serviceIdValue))) {
+        const fromVendor = vendorServices.find((vs: any) => {
+          const id = vs.serviceId || vs.service_id || vs.id;
+          return id && uuidRegex.test(String(id));
+        });
+        const fallback = fromVendor?.serviceId || fromVendor?.service_id || fromVendor?.id;
+        if (fallback && uuidRegex.test(String(fallback))) {
+          serviceIdValue = fallback;
+          toast.info('Using your sitter’s service plan for this booking.');
+        } else {
+          toast.error(isPetSitting ? 'Please select a sitting option from your sitter.' : 'Service ID is required. Please select a boarding option.');
+          setProcessing(false);
+          return;
+        }
       }
 
       const totalAmount = calculateTotalPrice();
@@ -381,7 +525,9 @@ export function BoardingBookingRouter({
       }
 
       // CreateBookingRequestSchema expects serviceType: at_vendor|at_home|online|at_center|tele|hybrid|product
-      const bookingServiceType = (selectedServiceType === 'overnight' || selectedServiceType === 'daycare') ? 'at_center' : selectedServiceType;
+      const bookingServiceType = isPetSitting
+        ? 'at_home'
+        : ((selectedServiceType === 'overnight' || selectedServiceType === 'daycare') ? 'at_center' : selectedServiceType);
 
       const bookingData: any = {
         customerId: customerId,
@@ -399,14 +545,14 @@ export function BoardingBookingRouter({
         checkInTime,
         checkOutTime,
         roomId: selectedRoom?.id,
-        numberOfNights: calculateNights(),
+        numberOfNights: isPetSitting && sittingSameDay ? 0 : Math.max(1, calculateNights()),
       };
 
       if (!usePackageSession && totalAmount > 0) {
         bookingData.amount = totalAmount;
       }
 
-      console.log('📤 Creating boarding booking:', bookingData);
+      console.log(isPetSitting ? '📤 Creating pet sitting booking:' : '📤 Creating boarding booking:', bookingData);
 
       const endpoints = ['/bookings/create', '/booking/create'];
       let response: any;
@@ -454,10 +600,8 @@ export function BoardingBookingRouter({
   const handlePaymentSuccess = (paidBookingId: string) => {
     setBookingId(paidBookingId);
     setStep('confirmation');
-    toast.success('Boarding booked successfully!');
+    toast.success(isPetSitting ? 'Pet sitting booked successfully!' : 'Boarding booked successfully!');
   };
-
-  const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
 
   const renderStepIndicator = () => {
     const stepLabels = rooms.length > 0 
@@ -495,9 +639,9 @@ export function BoardingBookingRouter({
         customerId={phone}
         bookingId={paymentBookingId}
         baseAmount={calculateTotalPrice()}
-        serviceName={selectedServiceOption?.name || 'Boarding Service'}
+        serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding Service')}
         vendorId={vendorId || ''}
-        vendorName={'Boarding Provider'}
+        vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
         onBack={handleBack}
         onSuccess={handlePaymentSuccess}
       />
@@ -510,8 +654,8 @@ export function BoardingBookingRouter({
       <BookingConfirmationPage
         bookingId={bookingId}
         type="booking"
-        serviceName={selectedServiceOption?.name || 'Boarding'}
-        vendorName={'Boarding Provider'}
+        serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding')}
+        vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
         serviceStyle={selectedServiceType as 'at_home' | 'at_center' | 'tele'}
         bookingDate={checkInDate}
         bookingTime={checkInTime}
@@ -523,9 +667,16 @@ export function BoardingBookingRouter({
     );
   }
 
+  const dateSummaryValue =
+    !checkInDate
+      ? '—'
+      : isPetSitting && sittingSameDay && checkInDate === checkOutDate
+        ? `${checkInDate} · ${checkInTime}–${checkOutTime}`
+        : `${checkInDate} → ${checkOutDate || '—'}`;
+
   const boardingStats = [
-    { value: selectedServiceOption?.name || 'Boarding', label: 'Type', icon: <Building2 className="w-4 h-4" /> },
-    { value: checkInDate ? `${checkInDate} → ${checkOutDate || '-'}` : '—', label: 'Dates' },
+    { value: selectedServiceOption?.name || flowTitle, label: 'Type', icon: (isPetSitting ? <Home className="w-4 h-4" /> : <Building2 className="w-4 h-4" />) },
+    { value: dateSummaryValue, label: 'Dates' },
     { value: selectedPet?.name || '—', label: 'Pet', icon: <Dog className="w-4 h-4" /> }
   ];
   const stepLabels = rooms.length > 0
@@ -541,22 +692,22 @@ export function BoardingBookingRouter({
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       <ServiceDashboardHeader
-        serviceName="Pet Boarding"
-        serviceSubtitle={selectedServiceOption?.name || 'Select boarding type'}
-        serviceIcon={Building2}
+        serviceName={flowTitle}
+        serviceSubtitle={selectedServiceOption?.name || (isPetSitting ? 'Select sitting type' : 'Select boarding type')}
+        serviceIcon={isPetSitting ? Home : Building2}
         iconColor="text-white"
         stats={boardingStats}
         steps={stepIndicators}
         onBack={handleBack}
         showBackButton={true}
-        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        headerColor={isPetSitting ? 'bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600' : 'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]'}
       />
       <div className="flex-1 overflow-y-auto bg-gray-50">
         <div className="max-w-md mx-auto px-4 py-4">
         {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Select Boarding Type</h2>
+            <h2 className="text-lg font-bold text-gray-900">{isPetSitting ? 'Select sitting type' : 'Select Boarding Type'}</h2>
             <div className="space-y-3">
               {serviceOptions.map((service) => {
                 const Icon = service.icon;
@@ -574,6 +725,8 @@ export function BoardingBookingRouter({
                     <div className="flex items-center gap-4">
                       <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
                         service.color === 'indigo' ? 'bg-indigo-100 text-indigo-600' :
+                        service.color === 'sky' ? 'bg-sky-100 text-sky-600' :
+                        service.color === 'rose' ? 'bg-rose-100 text-rose-600' :
                         'bg-orange-100 text-orange-600'
                       }`}>
                         <Icon className="w-7 h-7" />
@@ -584,7 +737,7 @@ export function BoardingBookingRouter({
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
-                        <p className="text-xs text-gray-500">/night</p>
+                        <p className="text-xs text-gray-500">{priceSuffix}</p>
                         {isSelected && (
                           <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
                         )}
@@ -607,73 +760,184 @@ export function BoardingBookingRouter({
         {/* Date Selection */}
         {step === 'datetime' && (
           <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">Check-in Date</h2>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {dates.map((d) => (
-                  <button
-                    key={d.date}
-                    onClick={() => {
-                      setCheckInDate(d.date);
-                      if (!checkOutDate || new Date(d.date) >= new Date(checkOutDate)) {
-                        const nextDay = new Date(d.date);
-                        nextDay.setDate(nextDay.getDate() + 1);
-                        setCheckOutDate(nextDay.toISOString().split('T')[0]);
-                      }
-                    }}
-                    className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                      checkInDate === d.date 
-                        ? 'bg-orange-500 text-white' 
-                        : 'bg-white border border-gray-200 hover:border-orange-300'
-                    }`}
-                  >
-                    <p className="text-xs opacity-75">{d.day}</p>
-                    <p className="text-xl font-bold">{d.dayNum}</p>
-                    <p className="text-xs opacity-75">{d.month}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {checkInDate && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Check-out Date</h2>
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                  {dates.filter(d => new Date(d.date) > new Date(checkInDate)).map((d) => (
-                    <button
-                      key={d.date}
-                      onClick={() => setCheckOutDate(d.date)}
-                      className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                        checkOutDate === d.date 
-                          ? 'bg-orange-500 text-white' 
-                          : 'bg-white border border-gray-200 hover:border-orange-300'
-                      }`}
-                    >
-                      <p className="text-xs opacity-75">{d.day}</p>
-                      <p className="text-xl font-bold">{d.dayNum}</p>
-                      <p className="text-xs opacity-75">{d.month}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {checkInDate && checkOutDate && (
-              <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm text-gray-600">Duration</p>
-                    <p className="font-bold text-lg text-gray-900">{calculateNights()} night(s)</p>
+            {isPetSitting && sittingSameDay ? (
+              <>
+                <div>
+                  <h2 className="mb-3 text-lg font-bold text-gray-900">Visit date</h2>
+                  <p className="mb-2 text-xs text-gray-500">
+                    Day visits & drop-ins: same-day start and end times.
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {dates.map((d) => (
+                      <button
+                        key={d.date}
+                        type="button"
+                        onClick={() => {
+                          setCheckInDate(d.date);
+                          setCheckOutDate(d.date);
+                        }}
+                        className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                          checkInDate === d.date
+                            ? 'bg-sky-500 text-white'
+                            : 'border border-gray-200 bg-white hover:border-sky-300'
+                        }`}
+                      >
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-xl font-bold">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
+                      </button>
+                    ))}
                   </div>
-                  <Calendar className="w-8 h-8 text-orange-500" />
                 </div>
-              </div>
+
+                {checkInDate && (
+                  <div className="space-y-4">
+                    <h2 className="text-lg font-bold text-gray-900">Visit times</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">
+                          Start time
+                        </label>
+                        <input
+                          type="time"
+                          value={checkInTime}
+                          onChange={(e) => setCheckInTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-sky-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">
+                          End time
+                        </label>
+                        <input
+                          type="time"
+                          value={checkOutTime}
+                          onChange={(e) => setCheckOutTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-sky-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Duration & estimate</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m
+                        </p>
+                        <p className="text-sm text-sky-800">
+                          ₹{calculateTotalPrice()} (based on visit length)
+                        </p>
+                      </div>
+                      <Clock className="h-8 w-8 text-sky-500" />
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div>
+                  <h2 className="mb-3 text-lg font-bold text-gray-900">Check-in date</h2>
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {dates.map((d) => (
+                      <button
+                        key={d.date}
+                        type="button"
+                        onClick={() => {
+                          setCheckInDate(d.date);
+                          if (
+                            !sittingSameDay &&
+                            (!checkOutDate || new Date(d.date) >= new Date(checkOutDate))
+                          ) {
+                            const nextDay = new Date(d.date);
+                            nextDay.setDate(nextDay.getDate() + 1);
+                            setCheckOutDate(nextDay.toISOString().split('T')[0]);
+                          }
+                        }}
+                        className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                          checkInDate === d.date
+                            ? 'bg-orange-500 text-white'
+                            : 'border border-gray-200 bg-white hover:border-orange-300'
+                        }`}
+                      >
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-xl font-bold">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {checkInDate && (
+                  <div>
+                    <h2 className="mb-3 text-lg font-bold text-gray-900">Check-out date</h2>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {dates
+                        .filter((d) => new Date(d.date) > new Date(checkInDate))
+                        .map((d) => (
+                          <button
+                            key={d.date}
+                            type="button"
+                            onClick={() => setCheckOutDate(d.date)}
+                            className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                              checkOutDate === d.date
+                                ? 'bg-orange-500 text-white'
+                                : 'border border-gray-200 bg-white hover:border-orange-300'
+                            }`}
+                          >
+                            <p className="text-xs opacity-75">{d.day}</p>
+                            <p className="text-xl font-bold">{d.dayNum}</p>
+                            <p className="text-xs opacity-75">{d.month}</p>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {isPetSitting && sittingMultiNight && checkInDate && checkOutDate && (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Stay length</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {Math.max(1, calculateNights())} night(s)
+                        </p>
+                        <p className="text-sm text-sky-800">
+                          ₹{calculateTotalPrice()} total
+                        </p>
+                      </div>
+                      <Calendar className="h-8 w-8 text-sky-500" />
+                    </div>
+                  </div>
+                )}
+
+                {!isPetSitting && checkInDate && checkOutDate && (
+                  <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Duration</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {calculateNights()} night(s)
+                        </p>
+                      </div>
+                      <Calendar className="h-8 w-8 text-orange-500" />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!checkInDate || !checkOutDate}
+            <Button
+              onClick={handleNext}
+              className={`w-full ${isPetSitting && sittingSameDay ? 'bg-sky-600 hover:bg-sky-700' : 'bg-[#FF8C42] hover:bg-[#FF7A35]'}`}
+              disabled={
+                !checkInDate ||
+                !checkOutDate ||
+                (isPetSitting && sittingSameDay && getBilledMinutes() < 15)
+              }
             >
               Continue
             </Button>
@@ -697,7 +961,7 @@ export function BoardingBookingRouter({
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
               <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
               <p className="text-sm text-amber-800">
-                A pet profile is required for boarding services.
+                {isPetSitting ? 'A pet profile is required for pet sitting.' : 'A pet profile is required for boarding services.'}
               </p>
             </div>
             
@@ -751,7 +1015,11 @@ export function BoardingBookingRouter({
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedPet}
             >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
+              {selectedPet
+                ? isPetSitting && rooms.length === 0
+                  ? 'Continue to payment'
+                  : 'Continue'
+                : 'Select a Pet to Continue'}
             </Button>
           </div>
         )}

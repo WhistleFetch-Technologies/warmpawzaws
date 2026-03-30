@@ -101,12 +101,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
    */
   app.get('/customer/tele/available-now', async (c) => {
     try {
-      const now = new Date();
-      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-      const istNow = new Date(now.getTime() + IST_OFFSET_MS);
-      const dayOfWeek = istNow.getUTCDay();
-      const currentTime = `${String(istNow.getUTCHours()).padStart(2, '0')}:${String(istNow.getUTCMinutes()).padStart(2, '0')}:00`;
-
       const result = await query(
         `
         -- select the vendor id, vendor name, photo, phone, city, address
@@ -126,9 +120,6 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       INNER JOIN roles r 
           ON r.id = vi.selected_role_id
           AND r.is_active = true
-      -- join vendor_availability_v2 to get the availability
-      INNER JOIN vendor_availability_v2 va 
-          ON va.vendor_id = v.id
       -- join vendor_onboarding_applications to get the profile_photo_url
       LEFT JOIN vendor_onboarding_applications voa
           ON voa.vendor_identity_id = vi.id
@@ -145,20 +136,12 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         AND (v.status = 'approved' OR v.status IS NULL OR v.status = 'active')
         -- where the vendor is not deleted
         AND v.is_deleted = false
+        -- where the identity row is not soft deleted
+        AND COALESCE(vi.is_deleted, false) = false
         -- where the vendor is available for instant tele
         AND v.available_for_instant_tele = true
         -- where the role name is in the list of role names
-        AND LOWER(r.name) = ANY($2::text[])
-        -- where the day of week is the current day of week
-        AND va.day_of_week = $1
-        -- where the availability is available
-        AND COALESCE(va.is_available, true) = true
-        -- where the time window start is less than the current time
-        AND COALESCE(va.time_window_start, va.start_time) <= $3::time
-        -- where the time window end is greater than the current time
-        AND COALESCE(va.time_window_end, va.end_time) >= $3::time
-        -- where the service type is tele, online, or video consultation
-        AND va.service_type IN ('tele','online','video_consultation')
+        AND LOWER(r.name) = ANY($1::text[])
         -- where the vendor has a published tele service in vendor_services
         AND EXISTS (
               SELECT 1
@@ -172,9 +155,7 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       ORDER BY v.business_name;
       `,
         [
-          dayOfWeek,
-          VET_ROLE_NAMES.map(r => r.toLowerCase()),
-          currentTime
+          VET_ROLE_NAMES.map(r => r.toLowerCase())
         ]
       ).catch((err) => {
         console.error('[instant-tele-v2] available-now query error:', err);

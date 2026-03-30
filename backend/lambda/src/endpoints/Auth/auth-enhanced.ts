@@ -34,8 +34,7 @@ import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
 import { generateUATJWTToken } from '../../utils/jwt-generator';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
-import { processReferralSignup } from 'src/lib/services/referral-service';
-import { loyaltyPointsService } from 'src/lib/services/loyalty&reward/loyalty-points-service';
+import { processReferralSignup, processVendorReferralForCustomerSignup } from 'src/lib/services/referral-service';
 
 // ============================================================================
 // OTP HELPERS
@@ -607,7 +606,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
 
-          // Process referral code if provided (before signup bonus)
+          // Process referral code if provided (signup loyalty via action_sources, not here)
           console.log(`[AUTH] 🔍 Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith('temp_')}`);
 
           if (referralCode && userId && !userId.startsWith('temp_')) {
@@ -623,6 +622,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               const referralResult = await processReferralSignup({
                 customerId: userId,
                 referralCode: normalizedCode,
+                phone: normalizedPhone,
               });
               const duration = Date.now() - startTime;
 
@@ -631,6 +631,17 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
               if (referralResult.success) {
                 console.log(`[AUTH] ✅ Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
+              } else if (referralResult.error === 'Invalid referral code') {
+                const vendorRes = await processVendorReferralForCustomerSignup({
+                  customerId: userId,
+                  phone: normalizedPhone || phone,
+                  referralCode: normalizedCode,
+                });
+                if (vendorRes.success) {
+                  console.log(`[AUTH] ✅ Vendor referral code applied for customer (customer_referrals + vendor_referrals)`);
+                } else {
+                  console.warn(`[AUTH] ⚠️ Vendor referral fallback failed: ${vendorRes.error}`);
+                }
               } else {
                 console.warn(`[AUTH] ⚠️ Referral code processing failed: ${referralResult.error}`);
                 console.warn(`[AUTH] ⚠️ Full error details: ${JSON.stringify(referralResult)}`);
@@ -649,21 +660,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
 
-          // Award signup bonus (100 points) - auto-converts to wallet
-          //const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-
-          try {
-            await loyaltyPointsService.awardPoints({
-              customerId: userId,
-              actionName: 'signup',
-              referenceType: 'signup',
-              referenceId: userId,
-              description: 'Welcome bonus for signing up',
-            });
-          } catch (loyaltyError) {
-            console.error('Error awarding signup bonus:', loyaltyError);
-            // Don't fail signup if loyalty points fail
-          }
+          // Signup loyalty: handled by action_sources → ActionOccurred → loyalty-events-consumer (not inline here).
         }
       } else if (role === 'vendor') {
 
@@ -889,9 +886,38 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                 console.log(`[AUTH] ✅ Vendor referral record found/created: ${referralRecord.id}`);
                 console.log(`[AUTH] Referrer vendor ID: ${referralRecord.referrer_vendor_id}`);
 
-                // Store in vendor_identity metadata if identity exists
-                if (vendorIdentity.length > 0) {
-                  const identity = vendorIdentity[0];
+                // Ensure vendor_identity exists so referral metadata is always persisted for later activation flow.
+                let identity = vendorIdentity.length > 0 ? vendorIdentity[0] : null;
+                if (!identity) {
+                  try {
+                    const createdIdentity = await insert('vendor_identity', {
+                      phone: normalizedPhone,
+                      onboarding_status: 'INIT',
+                      metadata: {},
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                    });
+                    if (createdIdentity.length > 0) {
+                      identity = createdIdentity[0];
+                      vendorIdentity = createdIdentity;
+                      console.log(`[AUTH] ✅ Created vendor_identity for referral tracking: ${identity.id}`);
+                    }
+                  } catch (createIdentityError: any) {
+                    console.warn(`[AUTH] Could not create vendor_identity for referral metadata: ${createIdentityError.message}`);
+                    // Race-safe fallback: identity might have been created by another request.
+                    try {
+                      const reloadedIdentity = await select('vendor_identity', { phone: normalizedPhone });
+                      if (reloadedIdentity.length > 0) {
+                        identity = reloadedIdentity[0];
+                        vendorIdentity = reloadedIdentity;
+                      }
+                    } catch (reloadError: any) {
+                      console.warn(`[AUTH] Could not reload vendor_identity after create failure: ${reloadError.message}`);
+                    }
+                  }
+                }
+
+                if (identity) {
                   const metadata = identity.metadata || {};
                   metadata.referral_code_id = referralRecord.id;
                   metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
@@ -906,6 +932,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                   } catch (metaError: any) {
                     console.error(`[AUTH] Error storing referral metadata: ${metaError.message}`);
                   }
+                } else {
+                  console.warn('[AUTH] ⚠️ Referral record exists but vendor_identity is unavailable; metadata not persisted');
                 }
               } else {
                 console.log(`[AUTH] ⚠️ No vendor referral record found for code: ${normalizedCode}`);

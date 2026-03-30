@@ -1,10 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
 
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
@@ -22,12 +26,19 @@ function AuthPageContent() {
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get redirect from URL after mount (client-side only)
+    // Get redirect + referral (?ref=) from URL after mount (client-side only)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const redirect = params.get('redirect');
       if (redirect) {
         setRedirectAfterLogin(redirect);
+      }
+      const refCode = params.get('ref') || params.get('referralCode');
+      if (refCode && refCode.trim()) {
+        const c = refCode.trim().toUpperCase();
+        setReferralCode(c);
+        setShowReferralModal(true);
+        setReferralApplied(true);
       }
     }
   }, []);
@@ -44,6 +55,24 @@ function AuthPageContent() {
   const [showReferralModal, setShowReferralModal] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const [referralApplied, setReferralApplied] = useState(false);
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+
+  const openLegal = (t: PlatformPolicyType) => {
+    setLegalDialogType(t);
+    setLegalDialogOpen(true);
+  };
+
+  const legalDialog = (
+    <PlatformLegalPolicyDialog
+      open={legalDialogOpen}
+      onOpenChange={(o) => {
+        setLegalDialogOpen(o);
+        if (!o) setLegalDialogType(null);
+      }}
+      policyType={legalDialogType}
+    />
+  );
 
   // UAT_MODE must be computed at runtime (after hydration) for static exports
   const [UAT_MODE, setUatMode] = useState(false);
@@ -105,15 +134,24 @@ function AuthPageContent() {
       setResendTimer(60);
       setUatHint(true);
       setError(null);
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+      }
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
-      await apiClient.post('/auth/otp/send', { phone: `${countryCode}${phone}` });
+      await apiClient.post('/auth/otp/send', {
+        phone: `${countryCode}${phone}`,
+        role: 'customer',
+      });
       setOtpSent(true);
       setResendTimer(60);
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to send OTP');
     } finally {
@@ -128,7 +166,10 @@ function AuthPageContent() {
       return;
     }
 
-    if (UAT_MODE) {
+    const trimmedReferral = referralCode?.trim() ? referralCode.trim().toUpperCase() : '';
+
+    // UAT without referral: local shortcut (no API verify) — same as before
+    if (UAT_MODE && !trimmedReferral) {
       if (otp !== UAT_OTP) {
         setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
         return;
@@ -143,13 +184,9 @@ function AuthPageContent() {
       localStorage.setItem('customerCountryCode', countryCode);
       localStorage.setItem('authToken', `uat-token-customer-${cleanPhone}-${Date.now()}`);
 
-      if (referralCode) {
-        localStorage.setItem('pendingReferralCode', referralCode);
-      }
-
       sessionStorage.setItem('_warmpawz_has_session', 'true');
       sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
-      console.log('✅ [Auth] UAT Mode - sessionStorage flags set before navigation');
+      console.log('✅ [Auth] UAT Mode (no referral) - sessionStorage flags set before navigation');
 
       try {
         const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
@@ -198,6 +235,12 @@ function AuthPageContent() {
       return;
     }
 
+    // Production OR UAT with referral: real OTP verify (vendor-web parity — backend applies referral)
+    if (UAT_MODE && trimmedReferral && otp !== UAT_OTP) {
+      setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -206,7 +249,8 @@ function AuthPageContent() {
       const response = await apiClient.post<any>('/auth/otp/verify', {
         phone: fullPhoneForApi,
         otp,
-        referralCode: referralCode || undefined
+        role: 'customer',
+        referralCode: trimmedReferral || undefined,
       });
 
       // Handle nested response structure: { success: true, data: { success: true, data: {...} } }
@@ -263,6 +307,10 @@ function AuthPageContent() {
         sessionStorage.setItem('_warmpawz_has_session', 'true');
         sessionStorage.setItem('_warmpawz_just_logged_in', 'true'); // ✅ FIX: Prevent session clearing right after login
         console.log('✅ [Auth] sessionStorage flags set after OTP verification');
+
+        if (trimmedReferral) {
+          localStorage.setItem('pendingReferralCode', trimmedReferral);
+        }
 
         // Get customer profile; cache pets for app use without using pet count for routing
         try {
@@ -359,6 +407,7 @@ function AuthPageContent() {
   // OTP VERIFICATION SCREEN
   if (otpSent) {
     return (
+      <Fragment>
       <div className="min-h-screen flex justify-center bg-[#FF8C42]">
         {/* Centered Container */}
         <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
@@ -494,6 +543,25 @@ function AuthPageContent() {
                 </div>
               </div>
 
+              <p className="text-center text-sm text-gray-500 mt-6 px-2">
+                By continuing, you agree to our{' '}
+                <button
+                  type="button"
+                  onClick={() => openLegal('customer_terms_of_service')}
+                  className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium"
+                >
+                  Customer Terms of Service
+                </button>
+                {' '}and{' '}
+                <button
+                  type="button"
+                  onClick={() => openLegal('privacy_policy')}
+                  className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium"
+                >
+                  Privacy Policy
+                </button>
+              </p>
+
               {/* Footer with Version Info */}
               <div className="mt-auto pt-10 text-center space-y-1">
                 <p className="text-gray-400 text-xs">WARMPAWZ Provider v2.1.0</p>
@@ -503,11 +571,14 @@ function AuthPageContent() {
           </div>
         </div>
       </div>
+      {legalDialog}
+      </Fragment>
     );
   }
 
   // PHONE NUMBER ENTRY SCREEN
   return (
+    <Fragment>
     <div className="min-h-screen flex justify-center bg-[#FF8C42]">
       {/* Centered Container */}
       <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
@@ -681,9 +752,21 @@ function AuthPageContent() {
             {/* Terms Footer */}
             <p className="text-center text-sm text-gray-500 mt-6">
               By continuing, you agree to our{' '}
-              <a href="#" className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Terms of Service</a>
+              <button
+                type="button"
+                onClick={() => openLegal('customer_terms_of_service')}
+                className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors"
+              >
+                Customer Terms of Service
+              </button>
               {' '}and{' '}
-              <a href="#" className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Privacy Policy</a>
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors"
+              >
+                Privacy Policy
+              </button>
             </p>
 
             {/* Already have account */}
@@ -705,6 +788,8 @@ function AuthPageContent() {
       {/* Referral Code Modal Overlay - Alternative full-screen modal */}
       {/* This can be enabled if you prefer a modal approach */}
     </div>
+    {legalDialog}
+    </Fragment>
   );
 }
 

@@ -17,6 +17,7 @@
 import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
 import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
+import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 
@@ -76,6 +77,11 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
       params.push(limit, offset);
 
       const bookings = await query(bookingQuery, params);
+
+      // ✅ PAYMENT RECONCILIATION (2 tiers):
+      //   Tier 1 – DB: pending booking with completed payment → mark paid
+      //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
+      await reconcileBookingPayments(bookings.rows);
 
       // Get statistics
       const statsQuery = await query(

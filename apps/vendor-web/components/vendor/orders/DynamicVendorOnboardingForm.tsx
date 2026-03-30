@@ -121,6 +121,12 @@ const DEFAULT_POLICIES = {
    - Payment settlements are processed as per the platform's payment policy.
    - Standard settlement cycle is 7 business days from service completion.`,
   },
+  privacyPolicy: {
+    title: 'Privacy Policy',
+    content: `PRIVACY POLICY
+
+This policy describes how we collect, use, and protect your information when you use Warmpawz as a vendor.`,
+  },
 };
 
 export function DynamicVendorOnboardingForm({ 
@@ -146,6 +152,7 @@ export function DynamicVendorOnboardingForm({
   const [policies, setPolicies] = useState<{
     vendorOnboardingAgreement: { title: string; content: string };
     termsOfService: { title: string; content: string };
+    privacyPolicy: { title: string; content: string };
   }>(DEFAULT_POLICIES);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
   
@@ -169,12 +176,19 @@ export function DynamicVendorOnboardingForm({
     
     try {
       setLoadingPolicies(true);
-      const response = await apiClient.get<any>('/vendor/policies');
-      
-      if (response.success && response.policies) {
-        const vendorAgreement = response.policies.find((p: any) => p.policyType === 'vendor_onboarding_agreement');
-        const terms = response.policies.find((p: any) => p.policyType === 'terms_of_service');
-        
+      const response = await apiClient.get<any>('/public/policies');
+      const raw = response?.policies ?? response?.data?.policies;
+      const list = Array.isArray(raw) ? raw : [];
+      console.log('[vendor-onboarding] Fetched policies:', list.length, 'types:', list.map((p: any) => p.policyType).join(','));
+
+      if (list.length > 0) {
+        const vendorAgreement = list.find((p: any) => p.policyType === 'vendor_onboarding_agreement');
+        const terms = list.find(
+          (p: any) =>
+            p.policyType === 'vendor_terms_of_service' || p.policyType === 'terms_of_service'
+        );
+        const privacy = list.find((p: any) => p.policyType === 'privacy_policy');
+
         setPolicies({
           vendorOnboardingAgreement: {
             title: vendorAgreement?.title || DEFAULT_POLICIES.vendorOnboardingAgreement.title,
@@ -183,6 +197,10 @@ export function DynamicVendorOnboardingForm({
           termsOfService: {
             title: terms?.title || DEFAULT_POLICIES.termsOfService.title,
             content: terms?.content || DEFAULT_POLICIES.termsOfService.content,
+          },
+          privacyPolicy: {
+            title: privacy?.title || DEFAULT_POLICIES.privacyPolicy.title,
+            content: privacy?.content || DEFAULT_POLICIES.privacyPolicy.content,
           },
         });
       }
@@ -1832,7 +1850,7 @@ export function DynamicVendorOnboardingForm({
           <DialogHeader className="bg-white">
             <DialogTitle className="text-gray-900 text-xl font-bold">Vendor Agreements</DialogTitle>
             <DialogDescription className="text-gray-600">
-              Review the vendor onboarding agreement and terms of service.
+              Review the vendor onboarding agreement, terms of service, and privacy policy.
             </DialogDescription>
           </DialogHeader>
           
@@ -1853,6 +1871,12 @@ export function DynamicVendorOnboardingForm({
                 <h3 className="font-bold text-gray-800 mb-3">{policies.termsOfService.title}</h3>
                 <div className="text-sm text-gray-600 whitespace-pre-wrap max-h-[200px] overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-100">
                   {policies.termsOfService.content}
+                </div>
+              </div>
+              <div className="bg-white">
+                <h3 className="font-bold text-gray-800 mb-3">{policies.privacyPolicy.title}</h3>
+                <div className="text-sm text-gray-600 whitespace-pre-wrap max-h-[200px] overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  {policies.privacyPolicy.content}
                 </div>
               </div>
             </div>

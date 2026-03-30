@@ -661,32 +661,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         tax_breakdown: taxBreakdown ? JSON.stringify(taxBreakdown) : null,
       });
 
-      // Award loyalty points for order (if first product or regular product)
-      if (customerId) {
-        try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-          
-          // Check if this is first product purchase
-          const existingOrders = await select('orders', { customer_id: customerId });
-          const isFirstProduct = existingOrders.length === 0;
-          
-          // Award points for each product
-          for (const item of orderItems) {
-            const actionName = isFirstProduct ? 'buy_first_product' : 'buy_product';
-            await loyaltyPointsService.awardPoints({
-              customerId,
-              actionName,
-              amount: item.price * item.quantity,
-              referenceType: 'order',
-              referenceId: order[0].id,
-              description: `Purchase: ${item.name}`,
-            });
-          }
-        } catch (loyaltyError) {
-          console.error('Error awarding loyalty points for order:', loyaltyError);
-          // Don't fail order creation if loyalty points fail
-        }
-      }
+      // Order purchase loyalty: handled by action_sources → loyalty-events-consumer (not inline here).
 
       // Create order items
       for (const item of orderItems) {

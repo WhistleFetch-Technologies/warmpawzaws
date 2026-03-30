@@ -7879,6 +7879,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           partner_name as name,
           partner_type as type,
           enabled,
+          base_url as baseUrl,
           email as apiEndpoint,
           api_key as apiKey,
           config->>'categories' as categories,
@@ -7888,7 +7889,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           created_at,
           updated_at
         FROM logistics_partners
-        ORDER BY created_at DESC`
+        ORDER BY enabled DESC NULLS LAST, partner_name ASC`
       );
 
       const partners = (partnersResult.rows || []).map((p: any) => {
@@ -7898,6 +7899,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           name: p.name,
           type: p.type,
           enabled: p.enabled !== false,
+          baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
           apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
           apiKey: p.apiKey ? '••••••••' : null,
           categories: config.categories || (typeof p.categories === 'string' ? JSON.parse(p.categories) : []),
@@ -7924,6 +7926,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         name: partner_name,
         type: partner_type,
         enabled,
+        baseUrl,
         apiEndpoint,
         apiKey,
         categories,
@@ -7939,17 +7942,32 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (categories) config.categories = categories;
       if (pricing) config.pricing = pricing;
       if (regions) config.regions = regions;
+      if (
+        'baseUrl' in partnerData &&
+        baseUrl != null &&
+        String(baseUrl).trim() &&
+        String(partner_type) === 'pidge'
+      ) {
+        config.pidgeApiBase = String(baseUrl).trim();
+      }
 
-      const partnerRecord = {
+      const partnerRecord: Record<string, unknown> = {
         partner_id: String(partner_id),
         partner_name: String(partner_name),
         partner_type: String(partner_type),
         enabled: enabled !== false,
         email: apiEndpoint || null,
-        api_key: apiKey || null,
-        config: config,
+        config,
         updated_at: new Date().toISOString(),
       };
+
+      if ('baseUrl' in partnerData) {
+        partnerRecord.base_url =
+          baseUrl != null && String(baseUrl).trim() ? String(baseUrl).trim() : null;
+      }
+      if (apiKey && String(apiKey) !== '••••••••') {
+        partnerRecord.api_key = String(apiKey);
+      }
 
       await upsert('logistics_partners', partnerRecord, 'partner_id');
 

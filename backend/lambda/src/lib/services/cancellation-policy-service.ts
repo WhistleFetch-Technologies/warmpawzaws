@@ -107,10 +107,13 @@ export async function getRefundTierForCancellation(
   if (typeof options?.hoursUntilBooking === 'number' && Number.isFinite(options.hoursUntilBooking)) {
     computedHours = options.hoursUntilBooking;
   } else {
+    // booking_date from DB may be ISO format (e.g. "2026-03-26T00:00:00.000Z")
+    // Extract just YYYY-MM-DD to avoid malformed concatenation
+    const dateOnly = String(booking.booking_date || '').split('T')[0];
     const rawDateTime =
       (booking.booking_datetime ? new Date(booking.booking_datetime) : null) ||
       (booking.scheduled_at ? new Date(booking.scheduled_at) : null) ||
-      new Date(`${booking.booking_date}T${booking.booking_time}`);
+      new Date(`${dateOnly}T${booking.booking_time}`);
     if (!isNaN(rawDateTime.getTime())) {
       computedHours = (rawDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
     }
@@ -189,5 +192,102 @@ export function computeRefundFromTier(
     refundAmount,
     refundPercentage: effectivePercentage,
     cancellationFee,
+  };
+}
+
+export type RefundSource = 'vendor_refund_tiers' | 'booking_cancellation_rules' | 'default';
+
+/**
+ * Unified preview for customer cancellation refunds.
+ * Order of precedence:
+ *   1) vendor_refund_tiers (policyApplied = true, source='vendor_refund_tiers')
+ *   2) booking_cancellation_rules (legacy, policyApplied = true, source='booking_cancellation_rules')
+ *   3) default fallback (policyApplied = false, source='default')
+ */
+export async function previewCustomerCancellationRefund(booking: BookingForPolicy): Promise<{
+  refundAmount: number;
+  refundPercentage: number;
+  cancellationFee: number;
+  source: RefundSource;
+  policyApplied: boolean;
+  meta?: { tierId?: string; tierName?: string };
+}> {
+  const total = parseFloat(String(booking.total_amount || 0));
+  // Compute hours until booking
+  let hoursUntilBooking = 0;
+  if (booking.booking_datetime) {
+    const dt = new Date(booking.booking_datetime);
+    if (!isNaN(dt.getTime())) hoursUntilBooking = Math.max(0, (dt.getTime() - Date.now()) / (1000 * 60 * 60));
+  } else if (booking.scheduled_at) {
+    const dt = new Date(booking.scheduled_at);
+    if (!isNaN(dt.getTime())) hoursUntilBooking = Math.max(0, (dt.getTime() - Date.now()) / (1000 * 60 * 60));
+  } else if (booking.booking_date && booking.booking_time) {
+    // booking_date from DB may be ISO format (e.g. "2026-03-26T00:00:00.000Z")
+    // Extract just the YYYY-MM-DD portion to avoid malformed concatenation
+    const dateOnly = String(booking.booking_date).split('T')[0];
+    const dt = new Date(`${dateOnly}T${booking.booking_time}`);
+    if (!isNaN(dt.getTime())) hoursUntilBooking = Math.max(0, (dt.getTime() - Date.now()) / (1000 * 60 * 60));
+  }
+
+  // 1) Preferred: vendor_refund_tiers
+  const tier = await getRefundTierForCancellation(booking, 'pet_parent', { hoursUntilBooking });
+  if (tier) {
+    const computed = computeRefundFromTier(total, tier, 100, 0);
+    return {
+      refundAmount: computed.refundAmount,
+      refundPercentage: computed.refundPercentage,
+      cancellationFee: computed.cancellationFee,
+      source: 'vendor_refund_tiers',
+      policyApplied: true,
+      meta: { tierId: tier.tierId, tierName: tier.tierName },
+    };
+  }
+
+  // 2) Fallback: booking_cancellation_rules
+  let rule: any = null;
+  try {
+    const rulesResult = await query(
+      `SELECT * FROM booking_cancellation_rules
+       WHERE (vendor_id = $1 OR vendor_id IS NULL)
+         AND (service_id = $2 OR service_id IS NULL)
+       ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+       LIMIT 1`,
+      [booking.vendor_id || null, booking.service_id || null]
+    );
+    rule = (rulesResult as any).rows?.[0] || null;
+  } catch {
+    // ignore
+  }
+
+  if (rule) {
+    const fullRefundHours = rule.full_refund_before_hours ?? 48;
+    const partialRefundHours = rule.partial_refund_before_hours ?? 24;
+    const partialRefundPct = Number(rule.partial_refund_percentage ?? 50);
+    const cutoffHours = rule.cancellation_cutoff_hours ?? 12;
+
+    let pct = 0;
+    if (hoursUntilBooking >= fullRefundHours) pct = 100;
+    else if (hoursUntilBooking >= partialRefundHours) pct = partialRefundPct;
+    else if (hoursUntilBooking >= cutoffHours) pct = partialRefundPct;
+    else pct = 0;
+
+    const fee = pct === 0 ? total * 0.1 : 0;
+    return {
+      refundAmount: Math.max(0, (total * pct) / 100 - fee),
+      refundPercentage: pct,
+      cancellationFee: Math.round(fee * 100) / 100,
+      source: 'booking_cancellation_rules',
+      policyApplied: true,
+    };
+  }
+
+  // 3) Default: no configured policy
+  const pct = hoursUntilBooking < 24 ? 50 : 100;
+  return {
+    refundAmount: Math.round(((total * pct) / 100) * 100) / 100,
+    refundPercentage: pct,
+    cancellationFee: 0,
+    source: 'default',
+    policyApplied: false,
   };
 }

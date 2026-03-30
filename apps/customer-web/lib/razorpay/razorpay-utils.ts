@@ -30,13 +30,13 @@ export const loadRazorpayScript = (): Promise<void> => {
       reject(new Error('Window is not available'));
       return;
     }
-    
+
     // If already loaded, resolve immediately
     if ((window as any).Razorpay) {
       resolve();
       return;
     }
-    
+
     // Check if script is already being loaded
     const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
     if (existingScript) {
@@ -52,12 +52,12 @@ export const loadRazorpayScript = (): Promise<void> => {
       });
       return;
     }
-    
+
     // Create and load new script
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.async = true;
-    
+
     script.onload = () => {
       setTimeout(() => {
         if ((window as any).Razorpay) {
@@ -67,11 +67,11 @@ export const loadRazorpayScript = (): Promise<void> => {
         }
       }, 100);
     };
-    
+
     script.onerror = () => {
       reject(new Error('Failed to load Razorpay script'));
     };
-    
+
     document.body.appendChild(script);
   });
 };
@@ -79,21 +79,21 @@ export const loadRazorpayScript = (): Promise<void> => {
 /**
  * Open Razorpay checkout modal
  */
-export const openRazorpayCheckout = async (options: RazorpayCheckoutOptions): Promise<void> => {
+export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions): Promise<void> => {
   // Load script if needed
   await loadRazorpayScript();
-  
+
   if (!(window as any).Razorpay) {
     throw new Error('Razorpay is not available');
   }
 
   // Use keyId from API response, fallback to environment variable
   const razorpayKey = options.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-  
+
   if (!razorpayKey) {
     throw new Error('Razorpay key is missing. Please provide keyId or set NEXT_PUBLIC_RAZORPAY_KEY environment variable.');
   }
-  
+
   const razorpayOptions = {
     key: razorpayKey,
     amount: Math.round(options.amount * 100), // Convert to paise
@@ -109,10 +109,10 @@ export const openRazorpayCheckout = async (options: RazorpayCheckoutOptions): Pr
       color: '#FF8C42',
     },
     modal: {
-      ondismiss: options.onDismiss || (() => {}),
+      ondismiss: options.onDismiss || (() => { }),
     },
   };
-  
+
   const razorpay = new (window as any).Razorpay(razorpayOptions);
   razorpay.open();
 };

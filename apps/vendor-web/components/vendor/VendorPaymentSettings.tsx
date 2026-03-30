@@ -63,8 +63,8 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
   const loadWalletData = async () => {
     try {
       setLoadingWallet(true);
-      // Load wallet balance using GET /wallet/:vendorId
-      const walletResponse = await apiClient.get(`/wallet/${vendorId}`) as any;
+      // Load vendor wallet balance
+      const walletResponse = await apiClient.get(`/vendor/wallet/${vendorId}`) as any;
       
       if (walletResponse && walletResponse.balance !== undefined) {
         setWalletBalance(parseFloat(walletResponse.balance) || 0);
@@ -72,9 +72,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
         setWalletBalance(parseFloat(walletResponse.data.balance) || 0);
       }
       
-      // Load wallet transactions
+      // Load vendor wallet transactions
       try {
-        const transactionsResponse = await apiClient.get(`/wallet/${vendorId}/transactions?limit=10`) as any;
+        const transactionsResponse = await apiClient.get(`/vendor/wallet/${vendorId}/transactions?limit=10`) as any;
         if (transactionsResponse?.transactions) {
           setWalletTransactions(transactionsResponse.transactions);
         } else if (Array.isArray(transactionsResponse)) {
@@ -686,17 +686,19 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 ) : walletTransactions.length > 0 ? (
                   <div className="space-y-2 text-sm">
                     {walletTransactions.slice(0, 10).map((txn: any, index: number) => {
-                      const isCredit = txn.transaction_type === 'credit' || txn.amount > 0;
+                      const txType = txn.transaction_type || txn.type;
+                      const txDate = txn.created_at || txn.timestamp;
+                      const isCredit = txType === 'credit' || txn.amount > 0;
                       const amount = Math.abs(parseFloat(txn.amount || 0));
-                      const description = txn.description || txn.reference_type || 'Transaction';
+                      const description = txn.description || txn.reference_type || txn.referenceType || 'Transaction';
                       
                       return (
                         <div key={txn.id || index} className="flex justify-between py-2 border-b border-gray-100 last:border-b-0">
                           <div className="flex-1">
                             <span className="text-gray-600">{description}</span>
-                            {txn.created_at && (
+                            {txDate && (
                               <p className="text-xs text-gray-400 mt-0.5">
-                                {new Date(txn.created_at).toLocaleDateString()}
+                                {new Date(txDate).toLocaleDateString()}
                               </p>
                             )}
                           </div>

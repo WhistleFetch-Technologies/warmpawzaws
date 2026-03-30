@@ -286,16 +286,7 @@ export function registerReferralEndpoints(app: Hono) {
         claimed_at: new Date().toISOString(),
       });
 
-      // Award points if applicable
-      if (reward.points_awarded) {
-        await query(
-          `UPDATE customer_loyalty_points
-           SET total_points = total_points + $1,
-               lifetime_points_earned = lifetime_points_earned + $1
-           WHERE customer_id = $2`,
-          [reward.points_awarded, customerId]
-        );
-      }
+      // Referral reward points: handled by action_sources → loyalty-events-consumer (not inline here).
 
       return c.json({
         success: true,
@@ -484,7 +475,7 @@ export function registerReferralEndpoints(app: Hono) {
            FROM loyalty_transactions lt 
            WHERE lt.customer_id = CAST($1 AS uuid)
            AND lt.reference_type = 'vendor_referral' 
-               AND lt.reference_id = vr.id)
+               AND lt.reference_id = vr.id::text)
             ELSE 0
           END as points_earned
          FROM vendor_referrals vr
@@ -536,9 +527,9 @@ export function registerReferralEndpoints(app: Hono) {
           vr.created_at as referral_created_at,
           v.business_name as referred_vendor_name
          FROM loyalty_transactions lt
-         INNER JOIN vendor_referrals vr ON lt.reference_id = vr.id
+         INNER JOIN vendor_referrals vr ON lt.reference_id = vr.id::text
          LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
-         WHERE lt.customer_id = CAST($1 AS uuid)
+         WHERE lt.vendor_id = CAST($1 AS uuid)
          AND lt.reference_type = 'vendor_referral'
          AND lt.transaction_type = 'earned'
          AND vr.referrer_vendor_id = CAST($1 AS uuid)
@@ -589,7 +580,7 @@ export function registerReferralEndpoints(app: Hono) {
          FROM loyalty_transactions lt
          WHERE lt.customer_id = CAST($1 AS uuid)
          AND lt.reference_type = 'vendor_referral'
-         AND lt.reference_id = CAST($2 AS uuid)
+         AND lt.reference_id = $2
          ORDER BY lt.created_at DESC`,
         [vendorId, referralId]
       );
@@ -745,11 +736,11 @@ export function registerReferralEndpoints(app: Hono) {
           action_name, action_category, user_type, points_type, points_value,
           base_amount, frequency_type, description, is_active, priority, notes
         ) VALUES (
-          'vendor_refer_friend', 'referral_rewards', 'vendor', 'fixed', 500,
+          'vendor_refer_friend', 'referral_rewards', 'vendor', 'fixed', 200,
           NULL, 'recurring', 'Refer a friend who joins', true, 50, 'Friend must Onboard 1 End User and complete 1 booking'
         )
         ON CONFLICT (action_name) DO UPDATE SET
-          points_value = 500,
+          points_value = 200,
           action_category = 'referral_rewards',
           user_type = 'vendor',
           points_type = 'fixed',
@@ -759,8 +750,7 @@ export function registerReferralEndpoints(app: Hono) {
           priority = 50,
           updated_at = NOW()
       `);
-
-      return c.json({ success: true, message: 'vendor_refer_friend rule created/updated with 500 points' });
+      return c.json({ success: true, message: 'vendor_refer_friend rule created/updated' });
     } catch (error: any) {
       console.error('Error creating rule:', error);
       return c.json({ error: error.message, stack: error.stack }, 500);
@@ -773,120 +763,7 @@ export function registerReferralEndpoints(app: Hono) {
    * This will award points for referrals that were approved before the loyalty rule existed
    */
   app.post("/vendor/:vendorId/referral/retroactive-process", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-
-      console.log(`[REFERRALS] Starting retroactive processing for vendor: ${vendorId}`);
-
-      // Get all approved referrals without points
-      const referrals = await query(
-        `SELECT vr.*, v.phone as referred_vendor_phone, v.id as referred_vendor_id
-         FROM vendor_referrals vr
-         LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
-         WHERE vr.referrer_vendor_id = CAST($1 AS uuid)
-         AND vr.status = 'approved'
-         AND NOT EXISTS (
-           SELECT 1 FROM loyalty_transactions lt
-           WHERE lt.customer_id = vr.referrer_vendor_id
-           AND lt.reference_type = 'vendor_referral'
-           AND lt.reference_id = vr.id
-         )
-         ORDER BY vr.created_at DESC`,
-        [vendorId]
-      );
-
-      const results = [];
-      let totalPointsAwarded = 0;
-      let totalWalletCredited = 0;
-
-      for (const referral of referrals.rows) {
-        try {
-          if (!referral.referrer_vendor_id || !referral.id) {
-            console.log(`[REFERRALS] Skipping referral ${referral.id} - missing referrer vendor ID`);
-            results.push({
-              referralId: referral.id,
-              success: false,
-              error: 'Missing referrer vendor ID',
-            });
-            continue;
-          }
-
-          // Check if points were already awarded
-          const existingPoints = await query(
-            `SELECT COUNT(*) as count FROM loyalty_transactions 
-             WHERE customer_id = $1 
-             AND reference_type = 'vendor_referral' 
-             AND reference_id = $2`,
-            [referral.referrer_vendor_id, referral.id]
-          );
-          
-          if (parseInt(existingPoints.rows[0]?.count || '0') > 0) {
-            results.push({
-              referralId: referral.id,
-              success: false,
-              error: 'Points already awarded',
-            });
-            continue;
-          }
-
-          // Award points directly to referrer (bypassing the full referral processing)
-          const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
-          const pointsResult = await loyaltyPointsService.awardPoints({
-            vendorId: referral.referrer_vendor_id,
-            actionName: 'vendor_refer_friend',
-            referenceType: 'vendor_referral',
-            referenceId: referral.id,
-            description: `Vendor referral: Retroactive processing for approved referral ${referral.referral_code || referral.id}`,
-          });
-
-          const result = {
-            success: true,
-            referrerPoints: pointsResult.points,
-            walletCredited: pointsResult.walletCredited,
-          };
-
-          if (result.success) {
-            totalPointsAwarded += result.referrerPoints || 0;
-            totalWalletCredited += (result.referrerPoints || 0) / 100; // 100 points = ₹1
-            results.push({
-              referralId: referral.id,
-              success: true,
-              points: result.referrerPoints,
-              walletCredited: (result.referrerPoints || 0) / 100,
-            });
-            console.log(`[REFERRALS] ✅ Processed referral ${referral.id}: ${result.referrerPoints} points`);
-          } else {
-            const errorMsg = (result as any).error || 'Unknown error';
-            results.push({
-              referralId: referral.id,
-              success: false,
-              error: errorMsg,
-            });
-            console.log(`[REFERRALS] ❌ Failed to process referral ${referral.id}: ${errorMsg}`);
-          }
-        } catch (error: any) {
-          console.error(`[REFERRALS] Error processing referral ${referral.id}:`, error);
-          results.push({
-            referralId: referral.id,
-            success: false,
-            error: error.message,
-          });
-        }
-      }
-
-      return c.json({
-        success: true,
-        message: `Processed ${results.length} referrals`,
-        processed: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length,
-        totalPointsAwarded,
-        totalWalletCredited: Math.round(totalWalletCredited * 100) / 100,
-        results,
-      });
-    } catch (error: any) {
-      console.error('Error in retroactive referral processing:', error);
-      return c.json({ error: error.message }, 500);
-    }
+    return c.json({ error: 'Deprecated: points are awarded via action-source pipeline only.' }, 410);
   });
 
   /**
@@ -894,180 +771,7 @@ export function registerReferralEndpoints(app: Hono) {
    * Manually process a specific referral to award points
    */
   app.post("/vendor/:vendorId/referral/:referralId/process", async (c) => {
-    try {
-      const { vendorId, referralId } = c.req.param();
-
-      console.log(`[REFERRALS] Processing specific referral: ${referralId} for vendor: ${vendorId}`);
-
-      // Get the referral record
-      const referralResult = await query(
-        `SELECT * FROM vendor_referrals WHERE id = $1 AND referrer_vendor_id = $2`,
-        [referralId, vendorId]
-      );
-
-      if (referralResult.rows.length === 0) {
-        return c.json({ error: 'Referral not found' }, 404);
-      }
-
-      const referral = referralResult.rows[0];
-
-      // CRITICAL: If referred_vendor_id is NULL, try to find it from vendor_identity
-      // This fixes "Unknown Vendor" issue when processing referrals before admin approval
-      let vendorIdToLink = referral.referred_vendor_id;
-      if (!vendorIdToLink && referral.referred_phone) {
-        console.log(`[REFERRALS] referred_vendor_id is NULL, trying to find from vendor_identity for phone: ${referral.referred_phone}`);
-        const vendorIdentityResult = await query(
-          `SELECT vendor_id FROM vendor_identity 
-           WHERE phone LIKE $1 OR phone LIKE $2
-           AND vendor_id IS NOT NULL
-           ORDER BY updated_at DESC LIMIT 1`,
-          [`%${referral.referred_phone}%`, `%${referral.referred_phone.slice(-10)}%`]
-        );
-        
-        if (vendorIdentityResult.rows.length > 0 && vendorIdentityResult.rows[0].vendor_id) {
-          vendorIdToLink = vendorIdentityResult.rows[0].vendor_id;
-          console.log(`[REFERRALS] ✅ Found vendor_id ${vendorIdToLink} from vendor_identity`);
-        } else {
-          console.log(`[REFERRALS] ⚠️ No vendor_id found in vendor_identity - vendor may not be approved yet`);
-        }
-      }
-
-      // Check if points were already awarded for THIS specific referral
-      // Use CAST to ensure UUID comparison works correctly
-      const existingPoints = await query(
-        `SELECT COUNT(*) as count, COALESCE(SUM(points), 0) as total_points FROM loyalty_transactions 
-         WHERE customer_id = CAST($1 AS uuid)
-         AND reference_type = 'vendor_referral' 
-         AND reference_id = CAST($2 AS uuid)`,
-        [referral.referrer_vendor_id, referral.id]
-      );
-
-      const pointsCount = parseInt(existingPoints.rows[0]?.count || '0');
-      const totalPoints = parseInt(existingPoints.rows[0]?.total_points || '0');
-      console.log(`[REFERRALS] Checking points for referral ${referral.id}: found ${pointsCount} loyalty transactions, total ${totalPoints} points`);
-      console.log(`[REFERRALS] Referrer vendor ID: ${referral.referrer_vendor_id}, Referral ID: ${referral.id}`);
-
-      if (pointsCount > 0 && totalPoints > 0) {
-        // Points already awarded - ALWAYS update status to approved
-        // Try to extract vendor ID from the latest transaction description
-        const latestTx = await query(
-          `SELECT description FROM loyalty_transactions 
-           WHERE customer_id = CAST($1 AS uuid)
-           AND reference_type = 'vendor_referral' 
-           AND reference_id = CAST($2 AS uuid)
-           ORDER BY created_at DESC LIMIT 1`,
-          [referral.referrer_vendor_id, referral.id]
-        );
-        
-        let vendorIdToLink = null;
-        if (latestTx.rows.length > 0) {
-          const desc = latestTx.rows[0].description || '';
-          // Extract vendor ID from description like "Admin approved vendor 5585e6f7-5633-417b-a7a2-314285c81a40"
-          const match = desc.match(/vendor\s+([a-f0-9-]{36})/i);
-          if (match && match[1]) {
-            vendorIdToLink = match[1];
-          }
-        }
-        
-        // ALWAYS update status to approved, and vendor_id if we found it
-        await query(
-          `UPDATE vendor_referrals
-           SET status = 'approved',
-               referred_vendor_id = COALESCE($2, referred_vendor_id),
-               approved_at = COALESCE(approved_at, NOW()),
-               applied_at = COALESCE(applied_at, NOW()),
-               updated_at = NOW()
-           WHERE id = $1`,
-          [referral.id, vendorIdToLink || referral.referred_vendor_id]
-        );
-        
-        if (vendorIdToLink) {
-          console.log(`[REFERRALS] ✅ Linked referral ${referral.id} to vendor ${vendorIdToLink} from transaction description`);
-        } else {
-          console.log(`[REFERRALS] ✅ Updated referral ${referral.id} status to approved (vendor_id not found in description)`);
-        }
-        
-        return c.json({
-          success: true,
-          message: 'Points already awarded, status updated to approved',
-          referralId: referral.id,
-          points: totalPoints,
-          walletCredited: totalPoints / 100,
-          vendorIdLinked: vendorIdToLink || referral.referred_vendor_id || null,
-        });
-      }
-      
-      // If points count > 0 but total_points = 0, it means transaction exists but points = 0
-      // This is an error case - we should still try to award points
-      if (pointsCount > 0 && totalPoints === 0) {
-        console.log(`[REFERRALS] ⚠️ Found ${pointsCount} loyalty transactions but total points = 0. This is an error. Will try to award points anyway.`);
-      }
-
-      console.log(`[REFERRALS] No points found - proceeding to award points...`);
-
-      // Award points directly to referrer
-      let pointsResult;
-      try {
-        const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
-        pointsResult = await loyaltyPointsService.awardPoints({
-          vendorId: referral.referrer_vendor_id,
-          actionName: 'vendor_refer_friend',
-          referenceType: 'vendor_referral',
-          referenceId: referral.id,
-          description: `Vendor referral: ${referral.referral_code || referral.id}`,
-        });
-        console.log(`[REFERRALS] ✅ Awarded ${pointsResult.points} points`);
-      } catch (pointsError: any) {
-        console.error(`[REFERRALS] Error awarding points: ${pointsError.message}`);
-        // If points award fails (e.g., schema issue), still try to update status if points already exist
-        // Check if points were actually created despite the error
-        const checkPoints = await query(
-          `SELECT COUNT(*) as count, COALESCE(SUM(points), 0) as total FROM loyalty_transactions 
-           WHERE customer_id = CAST($1 AS uuid)
-           AND reference_type = 'vendor_referral' 
-           AND reference_id = CAST($2 AS uuid)`,
-          [referral.referrer_vendor_id, referral.id]
-        );
-        const actualPoints = parseInt(checkPoints.rows[0]?.total || '0');
-        if (actualPoints > 0) {
-          console.log(`[REFERRALS] Points exist despite error (${actualPoints}), will update status`);
-          pointsResult = { points: actualPoints, walletCredited: actualPoints / 100 };
-        } else {
-          throw pointsError; // Re-throw if no points exist
-        }
-      }
-
-      // CRITICAL: Always update referral status to approved after awarding points
-      // Also update vendor_id if we found it from vendor_identity
-      // This must happen even if wallet update failed
-      await query(
-        `UPDATE vendor_referrals
-         SET status = 'approved',
-             referred_vendor_id = COALESCE($2, referred_vendor_id),
-             approved_at = COALESCE(approved_at, NOW()),
-             applied_at = COALESCE(applied_at, NOW()),
-             updated_at = NOW()
-         WHERE id = $1`,
-        [referral.id, vendorIdToLink || referral.referred_vendor_id]
-      );
-      
-      if (vendorIdToLink && !referral.referred_vendor_id) {
-        console.log(`[REFERRALS] ✅ Linked referral ${referral.id} to vendor ${vendorIdToLink} from vendor_identity`);
-      }
-
-      console.log(`[REFERRALS] ✅ Updated referral ${referral.id} status to 'approved'`);
-
-      return c.json({
-        success: true,
-        message: 'Referral processed successfully',
-        referralId: referral.id,
-        points: pointsResult.points,
-        walletCredited: pointsResult.walletCredited,
-      });
-    } catch (error: any) {
-      console.error('Error processing referral:', error);
-      return c.json({ error: error.message, stack: error.stack }, 500);
-    }
+    return c.json({ error: 'Deprecated: points are awarded via action-source pipeline only.' }, 410);
   });
 
   /**
@@ -1076,132 +780,7 @@ export function registerReferralEndpoints(app: Hono) {
    * This fixes referrals where points were awarded but wallet conversion failed
    */
   app.post("/vendor/:vendorId/referral/convert-loyalty-to-wallet", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-
-      console.log(`[REFERRALS] Converting loyalty points to wallet for vendor: ${vendorId}`);
-
-      // Get all loyalty transactions for vendor referrals
-      // Use LEFT JOIN in case referral record doesn't exist
-      const loyaltyTxns = await query(
-        `SELECT lt.*, COALESCE(vr.referral_code, '') as referral_code
-         FROM loyalty_transactions lt
-         LEFT JOIN vendor_referrals vr ON lt.reference_id = vr.id
-         WHERE lt.customer_id = $1
-         AND lt.reference_type = 'vendor_referral'
-         ORDER BY lt.created_at ASC`,
-        [vendorId]
-      );
-
-      if (loyaltyTxns.rows.length === 0) {
-        return c.json({
-          success: true,
-          message: 'No loyalty transactions found',
-          converted: 0,
-        });
-      }
-
-      const { query: queryFn, withTransaction, select, insert } = await import('../database/rds-connection');
-
-      let totalConverted = 0;
-      let totalWalletCredited = 0;
-      const results = [];
-
-      for (const txn of loyaltyTxns.rows) {
-        try {
-          const points = parseInt(txn.points || '0');
-          if (points <= 0) continue;
-
-          const walletAmount = Math.round((points / 100) * 100) / 100; // 100 points = ₹1
-
-          // Check if wallet transaction already exists for this loyalty transaction
-          const existingWalletTxn = await query(
-            `SELECT COUNT(*) as count FROM wallet_transactions 
-             WHERE customer_id = $1 
-             AND (description LIKE $2 OR description LIKE $3)
-             AND transaction_type = 'credit'`,
-            [vendorId, `%${points} points%`, `%${txn.id}%`]
-          );
-
-          if (parseInt(existingWalletTxn.rows[0]?.count || '0') > 0) {
-            console.log(`[REFERRALS] Skipping ${txn.id} - wallet transaction already exists`);
-            continue; // Already converted
-          }
-
-          await withTransaction(async (txClient) => {
-            // Get or create wallet using select/insert helpers
-            let wallets = await select('customer_wallets', { customer_id: vendorId });
-            
-            if (wallets.length === 0) {
-              await insert('customer_wallets', {
-                customer_id: vendorId,
-                balance: 0,
-              });
-              wallets = await select('customer_wallets', { customer_id: vendorId });
-            }
-
-            const wallet = wallets[0];
-
-            // Credit wallet
-            await txClient.query(
-              `UPDATE customer_wallets
-               SET balance = balance + $1,
-                   updated_at = NOW()
-               WHERE id = $2`,
-              [walletAmount, wallet.id]
-            );
-
-            // Get balance after
-            const balanceAfter = await txClient.query(
-              `SELECT balance FROM customer_wallets WHERE id = $1`,
-              [wallet.id]
-            );
-            const newBalance = parseFloat(balanceAfter.rows[0]?.balance || '0');
-
-            // Create wallet transaction
-            try {
-              await queryFn(
-                `INSERT INTO wallet_transactions (customer_id, transaction_type, amount, balance_after, description)
-                 VALUES ($1, 'credit', $2, $3, $4)`,
-                [
-                  vendorId,
-                  walletAmount,
-                  newBalance,
-                  `Loyalty points converted: ${points} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1) - Retroactive`
-                ]
-              );
-            } catch (insertError: any) {
-              console.error(`[REFERRALS] Error inserting wallet transaction: ${insertError.message}`);
-            }
-
-            totalConverted++;
-            totalWalletCredited += walletAmount;
-            results.push({
-              loyaltyTransactionId: txn.id,
-              points,
-              walletCredited: walletAmount,
-            });
-          });
-        } catch (error: any) {
-          console.error(`[REFERRALS] Error converting transaction ${txn.id}:`, error);
-          results.push({
-            loyaltyTransactionId: txn.id,
-            error: error.message,
-          });
-        }
-      }
-
-      return c.json({
-        success: true,
-        message: `Converted ${totalConverted} loyalty transactions to wallet`,
-        converted: totalConverted,
-        totalWalletCredited: Math.round(totalWalletCredited * 100) / 100,
-        results,
-      });
-    } catch (error: any) {
-      console.error('Error converting loyalty to wallet:', error);
-      return c.json({ error: error.message, stack: error.stack }, 500);
-    }
+    return c.json({ error: 'Deprecated: wallet conversion is handled by the consumer pipeline.' }, 410);
   });
 
   /**
@@ -1316,87 +895,7 @@ export function registerReferralEndpoints(app: Hono) {
    * Manually process a specific referral to award points (similar to vendor referrals)
    */
   app.post("/customer/:customerId/referral/:referralId/process", async (c) => {
-    try {
-      const { customerId, referralId } = c.req.param();
-
-      console.log(`[REFERRALS] Processing customer referral: ${referralId} for referrer: ${customerId}`);
-
-      // Get the referral record
-      const referralResult = await query(
-        `SELECT * FROM referrals WHERE id = $1 AND referrer_id = $2`,
-        [referralId, customerId]
-      );
-
-      if (referralResult.rows.length === 0) {
-        return c.json({ error: 'Referral not found' }, 404);
-      }
-
-      const referral = referralResult.rows[0];
-
-      // Check if referral was already used
-      if (!referral.referred_id) {
-        return c.json({ 
-          error: 'Referral code has not been used yet',
-          referral: referral
-        }, 400);
-      }
-
-      // Check if points were already awarded for THIS specific referral
-      const existingPoints = await query(
-        `SELECT COUNT(*) as count, COALESCE(SUM(points), 0) as total_points FROM loyalty_transactions 
-         WHERE customer_id = $1 
-         AND reference_type = 'referral' 
-         AND reference_id = $2`,
-        [customerId, referralId]
-      );
-
-      const pointsCount = parseInt(existingPoints.rows[0]?.count || '0');
-      const totalPoints = parseInt(existingPoints.rows[0]?.total_points || '0');
-      console.log(`[REFERRALS] Checking points for referral ${referralId}: found ${pointsCount} loyalty transactions, total ${totalPoints} points`);
-
-      if (pointsCount > 0 && totalPoints > 0) {
-        // Points already awarded
-        return c.json({
-          success: true,
-          message: 'Points already awarded',
-          referralId: referral.id,
-          points: totalPoints,
-          walletCredited: totalPoints / 100,
-        });
-      }
-
-      // Award points to referrer (via refer_friend rule)
-      let referrerPoints = 0;
-      try {
-        const { loyaltyPointsService } = await import('../lib/services/loyalty&reward/loyalty-points-service');
-        const referrerResult = await loyaltyPointsService.awardPoints({
-          customerId: customerId,
-          actionName: 'refer_friend',
-          referenceType: 'referral',
-          referenceId: referral.id,
-          description: 'Referral reward for friend signup',
-        });
-        referrerPoints = referrerResult.points;
-        console.log(`[REFERRALS] ✅ Awarded ${referrerPoints} points to referrer ${customerId}`);
-      } catch (pointsError: any) {
-        console.error(`[REFERRALS] ❌ Error awarding referral points: ${pointsError.message}`);
-        return c.json({ 
-          error: `Failed to award points: ${pointsError.message}`,
-          referralId: referral.id
-        }, 500);
-      }
-
-      return c.json({
-        success: true,
-        message: 'Referral processed successfully',
-        referralId: referral.id,
-        points: referrerPoints,
-        walletCredited: referrerPoints / 100,
-      });
-    } catch (error: any) {
-      console.error('Error processing customer referral:', error);
-      return c.json({ error: error.message, stack: error.stack }, 500);
-    }
+    return c.json({ error: 'Deprecated: points are awarded via action-source pipeline only.' }, 410);
   });
 }
 

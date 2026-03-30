@@ -1745,8 +1745,12 @@ export function UniversalPaymentPage({
       console.log('📤 Creating payment with payload:', paymentPayload);
 
       // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
+      // ⚠️ SKIP for Razorpay online payments when finalAmount > 0:
+      //    /razorpay/create-order already inserts the payment record with razorpay_order_id.
+      //    Calling /payments/create here would create a duplicate (orphan) record without razorpay_order_id.
+      const isRazorpayOnline = (paymentPayload.paymentMethod === 'razorpay' || selectedMethod === 'razorpay') && finalAmount > 0;
       let paymentRes: any = null;
-      if (type === 'booking' && currentBookingId && !bookingCreationDeferred) {
+      if (type === 'booking' && currentBookingId && !bookingCreationDeferred && !isRazorpayOnline) {
         // ✅ Validate bookingId is a UUID before sending
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(currentBookingId)) {
@@ -1867,7 +1871,7 @@ export function UniversalPaymentPage({
           return;
         }
       } else {
-        // For orders, create a mock payment response to proceed
+        // For orders or Razorpay online (where /payments/create was skipped), set mock response
         paymentRes = {
           id: `payment-${Date.now()}`,
           status: 'pending',
@@ -1876,7 +1880,7 @@ export function UniversalPaymentPage({
       }
 
       // If fully paid with wallet
-      if (paymentRes.status === 'completed' || finalAmount === 0) {
+      if (paymentRes?.status === 'completed' || finalAmount === 0) {
         // If booking creation was deferred (payment policy), create booking now
         if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
           const createPayload = {
@@ -2057,15 +2061,29 @@ export function UniversalPaymentPage({
               has_signature: !!response.razorpay_signature,
             });
 
-            // ✅ Step 1: Verify payment with backend
+            // ✅ Step 1: Verify payment with backend (with retry)
             console.log('🔄 [RAZORPAY] Verifying payment...');
-            const verifyRes = await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-
-            console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
+            let verifyRes: any = null;
+            const MAX_VERIFY_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_VERIFY_RETRIES; attempt++) {
+              try {
+                verifyRes = await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
+                break; // success – exit retry loop
+              } catch (verifyErr: any) {
+                console.error(`❌ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_VERIFY_RETRIES) {
+                  // All retries exhausted – throw so outer catch can handle
+                  throw verifyErr;
+                }
+                // Exponential backoff: 1s, 2s
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
 
             // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
             if (type === 'booking' && flowType === 'tele-instant') {
@@ -2194,6 +2212,7 @@ export function UniversalPaymentPage({
         offers: selectedRazorpayOffer ? [selectedRazorpayOffer.id] : [],
         modal: {
           ondismiss: () => {
+            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
             setProcessing(false);
             toast.info('Payment cancelled');
           },
@@ -2214,6 +2233,20 @@ export function UniversalPaymentPage({
 
       try {
         const razorpay = new window.Razorpay(options);
+        // ✅ Listen for payment failures (these don't trigger the handler callback)
+        razorpay.on('payment.failed', (resp: any) => {
+          console.error('❌ [RAZORPAY] Payment failed event:', {
+            code: resp?.error?.code,
+            description: resp?.error?.description,
+            source: resp?.error?.source,
+            step: resp?.error?.step,
+            reason: resp?.error?.reason,
+            orderId: resp?.error?.metadata?.order_id,
+            paymentId: resp?.error?.metadata?.payment_id,
+          });
+          toast.error(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
+          setProcessing(false);
+        });
         razorpay.open();
         console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
       } catch (openError: any) {

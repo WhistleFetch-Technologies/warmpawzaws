@@ -21,6 +21,10 @@ export const categoryIdToScreen: Record<string, string> = {
   training: 'training',
   boarding: 'boarding',
   walking: 'walker',
+  // Pet sitting (custom catalog slug) → same flow as sitting / home services
+  'pet-sitter': 'pet-sitter',
+  pet_sitter: 'pet-sitter',
+  sitting: 'pet-sitter',
   // ✅ FIX: Merge all diagnostics variants to lab-diagnostics
   diagnostic: 'lab-diagnostics',
   diagnostics: 'lab-diagnostics',

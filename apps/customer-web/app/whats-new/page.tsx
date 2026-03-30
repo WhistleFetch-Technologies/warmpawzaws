@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
@@ -8,7 +9,15 @@ import {
   navigateWhatsNewFromFullPage,
   type WhatsNewAnnouncement,
 } from '@/lib/whats-new-announcements';
-import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
+
+// Fix: dynamically import to avoid reference errors in certain static bundling orders
+const WhatsNewAnnouncementList = dynamic(
+  () =>
+    import('@/components/customer/whats-new/WhatsNewAnnouncementList').then(
+      (m) => m.WhatsNewAnnouncementList
+    ),
+  { ssr: false }
+);
 import { ArrowLeft, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 export default function WhatsNewHubPage() {

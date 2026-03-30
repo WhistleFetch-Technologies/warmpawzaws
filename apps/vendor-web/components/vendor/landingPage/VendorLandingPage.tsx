@@ -1516,8 +1516,8 @@ export function VendorLandingPage({
         );
       }
 
-      // 6. Insurance Provider
-      if (vendorData?.roleId === 'insurance') {
+      // 6. Pet / general insurance provider (plan creation + links to issued policies & claims)
+      if (vendorData?.roleId === 'insurance' || vendorData?.roleId === 'pet_insurance') {
         console.log('🛡️ Rendering InsuranceVendorContainer');
         return (
           <InsuranceVendorContainer
