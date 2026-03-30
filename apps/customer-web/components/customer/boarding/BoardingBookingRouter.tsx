@@ -45,6 +45,9 @@ interface BoardingBookingRouterProps {
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'room' | 'payment' | 'confirmation';
 
+/** Matches server pet-sitting pricing (bookings-enhanced). */
+const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+
 interface TimeSlot {
   time: string;
   available: boolean;
@@ -113,7 +116,7 @@ export function BoardingBookingRouter({
   });
   const [checkInDate, setCheckInDate] = useState('');
   const [checkOutDate, setCheckOutDate] = useState('');
-  const [checkInTime, setCheckInTime] = useState('10:00');
+  const [checkInTime, setCheckInTime] = useState('09:00');
   const [checkOutTime, setCheckOutTime] = useState('10:00');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -154,7 +157,7 @@ export function BoardingBookingRouter({
   const defaultPetSittingOptions = [
     { id: 'overnight_sitting', name: 'Overnight sitting', icon: Moon, price: 899, duration: 1440, desc: 'Sitter stays overnight at your home', color: 'indigo' },
     { id: 'day_sitting', name: 'Day visits', icon: Sun, price: 549, duration: 480, desc: 'Scheduled daytime check-ins', color: 'orange' },
-    { id: 'extended_home', name: 'Extended home stay', icon: Calendar, price: 1499, duration: 2880, desc: 'Multi-day in-home care', color: 'sky' },
+    { id: 'extended_home', name: 'Extended home stay', icon: Calendar, price: 1499, duration: 2880, desc: 'Multi-day in-home care', color: 'orange' },
     { id: 'drop_in', name: 'Drop-in visits', icon: Clock, price: 249, duration: 45, desc: 'Quick feeding & potty breaks', color: 'rose' },
   ];
 
@@ -171,48 +174,51 @@ export function BoardingBookingRouter({
     const st = (styleRaw || '').toLowerCase();
     if (st.includes('overnight') || st.includes('night')) return 'indigo';
     if (st.includes('day')) return 'orange';
-    if (st.includes('extend')) return 'sky';
+    if (st.includes('extend')) return 'orange';
     if (st.includes('drop') || st.includes('visit')) return 'rose';
-    return isPetSitting ? 'sky' : 'orange';
+    return 'orange';
   };
 
   const fallbackDefaults = isPetSitting ? defaultPetSittingOptions : defaultServiceTypeOptions;
 
-  const serviceOptions = vendorServices.length > 0 
-    ? vendorServices.map(s => {
-        const styleVal = s.serviceStyle || s.service_style;
-        return {
-        id: s.id || s.serviceId,
-        serviceId: s.serviceId || s.service_id,
-        name: s.serviceName || s.service_name || s.name,
-        price: s.price || 0,
-        duration: s.duration || 1440,
-        desc: s.description || '',
-        serviceStyle: styleVal,
-        icon: pickVendorServiceIcon(styleVal),
-        color: pickVendorServiceColor(styleVal),
-      };
-      })
-    : fallbackDefaults;
+  /** With a vendor, only list API services — defaults are UI placeholders and have no bookable UUID. */
+  const serviceOptions =
+    vendorServices.length > 0
+      ? vendorServices.map((s) => {
+          const styleVal = s.serviceStyle || s.service_style;
+          return {
+            id: s.id || s.serviceId,
+            /** Catalog / legacy FK; may be null while vs.id is always the bookable vendor_services row. */
+            serviceId: s.serviceId || s.service_id,
+            name: s.serviceName || s.service_name || s.name,
+            price: s.price || 0,
+            duration: s.duration || 1440,
+            desc: s.description || s.shortDescription || '',
+            serviceStyle: styleVal,
+            icon: pickVendorServiceIcon(styleVal),
+            color: pickVendorServiceColor(styleVal),
+          };
+        })
+      : vendorId
+        ? []
+        : fallbackDefaults;
 
   const selectedServiceOption = serviceOptions.find((s) => s.id === selectedServiceType);
+  const sittingStyleLower = String(selectedServiceOption?.serviceStyle || '').toLowerCase();
 
-  /** Day visits & drop-ins: one calendar day + start/end time for pricing. */
-  const sittingSameDay =
-    isPetSitting &&
-    (['day_sitting', 'drop_in'].includes(selectedServiceType) ||
-      (() => {
-        const n = (selectedServiceOption?.name || '').toLowerCase();
-        if (/overnight|extended|multi[\s-]?day/.test(n)) return false;
-        return /drop|day\s*visit|daytime|day visit/.test(n);
-      })());
-
-  /** Overnight / extended: separate check-in & check-out dates (nights). */
+  /** Overnight / extended: multi-night dates + times (e.g. 1440+ min unit). */
   const sittingMultiNight =
     isPetSitting &&
-    !sittingSameDay &&
     (['overnight_sitting', 'extended_home'].includes(selectedServiceType) ||
+      sittingStyleLower === 'overnight_sitting' ||
+      sittingStyleLower === 'extended_home' ||
       /overnight|extended|multi[\s-]?day/.test((selectedServiceOption?.name || '').toLowerCase()));
+
+  /**
+   * Short visits: same-day or few-hour window (30 min, 2 hr, etc.) — "Pet Sitting Visit" and similar.
+   * Checkout can be the same calendar day as check-in; not overnight/extended.
+   */
+  const sittingSameDay = isPetSitting && !sittingMultiNight;
 
   const generateDates = () => {
     const dates = [];
@@ -251,9 +257,11 @@ export function BoardingBookingRouter({
   }, [vendorServices]);
 
   useEffect(() => {
-    if (step !== 'datetime' || !isPetSitting || !sittingSameDay) return;
-    if (checkInDate) setCheckOutDate(checkInDate);
-  }, [step, isPetSitting, sittingSameDay, checkInDate]);
+    if (!vendorId || loading) return;
+    if (vendorServices.length === 0) {
+      setSelectedServiceType('');
+    }
+  }, [vendorId, loading, vendorServices.length]);
 
   useEffect(() => {
     if (step !== 'datetime' || !isPetSitting || sittingSameDay || !checkInDate) return;
@@ -263,15 +271,47 @@ export function BoardingBookingRouter({
     setCheckOutDate(next.toISOString().split('T')[0]);
   }, [step, isPetSitting, sittingSameDay, checkInDate, checkOutDate]);
 
+  /** Same-day visits: checkout stays on the selected calendar day; duration comes from start/end time. */
+  useEffect(() => {
+    if (!isPetSitting || !sittingSameDay || !checkInDate) return;
+    setCheckOutDate(checkInDate);
+  }, [isPetSitting, sittingSameDay, checkInDate]);
+
   const loadVendorServices = async () => {
     if (!vendorId) return;
-    
+
+    const filterAtHomeForSitting = (list: any[]) => {
+      if (!isPetSitting || !Array.isArray(list)) return list;
+      return list.filter((s: any) => {
+        const st = String(s.serviceStyle || s.service_style || '').toLowerCase();
+        return st === 'at_home' || st === '';
+      });
+    };
+
     try {
       setLoading(true);
-      const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=${apiCategory}`) as any;
-      if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
+      const servicesResponse = (await apiClient.get(
+        `/customer/vendor/${vendorId}/services?category=${apiCategory}`
+      )) as any;
+
+      let list: any[] =
+        servicesResponse?.success && Array.isArray(servicesResponse.services)
+          ? servicesResponse.services
+          : [];
+
+      /** If sitting filter returns nothing, refetch without category and keep at_home rows (DB category/style quirks). */
+      if (isPetSitting && list.length === 0) {
+        try {
+          const fallback = (await apiClient.get(`/customer/vendor/${vendorId}/services`)) as any;
+          if (fallback?.success && Array.isArray(fallback.services)) {
+            list = filterAtHomeForSitting(fallback.services);
+          }
+        } catch {
+          /* keep empty */
+        }
       }
+
+      setVendorServices(list);
     } catch (error) {
       console.error('Error loading vendor services:', error);
     } finally {
@@ -409,6 +449,18 @@ export function BoardingBookingRouter({
     return Math.round((end - start) / 60000);
   };
 
+  /** Unit window for ₹ price (vendor `duration` minutes, else overnight = 1440, extended = 2880). */
+  const getPetSittingPricingBaseMinutes = (): number => {
+    const optDur = Number(selectedServiceOption?.duration);
+    if (Number.isFinite(optDur) && optDur >= 15) return optDur;
+    const name = (selectedServiceOption?.name || '').toLowerCase();
+    if (/extended|multi[\s-]?day/.test(name)) return 2880;
+    if (/overnight|night/.test(name)) return 1440;
+    if (sittingMultiNight) return 1440;
+    if (sittingSameDay) return Math.max(15, Number(selectedServiceOption?.duration) || 60);
+    return 1440;
+  };
+
   const calculateNights = () => {
     if (!checkInDate || !checkOutDate) return 0;
     if (isPetSitting && sittingSameDay && checkInDate === checkOutDate) return 0;
@@ -422,18 +474,16 @@ export function BoardingBookingRouter({
     const opt = selectedServiceOption;
     const unitPrice = Number(opt?.price ?? price ?? 0);
 
-    if (isPetSitting && sittingSameDay) {
-      const baseMins = Math.max(15, Number(opt?.duration) || 60);
+    /** Pet sitting: price uses 30-minute billing slots; list price applies to the sitter’s base duration. */
+    if (isPetSitting) {
+      const baseMins = getPetSittingPricingBaseMinutes();
       const mins = getBilledMinutes();
       if (mins < 1) return unitPrice;
-      const proportional = unitPrice * (mins / baseMins);
+      const slots = Math.max(1, Math.ceil(mins / PET_SITTING_BILLING_SLOT_MINUTES));
+      const pricePerSlot = (unitPrice * PET_SITTING_BILLING_SLOT_MINUTES) / baseMins;
+      const proportional = Math.round(slots * pricePerSlot);
       const floor = Math.min(unitPrice, Math.max(49, Math.round(unitPrice * 0.3)));
-      return Math.max(Math.round(proportional), floor);
-    }
-
-    if (isPetSitting) {
-      const nights = Math.max(1, calculateNights());
-      return Math.round(nights * unitPrice);
+      return Math.max(proportional, floor);
     }
 
     const nights = calculateNights();
@@ -469,10 +519,14 @@ export function BoardingBookingRouter({
       return;
     }
 
-    if (isPetSitting && sittingSameDay) {
+    if (isPetSitting) {
       const bm = getBilledMinutes();
       if (bm < 15) {
-        toast.error('Visit must be at least 15 minutes. Adjust start and end times.');
+        toast.error(
+          sittingSameDay
+            ? 'This visit could not be priced. Pick another check-in date or a different sitting service.'
+            : 'Stay must be at least 15 minutes. Adjust check-in and check-out date & time.'
+        );
         return;
       }
     }
@@ -489,23 +543,46 @@ export function BoardingBookingRouter({
 
     setProcessing(true);
     try {
-      let serviceIdValue = (selectedServiceOption as any)?.serviceId ||
-                          selectedVendorService?.serviceId ||
-                          serviceId;
-
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const opt = selectedServiceOption as any;
+      /** Bookings FK uses vendor_services.id; API exposes it as `id`. `serviceId` is vs.service_id and is often null. */
+      let serviceIdValue =
+        opt?.id ||
+        opt?.serviceId ||
+        selectedVendorService?.id ||
+        selectedVendorService?.serviceId ||
+        serviceId;
 
       if (!serviceIdValue || !uuidRegex.test(String(serviceIdValue))) {
-        const fromVendor = vendorServices.find((vs: any) => {
-          const id = vs.serviceId || vs.service_id || vs.id;
-          return id && uuidRegex.test(String(id));
-        });
-        const fallback = fromVendor?.serviceId || fromVendor?.service_id || fromVendor?.id;
+        const fromVendor =
+          vendorServices.find((vs: any) => {
+            const rowId = vs.id;
+            return rowId && String(rowId) === String(selectedServiceType);
+          }) ||
+          vendorServices.find((vs: any) => {
+            const sid = vs.serviceId || vs.service_id;
+            return sid && String(sid) === String(selectedServiceType);
+          }) ||
+          vendorServices.find((vs: any) => {
+            const id = vs.id || vs.serviceId || vs.service_id;
+            return id && uuidRegex.test(String(id));
+          });
+        const fallback = fromVendor?.id || fromVendor?.serviceId || fromVendor?.service_id;
         if (fallback && uuidRegex.test(String(fallback))) {
           serviceIdValue = fallback;
           toast.info('Using your sitter’s service plan for this booking.');
         } else {
-          toast.error(isPetSitting ? 'Please select a sitting option from your sitter.' : 'Service ID is required. Please select a boarding option.');
+          const noPublished =
+            vendorId && vendorServices.length === 0;
+          toast.error(
+            noPublished
+              ? isPetSitting
+                ? 'This sitter has no published sitting services to book. Ask them to publish sitting services, or try another sitter.'
+                : 'This provider has no published boarding services to book.'
+              : isPetSitting
+                ? 'Please select a sitting option from your sitter.'
+                : 'Service ID is required. Please select a boarding option.'
+          );
           setProcessing(false);
           return;
         }
@@ -537,6 +614,7 @@ export function BoardingBookingRouter({
         bookingTime: checkInTime,
         serviceType: bookingServiceType,
         petId: selectedPet?.id,
+        customerPhone: phone || undefined,
         notes: notes || undefined,
         idempotencyKey,
         // Boarding-specific fields
@@ -545,8 +623,18 @@ export function BoardingBookingRouter({
         checkInTime,
         checkOutTime,
         roomId: selectedRoom?.id,
-        numberOfNights: isPetSitting && sittingSameDay ? 0 : Math.max(1, calculateNights()),
+        numberOfNights:
+          isPetSitting && sittingSameDay
+            ? 0
+            : isPetSitting
+              ? Math.max(1, Math.ceil(getBilledMinutes() / 1440))
+              : Math.max(1, calculateNights()),
       };
+
+      if (isPetSitting) {
+        bookingData.totalDurationMinutes = getBilledMinutes();
+        bookingData.flowVariant = 'pet_sitting';
+      }
 
       if (!usePackageSession && totalAmount > 0) {
         bookingData.amount = totalAmount;
@@ -578,7 +666,12 @@ export function BoardingBookingRouter({
       setStep('payment');
     } catch (err: any) {
       console.error('Error creating booking:', err);
-      const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create booking';
+      const apiErr = err?.response?.data?.error;
+      const errorMessage =
+        (typeof apiErr === 'string' ? apiErr : apiErr?.message) ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to create booking';
       toast.error(errorMessage);
       setBookingIdempotencyKey(null);
     } finally {
@@ -670,9 +763,11 @@ export function BoardingBookingRouter({
   const dateSummaryValue =
     !checkInDate
       ? '—'
-      : isPetSitting && sittingSameDay && checkInDate === checkOutDate
+      : isPetSitting && sittingSameDay
         ? `${checkInDate} · ${checkInTime}–${checkOutTime}`
-        : `${checkInDate} → ${checkOutDate || '—'}`;
+        : isPetSitting && checkInDate && checkOutDate
+          ? `${checkInDate} ${checkInTime} → ${checkOutDate} ${checkOutTime}`
+          : `${checkInDate} → ${checkOutDate || '—'}`;
 
   const boardingStats = [
     { value: selectedServiceOption?.name || flowTitle, label: 'Type', icon: (isPetSitting ? <Home className="w-4 h-4" /> : <Building2 className="w-4 h-4" />) },
@@ -700,7 +795,7 @@ export function BoardingBookingRouter({
         steps={stepIndicators}
         onBack={handleBack}
         showBackButton={true}
-        headerColor={isPetSitting ? 'bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600' : 'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]'}
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
       />
       <div className="flex-1 overflow-y-auto bg-gray-50">
         <div className="max-w-md mx-auto px-4 py-4">
@@ -708,52 +803,87 @@ export function BoardingBookingRouter({
         {step === 'service' && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-gray-900">{isPetSitting ? 'Select sitting type' : 'Select Boarding Type'}</h2>
-            <div className="space-y-3">
-              {serviceOptions.map((service) => {
-                const Icon = service.icon;
-                const isSelected = selectedServiceType === service.id;
-                return (
-                  <button
-                    key={service.id}
-                    onClick={() => setSelectedServiceType(service.id)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all ${
-                      isSelected 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                        service.color === 'indigo' ? 'bg-indigo-100 text-indigo-600' :
-                        service.color === 'sky' ? 'bg-sky-100 text-sky-600' :
-                        service.color === 'rose' ? 'bg-rose-100 text-rose-600' :
-                        'bg-orange-100 text-orange-600'
-                      }`}>
-                        <Icon className="w-7 h-7" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                        <p className="text-sm text-gray-500">{service.desc}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
-                        <p className="text-xs text-gray-500">{priceSuffix}</p>
-                        {isSelected && (
-                          <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
-              disabled={!selectedServiceType}
-            >
-              Continue
-            </Button>
+            {vendorId && loading ? (
+              <p className="text-center py-10 text-gray-500">Loading services…</p>
+            ) : serviceOptions.length === 0 ? (
+              <p className="text-center py-10 text-gray-600 text-sm px-2">
+                {vendorId
+                  ? isPetSitting
+                    ? 'This sitter has no published sitting services to book yet. Ask them to add and publish a sitting service in their dashboard, or try another sitter.'
+                    : 'This provider has no published boarding services to book yet.'
+                  : isPetSitting
+                    ? 'No sitting services to display. Open this flow from a sitter’s profile.'
+                    : 'No boarding services to display.'}
+              </p>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {serviceOptions.map((service) => {
+                    const Icon = service.icon;
+                    const isSelected = selectedServiceType === service.id;
+                    return (
+                      <button
+                        key={service.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedServiceType(service.id);
+                          const raw = vendorServices.find(
+                            (vs) => String(vs.id || vs.serviceId) === String(service.id)
+                          );
+                          if (raw) {
+                            setSelectedVendorService({
+                              id: raw.id,
+                              serviceId: raw.serviceId || raw.service_id,
+                              name: raw.serviceName || raw.service_name || raw.name,
+                              price: raw.price,
+                              duration: raw.duration,
+                              serviceStyle: raw.serviceStyle || raw.service_style,
+                            });
+                          }
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 transition-all ${
+                          isSelected
+                            ? 'border-[#FF8C42] bg-orange-50'
+                            : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div
+                            className={`w-14 h-14 rounded-xl flex items-center justify-center ${
+                              service.color === 'indigo'
+                                ? 'bg-indigo-100 text-indigo-600'
+                                : service.color === 'rose'
+                                  ? 'bg-rose-100 text-rose-600'
+                                  : 'bg-orange-100 text-[#FF8C42]'
+                            }`}
+                          >
+                            <Icon className="w-7 h-7" />
+                          </div>
+                          <div className="flex-1 text-left">
+                            <h3 className="font-semibold text-gray-900">{service.name}</h3>
+                            <p className="text-sm text-gray-500">{service.desc}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                            <p className="text-xs text-gray-500">{priceSuffix}</p>
+                            {isSelected && (
+                              <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  onClick={handleNext}
+                  className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
+                  disabled={!selectedServiceType}
+                >
+                  Continue
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -765,21 +895,20 @@ export function BoardingBookingRouter({
                 <div>
                   <h2 className="mb-3 text-lg font-bold text-gray-900">Visit date</h2>
                   <p className="mb-2 text-xs text-gray-500">
-                    Day visits & drop-ins: same-day start and end times.
+                    Pick the day, then choose start and end time. Price is based on 30-minute blocks; your
+                    sitter’s listed rate applies to their base visit length (
+                    {getPetSittingPricingBaseMinutes()} minutes).
                   </p>
                   <div className="flex gap-2 overflow-x-auto pb-2">
                     {dates.map((d) => (
                       <button
                         key={d.date}
                         type="button"
-                        onClick={() => {
-                          setCheckInDate(d.date);
-                          setCheckOutDate(d.date);
-                        }}
+                        onClick={() => setCheckInDate(d.date)}
                         className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
                           checkInDate === d.date
-                            ? 'bg-sky-500 text-white'
-                            : 'border border-gray-200 bg-white hover:border-sky-300'
+                            ? 'bg-[#FF8C42] text-white'
+                            : 'border border-gray-200 bg-white hover:border-[#FF8C42]/50'
                         }`}
                       >
                         <p className="text-xs opacity-75">{d.day}</p>
@@ -792,28 +921,24 @@ export function BoardingBookingRouter({
 
                 {checkInDate && (
                   <div className="space-y-4">
-                    <h2 className="text-lg font-bold text-gray-900">Visit times</h2>
+                    <h2 className="text-lg font-bold text-gray-900">Visit time</h2>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">
-                          Start time
-                        </label>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">Start time</label>
                         <input
                           type="time"
                           value={checkInTime}
                           onChange={(e) => setCheckInTime(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">
-                          End time
-                        </label>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">End time</label>
                         <input
                           type="time"
                           value={checkOutTime}
                           onChange={(e) => setCheckOutTime(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
                         />
                       </div>
                     </div>
@@ -821,18 +946,18 @@ export function BoardingBookingRouter({
                 )}
 
                 {checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
-                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                  <div className="rounded-xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-600">Duration & estimate</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m
-                        </p>
-                        <p className="text-sm text-sky-800">
-                          ₹{calculateTotalPrice()} (based on visit length)
+                        <p className="text-sm text-gray-600">Estimated price</p>
+                        <p className="text-2xl font-bold text-gray-900">₹{calculateTotalPrice()}</p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m ·{' '}
+                          {Math.ceil(getBilledMinutes() / PET_SITTING_BILLING_SLOT_MINUTES)} ×{' '}
+                          {PET_SITTING_BILLING_SLOT_MINUTES}-min blocks
                         </p>
                       </div>
-                      <Clock className="h-8 w-8 text-sky-500" />
+                      <Clock className="h-8 w-8 text-[#FF8C42]" />
                     </div>
                   </div>
                 )}
@@ -897,19 +1022,58 @@ export function BoardingBookingRouter({
                   </div>
                 )}
 
-                {isPetSitting && sittingMultiNight && checkInDate && checkOutDate && (
-                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                {isPetSitting && checkInDate && checkOutDate && (
+                  <div className="space-y-4">
+                    <h2 className="text-lg font-bold text-gray-900">Check-in & check-out time</h2>
+                    <p className="text-xs text-gray-500">
+                      Price follows your visit length in 30-minute blocks. Your sitter’s rate applies to their
+                      base duration ({getPetSittingPricingBaseMinutes()} minutes) unless they set a different
+                      length on the service.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">
+                          Check-in time
+                        </label>
+                        <input
+                          type="time"
+                          value={checkInTime}
+                          onChange={(e) => setCheckInTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">
+                          Check-out time
+                        </label>
+                        <input
+                          type="time"
+                          value={checkOutTime}
+                          onChange={(e) => setCheckOutTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isPetSitting && !sittingSameDay && checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
+                  <div className="rounded-xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-600">Stay length</p>
+                        <p className="text-sm text-gray-600">Stay length & price</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {Math.max(1, calculateNights())} night(s)
+                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m
                         </p>
-                        <p className="text-sm text-sky-800">
+                        <p className="text-xs text-gray-600">
+                          {Math.max(1, calculateNights())} calendar day(s) · billed vs{' '}
+                          {getPetSittingPricingBaseMinutes()} min unit
+                        </p>
+                        <p className="text-sm font-semibold text-[#FF8C42]">
                           ₹{calculateTotalPrice()} total
                         </p>
                       </div>
-                      <Calendar className="h-8 w-8 text-sky-500" />
+                      <Clock className="h-8 w-8 text-[#FF8C42]" />
                     </div>
                   </div>
                 )}
@@ -932,11 +1096,11 @@ export function BoardingBookingRouter({
 
             <Button
               onClick={handleNext}
-              className={`w-full ${isPetSitting && sittingSameDay ? 'bg-sky-600 hover:bg-sky-700' : 'bg-[#FF8C42] hover:bg-[#FF7A35]'}`}
+              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={
                 !checkInDate ||
                 !checkOutDate ||
-                (isPetSitting && sittingSameDay && getBilledMinutes() < 15)
+                (isPetSitting && getBilledMinutes() < 15)
               }
             >
               Continue

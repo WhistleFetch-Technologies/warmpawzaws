@@ -40,7 +40,8 @@ export const CreateBookingRequestSchema = z.object({
   pincode: z.string().optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
-  petId: z.string().uuid('Invalid pet ID format').optional(),
+  /** DB may use UUID or legacy string ids (e.g. prefixed); booking handler validates ownership when needed. */
+  petId: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().min(1).max(128).optional()),
   amount: z.coerce.number().min(0, 'Amount must be non-negative').optional(),
   totalAmount: z.coerce.number().min(0, 'Total amount must be non-negative').optional(),
   notes: z.string().max(10000, 'Notes too long').optional(),
@@ -53,6 +54,17 @@ export const CreateBookingRequestSchema = z.object({
   customerName: z.string().optional(),
   petName: z.string().optional(),
   packagePurchaseId: z.string().uuid('Invalid package purchase ID format').optional(),
+  /** Boarding / pet sitting: end of stay (YYYY-MM-DD). */
+  checkOutDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid check-out date').optional(),
+  checkOutTime: z
+    .string()
+    .regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/, 'Invalid check-out time (HH:MM)')
+    .optional(),
+  /** Client-computed stay length; server recomputes for pet sitting when checkout times are sent. */
+  totalDurationMinutes: z.coerce.number().int().positive().optional(),
+  numberOfNights: z.coerce.number().int().min(0).optional(),
+  /** Customer app: drives timed pet-sitting pricing when vendor role lookup is ambiguous. */
+  flowVariant: z.enum(['pet_sitting', 'boarding']).optional(),
 });
 
 export const UpdateBookingStatusRequestSchema = z.object({

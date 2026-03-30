@@ -354,13 +354,12 @@ export function CustomerHomeComplete({
   const { quickServiceTiles } = useCustomerCategories();
 
   // Define quickServices constant (fallback when API has no categories)
-  // Labels aligned with canonical names: Trainer, Behaviorist, Emergency care, Ambulance, Lab Test, Diagnostics
+  // Labels aligned with canonical names: Trainer and Behaviourist, Behaviorist, Emergency care, etc.
 
-
-  // Canonical display names: avoid duplicate-sounding labels (Trainer vs Training, Lab Test vs Diagnostics, etc.)
+  // Canonical display names: avoid duplicate-sounding labels (Lab Test vs Diagnostics, etc.)
   const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
-    training: 'Trainer',
-    trainer: 'Trainer',
+    training: 'Trainer and Behaviourist',
+    trainer: 'Trainer and Behaviourist',
     behavioral: 'Behaviorist',
     behaviorist: 'Behaviorist',
     // ✅ FIX: Merge emergency and ambulance to "Emergency Care"
@@ -385,6 +384,9 @@ export function CustomerHomeComplete({
     walker: 'Dog Walker',
     shop: 'Pet Shop',
     marketplace: 'Pet Shop',
+    'pet-sitter': 'Pet Sitter',
+    pet_sitter: 'Pet Sitter',
+    sitting: 'Pet Sitter',
   };
 
   // Use API-driven categories when available; otherwise fallback to hardcoded quickServices

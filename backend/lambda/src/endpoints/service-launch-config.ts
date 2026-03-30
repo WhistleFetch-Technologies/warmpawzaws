@@ -97,6 +97,39 @@ export const MAJOR_CITIES: Record<string, string[]> = {
   ML: ['Shillong'],
 };
 
+/**
+ * Canonical Indian city names for launch config keys and lookups.
+ * Admin UI lists "Bangalore" while some data may use "Bengaluru"; without this,
+ * city overrides are missed and state-level "Launched" appears after setting Hidden.
+ */
+const CITY_NAME_ALIASES: Record<string, string> = {
+  bengaluru: 'Bangalore',
+  bangalore: 'Bangalore',
+  mumbai: 'Mumbai',
+  bombay: 'Mumbai',
+  chennai: 'Chennai',
+  madras: 'Chennai',
+  kolkata: 'Kolkata',
+  calcutta: 'Kolkata',
+  'new delhi': 'New Delhi',
+  delhi: 'New Delhi',
+  hyderabad: 'Hyderabad',
+  pune: 'Pune',
+  poona: 'Pune',
+  ahmedabad: 'Ahmedabad',
+  gurugram: 'Gurugram',
+  gurgaon: 'Gurugram',
+  noida: 'Noida',
+  ghaziabad: 'Ghaziabad',
+};
+
+function normalizeIndianCityName(cityName: string): string {
+  const t = String(cityName || '').trim();
+  if (!t) return '';
+  const mapped = CITY_NAME_ALIASES[t.toLowerCase()];
+  return mapped || t;
+}
+
 // Launch status types
 export type LaunchStatus = 'hidden' | 'coming_soon' | 'beta' | 'launched';
 
@@ -128,6 +161,23 @@ interface StateConfig {
 interface CityConfig {
   status: LaunchStatus;
   rolloutPercentage: number;
+}
+
+function getCityLaunchOverride(
+  cities: Record<string, CityConfig> | undefined,
+  cityQuery: string
+): CityConfig | undefined {
+  if (!cities || !cityQuery) return undefined;
+  const q = cityQuery.trim();
+  if (cities[q]) return cities[q];
+  const canon = normalizeIndianCityName(q);
+  if (canon && cities[canon]) return cities[canon];
+  const qLower = q.toLowerCase();
+  for (const k of Object.keys(cities)) {
+    if (k.toLowerCase() === qLower) return cities[k];
+    if (canon && normalizeIndianCityName(k).toLowerCase() === canon.toLowerCase()) return cities[k];
+  }
+  return undefined;
 }
 
 // Default icon mapping for services
@@ -211,6 +261,10 @@ function mapToDashboardServiceId(categoryId: string | null | undefined): string 
     training: 'training',
     walking: 'walker',
     boarding: 'boarding',
+    // Pet Holiday may appear under catalog / role slugs — keep one launch tile id
+    'pet-holiday': 'holiday',
+    pet_holiday: 'holiday',
+    pet_holiday_planner: 'holiday',
     diagnostic: 'diagnostics',
     diagnostics: 'diagnostics',
     pharmacy: 'pharmacy',
@@ -225,7 +279,11 @@ function mapToDashboardServiceId(categoryId: string | null | undefined): string 
   return mappings[key] || String(categoryId).trim();
 }
 
-/** Merge platform_settings keys: dashboard id, raw slug, and any UUID aliases that resolve to this slug. */
+/**
+ * Merge platform_settings keys: legacy UUID / alternate slugs first, canonical dashboard id last.
+ * mergeServiceLaunchEntries overlays later parts — if UUID was merged after `holiday`, stale
+ * UUID city overrides overwrote admin saves done under `holiday` (e.g. Bangalore stayed Launched).
+ */
 function collectLaunchConfigForCategory(
   slug: string,
   dashboardId: string,
@@ -233,8 +291,6 @@ function collectLaunchConfigForCategory(
   uuidToSlug: Map<string, string>
 ): Record<string, any> {
   const parts: Record<string, any>[] = [];
-  if (existingConfig[dashboardId]) parts.push(existingConfig[dashboardId]);
-  if (slug !== dashboardId && existingConfig[slug]) parts.push(existingConfig[slug]);
   for (const [uuidKey, resolvedSlug] of uuidToSlug) {
     if (mapToDashboardServiceId(resolvedSlug) === dashboardId && existingConfig[uuidKey]) {
       parts.push(existingConfig[uuidKey]);
@@ -247,6 +303,19 @@ function collectLaunchConfigForCategory(
         parts.push(existingConfig[legacy]);
       }
     }
+  }
+  if (dashboardId === 'holiday') {
+    for (const legacy of ['pet-holiday', 'pet_holiday', 'pet_holiday_planner']) {
+      if (legacy !== slug && legacy !== dashboardId && existingConfig[legacy]) {
+        parts.push(existingConfig[legacy]);
+      }
+    }
+  }
+  if (slug !== dashboardId && existingConfig[slug]) {
+    parts.push(existingConfig[slug]);
+  }
+  if (existingConfig[dashboardId]) {
+    parts.push(existingConfig[dashboardId]);
   }
   return mergeServiceLaunchEntries(...parts);
 }
@@ -300,11 +369,13 @@ async function canonicalizeServiceLaunchConfig(raw: Record<string, any>): Promis
 
   const out: Record<string, any> = {};
   for (const [canonicalId, keys] of buckets) {
-    const ordered = [...keys].sort((a, b) => {
-      const ua = isUuidKey(a) ? 1 : 0;
-      const ub = isUuidKey(b) ? 1 : 0;
-      return ua - ub;
-    });
+    // Merge UUID / legacy keys first, canonical id key last so admin saves under `holiday` (etc.) win.
+    const rank = (k: string) => {
+      if (isUuidKey(k)) return 0;
+      if (String(k).toLowerCase() === String(canonicalId).toLowerCase()) return 2;
+      return 1;
+    };
+    const ordered = [...keys].sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b)));
     out[canonicalId] = mergeServiceLaunchEntries(...ordered.map((k) => raw[k]));
   }
   return out;
@@ -440,8 +511,8 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
           effectiveStatus = stateConfig.status;
           effectiveRollout = stateConfig.rolloutPercentage;
 
-          if (city && stateConfig.cities?.[city]) {
-            const cityConfig = stateConfig.cities[city];
+          const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
+          if (cityConfig) {
             effectiveStatus = cityConfig.status;
             effectiveRollout = cityConfig.rolloutPercentage;
           }
@@ -499,9 +570,10 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
           effectiveStatus = stateConfig.status;
           effectiveRollout = stateConfig.rolloutPercentage;
 
-          if (city && stateConfig.cities?.[city]) {
-            effectiveStatus = stateConfig.cities[city].status;
-            effectiveRollout = stateConfig.cities[city].rolloutPercentage;
+          const cityCfg = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
+          if (cityCfg) {
+            effectiveStatus = cityCfg.status;
+            effectiveRollout = cityCfg.rolloutPercentage;
           }
         }
 
@@ -709,7 +781,15 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         if (!serviceConfig.stateOverrides[stateCode].cities) {
           serviceConfig.stateOverrides[stateCode].cities = {};
         }
-        serviceConfig.stateOverrides[stateCode].cities[city] = {
+        const citiesMap = serviceConfig.stateOverrides[stateCode].cities;
+        const canonCity = normalizeIndianCityName(city);
+        const cityKey = canonCity || city;
+        for (const k of Object.keys(citiesMap)) {
+          if (k !== cityKey && normalizeIndianCityName(k) === cityKey) {
+            delete citiesMap[k];
+          }
+        }
+        citiesMap[cityKey] = {
           status,
           rolloutPercentage,
         };
@@ -776,34 +856,6 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         stateCode = stateMatch?.code || '';
       }
 
-      // Normalize city name - handle common variations
-      const normalizeCity = (cityName: string): string => {
-        const cityMappings: Record<string, string> = {
-          'bengaluru': 'Bangalore',
-          'bangalore': 'Bangalore',
-          'mumbai': 'Mumbai',
-          'bombay': 'Mumbai',
-          'chennai': 'Chennai',
-          'madras': 'Chennai',
-          'kolkata': 'Kolkata',
-          'calcutta': 'Kolkata',
-          'new delhi': 'New Delhi',
-          'delhi': 'New Delhi',
-          'hyderabad': 'Hyderabad',
-          'pune': 'Pune',
-          'poona': 'Pune',
-          'ahmedabad': 'Ahmedabad',
-          'gurugram': 'Gurugram',
-          'gurgaon': 'Gurugram',
-          'noida': 'Noida',
-          'ghaziabad': 'Ghaziabad',
-        };
-        const normalized = cityMappings[cityName.toLowerCase()];
-        return normalized || cityName;
-      };
-
-      const normalizedCity = city ? normalizeCity(city) : '';
-
       // Get configuration
       const configResult = await query(
         `SELECT setting_value FROM platform_settings WHERE setting_key = $1`,
@@ -833,8 +885,7 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
           status = stateConfig.status;
           rollout = stateConfig.rolloutPercentage;
 
-          // Check city override (try both original and normalized city name)
-          const cityConfig = stateConfig.cities?.[normalizedCity] || stateConfig.cities?.[city];
+          const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
           if (cityConfig) {
             status = cityConfig.status;
             rollout = cityConfig.rolloutPercentage;
