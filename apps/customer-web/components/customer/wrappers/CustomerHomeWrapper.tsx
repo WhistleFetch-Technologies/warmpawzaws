@@ -33,6 +33,7 @@ import { GroomingBookingRouter } from '../grooming/GroomingBookingRouter';
 import { UniversalServicesByStyle } from '../shared/UniversalServicesByStyle';
 import { BoardingServiceRouter } from '../BoardingServiceRouter';
 import { BoardingBookingRouter } from '../boarding/BoardingBookingRouter';
+import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
 import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
 import { SunsetServiceRouter } from '../SunsetServiceRouter';
 import { CustomerProfile } from '../CustomerProfile';
@@ -161,6 +162,9 @@ type ScreenType =
   | 'training_home'
   | 'boarding'
   | 'boarding_facility'
+  | 'pet-sitter'
+  | 'pet-sitter-facility'
+  | 'pet-sitter-booking'
   | 'adoption'
   | 'sunset'
   | 'insurance'
@@ -463,6 +467,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'grooming') setCurrentScreen('grooming');
     else if (service === 'training') setCurrentScreen('training');
     else if (service === 'boarding') setCurrentScreen('boarding');
+    else if (service === 'pet-sitter' || service === 'pet_sitter' || service === 'sitting') setCurrentScreen('pet-sitter');
     else if (service === 'adoption') setCurrentScreen('adoption');
     else if (service === 'adoption_questionnaire') setCurrentScreen('adoption_questionnaire');
     else if (service === 'sunset') setCurrentScreen('sunset');
@@ -1393,6 +1398,69 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       { title: 'Boarding Facilities', subtitle: 'Select a facility', showBackButton: true, skipHeader: true }
     );
   }
+  if (currentScreen === 'pet-sitter') {
+    return renderScreenWithLayout('pet-sitter',
+      <PetSitterServiceRouter
+        phone={phone}
+        onBack={handleBack}
+        onNavigate={(screen, data) => {
+          if (screen === 'pet-sitter-booking') {
+            setPreviousScreen('pet-sitter');
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: 'sitting',
+              facility: data?.facility,
+            });
+            setCurrentScreen('pet-sitter-booking');
+          } else if (screen === 'create-booking') {
+            setPreviousScreen('pet-sitter');
+            setSelectedVendorId(data?.vendorId);
+            setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'sitting' });
+            setCurrentScreen('create-booking');
+          } else if (screen === 'pet-sitter-facility') {
+            setCurrentScreen('pet-sitter-facility');
+          } else if (screen) {
+            setCurrentScreen(screen as ScreenType);
+          } else {
+            handleBack();
+          }
+        }}
+      />,
+      { title: 'Pet Sitting', subtitle: 'Trusted in-home care', showBackButton: true, skipHeader: true }
+    );
+  }
+  if (currentScreen === 'pet-sitter-facility') {
+    return renderScreenWithLayout('pet-sitter-facility',
+      <PetSitterServiceRouter
+        hubMode={false}
+        phone={phone}
+        onBack={() => setCurrentScreen('pet-sitter')}
+        onNavigate={(screen, data) => {
+          if (screen === 'pet-sitter-booking') {
+            setPreviousScreen('pet-sitter-facility');
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: 'sitting',
+              facility: data?.facility,
+            });
+            setCurrentScreen('pet-sitter-booking');
+          } else if (screen === 'create-booking') {
+            setPreviousScreen('pet-sitter-facility');
+            setSelectedVendorId(data?.vendorId);
+            setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'sitting' });
+            setCurrentScreen('create-booking');
+          } else if (screen === 'pet-sitter') {
+            setCurrentScreen('pet-sitter');
+          } else if (screen) {
+            setCurrentScreen(screen as ScreenType);
+          } else {
+            setCurrentScreen('pet-sitter');
+          }
+        }}
+      />,
+      { title: 'Pet Sitters', subtitle: 'Choose a sitter', showBackButton: true, skipHeader: true }
+    );
+  }
   // ✅ FIX: Adoption Service with StandardizedHeader layout
   if (currentScreen === 'adoption') {
     return renderScreenWithLayout('adoption',
@@ -2160,27 +2228,31 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // ✅ Boarding Booking Router - step-by-step boarding flow (service → datetime → pet → room → payment → confirmation)
-  if (currentScreen === 'boarding-booking') return <BoardingBookingRouter 
-    phone={phone}
-    vendorId={vetServiceData?.vendorId}
-    facility={vetServiceData?.facility}
-    selectedService={vetServiceData?.serviceId}
-    serviceType={vetServiceData?.serviceType || 'boarding'}
-    serviceId={vetServiceData?.serviceId}
-    serviceName={vetServiceData?.service?.name}
-    serviceStyle={vetServiceData?.serviceStyle}
-    price={vetServiceData?.price}
-    duration={vetServiceData?.duration}
-    onBack={() => setCurrentScreen(previousScreen || 'boarding')} 
-    onNavigate={(screen, data) => {
-      if (screen === 'booking-details' || screen === 'booking-confirmation') {
-        handleViewBooking(data?.bookingId);
-      } else {
-        handleNavigateToService(screen);
-      }
-    }}
-    onViewBooking={handleViewBooking}
-  />;
+  if (currentScreen === 'boarding-booking' || currentScreen === 'pet-sitter-booking') {
+    const sittingBooking = currentScreen === 'pet-sitter-booking';
+    return <BoardingBookingRouter 
+      flowVariant={sittingBooking ? 'pet_sitting' : 'boarding'}
+      phone={phone}
+      vendorId={vetServiceData?.vendorId}
+      facility={vetServiceData?.facility}
+      selectedService={vetServiceData?.serviceId}
+      serviceType={vetServiceData?.serviceType || (sittingBooking ? 'sitting' : 'boarding')}
+      serviceId={vetServiceData?.serviceId}
+      serviceName={vetServiceData?.service?.name}
+      serviceStyle={vetServiceData?.serviceStyle}
+      price={vetServiceData?.price}
+      duration={vetServiceData?.duration}
+      onBack={() => setCurrentScreen(previousScreen || (sittingBooking ? 'pet-sitter' : 'boarding'))} 
+      onNavigate={(screen, data) => {
+        if (screen === 'booking-details' || screen === 'booking-confirmation') {
+          handleViewBooking(data?.bookingId);
+        } else {
+          handleNavigateToService(screen);
+        }
+      }}
+      onViewBooking={handleViewBooking}
+    />;
+  }
 
   // ✅ NEW: Bookings List
   if (currentScreen === 'bookings') return <CustomerBookingsPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
@@ -2306,6 +2378,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerPhone={phone}
     petId={selectedPetId || 'pet_default'}
     onBack={handleBack}
+    onNavigate={(screen) => {
+      if (screen === 'pet-sitter') setCurrentScreen('pet-sitter');
+    }}
     onSuccess={(bookingId) => bookingId && handleViewBooking(bookingId)}
   />;
 
