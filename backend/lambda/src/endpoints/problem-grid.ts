@@ -1804,7 +1804,7 @@ export function registerProblemGridEndpoints(app: Hono) {
   /**
    * GET /public/problems
    * Get problems for problem grid selector (used by ProblemGridSelector.tsx)
-   * Query params: roleId (required) - e.g., 'vet', 'groomer', 'trainer'
+   * Query params: roleId (required) — e.g. 'groomer', 'trainer', 'veterinarian', or 'all' for full catalog (home View All)
    * Note: This is a PUBLIC endpoint (no auth required) since problem grid is shown to all users
    * Returns: { id, name, displayName, icon, description, roleId, allowedServiceStyles: [...] }
    */
@@ -1820,7 +1820,11 @@ export function registerProblemGridEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Query problem_grid_mappings for problems matching the role
+      const roleIdNorm = roleId.toLowerCase().trim();
+      /** Home "View All" uses roleId=all — must return every specialization, not a single generic row */
+      const isAllRoles = roleIdNorm === 'all' || roleIdNorm === '*' || roleIdNorm === 'every';
+
+      // Query problem_grid_mappings for problems matching the role (or all roles when roleId=all)
       // Include allowed_service_styles for service style filtering
       let problemsResult;
       try {
@@ -1839,10 +1843,10 @@ export function registerProblemGridEndpoints(app: Hono) {
             ) as allowed_service_styles,
             MIN(order_index) as order_index
           FROM problem_grid_mappings
-          WHERE role_id = $1
+          ${isAllRoles ? '' : 'WHERE role_id = $1'}
           GROUP BY problem_id, problem_name, problem_display_name, role_id
-          ORDER BY MIN(order_index) ASC, problem_name ASC`,
-          [roleId]
+          ORDER BY MIN(order_index) ASC, role_id ASC, problem_name ASC`,
+          isAllRoles ? [] : [roleId]
         );
       } catch (dbError: any) {
         console.error('Database error fetching problems:', dbError.message);
@@ -1863,6 +1867,41 @@ export function registerProblemGridEndpoints(app: Hono) {
           problems: defaultProblems,
           count: defaultProblems.length,
           message: 'Default problems (no custom mappings yet)'
+        });
+      }
+
+      // Combined catalog (home View All): use mapping styles as-is — each row may be a different role
+      if (isAllRoles) {
+        const problems = problemsResult.rows.map((row: any) => {
+          let mappingStyles: string[] = ['at_home', 'at_center', 'tele'];
+          try {
+            if (row.allowed_service_styles) {
+              if (typeof row.allowed_service_styles === 'string') {
+                mappingStyles = JSON.parse(row.allowed_service_styles);
+              } else if (Array.isArray(row.allowed_service_styles)) {
+                mappingStyles = row.allowed_service_styles;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse allowed_service_styles for problem:', row.id);
+          }
+          const rId = row.roleId;
+          const finalStyles = mappingStyles.length > 0 ? mappingStyles : ['at_home', 'at_center', 'tele'];
+          return {
+            id: row.id,
+            name: row.name,
+            displayName: row.displayName || row.name,
+            icon: getProblemEmoji(row.id, rId),
+            description: `Find ${row.displayName || row.name} specialists`,
+            roleId: rId,
+            allowedServiceStyles: finalStyles,
+            keywords: [row.name.toLowerCase(), row.id.toLowerCase()],
+          };
+        });
+        return c.json({
+          success: true,
+          problems,
+          count: problems.length,
         });
       }
 
@@ -2240,6 +2279,7 @@ function getProblemEmoji(problemId: string, roleId: string): string {
 
 /**
  * Helper: Get default problems for a role when database has no mappings
+ * roleId "all" merges every catalog role (matches home "What's your pet needs?" View All).
  */
 function getDefaultProblemsForRole(roleId: string): any[] {
   const defaultProblems: Record<string, any[]> = {
@@ -2298,6 +2338,27 @@ function getDefaultProblemsForRole(roleId: string): any[] {
       { id: 'senior_nutrition', name: 'Senior Nutrition', displayName: 'Senior Nutrition', icon: '🦴', description: 'Elderly pet diet' },
     ],
   };
+
+  const norm = (roleId || '').toLowerCase().trim();
+  if (norm === 'all' || norm === '*' || norm === 'every') {
+    const stdStyles = ['at_home', 'at_center', 'tele'];
+    const withRole = (items: any[], apiRole: string) =>
+      items.map((p) => ({
+        ...p,
+        roleId: apiRole,
+        allowedServiceStyles: stdStyles,
+        keywords: [p.name.toLowerCase(), String(p.id).toLowerCase()],
+      }));
+    return [
+      ...withRole(defaultProblems.vet, 'veterinarian'),
+      ...withRole(defaultProblems.groomer, 'groomer'),
+      ...withRole(defaultProblems.trainer, 'trainer'),
+      ...withRole(defaultProblems.walker, 'walker'),
+      ...withRole(defaultProblems.boarding, 'boarding'),
+      ...withRole(defaultProblems.nutritionist, 'nutritionist'),
+      ...withRole(defaultProblems.behaviorist, 'behaviorist'),
+    ];
+  }
 
   return defaultProblems[roleId] || [
     { id: 'general', name: 'General Service', displayName: 'General Service', icon: '🐾', description: 'General pet services' }

@@ -160,14 +160,14 @@ export function PetSelector({
   // Full-page mode
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center max-w-customer mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-[430px] mx-auto pb-32">
+    <div className="min-h-screen bg-[#FF8C42] max-w-customer mx-auto pb-32">
       {/* Header */}
       <div className="bg-[#FF8C42] text-white px-6 pt-8 pb-8 sticky top-0 z-10">
         <button 
@@ -252,7 +252,7 @@ export function PetSelector({
 
       {/* Fixed Bottom Bar */}
       {selectedPet && (
-        <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-[430px] mx-auto z-40">
+        <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-customer mx-auto z-40">
           <div className="flex items-center gap-4 mb-3">
             <div className="flex-1">
               <p className="text-sm text-gray-600">Selected Pet</p>
@@ -269,7 +269,7 @@ export function PetSelector({
       )}
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-customer mx-auto z-50">
         <div className="flex items-center justify-around">
           <button 
             onClick={() => onNavigate?.('home')}

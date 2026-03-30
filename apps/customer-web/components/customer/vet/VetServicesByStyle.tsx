@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -63,6 +65,7 @@ export function VetServicesByStyle({
   onBack, 
   onNavigate 
 }: VetServicesByStyleProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -197,6 +200,23 @@ export function VetServicesByStyle({
   };
 
   const handleSelectService = (provider: Provider, service: any) => {
+    if (serviceStyle === 'tele') {
+      const sid = String(service.id || service.serviceId || '');
+      const vid =
+        provider.providerType === 'vendor'
+          ? provider.providerId
+          : provider.vendorId || provider.providerId;
+      if (sid) {
+        const url = buildTeleInstantAutoPayBookingUrl({
+          serviceId: sid,
+          vendorId: vid ? String(vid) : undefined,
+        });
+        console.log('[VetServicesByStyle] tele Book Now →', url);
+        router.push(url);
+        return;
+      }
+    }
+
     // For staff/individual providers, include staffId in booking data
     const bookingData: any = {
       serviceId: service.id,
@@ -257,6 +277,12 @@ export function VetServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
+      if (serviceStyle === 'tele' && profileProvider) {
+        const only = selectedServicesData[0];
+        handleSelectService(profileProvider, only);
+        return;
+      }
+
       // ✅ FIX: Pass all selected services, not just the first one
       // Build booking data similar to GroomingServicesByStyle
       const firstService = selectedServicesData[0];

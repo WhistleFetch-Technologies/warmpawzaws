@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight,
+  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
-  Clock, Calendar, User, Plus, Smartphone, Building2,
+  Clock, Calendar, Plus, Smartphone, Building2,
   Home, Video, Gift, Sparkles, AlertCircle, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,9 @@ import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
-// 1. Update imports (around line 13)
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
+import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 
 // Razorpay type declaration
 declare global {
@@ -54,6 +56,10 @@ interface UniversalPaymentPageProps {
   petId?: string;
   petName?: string;
   petBreed?: string;
+  /** When length > 1, shows an inline selector without changing the rest of the row layout */
+  petSwitcherPets?: { id: string; name: string }[];
+  /** Called when the user picks a pet from the switcher, or null for “no pet” (checkout still allowed). */
+  onPetSwitcherChange?: (pet: { id: string; name: string } | null) => void;
 
   // Address (for home services/orders)
   addressId?: string;
@@ -83,6 +89,12 @@ interface UniversalPaymentPageProps {
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
   flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted';
+
+  /**
+   * fullscreen: default; CTA hugs bottom (overlays, dedicated routes).
+   * appShell: matches CustomerHomeWrapper + BottomNavigation — CTA sits above the tab bar.
+   */
+  layoutVariant?: 'fullscreen' | 'appShell';
 
   // Navigation
   onBack: () => void;
@@ -168,6 +180,10 @@ interface RazorpayOffer {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function petsListForPaymentPicker(data: unknown): { id: string; name: string }[] {
+  return petsFromApiResponse(data).map((p) => ({ id: p.id, name: p.name }));
+}
+
 /**
  * Forensic: extract booking ID from any create-booking response shape.
  * Handles wrapped ({ success, data: { bookingId } }), idempotency ({ bookingId }), double-wrapped, and snake_case.
@@ -241,6 +257,8 @@ export function UniversalPaymentPage({
   petId,
   petName,
   petBreed,
+  petSwitcherPets,
+  onPetSwitcherChange,
   addressId,
   address,
   showAddressSelection = false,
@@ -251,9 +269,11 @@ export function UniversalPaymentPage({
   customerPhone,
   customerId,
   flowType,
+  layoutVariant = 'fullscreen',
   onBack,
   onSuccess,
 }: UniversalPaymentPageProps) {
+  const router = useRouter();
   // State
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -307,6 +327,10 @@ export function UniversalPaymentPage({
   const [subscriptionCovered, setSubscriptionCovered] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
+  const [fetchedPetsForPicker, setFetchedPetsForPicker] = useState<{ id: string; name: string }[]>([]);
+  /** Bumps when user returns to this tab (e.g. after adding a pet on /pets) so the picker refetches. */
+  const [petsListRefreshNonce, setPetsListRefreshNonce] = useState(0);
+  const [localPetSelection, setLocalPetSelection] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     loadPaymentData();
@@ -363,6 +387,92 @@ export function UniversalPaymentPage({
       loadAddresses();
     }
   }, [showAddressSelection, customerPhone]);
+
+  useEffect(() => {
+    setLocalPetSelection(null);
+  }, [bookingId, orderId, type]);
+
+  const petListWasHiddenRef = useRef(false);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') petListWasHiddenRef.current = true;
+      if (document.visibilityState === 'visible' && petListWasHiddenRef.current) {
+        setPetsListRefreshNonce((n) => n + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (type !== 'booking' || petSwitcherPets !== undefined) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        let list: { id: string; name: string }[] = [];
+        if (customerId) {
+          try {
+            const res = await apiClient.get<unknown>(`/customer/${customerId}/pets`);
+            list = petsListForPaymentPicker(res);
+          } catch {
+            list = [];
+          }
+        }
+        if (!cancelled && list.length === 0 && customerPhone) {
+          try {
+            const byQuery = await apiClient.get<unknown>(
+              `/customer/pets?phone=${encodeURIComponent(customerPhone)}`
+            );
+            list = petsListForPaymentPicker(byQuery);
+          } catch {
+            /* try path route next */
+          }
+        }
+        if (!cancelled && list.length === 0 && customerPhone) {
+          try {
+            const byPath = await apiClient.get<unknown>(
+              `/customer/pets/${encodeURIComponent(customerPhone)}`
+            );
+            list = petsListForPaymentPicker(byPath);
+          } catch {
+            list = [];
+          }
+        }
+        if (!cancelled) setFetchedPetsForPicker(list);
+      } catch {
+        if (!cancelled) setFetchedPetsForPicker([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [type, petSwitcherPets, customerId, customerPhone, petsListRefreshNonce]);
+
+  useEffect(() => {
+    if (type !== 'booking') return;
+    const applyCheckoutSelection = () => {
+      const payload = readAndConsumeCheckoutPetSelection();
+      if (!payload) return;
+      if ('skip' in payload) {
+        if (onPetSwitcherChange) onPetSwitcherChange(null);
+        else setLocalPetSelection(null);
+        return;
+      }
+      const p = payload.pet;
+      if (onPetSwitcherChange) onPetSwitcherChange({ id: p.id, name: p.name });
+      else setLocalPetSelection({ id: p.id, name: p.name });
+    };
+    applyCheckoutSelection();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') applyCheckoutSelection();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', applyCheckoutSelection);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', applyCheckoutSelection);
+    };
+  }, [type, onPetSwitcherChange]);
 
   //  Resolve serviceId early (before payment flow)
   useEffect(() => {
@@ -1018,6 +1128,15 @@ export function UniversalPaymentPage({
   // ✅ NEW: If subscription covers this booking, final amount is 0
   const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
+  const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
+  const effectivePetId = onPetSwitcherChange ? petId : (localPetSelection?.id ?? petId);
+  const effectivePetName = onPetSwitcherChange ? petName : (localPetSelection?.name ?? petName);
+  const selectedPetDisplayName =
+    (effectivePetName?.trim() ||
+      (effectivePetId && effectivePetsForPicker.some((x) => x.id === effectivePetId)
+        ? effectivePetsForPicker.find((x) => x.id === effectivePetId)!.name.trim()
+        : '')) || '';
+
   const handlePayment = async (skipPolicyCheck: boolean = false) => {
     // Check if policies have been accepted (for bookings)
     // ✅ FIX: Allow skipping policy check when called from modal acceptance
@@ -1313,8 +1432,8 @@ export function UniversalPaymentPage({
               bookingDate,
               bookingTime,
               serviceType: serviceStyle || 'at_center',
-              petId,
-              petName,
+              petId: effectivePetId,
+              petName: effectivePetName,
               customerPhone,
               address: selectedAddress?.addressLine1 || address?.addressLine1,
             });
@@ -1401,8 +1520,8 @@ export function UniversalPaymentPage({
           bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // ✅ Required enum
           amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
-          petId: petId || undefined, // ✅ Optional UUID
-          petName: petName || undefined, // ✅ Pet name for booking
+          petId: effectivePetId || undefined, // ✅ Optional UUID
+          petName: effectivePetName || undefined, // ✅ Pet name for booking
           customerPhone: customerPhone, // ✅ Customer phone
           customerName: customerNameValue, // ✅ Customer name
           address: addressValue, // ✅ Optional string
@@ -1974,12 +2093,12 @@ export function UniversalPaymentPage({
                 razorpay_signature: response.razorpay_signature,
                 vendorId,
                 customerId,
-                petId,
+                petId: effectivePetId ?? null,
                 serviceId: resolvedServiceId || serviceId,
                 amount: amountToCharge,
                 serviceName,
                 vendorName,
-                petName,
+                petName: effectivePetName,
               });
               const bid = instantRes?.bookingId;
               if (!bid) {
@@ -2194,8 +2313,8 @@ export function UniversalPaymentPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-[#FF8C42]" />
+      <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col items-center justify-center bg-orange-50">
+        <Loader2 className="h-12 w-12 animate-spin text-[#FF8C42]" />
       </div>
     );
   }
@@ -2219,26 +2338,40 @@ export function UniversalPaymentPage({
       ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
       : firstServiceFromArray?.duration);
 
+  const appShell = layoutVariant === 'appShell';
+  const ctaBottomClass = appShell
+    ? 'bottom-[calc(4.75rem+max(0px,env(safe-area-inset-bottom,0px)))]'
+    : 'bottom-[max(1rem,env(safe-area-inset-bottom,1rem))]';
+  const mainBottomPadding = appShell
+    ? 'pb-[calc(13rem+env(safe-area-inset-bottom,0px))]'
+    : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-48">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-lg sticky top-0 z-40">
-        <div className="max-w-lg mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
-          <button onClick={onBack} className="text-white/90 hover:text-white">
-            <ArrowLeft className="w-6 h-6" />
+    <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col bg-orange-50">
+      <header className="sticky top-0 z-50 min-h-[120px] shrink-0 rounded-b-2xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-5 shadow-sm">
+        <div className="relative flex min-h-[88px] items-center">
+          <button
+            type="button"
+            onClick={onBack}
+            className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-all duration-150 active:scale-[0.98] active:bg-white/10 touch-manipulation"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-6 w-6" strokeWidth={2.25} />
           </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold">Payment</h1>
-            <p className="text-sm text-white/80">Secure checkout</p>
+          <div className="pointer-events-none absolute inset-x-0 flex flex-col items-center justify-center gap-0.5 text-center">
+            <h1 className="text-lg font-bold tracking-tight text-white">Payment</h1>
+            <p className="text-sm font-medium text-white/90">Secure checkout</p>
           </div>
-          <Shield className="w-6 h-6 text-white/90" />
+          <div className="relative z-10 ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-white" aria-hidden>
+            <Shield className="h-6 w-6" strokeWidth={1.75} />
+          </div>
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
+      <main className={`flex-1 space-y-4 overflow-y-auto px-4 py-4 ${mainBottomPadding}`}>
         {/* Address Selection (if needed and on top) */}
         {showAddressSelection && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-[#FF8C42]" />
@@ -2271,8 +2404,26 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
+        {type === 'booking' && (
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <button
+              type="button"
+              onClick={() => router.push('/pets?forCheckout=1')}
+              className="flex w-full items-center justify-between gap-3 rounded-xl text-left transition-all duration-150 active:scale-[0.98] active:bg-gray-50 touch-manipulation"
+            >
+              <span className="shrink-0 text-sm font-medium text-gray-700">Pet</span>
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                <span className="truncate text-right text-sm font-semibold text-gray-900">
+                  {selectedPetDisplayName || 'Select Pet'}
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+              </div>
+            </button>
+          </Card>
+        )}
+
         {/* Booking/Order Summary - Universal display for all service booking flows */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             {type === 'booking' ? 'Booking Summary' : 'Order Summary'}
           </h2>
@@ -2356,17 +2507,6 @@ export function UniversalPaymentPage({
             </div>
           )}
 
-          {/* Pet (for bookings) */}
-          {type === 'booking' && petName && (
-            <div className="flex items-center gap-3 py-3 border-b border-gray-100">
-              <User className="w-5 h-5 text-gray-400" />
-              <div className="flex-1">
-                <p className="text-sm text-gray-500">Pet</p>
-                <p className="font-medium">{petName}{petBreed && ` (${petBreed})`}</p>
-              </div>
-            </div>
-          )}
-
           {/* Address (for home services/orders) */}
           {((serviceStyle === 'at_home' && type === 'booking') || type === 'order') && selectedAddress && (
             <div className="flex items-center gap-3 py-3">
@@ -2384,7 +2524,7 @@ export function UniversalPaymentPage({
 
         {/* Promotions & Spotlight Offers */}
         {promotions.length > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               <h2 className="font-semibold text-gray-900">Available Offers</h2>
@@ -2395,7 +2535,7 @@ export function UniversalPaymentPage({
                 <button
                   key={promo.id}
                   onClick={() => applyPromotion(promo)}
-                  className={`w-full text-left p-3 rounded-xl border-2 transition ${appliedPromotion?.id === promo.id
+                  className={`w-full text-left p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${appliedPromotion?.id === promo.id
                     ? 'border-green-500 bg-green-50'
                     : 'border-gray-200 hover:border-[#FF8C42]'
                     }`}
@@ -2424,7 +2564,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Coupon Section */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-[#FF8C42]" />
@@ -2473,7 +2613,7 @@ export function UniversalPaymentPage({
           ) : (
             <button
               onClick={() => setShowCouponInput(true)}
-              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition"
+              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition-all duration-150 active:scale-[0.98] touch-manipulation"
             >
               <span className="text-gray-600">Have a coupon code?</span>
               <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -2483,7 +2623,7 @@ export function UniversalPaymentPage({
 
         {/* Razorpay Offers */}
         {razorpayOffers.length > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Gift className="w-5 h-5 text-blue-500" />
               <h2 className="font-semibold text-gray-900">Payment Offers</h2>
@@ -2494,7 +2634,7 @@ export function UniversalPaymentPage({
                 <button
                   key={offer.id}
                   onClick={() => applyRazorpayOffer(offer)}
-                  className={`w-full text-left p-3 rounded-xl border-2 transition ${selectedRazorpayOffer?.id === offer.id
+                  className={`w-full text-left p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedRazorpayOffer?.id === offer.id
                     ? 'border-blue-500 bg-blue-50'
                     : 'border-gray-200 hover:border-blue-300'
                     }`}
@@ -2521,10 +2661,10 @@ export function UniversalPaymentPage({
 
         {/* Wallet Section */}
         {wallet && wallet.balance > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <button
               onClick={() => setUseWallet(!useWallet)}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
                 }`}
             >
               <div className="flex items-center gap-3">
@@ -2555,7 +2695,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Price Breakdown */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
 
           <div className="space-y-3">
@@ -2718,7 +2858,7 @@ export function UniversalPaymentPage({
 
         {/* Saved Payment Methods */}
         {savedMethods.length > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900">Saved Payment Methods</h2>
               <button
@@ -2735,7 +2875,7 @@ export function UniversalPaymentPage({
                 <button
                   key={method.id}
                   onClick={() => setSelectedMethod(method.id)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
                     }`}
                 >
                   <div className="flex items-center gap-3">
@@ -2771,10 +2911,10 @@ export function UniversalPaymentPage({
         )}
 
         {/* Pay with Razorpay (default) */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <button
             onClick={() => setSelectedMethod('razorpay')}
-            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
               }`}
           >
             <div className="flex items-center gap-3">
@@ -2820,14 +2960,15 @@ export function UniversalPaymentPage({
         )}
       </main>
 
-      {/* Fixed Bottom Payment Button */}
-      {/* Increased z-index to ensure it's above footer navigation (footer typically uses z-50) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-[100]">
-        <div className="max-w-lg mx-auto">
+      {/* Fixed CTA — same max width as BottomNavigation (max-w-customer) */}
+      <div
+        className={`pointer-events-none fixed left-0 right-0 z-[100] mx-auto w-full max-w-customer px-4 ${ctaBottomClass}`}
+      >
+        <div className="pointer-events-auto w-full space-y-2">
           <Button
             onClick={() => handlePayment()}
             disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
-            className="w-full py-4 bg-gradient-to-r from-[#FF8C42] to-[#FF7029] hover:from-[#E67A35] hover:to-[#D66A25] text-white rounded-xl font-bold text-lg disabled:opacity-50"
+            className="h-auto w-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF7029] px-6 py-4 text-lg font-bold text-white shadow-md transition-all duration-150 hover:from-[#E67A35] hover:to-[#D66A25] active:scale-[0.98] touch-manipulation disabled:opacity-50"
           >
             {processing || serviceIdResolving ? (
               <span className="flex items-center gap-2">
@@ -2841,8 +2982,8 @@ export function UniversalPaymentPage({
               </>
             )}
           </Button>
-          <p className="text-center text-xs text-gray-500 mt-2 flex items-center justify-center gap-1">
-            <Shield className="w-3 h-3" />
+          <p className="flex items-center justify-center gap-1 text-center text-xs text-gray-600">
+            <Shield className="h-3 w-3 shrink-0 text-gray-500" />
             Secured by Razorpay • 100% Safe Payments
           </p>
         </div>
@@ -2850,8 +2991,8 @@ export function UniversalPaymentPage({
 
       {/* Address Selection Modal */}
       {showAddressModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-          <div className="bg-white rounded-t-3xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
+          <div className="w-full max-w-customer bg-white rounded-t-3xl max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Select Address</h3>
               <button onClick={() => setShowAddressModal(false)}>
@@ -2932,6 +3073,7 @@ export function UniversalPaymentPage({
         serviceId={resolvedServiceId || serviceId} // Use resolved serviceId if available
         customerId={customerId}
       />
+
     </div>
   );
 }

@@ -17,7 +17,8 @@ interface UserProfile {
   pincode: string;
   city: string;
   state: string;
-  landmark: string;
+  houseNo: string;
+  floor: string;
   photo?: string;
 }
 
@@ -38,7 +39,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
     pincode: '',
     city: '',
     state: '',
-    landmark: '',
+    houseNo: '',
+    floor: '',
     photo: ''
   });
   
@@ -115,8 +117,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
 
   const handleSubmit = async () => {
     // Validation
-    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city) {
-      alert('Please fill in all required fields (including city)');
+    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city || !profile.houseNo?.trim()) {
+      alert('Please fill in all required fields (including house / flat number)');
       return;
     }
 
@@ -152,7 +154,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
       {/* Top Bar with Back Button */}
       <div className="px-4 pt-4 pb-2 flex items-center">
         {onBack && (
@@ -320,9 +322,6 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
                   if (components?.state) {
                     updated.state = components.state;
                   }
-                  if (components?.landmark) {
-                    updated.landmark = components.landmark;
-                  }
                   return updated;
                 });
               }}
@@ -335,16 +334,30 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             </p>
           </div>
 
-          {/* Landmark (Optional) */}
+          {/* House No / Flat No */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Landmark (Optional)
+              House No / Flat No <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
-              value={profile.landmark}
-              onChange={(e) => setProfile({ ...profile, landmark: e.target.value })}
-              placeholder="Near Metro Station, Opposite Park, etc."
+              value={profile.houseNo}
+              onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+              placeholder="e.g., A-101, Flat 12B"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+            />
+          </div>
+
+          {/* Floor (Optional) */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Floor
+            </label>
+            <input
+              type="text"
+              value={profile.floor}
+              onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+              placeholder="e.g., 1st Floor"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
           </div>
@@ -406,7 +419,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
         <Button
           onClick={handleSubmit}
           disabled={loading}

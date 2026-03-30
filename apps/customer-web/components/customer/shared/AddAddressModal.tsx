@@ -321,7 +321,7 @@ export function AddAddressModal({
       onClick={onClose}
     >
       <div 
-        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl transform transition-transform duration-300 ease-out flex flex-col translate-y-0 max-w-[430px] mx-auto"
+        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl transform transition-transform duration-300 ease-out flex flex-col translate-y-0 max-w-customer mx-auto"
         style={{ 
           height: '90vh',
           maxHeight: '90vh'

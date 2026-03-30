@@ -1214,7 +1214,17 @@ export function GroomingBookingRouter({
         {/* Payment Summary - Now using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBack}
+                className="p-2 -ml-2 rounded-xl text-gray-800 hover:bg-gray-100 transition-colors shrink-0"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
+            </div>
             
             <div className="bg-white rounded-xl p-4 space-y-4">
               {/* ✅ Updated: Show all selected services */}

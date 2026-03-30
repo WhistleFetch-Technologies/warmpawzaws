@@ -239,21 +239,24 @@ class GetCustomerOrdersHandler extends BaseHandler {
       const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
       const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
 
+      // Align with RDS `orders` schema: order_status, shipping_*, total_amount (not legacy status/final_amount/delivery_address).
       let ordersQuery = `
         SELECT 
           o.id,
           o.order_number,
           o.customer_id,
           o.vendor_id,
+          o.subtotal,
           o.total_amount,
           o.discount_amount,
-          o.final_amount,
-          o.status,
+          o.total_amount AS final_amount,
+          o.order_status AS status,
           o.payment_status,
-          o.payment_method,
-          o.delivery_address,
-          o.delivery_status,
-          o.tracking_number,
+          o.shipping_address AS delivery_address,
+          o.shipping_phone,
+          o.shipping_city,
+          o.shipping_state,
+          o.shipping_pincode,
           o.created_at,
           o.updated_at,
           v.business_name as vendor_name,
@@ -268,7 +271,7 @@ class GetCustomerOrdersHandler extends BaseHandler {
       let paramIndex = 2;
 
       if (status) {
-        ordersQuery += ` AND o.status = $${paramIndex}`;
+        ordersQuery += ` AND o.order_status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
@@ -311,13 +314,13 @@ class GetCustomerOrdersHandler extends BaseHandler {
       const statsQuery = await query(`
         SELECT 
           COUNT(*) as total,
-          COUNT(*) FILTER (WHERE status = 'pending') as pending,
-          COUNT(*) FILTER (WHERE status = 'confirmed') as confirmed,
-          COUNT(*) FILTER (WHERE status = 'processing') as processing,
-          COUNT(*) FILTER (WHERE status = 'shipped') as shipped,
-          COUNT(*) FILTER (WHERE status = 'delivered') as delivered,
-          COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled,
-          SUM(final_amount) FILTER (WHERE status != 'cancelled') as total_spent
+          COUNT(*) FILTER (WHERE order_status = 'pending') as pending,
+          COUNT(*) FILTER (WHERE order_status = 'confirmed') as confirmed,
+          COUNT(*) FILTER (WHERE order_status = 'processing') as processing,
+          COUNT(*) FILTER (WHERE order_status = 'shipped') as shipped,
+          COUNT(*) FILTER (WHERE order_status = 'delivered') as delivered,
+          COUNT(*) FILTER (WHERE order_status = 'cancelled') as cancelled,
+          SUM(total_amount) FILTER (WHERE order_status != 'cancelled') as total_spent
         FROM orders
         WHERE customer_id = $1
       `, [customerId]);

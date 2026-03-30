@@ -14,7 +14,7 @@
  * - Shiprocket: Inter-city e-commerce shipments
  * - Delhivery: Inter-city shipments with better rates for certain routes
  * - Dunzo: Hyperlocal delivery (<10km, same city) for pharmacy/meal
- * 
+ * - Pidge: Store-channel vendor order create (hyperlocal / channel)
  * 
  * Date: 2025-01-28
  * Updated: 2026-01-27 - Added Delhivery and Dunzo integrations
@@ -27,6 +27,15 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getSecretJson } from '../utils/aws/secrets-manager';
+import {
+  getPidgeOrderDefaults,
+  buildPidgeOrderPayloadFromSimplified,
+  isPidgeNativeCreateOrderBody,
+  pidgeCreateOrder,
+  pidgeGetOrderStatus,
+  pidgeCancelOrder,
+  extractPidgeOrderIdMap,
+} from '../lib/services/pidge-logistics';
 
 // ============================================================================
 // API BASE URLS
@@ -794,6 +803,133 @@ export function registerLogisticsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error creating Shiprocket order:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /logistics/pidge/create-order
+   * Proxies Pidge POST /v1.0/store/channel/vendor/order (Bearer from vendor login).
+   *
+   * Body (either):
+   * - Full Pidge JSON: { brand, channel, sender_detail, poc_detail, trips[] } (same as Pidge docs).
+   * - Simplified: { orderId or sourceOrderId, sender|pickup, receiver|delivery, items[], codAmount?, billAmount?, ... }
+   *   merged with brand/channel from logistics_partners.config (pidge) or env PIDGE_*.
+   *
+   * Response forwards Pidge JSON; `data` is { [source_order_id]: pidge_id } for use as :id on status/update APIs.
+   */
+  app.post('/logistics/pidge/create-order', async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const defaults = await getPidgeOrderDefaults();
+
+      const pidgePayload = isPidgeNativeCreateOrderBody(body)
+        ? body
+        : buildPidgeOrderPayloadFromSimplified(body, defaults);
+
+      const { json } = await pidgeCreateOrder(pidgePayload);
+      const idMap = extractPidgeOrderIdMap(json);
+
+      const firstSource = Object.keys(idMap)[0];
+      const firstPidgeId = firstSource ? idMap[firstSource] : null;
+
+      if (firstSource && firstPidgeId) {
+        await insert('shipments', {
+          order_id: firstSource,
+          logistics_partner: 'pidge',
+          shipment_id: firstPidgeId,
+          awb_code: null,
+          status: 'created',
+          tracking_url: null,
+        }).catch(() => {});
+      }
+
+      return c.json({
+        success: true,
+        pidge: json,
+        orderIdMap: idMap,
+        pidgeOrderId: firstPidgeId || undefined,
+      });
+    } catch (error: any) {
+      console.error('[PIDGE] create-order:', error);
+      return c.json({ success: false, error: error.message || 'Pidge create order failed' }, 502);
+    }
+  });
+
+  /**
+   * GET /logistics/pidge/order/:id
+   * Proxies Pidge GET /v1.0/store/channel/vendor/order/:id (Bearer token).
+   * :id is the Pidge order id returned from create-order (same as :id in webhooks/updates).
+   * Response includes order data, Status (parent), and fulfillment (current status, logs, rider, locations).
+   */
+  app.get('/logistics/pidge/order/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      if (!id?.trim()) {
+        return c.json({ success: false, error: 'id path parameter is required' }, 400);
+      }
+
+      const { json } = await pidgeGetOrderStatus(id.trim());
+
+      return c.json({
+        success: true,
+        pidge: json,
+      });
+    } catch (error: any) {
+      console.error('[PIDGE] get order:', error);
+      const upstream = error?.httpStatus;
+      const status =
+        typeof upstream === 'number' && upstream >= 400 && upstream < 600
+          ? upstream
+          : 502;
+      return c.json({ success: false, error: error.message || 'Pidge get order failed' }, status);
+    }
+  });
+
+  /**
+   * POST /logistics/pidge/order/:id/cancel
+   * Proxies Pidge POST /v1.0/store/channel/vendor/:id/cancel (Bearer token).
+   * Only valid when order Status is PENDING or FULFILLED. Optional JSON body is forwarded if present.
+   */
+  app.post('/logistics/pidge/order/:id/cancel', async (c) => {
+    try {
+      const id = c.req.param('id');
+      if (!id?.trim()) {
+        return c.json({ success: false, error: 'id path parameter is required' }, 400);
+      }
+
+      let extra: Record<string, unknown> | undefined;
+      try {
+        const raw = await c.req.json();
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          extra = raw as Record<string, unknown>;
+        }
+      } catch {
+        extra = undefined;
+      }
+
+      const { json } = await pidgeCancelOrder(id.trim(), extra);
+
+      await update(
+        'shipments',
+        { shipment_id: id.trim(), logistics_partner: 'pidge' },
+        { status: 'cancelled', updated_at: new Date().toISOString() }
+      ).catch(() => {});
+
+      return c.json({
+        success: true,
+        pidge: json,
+      });
+    } catch (error: any) {
+      console.error('[PIDGE] cancel order:', error);
+      const upstream = error?.httpStatus;
+      const status =
+        typeof upstream === 'number' && upstream >= 400 && upstream < 600
+          ? upstream
+          : 502;
+      return c.json(
+        { success: false, error: error.message || 'Pidge cancel order failed' },
+        status
+      );
     }
   });
 

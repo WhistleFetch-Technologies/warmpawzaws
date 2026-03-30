@@ -3,6 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { PharmacyOrderFlow } from '../../../../components/customer/specialized/PharmacyOrderFlow';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 function PrescriptionOrderPageContent() {
   const params = useParams();
@@ -29,7 +30,7 @@ function PrescriptionOrderPageContent() {
   }, [searchParams]);
 
   const handleBack = () => {
-    router.back();
+    goBackOrHome(router);
   };
 
   if (loading) {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, ChevronDown, ChevronUp, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -10,6 +11,7 @@ import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { getRoleConfig, RoleId, ServiceStyle } from './roleConfig';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
+import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -72,6 +74,7 @@ export function UniversalServicesByStyle({
   onNavigate,
   bookingScreen = 'booking' // Default booking screen
 }: UniversalServicesByStyleProps) {
+  const router = useRouter();
   const config = getRoleConfig(roleId);
   const finalCategory = category || config.category;
   const RoleIcon = config.icon;
@@ -419,6 +422,23 @@ export function UniversalServicesByStyle({
   };
 
   const handleSelectService = (provider: Provider, service: any) => {
+    if (serviceStyle === 'tele' && roleId === 'veterinarian') {
+      const sid = String(service.id || service.serviceId || '');
+      const vid =
+        provider.providerType === 'vendor'
+          ? provider.providerId || provider.vendorId
+          : provider.vendorId || provider.providerId;
+      if (sid) {
+        const url = buildTeleInstantAutoPayBookingUrl({
+          serviceId: sid,
+          vendorId: vid ? String(vid) : undefined,
+        });
+        console.log('[UniversalServicesByStyle] vet tele Book Now →', url);
+        router.push(url);
+        return;
+      }
+    }
+
     // ✅ FIX: Pass complete service data to booking router
     const bookingData: any = {
       serviceId: service.id || service.serviceId,
@@ -490,6 +510,15 @@ export function UniversalServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
+      if (
+        serviceStyle === 'tele' &&
+        roleId === 'veterinarian' &&
+        profileProvider
+      ) {
+        handleSelectService(profileProvider, selectedServicesData[0]);
+        return;
+      }
+
       const firstService = selectedServicesData[0];
       const bookingData: any = {
         vendorId: profileProvider!.providerId || profileProvider!.vendorId,

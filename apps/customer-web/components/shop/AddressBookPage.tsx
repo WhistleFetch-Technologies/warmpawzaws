@@ -28,7 +28,6 @@ interface Address {
   city: string;
   state: string;
   pincode: string;
-  landmark?: string;
   coordinates?: { lat: number; lng: number };
   isDefault: boolean;
   createdAt?: string;
@@ -58,13 +57,10 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
     name: '',
     phone: phone.replace(/[^0-9]/g, ''),
     addressLine1: '',
-    addressLine2: '',
     city: '',
     state: '',
     pincode: '',
-    landmark: '',
     isDefault: false,
-    flatNo: '',
     houseNo: '',
     floor: '',
     streetName: '',
@@ -96,14 +92,11 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
       name: address.name,
       phone: address.phone,
       addressLine1: address.addressLine1,
-      addressLine2: address.addressLine2 || '',
       city: address.city,
       state: address.state,
       pincode: address.pincode,
-      landmark: address.landmark || '',
       isDefault: address.isDefault,
-      flatNo: address.flatNo || '',
-      houseNo: address.houseNo || '',
+      houseNo: address.houseNo || (address as any).flatNo || '',
       floor: address.floor || '',
       streetName: address.streetName || '',
       apartmentName: address.apartmentName || ''
@@ -137,6 +130,11 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
       return;
     }
 
+    if (!formData.houseNo.trim()) {
+      toast.error('Please enter House No / Flat No');
+      return;
+    }
+
     if (formData.pincode.length !== 6) {
       toast.error('PIN code must be 6 digits');
       return;
@@ -146,7 +144,9 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
       setSaving(true);
       const addressData = {
         ...formData,
-        phone: formData.phone || phone.replace(/[^0-9]/g, '')
+        phone: formData.phone || phone.replace(/[^0-9]/g, ''),
+        flatNo: null,
+        addressLine2: null,
       };
 
       if (editingAddress) {
@@ -172,13 +172,10 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
         name: '',
         phone: phone.replace(/[^0-9]/g, ''),
         addressLine1: '',
-        addressLine2: '',
         city: '',
         state: '',
         pincode: '',
-        landmark: '',
         isDefault: false,
-        flatNo: '',
         houseNo: '',
         floor: '',
         streetName: '',
@@ -200,13 +197,10 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
       name: '',
       phone: phone.replace(/[^0-9]/g, ''),
       addressLine1: '',
-      addressLine2: '',
       city: '',
       state: '',
       pincode: '',
-      landmark: '',
       isDefault: addresses.length === 0, // Set as default if first address
-      flatNo: '',
       houseNo: '',
       floor: '',
       streetName: '',
@@ -349,8 +343,6 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
                     if (components.city && !prev.city) updates.city = components.city;
                     if (components.state && !prev.state) updates.state = components.state;
                     if (components.pincode && !prev.pincode) updates.pincode = components.pincode;
-                    if (components.landmark && !prev.landmark) updates.landmark = components.landmark;
-                    if (components.street && !prev.addressLine2) updates.addressLine2 = components.street;
                   }
                   return updates;
                 });
@@ -360,68 +352,46 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
             />
           </div>
 
-          {/* Address Line 2 */}
+          {/* House / Flat (required) + Floor — aligned with customer profile */}
           <div>
-            <Label htmlFor="addressLine2" className="text-sm font-medium text-gray-700 mb-2 block">
-              Address Line 2 (Optional)
+            <Label htmlFor="houseNo" className="text-sm font-medium text-gray-700 mb-2 block">
+              House No / Flat No *
             </Label>
             <Input
-              id="addressLine2"
+              id="houseNo"
               type="text"
-              value={formData.addressLine2}
-              onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
-              placeholder="Street, Area, Colony"
+              value={formData.houseNo}
+              onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
+              placeholder="e.g., A-101, Flat 12B"
+              required
+              className="rounded-xl"
             />
           </div>
-
-          {/* Optional: Flat, House, Floor, Street, Apartment */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="flatNo" className="block text-xs font-medium text-gray-500 mb-1.5">Flat / Unit no.</Label>
-              <Input
-                id="flatNo"
-                type="text"
-                value={formData.flatNo}
-                onChange={(e) => setFormData({ ...formData, flatNo: e.target.value })}
-                placeholder="e.g. 401"
-                className="text-sm"
-              />
-            </div>
-            <div>
-              <Label htmlFor="houseNo" className="block text-xs font-medium text-gray-500 mb-1.5">House / Building no.</Label>
-              <Input
-                id="houseNo"
-                type="text"
-                value={formData.houseNo}
-                onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
-                placeholder="e.g. 12"
-                className="text-sm"
-              />
-            </div>
+          <div>
+            <Label htmlFor="floor" className="text-sm font-medium text-gray-700 mb-2 block">
+              Floor
+            </Label>
+            <Input
+              id="floor"
+              type="text"
+              value={formData.floor}
+              onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+              placeholder="e.g., 1st Floor"
+              className="rounded-xl"
+            />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="floor" className="block text-xs font-medium text-gray-500 mb-1.5">Floor</Label>
-              <Input
-                id="floor"
-                type="text"
-                value={formData.floor}
-                onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
-                placeholder="e.g. 4th"
-                className="text-sm"
-              />
-            </div>
-            <div>
-              <Label htmlFor="streetName" className="block text-xs font-medium text-gray-500 mb-1.5">Street name</Label>
-              <Input
-                id="streetName"
-                type="text"
-                value={formData.streetName}
-                onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
-                placeholder="Street name"
-                className="text-sm"
-              />
-            </div>
+          <div>
+            <Label htmlFor="streetName" className="text-sm font-medium text-gray-700 mb-2 block">
+              Street name (optional)
+            </Label>
+            <Input
+              id="streetName"
+              type="text"
+              value={formData.streetName}
+              onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
+              placeholder="Street name"
+              className="rounded-xl"
+            />
           </div>
           <div>
             <Label htmlFor="apartmentName" className="block text-xs font-medium text-gray-500 mb-1.5">Apartment / Building / Society name</Label>
@@ -478,20 +448,6 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
               placeholder="6-digit PIN code"
               maxLength={6}
               required
-            />
-          </div>
-
-          {/* Landmark */}
-          <div>
-            <Label htmlFor="landmark" className="text-sm font-medium text-gray-700 mb-2 block">
-              Landmark (Optional)
-            </Label>
-            <Input
-              id="landmark"
-              type="text"
-              value={formData.landmark}
-              onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
-              placeholder="Nearby landmark"
             />
           </div>
 
@@ -594,24 +550,18 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
                     {address.addressLine2 && (
                       <p className="text-sm text-gray-600 mb-1">{address.addressLine2}</p>
                     )}
-                    {(address.flatNo || address.houseNo || address.floor || address.streetName || address.apartmentName) && (
+                    {(address.houseNo || address.floor || address.streetName || address.apartmentName || (address as any).flatNo) && (
                       <div className="text-sm text-gray-600 mb-1 space-y-0.5">
                         {address.apartmentName && <p>{address.apartmentName}</p>}
-                        {address.flatNo && address.houseNo && (
-                          <p>Flat {address.flatNo}, House {address.houseNo}</p>
-                        )}
-                        {address.flatNo && !address.houseNo && <p>Flat {address.flatNo}</p>}
-                        {!address.flatNo && address.houseNo && <p>House {address.houseNo}</p>}
-                        {address.floor && <p>Floor {address.floor}</p>}
+                        {address.houseNo && <p>House / Flat: {address.houseNo}</p>}
+                        {!address.houseNo && (address as any).flatNo && <p>Flat {(address as any).flatNo}</p>}
+                        {address.floor && <p>Floor: {address.floor}</p>}
                         {address.streetName && <p>{address.streetName}</p>}
                       </div>
                     )}
                     <p className="text-sm text-gray-600">
                       {address.city}, {address.state} - {address.pincode}
                     </p>
-                    {address.landmark && (
-                      <p className="text-sm text-gray-500 mt-1">Landmark: {address.landmark}</p>
-                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <Button

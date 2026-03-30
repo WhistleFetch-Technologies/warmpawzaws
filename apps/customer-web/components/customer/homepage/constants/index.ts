@@ -8,6 +8,8 @@ export const serviceScreenMap: Record<string, string[]> = {
     'walker': ['walker'],
     'walking': ['walker'],
     'boarding': ['boarding'],
+    'pet-sitter': ['pet-sitter'],
+    'sitting': ['pet-sitter'],
     'adoption': ['adoption'],
     'mating': ['mating-dating-hub'],
     'cafes': ['cafes'],
@@ -142,5 +144,7 @@ export const serviceNavigationMap: Record<string, string> = {
     'resort': 'resort',
     'holiday': 'holiday',
     'sunset': 'sunset',
-    'mating': 'mating-dating-hub'
+    'mating': 'mating-dating-hub',
+    'pet-sitter': 'pet-sitter',
+    'sitting': 'pet-sitter',
 };

@@ -76,7 +76,7 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
       </div>
 
       {/* Content - curved top matching customer home */}
-      <div className="max-w-[430px] mx-auto -mt-1 rounded-t-[24px] bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 pt-6 pb-8">
+      <div className="max-w-customer mx-auto -mt-1 rounded-t-[24px] bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 pt-6 pb-8">
         {/* Personal Information - design system card */}
         <div className="card rounded-2xl p-5 border border-gray-100 mb-4">
           <div className="flex items-center gap-4 mb-4">

@@ -138,7 +138,7 @@ export function TimeSlotSelector({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-3">
         <button

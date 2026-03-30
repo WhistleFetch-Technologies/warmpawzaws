@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import NutritionOrderFlow from '../../../../components/customer/nutrition/NutritionOrderFlow';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 export default function NutritionOrderPageClient() {
   const params = useParams();
@@ -39,7 +40,7 @@ export default function NutritionOrderPageClient() {
   }, [vendorId]);
 
   const handleBack = () => {
-    router.back();
+    goBackOrHome(router);
   };
 
   const handleSuccess = (orderId: string) => {

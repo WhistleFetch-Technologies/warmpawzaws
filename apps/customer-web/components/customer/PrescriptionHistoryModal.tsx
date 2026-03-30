@@ -337,7 +337,7 @@ export function PrescriptionHistoryModal({
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-        <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
+        <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
             <h2 className="font-bold text-gray-800">Prescription History</h2>
@@ -445,7 +445,7 @@ export function PrescriptionHistoryModal({
       {/* Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] p-6">
+          <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-800">
                 {selectedPrescription ? 'Upload Additional File' : 'Upload Handwritten Prescription'}

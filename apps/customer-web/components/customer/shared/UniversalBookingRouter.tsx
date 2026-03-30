@@ -1308,7 +1308,7 @@ export function UniversalBookingRouter({
         {/* Fixed Continue Button - Above Footer */}
         {step === 'details' && (
           <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30">
-            <div className="max-w-[430px] mx-auto">
+            <div className="max-w-customer mx-auto">
             <Button 
               onClick={() => {
                 handleNext();
@@ -1458,7 +1458,7 @@ export function UniversalBookingRouter({
         {/* Fixed Continue Button for Payment Summary - Above Footer */}
         {step === 'payment' && !showPaymentPage && (
           <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30 shadow-lg">
-            <div className="max-w-[430px] mx-auto">
+            <div className="max-w-customer mx-auto">
               <Button 
                 onClick={() => {
                   // Ensure we have selectedVendorService before showing payment

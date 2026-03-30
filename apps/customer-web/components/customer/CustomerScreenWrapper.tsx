@@ -18,7 +18,8 @@ export function CustomerScreenWrapper({
 }: CustomerScreenWrapperProps) {
   return (
     <>
-      <div className="pb-24 min-h-screen">
+      {/* Match bottom nav width so tabbed screens stay a single mobile column on large viewports */}
+      <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
         {children}
       </div>
       <BottomNavigation 

@@ -115,12 +115,15 @@ class GetCustomerByPhoneHandlerEnhanced extends BaseHandlerEnhanced {
 class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const customerId = context.event.pathParameters?.customerId;
-    const body = this.parseBody(context.event);
+    const body = this.parseBody(context.event) as Record<string, unknown>;
     const requestId = context.requestId;
 
     if (!customerId) {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
+
+    const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
+    const hasFloorInPut = 'floor' in body;
 
     // Validate request with Zod schema
     const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
@@ -135,25 +138,53 @@ class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
+      const profileData = validationResult.data;
+      const addrStr =
+        profileData.address !== undefined && profileData.address !== null
+          ? String(profileData.address).trim()
+          : '';
+      if (addrStr.length > 0 && hasHouseNoInPut && !profileData.houseNo?.trim()) {
+        return this.error(
+          'House / flat number is required when address is provided',
+          400,
+          'VALIDATION_ERROR',
+          { field: 'houseNo' },
+          requestId
+        );
+      }
+
       const updateData: any = {
         updated_at: new Date(),
       };
 
-      if (validationResult.data.firstName) updateData.first_name = validationResult.data.firstName;
-      if (validationResult.data.lastName) updateData.last_name = validationResult.data.lastName;
-      if (validationResult.data.email) updateData.email = validationResult.data.email;
-      if (validationResult.data.address) updateData.address = validationResult.data.address;
-      if (validationResult.data.pincode) updateData.pincode = validationResult.data.pincode;
-      if (validationResult.data.photo) updateData.profile_photo_url = validationResult.data.photo;
+      if (profileData.firstName) updateData.first_name = profileData.firstName;
+      if (profileData.lastName) updateData.last_name = profileData.lastName;
+      if (profileData.email) updateData.email = profileData.email;
+      if (profileData.address) updateData.address = profileData.address;
+      if (profileData.pincode) updateData.pincode = profileData.pincode;
+      if (profileData.city) updateData.city = profileData.city;
+      if (profileData.state) updateData.state = profileData.state;
+      if (profileData.photo) updateData.profile_photo_url = profileData.photo;
+      if (hasHouseNoInPut) {
+        updateData.house_no = profileData.houseNo?.trim() || null;
+      }
+      if (hasFloorInPut) {
+        updateData.floor = profileData.floor?.trim() || null;
+      }
 
       await update('customers', { id: customerId }, updateData);
 
       // Get updated customer
       const customers = await select('customers', { id: customerId });
 
+      const row = customers[0];
       return this.success({
         message: 'Customer updated successfully',
-        customer: customers[0],
+        customer: {
+          ...row,
+          houseNo: row.house_no ?? null,
+          floor: row.floor ?? null,
+        },
       }, requestId);
     } catch (error: any) {
       console.error('Error updating customer:', error);
@@ -210,16 +241,41 @@ class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
     this.validateRequired(body, ['name', 'species']);
 
     try {
+      const ageUnit = body.ageUnit || body.age_unit;
+      let age_years: number | null = null;
+      let age_months: number | null = null;
+      if (body.age != null && body.age !== '') {
+        const n = parseInt(String(body.age), 10);
+        if (!Number.isNaN(n)) {
+          if (ageUnit === 'months' || ageUnit === 'month') age_months = n;
+          else age_years = n;
+        }
+      }
+
+      const weight_kg =
+        body.weight_kg != null && body.weight_kg !== ''
+          ? parseFloat(String(body.weight_kg))
+          : body.weight != null && body.weight !== ''
+            ? parseFloat(String(body.weight))
+            : null;
+
+      const med = body.medicalHistory ?? body.medical_history;
+      const medical_history =
+        med != null && typeof med === 'object' && !Array.isArray(med)
+          ? med
+          : {};
+
       const petData = {
         customer_id: customerId,
         name: body.name,
         species: body.species,
         breed: body.breed || null,
-        age: body.age || null,
+        age_years,
+        age_months,
         gender: body.gender || null,
-        weight: body.weight || null,
+        weight_kg: weight_kg != null && !Number.isNaN(weight_kg) ? weight_kg : null,
         color: body.color || null,
-        medical_history: body.medicalHistory || [],
+        medical_history,
       };
 
       const pets = await insert('pets', petData);

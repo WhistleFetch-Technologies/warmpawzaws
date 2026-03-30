@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Clock, Share2, Facebook, Twitter, Linkedin, MessageCircle, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { SocialShareButtons } from './SocialShareButtons';
 
 interface ContentPage {
@@ -79,7 +80,7 @@ export function ContentPageViewer({ slug, onBack }: ContentPageViewerProps) {
     if (onBack) {
       onBack();
     } else {
-      router.back();
+      goBackOrHome(router);
     }
   };
 

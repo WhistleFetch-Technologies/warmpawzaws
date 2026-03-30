@@ -3,7 +3,25 @@
  * Provides upload progress, retry logic, and success verification
  */
 
-import { apiClient, getApiBaseUrl } from './api-client';
+import { apiClient, getApiBaseUrl, getCustomerAuthHeadersForUpload } from './api-client';
+
+/** JPEG/PNG/WebP/GIF/HEIC; also allows missing MIME when the filename looks like an image (common on mobile). */
+function isAllowedCustomerImageFile(file: File): boolean {
+  const validTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/heic',
+    'image/heif',
+  ];
+  if (validTypes.includes(file.type)) return true;
+  if (!file.type || file.type === 'application/octet-stream') {
+    return /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name);
+  }
+  return false;
+}
 
 export interface PhotoUploadOptions {
   onProgress?: (progress: number) => void;
@@ -50,12 +68,10 @@ export async function uploadPhotoWithProgress(
     };
   }
 
-  // Check file type
-  const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  if (!validTypes.includes(file.type)) {
+  if (!isAllowedCustomerImageFile(file)) {
     return {
       success: false,
-      error: 'Invalid file type: Only JPEG, PNG, WebP, and GIF images are allowed',
+      error: 'Invalid file type: Use JPEG, PNG, WebP, GIF, or HEIC',
     };
   }
 
@@ -190,11 +206,10 @@ async function uploadWithXHR(
       });
     });
 
-    // Get auth token if available
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
     xhr.open('POST', url);
-    if (token) {
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    const authHeaders = getCustomerAuthHeadersForUpload();
+    for (const [key, value] of Object.entries(authHeaders)) {
+      xhr.setRequestHeader(key, value);
     }
 
     xhr.send(formData);
@@ -297,11 +312,10 @@ export async function uploadStaffPhotoWithProgress(
     };
   }
 
-  const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  if (!validTypes.includes(file.type)) {
+  if (!isAllowedCustomerImageFile(file)) {
     return {
       success: false,
-      error: 'Invalid file type: Only JPEG, PNG, WebP, and GIF images are allowed',
+      error: 'Invalid file type: Use JPEG, PNG, WebP, GIF, or HEIC',
     };
   }
 

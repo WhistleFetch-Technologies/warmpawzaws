@@ -139,7 +139,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       : `${countryCode} ${phoneNumber}`;
 
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-customer mx-auto">
         {/* Status Bar */}
         <div className="px-6 pt-3 pb-2 flex justify-between items-center">
           <span className="text-sm font-medium text-black">09:41</span>
@@ -279,7 +279,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
   // PHONE NUMBER SCREEN
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-customer mx-auto">
       {/* Status Bar */}
       <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-sm font-medium text-black">09:41</span>

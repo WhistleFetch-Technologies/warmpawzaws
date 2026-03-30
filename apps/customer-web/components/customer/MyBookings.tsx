@@ -415,7 +415,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       <ServiceDashboardHeader
         serviceName="My Bookings"
         serviceSubtitle="View and manage your appointments"
@@ -427,7 +427,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         headerColor="bg-[#FF8C42]"
       />
       
-      <div className="max-w-[430px] mx-auto">
+      <div className="max-w-customer mx-auto">
         {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1) */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
@@ -463,7 +463,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       </div>
 
       {/* Bookings List */}
-      <div className="max-w-[430px] mx-auto p-4 space-y-3 pb-20">
+      <div className="max-w-customer mx-auto p-4 space-y-3 pb-20">
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />

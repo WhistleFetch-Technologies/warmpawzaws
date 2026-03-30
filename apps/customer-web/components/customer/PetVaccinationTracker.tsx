@@ -152,7 +152,7 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading vaccinations...</p>
@@ -162,7 +162,7 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       {/* Header */}
       <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">

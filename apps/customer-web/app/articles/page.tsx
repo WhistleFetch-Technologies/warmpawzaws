@@ -76,7 +76,7 @@ export default function CustomerArticlesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50/80 via-white to-slate-50">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-teal-100">
-        <div className="max-w-[430px] mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-customer mx-auto px-4 py-3 flex items-center gap-3">
           <button
             type="button"
             onClick={() => router.push('/')}
@@ -97,7 +97,7 @@ export default function CustomerArticlesPage() {
         </div>
       </header>
 
-      <main className="max-w-[430px] mx-auto px-4 py-5 pb-10">
+      <main className="max-w-customer mx-auto px-4 py-5 pb-10">
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-3 mb-2">
             <button

@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { StandardizedFooter } from './shared/StandardizedFooter';
+import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -467,7 +468,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       />
 
       {/* Main Content */}
-      <div className="max-w-[430px] mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
+      <div className="max-w-customer mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
         {/* Phase 0.1: Promotion Banner Component */}
         <div className="mb-6">
           <PromotionBanner service="vet" maxPromotions={3} onNavigate={onNavigate} />
@@ -541,7 +542,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <Button 
                   size="sm" 
                   className="bg-blue-600 text-white hover:bg-blue-700 h-8"
-                  onClick={() => handleNavigate('vet-booking', { serviceType: 'tele' })}
+                  onClick={() => router.push(buildTeleInstantAutoPayBookingUrl())}
                 >
                   Book Now
                 </Button>
@@ -610,22 +611,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     console.log('🔵 [VetServiceRouter] Navigating to vet-clinic-list');
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    // ✅ FIX: Tele Consultation - direct navigation with error handling
-                    console.log('🔵 [VetServiceRouter] Navigating to vet-tele-consultation');
-                    // Direct navigation to avoid any validation issues
-                    if (typeof onNavigate === 'function') {
-                      try {
-                        onNavigate('vet-tele-consultation');
-                        console.log('✅ [VetServiceRouter] Tele consultation navigation called');
-                      } catch (error) {
-                        console.error('❌ [VetServiceRouter] Direct navigation error:', error);
-                        // Fallback to handleNavigate
-                        handleNavigate('vet-tele-consultation');
-                      }
-                    } else {
-                      console.error('❌ [VetServiceRouter] onNavigate is not a function');
-                      handleNavigate('vet-tele-consultation');
-                    }
+                    const teleUrl = buildTeleInstantAutoPayBookingUrl();
+                    console.log('🔵 [VetServiceRouter] Tele service → instant auto-pay booking:', teleUrl);
+                    router.push(teleUrl);
                   } else if (service.id === 'home') {
                     // ✅ NEW: Home Visit with provider list → profile → booking
                     console.log('🔵 [VetServiceRouter] Navigating to vet-home-visit');
@@ -779,7 +767,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
           
           <div className="space-y-3">
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card
+              role="button"
+              tabIndex={0}
+              className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+              onClick={() => router.push(buildTeleInstantAutoPayBookingUrl())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  router.push(buildTeleInstantAutoPayBookingUrl());
+                }
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Video className="w-5 h-5 text-orange-600" />
@@ -791,7 +790,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card
+              role="button"
+              tabIndex={0}
+              className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+              onClick={() => handleNavigate('lab-diagnostics')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNavigate('lab-diagnostics');
+                }
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <FlaskConical className="w-5 h-5 text-purple-600" />
@@ -803,7 +813,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card
+              role="button"
+              tabIndex={0}
+              className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+              onClick={() => handleNavigate('my-bookings')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNavigate('my-bookings');
+                }
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <HomeIcon className="w-5 h-5 text-orange-600" />
@@ -827,7 +848,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );
