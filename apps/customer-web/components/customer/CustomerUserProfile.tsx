@@ -6,7 +6,8 @@ import { ArrowLeft, Camera } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
-import { validateEmail } from '@/lib/validation';
+import { validateEmail, cleanPhone } from '@/lib/validation';
+import { houseNoFloorFromProfilePayload } from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -117,8 +118,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
 
   const handleSubmit = async () => {
     // Validation
-    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city || !profile.houseNo?.trim()) {
-      alert('Please fill in all required fields (including house / flat number)');
+    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city) {
+      alert('Please fill in all required fields');
       return;
     }
 
@@ -136,15 +137,36 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
 
     setLoading(true);
     try {
-      // Save user profile to backend - AWS Serverless compatible
-      await apiClient.post('/customer/profile', {
-        phone: session.phone,
-        profile: profile,
-        journeyType: journeyStage, // Save journey type
+      const phoneForApi = cleanPhone(session.phone) || cleanPhone(profile.phone);
+      if (!phoneForApi) {
+        alert('Invalid phone number. Please go back and verify your number.');
+        return;
+      }
+      const houseNo = (profile.houseNo ?? '').trim();
+      const floor = (profile.floor ?? '').trim();
+      const profileForApi = {
+        ...profile,
+        houseNo,
+        floor,
+        phone: phoneForApi,
+        pincode: String(profile.pincode).replace(/\D/g, '').slice(0, 6),
+      };
+      console.log('Sending profile update:', { houseNo, floor });
+      const saveRes = await apiClient.post<{ profile?: Record<string, unknown> }>('/customer/profile', {
+        phone: phoneForApi,
+        profile: profileForApi,
+        journeyType: journeyStage,
       });
+      console.log('Profile API response:', saveRes);
+
+      const { houseNo: resHouse, floor: resFloor } = saveRes?.profile
+        ? houseNoFloorFromProfilePayload(saveRes.profile)
+        : { houseNo, floor };
+      const mergedForComplete = { ...profileForApi, houseNo: resHouse, floor: resFloor };
+      setProfile((prev) => ({ ...prev, houseNo: resHouse, floor: resFloor }));
 
       console.log('User profile saved successfully');
-      onComplete(profile);
+      onComplete(mergedForComplete);
     } catch (error) {
       console.error('Error saving user profile:', error);
       alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -337,7 +359,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
           {/* House No / Flat No */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              House No / Flat No <span className="text-red-500">*</span>
+              House No / Flat No
             </label>
             <input
               type="text"

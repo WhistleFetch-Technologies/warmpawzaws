@@ -78,7 +78,7 @@ export function StandardizedHeader({
   const topRowMb = hasPetsRow ? 'mb-2' : 'mb-0';
 
   return (
-    <div className="mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
+    <div className="mx-auto w-full max-w-customer overflow-hidden rounded-b-[1.75rem] bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] shadow-[0_10px_40px_-15px_rgba(15,23,42,0.12)] sm:rounded-b-[2rem] sm:pb-5 sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
       {/* Top Row - Match footer height: compact py-3, same width */}
       <div className={`flex items-center justify-between ${topRowMb}`}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -99,7 +99,7 @@ export function StandardizedHeader({
               <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-sm font-bold">
-                {userName.charAt(0).toUpperCase()}
+                {(userName || 'User').charAt(0).toUpperCase()}
               </div>
             )}
           </button>
@@ -153,24 +153,25 @@ export function StandardizedHeader({
       {showPets && pets.length > 0 && (
         <div className="flex items-center gap-2 mt-2">
           <span className="text-white/90 text-[10px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-1">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-1 py-1 px-0.5">
             {pets.map((pet) => (
-              <div key={pet.id} className="relative flex-shrink-0">
+              <div key={pet.id} className="relative w-9 shrink-0 flex flex-col items-center">
                 <button
+                  type="button"
                   onClick={() => {
                     if (onPetSelect) onPetSelect(pet);
                   }}
-                  className="flex flex-col items-center gap-0.5"
+                  className="flex w-full flex-col items-center gap-0.5 rounded-none border-0 bg-transparent p-0 text-left"
                 >
                   <div 
-                    className={`w-9 h-9 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${
+                    className={`w-9 h-9 min-w-9 min-h-9 shrink-0 aspect-square rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${
                       selectedPet?.id === pet.id
-                        ? 'ring-2 ring-white bg-white shadow-md scale-105'
+                        ? 'ring-2 ring-white bg-white shadow-md'
                         : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
                     }`}
                   >
                     {pet.photo || pet.image ? (
-                      <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                      <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="h-full w-full object-cover" />
                     ) : (
                       pet.type === 'Dog' ? (
                         <Dog className={`w-4 h-4 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
@@ -181,12 +182,10 @@ export function StandardizedHeader({
                       )
                     )}
                   </div>
-                  <span className={`text-[9px] font-semibold max-w-[36px] truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
+                  <span className={`w-full text-center text-[9px] font-semibold truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
                     {pet.name}
                   </span>
                 </button>
-                
-                {/* Edit/View Button - Only show for selected pet */}
                 {selectedPet?.id === pet.id && onPetClick && (
                   <button
                     type="button"
@@ -194,10 +193,10 @@ export function StandardizedHeader({
                       e.stopPropagation();
                       onPetClick(pet.id);
                     }}
-                    className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
+                    className="absolute -right-0.5 -top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 shadow-md ring-2 ring-[#FF7A35] hover:bg-blue-600 transition-colors"
                     title="View / edit pet"
                   >
-                    <ChevronRight className="w-2 h-2 text-white" />
+                    <ChevronRight className="h-2 w-2 text-white" />
                   </button>
                 )}
               </div>

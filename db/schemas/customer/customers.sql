@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS customers (
     city TEXT,
     state TEXT,
     pincode TEXT,
+    house_no TEXT,
     profile_photo_url TEXT,
     is_active BOOL DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -91,8 +92,9 @@ COMMENT ON COLUMN customers.profile_completed_at IS 'Timestamp when profile was 
 COMMENT ON COLUMN customers.customer_identity_id IS 'Reference to customer_identity table for OTP/auth state';
 COMMENT ON COLUMN customers.name IS 'Customer name (synonym for full_name)';
 COMMENT ON COLUMN customers.longitude IS 'Longitude coordinate for customer address';
+COMMENT ON COLUMN customers.house_no IS 'House or flat number (snake_case; preferred for API/Lambda)';
 COMMENT ON COLUMN customers.flatNo IS 'Flat number for customer address';
-COMMENT ON COLUMN customers.houseNo IS 'House number for customer address';
+COMMENT ON COLUMN customers.houseNo IS 'Legacy house number (stored as houseno in PostgreSQL)';
 COMMENT ON COLUMN customers.floor IS 'Floor number for customer address';
 COMMENT ON COLUMN customers.wing IS 'Wing/building section for customer address';
 COMMENT ON COLUMN customers.streetName IS 'Street name for customer address';

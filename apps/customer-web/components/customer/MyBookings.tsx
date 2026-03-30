@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { extractBookingsArray } from '@/lib/customer-booking-normalize';
 
 import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from './BookingDetailModal';
@@ -49,7 +50,8 @@ interface Booking {
   bookingTime: string;
   duration: number;
   price: number;
-  status: 'pending' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
+  /** Backend may return additional values (e.g. scheduled, vendor_on_way). */
+  status: string;
   completionOTP?: string;
   isPackage: boolean;
   packageDetails?: {
@@ -135,13 +137,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     try {
       setLoading(true);
       const result = await apiClient.get<any>(`/customer/${phone}/bookings`);
-      
-      let rawBookings: any[] = [];
-      if (Array.isArray(result)) {
-        rawBookings = result;
-      } else {
-        rawBookings = result.bookings || result.data?.bookings || [];
-      }
+      const rawBookings = extractBookingsArray(result);
       
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
       console.log('[MyBookings] Loaded bookings:', rawBookings.length);
@@ -228,7 +224,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         }
         
         return {
-        bookingId: b.id || b.bookingId,
+        bookingId: String(b.id ?? b.booking_id ?? b.bookingId ?? ''),
         serviceType: b.service_type || b.serviceType || 'at_center',
         serviceName: serviceName,
         vendorId: b.vendor_id || b.vendorId,
@@ -246,7 +242,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         bookingTime: b.booking_time || b.bookingTime || b.scheduled_time || '',
         duration: b.duration || 30,
         price: parseFloat(b.total_amount || b.totalAmount || b.price || 0),
-        status: b.status || 'pending',
+        status: String(b.status ?? b.booking_status ?? b.bookingStatus ?? 'pending'),
         completionOTP: b.completion_otp || b.completionOTP,
         isPackage: b.is_package || b.isPackage || false,
         packageDetails: b.package_details || b.packageDetails,
@@ -265,7 +261,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         };
       });
       
-      setBookings(mappedBookings);
+      setBookings(mappedBookings.filter((row) => row.bookingId));
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
@@ -390,8 +386,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     }
   };
 
-  const getStatusText = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+  const getStatusText = (status: string | undefined | null) => {
+    const s = String(status ?? 'pending').replace(/_/g, ' ').trim() || 'pending';
+    return s.charAt(0).toUpperCase() + s.slice(1);
   };
 
   if (selectedBooking) {

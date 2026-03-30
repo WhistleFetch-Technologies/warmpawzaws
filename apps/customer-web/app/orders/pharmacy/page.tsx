@@ -223,8 +223,8 @@ function PharmacyOrdersContent() {
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-b from-blue-600 to-blue-700 text-white pb-6 rounded-b-3xl">
-        <div className="px-4 pt-4 flex items-center gap-4">
+      <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white pb-6 rounded-b-3xl pt-[max(1rem,env(safe-area-inset-top,0px))]">
+        <div className="px-4 flex items-center gap-4">
           <button
             onClick={() => goBackOrHome(router)}
             className="p-2 hover:bg-white/20 rounded-full transition-colors"
@@ -233,7 +233,7 @@ function PharmacyOrdersContent() {
           </button>
           <div className="flex-1">
             <h1 className="text-2xl font-bold">Pharmacy Orders</h1>
-            <p className="text-blue-100 text-sm">Track your medicine orders</p>
+            <p className="text-white/80 text-sm">Track your medicine orders</p>
           </div>
         </div>
       </div>

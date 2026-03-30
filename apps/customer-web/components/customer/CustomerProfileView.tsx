@@ -6,14 +6,17 @@ import { ChevronLeft, Camera, Edit2, Save, X, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
-import { validateEmail } from '@/lib/validation';
+import { validateEmail, cleanPhone } from '@/lib/validation';
 import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
   PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
+import {
+  houseNoFloorFromProfilePayload,
+  normalizeCustomerProfileFields,
+} from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -56,6 +59,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       const result = await apiClient.get<{ profile: Record<string, unknown> }>(
         `/customer/profile?phone=${encodeURIComponent(phone)}`
       );
+      console.log('Profile API response:', result);
       const raw = result.profile;
       if (!raw) return;
       const base = normalizeCustomerProfileFields(raw as any, phone);
@@ -64,8 +68,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
         city: base.city,
         state: base.state,
       });
-      const houseNo = String((raw as any).houseNo ?? (raw as any).house_no ?? '').trim();
-      const floor = String((raw as any).floor ?? '').trim();
+      const { houseNo, floor } = houseNoFloorFromProfilePayload(raw as Record<string, unknown>);
       const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addressLine);
       const normalized: UserProfile = {
         firstName: base.firstName,
@@ -146,11 +149,6 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       return;
     }
 
-    if (!profile.houseNo?.trim()) {
-      alert('Please enter House No / Flat No');
-      return;
-    }
-
     if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
@@ -163,27 +161,52 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
     setSaving(true);
     try {
+      const phoneForApi = cleanPhone(phone) || cleanPhone(profile.phone);
+      if (!phoneForApi) {
+        alert('Invalid phone number. Please sign in again.');
+        return;
+      }
       // Use uploaded photo URL if available, otherwise keep existing
       const addr = profile.address.trim();
       const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
+      const houseNo = (profile.houseNo ?? '').trim();
+      const floor = (profile.floor ?? '').trim();
       const profileToSave = {
         ...profile,
         address: addr,
         city: inferredCity ?? profile.city,
         state: inferredState ?? profile.state,
-        houseNo: profile.houseNo.trim(),
-        floor: (profile.floor || '').trim(),
+        houseNo,
+        floor,
+        pincode: String(profile.pincode).replace(/\D/g, '').slice(0, 6),
+        phone: phoneForApi,
         photo: uploadedPhotoUrl || profile.photo,
       };
 
-      await apiClient.post('/customer/profile', {
-        phone: phone,
+      console.log('Sending profile update:', { houseNo, floor });
+      const postRes = await apiClient.post<{ profile?: Record<string, unknown> }>('/customer/profile', {
+        phone: phoneForApi,
         profile: profileToSave,
       });
+      if (postRes?.profile) {
+        const { houseNo: resHouse, floor: resFloor } = houseNoFloorFromProfilePayload(
+          postRes.profile as Record<string, unknown>
+        );
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                houseNo: resHouse,
+                floor: resFloor,
+              }
+            : null
+        );
+      }
 
       setEditMode(false);
       setUploadedPhotoUrl(''); // Reset after save
       toast.success('Profile updated successfully! 🎉');
+      await loadProfile();
     } catch (error) {
       console.error('Error saving profile:', error);
       toast.error('Error saving profile. Please try again.');
@@ -424,19 +447,19 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
             {/* House No / Flat No — same as account creation */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                House No / Flat No <span className="text-red-500">*</span>
+                House No / Flat No
               </label>
               {editMode ? (
                 <input
                   type="text"
-                  value={profile.houseNo}
+                  value={profile.houseNo ?? ''}
                   onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
                   placeholder="e.g., A-101, Flat 12B"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                 />
               ) : (
                 <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.houseNo?.trim() || '—'}
+                  {profile.houseNo?.trim() || '-'}
                 </p>
               )}
             </div>
@@ -447,14 +470,14 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
               {editMode ? (
                 <input
                   type="text"
-                  value={profile.floor}
+                  value={profile.floor ?? ''}
                   onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
                   placeholder="e.g., 1st Floor"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                 />
               ) : (
                 <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.floor?.trim() || '—'}
+                  {profile.floor?.trim() || '-'}
                 </p>
               )}
             </div>

@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import { Calendar, TrendingUp, Clock, Filter, Search, Package, ArrowLeft, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { BookingDetailModal } from './BookingDetailModal';
+import {
+  normalizePetBookingListItem,
+  titleCaseBookingLabel,
+  type NormalizedPetBookingListItem,
+} from '@/lib/customer-booking-normalize';
 
 interface Pet {
   id: string;
@@ -24,7 +29,7 @@ interface Booking {
   endDate?: string;
   totalSessions: number;
   completedSessions: number;
-  status: 'confirmed' | 'active' | 'completed' | 'cancelled';
+  status: string;
   price: number;
   requiresOTP?: boolean;
   completionOTP?: string;
@@ -61,11 +66,14 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
       setLoading(true);
       const data = await apiClient.get(`/customer/${phone}/pets/${petData.id}/bookings`) as any;
 
-      // Filter bookings for this specific pet
-      const petBookings = (data?.bookings || []).filter((b: Booking) => b.petId === petData.id);
-      // Sort by date (most recent first)
-      const sortedBookings = petBookings.sort((a: Booking, b: Booking) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      const raw = data?.bookings || [];
+      const petBookings = raw
+        .filter((b: any) => String(b.petId ?? b.pet_id ?? '') === String(petData.id))
+        .map(normalizePetBookingListItem)
+        .filter((b: NormalizedPetBookingListItem) => b.id);
+      const sortedBookings = petBookings.sort(
+        (a: Booking, b: Booking) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setBookings(sortedBookings);
     } catch (error) {
@@ -85,10 +93,12 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
 
     // Apply search filter
     if (searchQuery) {
-      filtered = filtered.filter(b =>
-        b.serviceType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.serviceName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.vendorName.toLowerCase().includes(searchQuery.toLowerCase())
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (b) =>
+          (b.serviceType || '').toLowerCase().includes(q) ||
+          (b.serviceName || '').toLowerCase().includes(q) ||
+          (b.vendorName || '').toLowerCase().includes(q)
       );
     }
 
@@ -115,7 +125,9 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
     }
   };
 
-  const activeBookings = bookings.filter(b => b.status === 'active');
+  const activeBookings = bookings.filter((b) =>
+    ['active', 'confirmed', 'in_progress', 'pending', 'scheduled', 'arrived'].includes(b.status)
+  );
   const completedBookings = bookings.filter(b => b.status === 'completed');
   const totalSpent = bookings
     .filter(b => b.status === 'completed')
@@ -286,13 +298,13 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h4 className="font-bold text-gray-800 mb-1">
-                          {booking.serviceName || 
-                           (booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1) + ' Service')}
+                          {booking.serviceName ||
+                            `${titleCaseBookingLabel(booking.serviceType, 'Booking')} Service`}
                         </h4>
                         <p className="text-sm text-gray-600">{booking.vendorName}</p>
                       </div>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
-                        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                        {titleCaseBookingLabel(booking.status, 'Pending')}
                       </span>
                     </div>
 

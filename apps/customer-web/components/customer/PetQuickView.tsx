@@ -12,6 +12,7 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { LiveTracking } from './LiveTracking';
 import { BookingActions } from './BookingActions';
+import { extractBookingsArray, normalizePetBookingListItem, titleCaseBookingLabel } from '@/lib/customer-booking-normalize';
 
 interface Pet {
   id: string;
@@ -49,7 +50,7 @@ interface Booking {
   totalSessions: number;
   completedSessions: number;
   upcomingSessions: number;
-  status: 'active' | 'completed' | 'cancelled';
+  status: string;
   price: number;
   sessions: BookingSession[];
 }
@@ -108,27 +109,28 @@ export function PetQuickView({
         const bookingsResult = (await apiClient.get(
           `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
         )) as any;
-        petBookings = bookingsResult.bookings || [];
+        petBookings = extractBookingsArray(bookingsResult);
       }
-      
-      // Load sessions for each booking
+
       const bookingsWithSessions = await Promise.all(
-        petBookings.map(async (booking: any) => {
+        petBookings.map(async (raw: any) => {
+          const normalized = normalizePetBookingListItem(raw);
+          if (!normalized.id) return null;
           try {
-            const sessionResult = await apiClient.get(`/tracking/session/${booking.id}`) as any;
-            
+            const sessionResult = (await apiClient.get(`/tracking/session/${normalized.id}`)) as any;
+
             if (sessionResult && sessionResult.success && sessionResult.sessions) {
-              return { ...booking, sessions: sessionResult.sessions };
+              return { ...normalized, sessions: sessionResult.sessions as BookingSession[] };
             }
-            return booking;
+            return { ...normalized, sessions: [] as BookingSession[] };
           } catch (error) {
-            console.error(`Error loading sessions for booking ${booking.id}:`, error);
-            return booking;
+            console.error(`Error loading sessions for booking ${normalized.id}:`, error);
+            return { ...normalized, sessions: [] as BookingSession[] };
           }
         })
       );
-      
-      setBookings(bookingsWithSessions);
+
+      setBookings(bookingsWithSessions.filter(Boolean) as Booking[]);
     } catch (error) {
       console.error('Error loading pet data:', error);
     } finally {
@@ -488,8 +490,8 @@ export function PetQuickView({
                     <div key={booking.id} className="bg-gradient-to-br from-orange-50 to-pink-50 rounded-xl p-4 border border-orange-100">
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <h4 className="font-semibold text-gray-800 mb-1 capitalize">
-                            {booking.serviceType} Service
+                          <h4 className="font-semibold text-gray-800 mb-1">
+                            {titleCaseBookingLabel(booking.serviceType, 'Booking')} Service
                           </h4>
                           <p className="text-sm text-gray-600">{booking.vendorName}</p>
                         </div>
@@ -498,7 +500,7 @@ export function PetQuickView({
                           booking.status === 'completed' ? 'bg-gray-100 text-gray-700' :
                           'bg-red-100 text-red-700'
                         }`}>
-                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                          {titleCaseBookingLabel(booking.status, 'Pending')}
                         </span>
                       </div>
 

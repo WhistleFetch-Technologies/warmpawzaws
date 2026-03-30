@@ -13,6 +13,7 @@ import {
 import { validateEmail } from '@/lib/validation';
 import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { houseNoFloorFromProfilePayload } from '@/lib/normalize-customer-profile-api';
 
 interface CustomerProfile {
   id: string;
@@ -86,6 +87,7 @@ export default function ProfilePage() {
         p: CustomerProfile & { name?: string; firstName?: string; lastName?: string; house_no?: string }
       ): CustomerProfile => {
         const full = p.full_name || p.name || [p.firstName, p.lastName].filter(Boolean).join(' ').trim() || '';
+        const { houseNo: mappedHouse, floor: mappedFloor } = houseNoFloorFromProfilePayload(p as Record<string, unknown>);
         return {
           id: p.id,
           phone: p.phone || phone || '',
@@ -95,8 +97,8 @@ export default function ProfilePage() {
           state: p.state,
           pincode: p.pincode,
           address: typeof p.address === 'string' ? p.address : (p as any).address?.street,
-          houseNo: p.houseNo ?? p.house_no ?? '',
-          floor: p.floor ?? '',
+          houseNo: mappedHouse,
+          floor: mappedFloor,
           profile_photo_url: p.profile_photo_url || (p as any).photo,
         };
       };
@@ -105,17 +107,20 @@ export default function ProfilePage() {
         const data = await apiClient.get<{ profile?: CustomerProfile & { name?: string; firstName?: string; lastName?: string; house_no?: string } }>(
           `/customer/profile?phone=${encodeURIComponent(phone)}`
         );
+        console.log('Profile API response:', data);
         const p = data.profile;
         if (p) {
           const mapped = mapFromProfilePayload(p);
+          const { houseNo: h, floor: f } = houseNoFloorFromProfilePayload(p as Record<string, unknown>);
           const merged: CustomerProfile = {
             ...mapped,
             address: mergeStreetAddressLineOnly(mapped),
             city: '',
             state: '',
-            houseNo: (mapped.houseNo || '').trim(),
-            floor: (mapped.floor || '').trim(),
+            houseNo: h,
+            floor: f,
           };
+          console.log('[profile page GET] houseNo/floor:', merged.houseNo, merged.floor);
           setProfile(merged);
           setEditData(merged);
           persistCustomerDatabaseId(merged);
@@ -125,12 +130,14 @@ export default function ProfilePage() {
           success?: boolean;
           profile?: CustomerProfile & { firstName?: string; lastName?: string; house_no?: string };
         }>(`/customer/profile/${encodeURIComponent(customerId)}`);
+        console.log('Profile API response:', data);
         const p = data.profile;
         if (p) {
           const full =
             [p.firstName, p.lastName].filter(Boolean).join(' ').trim() ||
             (p as CustomerProfile).full_name ||
             '';
+          const { houseNo: idHouse, floor: idFloor } = houseNoFloorFromProfilePayload(p as Record<string, unknown>);
           const mapped: CustomerProfile = {
             id: p.id || customerId,
             phone: p.phone || '',
@@ -140,8 +147,8 @@ export default function ProfilePage() {
             state: p.state,
             pincode: p.pincode,
             address: typeof p.address === 'string' ? p.address : '',
-            houseNo: p.houseNo ?? p.house_no ?? '',
-            floor: p.floor ?? '',
+            houseNo: idHouse,
+            floor: idFloor,
             profile_photo_url: p.profile_photo_url || (p as any).photo,
           };
           const merged: CustomerProfile = {
@@ -149,9 +156,10 @@ export default function ProfilePage() {
             address: mergeStreetAddressLineOnly(mapped),
             city: '',
             state: '',
-            houseNo: (mapped.houseNo || '').trim(),
-            floor: (mapped.floor || '').trim(),
+            houseNo: idHouse,
+            floor: idFloor,
           };
+          console.log('[profile page GET :id] houseNo/floor:', merged.houseNo, merged.floor);
           setProfile(merged);
           setEditData(merged);
           persistCustomerDatabaseId(merged);
@@ -174,10 +182,6 @@ export default function ProfilePage() {
         alert('Please enter your address');
         return;
       }
-      if (!(editData.houseNo || '').trim()) {
-        alert('Please enter House No / Flat No');
-        return;
-      }
       if (!editData.pincode || !/^\d{6}$/.test(String(editData.pincode))) {
         alert('Please enter a valid 6-digit pincode');
         return;
@@ -198,7 +202,7 @@ export default function ProfilePage() {
       const houseNo = (editData.houseNo ?? '').trim();
       const floor = (editData.floor ?? '').trim();
 
-      await apiClient.put(`/customer/profile/${encodeURIComponent(customerId)}`, {
+      const putBody = {
         firstName,
         lastName,
         email,
@@ -208,7 +212,18 @@ export default function ProfilePage() {
         state: inferredState ?? '',
         houseNo,
         floor,
-      });
+      };
+      console.log('Sending profile update:', { houseNo, floor });
+      const putRes = await apiClient.put<{ profile?: Record<string, unknown> }>(
+        `/customer/profile/${encodeURIComponent(customerId)}`,
+        putBody
+      );
+      const fromApi = putRes?.profile
+        ? houseNoFloorFromProfilePayload(putRes.profile as Record<string, unknown>)
+        : { houseNo, floor };
+      if (putRes?.profile) {
+        console.log('[profile page PUT] response profile houseNo/floor:', fromApi.houseNo, fromApi.floor);
+      }
 
       const updatedProfile = {
         ...profile,
@@ -217,8 +232,8 @@ export default function ProfilePage() {
         address: addr,
         city: '',
         state: '',
-        houseNo,
-        floor,
+        houseNo: fromApi.houseNo,
+        floor: fromApi.floor,
       } as CustomerProfile;
       setProfile(updatedProfile);
       setEditData(updatedProfile);
@@ -227,6 +242,7 @@ export default function ProfilePage() {
       persistCustomerDatabaseId(updatedProfile);
       localStorage.setItem('profile_completed', 'true');
       setEditing(false);
+      await loadProfile();
     } catch (err) {
       console.error('Error saving profile:', err);
     }
@@ -329,9 +345,7 @@ export default function ProfilePage() {
                 <p className="text-xs text-gray-500 mt-1">Use commas between area, locality, city, state, and country.</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  House No / Flat No <span className="text-red-500">*</span>
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">House No / Flat No</label>
                 <input
                   type="text"
                   value={editData.houseNo || ''}
@@ -405,12 +419,12 @@ export default function ProfilePage() {
               <div className="flex justify-between py-3 border-b">
                 <span className="text-gray-500">House / Flat</span>
                 <span className="font-medium text-right max-w-[60%]">
-                  {profile?.houseNo?.trim() ? profile.houseNo : 'Not set'}
+                  {profile?.houseNo?.trim() || '-'}
                 </span>
               </div>
               <div className="flex justify-between py-3 border-b">
                 <span className="text-gray-500">Floor</span>
-                <span className="font-medium">{profile?.floor?.trim() ? profile.floor : '—'}</span>
+                <span className="font-medium">{profile?.floor?.trim() || '-'}</span>
               </div>
               <div className="flex justify-between py-3 border-b">
                 <span className="text-gray-500">Pincode</span>

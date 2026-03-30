@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar, Clock, MapPin, Phone } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { coerceCustomerBookingListRow, extractBookingsArray } from '@/lib/customer-booking-normalize';
 
 interface Booking {
   id: string;
@@ -47,7 +48,25 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
       const data = await apiClient.get<{ bookings?: Booking[] }>(
         `/customer/bookings?phone=${encodeURIComponent(phone)}`
       );
-      setBookings(data.bookings || []);
+      const raw = extractBookingsArray(data);
+      const rows = raw.map((b) => {
+        const c = coerceCustomerBookingListRow(b);
+        return {
+          id: c.id,
+          bookingId: c.id,
+          vendorName: c.vendorName,
+          serviceName: String((b as any).service_name ?? (b as any).serviceName ?? 'Service'),
+          petName: c.petName,
+          scheduledDate: String(
+            (b as any).scheduledDate ?? (b as any).scheduled_date ?? c.startDate ?? ''
+          ),
+          scheduledTime: String((b as any).scheduledTime ?? (b as any).scheduled_time ?? (b as any).booking_time ?? ''),
+          status: c.status as Booking['status'],
+          paymentStatus: ((b as any).paymentStatus ?? (b as any).payment_status ?? 'pending') as Booking['paymentStatus'],
+          amount: Number((b as any).amount ?? c.price ?? 0) || 0,
+        } as Booking;
+      }).filter((row) => row.id);
+      setBookings(rows);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load bookings');
       console.error('Error fetching bookings:', err);

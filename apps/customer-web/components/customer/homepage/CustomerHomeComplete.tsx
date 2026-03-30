@@ -1402,7 +1402,7 @@ export function CustomerHomeComplete({
     <div className={containerClassName}>
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
-        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top,0px))]">
+        <div className="overflow-hidden rounded-b-[1.75rem] bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pb-5 pt-[max(1rem,env(safe-area-inset-top,0px))] shadow-[0_10px_40px_-15px_rgba(15,23,42,0.12)] sm:rounded-b-[2rem] sm:pb-6">
           {/* Top Row - User Info & Actions */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -1414,7 +1414,7 @@ export function CustomerHomeComplete({
                   <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
-                    {userData.name.charAt(0).toUpperCase()}
+                    {(userData.name || 'User').charAt(0).toUpperCase()}
                   </div>
                 )}
               </button>
@@ -1448,31 +1448,31 @@ export function CustomerHomeComplete({
           {userData.pets.length > 0 ? (
             <div className="flex items-center gap-3">
               <span className="text-white/90 text-[11px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
-              <div className="flex gap-2.5 overflow-x-auto scrollbar-hide flex-1">
+              <div className="flex gap-2.5 overflow-x-auto scrollbar-hide flex-1 py-1.5 px-0.5">
                 {userData.pets.map((pet) => (
-                  <div key={pet.id} className="relative flex-shrink-0">
+                  <div key={pet.id} className="relative w-11 shrink-0 flex flex-col items-center">
                     <button
+                      type="button"
                       onClick={() => setSelectedPet(pet)}
-                      className="flex flex-col items-center gap-1"
+                      className="flex w-full flex-col items-center gap-1 rounded-none border-0 bg-transparent p-0 text-left"
                     >
                       <div
-                        className={`w-11 h-11 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${selectedPet?.id === pet.id
-                          ? 'ring-2 ring-white bg-white shadow-md scale-105'
+                        className={`w-11 h-11 min-w-11 min-h-11 shrink-0 aspect-square rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${selectedPet?.id === pet.id
+                          ? 'ring-2 ring-white bg-white shadow-md'
                           : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
                           }`}
                       >
                         {pet.photo || pet.image ? (
-                          <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                          <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="h-full w-full object-cover" />
                         ) : (
                           pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
                         )}
                       </div>
-                      <span className={`text-[10px] font-semibold max-w-[44px] truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
+                      <span className={`w-full text-center text-[10px] font-semibold truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
                         {pet.name}
                       </span>
                     </button>
 
-                    {/* Edit/View Button - Only show for selected pet */}
                     {selectedPet?.id === pet.id && (
                       <button
                         type="button"
@@ -1480,10 +1480,10 @@ export function CustomerHomeComplete({
                           e.stopPropagation();
                           onPetClick?.(pet.id);
                         }}
-                        className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
+                        className="absolute -right-0.5 -top-0.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-blue-500 shadow-md ring-2 ring-[#FF7A35] hover:bg-blue-600 transition-colors"
                         title="View / edit pet"
                       >
-                        <ChevronRight className="w-2.5 h-2.5 text-white" />
+                        <ChevronRight className="h-2.5 w-2.5 text-white" />
                       </button>
                     )}
                   </div>
@@ -1520,7 +1520,7 @@ export function CustomerHomeComplete({
       )}
 
       {/* Main Scrollable Content */}
-      <div className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[24px] -mt-3 pt-4'} ${hideHeaderFooter ? 'pb-4' : 'pb-24'}`}>
+      <div className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[28px] -mt-5 pt-5 sm:rounded-t-[32px] sm:-mt-6 sm:pt-6'} ${hideHeaderFooter ? 'pb-4' : 'pb-24'}`}>
         {/* ✅ Attention Section - Active Bookings with Tracking */}
         {activeBookings.length > 0 && (
           <div className="px-6 mb-4">
@@ -1849,8 +1849,7 @@ export function CustomerHomeComplete({
               <div className="w-10 h-10 mx-auto mb-2 bg-blue-100 rounded-xl flex items-center justify-center pointer-events-none">
                 <Video className="w-5 h-5 text-blue-600" />
               </div>
-              <h3 className="text-xs font-semibold text-gray-800 mb-1 pointer-events-none">Tele Consult</h3>
-              <p className="text-blue-600 font-medium text-sm pointer-events-none">₹299</p>
+              <h3 className="text-xs font-semibold text-gray-800 pointer-events-none">Tele Consult</h3>
             </button>
             <button
               onClick={() => handleNavigation('vet')}
@@ -1859,8 +1858,7 @@ export function CustomerHomeComplete({
               <div className="w-10 h-10 mx-auto mb-2 bg-green-100 rounded-xl flex items-center justify-center">
                 <HomeIcon className="w-5 h-5 text-green-600" />
               </div>
-              <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
-              <p className="text-blue-600 font-medium text-sm">₹599</p>
+              <h3 className="text-xs font-semibold text-gray-800">Vet at Home</h3>
             </button>
             <button
               onClick={() => handleNavigation('vet')}
@@ -1869,8 +1867,7 @@ export function CustomerHomeComplete({
               <div className="w-10 h-10 mx-auto mb-2 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Building2 className="w-5 h-5 text-purple-600" />
               </div>
-              <h3 className="text-xs font-semibold text-gray-800 mb-1">Clinic Visit</h3>
-              <p className="text-blue-600 font-medium text-sm">₹399</p>
+              <h3 className="text-xs font-semibold text-gray-800">Clinic Visit</h3>
             </button>
           </div>
         </div>

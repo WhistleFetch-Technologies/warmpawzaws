@@ -10,17 +10,50 @@ import { z } from 'zod';
 // REQUEST SCHEMAS
 // ============================================================================
 
+/** Empty / whitespace-only values become undefined so `.optional()` and `.min(1)` behave correctly. */
+function emptyToUndefined(v: unknown): unknown {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  return s === '' ? undefined : s;
+}
+
+/** Optional trimmed string with max length (house/floor/flat — never required for profile). */
+function optionalTrimmedMax(maxLen: number, tooLongMsg: string) {
+  return z.preprocess(
+    emptyToUndefined,
+    z.string().max(maxLen, tooLongMsg).optional()
+  );
+}
+
 export const UpdateCustomerProfileRequestSchema = z.object({
-  firstName: z.string().min(1, 'First name required').max(100, 'First name too long').optional(),
-  lastName: z.string().min(1, 'Last name required').max(100, 'Last name too long').optional(),
-  email: z.string().email('Invalid email format').optional(),
-  address: z.string().max(500, 'Address too long').optional(),
-  pincode: z.string().regex(/^\d{6}$/, 'Invalid pincode format').optional(),
-  city: z.string().max(100, 'City too long').optional(),
-  state: z.string().max(100, 'State too long').optional(),
-  houseNo: z.string().max(200, 'House number too long').optional(),
-  floor: z.string().max(100, 'Floor too long').optional(),
-  photo: z.string().url('Invalid photo URL').optional(),
+  firstName: z.preprocess(
+    emptyToUndefined,
+    z.string().min(1, 'First name required').max(100, 'First name too long').optional()
+  ),
+  lastName: z.preprocess(
+    emptyToUndefined,
+    z.string().min(1, 'Last name required').max(100, 'Last name too long').optional()
+  ),
+  email: z.preprocess(emptyToUndefined, z.string().email('Invalid email format').optional()),
+  address: z.preprocess(emptyToUndefined, z.string().max(500, 'Address too long').optional()),
+  pincode: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^\d{6}$/, 'Invalid pincode format').optional()
+  ),
+  city: z.preprocess(emptyToUndefined, z.string().max(100, 'City too long').optional()),
+  state: z.preprocess(emptyToUndefined, z.string().max(100, 'State too long').optional()),
+  houseNo: optionalTrimmedMax(200, 'House number too long'),
+  /** Legacy / address-style alias for house; Lambda maps to customers.house_no */
+  flatNo: optionalTrimmedMax(200, 'Flat number too long'),
+  flat_no: optionalTrimmedMax(200, 'Flat number too long'),
+  floor: optionalTrimmedMax(100, 'Floor too long'),
+  photo: z.preprocess((val) => {
+    const u = emptyToUndefined(val);
+    if (u === undefined) return undefined;
+    const s = String(u).trim();
+    if (!s.startsWith('http://') && !s.startsWith('https://')) return undefined;
+    return s;
+  }, z.string().url('Invalid photo URL').optional()),
 });
 
 export const AddPetRequestSchema = z.object({

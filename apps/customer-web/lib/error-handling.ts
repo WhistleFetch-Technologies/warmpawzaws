@@ -27,11 +27,38 @@ export class ApiError extends Error {
     public code: string,
     public statusCode?: number,
     public isRetryable: boolean = false,
-    public originalError?: Error
+    public originalError?: Error,
+    public responseBodyText?: string
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** Prefer server validation message over bare HTTP status (used when fetch returns !ok). */
+function messageFromErrorResponseBody(text: string, status: number): string {
+  const fallback = `HTTP ${status}`;
+  if (!text || !String(text).trim()) return fallback;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const err = parsed.error;
+    if (typeof err === 'string' && err.trim()) return err;
+    if (err && typeof err === 'object') {
+      const o = err as { message?: string; details?: { message?: string; errors?: { message?: string }[] } };
+      if (typeof o.message === 'string' && o.message.trim()) return o.message;
+      if (typeof o.details?.message === 'string' && o.details.message.trim()) return o.details.message;
+      const zodErrs = o.details?.errors;
+      if (Array.isArray(zodErrs) && zodErrs.length > 0) {
+        const parts = zodErrs.map((e) => e?.message).filter(Boolean) as string[];
+        if (parts.length) return parts.join('. ');
+      }
+    }
+    if (typeof parsed.message === 'string' && parsed.message.trim()) return parsed.message;
+  } catch {
+    const t = String(text).trim();
+    if (t.length > 0 && t.length < 300) return t;
+  }
+  return fallback;
 }
 
 /**
@@ -149,11 +176,20 @@ export async function resilientFetch(
       // Check if response is retryable
       if (!response.ok) {
         const isRetryable = retryConfig.retryableStatusCodes.includes(response.status);
+        let bodyText = '';
+        try {
+          bodyText = await response.text();
+        } catch {
+          /* ignore */
+        }
+        const message = messageFromErrorResponseBody(bodyText, response.status);
         const error = new ApiError(
-          `HTTP ${response.status}`,
+          message,
           response.status >= 500 ? 'server_error' : 'client_error',
           response.status,
-          isRetryable
+          isRetryable,
+          undefined,
+          bodyText
         );
         throw error;
       }
