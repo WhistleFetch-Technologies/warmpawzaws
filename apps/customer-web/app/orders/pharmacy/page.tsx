@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 // Import OrderTrackingScreen
 import { OrderTrackingScreen } from '@/components/customer/tracking/OrderTrackingScreen';
 import { usePharmacyPayment } from '@/hooks/usePharmacyPayment';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 interface PharmacyOrder {
   id: string;
@@ -220,12 +221,12 @@ function PharmacyOrdersContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       {/* Header */}
       <div className="bg-gradient-to-b from-blue-600 to-blue-700 text-white pb-6 rounded-b-3xl">
         <div className="px-4 pt-4 flex items-center gap-4">
           <button
-            onClick={() => router.back()}
+            onClick={() => goBackOrHome(router)}
             className="p-2 hover:bg-white/20 rounded-full transition-colors"
           >
             <ArrowLeft className="w-6 h-6" />

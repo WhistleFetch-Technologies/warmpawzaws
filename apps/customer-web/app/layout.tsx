@@ -1,10 +1,15 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
   title: 'Warmpawz - Pet Care Services',
   description: 'Find and book pet care services near you',
+};
+
+/** Lets env(safe-area-inset-*) apply under notch / home indicator in PWA / standalone WebViews. */
+export const viewport: Viewport = {
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

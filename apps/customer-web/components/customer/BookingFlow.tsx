@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { X, Camera, Upload, MapPin, Plus } from 'lucide-react';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 // Removed SpecializedServiceRouter - now integrated into unified flow
@@ -905,7 +906,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       {/* ✅ STANDARD HEADER - Exact match with CustomerHomeComplete */}
       <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
-          <button onClick={() => step === 'details' ? (onBack ? onBack() : router.back()) : setStep('details')} className="text-2xl text-white">←</button>
+          <button type="button" onClick={() => step === 'details' ? (onBack ? onBack() : goBackOrHome(router)) : setStep('details')} className="text-2xl text-white">←</button>
           <div className="flex-1">
             <h1 className="text-lg font-bold text-white">{service.name}</h1>
             <p className="text-sm text-white/80">{service.vendor_name}</p>

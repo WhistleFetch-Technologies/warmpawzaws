@@ -5,85 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ChevronRight, PawPrint, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient, isUatMode } from '@/lib/api-client';
-import {
-  extractCustomerUuidFromProfile,
-  getResolvedCustomerId,
-  isCustomerDatabaseUuid,
-  persistCustomerDatabaseId,
-  reconcileCustomerIdStorageOnLoad,
-} from '@/lib/customer-id-storage';
+import { getResolvedCustomerId, reconcileCustomerIdStorageOnLoad } from '@/lib/customer-id-storage';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
-import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { writeCheckoutPetSelectionForPayment } from '@/lib/checkout-pet-selection';
 import { breedsForSpecies } from '@/lib/pet-breeds';
+import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
 import { toast } from 'sonner';
-
-function addPetErrorMessage(err: unknown): string {
-  if (err && typeof err === 'object') {
-    const o = err as { message?: string; responseData?: { error?: unknown; message?: unknown } };
-    const rd = o.responseData;
-    if (rd && typeof rd === 'object') {
-      const e = rd.error;
-      if (typeof e === 'string' && e.trim()) return e;
-      if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: string }).message === 'string') {
-        return (e as { message: string }).message;
-      }
-      if (typeof rd.message === 'string' && rd.message.trim()) return rd.message;
-    }
-    if (typeof o.message === 'string' && o.message.trim() && !/^HTTP \d+$/.test(o.message.trim())) {
-      return o.message;
-    }
-  }
-  return err instanceof Error ? err.message : 'Could not add pet';
-}
-
-async function resolveCustomerIdForPetMutation(): Promise<string | null> {
-  reconcileCustomerIdStorageOnLoad();
-  const existing = getResolvedCustomerId();
-  if (existing) return existing;
-  const phone =
-    typeof window !== 'undefined' ? localStorage.getItem('customerPhone')?.trim() || null : null;
-  if (!phone) return null;
-  try {
-    const prof = (await apiClient.get(
-      `/customer/profile?phone=${encodeURIComponent(phone)}`
-    )) as Record<string, unknown>;
-    const nested =
-      (prof.customer && typeof prof.customer === 'object'
-        ? (prof.customer as Record<string, unknown>)
-        : null) ||
-      (prof.profile && typeof prof.profile === 'object'
-        ? (prof.profile as Record<string, unknown>)
-        : null) ||
-      (prof.data && typeof prof.data === 'object' && !Array.isArray(prof.data)
-        ? (prof.data as Record<string, unknown>)
-        : null);
-    const fromNested =
-      nested && typeof nested === 'object' ? extractCustomerUuidFromProfile(nested) : null;
-    const fromTop = extractCustomerUuidFromProfile(prof);
-    const uuid = fromNested || fromTop;
-    if (uuid) {
-      persistCustomerDatabaseId(uuid);
-      return uuid;
-    }
-  } catch {
-    /* fall through */
-  }
-  try {
-    const by = (await apiClient.get(
-      `/customer/by-phone?phone=${encodeURIComponent(phone)}`
-    )) as Record<string, unknown>;
-    const cust = by.customer as Record<string, unknown> | undefined;
-    const id = (cust?.id ?? by.id) as string | undefined;
-    if (id && isCustomerDatabaseUuid(String(id))) {
-      persistCustomerDatabaseId(String(id));
-      return String(id);
-    }
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
 
 function PetsPageContent() {
   const router = useRouter();
@@ -168,19 +96,12 @@ function PetsPageContent() {
 
   useEffect(() => {
     if (searchParams.get('openAdd') !== '1') return;
-    setShowAddForm(true);
-    const next = new URLSearchParams();
-    if (forCheckout) next.set('forCheckout', '1');
-    router.replace(next.toString() ? `/pets?${next}` : '/pets', { scroll: false });
-  }, [router, searchParams, forCheckout]);
+    router.replace('/add-pet', { scroll: false });
+  }, [router, searchParams]);
 
   const handleBack = useCallback(() => {
-    if (forCheckout) {
-      router.back();
-      return;
-    }
-    goBackOrReplace(router, '/');
-  }, [router, forCheckout]);
+    goBackOrHome(router);
+  }, [router]);
 
   const handleAddPet = async () => {
     const name = newPet.name?.trim();
@@ -289,7 +210,7 @@ function PetsPageContent() {
                 type="button"
                 onClick={() => {
                   writeCheckoutPetSelectionForPayment(null);
-                  router.back();
+                  goBackOrHome(router);
                 }}
                 className="w-full rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-4 text-left text-sm font-medium text-gray-600 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-[transform,box-shadow] active:scale-[0.99]"
               >
@@ -331,7 +252,7 @@ function PetsPageContent() {
                           name: pet.name,
                           breed: pet.breed || undefined,
                         });
-                        router.back();
+                        goBackOrHome(router);
                         return;
                       }
                       router.push(`/pets/${pet.id}`);

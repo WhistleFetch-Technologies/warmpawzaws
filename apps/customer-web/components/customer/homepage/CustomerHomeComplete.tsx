@@ -1358,7 +1358,7 @@ export function CustomerHomeComplete({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -1396,13 +1396,13 @@ export function CustomerHomeComplete({
 
   const containerClassName = hideHeaderFooter
     ? 'min-h-screen bg-gray-50'
-    : 'min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto';
+    : 'min-h-screen bg-gray-50 w-full max-w-customer mx-auto';
 
   return (
     <div className={containerClassName}>
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
-        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pt-4 pb-4">
+        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top,0px))]">
           {/* Top Row - User Info & Actions */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -1610,7 +1610,7 @@ export function CustomerHomeComplete({
           <div className="px-4 flex items-center justify-between mb-2">
             <h2 className="text-gray-900 text-sm font-semibold">What&apos;s your pet needs?</h2>
             <button
-              onClick={() => handleNavigation('problem_grid')}
+              onClick={() => handleNavigation('/services/all')}
               className="text-[11px] text-[#FF8C42] font-medium"
             >
               View All
@@ -2393,7 +2393,7 @@ export function CustomerHomeComplete({
 
       {/* Fixed Bottom Navigation - Hide when Add Pet modal is open to prevent overlap */}
       {!hideHeaderFooter && !showAddPetModal && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-40">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-customer mx-auto z-40">
           <div className="flex items-center justify-around">
             <button
               type="button"
@@ -2447,7 +2447,7 @@ export function CustomerHomeComplete({
       {!hideHeaderFooter && (
         <button
           onClick={() => setShowAIChat(true)}
-          className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
+          className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto animate-pulse"
         >
           <Bot className="w-8 h-8 text-white" />
           <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
@@ -2460,7 +2460,7 @@ export function CustomerHomeComplete({
       {onOpenCategoryMapper && !hideHeaderFooter && (
         <button
           onClick={onOpenCategoryMapper}
-          className="fixed bottom-24 left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto"
+          className="fixed bottom-24 left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto"
           title="Open Category Mapper"
         >
           <Settings className="w-7 h-7 text-white" />

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { 
   ArrowLeft, 
   Plus, 
@@ -118,6 +119,10 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
   const handleNavigateBack = useCallback(() => {
     if (typeof window === 'undefined') {
       onBack();
+      return;
+    }
+    if (window.history.length <= 1) {
+      goBackOrHome(router);
       return;
     }
     const before = window.location.href;

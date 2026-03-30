@@ -2298,7 +2298,7 @@ export function UniversalPaymentPage({
 
   if (loading) {
     return (
-      <div className="flex min-h-screen min-h-[100dvh] w-full max-w-[430px] mx-auto flex-col items-center justify-center bg-orange-50">
+      <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col items-center justify-center bg-orange-50">
         <Loader2 className="h-12 w-12 animate-spin text-[#FF8C42]" />
       </div>
     );
@@ -2332,7 +2332,7 @@ export function UniversalPaymentPage({
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
   return (
-    <div className="flex min-h-screen min-h-[100dvh] w-full max-w-[430px] mx-auto flex-col bg-orange-50">
+    <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col bg-orange-50">
       <header className="sticky top-0 z-50 min-h-[120px] shrink-0 rounded-b-2xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-5 shadow-sm">
         <div className="relative flex min-h-[88px] items-center">
           <button
@@ -2945,9 +2945,9 @@ export function UniversalPaymentPage({
         )}
       </main>
 
-      {/* Fixed CTA — same max width as BottomNavigation (430px) for native-app frame */}
+      {/* Fixed CTA — same max width as BottomNavigation (max-w-customer) */}
       <div
-        className={`pointer-events-none fixed left-0 right-0 z-[100] mx-auto w-full max-w-[430px] px-4 ${ctaBottomClass}`}
+        className={`pointer-events-none fixed left-0 right-0 z-[100] mx-auto w-full max-w-customer px-4 ${ctaBottomClass}`}
       >
         <div className="pointer-events-auto w-full space-y-2">
           <Button
@@ -2977,7 +2977,7 @@ export function UniversalPaymentPage({
       {/* Address Selection Modal */}
       {showAddressModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
-          <div className="w-full max-w-[430px] bg-white rounded-t-3xl max-h-[80vh] overflow-y-auto">
+          <div className="w-full max-w-customer bg-white rounded-t-3xl max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Select Address</h3>
               <button onClick={() => setShowAddressModal(false)}>

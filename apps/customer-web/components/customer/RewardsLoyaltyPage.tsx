@@ -180,10 +180,12 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading rewards...</p>
+      <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-orange-50 to-amber-50 flex justify-center">
+        <div className="w-full max-w-customer mx-auto flex items-center justify-center px-4 py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto" />
+            <p className="mt-4 text-sm text-gray-600">Loading rewards...</p>
+          </div>
         </div>
       </div>
     );
@@ -193,49 +195,62 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
   const tierColor = tierColors[tierName] || tierColors.Bronze;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-4 mb-2">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800">Rewards & Loyalty</h1>
-          <p className="text-sm text-gray-500 mt-1">Earn points and redeem amazing rewards</p>
-        </div>
-      </div>
-
-      {/* Hero Section */}
-      {balance && (
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
-          <div className="max-w-7xl mx-auto px-6 py-8 text-center">
-            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${tierColor.bg} ${tierColor.text} mb-4`}>
-              <span>{tierColor.icon}</span>
-              <span className="font-semibold capitalize">{tierName} Member</span>
-            </div>
-            
-            <p className="text-5xl font-bold mb-2">{balance.points.toLocaleString()}</p>
-            <p className="text-white/80">Available Points</p>
-            
-            <div className="mt-6 grid grid-cols-2 gap-4 max-w-md mx-auto">
-              <div className="bg-white/10 rounded-xl p-4">
-                <p className="text-sm text-white/80">Total Earned</p>
-                <p className="text-2xl font-bold">{balance.lifetimePointsEarned.toLocaleString()}</p>
-              </div>
-              <div className="bg-white/10 rounded-xl p-4">
-                <p className="text-sm text-white/80">Total Redeemed</p>
-                <p className="text-2xl font-bold">{balance.lifetimePointsRedeemed.toLocaleString()}</p>
+    <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-orange-50 to-amber-50 flex justify-center">
+      <div className="w-full max-w-customer mx-auto min-h-screen min-h-[100dvh] flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
+        {/* Header — compact app-style bar */}
+        <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)]">
+          <div className="px-4 pb-3 pt-2">
+            <div className="flex items-start gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={props.onBack}
+                className="rounded-full shrink-0 h-10 w-10 -ml-1"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div className="flex-1 min-w-0 pt-0.5 pr-1">
+                <h1 className="text-lg font-bold text-gray-800 leading-snug">Rewards & Loyalty</h1>
+                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                  Earn points and redeem amazing rewards
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </header>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        {/* Hero Section */}
+        {balance && (
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shrink-0">
+            <div className="px-4 py-6 text-center">
+              <div
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${tierColor.bg} ${tierColor.text} mb-3`}
+              >
+                <span>{tierColor.icon}</span>
+                <span className="font-semibold capitalize">{tierName} Member</span>
+              </div>
+
+              <p className="text-4xl font-bold tabular-nums mb-1">{balance.points.toLocaleString()}</p>
+              <p className="text-sm text-white/85">Available Points</p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="bg-white/10 rounded-xl p-3">
+                  <p className="text-xs text-white/80">Total Earned</p>
+                  <p className="text-xl font-bold tabular-nums mt-0.5">{balance.lifetimePointsEarned.toLocaleString()}</p>
+                </div>
+                <div className="bg-white/10 rounded-xl p-3">
+                  <p className="text-xs text-white/80">Total Redeemed</p>
+                  <p className="text-xl font-bold tabular-nums mt-0.5">{balance.lifetimePointsRedeemed.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main Content */}
+        <div className="flex-1 overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+          <div className="px-4 py-4">
           
           {/* Messages */}
           {error && (
@@ -253,22 +268,31 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
           )}
 
           {/* Tabs */}
-          <div className="mb-6">
-            <div className="flex bg-white rounded-xl p-1 shadow-sm">
+          <div className="mb-4">
+            <div
+              className="flex bg-white rounded-xl p-1 shadow-sm border border-stone-200/90"
+              role="tablist"
+            >
               {[
                 { id: 'rewards', label: 'Redeem Points', icon: '🎁' },
                 { id: 'history', label: 'Points History', icon: '📜' },
               ].map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex-1 py-3 rounded-lg font-medium transition ${
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  onClick={() => setActiveTab(tab.id as 'rewards' | 'history')}
+                  className={`flex-1 min-h-[44px] py-2 px-1 rounded-lg text-xs font-semibold transition flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 leading-tight ${
                     activeTab === tab.id
-                      ? 'bg-orange-500 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-stone-50'
                   }`}
                 >
-                  {tab.icon} {tab.label}
+                  <span className="text-base leading-none" aria-hidden>
+                    {tab.icon}
+                  </span>
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>
@@ -278,12 +302,14 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
           {activeTab === 'rewards' && (
             <div className="space-y-6">
               {rewards.length === 0 ? (
-                <div className="bg-white rounded-2xl p-12 text-center shadow-sm">
-                  <div className="text-5xl mb-4">🎁</div>
-                  <p className="text-gray-500">No rewards available at the moment</p>
+                <div className="bg-white rounded-2xl p-8 py-10 text-center shadow-sm border border-stone-200/80">
+                  <div className="text-5xl mb-3" aria-hidden>
+                    🎁
+                  </div>
+                  <p className="text-sm text-gray-600">No rewards available at the moment</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   {rewards.map(reward => (
                     <div key={reward.id} className="bg-white rounded-2xl p-5 shadow-sm">
                       <div className="flex items-start gap-4">
@@ -322,11 +348,13 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
 
           {/* History Tab */}
           {activeTab === 'history' && (
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-stone-200/80 overflow-hidden">
               {history.length === 0 ? (
-                <div className="p-12 text-center">
-                  <div className="text-5xl mb-4">📜</div>
-                  <p className="text-gray-500">No points history yet</p>
+                <div className="p-8 py-10 text-center">
+                  <div className="text-5xl mb-3" aria-hidden>
+                    📜
+                  </div>
+                  <p className="text-sm text-gray-600">No points history yet</p>
                 </div>
               ) : (
                 <div className="divide-y">
@@ -363,6 +391,7 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

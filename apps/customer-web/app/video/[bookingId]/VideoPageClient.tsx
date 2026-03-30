@@ -9,6 +9,7 @@ import {
   persistCustomerDatabaseId,
 } from '@/lib/customer-id-storage';
 import { ChimeVideoCall } from '@/components/teleCommunication/ChimeVideoCall';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 interface VideoPageClientProps {
   bookingId?: string;
@@ -204,7 +205,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           Go to Login
         </button>
         <button
-          onClick={() => router.back()}
+          onClick={() => goBackOrHome(router)}
           className="mt-3 px-6 py-2 text-gray-400 hover:text-white transition"
         >
           Go Back

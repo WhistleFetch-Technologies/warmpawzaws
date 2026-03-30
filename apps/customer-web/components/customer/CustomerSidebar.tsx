@@ -108,7 +108,7 @@ export function CustomerSidebar({
       )}
 
       {/* Sidebar */}
-      <div className={`fixed top-0 right-0 h-full w-full max-w-[430px] bg-white z-50 transform transition-transform duration-300 ${
+      <div className={`fixed top-0 right-0 h-full w-full max-w-customer bg-white z-50 transform transition-transform duration-300 ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}>
         {/* Header */}

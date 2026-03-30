@@ -75,7 +75,7 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50/80 via-white to-slate-50">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-teal-100">
-        <div className="max-w-[430px] mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-customer mx-auto px-4 py-3 flex items-center gap-3">
           <button
             type="button"
             onClick={() => router.push('/articles')}
@@ -93,7 +93,7 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
         </div>
       </header>
 
-      <main className="max-w-[430px] mx-auto px-4 py-5 pb-12">
+      <main className="max-w-customer mx-auto px-4 py-5 pb-12">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-500">
             <Loader2 className="w-10 h-10 animate-spin text-teal-500" />

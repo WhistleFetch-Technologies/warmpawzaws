@@ -18,7 +18,8 @@ export const UpdateCustomerProfileRequestSchema = z.object({
   pincode: z.string().regex(/^\d{6}$/, 'Invalid pincode format').optional(),
   city: z.string().max(100, 'City too long').optional(),
   state: z.string().max(100, 'State too long').optional(),
-  landmark: z.string().max(200, 'Landmark too long').optional(),
+  houseNo: z.string().max(200, 'House number too long').optional(),
+  floor: z.string().max(100, 'Floor too long').optional(),
   photo: z.string().url('Invalid photo URL').optional(),
 });
 

@@ -28,7 +28,7 @@ export function StaffSelectionStep({
   // For now, this is a stub to fix the build error
   
   return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
       <div className="px-6 pt-4 pb-2 flex items-center">
         <Button
           variant="ghost"

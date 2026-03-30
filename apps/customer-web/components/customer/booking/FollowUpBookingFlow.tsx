@@ -67,7 +67,7 @@ export function FollowUpBookingFlow({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       {/* Header */}
       <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">

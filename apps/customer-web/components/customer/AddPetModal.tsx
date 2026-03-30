@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { X, Camera, Upload } from 'lucide-react';
 // Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
+import { PetHealthVaccinationFormBody } from '@/components/customer/PetHealthVaccinationFormBody';
 
 interface Pet {
   id: string;
@@ -40,7 +41,7 @@ interface AddPetModalProps {
 }
 
 export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalProps) {
-  const [currentStep, setCurrentStep] = useState<'basic' | 'health' | 'vaccination'>('basic');
+  const [currentStep, setCurrentStep] = useState<'basic' | 'health'>('basic');
   const [loading, setLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -398,194 +399,45 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
     </div>
   );
 
-  const renderHealthRecords = () => (
+  const renderHealthStep = () => (
     <div className="space-y-3">
-      <h2 className="font-bold text-gray-900 text-center mb-1">Health Records</h2>
-      <p className="text-xs text-gray-600 text-center mb-2">
-        Optional: Add health information for better care
-      </p>
+      <h2 className="mb-1 text-center font-bold text-gray-900">Health &amp; vaccination</h2>
+      <p className="mb-2 text-center text-xs text-gray-600">Optional: add details for better care</p>
 
-      {/* Last Checkup */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Last Checkup Date
-        </label>
-        <input
-          type="date"
-          value={petData.healthRecords?.lastCheckup || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            healthRecords: { ...petData.healthRecords, lastCheckup: e.target.value }
-          })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
-        />
-      </div>
+      <PetHealthVaccinationFormBody
+        petName={petData.name}
+        showIntro={!!petData.name.trim()}
+        healthRecords={{
+          lastCheckup: petData.healthRecords?.lastCheckup,
+          allergies: petData.healthRecords?.allergies,
+          medications: petData.healthRecords?.medications,
+          conditions: petData.healthRecords?.conditions,
+        }}
+        vaccinations={{
+          rabies: petData.vaccinations?.rabies,
+          distemper: petData.vaccinations?.distemper,
+          parvovirus: petData.vaccinations?.parvovirus,
+          other: petData.vaccinations?.other,
+        }}
+        onHealthRecordsChange={(next) =>
+          setPetData((p) => ({
+            ...p,
+            healthRecords: { ...p.healthRecords, ...next },
+          }))
+        }
+        onVaccinationsChange={(next) =>
+          setPetData((p) => ({
+            ...p,
+            vaccinations: { ...p.vaccinations, ...next },
+          }))
+        }
+      />
 
-      {/* Allergies */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Known Allergies
-        </label>
-        <textarea
-          value={petData.healthRecords?.allergies || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            healthRecords: { ...petData.healthRecords, allergies: e.target.value }
-          })}
-          placeholder="e.g., Chicken, Pollen"
-          rows={2}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none text-sm"
-        />
-      </div>
-
-      {/* Medications */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Current Medications
-        </label>
-        <textarea
-          value={petData.healthRecords?.medications || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            healthRecords: { ...petData.healthRecords, medications: e.target.value }
-          })}
-          placeholder="e.g., Antibiotics, Supplements"
-          rows={2}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none text-sm"
-        />
-      </div>
-
-      {/* Medical Conditions */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Medical Conditions
-        </label>
-        <textarea
-          value={petData.healthRecords?.conditions || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            healthRecords: { ...petData.healthRecords, conditions: e.target.value }
-          })}
-          placeholder="e.g., Diabetes, Hip Dysplasia"
-          rows={2}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none text-sm"
-        />
-      </div>
-
-      {/* Action Buttons */}
       <div className="flex gap-2.5 pt-3">
         <Button
           onClick={() => setCurrentStep('basic')}
           variant="outline"
-          className="flex-1 h-11 border-2 border-gray-300 rounded-xl text-sm"
-          disabled={loading}
-        >
-          Back
-        </Button>
-        <Button
-          onClick={() => setCurrentStep('vaccination')}
-          className="flex-1 h-11 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white text-sm"
-          disabled={loading}
-        >
-          Next: Vaccines
-        </Button>
-      </div>
-      
-      <button
-        onClick={handleSavePet}
-        disabled={loading}
-        className="w-full py-2.5 text-blue-600 text-xs font-medium hover:text-blue-700 disabled:opacity-50"
-      >
-        {loading ? 'Saving...' : 'Skip & Save Pet'}
-      </button>
-    </div>
-  );
-
-  const renderVaccinations = () => (
-    <div className="space-y-3">
-      <h2 className="font-bold text-gray-900 text-center mb-1">Vaccination Records</h2>
-      <p className="text-xs text-gray-600 text-center mb-2">
-        Optional: Track vaccination dates
-      </p>
-
-      {/* Rabies */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Rabies Vaccine Date
-        </label>
-        <input
-          type="date"
-          value={petData.vaccinations?.rabies || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            vaccinations: { ...petData.vaccinations, rabies: e.target.value }
-          })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
-        />
-      </div>
-
-      {/* Distemper */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Distemper Vaccine Date
-        </label>
-        <input
-          type="date"
-          value={petData.vaccinations?.distemper || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            vaccinations: { ...petData.vaccinations, distemper: e.target.value }
-          })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
-        />
-      </div>
-
-      {/* Parvovirus */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Parvovirus Vaccine Date
-        </label>
-        <input
-          type="date"
-          value={petData.vaccinations?.parvovirus || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            vaccinations: { ...petData.vaccinations, parvovirus: e.target.value }
-          })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
-        />
-      </div>
-
-      {/* Other Vaccinations */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-          Other Vaccinations
-        </label>
-        <textarea
-          value={petData.vaccinations?.other || ''}
-          onChange={(e) => setPetData({
-            ...petData,
-            vaccinations: { ...petData.vaccinations, other: e.target.value }
-          })}
-          placeholder="e.g., Bordetella - Jan 2024"
-          rows={2}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none text-sm"
-        />
-      </div>
-
-      {/* Info Card */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-        <p className="text-[10px] text-blue-900 text-center">
-          💡 Keeping vaccination records helps vets provide better care!
-        </p>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-2.5 pt-3">
-        <Button
-          onClick={() => setCurrentStep('health')}
-          variant="outline"
-          className="flex-1 h-11 border-2 border-gray-300 rounded-xl text-sm"
+          className="h-11 flex-1 rounded-xl border-2 border-gray-300 text-sm"
           disabled={loading}
         >
           Back
@@ -593,11 +445,19 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         <Button
           onClick={handleSavePet}
           disabled={loading}
-          className="flex-1 h-11 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white text-sm"
+          className="h-11 flex-1 rounded-xl bg-[#FF8C42] text-sm text-white hover:bg-[#FF7A2E]"
         >
           {loading ? 'Saving...' : 'Save Pet'}
         </Button>
       </div>
+
+      <button
+        onClick={handleSavePet}
+        disabled={loading}
+        className="w-full py-2.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+      >
+        {loading ? 'Saving...' : 'Skip & Save Pet'}
+      </button>
     </div>
   );
 
@@ -610,7 +470,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       onClick={onClose}
     >
       <div 
-        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl transform transition-transform duration-300 ease-out flex flex-col translate-y-0 max-w-[430px] mx-auto"
+        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl transform transition-transform duration-300 ease-out flex flex-col translate-y-0 max-w-customer mx-auto"
         style={{ 
           height: '95vh',
           maxHeight: '95vh'
@@ -633,34 +493,34 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         </div>
 
         {/* Step Indicator */}
-        <div className="px-4 py-3 bg-white border-b border-gray-100 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            {['basic', 'health', 'vaccination'].map((step, index) => (
-              <div key={step} className="flex items-center flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all shadow-sm ${
-                  currentStep === step
-                    ? 'bg-[#FF8C42] text-white scale-110'
-                    : step === 'basic' || (step === 'health' && (currentStep === 'health' || currentStep === 'vaccination')) || currentStep === 'vaccination'
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}>
+        <div className="flex-shrink-0 border-b border-gray-100 bg-white px-4 py-3">
+          <div className="flex items-center">
+            {(['basic', 'health'] as const).map((stepKey, index) => (
+              <div key={stepKey} className="flex flex-1 items-center">
+                <div
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all ${
+                    currentStep === stepKey
+                      ? 'scale-110 bg-[#FF8C42] text-white'
+                      : stepKey === 'basic' && currentStep === 'health'
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-200 text-gray-500'
+                  }`}
+                >
                   {index + 1}
                 </div>
-                {index < 2 && (
-                  <div className={`h-1 flex-1 mx-1.5 rounded-full transition-colors ${
-                    (step === 'basic' && (currentStep === 'health' || currentStep === 'vaccination')) ||
-                    (step === 'health' && currentStep === 'vaccination')
-                      ? 'bg-green-500'
-                      : 'bg-gray-200'
-                  }`} />
-                )}
+                {index < 1 ? (
+                  <div
+                    className={`mx-1.5 h-1 flex-1 rounded-full ${
+                      currentStep === 'health' ? 'bg-green-500' : 'bg-gray-200'
+                    }`}
+                  />
+                ) : null}
               </div>
             ))}
           </div>
-          <div className="flex justify-between mt-2">
+          <div className="mt-2 flex justify-between">
             <span className="text-[10px] font-medium text-gray-600">Basic Info</span>
-            <span className="text-[10px] font-medium text-gray-600">Health</span>
-            <span className="text-[10px] font-medium text-gray-600">Vaccines</span>
+            <span className="text-[10px] font-medium text-gray-600">Health &amp; vaccines</span>
           </div>
         </div>
 
@@ -672,8 +532,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         }}>
           <div className="p-4 pb-24">
             {currentStep === 'basic' && renderBasicInfo()}
-            {currentStep === 'health' && renderHealthRecords()}
-            {currentStep === 'vaccination' && renderVaccinations()}
+            {currentStep === 'health' && renderHealthStep()}
           </div>
         </div>
       </div>

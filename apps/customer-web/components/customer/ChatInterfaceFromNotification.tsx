@@ -121,7 +121,7 @@ export function ChatInterfaceFromNotification({
 
   return (
     <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-[430px] h-[600px] flex flex-col shadow-2xl">
+      <div className="bg-white rounded-2xl w-full max-w-customer h-[600px] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white p-4 rounded-t-2xl flex items-center justify-between">
           <div className="flex items-center gap-3">

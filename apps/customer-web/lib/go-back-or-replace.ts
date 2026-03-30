@@ -14,3 +14,8 @@ export function goBackOrReplace(router: MinimalRouter, fallbackPath: string): vo
   }
   router.replace(fallbackPath);
 }
+
+/** Prefer history; if there is no prior entry, go home (`/`). */
+export function goBackOrHome(router: MinimalRouter): void {
+  goBackOrReplace(router, '/');
+}

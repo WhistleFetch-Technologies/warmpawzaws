@@ -43,17 +43,19 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
         const storedPhone = localStorage.getItem('customerPhone');
         const storedToken = localStorage.getItem('authToken');
         const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
+        const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
         const storedJourney = localStorage.getItem('customerJourneyStage');
         const storedCustomer = localStorage.getItem('customerData');
 
         if (storedPhone && storedToken) {
           const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
+          const onboardingDone = storedOnboarding === 'true' || stageOnboardingDone;
           
           setSessionState({
             phone: storedPhone,
             sessionToken: storedToken,
             verified: true,
-            hasCompletedOnboarding: storedOnboarding === 'true',
+            hasCompletedOnboarding: onboardingDone,
             customer: customerData,
             hasPets: customerData?.petIds?.length > 0 || false
           });
@@ -63,7 +65,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
           }
 
           // Determine initial screen
-          if (storedOnboarding === 'true') {
+          if (onboardingDone) {
             setCurrentScreen('home');
           } else if (storedJourney) {
             setCurrentScreen('user-profile');
@@ -121,6 +123,8 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('customer_id');
       localStorage.removeItem('warmpawz_customer_id');
       localStorage.removeItem('customerOnboardingComplete');
+      localStorage.removeItem('onboarding_completed');
+      localStorage.removeItem('profile_completed');
       localStorage.removeItem('customerJourneyStage');
     }
   };

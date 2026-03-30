@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { InstantTeleQueue } from '@/components/customer/InstantTele/InstantTeleQueue';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { apiClient } from '@/lib/api-client';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 type DirectPayContext = {
   vendorId: string;
@@ -419,13 +420,7 @@ function TeleConsultationContent() {
                 serviceStyle: 'tele',
               },
             ]}
-            onBack={() => {
-              if (typeof window !== 'undefined' && window.history.length > 1) {
-                router.back();
-              } else {
-                router.push('/');
-              }
-            }}
+            onBack={() => goBackOrHome(router)}
             onSuccess={(bookingId, _orderId, _otp, meta) => {
               const queryParams = new URLSearchParams();
               if (customerId) queryParams.set('customerId', customerId);
@@ -446,7 +441,8 @@ function TeleConsultationContent() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-4xl mx-auto">
         <button
-          onClick={() => router.back()}
+          type="button"
+          onClick={() => goBackOrHome(router)}
           className="mb-4 text-gray-600 hover:text-gray-800 flex items-center gap-2"
         >
           ← Back

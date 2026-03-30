@@ -19,33 +19,40 @@ export function WalletPage({ onBack, onNavigate }: WalletPageProps = {}) {
   }, []);
 
   const headerBar = (
-    <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-4 -mx-6 mt-0 mb-6 rounded-b-2xl shadow-md">
-      <div className="flex items-center gap-3">
+    <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-5 rounded-b-[1.75rem] shadow-md mb-4">
+      <div className="flex items-center gap-2">
         {onBack && (
-          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full text-white hover:bg-white/20">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            className="rounded-full text-white hover:bg-white/20"
+            aria-label="Go back"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Button>
         )}
         <h1 className="text-xl font-bold">{phone ? 'My Wallet' : 'Wallet'}</h1>
       </div>
-    </div>
+    </header>
   );
 
   if (!phone) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="p-6">
-          {headerBar}
-          <p className="text-gray-600">Please login to view your wallet</p>
+      <div className="w-full flex flex-col bg-[#FAF6F0] min-h-screen rounded-t-3xl overflow-hidden">
+        {headerBar}
+        <div className="px-4 pb-6">
+          <p className="text-gray-600 text-center">Please login to view your wallet</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      <div className="p-6">
-        {headerBar}
+    <div className="w-full flex flex-col bg-[#FAF6F0] min-h-screen rounded-t-3xl overflow-hidden">
+      {headerBar}
+      <div className="flex-1 min-h-0 px-4 pb-2">
         <CustomerWallet customerPhone={phone} onNavigate={onNavigate} />
       </div>
     </div>

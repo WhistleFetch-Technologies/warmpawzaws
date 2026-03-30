@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 interface CartItem {
   id: string;
@@ -366,7 +367,7 @@ export default function CheckoutPage() {
       <header className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+            <button type="button" onClick={() => goBackOrHome(router)} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-xl font-bold text-gray-800">Checkout</h1>

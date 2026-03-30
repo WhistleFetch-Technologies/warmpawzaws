@@ -26,9 +26,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
+import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import { toast } from 'sonner';
 
 interface ProductDetailPageProps {
@@ -55,6 +57,7 @@ export function ProductDetailPage({
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const { addToCart, cart } = useCart();
+  const router = useRouter();
 
   const loadProductDetails = async () => {
     try {
@@ -136,10 +139,9 @@ export function ProductDetailPage({
     initialProduct?.fullDetails,
   ]);
 
-  const handleAddToCart = () => {
-    if (!product) return;
-
-    const cartItem = {
+  const buildCartItemForContext = () => {
+    if (!product) return null;
+    return {
       id: product.id || product.productId,
       name: product.name || product.product_name,
       price: parseFloat(product.price || product.unit_price || 0),
@@ -149,14 +151,69 @@ export function ProductDetailPage({
       vendorName: product.vendor?.name || product.vendor_name,
       ...product
     };
+  };
 
+  const handleAddToCart = () => {
+    const cartItem = buildCartItemForContext();
+    if (!cartItem) return;
     addToCart(cartItem);
     toast.success(`${quantity} ${product.name || 'item'} added to cart`);
   };
 
   const handleBuyNow = () => {
-    handleAddToCart();
-    onNavigate?.('cart');
+    const cartItem = buildCartItemForContext();
+    if (!cartItem || !product) return;
+
+    const lineId = String(
+      canonicalProductId(product) ||
+        product.id ||
+        product.productId ||
+        product.product_id ||
+        ''
+    );
+    if (!lineId) {
+      toast.error('Could not add this product to cart');
+      return;
+    }
+
+    const unitPrice = parseFloat(product.price || product.unit_price || 0);
+    let stockNum = 999;
+    if (typeof product.stock_quantity === 'number') stockNum = product.stock_quantity;
+    else if (typeof product.stock === 'number') stockNum = product.stock;
+
+    const rawOp = product.original_price ?? product.mrp ?? product.compare_at_price;
+    const parsedOp =
+      rawOp != null && String(rawOp) !== '' ? parseFloat(String(rawOp)) : NaN;
+    const original_price = Number.isFinite(parsedOp) ? parsedOp : undefined;
+
+    let images: string[] | undefined;
+    if (Array.isArray(product.images) && product.images.length > 0) images = product.images;
+    else if (product.image) images = [product.image];
+    else if (product.image_url) images = [product.image_url];
+    else if (product.primary_image) images = [product.primary_image];
+
+    const persisted = mergeLineIntoWarmpawzCartStorage({
+      lineId,
+      quantity,
+      product: {
+        id: String(product.id || product.productId || lineId),
+        name: product.name || product.product_name || 'Item',
+        price: unitPrice,
+        original_price,
+        emoji: product.emoji,
+        images,
+        vendor_name: product.vendor?.name || product.vendor_name,
+        stock: stockNum,
+      },
+    });
+
+    if (!persisted) {
+      toast.error('Could not update cart');
+      return;
+    }
+
+    addToCart(cartItem);
+    router.push('/cart?buynow=1');
   };
 
   const incrementQuantity = () => {

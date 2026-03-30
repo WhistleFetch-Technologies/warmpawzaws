@@ -244,7 +244,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
       />
       
       {/* Content */}
-      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-28">
+      <div className="max-w-customer mx-auto px-4 pt-4 pb-28">
         {/* Search - design system curves (rounded-2xl), soft bg */}
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -395,7 +395,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );
