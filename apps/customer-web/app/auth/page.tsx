@@ -33,12 +33,13 @@ function AuthPageContent() {
       if (redirect) {
         setRedirectAfterLogin(redirect);
       }
-      const refCode = params.get('ref') || params.get('referralCode');
+      const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
       if (refCode && refCode.trim()) {
         const c = refCode.trim().toUpperCase();
         setReferralCode(c);
         setShowReferralModal(true);
         setReferralApplied(true);
+        localStorage.setItem('pendingReferralCode', c);
       }
     }
   }, []);
@@ -166,7 +167,10 @@ function AuthPageContent() {
       return;
     }
 
-    const trimmedReferral = referralCode?.trim() ? referralCode.trim().toUpperCase() : '';
+    const pendingReferral = localStorage.getItem('pendingReferralCode')?.trim().toUpperCase() || '';
+    const trimmedReferral = referralCode?.trim()
+      ? referralCode.trim().toUpperCase()
+      : pendingReferral;
 
     // UAT without referral: local shortcut (no API verify) — same as before
     if (UAT_MODE && !trimmedReferral) {
@@ -251,6 +255,7 @@ function AuthPageContent() {
         otp,
         role: 'customer',
         referralCode: trimmedReferral || undefined,
+        pendingReferralCode: trimmedReferral || undefined,
       });
 
       // Handle nested response structure: { success: true, data: { success: true, data: {...} } }

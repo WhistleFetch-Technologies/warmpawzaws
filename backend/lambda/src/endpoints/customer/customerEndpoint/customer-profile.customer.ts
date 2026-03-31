@@ -36,21 +36,47 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+async function selectCanonicalCustomerRowsByLast10Digits(digits: string): Promise<any[]> {
+  const last10 = normalizePhone(digits).slice(-10);
+  if (!last10 || last10.length < 10) return [];
+  const res = await query(
+    `SELECT * FROM customers
+     WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+     ORDER BY
+       LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g')) ASC,
+       (profile_completed IS TRUE) DESC,
+       updated_at DESC NULLS LAST,
+       created_at DESC NULLS LAST`,
+    [last10]
+  );
+  return (res as any).rows || [];
+}
+
 /**
- * Combine camelCase + snake_case house fields. `houseNo ?? house_no` is wrong when `houseNo` is ""
- * (empty string is not nullish) but `house_no` has the real value — common with mixed API/client payloads.
+ * Combine house / flat fields from camelCase + snake_case.
+ * Clients often send flat-only (`flatNo`) or duplicate empty `houseNo` with real value in `house_no`.
  */
 function mergeHouseNoFromPayload(raw: Record<string, any>): {
   hasHouseKey: boolean;
   merged: string | undefined;
 } {
+  if (raw == null || typeof raw !== 'object') {
+    return { hasHouseKey: false, merged: undefined };
+  }
   const hasHouseKey =
-    raw != null && typeof raw === 'object' && ('houseNo' in raw || 'house_no' in raw);
+    'houseNo' in raw ||
+    'house_no' in raw ||
+    'flatNo' in raw ||
+    'flat_no' in raw;
   const tc =
     raw?.houseNo === undefined || raw?.houseNo === null ? '' : String(raw.houseNo).trim();
   const ts =
     raw?.house_no === undefined || raw?.house_no === null ? '' : String(raw.house_no).trim();
-  const mergedNonEmpty = tc || ts;
+  const tf =
+    raw?.flatNo === undefined || raw?.flatNo === null ? '' : String(raw.flatNo).trim();
+  const tf2 =
+    raw?.flat_no === undefined || raw?.flat_no === null ? '' : String(raw.flat_no).trim();
+  const mergedNonEmpty = tc || ts || tf || tf2;
 
   if (!hasHouseKey) {
     return { hasHouseKey: false, merged: mergedNonEmpty || undefined };
@@ -63,13 +89,17 @@ async function resolveCustomerId(identifier: string): Promise<string | null> {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidRegex.test(identifier)) {
     const customers = await select('customers', { id: identifier });
-    return customers.length > 0 ? customers[0].id : null;
+    if (customers.length === 0) return null;
+    const last10 = normalizePhone(String(customers[0].phone || '')).slice(-10);
+    if (last10.length >= 10) {
+      const canon = await selectCanonicalCustomerRowsByLast10Digits(last10);
+      if (canon.length > 0) return canon[0].id;
+    }
+    return customers[0].id;
   }
 
-  // Check if it's a phone number
-  const cleanPhone = normalizePhone(identifier);
-  const customers = await select('customers', { phone: cleanPhone });
-  return customers.length > 0 ? customers[0].id : null;
+  const rows = await selectCanonicalCustomerRowsByLast10Digits(identifier);
+  return rows.length > 0 ? rows[0].id : null;
 }
 
 export function registerCustomerProfileEndpoints(app: Hono) {
@@ -269,19 +299,14 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
-      // Lines 239-264: Replace with this
       let customers: any[];
       try {
-        // Get customer profile
-        const customerResult = await query(
-          `SELECT * FROM customers WHERE phone = $1`,
-          [cleanPhone]
-        );
-        customers = customerResult.rows;
-
-        if (customers.length === 0) {
+        const customerId = await resolveCustomerId(cleanPhone);
+        if (!customerId) {
           return c.json({ error: 'Customer not found' }, 404);
         }
+        customers = await select('customers', { id: customerId });
+        if (customers.length === 0) return c.json({ error: 'Customer not found' }, 404);
 
         // Get addresses for this customer
         const addressesResult = await query(
@@ -536,7 +561,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const addrPresentPost = !!(profileData.address && String(profileData.address).trim());
-      if (addrPresentPost && hasHouseNoField && !profileData.houseNo?.trim()) {
+      const effectiveHousePost = String(mergedHouseNo ?? profileData.houseNo ?? '').trim();
+      if (addrPresentPost && hasHouseNoField && !effectiveHousePost) {
         return c.json({
           success: false,
           error: {
@@ -572,6 +598,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       let customerId = await resolveCustomerId(cleanPhone);
+
+      if (!customerId) {
+        const lateRows = await selectCanonicalCustomerRowsByLast10Digits(cleanPhone);
+        if (lateRows.length > 0) customerId = lateRows[0].id;
+      }
 
       if (!customerId) {
         // Customer doesn't exist - create it (for UAT mode or when OTP verification didn't create customer)
@@ -655,7 +686,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         updateData.state = profileData.state;
       }
       if (hasHouseNoField) {
-        updateData.house_no = profileData.houseNo?.trim() || null;
+        updateData.house_no = effectiveHousePost || null;
       }
       if (hasFloorField) {
         updateData.floor = profileData.floor?.trim() || null;
@@ -715,7 +746,6 @@ export function registerCustomerProfileEndpoints(app: Hono) {
 
       // Parse body from Hono request
       const body = await c.req.json().catch(() => ({}));
-      const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
       const hasFloorInPut = 'floor' in body;
 
       const bodyForSchema: Record<string, any> = { ...body };
@@ -763,7 +793,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const addrStr = profileData.address !== undefined && profileData.address !== null ? String(profileData.address).trim() : '';
-      if (addrStr.length > 0 && hasHouseNoInPut && !profileData.houseNo?.trim()) {
+      const effectiveHousePut = String(mergedPutHouse ?? profileData.houseNo ?? '').trim();
+      if (addrStr.length > 0 && hasHouseKey && !effectiveHousePut) {
         return c.json({
           success: false,
           error: {
@@ -819,8 +850,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (profileData.state) {
         updateData.state = profileData.state;
       }
-      if (hasHouseNoInPut) {
-        updateData.house_no = profileData.houseNo?.trim() || null;
+      if (hasHouseKey) {
+        updateData.house_no = effectiveHousePut || null;
       }
       if (hasFloorInPut) {
         updateData.floor = profileData.floor?.trim() || null;
@@ -936,8 +967,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         return c.json({ error: 'Phone number is required' }, 400);
       }
 
-      const cleanPhone = normalizePhone(phone);
-      const customers = await select('customers', { phone: cleanPhone });
+      const customerId = await resolveCustomerId(phone);
+      if (!customerId) {
+        return c.json({ error: 'Customer not found', customer: null }, 404);
+      }
+      const customers = await select('customers', { id: customerId });
 
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found', customer: null }, 404);

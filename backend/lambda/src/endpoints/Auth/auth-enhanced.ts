@@ -56,6 +56,63 @@ function normalizePhoneForOtp(phone: string): string {
   return digits || phone;
 }
 
+/** Collapse +91 and 10-digit customer rows to one canonical record. */
+async function selectCustomersByLast10Digits(last10: string): Promise<any[]> {
+  const key = last10.replace(/\D/g, '').slice(-10);
+  if (!key || key.length < 10) return [];
+  const res = await query(
+    `SELECT * FROM customers
+     WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+     ORDER BY
+       LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g')) ASC,
+       (profile_completed IS TRUE) DESC,
+       updated_at DESC NULLS LAST,
+       created_at DESC NULLS LAST`,
+    [key]
+  );
+  return (res as any).rows || [];
+}
+
+/** Persist Indian mobiles as 10 digits in `customers.phone` (same as profile POST). */
+function storagePhoneForNewCustomer(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const last10 = digits.slice(-10);
+    if (/^[6-9]\d{9}$/.test(last10)) return last10;
+  }
+  return phone;
+}
+
+async function applyCustomerReferralOnAuth(
+  userId: string,
+  phone: string,
+  referralCodeRaw: string | undefined
+): Promise<void> {
+  if (!referralCodeRaw || !userId || userId.startsWith('temp_')) return;
+
+  const normalizedCode = String(referralCodeRaw).trim().toUpperCase();
+  const referralResult = await processReferralSignup({
+    customerId: userId,
+    referralCode: normalizedCode,
+    phone,
+  });
+
+  if (referralResult.success) return;
+  if (referralResult.error !== 'Invalid referral code') {
+    console.warn(`[AUTH] Referral not applied: ${referralResult.error}`);
+    return;
+  }
+
+  const vendorRes = await processVendorReferralForCustomerSignup({
+    customerId: userId,
+    phone,
+    referralCode: normalizedCode,
+  });
+  if (!vendorRes.success) {
+    console.warn(`[AUTH] Vendor referral fallback failed: ${vendorRes.error}`);
+  }
+}
+
 async function createOtp(phone: string, code: string, purpose: string = 'login'): Promise<void> {
   const canonicalPhone = normalizePhoneForOtp(phone);
   const expiresAt = new Date();
@@ -464,10 +521,20 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       // REGULAR CUSTOMER/VENDOR LOGIN
       // ============================================================================
       if (role === 'customer') {
-        // ✅ FIX: Add timeout protection to customer queries
         let customers: any[] = [];
+        const last10ForCustomer =
+          phoneDigits.length >= 10
+            ? phoneDigits.slice(-10)
+            : phone.replace(/\D/g, '').slice(-10);
+
         try {
-          const customerQueryPromise = select('customers', { phone });
+          const customerQueryPromise = (async () => {
+            if (last10ForCustomer.length >= 10) {
+              const byDigits = await selectCustomersByLast10Digits(last10ForCustomer);
+              if (byDigits.length > 0) return byDigits;
+            }
+            return select('customers', { phone });
+          })();
           const customerQueryTimeout = new Promise<any[]>((_, reject) =>
             setTimeout(() => reject(new Error('Customer query timeout')), 5000)
           );
@@ -475,6 +542,24 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         } catch (customerQueryError: any) {
           console.warn('[AUTH] Customer query timed out or failed, treating as new customer:', customerQueryError.message);
           customers = [];
+        }
+
+        if (last10ForCustomer.length >= 10) {
+          try {
+            const canon = await selectCustomersByLast10Digits(last10ForCustomer);
+            if (canon.length > 0) customers = canon;
+          } catch (canonErr: any) {
+            console.warn('[AUTH] Canonical customer collapse failed:', canonErr?.message);
+          }
+        }
+
+        if (customers.length === 0 && last10ForCustomer.length >= 10) {
+          try {
+            const again = await selectCustomersByLast10Digits(last10ForCustomer);
+            if (again.length > 0) customers = again;
+          } catch (raceErr: any) {
+            console.warn('[AUTH] Customer recheck before signup failed:', raceErr?.message);
+          }
         }
 
         let isNewCustomer = false;
@@ -527,6 +612,12 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               // Continue - linking is not critical
             }
           }
+
+          try {
+            await applyCustomerReferralOnAuth(userId, normalizedPhone || phone, referralCode);
+          } catch (refError: any) {
+            console.error('[AUTH] Referral error (existing customer):', refError?.message || refError);
+          }
         } else {
           // Create customer with proper state
           isNewCustomer = true;
@@ -546,9 +637,10 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           // Create customer identity first (with timeout)
           //const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
 
+          const storedPhone = storagePhoneForNewCustomer(phone);
           let identityId: string | undefined;
           try {
-            const identityPromise = createOrUpdateCustomerIdentity(phone, undefined);
+            const identityPromise = createOrUpdateCustomerIdentity(storedPhone, undefined);
             const identityTimeout = new Promise<string>((_, reject) =>
               setTimeout(() => reject(new Error('Identity creation timeout')), 5000)
             );
@@ -562,8 +654,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           let newCustomers: any[] = [];
           try {
             const insertPromise = insert('customers', {
-              phone,
-              full_name: `Customer ${phone.slice(-4)}`, // Temporary name until profile is completed
+              phone: storedPhone,
+              full_name: `Customer ${storedPhone.slice(-4)}`, // Temporary name until profile is completed
               is_active: true,
               status: 'new',
               onboarding_status: 'PHONE_VERIFIED',
@@ -580,10 +672,10 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           } catch (insertError: any) {
             console.error('[AUTH] Failed to create customer record:', insertError.message);
             // This is critical - we need a user ID, so generate a temp one
-            userId = `temp_customer_${phone}_${Date.now()}`;
+            userId = `temp_customer_${storedPhone}_${Date.now()}`;
             userData = {
               id: userId,
-              phone,
+              phone: storedPhone,
               is_active: true,
               status: 'new',
               onboarding_status: 'PHONE_VERIFIED',
@@ -606,58 +698,10 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
 
-          // Process referral code if provided (signup loyalty via action_sources, not here)
-          console.log(`[AUTH] 🔍 Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith('temp_')}`);
-
-          if (referralCode && userId && !userId.startsWith('temp_')) {
-            try {
-              // Normalize referral code (trim and uppercase)
-              //const { processReferralSignup } = await import('../lib/services/referral-service');
-
-              const normalizedCode = String(referralCode).trim().toUpperCase();
-              console.log(`[AUTH] 🎁 Processing referral code: ${normalizedCode} for customer: ${userId}`);
-              console.log(`[AUTH] 🎁 Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
-
-              const startTime = Date.now();
-              const referralResult = await processReferralSignup({
-                customerId: userId,
-                referralCode: normalizedCode,
-                phone: normalizedPhone,
-              });
-              const duration = Date.now() - startTime;
-
-              console.log(`[AUTH] 🎁 processReferralSignup completed in ${duration}ms`);
-              console.log(`[AUTH] 🎁 Result: ${JSON.stringify(referralResult)}`);
-
-              if (referralResult.success) {
-                console.log(`[AUTH] ✅ Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
-              } else if (referralResult.error === 'Invalid referral code') {
-                const vendorRes = await processVendorReferralForCustomerSignup({
-                  customerId: userId,
-                  phone: normalizedPhone || phone,
-                  referralCode: normalizedCode,
-                });
-                if (vendorRes.success) {
-                  console.log(`[AUTH] ✅ Vendor referral code applied for customer (customer_referrals + vendor_referrals)`);
-                } else {
-                  console.warn(`[AUTH] ⚠️ Vendor referral fallback failed: ${vendorRes.error}`);
-                }
-              } else {
-                console.warn(`[AUTH] ⚠️ Referral code processing failed: ${referralResult.error}`);
-                console.warn(`[AUTH] ⚠️ Full error details: ${JSON.stringify(referralResult)}`);
-              }
-            } catch (refError: any) {
-              console.error('[AUTH] ❌ Error processing referral code during signup:', refError);
-              console.error('[AUTH] ❌ Error message:', refError.message);
-              console.error('[AUTH] ❌ Error stack:', refError.stack);
-              // Don't fail signup if referral processing fails
-            }
-          } else {
-            if (referralCode) {
-              console.warn(`[AUTH] ⚠️ Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith('temp_')}`);
-            } else {
-              console.log(`[AUTH] ℹ️ No referral code provided in request`);
-            }
+          try {
+            await applyCustomerReferralOnAuth(userId, normalizedPhone || phone, referralCode);
+          } catch (refError: any) {
+            console.error('[AUTH] ❌ Error processing referral code during signup:', refError?.message || refError);
           }
 
           // Signup loyalty: handled by action_sources → ActionOccurred → loyalty-events-consumer (not inline here).

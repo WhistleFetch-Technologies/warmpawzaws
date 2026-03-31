@@ -94,6 +94,40 @@ function normalizeCoordinates(coordinates: any): string | null {
   return null;
 }
 
+function normalizePhoneToLast10(phone: string): string {
+  return String(phone || '').replace(/\D/g, '').slice(-10);
+}
+
+async function findCustomerByPhone(phone: string): Promise<any | null> {
+  const raw = String(phone || '').trim();
+  if (!raw) return null;
+
+  const exact = await select('customers', { phone: raw });
+  if (exact.length > 0) return exact[0];
+
+  const last10 = normalizePhoneToLast10(raw);
+  if (last10.length !== 10) return null;
+
+  const candidates = [last10, `+91${last10}`];
+  const matched = await query(
+    `SELECT * FROM customers
+     WHERE phone = ANY($1::text[])
+        OR RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $2
+     ORDER BY
+       CASE
+         WHEN phone = $1[1] THEN 0
+         WHEN phone = $1[2] THEN 1
+         ELSE 2
+       END,
+       updated_at DESC NULLS LAST,
+       created_at DESC NULLS LAST
+     LIMIT 1`,
+    [candidates, last10]
+  ).catch(() => ({ rows: [] as any[] }));
+
+  return matched.rows.length > 0 ? matched.rows[0] : null;
+}
+
 export function registerAddressEndpoints(app: Hono) {
   /**
    * GET /customer/addresses?phone=...
@@ -108,9 +142,9 @@ export function registerAddressEndpoints(app: Hono) {
         return c.json({ error: 'phone parameter is required' }, 400);
       }
 
-      // Resolve customer ID from phone
-      let customer = await select('customers', { phone: phone });
-      if (customer.length === 0) {
+      // Resolve customer ID from phone (+91/plain/normalized supported)
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
@@ -118,7 +152,7 @@ export function registerAddressEndpoints(app: Hono) {
         `SELECT * FROM customer_addresses
          WHERE customer_id = $1
          ORDER BY is_default DESC, created_at DESC`,
-        [customer[0].id]
+        [customer.id]
       ).catch(() => ({ rows: [] }));
 
       const mapAddr = (addr: any) => ({
@@ -146,7 +180,7 @@ export function registerAddressEndpoints(app: Hono) {
       let list:any = addresses.rows.map(mapAddr);
 
       // When no saved addresses exist, use profile address/pincode so checkout doesn't block
-      const cust = customer[0] as any;
+      const cust = customer as any;
       if (list.length === 0 && (cust?.address || cust?.pincode)) {
         list = [{
           id: 'profile',
@@ -323,16 +357,16 @@ export function registerAddressEndpoints(app: Hono) {
       addressData.phone = phone;
       addressData.addressLine1 = addressLine1;
 
-      // Resolve customer ID from phone
-      let customer = await select('customers', { phone: customerPhone });
-      if (customer.length === 0) {
+      // Resolve customer ID from phone (+91/plain/normalized supported)
+      const customer = await findCustomerByPhone(customerPhone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       // Check if first address (auto-default)
       const existingAddresses = await query(
         'SELECT COUNT(*) as count FROM customer_addresses WHERE customer_id = $1',
-        [customer[0].id]
+        [customer.id]
       ).catch(() => ({ rows: [{ count: '0' }] }));
 
       const shouldBeDefault = addressData.isDefault || parseInt(existingAddresses.rows[0]?.count || '0', 10) === 0;
@@ -341,7 +375,7 @@ export function registerAddressEndpoints(app: Hono) {
       if (shouldBeDefault) {
         await query(
           'UPDATE customer_addresses SET is_default = false WHERE customer_id = $1',
-          [customer[0].id]
+          [customer.id]
         ).catch(() => { });
       }
 
@@ -363,7 +397,7 @@ export function registerAddressEndpoints(app: Hono) {
       let address;
       try {
         address = await insert('customer_addresses', {
-          customer_id: customer[0].id,
+          customer_id: customer.id,
           address_type: addressData.label || 'home',
           full_name: addressData.name,
           phone: addressData.phone,
@@ -384,7 +418,7 @@ export function registerAddressEndpoints(app: Hono) {
       } catch (insertError: any) {
         console.error('Error inserting address:', insertError);
         console.error('Address data:', JSON.stringify({
-          customer_id: customer[0].id,
+          customer_id: customer.id,
           address_type: addressData.label || 'home',
           full_name: addressData.name,
           phone: addressData.phone,
@@ -406,7 +440,7 @@ export function registerAddressEndpoints(app: Hono) {
       // Get all addresses
       const allAddresses = await query(
         'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
-        [customer[0].id]
+        [customer.id]
       ).catch(() => ({ rows: [] }));
 
       const mapRow = (addr: any) => ({
