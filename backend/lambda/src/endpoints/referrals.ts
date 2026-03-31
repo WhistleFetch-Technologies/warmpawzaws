@@ -866,7 +866,7 @@ export function registerReferralEndpoints(app: Hono) {
       const earnings = await query(
         `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
          FROM loyalty_transactions lt
-         INNER JOIN referrals r ON lt.reference_id = r.id
+         INNER JOIN referrals r ON lt.reference_id = r.id::text
          WHERE lt.customer_id = $1 
          AND lt.reference_type = 'referral'
          AND lt.transaction_type = 'earned'
