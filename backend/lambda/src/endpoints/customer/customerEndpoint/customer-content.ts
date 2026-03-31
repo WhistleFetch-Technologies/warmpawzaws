@@ -27,11 +27,12 @@ export function registerCustomerContentEndpoints(app: Hono) {
       // position query param: home_top -> main (banners.type), all -> all types
       const positionParam = c.req.query('position') || 'home_top';
       const bannerType = positionParam === 'all' ? 'all' : (positionParam === 'home_top' ? 'main' : positionParam);
-      const limit = parseInt(c.req.query('limit') || '10', 10);
+      const rawLimit = parseInt(c.req.query('limit') || '10', 10);
+      const limit = Math.min(Math.max(rawLimit, 1), 25);
 
       const now = new Date().toISOString();
 
-      // Fetch active banners (banners table has type: main, spotlight, category, service)
+      // Home hero: admin uses type `home_top`, `home_middle`, or legacy `main` — all roll into one carousel.
       const bannersResult = await query(
         `SELECT 
           id,
@@ -47,7 +48,11 @@ export function registerCustomerContentEndpoints(app: Hono) {
           end_date
         FROM banners
         WHERE is_active = true
-        AND (type = $1 OR $1 = 'all')
+        AND (
+          $1::text = 'all'
+          OR ($1::text = 'main' AND type IN ('main', 'home_top', 'home_middle'))
+          OR (type = $1::text)
+        )
         AND (start_date IS NULL OR start_date <= $2)
         AND (end_date IS NULL OR end_date >= $2)
         ORDER BY display_order ASC, created_at DESC
@@ -55,8 +60,24 @@ export function registerCustomerContentEndpoints(app: Hono) {
         [bannerType, now, limit]
       ).catch(() => ({ rows: [] }));
 
+      const parseMetadata = (raw: unknown): Record<string, unknown> => {
+        if (raw == null) return {};
+        if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+        if (typeof raw === 'string') {
+          try {
+            const o = JSON.parse(raw);
+            return typeof o === 'object' && o !== null && !Array.isArray(o) ? o : {};
+          } catch {
+            return {};
+          }
+        }
+        return {};
+      };
+
       // Map banners to frontend format (type exposed as position for backward compat)
-      const banners = (bannersResult.rows || []).map((b: any) => ({
+      const banners = (bannersResult.rows || []).map((b: any) => {
+        const meta = parseMetadata(b.metadata);
+        return {
         id: b.id,
         title: b.title,
         subtitle: b.subtitle,
@@ -65,11 +86,11 @@ export function registerCustomerContentEndpoints(app: Hono) {
         ctaLink: b.cta_link,
         position: b.type || 'main',
         displayOrder: b.display_order || 0,
-        // Extract gradient colors from metadata or use defaults
-        gradientFrom: b.metadata?.gradient_from || '#FF8C42',
-        gradientTo: b.metadata?.gradient_to || '#FF6B35',
-        icon: b.metadata?.icon,
-      }));
+        gradientFrom: (meta.gradient_from as string) || '#FF8C42',
+        gradientTo: (meta.gradient_to as string) || '#FF6B35',
+        icon: meta.icon,
+        };
+      });
 
       return c.json({
         success: true,

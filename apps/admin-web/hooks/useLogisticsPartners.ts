@@ -9,7 +9,7 @@ export interface LogisticsPartner {
   id: string;
   partner_id: string;
   partner_name: string;
-  partner_type: 'shiprocket' | 'delhivery' | 'dunzo' | 'other';
+  partner_type: 'shiprocket' | 'delhivery' | 'dunzo' | 'pidge' | 'other';
   email?: string;
   password?: string;
   api_key?: string;

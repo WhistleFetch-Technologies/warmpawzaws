@@ -146,71 +146,18 @@ export function registerLoyaltyEndpoints(app: Hono) {
 
   /**
    * POST /loyalty/earn
-   * Earn loyalty points
+   * Deprecated: customer earning is only via action_sources → ActionOccurred → loyalty-events-consumer.
    */
   app.post("/loyalty/earn", async (c) => {
-    try {
-      const { customerId, amount, referenceType, referenceId, description } = await c.req.json();
-
-      if (!customerId || amount === undefined) {
-        return c.json({ error: 'customerId and amount are required' }, 400);
-      }
-
-      // Get active loyalty rule
-      const rules = await select('loyalty_rules', { is_active: true });
-      if (rules.length === 0) {
-        return c.json({ error: 'Loyalty points earning is not configured' }, 400);
-      }
-
-      const rule = rules[0];
-      const points = Math.floor(amount * parseFloat(rule.points_per_rupee || '1'));
-
-      if (points <= 0) {
-        return c.json({ error: 'Amount too low to earn points' }, 400);
-      }
-
-      // Get or create profile
-      let profile = await select('customer_loyalty_points', { customer_id: customerId });
-      if (profile.length === 0) {
-        profile = await insert('customer_loyalty_points', {
-          customer_id: customerId,
-          total_points: 0,
-          lifetime_points_earned: 0,
-          lifetime_points_redeemed: 0,
-        });
-      }
-
-      // Create transaction
-      await insert('loyalty_transactions', {
-        customer_id: customerId,
-        transaction_type: 'earned',
-        points: points,
-        reference_type: referenceType || null,
-        reference_id: referenceId || null,
-        description: description || `Earned ${points} points`,
-      });
-
-      // Update profile
-      await query(
-        `UPDATE customer_loyalty_points
-         SET total_points = total_points + $1,
-             lifetime_points_earned = lifetime_points_earned + $1
-         WHERE customer_id = $2`,
-        [points, customerId]
-      );
-
-      const updatedProfile = await select('customer_loyalty_points', { customer_id: customerId });
-
-      return c.json({
-        success: true,
-        pointsEarned: points,
-        totalPoints: parseInt(updatedProfile[0]?.total_points || '0', 10), // Schema uses INTEGER
-        message: 'Points earned successfully',
-      });
-    } catch (error: any) {
-      console.error('Error earning loyalty points:', error);
-      return c.json({ error: error.message }, 500);
-    }
+    return c.json(
+      {
+        success: false,
+        error:
+          'Customer point earning is not available on this endpoint. Configure action_sources and use the loyalty events pipeline.',
+        code: 'USE_ACTION_SOURCE',
+      },
+      410
+    );
   });
 
   /**
@@ -316,24 +263,27 @@ export function registerLoyaltyEndpoints(app: Hono) {
     try {
       const body = await c.req.json();
       const customerId = body.customerId || body.newUserId;
-      const referralCode = body.referralCode;
+      const referralCode = body.referralCode || body.pendingReferralCode;
 
       if (!customerId || !referralCode) {
-        return c.json({ error: 'customerId and referralCode are required' }, 400);
+        return c.json({ error: 'customerId (or newUserId) and referralCode are required' }, 400);
       }
 
-      const { processReferralSignup, processVendorReferralForCustomerSignup } = await import(
-        '../../../lib/services/referral-service'
-      );
-
+      const normalizedCode = String(referralCode).trim().toUpperCase();
       const customers = await select('customers', { id: customerId });
-      const phoneForVendor =
-        customers[0]?.phone != null ? String(customers[0].phone) : '';
+      const phoneFromRow = String(customers[0]?.phone || '').replace(/\D/g, '').slice(-10);
+      const phoneFromBody = String(body.phone || '').replace(/\D/g, '').slice(-10);
+      const phoneDigits = phoneFromRow.length >= 10 ? phoneFromRow : phoneFromBody;
+
+      const {
+        processReferralSignup,
+        processVendorReferralForCustomerSignup,
+      } = await import('../../../lib/services/referral-service');
 
       const referralResult = await processReferralSignup({
         customerId,
-        referralCode: String(referralCode).trim(),
-        phone: phoneForVendor || undefined,
+        referralCode: normalizedCode,
+        phone: phoneDigits,
       });
 
       if (referralResult.success) {
@@ -345,24 +295,34 @@ export function registerLoyaltyEndpoints(app: Hono) {
         });
       }
 
-      if (referralResult.error === 'Invalid referral code' && phoneForVendor) {
+      if (referralResult.error === 'Invalid referral code') {
+        if (phoneDigits.length < 10) {
+          return c.json(
+            { error: 'Customer phone on file is required to apply this referral code' },
+            400
+          );
+        }
         const vendorRes = await processVendorReferralForCustomerSignup({
           customerId,
-          phone: phoneForVendor,
-          referralCode: String(referralCode).trim(),
+          phone: phoneDigits,
+          referralCode: normalizedCode,
         });
         if (vendorRes.success) {
           return c.json({
             success: true,
             message: 'Vendor referral code applied successfully',
+            referredPoints: vendorRes.referredPoints,
+            referrerPoints: vendorRes.referrerPoints,
           });
         }
+        return c.json(
+          { error: vendorRes.error || referralResult.error || 'Invalid referral code' },
+          400
+        );
       }
 
       return c.json(
-        {
-          error: referralResult.error || 'Failed to process referral code',
-        },
+        { error: referralResult.error || 'Failed to process referral code' },
         400
       );
     } catch (error: any) {

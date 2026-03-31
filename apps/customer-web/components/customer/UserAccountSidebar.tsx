@@ -17,6 +17,11 @@ import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
+import {
+  inferCityStateFromCommaAddress,
+  mergeStreetAddressLineOnly,
+  PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
+} from '@/lib/profile-address-format';
 
 interface UserProfile {
   firstName: string;
@@ -25,6 +30,10 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  houseNo: string;
+  floor: string;
+  city?: string;
+  state?: string;
   photo?: string;
 }
 
@@ -83,7 +92,8 @@ interface Address {
   city: string;
   state: string;
   pincode: string;
-  landmark?: string;
+  houseNo?: string;
+  floor?: string;
   coordinates?: { lat: number; lng: number };
   isDefault: boolean;
   createdAt: string;
@@ -249,13 +259,26 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
       if (result && result.profile) {
         const base = normalizeCustomerProfileFields(result.profile as any, phone);
+        const raw = result.profile as any;
+        const addressLine = mergeStreetAddressLineOnly({
+          address: base.address,
+          city: base.city,
+          state: base.state,
+        });
+        const houseNo = String(raw.houseNo ?? raw.house_no ?? '').trim();
+        const floor = String(raw.floor ?? '').trim();
+        const { city: ic, state: ist } = inferCityStateFromCommaAddress(addressLine);
         const next: UserProfile = {
           firstName: base.firstName,
           lastName: base.lastName,
           email: base.email,
           phone: base.phone,
-          address: base.address,
+          address: addressLine,
           pincode: base.pincode,
+          houseNo,
+          floor,
+          city: ic ?? base.city,
+          state: ist ?? base.state,
           photo: base.photo,
         };
         setProfile(next);
@@ -325,6 +348,11 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       return;
     }
 
+    if (!profile.houseNo?.trim()) {
+      alert('Please enter House No / Flat No');
+      return;
+    }
+
     if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
@@ -337,7 +365,17 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     setSaving(true);
     try {
-      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: profile });
+      const addr = profile.address.trim();
+      const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
+      const payload: UserProfile = {
+        ...profile,
+        address: addr,
+        city: inferredCity ?? profile.city,
+        state: inferredState ?? profile.state,
+        houseNo: profile.houseNo.trim(),
+        floor: (profile.floor || '').trim(),
+      };
+      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: payload });
       alert('✅ Profile updated successfully!');
       await loadProfile();
       setEditMode(false);
@@ -364,6 +402,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     localStorage.removeItem('authToken');
     localStorage.removeItem('customerData');
     localStorage.removeItem('customerOnboardingComplete');
+    localStorage.removeItem('onboarding_completed');
+    localStorage.removeItem('profile_completed');
     localStorage.removeItem('customerJourneyStage');
     
     // Redirect to auth page
@@ -467,11 +507,16 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const saveAddress = async (addressData: any) => {
     try {
+      const payload = {
+        ...addressData,
+        flatNo: null,
+        addressLine2: null,
+      };
       let data: any;
       if (editingAddress) {
-        data = await apiClient.put(`/customer/${phone}/addresses/${editingAddress.id}`, addressData) as any;
+        data = await apiClient.put(`/customer/${phone}/addresses/${editingAddress.id}`, payload) as any;
       } else {
-        data = await apiClient.post(`/customer/${phone}/addresses`, addressData) as any;
+        data = await apiClient.post(`/customer/${phone}/addresses`, payload) as any;
       }
 
       if (data && data.success) {
@@ -668,7 +713,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       }`}
     >
       {/* Full Screen Mobile Container */}
-      <div className="w-full max-w-[430px] mx-auto h-full bg-white flex flex-col">
+      <div className="w-full max-w-customer mx-auto h-full bg-white flex flex-col">
         
         {/* Header - Fixed */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-6 flex-shrink-0">
@@ -939,12 +984,60 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                       {editMode ? (
                         <textarea
                           value={profile.address}
-                          onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                          rows={3}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+                          onChange={(e) => {
+                            const address = e.target.value;
+                            const { city: c, state: s } = inferCityStateFromCommaAddress(address);
+                            setProfile({
+                              ...profile,
+                              address,
+                              city: c ?? profile.city,
+                              state: s ?? profile.state,
+                            });
+                          }}
+                          placeholder={PROFILE_ADDRESS_FORMAT_PLACEHOLDER}
+                          rows={4}
+                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-y min-h-[100px]"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
+                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl whitespace-pre-wrap">
+                          {profile.address || '-'}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2.5">
+                        House No / Flat No <span className="text-red-500">*</span>
+                      </label>
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={profile.houseNo}
+                          onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+                          placeholder="e.g., A-101, Flat 12B"
+                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                        />
+                      ) : (
+                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                          {profile.houseNo?.trim() || '—'}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2.5">Floor</label>
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={profile.floor}
+                          onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+                          placeholder="e.g., 1st Floor"
+                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                        />
+                      ) : (
+                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                          {profile.floor?.trim() || '—'}
+                        </p>
                       )}
                     </div>
 
@@ -954,7 +1047,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         <input
                           type="text"
                           value={profile.pincode}
-                          onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
+                          onChange={(e) =>
+                            setProfile({
+                              ...profile,
+                              pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
+                            })
+                          }
                           maxLength={6}
                           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
@@ -1257,6 +1355,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                           <p className="text-sm text-gray-600">{addr.addressLine1}</p>
                           {addr.addressLine2 && <p className="text-sm text-gray-600">{addr.addressLine2}</p>}
                           <p className="text-sm text-gray-600">{addr.city}, {addr.state} - {addr.pincode}</p>
+                          {addr.houseNo && <p className="text-sm text-gray-600 mt-1">House / Flat: {addr.houseNo}</p>}
+                          {addr.floor && <p className="text-sm text-gray-600">Floor: {addr.floor}</p>}
                           <p className="text-sm text-gray-600 mt-1.5">📞 {addr.phone}</p>
                         </div>
                       </div>
@@ -1725,11 +1825,11 @@ function AddressForm({ address, onSave, onCancel }: {
     name: address?.name || '',
     phone: address?.phone || '',
     addressLine1: address?.addressLine1 || '',
-    addressLine2: address?.addressLine2 || '',
     city: address?.city || '',
     state: address?.state || '',
     pincode: address?.pincode || '',
-    landmark: address?.landmark || '',
+    houseNo: address?.houseNo || '',
+    floor: address?.floor || '',
     isDefault: address?.isDefault || false
   });
 
@@ -1827,6 +1927,10 @@ function AddressForm({ address, onSave, onCancel }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.houseNo?.trim()) {
+      alert('Please enter House No / Flat No');
+      return;
+    }
     onSave(formData);
   };
 
@@ -1924,13 +2028,7 @@ function AddressForm({ address, onSave, onCancel }: {
               if (components.pincode && !formData.pincode) {
                 updates.pincode = components.pincode;
               }
-              if (components.street && !formData.addressLine2) {
-                updates.addressLine2 = components.street;
-              }
-              if (components.landmark && !formData.landmark) {
-                updates.landmark = components.landmark;
-              }
-              
+
               if (Object.keys(updates).length > 0) {
                 setFormData(prev => ({ ...prev, ...updates }));
               }
@@ -1939,16 +2037,6 @@ function AddressForm({ address, onSave, onCancel }: {
           placeholder="Search address, landmark, city..."
           className="w-full"
           required
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address Line 2 (Optional)</label>
-        <input
-          type="text"
-          value={formData.addressLine2}
-          onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
-          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
         />
       </div>
 
@@ -1988,11 +2076,24 @@ function AddressForm({ address, onSave, onCancel }: {
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Landmark (Optional)</label>
+        <label className="block text-xs font-semibold text-gray-500 mb-2.5">House No / Flat No *</label>
         <input
           type="text"
-          value={formData.landmark}
-          onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+          value={formData.houseNo}
+          onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
+          placeholder="e.g., A-101, Flat 12B"
+          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          required
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Floor</label>
+        <input
+          type="text"
+          value={formData.floor}
+          onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+          placeholder="e.g., 1st Floor"
           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
         />
       </div>

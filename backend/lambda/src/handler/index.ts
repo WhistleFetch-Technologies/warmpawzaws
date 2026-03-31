@@ -323,6 +323,42 @@ app.post('/system/run-pending-migrations', async (c) => {
       results.push({ migration: '605_availability_configured', status: 'completed', message: 'Columns and indexes created/verified' });
     } catch (err: any) { results.push({ migration: '605_availability_configured', status: 'error', message: err.message }); }
 
+    // Migration 620: customer_referrals — vendor-as-referrer for customer signups
+    try {
+      await dbQuery(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'customer_referrals'
+          ) THEN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'customer_referrals' AND column_name = 'referrer_vendor_id'
+            ) THEN
+              ALTER TABLE customer_referrals
+                ADD COLUMN referrer_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL;
+            END IF;
+            ALTER TABLE customer_referrals ALTER COLUMN referrer_customer_id DROP NOT NULL;
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint WHERE conname = 'customer_referrals_referrer_chk'
+            ) THEN
+              ALTER TABLE customer_referrals
+                ADD CONSTRAINT customer_referrals_referrer_chk CHECK (
+                  (referrer_customer_id IS NOT NULL AND referrer_vendor_id IS NULL)
+                  OR (referrer_customer_id IS NULL AND referrer_vendor_id IS NOT NULL)
+                );
+            END IF;
+          END IF;
+        END $$;
+      `);
+      await dbQuery(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_referrals_vendor_referred_phone
+        ON customer_referrals (referrer_vendor_id, referred_phone)
+        WHERE referrer_vendor_id IS NOT NULL;
+      `);
+      results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'completed', message: 'referrer_vendor_id + constraints' });
+    } catch (err: any) { results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'error', message: err.message }); }
+
     // Migration 071: vendor settings columns
     try {
       await dbQuery(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') THEN ALTER TABLE vendors ADD COLUMN service_radius NUMERIC(5, 2); END IF; END $$`);
@@ -481,6 +517,8 @@ registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/u
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
+// GET/POST /customer/orders MUST register before /customer/:customerId or "orders" is treated as a customer id → HTTP 404.
+registerCustomerOrdersEndpoints(app);
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
 registerSpecializedServiceFlows(app);
@@ -549,7 +587,7 @@ registerReportEndpoints(app);
 registerCustomerPasswordEndpoints(app);
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
-registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
+registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /webhooks/pidge, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
 registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);
@@ -584,7 +622,6 @@ registerAdminAdvancedEndpoints(app);
 registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering
 registerCustomerAppointmentsEndpoints(app);
-registerCustomerOrdersEndpoints(app);
 registerVendorAnalyticsEndpoints(app);
 registerPetCafeEndpoints(app);
 registerVendorRadarEndpoints(app);

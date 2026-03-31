@@ -725,7 +725,7 @@ class VerifyPaymentHandler extends BaseHandler {
               // Queue settlement asynchronously (don't await in transaction)
               Promise.resolve().then(async () => {
                 try {
-                  const { sendToSQS } = await import('../../../utils/aws-clients');
+                  const { sendToSQS } = await import('../../../utils/aws/aws-clients');
                   await sendToSQS('settlement-queue', {
                     type: 'auto_settle_booking',
                     bookingId: bookingId,
@@ -989,7 +989,7 @@ class RazorpayWebhookHandler extends BaseHandler {
           const vendor = vendors.length > 0 ? vendors[0] : null;
           
           if (vendor?.razorpay_account_id && vendor.bank_verified) {
-            const { sendToSQS } = await import('../../../utils/aws-clients');
+            const { sendToSQS } = await import('../../../utils/aws/aws-clients');
             await sendToSQS('settlement-queue', {
               type: 'auto_settle_booking',
               bookingId: paymentRecord.booking_id,

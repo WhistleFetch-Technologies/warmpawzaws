@@ -21,6 +21,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CustomerApi, ApiService } from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -92,19 +93,9 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
     try {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
       
-      const data = await CustomerApi.verifyOtp(cleanPhone, otpCode);
-      
-      // Apply referral code if provided
-      if (referralCode && data.isNewUser) {
-        try {
-          await ApiService.post('/loyalty/referral/apply', {
-            referralCode: referralCode,
-            newUserId: data.customer.id,
-            userType: 'customer'
-          });
-        } catch (refError) {
-          console.error('Referral code error:', refError);
-        }
+      const data = await CustomerApi.verifyOtp(cleanPhone, otpCode, referralCode || undefined);
+      if (referralCode?.trim()) {
+        await AsyncStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
       }
       
       // Save session token

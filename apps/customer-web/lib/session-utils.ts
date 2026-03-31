@@ -113,6 +113,8 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('customerProfile');
   localStorage.removeItem('customerPets');
   localStorage.removeItem('customerOnboardingComplete');
+  localStorage.removeItem('onboarding_completed');
+  localStorage.removeItem('profile_completed');
   localStorage.removeItem('customerJourneyStage');
   
   // Clear Cognito tokens

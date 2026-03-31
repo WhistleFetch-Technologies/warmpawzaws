@@ -13,6 +13,12 @@ import {
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
 
+function setCustomerOnboardingCompleteFromAuth(value: 'true' | 'false'): void {
+  if (typeof window === 'undefined') return;
+  if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
+  localStorage.setItem('customerOnboardingComplete', value);
+}
+
 function AuthPageContent() {
   const router = useRouter();
   // For static export compatibility, use window.location.search directly instead of useSearchParams
@@ -20,25 +26,19 @@ function AuthPageContent() {
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get redirect from URL after mount (client-side only)
+    // Get redirect + referral (?ref=) from URL after mount (client-side only)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const redirect = params.get('redirect');
       if (redirect) {
         setRedirectAfterLogin(redirect);
       }
-      const refParam =
-        (params.get('ref') || params.get('referral') || params.get('referralCode') || '').trim();
-      if (refParam) {
-        const normalized = refParam.toUpperCase();
-        setReferralCode(normalized);
+      const refCode = params.get('ref') || params.get('referralCode');
+      if (refCode && refCode.trim()) {
+        const c = refCode.trim().toUpperCase();
+        setReferralCode(c);
         setShowReferralModal(true);
         setReferralApplied(true);
-        try {
-          localStorage.setItem('pendingReferralCode', normalized);
-        } catch {
-          /* ignore */
-        }
       }
     }
   }, []);
@@ -134,15 +134,24 @@ function AuthPageContent() {
       setResendTimer(60);
       setUatHint(true);
       setError(null);
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+      }
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
-      await apiClient.post('/auth/otp/send', { phone: `${countryCode}${phone}` });
+      await apiClient.post('/auth/otp/send', {
+        phone: `${countryCode}${phone}`,
+        role: 'customer',
+      });
       setOtpSent(true);
       setResendTimer(60);
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to send OTP');
     } finally {
@@ -157,7 +166,10 @@ function AuthPageContent() {
       return;
     }
 
-    if (UAT_MODE) {
+    const trimmedReferral = referralCode?.trim() ? referralCode.trim().toUpperCase() : '';
+
+    // UAT without referral: local shortcut (no API verify) — same as before
+    if (UAT_MODE && !trimmedReferral) {
       if (otp !== UAT_OTP) {
         setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
         return;
@@ -172,13 +184,9 @@ function AuthPageContent() {
       localStorage.setItem('customerCountryCode', countryCode);
       localStorage.setItem('authToken', `uat-token-customer-${cleanPhone}-${Date.now()}`);
 
-      if (referralCode) {
-        localStorage.setItem('pendingReferralCode', referralCode);
-      }
-
       sessionStorage.setItem('_warmpawz_has_session', 'true');
       sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
-      console.log('✅ [Auth] UAT Mode - sessionStorage flags set before navigation');
+      console.log('✅ [Auth] UAT Mode (no referral) - sessionStorage flags set before navigation');
 
       try {
         const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
@@ -189,27 +197,47 @@ function AuthPageContent() {
 
           const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
           const profileCompleted = profileResponse.profile.profile_completed;
+          const nameVal = profileResponse.profile.name || profileResponse.profile.full_name || '';
+          const hasRealName =
+            !!nameVal &&
+            String(nameVal).trim() !== '' &&
+            nameVal !== `Customer ${phone.replace(/\D/g, '').slice(-4)}`;
+          const hasProfileId = !!profileResponse.profile.id;
+          const backendFullyOnboarded =
+            onboardingStatus === 'COMPLETED' || profileCompleted === true;
+          const hasMeaningfulProfile = (hasProfileId && hasRealName) || false;
 
-          // Check for pets
+          if (backendFullyOnboarded) {
+            localStorage.setItem('profile_completed', 'true');
+            localStorage.setItem('onboarding_completed', 'true');
+            setCustomerOnboardingCompleteFromAuth('true');
+          } else if (hasMeaningfulProfile) {
+            localStorage.setItem('profile_completed', 'true');
+            setCustomerOnboardingCompleteFromAuth('false');
+          } else {
+            setCustomerOnboardingCompleteFromAuth('false');
+          }
+
           try {
             const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
             if (petsResponse?.pets?.length > 0) {
               localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-              localStorage.setItem('customerOnboardingComplete', 'true');
             }
           } catch { }
-
-          if (onboardingStatus === 'COMPLETED' || profileCompleted) {
-            localStorage.setItem('customerOnboardingComplete', 'true');
-          }
         }
       } catch {
         // New customer - will go through onboarding
-        localStorage.setItem('customerOnboardingComplete', 'false');
+        setCustomerOnboardingCompleteFromAuth('false');
       }
 
       setLoading(false);
       router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
+      return;
+    }
+
+    // Production OR UAT with referral: real OTP verify (vendor-web parity — backend applies referral)
+    if (UAT_MODE && trimmedReferral && otp !== UAT_OTP) {
+      setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
       return;
     }
 
@@ -218,21 +246,11 @@ function AuthPageContent() {
       setError(null);
 
       const fullPhoneForApi = `${countryCode}${phone}`;
-      let pendingFromStorage = '';
-      try {
-        pendingFromStorage = (localStorage.getItem('pendingReferralCode') || '').trim();
-      } catch {
-        pendingFromStorage = '';
-      }
-      const effectiveReferral = (referralCode || pendingFromStorage || '').trim();
-      const referralPayload = effectiveReferral ? effectiveReferral.toUpperCase() : undefined;
-
       const response = await apiClient.post<any>('/auth/otp/verify', {
         phone: fullPhoneForApi,
         otp,
         role: 'customer',
-        referralCode: referralPayload,
-        pendingReferralCode: referralPayload,
+        referralCode: trimmedReferral || undefined,
       });
 
       // Handle nested response structure: { success: true, data: { success: true, data: {...} } }
@@ -290,103 +308,83 @@ function AuthPageContent() {
         sessionStorage.setItem('_warmpawz_just_logged_in', 'true'); // ✅ FIX: Prevent session clearing right after login
         console.log('✅ [Auth] sessionStorage flags set after OTP verification');
 
-        if (referralPayload && responseData?.user?.id) {
-          try {
-            await apiClient.post('/referrals/apply', {
-              customerId: responseData.user.id,
-              referralCode: referralPayload,
-            });
-            try {
-              localStorage.removeItem('pendingReferralCode');
-            } catch {
-              /* ignore */
-            }
-          } catch (applyErr) {
-            console.warn('[Auth] referrals/apply after verify (non-fatal):', applyErr);
-          }
+        if (trimmedReferral) {
+          localStorage.setItem('pendingReferralCode', trimmedReferral);
         }
 
-        // Get customer profile and pets to check onboarding status
+        // Get customer profile; cache pets for app use without using pet count for routing
         try {
           const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
           console.log('✅ [Auth] Profile response:', profileResponse);
 
-          // Store customer state from database (not localStorage)
           if (profileResponse?.profile) {
             const profile = profileResponse.profile;
             const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
-            const profileCompleted = profile.profile_completed || profile.onboardingComplete || false;
+            const profileCompletedFlag = profile.profile_completed || profile.onboardingComplete || false;
             const nameVal = profile.name || profile.full_name || '';
-            const hasName = !!nameVal && String(nameVal).trim() !== '' && nameVal !== `Customer ${phone.slice(-4)}`;
+            const digits = phone.replace(/\D/g, '').slice(-10);
+            const hasName =
+              !!nameVal &&
+              String(nameVal).trim() !== '' &&
+              nameVal !== `Customer ${digits.slice(-4)}`;
             const hasBookings = (profile.bookings?.length || 0) > 0;
+            const hasProfileId = !!profile.id;
 
             console.log('📊 [Auth] Profile check:', {
               onboardingStatus,
-              profileCompleted,
+              profileCompleted: profileCompletedFlag,
               hasName,
               hasBookings,
-              name: profile.name || profile.full_name
             });
 
-            // Store in localStorage for CustomerApp to use
             localStorage.setItem('customerData', JSON.stringify(profile));
             localStorage.setItem('customerProfile', JSON.stringify(profile));
             persistCustomerDatabaseId(profile);
 
-            // Also check if customer has pets
-            let hasPets = false;
             try {
               const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
               if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
-                hasPets = true;
                 localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-                console.log('✅ [Auth] Found pets:', petsResponse.pets.length);
               }
             } catch (petError) {
-              console.warn('⚠️ [Auth] No pets found or error fetching pets:', petError);
-              // No pets yet - this is OK
+              console.warn('⚠️ [Auth] Pets fetch:', petError);
             }
 
-            // ✅ FIX: Customer is onboarded if: backend says COMPLETED, or has profile+name, or has usage (bookings/pets)
-            const isOnboarded = onboardingStatus === 'COMPLETED' ||
-              profileCompleted ||
-              (hasName && hasPets) ||
-              (hasName && profile.id) ||
-              (profile.id && hasBookings);
+            const backendFullyOnboarded =
+              onboardingStatus === 'COMPLETED' || profileCompletedFlag === true;
+            const hasMeaningfulProfile =
+              (hasProfileId && hasName) || (hasProfileId && hasBookings);
 
-            console.log('🎯 [Auth] Onboarding decision:', { isOnboarded, onboardingStatus, profileCompleted, hasName, hasPets });
-
-            if (isOnboarded) {
-              localStorage.setItem('customerOnboardingComplete', 'true');
-              localStorage.setItem('customerJourneyStage', 'have-pet');
-              console.log('✅ [Auth] Customer is onboarded - going to home');
-            } else if (hasName && !hasPets) {
-              // Has profile but no pets - skip to pet step
-              localStorage.setItem('customerOnboardingComplete', 'false');
-              localStorage.setItem('customerJourneyStage', 'have-pet');
-              localStorage.setItem('customerProfile', JSON.stringify(profile));
-              console.log('⚠️ [Auth] Customer has profile but no pets - showing pet profile');
+            if (backendFullyOnboarded) {
+              localStorage.setItem('profile_completed', 'true');
+              localStorage.setItem('onboarding_completed', 'true');
+              setCustomerOnboardingCompleteFromAuth('true');
+              console.log('✅ [Auth] Backend reports full onboarding complete');
+            } else if (hasMeaningfulProfile) {
+              localStorage.setItem('profile_completed', 'true');
+              setCustomerOnboardingCompleteFromAuth('false');
+              console.log('✅ [Auth] Profile saved — show onboarding choice');
             } else {
-              localStorage.setItem('customerOnboardingComplete', 'false');
-              console.log('🆕 [Auth] New customer - will show onboarding');
+              setCustomerOnboardingCompleteFromAuth('false');
+              console.log('🆕 [Auth] New customer — start at profile');
             }
           } else {
             console.warn('⚠️ [Auth] No profile in response:', profileResponse);
-            // Customer doesn't exist yet - will be created by backend on first profile access
-            localStorage.setItem('customerOnboardingComplete', 'false');
+            setCustomerOnboardingCompleteFromAuth('false');
           }
         } catch (profileError: any) {
           console.error('❌ [Auth] Error fetching profile:', profileError);
           // ✅ FIX: If profile fetch fails but customer exists, check localStorage for cached data
           const cachedProfile = localStorage.getItem('customerProfile');
           const cachedOnboarding = localStorage.getItem('customerOnboardingComplete');
+          const stageSelectionDone = localStorage.getItem('onboarding_completed') === 'true';
 
-          if (cachedProfile && cachedOnboarding === 'true') {
+          if (cachedProfile && (cachedOnboarding === 'true' || stageSelectionDone)) {
             console.log('✅ [Auth] Using cached profile data');
             // Keep existing onboarding status
           } else {
             // Customer doesn't exist yet - will be created by backend on first profile access
-            localStorage.setItem('customerOnboardingComplete', 'false');
+            setCustomerOnboardingCompleteFromAuth('false');
             console.log('🆕 [Auth] No cached profile - new customer');
           }
         }

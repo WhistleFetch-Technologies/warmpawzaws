@@ -271,9 +271,16 @@ export const CustomerApi = {
   getPetBookings: (phone: string, petId: string) => 
     ApiService.get(`/customer/bookings/pet/${phone}/${petId}`),
   
-  // OTP
-  generateOtp: (phone: string) => ApiService.post('/otp/generate', { phone }),
-  verifyOtp: (phone: string, otp: string) => ApiService.post('/otp/verify', { phone, otp }),
+  // OTP (API Gateway uses /auth/otp/* — include E.164 phone + optional referral)
+  generateOtp: (phone: string) =>
+    ApiService.post('/auth/otp/send', { phone: phone.startsWith('+') ? phone : `+91${phone}`, role: 'customer' }),
+  verifyOtp: (phone: string, otp: string, referralCode?: string) =>
+    ApiService.post('/auth/otp/verify', {
+      phone: phone.startsWith('+') ? phone : `+91${phone}`,
+      otp,
+      role: 'customer',
+      ...(referralCode?.trim() ? { referralCode: referralCode.trim().toUpperCase() } : {}),
+    }),
   
   // Notifications
   getNotifications: (customerId: string) => ApiService.get(`/customer/notifications/${customerId}`),

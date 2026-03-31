@@ -11,7 +11,14 @@ module.exports = {
   
   theme: {
     extend: {
-      // App-specific overrides can go here
+      /** Fluid app column: full width on phones, capped on tablet/desktop; avoids hard 430px clipping */
+      maxWidth: {
+        /** Full width on narrow viewports; cap ~512px on large screens; pair with mx-auto + w-full */
+        customer: 'min(100%, 32rem)',
+      },
+      minHeight: {
+        'screen-dynamic': '100dvh',
+      },
     },
   },
   

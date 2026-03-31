@@ -111,7 +111,7 @@ export function SmartTimeSlotSelection({
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       <div className="bg-white sticky top-0 z-10 p-4 border-b flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />

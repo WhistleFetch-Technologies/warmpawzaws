@@ -48,6 +48,7 @@ import {
 	Eye,
 	EyeOff,
 	ExternalLink,
+	AlertCircle,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast, Toaster } from "sonner";
@@ -1210,7 +1211,8 @@ export default function MarketingPromotionsTab() {
 												<li><strong>Launched</strong> - Fully available to all</li>
 											</ul>
 											<p className="mt-3 text-xs">
-												City overrides State settings. State overrides Default.
+												<strong>Order of precedence (what customers see):</strong> City → State → Default (All India).
+												Setting <strong>Default</strong> to Hidden does <strong>not</strong> remove existing state or city overrides — customers in a city that is still &quot;Launched&quot; will keep seeing the service until you change that region&apos;s dropdown to Hidden (or Coming Soon).
 											</p>
 										</div>
 									</div>
@@ -1340,6 +1342,28 @@ export default function MarketingPromotionsTab() {
 																</div>
 															</div>
 															
+															{/* Default vs regional: explain why customer may still see a "hidden" default */}
+															{!selectedState && !selectedCity &&
+																svc.stateOverrides &&
+																typeof svc.stateOverrides === 'object' &&
+																Object.keys(svc.stateOverrides).length > 0 && (
+																	<div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded flex items-start gap-2">
+																		<AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+																		<span>
+																			This service has <strong>regional overrides</strong>. Default (All India) only applies where no state/city override exists. To hide it everywhere, open each state or city that still shows Launched and set it to Hidden.
+																		</span>
+																	</div>
+																)}
+															{(selectedState || selectedCity) &&
+																svc.defaultStatus === 'hidden' &&
+																(svc.effectiveStatus === 'launched' || svc.effectiveStatus === 'beta') && (
+																	<div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded flex items-start gap-2">
+																		<AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+																		<span>
+																			Default is <strong>Hidden</strong>, but this <strong>region</strong> is set to <strong className="capitalize">{String(svc.effectiveStatus).replace('_', ' ')}</strong>. Customers in this region use the regional status first, so they still see this service until you set the dropdown above to Hidden.
+																		</span>
+																	</div>
+																)}
 															{/* Info Messages */}
 															{svc.effectiveStatus === "coming_soon" && (
 																<div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center gap-2">

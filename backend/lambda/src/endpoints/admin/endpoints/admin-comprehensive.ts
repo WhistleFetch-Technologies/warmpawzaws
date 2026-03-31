@@ -600,7 +600,11 @@ class GetActiveVendorsHandler extends BaseHandler {
           GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE v.status = 'approved' AND v.is_active = true
         ORDER BY v.updated_at DESC
       `);
@@ -737,7 +741,11 @@ class GetVendorDetailsHandler extends BaseHandler {
           LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT id, vendor_type, onboarding_status, phone FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
       `, [vendorId]);
@@ -1151,6 +1159,9 @@ class DeleteVendorHandler extends BaseHandler {
     if (!vendorId) {
       return this.error('Vendor ID is required', 400);
     }
+    if (!isValidUUID(vendorId)) {
+      return this.error('Invalid vendor ID format', 400);
+    }
 
     try {
       // Check if vendor exists
@@ -1255,6 +1266,92 @@ class DeleteVendorHandler extends BaseHandler {
       
       if (uniqueRecords.length > 0) {
         console.log(`✅ [DELETE-VENDOR] Deleted ${uniqueRecords.length} vendor_identity record(s) associated with vendor ${vendorId}`);
+      }
+
+      // 3. Propagate soft-delete across all vendor-related tables
+      // This keeps delete behavior consistent even when new vendor_* tables are added.
+      try {
+        const propagationSql = `
+DO $$
+DECLARE
+  r RECORD;
+  v_vendor_id uuid := '${vendorId}'::uuid;
+  v_phone text := ${vendor.phone ? `'${String(vendor.phone).replace(/'/g, "''")}'` : 'NULL'};
+BEGIN
+  CREATE TEMP TABLE tmp_deleted_vendors ON COMMIT DROP AS
+    SELECT v_vendor_id AS id;
+
+  CREATE TEMP TABLE tmp_deleted_vendor_identity ON COMMIT DROP AS
+    SELECT id
+    FROM vendor_identity
+    WHERE vendor_id = v_vendor_id
+       OR (v_phone IS NOT NULL AND phone = v_phone)
+       OR is_deleted = true;
+
+  FOR r IN
+    SELECT t.table_name
+    FROM information_schema.tables t
+    WHERE t.table_schema = 'public'
+      AND t.table_type = 'BASE TABLE'
+      AND (
+        t.table_name = 'vendors'
+        OR t.table_name = 'vendor_identity'
+        OR t.table_name LIKE 'vendor_%'
+      )
+      AND EXISTS (
+        SELECT 1 FROM information_schema.columns c
+        WHERE c.table_schema='public'
+          AND c.table_name=t.table_name
+          AND c.column_name='is_deleted'
+      )
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='vendor_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND vendor_id IN (SELECT id FROM tmp_deleted_vendors)',
+        r.table_name
+      );
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='vendor_identity_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND vendor_identity_id IN (SELECT id FROM tmp_deleted_vendor_identity)',
+        r.table_name
+      );
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='referrer_vendor_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND referrer_vendor_id IN (SELECT id FROM tmp_deleted_vendors)',
+        r.table_name
+      );
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='referred_vendor_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND referred_vendor_id IN (SELECT id FROM tmp_deleted_vendors)',
+        r.table_name
+      );
+    END IF;
+  END LOOP;
+END $$;
+`;
+        await query(propagationSql);
+        console.log(`✅ [DELETE-VENDOR] Propagated is_deleted=true across vendor-related tables for vendor ${vendorId}`);
+      } catch (cascadeErr) {
+        console.error(`❌ [DELETE-VENDOR] Propagation failed for vendor ${vendorId}:`, cascadeErr);
+        throw cascadeErr;
       }
 
       // Create notification for vendor (optional, since they're deleted)
@@ -1523,7 +1620,11 @@ class GetVendorDocumentsHandler extends BaseHandler {
           v.registration_number,
           v.phone as v_phone
         FROM vendors v
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT id, phone FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
         ORDER BY voa.submitted_at DESC NULLS LAST
@@ -3803,7 +3904,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -3814,7 +3919,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
 
@@ -3986,7 +4095,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS total_revenue
         FROM vendors v
         LEFT JOIN roles r             ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -3997,7 +4110,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         SELECT COUNT(DISTINCT v.id) AS total
         FROM vendors v
         LEFT JOIN roles r             ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
       const totalCount = parseInt(countResult.rows[0]?.total) || 0;

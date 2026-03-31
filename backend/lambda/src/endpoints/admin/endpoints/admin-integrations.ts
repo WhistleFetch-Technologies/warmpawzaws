@@ -24,6 +24,10 @@ import { getSecret, getSecretJson, putSecret } from '../../../utils/aws/secrets-
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { validateBankAccountStrict } from '../../razorpay/endpoints/razorpay.razorpay';
+import {
+  fetchPidgeVendorToken,
+  getPidgeCredentials,
+} from '../../../lib/services/pidge-logistics';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
@@ -435,11 +439,12 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
   app.get("/admin/integrations/logistics", async (c) => {
     try {
       const partnersResult = await query(
-        `SELECT 
+        `        SELECT 
           partner_id as id,
           partner_name as name,
           partner_type as type,
           enabled,
+          base_url as baseUrl,
           email as apiEndpoint,
           api_key as apiKey,
           config->>'categories' as categories,
@@ -449,7 +454,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
           created_at,
           updated_at
         FROM logistics_partners
-        ORDER BY created_at DESC`
+        ORDER BY enabled DESC NULLS LAST, partner_name ASC`
       );
 
       const partners = (partnersResult.rows || []).map((p: any) => {
@@ -481,6 +486,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
           name: p.name,
           type: p.type,
           enabled: p.enabled !== false,
+          baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
           apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
           apiKey: p.apiKey ? '••••••••' : null,
           categories: categories,
@@ -659,6 +665,29 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               connected: false,
               error: error.message,
             }, 500);
+          }
+
+        case 'pidge':
+          try {
+            const { username, password, baseUrl } = await getPidgeCredentials();
+            await fetchPidgeVendorToken(username, password, baseUrl);
+            return c.json({
+              success: true,
+              connected: true,
+              details: {
+                vendorLoginOk: true,
+                baseUrl,
+              },
+            });
+          } catch (error: any) {
+            return c.json(
+              {
+                success: false,
+                connected: false,
+                error: error.message || 'Pidge vendor login failed',
+              },
+              500
+            );
           }
 
         default:

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { 
   ArrowLeft, 
   Plus, 
@@ -27,11 +29,10 @@ import {
   Zap,
   X,
   CheckCircle2,
-  Store
+  Store,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 import { useCart } from '@/context/CartContext';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
@@ -111,7 +112,27 @@ const vendorData: Record<string, { name: string; rating: number; reviews: number
 };
 
 export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
-  const { cart, updateQuantity, removeFromCart, addToCart, getTotal, itemCount } = useCart();
+  const router = useRouter();
+  const { cart, updateQuantity, removeFromCart, addToCart, itemCount } = useCart();
+  const [isCheckoutPending, startCheckoutTransition] = useTransition();
+
+  const handleNavigateBack = useCallback(() => {
+    if (typeof window === 'undefined') {
+      onBack();
+      return;
+    }
+    if (window.history.length <= 1) {
+      goBackOrHome(router);
+      return;
+    }
+    const before = window.location.href;
+    router.back();
+    window.setTimeout(() => {
+      if (window.location.href === before) {
+        onBack();
+      }
+    }, 80);
+  }, [router, onBack]);
   const [promoCode, setPromoCode] = useState('');
   const [appliedCoupons, setAppliedCoupons] = useState<Coupon[]>([]);
   const [selectedDelivery, setSelectedDelivery] = useState<'standard' | 'express' | 'scheduled'>('standard');
@@ -121,66 +142,95 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
   const [promotionResult, setPromotionResult] = useState<CartPromotionResult | null>(null);
 
-  // Group items by vendor
-  const itemsByVendor = cart.reduce((acc, item) => {
-    const vendorId = item.vendorId || 'default';
-    if (!acc[vendorId]) {
-      acc[vendorId] = [];
-    }
-    acc[vendorId].push(item);
-    return acc;
-  }, {} as Record<string, typeof cart>);
+  const itemsByVendor = useMemo(() => {
+    return cart.reduce((acc, item) => {
+      const vendorId = item.vendorId || 'default';
+      if (!acc[vendorId]) {
+        acc[vendorId] = [];
+      }
+      acc[vendorId].push(item);
+      return acc;
+    }, {} as Record<string, typeof cart>);
+  }, [cart]);
 
-  // Calculate vendor-wise totals
-  const getVendorTotal = (vendorItems: typeof cart) => {
-    return vendorItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
+  const primaryVendorId = useMemo(() => Object.keys(itemsByVendor)[0], [itemsByVendor]);
 
-  // Calculate delivery fees
-  const calculateDeliveryFee = (vendorId: string, vendorTotal: number) => {
-    const vendor = vendorData[vendorId] || vendorData['default'];
-    
-    const hasDeliveryFreeCoupon = appliedCoupons.some(c => c.type === 'delivery');
-    if (hasDeliveryFreeCoupon || vendorTotal >= vendor.freeDeliveryMin) return 0;
-    
-    if (selectedDelivery === 'express') return 150;
-    if (selectedDelivery === 'scheduled') return 80;
-    return 60;
-  };
+  const promotionBannerItems = useMemo(
+    () =>
+      cart.map((item) => ({
+        id: item.id,
+        productId: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        vendorId: item.vendorId,
+        category: (item as any).category,
+        categoryId: (item as any).categoryId,
+      })),
+    [cart]
+  );
 
-  // Calculate discount
-  const calculateDiscount = () => {
-    const cartTotal = getTotal();
+  const getVendorTotal = useCallback((vendorItems: typeof cart) => {
+    return vendorItems.reduce((total, item) => total + item.price * item.quantity, 0);
+  }, []);
+
+  const calculateDeliveryFee = useCallback(
+    (vendorId: string, vendorTotal: number) => {
+      const vendor = vendorData[vendorId] || vendorData['default'];
+      const hasDeliveryFreeCoupon = appliedCoupons.some((c) => c.type === 'delivery');
+      if (hasDeliveryFreeCoupon || vendorTotal >= vendor.freeDeliveryMin) return 0;
+      if (selectedDelivery === 'express') return 150;
+      if (selectedDelivery === 'scheduled') return 80;
+      return 60;
+    },
+    [selectedDelivery, appliedCoupons]
+  );
+
+  const cartTotal = useMemo(
+    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [cart]
+  );
+
+  const discount = useMemo(() => {
     let totalDiscount = 0;
-    appliedCoupons.forEach(coupon => {
+    appliedCoupons.forEach((coupon) => {
       if (coupon.type === 'percentage') {
-        const discount = (cartTotal * coupon.value) / 100;
-        totalDiscount += coupon.maxDiscount ? Math.min(discount, coupon.maxDiscount) : discount;
+        const d = (cartTotal * coupon.value) / 100;
+        totalDiscount += coupon.maxDiscount ? Math.min(d, coupon.maxDiscount) : d;
       } else if (coupon.type === 'fixed') {
         totalDiscount += coupon.value;
       }
     });
     return totalDiscount;
-  };
+  }, [appliedCoupons, cartTotal]);
 
-  const cartTotal = getTotal();
-  const discount = calculateDiscount();
-  const deliveryFees = Object.keys(itemsByVendor).reduce((total, vendorId) => {
-    return total + calculateDeliveryFee(vendorId, getVendorTotal(itemsByVendor[vendorId]));
-  }, 0);
-  
+  const deliveryFees = useMemo(() => {
+    return Object.keys(itemsByVendor).reduce((total, vendorId) => {
+      return total + calculateDeliveryFee(vendorId, getVendorTotal(itemsByVendor[vendorId]));
+    }, 0);
+  }, [itemsByVendor, calculateDeliveryFee, getVendorTotal]);
+
   const giftWrapFee = giftWrap ? itemCount * 25 : 0;
   const protectionFee = productProtection ? cartTotal * 0.02 : 0;
-  
-  // Calculate tax using tax system
+
   const subtotalForTax = cartTotal - discount;
-  const taxableItems = cartItemsToTaxableItems(cart);
-  const taxResult = calculateTax(taxableItems.map(item => ({
-    ...item,
-    amount: (item.amount * (item.quantity || 1) - (discount * (item.amount * (item.quantity || 1)) / cartTotal)) / (item.quantity || 1)
-  })));
-  const taxAmount = taxResult.total;
-  const totalAmount = subtotalForTax + deliveryFees + giftWrapFee + protectionFee + taxAmount;
+  const taxAmount = useMemo(() => {
+    const taxableItems = cartItemsToTaxableItems(cart);
+    const divisor = cartTotal > 0 ? cartTotal : 1;
+    const adjusted = taxableItems.map((item) => ({
+      ...item,
+      amount:
+        (item.amount * (item.quantity || 1) - (discount * (item.amount * (item.quantity || 1))) / divisor) /
+        (item.quantity || 1),
+    }));
+    const result = calculateTax(adjusted);
+    return result.total;
+  }, [cart, cartTotal, discount]);
+
+  const totalAmount = useMemo(
+    () => subtotalForTax + deliveryFees + giftWrapFee + protectionFee + taxAmount,
+    [subtotalForTax, deliveryFees, giftWrapFee, protectionFee, taxAmount]
+  );
 
   const handleApplyCoupon = (coupon: Coupon) => {
     if (cartTotal < coupon.minOrder) {
@@ -225,7 +275,7 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-md mx-auto relative">
         <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 flex items-center gap-3 z-10 rounded-b-2xl shadow-md">
-          <button onClick={onBack} className="p-2 hover:bg-white/20 rounded-full transition-colors text-white">
+          <button type="button" onClick={handleNavigateBack} className="p-2 hover:bg-white/20 rounded-full transition-colors text-white" aria-label="Go back">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h1 className="font-bold text-lg text-white">Shopping Cart</h1>
@@ -250,14 +300,29 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
     );
   }
 
+  /* Bottom nav (~5.5rem) + compact checkout bar (~4.25rem) + safe area — scroll clearance only */
+  const scrollBottomPad =
+    'pb-[calc(5.5rem+4.5rem+env(safe-area-inset-bottom,0px)+12px)]';
+
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      <div className="pb-[500px]">
+    <div className="relative w-full max-w-md mx-auto min-h-0">
+      {/* Header: back + title — sticky with page scroll (wrapper is not a flex scroll parent) */}
+      <header className="sticky top-0 z-30 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 flex items-center gap-3 rounded-b-2xl shadow-md">
+        <button
+          type="button"
+          onClick={handleNavigateBack}
+          className="p-2 hover:bg-white/20 rounded-full transition-colors text-white shrink-0"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="font-bold text-lg text-white truncate">Shopping Cart</h1>
+      </header>
+
+      <div className={`${scrollBottomPad}`}>
         {/* Trust Badges */}
         <div className="bg-gradient-to-r from-blue-50 to-green-50 px-4 py-3 border-b border-blue-100">
-          <div className="flex items-center justify-around text-xs">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:flex sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0">
             <div className="flex items-center gap-1.5">
               <Lock className="w-4 h-4 text-green-600" />
               <span className="text-gray-700">Secure</span>
@@ -281,17 +346,8 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
         {cart.length > 0 && (
           <div className="px-4 py-3">
             <CartPromotionsBanner
-              items={cart.map(item => ({
-                id: item.id,
-                productId: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: item.quantity,
-                vendorId: item.vendorId,
-                category: (item as any).category,
-                categoryId: (item as any).categoryId,
-              }))}
-              vendorId={Object.keys(itemsByVendor)[0]}
+              items={promotionBannerItems}
+              vendorId={primaryVendorId}
               onPromotionApplied={(result) => setPromotionResult(result)}
             />
           </div>
@@ -303,42 +359,51 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
             <Truck className="w-5 h-5 text-[#FF8C42]" />
             Choose Delivery Speed
           </h3>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="flex flex-col gap-2">
             <button
+              type="button"
               onClick={() => setSelectedDelivery('standard')}
-              className={`p-3 rounded-xl border-2 transition-all ${
+              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
                 selectedDelivery === 'standard'
                   ? 'border-[#FF8C42] bg-orange-50'
                   : 'border-gray-200 bg-white'
               }`}
             >
-              <Package className="w-5 h-5 text-gray-600 mx-auto mb-1" />
-              <div className="text-xs font-medium text-gray-900">Standard</div>
-              <div className="text-xs text-gray-500">₹60</div>
+              <Package className="h-5 w-5 shrink-0 text-gray-600" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-gray-900">Standard</div>
+                <div className="text-xs text-gray-500">₹60</div>
+              </div>
             </button>
             <button
+              type="button"
               onClick={() => setSelectedDelivery('express')}
-              className={`p-3 rounded-xl border-2 transition-all ${
+              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
                 selectedDelivery === 'express'
                   ? 'border-[#FF8C42] bg-orange-50'
                   : 'border-gray-200 bg-white'
               }`}
             >
-              <Zap className="w-5 h-5 text-yellow-600 mx-auto mb-1" />
-              <div className="text-xs font-medium text-gray-900">Express</div>
-              <div className="text-xs text-gray-500">₹150</div>
+              <Zap className="h-5 w-5 shrink-0 text-yellow-600" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-gray-900">Express</div>
+                <div className="text-xs text-gray-500">₹150</div>
+              </div>
             </button>
             <button
+              type="button"
               onClick={() => setSelectedDelivery('scheduled')}
-              className={`p-3 rounded-xl border-2 transition-all ${
+              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
                 selectedDelivery === 'scheduled'
                   ? 'border-[#FF8C42] bg-orange-50'
                   : 'border-gray-200 bg-white'
               }`}
             >
-              <Clock className="w-5 h-5 text-blue-600 mx-auto mb-1" />
-              <div className="text-xs font-medium text-gray-900">Scheduled</div>
-              <div className="text-xs text-gray-500">₹80</div>
+              <Clock className="h-5 w-5 shrink-0 text-blue-600" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-gray-900">Scheduled</div>
+                <div className="text-xs text-gray-500">₹80</div>
+              </div>
             </button>
           </div>
         </div>
@@ -354,8 +419,8 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
             <div key={vendorId} className="bg-white mb-3 border-b-4 border-gray-100">
               {/* Vendor Header */}
               <div className="px-4 py-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-full flex items-center justify-center">
                       <Store className="w-5 h-5 text-white" />
                     </div>
@@ -371,9 +436,9 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                      <Clock className="w-3 h-3" />
+                  <div className="shrink-0 text-left sm:text-right">
+                    <div className="flex items-center gap-1 text-xs text-gray-600 sm:justify-end">
+                      <Clock className="w-3 h-3 shrink-0" />
                       <span>{vendor.deliveryTime}</span>
                     </div>
                   </div>
@@ -403,51 +468,52 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
               {/* Vendor Items */}
               <div className="divide-y divide-gray-100">
                 {vendorItems.map((item) => (
-                  <div key={item.id} className="p-4">
-                    <div className="flex gap-4">
+                  <div key={item.id} className="p-3 sm:p-4">
+                    <div className="flex gap-3 sm:gap-4">
                       {/* Product Image */}
-                      <div className="w-24 h-24 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 relative">
+                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100 sm:h-24 sm:w-24">
                         {item.image ? (
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                          <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-3xl">
+                          <div className="flex h-full w-full items-center justify-center text-2xl sm:text-3xl">
                             🐾
                           </div>
                         )}
                       </div>
 
                       {/* Product Info */}
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 text-sm">{item.name}</h3>
-                        
-                        {/* Price */}
-                        <div className="flex items-baseline gap-2 mb-3">
-                          <span className="text-lg font-bold text-gray-900">₹{(item.price * item.quantity).toLocaleString()}</span>
-                          <span className="text-xs text-gray-500">₹{item.price.toLocaleString()} each</span>
-                        </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <h3 className="line-clamp-2 text-sm font-semibold text-gray-900">{item.name}</h3>
 
-                        {/* Quantity and Actions */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center bg-gray-100 rounded-lg">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span className="text-base font-bold text-gray-900 sm:text-lg">
+                              ₹{(item.price * item.quantity).toLocaleString()}
+                            </span>
+                            <span className="text-xs text-gray-500">₹{item.price.toLocaleString()} each</span>
+                          </div>
+                          <div className="flex w-fit items-center rounded-lg bg-gray-100">
                             <button
+                              type="button"
                               onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                              className="p-2 hover:bg-gray-200 rounded-l-lg transition-colors"
+                              className="rounded-l-lg p-2 transition-colors hover:bg-gray-200"
                             >
-                              <Minus className="w-4 h-4" />
+                              <Minus className="h-4 w-4" />
                             </button>
-                            <span className="px-4 font-semibold min-w-[40px] text-center">{item.quantity}</span>
+                            <span className="min-w-[40px] px-3 text-center text-sm font-semibold">{item.quantity}</span>
                             <button
+                              type="button"
                               onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                              className="p-2 hover:bg-gray-200 rounded-r-lg transition-colors"
+                              className="rounded-r-lg p-2 transition-colors hover:bg-gray-200 disabled:opacity-40"
                               disabled={item.quantity >= 10}
                             >
-                              <Plus className="w-4 h-4" />
+                              <Plus className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex items-center gap-4 mt-3">
+                        <div className="flex flex-wrap items-center gap-3 pt-1">
                           <button
                             onClick={() => removeFromCart(item.id)}
                             className="flex items-center gap-1.5 text-red-500 text-xs hover:text-red-600 transition-colors"
@@ -666,94 +732,48 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
             </div>
           )}
         </div>
-      </div>
 
-      {/* Bottom Price Summary */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-200 shadow-2xl max-w-[430px] mx-auto">
-        <div className="p-4">
-          {/* Price Breakdown */}
-          <div className="space-y-2 mb-4">
-            <div className="flex items-center justify-between text-gray-700 text-sm">
-              <span>Subtotal ({itemCount} items)</span>
-              <span className="font-medium">₹{cartTotal.toFixed(2)}</span>
-            </div>
-            
-            {discount > 0 && (
-              <div className="flex items-center justify-between text-green-600 text-sm">
-                <span>Coupon Discount</span>
-                <span className="font-medium">-₹{discount.toFixed(2)}</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-gray-700 text-sm">
-              <span>Delivery Charges</span>
-              {deliveryFees > 0 ? (
-                <span className="font-medium">₹{deliveryFees.toFixed(2)}</span>
-              ) : (
-                <span className="font-medium text-green-600">FREE</span>
-              )}
-            </div>
-
-            {giftWrap && (
-              <div className="flex items-center justify-between text-gray-700 text-sm">
-                <span>Gift Wrap</span>
-                <span className="font-medium">₹{giftWrapFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {productProtection && (
-              <div className="flex items-center justify-between text-gray-700 text-sm">
-                <span>Product Protection</span>
-                <span className="font-medium">₹{protectionFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {taxResult.byType.map((taxType) => (
-              <div key={taxType.taxType} className="flex items-center justify-between text-gray-700 text-sm">
-                <span>
-                  {taxType.taxType === 'gst' ? 'GST' : 
-                   taxType.taxType === 'service_tax' ? 'Service Tax' :
-                   taxType.taxType === 'education_cess' ? 'Education Cess' :
-                   taxType.taxType === 'infrastructure_cess' ? 'Infrastructure Cess' :
-                   taxType.taxType.toUpperCase()} 
-                  {taxType.breakdown.length > 0 && ` (${taxType.breakdown[0].rate}%)`}
-                </span>
-                <span className="font-medium">₹{taxType.totalAmount.toFixed(2)}</span>
-              </div>
-            ))}
-
-            <Separator className="my-2" />
-
-            <div className="flex items-center justify-between text-lg">
-              <span className="font-bold text-gray-900">Total Amount</span>
-              <span className="font-bold text-gray-900">₹{totalAmount.toFixed(2)}</span>
-            </div>
-
-            {discount > 0 && (
-              <p className="text-xs text-green-600 font-medium">
-                You're saving ₹{discount.toFixed(2)} on this order!
-              </p>
-            )}
-          </div>
-
-          {/* Checkout Button */}
-          <Button
-            onClick={onCheckout}
-            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A2A] hover:to-[#FF5A8D] text-white h-14 text-base font-semibold shadow-lg"
-          >
-            Proceed to Checkout
-            <ChevronRight className="w-5 h-5 ml-2" />
-          </Button>
-
-          {/* Continue Shopping Link */}
+        <div className="px-4 pb-2 pt-1">
           <button
+            type="button"
             onClick={onContinueShopping}
-            className="w-full mt-3 text-[#FF8C42] font-medium hover:underline text-sm"
+            className="text-sm font-medium text-[#FF8C42] hover:underline"
           >
-            Continue Shopping
+            Continue shopping
           </button>
         </div>
       </div>
-    </>
+
+      {/* Compact checkout bar — fixed above bottom nav; short bar so main content stays visible while scrolling */}
+      <div
+        className="fixed left-0 right-0 z-40 mx-auto w-full max-w-md border-t border-gray-200 bg-white/95 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur-sm supports-[backdrop-filter]:bg-white/90"
+        style={{ bottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="min-w-0 shrink-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Total</p>
+            <p className="text-lg font-bold leading-tight text-gray-900">₹{totalAmount.toFixed(2)}</p>
+          </div>
+          <Button
+            type="button"
+            disabled={isCheckoutPending}
+            onClick={() => startCheckoutTransition(() => onCheckout())}
+            className="h-12 min-w-0 flex-1 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-sm font-semibold text-white shadow-md hover:from-[#FF7A2A] hover:to-[#FF5A8D] disabled:opacity-70 sm:text-base"
+          >
+            {isCheckoutPending ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+                <span>Loading…</span>
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                Proceed to Checkout
+                <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+              </span>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

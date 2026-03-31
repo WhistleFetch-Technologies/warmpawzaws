@@ -158,7 +158,7 @@ export function PetQuickView({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -169,7 +169,7 @@ export function PetQuickView({
 
   if (!pet) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-white w-full max-w-customer mx-auto p-6">
         <p className="text-center text-gray-600">Pet not found</p>
       </div>
     );

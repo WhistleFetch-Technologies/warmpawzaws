@@ -17,7 +17,7 @@ const SLUG_TO_SCREEN: Record<string, string> = {
   walk: 'walker',
   vet: 'vet',
   veterinarian: 'vet',
-  tele: 'vet',
+  tele: 'vet-tele-consultation',
   training: 'training',
   boarding: 'boarding',
   nutrition: 'nutritionist',
@@ -43,7 +43,9 @@ const SLUG_TO_SCREEN: Record<string, string> = {
   behaviourist: 'behaviorist',
   behaviorist: 'behaviorist',
   behavioral: 'behaviorist',
-  sitting: 'home-service-selection',
+  sitting: 'pet-sitter',
+  pet_sitter: 'pet-sitter',
+  'pet-sitter': 'pet-sitter',
 };
 
 /** Banner `service` prop values → same screen ids */
@@ -71,10 +73,29 @@ const CONTEXT_SERVICE_TO_SCREEN: Record<string, string> = {
   pharmacy: 'pharmacy',
   diagnostics: 'lab-diagnostics',
   'lab-diagnostics': 'lab-diagnostics',
+  sitting: 'pet-sitter',
+  pet_sitter: 'pet-sitter',
+  'pet-sitter': 'pet-sitter',
 };
 
 function norm(s: string): string {
   return String(s).toLowerCase().trim().replace(/\s+/g, '_');
+}
+
+/**
+ * Admin/CMS often stores CTAs as `/grooming`, `/vet` — those are in-app screen ids, not App Router paths.
+ * Returns the wrapper screen id when the path is a single known segment; otherwise null (use router as-is).
+ */
+export function customerPathToScreen(path: string): string | null {
+  const pathOnly = String(path ?? '')
+    .trim()
+    .split('?')[0]
+    .split('#')[0];
+  if (!pathOnly.startsWith('/')) return null;
+  const segments = pathOnly.replace(/^\/+/, '').split('/').filter(Boolean);
+  if (segments.length !== 1) return null;
+  const key = norm(segments[0]);
+  return SLUG_TO_SCREEN[key] ?? null;
 }
 
 export function parseApplicableServices(promo: Record<string, unknown>): string[] {
@@ -162,6 +183,8 @@ const ROLE_ID_TO_SCREEN: Record<string, string> = {
   groomer: 'grooming',
   boarder: 'boarding',
   trainer: 'training',
+  pet_sitter: 'pet-sitter',
+  sitter: 'pet-sitter',
 };
 
 export type FeaturedVendorNavResult =

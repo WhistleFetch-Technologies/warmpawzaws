@@ -114,7 +114,7 @@ export function LocationPermission({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FF8C42]/10 to-white max-w-[430px] mx-auto flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-[#FF8C42]/10 to-white max-w-customer mx-auto flex items-center justify-center p-6">
       <Card className="w-full p-8 text-center">
         <div className="mb-6">
           <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-full mx-auto flex items-center justify-center mb-4">

@@ -22,6 +22,8 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 
 interface NotificationMessage {
   type: 'push' | 'in_app' | 'email' | 'sms';
+  phone?: string;
+  message?: string;
   recipientId: string;
   recipientType: 'customer' | 'vendor' | 'admin';
   title: string;
@@ -73,19 +75,28 @@ export async function handler(event: SQSEvent, context: Context) {
 }
 
 async function processNotification(notification: NotificationMessage) {
+  // SMS payloads from referral flow only contain phone + message.
+  // Handle SMS delivery directly and avoid DB insert requirements for recipient fields.
+  if (notification.type === 'sms') {
+    await sendSmsNotification(notification);
+    return;
+  }
+
+  if (!notification.recipientId || !notification.recipientType) {
+    console.warn('Skipping non-SMS notification without recipient fields', notification);
+    return;
+  }
+
   // Store notification in database
   await insert('notifications', {
     recipient_id: notification.recipientId,
     recipient_type: notification.recipientType,
-    type: notification.type,
+    notification_type: notification.eventType || notification.type || 'general',
     title: notification.title,
-    body: notification.body,
-    data: notification.data ? JSON.stringify(notification.data) : null,
-    priority: notification.priority || 'normal',
-    event_type: notification.eventType || null,
-    booking_id: notification.bookingId || null,
-    status: 'pending',
-    created_at: new Date().toISOString(),
+    message: notification.body || notification.message || '',
+    data: notification.data || null,
+    channels: { inApp: true, push: notification.type === 'push', email: false, sms: false },
+    is_read: false,
   });
 
   // Send push notification if type is push
@@ -102,6 +113,30 @@ async function processNotification(notification: NotificationMessage) {
      ORDER BY created_at DESC LIMIT 1`,
     [notification.recipientId, notification.recipientType, notification.title]
   );
+}
+
+async function sendSmsNotification(notification: NotificationMessage) {
+  const phone = notification.phone;
+  const text = notification.message || notification.body || '';
+  if (!phone || !text) {
+    console.warn('Skipping SMS notification due to missing phone or message', notification);
+    return;
+  }
+
+  const snsClient = getSnsClient();
+  await snsClient.send(
+    new PublishCommand({
+      PhoneNumber: phone,
+      Message: text,
+      MessageAttributes: {
+        'AWS.SNS.SMS.SMSType': {
+          DataType: 'String',
+          StringValue: 'Transactional',
+        },
+      },
+    })
+  );
+  console.log(`SMS published to ${phone}`);
 }
 
 async function sendPushNotification(notification: NotificationMessage) {

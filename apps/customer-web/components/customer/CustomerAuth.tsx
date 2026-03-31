@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,23 +22,6 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
   const [referralCode, setReferralCode] = useState('');
   const [showReferralInput, setShowReferralInput] = useState(false);
   const [referralApplied, setReferralApplied] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const p = new URLSearchParams(window.location.search);
-    const refParam = (p.get('ref') || p.get('referral') || p.get('referralCode') || '').trim();
-    if (refParam) {
-      const u = refParam.toUpperCase();
-      setReferralCode(u);
-      setShowReferralInput(true);
-      setReferralApplied(true);
-      try {
-        localStorage.setItem('pendingReferralCode', u);
-      } catch {
-        /* ignore */
-      }
-    }
-  }, []);
 
   // Format phone number with spaces
   const formatPhoneDisplay = (num: string) => {
@@ -62,13 +45,20 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
       console.log('🔐 Requesting OTP for:', `${countryCode}${cleanPhone}`);
       
-      const data = await apiClient.post('/auth/send-otp', { phone: `${countryCode}${cleanPhone}` }) as any;
+      const data = await apiClient.post('/auth/send-otp', {
+        phone: `${countryCode}${cleanPhone}`,
+        role: 'customer',
+      }) as any;
       console.log('✅ OTP sent:', data);
       
       if (data.uatMode) {
         toast.success('OTP: 123456 (UAT Testing Mode)', { duration: 5000 });
       } else {
         toast.success('OTP sent to your phone');
+      }
+
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
       }
       
       setShowOtpScreen(true);
@@ -89,59 +79,28 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
       
       console.log('🔐 Verifying OTP for:', `${countryCode}${cleanPhone}`);
-
-      let pendingFromStorage = '';
-      try {
-        pendingFromStorage = (localStorage.getItem('pendingReferralCode') || '').trim();
-      } catch {
-        pendingFromStorage = '';
-      }
-      const effectiveReferral = (referralCode || pendingFromStorage || '').trim();
-      const referralPayload = effectiveReferral ? effectiveReferral.toUpperCase() : undefined;
-
-      const data = await apiClient.post('/auth/verify-otp', {
-        phone: `${countryCode}${cleanPhone}`,
-        otp: otpCode,
+      
+      const ref = referralCode?.trim() ? referralCode.trim().toUpperCase() : '';
+      const data = await apiClient.post('/auth/verify-otp', { 
+        phone: `${countryCode}${cleanPhone}`, 
+        otp: otpCode, 
         role: 'customer',
-        referralCode: referralPayload,
-        pendingReferralCode: referralPayload,
+        referralCode: ref || undefined
       }) as any;
       console.log('✅ OTP verified:', data);
-
-      const inner = data?.data?.data ?? data?.data ?? data;
-      const userId = inner?.user?.id as string | undefined;
-      const isNewUser = inner?.state === 'new';
-
-      if (referralPayload && userId) {
-        try {
-          console.log('🎁 Applying referral code (backup):', referralPayload);
-          const referralData = await apiClient.post('/referrals/apply', {
-            customerId: userId,
-            referralCode: referralPayload,
-          }) as any;
-          console.log('✅ Referral code applied:', referralData);
-          toast.success('Referral code applied! You\'ll earn bonus points!', { duration: 4000 });
-          try {
-            localStorage.removeItem('pendingReferralCode');
-          } catch {
-            /* ignore */
-          }
-        } catch (refError: any) {
-          console.error('❌ Referral code error:', refError);
-        }
+      if (ref) {
+        localStorage.setItem('pendingReferralCode', ref);
       }
-
-      const hasCompletedOnboarding =
-        inner?.profile?.profile_completed === true ||
-        inner?.customer?.onboardingComplete === true;
-      const hasPets =
-        (inner?.customer?.petIds && inner.customer.petIds.length > 0) || false;
-
+      
+      // Check if user has completed onboarding
+      const hasCompletedOnboarding = data.customer.onboardingComplete;
+      const hasPets = data.customer.petIds && data.customer.petIds.length > 0;
+      
       console.log('📊 User state:', {
-        isNewUser,
+        isNewUser: data.isNewUser,
         hasCompletedOnboarding,
         hasPets,
-        userId,
+        customer: data.customer
       });
       
       // Set sessionStorage flags for hard refresh detection
@@ -156,13 +115,13 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       onAuthSuccess({
         phone: cleanPhone,
         countryCode: countryCode,
-        customerId: userId,
-        customer: inner?.profile || inner?.user || { id: userId },
-        sessionToken: inner?.token?.access_token || data.sessionToken,
+        customerId: data.customer.id,
+        customer: data.customer,
+        sessionToken: data.sessionToken,
         verified: true,
-        isNewUser,
+        isNewUser: data.isNewUser,
         hasCompletedOnboarding,
-        hasPets,
+        hasPets
       });
       
       setLoading(false);
@@ -180,7 +139,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       : `${countryCode} ${phoneNumber}`;
 
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-customer mx-auto">
         {/* Status Bar */}
         <div className="px-6 pt-3 pb-2 flex justify-between items-center">
           <span className="text-sm font-medium text-black">09:41</span>
@@ -320,7 +279,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
   // PHONE NUMBER SCREEN
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-customer mx-auto">
       {/* Status Bar */}
       <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-sm font-medium text-black">09:41</span>

@@ -36,12 +36,17 @@ interface BoardingBookingRouterProps {
   serviceStyle?: string;
   price?: number;
   duration?: number;
+  /** When set, loads `sitting` vendor services and uses at-home booking semantics (no facility rooms). */
+  flowVariant?: "boarding" | "pet_sitting";
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
 }
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'room' | 'payment' | 'confirmation';
+
+/** Matches server pet-sitting pricing (bookings-enhanced). */
+const PET_SITTING_BILLING_SLOT_MINUTES = 30;
 
 interface TimeSlot {
   time: string;
@@ -76,10 +81,17 @@ export function BoardingBookingRouter({
   serviceStyle,
   price,
   duration,
+  flowVariant = "boarding",
   onBack, 
   onNavigate, 
   onViewBooking 
 }: BoardingBookingRouterProps) {
+  const isPetSitting = flowVariant === "pet_sitting";
+  const apiCategory = isPetSitting ? "sitting" : "boarding";
+  const packageServiceType = isPetSitting ? "sitting" : "boarding";
+  const flowTitle = isPetSitting ? "Pet Sitting" : "Pet Boarding";
+  const priceSuffix = isPetSitting ? "/visit" : "/night";
+
   // Service context logic
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
@@ -94,10 +106,17 @@ export function BoardingBookingRouter({
   }, [serviceId, serviceType, serviceStyle, step, hasServiceContext]);
 
   const [loading, setLoading] = useState(false);
-  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'overnight');
+  const [selectedServiceType, setSelectedServiceType] = useState(() => {
+    if (serviceStyle && serviceStyle !== "sitting" && serviceStyle !== "boarding") {
+      return serviceStyle;
+    }
+    if (isPetSitting) return "overnight_sitting";
+    if (serviceType === "daycare") return "daycare";
+    return "overnight";
+  });
   const [checkInDate, setCheckInDate] = useState('');
   const [checkOutDate, setCheckOutDate] = useState('');
-  const [checkInTime, setCheckInTime] = useState('10:00');
+  const [checkInTime, setCheckInTime] = useState('09:00');
   const [checkOutTime, setCheckOutTime] = useState('10:00');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -135,19 +154,71 @@ export function BoardingBookingRouter({
     { id: 'daycare', name: 'Day Care', icon: Sun, price: 499, duration: 480, desc: 'Daily care & supervision', color: 'orange' },
   ];
 
-  const serviceOptions = vendorServices.length > 0 
-    ? vendorServices.map(s => ({
-        id: s.id || s.serviceId,
-        serviceId: s.serviceId || s.service_id,
-        name: s.serviceName || s.service_name || s.name,
-        price: s.price || 0,
-        duration: s.duration || 1440,
-        desc: s.description || '',
-        serviceStyle: s.serviceStyle || s.service_style,
-        icon: s.serviceStyle === 'overnight' ? Moon : Sun,
-        color: s.serviceStyle === 'overnight' ? 'indigo' : 'orange',
-      }))
-    : defaultServiceTypeOptions;
+  const defaultPetSittingOptions = [
+    { id: 'overnight_sitting', name: 'Overnight sitting', icon: Moon, price: 899, duration: 1440, desc: 'Sitter stays overnight at your home', color: 'indigo' },
+    { id: 'day_sitting', name: 'Day visits', icon: Sun, price: 549, duration: 480, desc: 'Scheduled daytime check-ins', color: 'orange' },
+    { id: 'extended_home', name: 'Extended home stay', icon: Calendar, price: 1499, duration: 2880, desc: 'Multi-day in-home care', color: 'orange' },
+    { id: 'drop_in', name: 'Drop-in visits', icon: Clock, price: 249, duration: 45, desc: 'Quick feeding & potty breaks', color: 'rose' },
+  ];
+
+  const pickVendorServiceIcon = (styleRaw: string | undefined) => {
+    const st = (styleRaw || '').toLowerCase();
+    if (st.includes('overnight') || st.includes('night')) return Moon;
+    if (st.includes('day')) return Sun;
+    if (st.includes('drop') || st.includes('visit') || st.includes('check')) return Clock;
+    if (st.includes('extend')) return Calendar;
+    return isPetSitting ? Home : Sun;
+  };
+
+  const pickVendorServiceColor = (styleRaw: string | undefined): string => {
+    const st = (styleRaw || '').toLowerCase();
+    if (st.includes('overnight') || st.includes('night')) return 'indigo';
+    if (st.includes('day')) return 'orange';
+    if (st.includes('extend')) return 'orange';
+    if (st.includes('drop') || st.includes('visit')) return 'rose';
+    return 'orange';
+  };
+
+  const fallbackDefaults = isPetSitting ? defaultPetSittingOptions : defaultServiceTypeOptions;
+
+  /** With a vendor, only list API services — defaults are UI placeholders and have no bookable UUID. */
+  const serviceOptions =
+    vendorServices.length > 0
+      ? vendorServices.map((s) => {
+          const styleVal = s.serviceStyle || s.service_style;
+          return {
+            id: s.id || s.serviceId,
+            /** Catalog / legacy FK; may be null while vs.id is always the bookable vendor_services row. */
+            serviceId: s.serviceId || s.service_id,
+            name: s.serviceName || s.service_name || s.name,
+            price: s.price || 0,
+            duration: s.duration || 1440,
+            desc: s.description || s.shortDescription || '',
+            serviceStyle: styleVal,
+            icon: pickVendorServiceIcon(styleVal),
+            color: pickVendorServiceColor(styleVal),
+          };
+        })
+      : vendorId
+        ? []
+        : fallbackDefaults;
+
+  const selectedServiceOption = serviceOptions.find((s) => s.id === selectedServiceType);
+  const sittingStyleLower = String(selectedServiceOption?.serviceStyle || '').toLowerCase();
+
+  /** Overnight / extended: multi-night dates + times (e.g. 1440+ min unit). */
+  const sittingMultiNight =
+    isPetSitting &&
+    (['overnight_sitting', 'extended_home'].includes(selectedServiceType) ||
+      sittingStyleLower === 'overnight_sitting' ||
+      sittingStyleLower === 'extended_home' ||
+      /overnight|extended|multi[\s-]?day/.test((selectedServiceOption?.name || '').toLowerCase()));
+
+  /**
+   * Short visits: same-day or few-hour window (30 min, 2 hr, etc.) — "Pet Sitting Visit" and similar.
+   * Checkout can be the same calendar day as check-in; not overnight/extended.
+   */
+  const sittingSameDay = isPetSitting && !sittingMultiNight;
 
   const generateDates = () => {
     const dates = [];
@@ -173,17 +244,74 @@ export function BoardingBookingRouter({
       loadVendorServices();
       loadRooms();
     }
-  }, [phone, vendorId]);
+  }, [phone, vendorId, apiCategory]);
+
+  useEffect(() => {
+    if (vendorServices.length === 0) return;
+    const ids = vendorServices
+      .map((s) => s.id || s.serviceId)
+      .filter(Boolean) as string[];
+    if (ids.length > 0 && !ids.includes(selectedServiceType)) {
+      setSelectedServiceType(ids[0]);
+    }
+  }, [vendorServices]);
+
+  useEffect(() => {
+    if (!vendorId || loading) return;
+    if (vendorServices.length === 0) {
+      setSelectedServiceType('');
+    }
+  }, [vendorId, loading, vendorServices.length]);
+
+  useEffect(() => {
+    if (step !== 'datetime' || !isPetSitting || sittingSameDay || !checkInDate) return;
+    if (checkOutDate && checkOutDate > checkInDate) return;
+    const next = new Date(checkInDate);
+    next.setDate(next.getDate() + 1);
+    setCheckOutDate(next.toISOString().split('T')[0]);
+  }, [step, isPetSitting, sittingSameDay, checkInDate, checkOutDate]);
+
+  /** Same-day visits: checkout stays on the selected calendar day; duration comes from start/end time. */
+  useEffect(() => {
+    if (!isPetSitting || !sittingSameDay || !checkInDate) return;
+    setCheckOutDate(checkInDate);
+  }, [isPetSitting, sittingSameDay, checkInDate]);
 
   const loadVendorServices = async () => {
     if (!vendorId) return;
-    
+
+    const filterAtHomeForSitting = (list: any[]) => {
+      if (!isPetSitting || !Array.isArray(list)) return list;
+      return list.filter((s: any) => {
+        const st = String(s.serviceStyle || s.service_style || '').toLowerCase();
+        return st === 'at_home' || st === '';
+      });
+    };
+
     try {
       setLoading(true);
-      const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=boarding`) as any;
-      if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
+      const servicesResponse = (await apiClient.get(
+        `/customer/vendor/${vendorId}/services?category=${apiCategory}`
+      )) as any;
+
+      let list: any[] =
+        servicesResponse?.success && Array.isArray(servicesResponse.services)
+          ? servicesResponse.services
+          : [];
+
+      /** If sitting filter returns nothing, refetch without category and keep at_home rows (DB category/style quirks). */
+      if (isPetSitting && list.length === 0) {
+        try {
+          const fallback = (await apiClient.get(`/customer/vendor/${vendorId}/services`)) as any;
+          if (fallback?.success && Array.isArray(fallback.services)) {
+            list = filterAtHomeForSitting(fallback.services);
+          }
+        } catch {
+          /* keep empty */
+        }
       }
+
+      setVendorServices(list);
     } catch (error) {
       console.error('Error loading vendor services:', error);
     } finally {
@@ -193,7 +321,11 @@ export function BoardingBookingRouter({
 
   const loadRooms = async () => {
     if (!vendorId) return;
-    
+    if (isPetSitting) {
+      setRooms([]);
+      return;
+    }
+
     try {
       const roomsResponse = await apiClient.get(`/vendor/${vendorId}/rooms`) as any;
       if (roomsResponse.success && roomsResponse.rooms) {
@@ -268,7 +400,7 @@ export function BoardingBookingRouter({
     
     try {
       const response = await apiClient.get<any>(
-        `/packages/check-for-booking?customerId=${customerId}&vendorId=${vendorId}&serviceType=boarding`
+        `/packages/check-for-booking?customerId=${customerId}&vendorId=${vendorId}&serviceType=${packageServiceType}`
       );
 
       if (response?.hasActivePackage && response?.package) {
@@ -299,8 +431,39 @@ export function BoardingBookingRouter({
     setUsePackageSession(false);
   };
 
+  const parseLocalDateTime = (dateStr: string, timeStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [hh, mm] = (timeStr || '0:0').split(':').map(Number);
+    return new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0).getTime();
+  };
+
+  /** Minutes between check-in and check-out (handles next-day end when checkout time is after midnight). */
+  const getBilledMinutes = () => {
+    if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) return 0;
+    const start = parseLocalDateTime(checkInDate, checkInTime);
+    let end = parseLocalDateTime(checkOutDate, checkOutTime);
+    if (end <= start) {
+      if (sittingSameDay && checkInDate === checkOutDate) return 0;
+      end += 24 * 60 * 60 * 1000;
+    }
+    return Math.round((end - start) / 60000);
+  };
+
+  /** Unit window for ₹ price (vendor `duration` minutes, else overnight = 1440, extended = 2880). */
+  const getPetSittingPricingBaseMinutes = (): number => {
+    const optDur = Number(selectedServiceOption?.duration);
+    if (Number.isFinite(optDur) && optDur >= 15) return optDur;
+    const name = (selectedServiceOption?.name || '').toLowerCase();
+    if (/extended|multi[\s-]?day/.test(name)) return 2880;
+    if (/overnight|night/.test(name)) return 1440;
+    if (sittingMultiNight) return 1440;
+    if (sittingSameDay) return Math.max(15, Number(selectedServiceOption?.duration) || 60);
+    return 1440;
+  };
+
   const calculateNights = () => {
     if (!checkInDate || !checkOutDate) return 0;
+    if (isPetSitting && sittingSameDay && checkInDate === checkOutDate) return 0;
     const start = new Date(checkInDate);
     const end = new Date(checkOutDate);
     const diffTime = Math.abs(end.getTime() - start.getTime());
@@ -308,6 +471,21 @@ export function BoardingBookingRouter({
   };
 
   const calculateTotalPrice = () => {
+    const opt = selectedServiceOption;
+    const unitPrice = Number(opt?.price ?? price ?? 0);
+
+    /** Pet sitting: price uses 30-minute billing slots; list price applies to the sitter’s base duration. */
+    if (isPetSitting) {
+      const baseMins = getPetSittingPricingBaseMinutes();
+      const mins = getBilledMinutes();
+      if (mins < 1) return unitPrice;
+      const slots = Math.max(1, Math.ceil(mins / PET_SITTING_BILLING_SLOT_MINUTES));
+      const pricePerSlot = (unitPrice * PET_SITTING_BILLING_SLOT_MINUTES) / baseMins;
+      const proportional = Math.round(slots * pricePerSlot);
+      const floor = Math.min(unitPrice, Math.max(49, Math.round(unitPrice * 0.3)));
+      return Math.max(proportional, floor);
+    }
+
     const nights = calculateNights();
     const basePrice = selectedRoom?.pricePerNight || price || 0;
     return nights * basePrice;
@@ -341,6 +519,18 @@ export function BoardingBookingRouter({
       return;
     }
 
+    if (isPetSitting) {
+      const bm = getBilledMinutes();
+      if (bm < 15) {
+        toast.error(
+          sittingSameDay
+            ? 'This visit could not be priced. Pick another check-in date or a different sitting service.'
+            : 'Stay must be at least 15 minutes. Adjust check-in and check-out date & time.'
+        );
+        return;
+      }
+    }
+
     if (!customerId) {
       toast.error('Customer ID not found. Please try again.');
       return;
@@ -353,18 +543,49 @@ export function BoardingBookingRouter({
 
     setProcessing(true);
     try {
-      const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
-      let serviceIdValue = (selectedServiceOption as any)?.serviceId || 
-                          selectedVendorService?.serviceId || 
-                          serviceId;
-
-      // UUID validation
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      
-      if (!serviceIdValue || !uuidRegex.test(serviceIdValue)) {
-        toast.error('Service ID is required. Please select a boarding option.');
-        setProcessing(false);
-        return;
+      const opt = selectedServiceOption as any;
+      /** Bookings FK uses vendor_services.id; API exposes it as `id`. `serviceId` is vs.service_id and is often null. */
+      let serviceIdValue =
+        opt?.id ||
+        opt?.serviceId ||
+        selectedVendorService?.id ||
+        selectedVendorService?.serviceId ||
+        serviceId;
+
+      if (!serviceIdValue || !uuidRegex.test(String(serviceIdValue))) {
+        const fromVendor =
+          vendorServices.find((vs: any) => {
+            const rowId = vs.id;
+            return rowId && String(rowId) === String(selectedServiceType);
+          }) ||
+          vendorServices.find((vs: any) => {
+            const sid = vs.serviceId || vs.service_id;
+            return sid && String(sid) === String(selectedServiceType);
+          }) ||
+          vendorServices.find((vs: any) => {
+            const id = vs.id || vs.serviceId || vs.service_id;
+            return id && uuidRegex.test(String(id));
+          });
+        const fallback = fromVendor?.id || fromVendor?.serviceId || fromVendor?.service_id;
+        if (fallback && uuidRegex.test(String(fallback))) {
+          serviceIdValue = fallback;
+          toast.info('Using your sitter’s service plan for this booking.');
+        } else {
+          const noPublished =
+            vendorId && vendorServices.length === 0;
+          toast.error(
+            noPublished
+              ? isPetSitting
+                ? 'This sitter has no published sitting services to book. Ask them to publish sitting services, or try another sitter.'
+                : 'This provider has no published boarding services to book.'
+              : isPetSitting
+                ? 'Please select a sitting option from your sitter.'
+                : 'Service ID is required. Please select a boarding option.'
+          );
+          setProcessing(false);
+          return;
+        }
       }
 
       const totalAmount = calculateTotalPrice();
@@ -381,7 +602,9 @@ export function BoardingBookingRouter({
       }
 
       // CreateBookingRequestSchema expects serviceType: at_vendor|at_home|online|at_center|tele|hybrid|product
-      const bookingServiceType = (selectedServiceType === 'overnight' || selectedServiceType === 'daycare') ? 'at_center' : selectedServiceType;
+      const bookingServiceType = isPetSitting
+        ? 'at_home'
+        : ((selectedServiceType === 'overnight' || selectedServiceType === 'daycare') ? 'at_center' : selectedServiceType);
 
       const bookingData: any = {
         customerId: customerId,
@@ -391,6 +614,7 @@ export function BoardingBookingRouter({
         bookingTime: checkInTime,
         serviceType: bookingServiceType,
         petId: selectedPet?.id,
+        customerPhone: phone || undefined,
         notes: notes || undefined,
         idempotencyKey,
         // Boarding-specific fields
@@ -399,14 +623,24 @@ export function BoardingBookingRouter({
         checkInTime,
         checkOutTime,
         roomId: selectedRoom?.id,
-        numberOfNights: calculateNights(),
+        numberOfNights:
+          isPetSitting && sittingSameDay
+            ? 0
+            : isPetSitting
+              ? Math.max(1, Math.ceil(getBilledMinutes() / 1440))
+              : Math.max(1, calculateNights()),
       };
+
+      if (isPetSitting) {
+        bookingData.totalDurationMinutes = getBilledMinutes();
+        bookingData.flowVariant = 'pet_sitting';
+      }
 
       if (!usePackageSession && totalAmount > 0) {
         bookingData.amount = totalAmount;
       }
 
-      console.log('📤 Creating boarding booking:', bookingData);
+      console.log(isPetSitting ? '📤 Creating pet sitting booking:' : '📤 Creating boarding booking:', bookingData);
 
       const endpoints = ['/bookings/create', '/booking/create'];
       let response: any;
@@ -432,7 +666,12 @@ export function BoardingBookingRouter({
       setStep('payment');
     } catch (err: any) {
       console.error('Error creating booking:', err);
-      const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create booking';
+      const apiErr = err?.response?.data?.error;
+      const errorMessage =
+        (typeof apiErr === 'string' ? apiErr : apiErr?.message) ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to create booking';
       toast.error(errorMessage);
       setBookingIdempotencyKey(null);
     } finally {
@@ -454,10 +693,8 @@ export function BoardingBookingRouter({
   const handlePaymentSuccess = (paidBookingId: string) => {
     setBookingId(paidBookingId);
     setStep('confirmation');
-    toast.success('Boarding booked successfully!');
+    toast.success(isPetSitting ? 'Pet sitting booked successfully!' : 'Boarding booked successfully!');
   };
-
-  const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
 
   const renderStepIndicator = () => {
     const stepLabels = rooms.length > 0 
@@ -495,9 +732,9 @@ export function BoardingBookingRouter({
         customerId={phone}
         bookingId={paymentBookingId}
         baseAmount={calculateTotalPrice()}
-        serviceName={selectedServiceOption?.name || 'Boarding Service'}
+        serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding Service')}
         vendorId={vendorId || ''}
-        vendorName={'Boarding Provider'}
+        vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
         onBack={handleBack}
         onSuccess={handlePaymentSuccess}
       />
@@ -510,8 +747,8 @@ export function BoardingBookingRouter({
       <BookingConfirmationPage
         bookingId={bookingId}
         type="booking"
-        serviceName={selectedServiceOption?.name || 'Boarding'}
-        vendorName={'Boarding Provider'}
+        serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding')}
+        vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
         serviceStyle={selectedServiceType as 'at_home' | 'at_center' | 'tele'}
         bookingDate={checkInDate}
         bookingTime={checkInTime}
@@ -523,9 +760,18 @@ export function BoardingBookingRouter({
     );
   }
 
+  const dateSummaryValue =
+    !checkInDate
+      ? '—'
+      : isPetSitting && sittingSameDay
+        ? `${checkInDate} · ${checkInTime}–${checkOutTime}`
+        : isPetSitting && checkInDate && checkOutDate
+          ? `${checkInDate} ${checkInTime} → ${checkOutDate} ${checkOutTime}`
+          : `${checkInDate} → ${checkOutDate || '—'}`;
+
   const boardingStats = [
-    { value: selectedServiceOption?.name || 'Boarding', label: 'Type', icon: <Building2 className="w-4 h-4" /> },
-    { value: checkInDate ? `${checkInDate} → ${checkOutDate || '-'}` : '—', label: 'Dates' },
+    { value: selectedServiceOption?.name || flowTitle, label: 'Type', icon: (isPetSitting ? <Home className="w-4 h-4" /> : <Building2 className="w-4 h-4" />) },
+    { value: dateSummaryValue, label: 'Dates' },
     { value: selectedPet?.name || '—', label: 'Pet', icon: <Dog className="w-4 h-4" /> }
   ];
   const stepLabels = rooms.length > 0
@@ -541,9 +787,9 @@ export function BoardingBookingRouter({
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       <ServiceDashboardHeader
-        serviceName="Pet Boarding"
-        serviceSubtitle={selectedServiceOption?.name || 'Select boarding type'}
-        serviceIcon={Building2}
+        serviceName={flowTitle}
+        serviceSubtitle={selectedServiceOption?.name || (isPetSitting ? 'Select sitting type' : 'Select boarding type')}
+        serviceIcon={isPetSitting ? Home : Building2}
         iconColor="text-white"
         stats={boardingStats}
         steps={stepIndicators}
@@ -556,124 +802,306 @@ export function BoardingBookingRouter({
         {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Select Boarding Type</h2>
-            <div className="space-y-3">
-              {serviceOptions.map((service) => {
-                const Icon = service.icon;
-                const isSelected = selectedServiceType === service.id;
-                return (
-                  <button
-                    key={service.id}
-                    onClick={() => setSelectedServiceType(service.id)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all ${
-                      isSelected 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                        service.color === 'indigo' ? 'bg-indigo-100 text-indigo-600' :
-                        'bg-orange-100 text-orange-600'
-                      }`}>
-                        <Icon className="w-7 h-7" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                        <p className="text-sm text-gray-500">{service.desc}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
-                        <p className="text-xs text-gray-500">/night</p>
-                        {isSelected && (
-                          <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
-              disabled={!selectedServiceType}
-            >
-              Continue
-            </Button>
+            <h2 className="text-lg font-bold text-gray-900">{isPetSitting ? 'Select sitting type' : 'Select Boarding Type'}</h2>
+            {vendorId && loading ? (
+              <p className="text-center py-10 text-gray-500">Loading services…</p>
+            ) : serviceOptions.length === 0 ? (
+              <p className="text-center py-10 text-gray-600 text-sm px-2">
+                {vendorId
+                  ? isPetSitting
+                    ? 'This sitter has no published sitting services to book yet. Ask them to add and publish a sitting service in their dashboard, or try another sitter.'
+                    : 'This provider has no published boarding services to book yet.'
+                  : isPetSitting
+                    ? 'No sitting services to display. Open this flow from a sitter’s profile.'
+                    : 'No boarding services to display.'}
+              </p>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {serviceOptions.map((service) => {
+                    const Icon = service.icon;
+                    const isSelected = selectedServiceType === service.id;
+                    return (
+                      <button
+                        key={service.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedServiceType(service.id);
+                          const raw = vendorServices.find(
+                            (vs) => String(vs.id || vs.serviceId) === String(service.id)
+                          );
+                          if (raw) {
+                            setSelectedVendorService({
+                              id: raw.id,
+                              serviceId: raw.serviceId || raw.service_id,
+                              name: raw.serviceName || raw.service_name || raw.name,
+                              price: raw.price,
+                              duration: raw.duration,
+                              serviceStyle: raw.serviceStyle || raw.service_style,
+                            });
+                          }
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 transition-all ${
+                          isSelected
+                            ? 'border-[#FF8C42] bg-orange-50'
+                            : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div
+                            className={`w-14 h-14 rounded-xl flex items-center justify-center ${
+                              service.color === 'indigo'
+                                ? 'bg-indigo-100 text-indigo-600'
+                                : service.color === 'rose'
+                                  ? 'bg-rose-100 text-rose-600'
+                                  : 'bg-orange-100 text-[#FF8C42]'
+                            }`}
+                          >
+                            <Icon className="w-7 h-7" />
+                          </div>
+                          <div className="flex-1 text-left">
+                            <h3 className="font-semibold text-gray-900">{service.name}</h3>
+                            <p className="text-sm text-gray-500">{service.desc}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                            <p className="text-xs text-gray-500">{priceSuffix}</p>
+                            {isSelected && (
+                              <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  onClick={handleNext}
+                  className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
+                  disabled={!selectedServiceType}
+                >
+                  Continue
+                </Button>
+              </>
+            )}
           </div>
         )}
 
         {/* Date Selection */}
         {step === 'datetime' && (
           <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">Check-in Date</h2>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {dates.map((d) => (
-                  <button
-                    key={d.date}
-                    onClick={() => {
-                      setCheckInDate(d.date);
-                      if (!checkOutDate || new Date(d.date) >= new Date(checkOutDate)) {
-                        const nextDay = new Date(d.date);
-                        nextDay.setDate(nextDay.getDate() + 1);
-                        setCheckOutDate(nextDay.toISOString().split('T')[0]);
-                      }
-                    }}
-                    className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                      checkInDate === d.date 
-                        ? 'bg-orange-500 text-white' 
-                        : 'bg-white border border-gray-200 hover:border-orange-300'
-                    }`}
-                  >
-                    <p className="text-xs opacity-75">{d.day}</p>
-                    <p className="text-xl font-bold">{d.dayNum}</p>
-                    <p className="text-xs opacity-75">{d.month}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {checkInDate && (
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Check-out Date</h2>
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                  {dates.filter(d => new Date(d.date) > new Date(checkInDate)).map((d) => (
-                    <button
-                      key={d.date}
-                      onClick={() => setCheckOutDate(d.date)}
-                      className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                        checkOutDate === d.date 
-                          ? 'bg-orange-500 text-white' 
-                          : 'bg-white border border-gray-200 hover:border-orange-300'
-                      }`}
-                    >
-                      <p className="text-xs opacity-75">{d.day}</p>
-                      <p className="text-xl font-bold">{d.dayNum}</p>
-                      <p className="text-xs opacity-75">{d.month}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {checkInDate && checkOutDate && (
-              <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm text-gray-600">Duration</p>
-                    <p className="font-bold text-lg text-gray-900">{calculateNights()} night(s)</p>
+            {isPetSitting && sittingSameDay ? (
+              <>
+                <div>
+                  <h2 className="mb-3 text-lg font-bold text-gray-900">Visit date</h2>
+                  <p className="mb-2 text-xs text-gray-500">
+                    Pick the day, then choose start and end time. Price is based on 30-minute blocks; your
+                    sitter’s listed rate applies to their base visit length (
+                    {getPetSittingPricingBaseMinutes()} minutes).
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {dates.map((d) => (
+                      <button
+                        key={d.date}
+                        type="button"
+                        onClick={() => setCheckInDate(d.date)}
+                        className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                          checkInDate === d.date
+                            ? 'bg-[#FF8C42] text-white'
+                            : 'border border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                        }`}
+                      >
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-xl font-bold">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
+                      </button>
+                    ))}
                   </div>
-                  <Calendar className="w-8 h-8 text-orange-500" />
                 </div>
-              </div>
+
+                {checkInDate && (
+                  <div className="space-y-4">
+                    <h2 className="text-lg font-bold text-gray-900">Visit time</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">Start time</label>
+                        <input
+                          type="time"
+                          value={checkInTime}
+                          onChange={(e) => setCheckInTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">End time</label>
+                        <input
+                          type="time"
+                          value={checkOutTime}
+                          onChange={(e) => setCheckOutTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
+                  <div className="rounded-xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Estimated price</p>
+                        <p className="text-2xl font-bold text-gray-900">₹{calculateTotalPrice()}</p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m ·{' '}
+                          {Math.ceil(getBilledMinutes() / PET_SITTING_BILLING_SLOT_MINUTES)} ×{' '}
+                          {PET_SITTING_BILLING_SLOT_MINUTES}-min blocks
+                        </p>
+                      </div>
+                      <Clock className="h-8 w-8 text-[#FF8C42]" />
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div>
+                  <h2 className="mb-3 text-lg font-bold text-gray-900">Check-in date</h2>
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {dates.map((d) => (
+                      <button
+                        key={d.date}
+                        type="button"
+                        onClick={() => {
+                          setCheckInDate(d.date);
+                          if (
+                            !sittingSameDay &&
+                            (!checkOutDate || new Date(d.date) >= new Date(checkOutDate))
+                          ) {
+                            const nextDay = new Date(d.date);
+                            nextDay.setDate(nextDay.getDate() + 1);
+                            setCheckOutDate(nextDay.toISOString().split('T')[0]);
+                          }
+                        }}
+                        className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                          checkInDate === d.date
+                            ? 'bg-orange-500 text-white'
+                            : 'border border-gray-200 bg-white hover:border-orange-300'
+                        }`}
+                      >
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-xl font-bold">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {checkInDate && (
+                  <div>
+                    <h2 className="mb-3 text-lg font-bold text-gray-900">Check-out date</h2>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {dates
+                        .filter((d) => new Date(d.date) > new Date(checkInDate))
+                        .map((d) => (
+                          <button
+                            key={d.date}
+                            type="button"
+                            onClick={() => setCheckOutDate(d.date)}
+                            className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                              checkOutDate === d.date
+                                ? 'bg-orange-500 text-white'
+                                : 'border border-gray-200 bg-white hover:border-orange-300'
+                            }`}
+                          >
+                            <p className="text-xs opacity-75">{d.day}</p>
+                            <p className="text-xl font-bold">{d.dayNum}</p>
+                            <p className="text-xs opacity-75">{d.month}</p>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {isPetSitting && checkInDate && checkOutDate && (
+                  <div className="space-y-4">
+                    <h2 className="text-lg font-bold text-gray-900">Check-in & check-out time</h2>
+                    <p className="text-xs text-gray-500">
+                      Price follows your visit length in 30-minute blocks. Your sitter’s rate applies to their
+                      base duration ({getPetSittingPricingBaseMinutes()} minutes) unless they set a different
+                      length on the service.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">
+                          Check-in time
+                        </label>
+                        <input
+                          type="time"
+                          value={checkInTime}
+                          onChange={(e) => setCheckInTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">
+                          Check-out time
+                        </label>
+                        <input
+                          type="time"
+                          value={checkOutTime}
+                          onChange={(e) => setCheckOutTime(e.target.value)}
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isPetSitting && !sittingSameDay && checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
+                  <div className="rounded-xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Stay length & price</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          {Math.max(1, calculateNights())} calendar day(s) · billed vs{' '}
+                          {getPetSittingPricingBaseMinutes()} min unit
+                        </p>
+                        <p className="text-sm font-semibold text-[#FF8C42]">
+                          ₹{calculateTotalPrice()} total
+                        </p>
+                      </div>
+                      <Clock className="h-8 w-8 text-[#FF8C42]" />
+                    </div>
+                  </div>
+                )}
+
+                {!isPetSitting && checkInDate && checkOutDate && (
+                  <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Duration</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {calculateNights()} night(s)
+                        </p>
+                      </div>
+                      <Calendar className="h-8 w-8 text-orange-500" />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            <Button 
-              onClick={handleNext} 
+            <Button
+              onClick={handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!checkInDate || !checkOutDate}
+              disabled={
+                !checkInDate ||
+                !checkOutDate ||
+                (isPetSitting && getBilledMinutes() < 15)
+              }
             >
               Continue
             </Button>
@@ -697,7 +1125,7 @@ export function BoardingBookingRouter({
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
               <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
               <p className="text-sm text-amber-800">
-                A pet profile is required for boarding services.
+                {isPetSitting ? 'A pet profile is required for pet sitting.' : 'A pet profile is required for boarding services.'}
               </p>
             </div>
             
@@ -751,7 +1179,11 @@ export function BoardingBookingRouter({
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedPet}
             >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
+              {selectedPet
+                ? isPetSitting && rooms.length === 0
+                  ? 'Continue to payment'
+                  : 'Continue'
+                : 'Select a Pet to Continue'}
             </Button>
           </div>
         )}

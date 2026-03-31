@@ -1258,7 +1258,7 @@ export function VetBookingRouter({
         {/* Fixed Continue Button - Above Footer */}
         {step === 'details' && (
           <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30">
-            <div className="max-w-[430px] mx-auto">
+            <div className="max-w-customer mx-auto">
             <Button 
               onClick={() => {
                 handleNext();
@@ -1387,7 +1387,7 @@ export function VetBookingRouter({
         {/* Fixed Continue Button for Payment Summary - Above Footer (only for at_center, not at_home) */}
         {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
           <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30 shadow-lg">
-            <div className="max-w-[430px] mx-auto">
+            <div className="max-w-customer mx-auto">
               <Button 
                 onClick={() => {
                   // Ensure we have selectedVendorService before showing payment
@@ -1713,7 +1713,7 @@ export function VetBookingRouter({
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );

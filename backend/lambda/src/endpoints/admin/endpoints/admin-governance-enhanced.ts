@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update, deleteRows } from '../../../database/rds-connection';
-import { publishToSNS } from '../../../utils/aws-clients';
+import { publishToSNS } from '../../../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 

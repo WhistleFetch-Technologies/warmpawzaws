@@ -17,7 +17,7 @@
 
 import { query, select, insert, update, withTransaction } from '../../database/rds-connection';
 import { getRazorpayClient } from '../../utils/payments/razorpay-client';
-import { publishToSNS } from '../../utils/aws-clients';
+import { publishToSNS } from '../aws/aws-clients';
 import { BookingPaymentStatus } from '../../endpoints/constants';
 
 export interface RefundRequest {

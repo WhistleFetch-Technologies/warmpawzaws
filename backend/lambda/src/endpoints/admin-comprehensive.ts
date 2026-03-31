@@ -600,7 +600,11 @@ class GetActiveVendorsHandler extends BaseHandler {
           GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE v.status = 'approved' AND v.is_active = true
         ORDER BY v.updated_at DESC
       `);
@@ -737,7 +741,11 @@ class GetVendorDetailsHandler extends BaseHandler {
           LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT id, vendor_type, onboarding_status, phone FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
       `, [vendorId]);
@@ -1360,7 +1368,11 @@ class GetVendorDocumentsHandler extends BaseHandler {
           v.registration_number,
           v.phone as v_phone
         FROM vendors v
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT id, phone FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
         ORDER BY voa.submitted_at DESC NULLS LAST
@@ -3582,7 +3594,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -3593,7 +3609,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
 

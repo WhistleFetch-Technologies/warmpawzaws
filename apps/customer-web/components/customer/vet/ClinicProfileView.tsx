@@ -209,7 +209,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         headerColor="bg-[#FF8C42]"
       />
 
-      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-32">
+      <div className="max-w-customer mx-auto px-4 pt-4 pb-32">
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">
@@ -341,7 +341,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       </div>
 
       {/* Book Appointment Button - Fixed above footer */}
-      <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-40 max-w-[430px] mx-auto">
+      <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-40 max-w-customer mx-auto">
         <Button 
           onClick={handleBookAppointment}
           disabled={!selectedService}
@@ -360,7 +360,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );

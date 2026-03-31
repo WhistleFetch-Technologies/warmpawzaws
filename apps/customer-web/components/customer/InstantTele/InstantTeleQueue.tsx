@@ -61,7 +61,7 @@ interface PreSelectedVendor {
 
 interface InstantTeleQueueProps {
   customerId: string;
-  petId: string;
+  petId: string | null;
   roleId?: string;
   category?: string;
   serviceId?: string;
@@ -69,6 +69,8 @@ interface InstantTeleQueueProps {
   availableInMinutes?: number; // ✅ NEW: Filter by availability (default: 5 min)
   showHorizontalScroll?: boolean; // ✅ NEW: Show providers in horizontal scroll
   preSelectedVendor?: PreSelectedVendor; // ✅ NEW: Auto-join queue for this vendor (skip provider picker)
+  /** `?service=tele` on /booking/tele: when there is exactly one provider with one tele service, pre-select (skip redundant tap). */
+  teleServiceQuery?: boolean;
   onBack?: () => void; // ✅ NEW: Back button handler
   onQueueJoined?: (queueId: string) => void;
   onAccepted?: (bookingId: string, meetingId?: string) => void;
@@ -84,6 +86,7 @@ export function InstantTeleQueue({
   availableInMinutes = 5,
   showHorizontalScroll = false,
   preSelectedVendor,
+  teleServiceQuery,
   onBack,
   onQueueJoined,
   onAccepted,
@@ -139,7 +142,7 @@ export function InstantTeleQueue({
       }
       stopPolling();
     };
-  }, [roleId, category, serviceId]);
+  }, [roleId, category, serviceId, teleServiceQuery]);
 
   const loadAvailableProviders = async () => {
     try {
@@ -158,8 +161,19 @@ export function InstantTeleQueue({
       );
 
       if (response.success) {
-        setProviders(response.providers || []);
-        if (response.providers && response.providers.length === 0) {
+        const list = response.providers || [];
+        setProviders(list);
+        if (
+          teleServiceQuery &&
+          !serviceId &&
+          !preSelectedVendor &&
+          list.length === 1 &&
+          list[0].services?.length === 1
+        ) {
+          setSelectedProvider(list[0]);
+          setSelectedServiceId(list[0].services[0].id);
+        }
+        if (list.length === 0) {
           toast.info('No providers are currently available for instant consultations');
         }
       }
@@ -419,7 +433,7 @@ export function InstantTeleQueue({
       const response = await apiClient.post<any>('/customer/tele/join-queue', {
         customerId,
         vendorId: vendor.vendorId, // Direct vendorId param
-        petId,
+        petId: petId ?? null,
         serviceId: vendor.serviceId,
         symptoms: symptoms.trim() || undefined,
         urgency,
@@ -461,7 +475,7 @@ export function InstantTeleQueue({
       const response = await apiClient.post<any>('/customer/tele/join-queue', {
         customerId,
         vendorId: provider.vendorId || provider.providerId,
-        petId,
+        petId: petId ?? null,
         serviceId: selectedServiceId,
         symptoms: symptoms.trim() || undefined,
         urgency,

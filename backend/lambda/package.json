@@ -4,7 +4,8 @@
   "description": "AWS Lambda handlers for Warmpawz platform",
   "main": "dist/handler.js",
   "scripts": {
-    "build": "npm run clean && npm run build:bundle && npm run package",
+    "build:contracts": "npm run build --prefix ../../packages/api-contracts",
+    "build": "npm run build:contracts && npm run clean && npm run build:bundle && npm run package",
     "build:ts": "tsc --noEmit",
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
     "build:bundle": "node esbuild.config.js",

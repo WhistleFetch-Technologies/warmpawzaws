@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import {
   ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -271,52 +273,43 @@ export default function ProductDetailClient() {
     }
   };
 
+  const mergeLineIntoLocalCart = (): boolean => {
+    if (!product || product.stock === 0) return false;
+    const lineId = wishlistProductId || productId;
+    const ok = mergeLineIntoWarmpawzCartStorage({
+      lineId: String(lineId),
+      quantity,
+      product: {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        original_price: product.original_price,
+        emoji: product.emoji,
+        images: product.images,
+        vendor_name: product.vendor_name,
+        stock: product.stock,
+      },
+      selectedVariations:
+        Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
+    });
+    if (ok) setIsInCart(true);
+    return ok;
+  };
+
   const addToCart = async () => {
     if (!product || product.stock === 0) return;
 
     setAddingToCart(true);
     try {
-      const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-      const lineId = wishlistProductId || productId;
-      const existingIndex = cart.findIndex(
-        (item: CartItem) => String(item.product_id) === String(lineId)
-      );
-
-      if (existingIndex >= 0) {
-        cart[existingIndex].quantity += quantity;
-      } else {
-        cart.push({
-          product_id: lineId,
-          product: {
-            id: product.id,
-            name: product.name,
-            price: product.price,
-            original_price: product.original_price,
-            emoji: product.emoji,
-            images: product.images,
-            vendor_name: product.vendor_name,
-            stock: product.stock,
-          },
-          quantity,
-          selected_variations: Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
-        });
-      }
-
-      localStorage.setItem('warmpawz_cart', JSON.stringify(cart));
-      setIsInCart(true);
-
-      // Dispatch custom event for cart update
-      window.dispatchEvent(new CustomEvent('cart-updated'));
-    } catch (err) {
-      console.error('Failed to add to cart:', err);
+      mergeLineIntoLocalCart();
     } finally {
       setAddingToCart(false);
     }
   };
 
   const buyNow = () => {
-    addToCart();
-    router.push('/checkout');
+    if (!mergeLineIntoLocalCart()) return;
+    router.push('/cart?buynow=1');
   };
 
   const shareProduct = async () => {
@@ -403,7 +396,7 @@ export default function ProductDetailClient() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <button
-              onClick={() => router.back()}
+              onClick={() => goBackOrHome(router)}
               className="p-2 hover:bg-slate-100 rounded-xl"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -453,6 +446,14 @@ export default function ProductDetailClient() {
           <div className="space-y-4">
             {/* Main Image */}
             <div className="aspect-square bg-white rounded-2xl border border-slate-100 overflow-hidden flex items-center justify-center relative">
+              <button
+                type="button"
+                onClick={() => goBackOrHome(router)}
+                className="absolute top-3 left-3 z-20 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
+              </button>
               {product.images && product.images.length > 0 ? (
                 <img 
                   src={product.images[selectedImage]} 
@@ -465,7 +466,7 @@ export default function ProductDetailClient() {
               
               {/* Discount Badge */}
               {discount > 0 && (
-                <div className="absolute top-4 left-4 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg">
+                <div className="absolute top-3 left-14 z-10 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg lg:top-4 lg:left-4">
                   {discount}% OFF
                 </div>
               )}

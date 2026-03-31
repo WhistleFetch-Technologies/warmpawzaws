@@ -96,7 +96,7 @@ export function OrderTrackingWidget({
   const isActive = ['picked_up', 'on_the_way'].includes(tracking.status);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t-2 border-gray-200 shadow-2xl max-w-[430px] mx-auto">
+    <div className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t-2 border-gray-200 shadow-2xl max-w-customer mx-auto">
       <div className="p-4 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">

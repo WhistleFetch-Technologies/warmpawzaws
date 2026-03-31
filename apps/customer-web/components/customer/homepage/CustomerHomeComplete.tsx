@@ -10,7 +10,8 @@ import {
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
   Phone, Video, Building2, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle, FlaskConical
+  Navigation, AlertCircle, FlaskConical,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
@@ -34,7 +35,8 @@ import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from '.
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
-import { resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
+import { customerPathToScreen, resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
+import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -260,6 +262,11 @@ export function CustomerHomeComplete({
         return;
       }
       if (d.startsWith('/')) {
+        const screenFromPath = customerPathToScreen(d);
+        if (screenFromPath) {
+          onNavigate?.(screenFromPath, data);
+          return;
+        }
         router.push(d);
         return;
       }
@@ -347,13 +354,12 @@ export function CustomerHomeComplete({
   const { quickServiceTiles } = useCustomerCategories();
 
   // Define quickServices constant (fallback when API has no categories)
-  // Labels aligned with canonical names: Trainer, Behaviorist, Emergency care, Ambulance, Lab Test, Diagnostics
+  // Labels aligned with canonical names: Trainer and Behaviourist, Behaviorist, Emergency care, etc.
 
-
-  // Canonical display names: avoid duplicate-sounding labels (Trainer vs Training, Lab Test vs Diagnostics, etc.)
+  // Canonical display names: avoid duplicate-sounding labels (Lab Test vs Diagnostics, etc.)
   const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
-    training: 'Trainer',
-    trainer: 'Trainer',
+    training: 'Trainer and Behaviourist',
+    trainer: 'Trainer and Behaviourist',
     behavioral: 'Behaviorist',
     behaviorist: 'Behaviorist',
     // ✅ FIX: Merge emergency and ambulance to "Emergency Care"
@@ -378,6 +384,9 @@ export function CustomerHomeComplete({
     walker: 'Dog Walker',
     shop: 'Pet Shop',
     marketplace: 'Pet Shop',
+    'pet-sitter': 'Pet Sitter',
+    pet_sitter: 'Pet Sitter',
+    sitting: 'Pet Sitter',
   };
 
   // Use API-driven categories when available; otherwise fallback to hardcoded quickServices
@@ -434,16 +443,37 @@ export function CustomerHomeComplete({
     try {
       // Fetch all content in parallel with better error handling
       const [bannersResp, articlesResp, announcementsResp, adoptionResp, featuredResp] = await Promise.allSettled([
-        apiClient.get<any>('/customer/banners?position=home_top&limit=5'),
+        apiClient.get<any>('/customer/banners?position=home_top&limit=20'),
         apiClient.get<any>('/customer/articles?limit=3&featured=true'),
         apiClient.get<any>('/customer/announcements?limit=3'),
         apiClient.get<any>('/customer/adoption-stats'),
         apiClient.get<any>('/customer/featured-vendors?limit=6'),
       ]);
 
-      // Handle banners
-      if (bannersResp.status === 'fulfilled' && bannersResp.value?.banners?.length > 0) {
-        setDynamicBanners(bannersResp.value.banners);
+      // Handle banners (support alternate response shapes; dedupe by id)
+      if (bannersResp.status === 'fulfilled') {
+        const v = bannersResp.value as Record<string, unknown> | null | undefined;
+        const rawList =
+          (Array.isArray(v?.banners) && v.banners) ||
+          (Array.isArray((v?.data as Record<string, unknown>)?.banners) &&
+            (v!.data as { banners: unknown[] }).banners) ||
+          [];
+        if (rawList.length > 0) {
+          const seen = new Set<string>();
+          const unique = (rawList as unknown[]).filter((item) => {
+            const id =
+              item &&
+              typeof item === 'object' &&
+              'id' in item &&
+              (item as { id: unknown }).id != null
+                ? String((item as { id: unknown }).id)
+                : '';
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+          setDynamicBanners(unique as any[]);
+        }
       } else if (bannersResp.status === 'rejected') {
         const error = bannersResp.reason;
         // Only log non-CORS errors to reduce console noise
@@ -785,12 +815,144 @@ export function CustomerHomeComplete({
     }
   }, [phone, refreshKey, quickServiceTiles.length]);
 
+  /** Map API + defaults for hero; dedupe defaults by CTA vertical; icons from CTA / metadata */
+  const homeCarouselBanners = useMemo(() => {
+    const normalizeBannerTarget = (link: unknown): string => {
+      const raw = String(link ?? '').toLowerCase().trim();
+      if (!raw) return '';
+      const path = raw.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
+      const segments = path.split(/[/?#]/).map((s) => s.toLowerCase());
+      const hay = `${path} ${segments.join(' ')}`;
+
+      const pick = (slug: string) => (hay.includes(slug) ? slug : '');
+
+      if (pick('grooming') || pick('groom')) return 'grooming';
+      if (pick('lab-diagnostics') || pick('diagnostics') || pick('diagnostic')) return 'lab-diagnostics';
+      if ((pick('vet') || pick('veterinary')) && !hay.includes('walker')) return 'vet';
+      if (pick('walker') || pick('walking')) return 'walker';
+      if (pick('training') || pick('trainer')) return 'training';
+      if (pick('boarding') || pick('board')) return 'boarding';
+      if (pick('adoption')) return 'adoption';
+      if (pick('cafes') || pick('cafe')) return 'cafes';
+      if (pick('insurance')) return 'insurance';
+      if (pick('photography') || pick('photo')) return 'photography';
+      if (pick('pharmacy') || pick('shop') || pick('ecom')) return 'shop';
+      if (pick('relocation')) return 'relocation';
+      if (pick('resort')) return 'resort';
+      if (pick('holiday')) return 'holiday';
+      if (pick('sunset')) return 'sunset';
+      if (pick('ambulance') || pick('emergency')) return 'ambulance';
+      if (pick('nutritionist') || pick('nutrition')) return 'nutritionist';
+      if (pick('behaviorist') || pick('behavior')) return 'behaviorist';
+      if (pick('breeder')) return 'breeder';
+      if (pick('mating')) return 'mating-dating-hub';
+
+      const head = (segments[0] || path).toLowerCase();
+      return head || raw;
+    };
+
+    const iconForTarget = (target: string): LucideIcon => {
+      switch (target) {
+        case 'shop':
+          return Bone;
+        case 'grooming':
+          return Scissors;
+        case 'vet':
+          return Stethoscope;
+        case 'training':
+          return GraduationCap;
+        case 'walker':
+          return Dog;
+        case 'boarding':
+          return HomeIcon;
+        case 'adoption':
+          return Heart;
+        case 'cafes':
+          return Coffee;
+        case 'insurance':
+          return Shield;
+        case 'photography':
+          return Users;
+        case 'lab-diagnostics':
+          return FlaskConical;
+        case 'relocation':
+          return MapPin;
+        case 'resort':
+        case 'holiday':
+          return Palmtree;
+        case 'ambulance':
+          return Phone;
+        case 'nutritionist':
+          return Wheat;
+        case 'behaviorist':
+          return Heart;
+        case 'breeder':
+          return Users;
+        case 'mating-dating-hub':
+          return Heart;
+        case 'sunset':
+          return Sparkles;
+        default:
+          return Sparkles;
+      }
+    };
+
+    const iconForApiBanner = (b: Record<string, unknown>): LucideIcon => {
+      const target = normalizeBannerTarget(b.ctaLink ?? b.cta_link);
+      return iconForTarget(target || 'generic');
+    };
+
+    if (dynamicBanners.length === 0) {
+      return defaultBanners;
+    }
+
+    const fromApi = dynamicBanners.map((b: any) => {
+      const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
+      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      return {
+        id: b.id,
+        title: b.title,
+        subtitle: b.subtitle,
+        gradientFrom: b.gradientFrom || '#FF8C42',
+        gradientTo: b.gradientTo || '#FF6B35',
+        Icon: iconForApiBanner(b),
+        ctaText: b.ctaText || b.cta_text || 'Learn More',
+        ctaLink: screenFromSlash ?? rawCta,
+      };
+    });
+
+    const coveredTargets = new Set(
+      fromApi.map((b) => normalizeBannerTarget(b.ctaLink)).filter(Boolean)
+    );
+    const coveredTitles = new Set(
+      fromApi.map((b) => String(b.title || '').toLowerCase().trim()).filter(Boolean)
+    );
+
+    const defaultsNotInApi = defaultBanners.filter((d) => {
+      const key = normalizeBannerTarget(d.ctaLink);
+      if (key && coveredTargets.has(key)) return false;
+      if (coveredTitles.has(String(d.title || '').toLowerCase().trim())) return false;
+      return true;
+    });
+
+    return [...fromApi, ...defaultsNotInApi].slice(0, 20);
+  }, [dynamicBanners]);
+
+  const homeBannerCount = homeCarouselBanners.length;
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentBanner((prev) => (prev + 1) % 3);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
+    setCurrentBanner((prev) =>
+      homeBannerCount > 0 ? prev % homeBannerCount : 0
+    );
+  }, [homeBannerCount]);
+
+  useEffect(() => {
+    if (homeBannerCount <= 1) return undefined;
+    const id = window.setInterval(() => {
+      setCurrentBanner((prev) => (prev + 1) % homeBannerCount);
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [homeBannerCount]);
 
   // Load active bookings with tracking for "Attention" section
   useEffect(() => {
@@ -1198,7 +1360,7 @@ export function CustomerHomeComplete({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -1207,21 +1369,7 @@ export function CustomerHomeComplete({
     );
   }
 
-  // Use dynamic banners if available, otherwise use defaults
-
-
-  const banners = dynamicBanners.length > 0
-    ? dynamicBanners.map((b: any) => ({
-      id: b.id,
-      title: b.title,
-      subtitle: b.subtitle,
-      gradientFrom: b.gradientFrom || "#FF8C42",
-      gradientTo: b.gradientTo || "#FF6B35",
-      Icon: Scissors, // Default icon - could map based on ctaLink
-      ctaText: b.ctaText || "Learn More",
-      ctaLink: b.ctaLink || ""
-    }))
-    : defaultBanners;
+  const banners = homeCarouselBanners;
 
 
 
@@ -1250,13 +1398,13 @@ export function CustomerHomeComplete({
 
   const containerClassName = hideHeaderFooter
     ? 'min-h-screen bg-gray-50'
-    : 'min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto';
+    : 'min-h-screen bg-gray-50 w-full max-w-customer mx-auto';
 
   return (
     <div className={containerClassName}>
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
-        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pt-4 pb-4">
+        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top,0px))]">
           {/* Top Row - User Info & Actions */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -1464,7 +1612,7 @@ export function CustomerHomeComplete({
           <div className="px-4 flex items-center justify-between mb-2">
             <h2 className="text-gray-900 text-sm font-semibold">What&apos;s your pet needs?</h2>
             <button
-              onClick={() => handleNavigation('problem_grid')}
+              onClick={() => handleNavigation('/services/all')}
               className="text-[11px] text-[#FF8C42] font-medium"
             >
               View All
@@ -1490,9 +1638,13 @@ export function CustomerHomeComplete({
             {banners.map((banner, index) => (
               <div
                 key={banner.id || index}
-                className={`absolute inset-0 transition-opacity duration-500 ${currentBanner === index ? 'opacity-100' : 'opacity-0'
-                  }`}
+                className={`absolute inset-0 transition-opacity duration-500 ${
+                  currentBanner === index
+                    ? 'z-[1] opacity-100'
+                    : 'z-0 opacity-0 pointer-events-none'
+                }`}
                 style={{ background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)` }}
+                aria-hidden={currentBanner !== index}
               >
                 <div className="h-full flex items-center justify-between px-4">
                   <div>
@@ -1521,12 +1673,22 @@ export function CustomerHomeComplete({
               </div>
             ))}
             {/* Banner Indicators */}
-            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+            <div
+              className="absolute bottom-3 left-0 right-0 z-[2] flex justify-center gap-2"
+              role="tablist"
+              aria-label="Promotional offers"
+            >
               {banners.map((banner, index) => (
-                <div
+                <button
                   key={banner.id || index}
-                  className={`h-1.5 rounded-full transition-all ${currentBanner === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
-                    }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={currentBanner === index}
+                  aria-label={`Offer ${index + 1} of ${banners.length}`}
+                  className={`h-1.5 min-w-[6px] rounded-full transition-all ${
+                    currentBanner === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/70'
+                  }`}
+                  onClick={() => setCurrentBanner(index)}
                 />
               ))}
             </div>
@@ -1673,7 +1835,9 @@ export function CustomerHomeComplete({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                handleNavigation('vet-tele-consultation');
+                const url = buildTeleInstantAutoPayBookingUrl();
+                console.log('[CustomerHomeComplete] Tele Consult CTA →', url);
+                router.push(url);
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -1792,12 +1956,13 @@ export function CustomerHomeComplete({
                   </div>
                   <button
                     onClick={() => {
-                      // ✅ FIX: Navigate directly to vet booking flow with package filter
-                      handleNavigation('vet-booking', {
-                        packageId: 'complete-health-package',
-                        serviceName: 'Complete Health Package',
-                        filter: 'packages'
+                      const url = buildTeleInstantAutoPayBookingUrl({
+                        offerName: 'Complete Health Package',
+                        price: 2499,
+                        desc: 'Full checkup + vaccination + grooming',
                       });
+                      console.log('[CustomerHomeComplete] Complete Health Package Book Now →', url);
+                      router.push(url);
                     }}
                     className="bg-white text-purple-600 px-4 py-2 rounded-full text-sm font-semibold"
                   >
@@ -2230,7 +2395,7 @@ export function CustomerHomeComplete({
 
       {/* Fixed Bottom Navigation - Hide when Add Pet modal is open to prevent overlap */}
       {!hideHeaderFooter && !showAddPetModal && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-40">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-customer mx-auto z-40">
           <div className="flex items-center justify-around">
             <button
               type="button"
@@ -2284,7 +2449,7 @@ export function CustomerHomeComplete({
       {!hideHeaderFooter && (
         <button
           onClick={() => setShowAIChat(true)}
-          className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
+          className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto animate-pulse"
         >
           <Bot className="w-8 h-8 text-white" />
           <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
@@ -2297,7 +2462,7 @@ export function CustomerHomeComplete({
       {onOpenCategoryMapper && !hideHeaderFooter && (
         <button
           onClick={onOpenCategoryMapper}
-          className="fixed bottom-24 left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto"
+          className="fixed bottom-24 left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto"
           title="Open Category Mapper"
         >
           <Settings className="w-7 h-7 text-white" />
@@ -2310,9 +2475,11 @@ export function CustomerHomeComplete({
       {/* AI Assistant Chat Modal */}
       {showAIChat && (
         <AIChatbotWidget
-          customerId={phone}
+          customerId={customerId || undefined}
           customerPhone={phone}
+          petId={selectedPet?.id}
           onClose={() => setShowAIChat(false)}
+          onNavigate={handleNavigation}
         />
       )}
 

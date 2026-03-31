@@ -1,15 +1,23 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, SlidersHorizontal, ArrowLeft, TrendingUp, Star, Heart, Package, Truck, Shield, Zap, MapPin, Store, Dog, ShoppingBag, Bone, Shirt, Watch, Pill, Scissors, Bed, UtensilsCrossed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { canonicalProductId } from '@/lib/product-id';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { cn } from '@/components/ui/utils';
 
 interface ShopDashboardProps {
   phone?: string;
@@ -43,6 +51,9 @@ interface Product {
   discount?: string;
 }
 
+type ShopSortOption = 'default' | 'price_asc' | 'price_desc' | 'rating_desc';
+type PricePreset = 'any' | 'lt500' | 'mid' | 'gt2000';
+
 export function ShopDashboard({ phone, product, category: initialCategory, onBack, onNavigate, onReviewsClick, onVendorClick }: ShopDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(initialCategory || 'all');
@@ -50,6 +61,19 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [apiCategories, setApiCategories] = useState<any[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOption, setSortOption] = useState<ShopSortOption>('default');
+  const [pricePreset, setPricePreset] = useState<PricePreset>('any');
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [catalogExpanded, setCatalogExpanded] = useState(false);
+  const shopProductsSectionRef = useRef<HTMLDivElement>(null);
+
+  const scrollToFullCatalog = useCallback(() => {
+    setCatalogExpanded(true);
+    requestAnimationFrame(() => {
+      shopProductsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
 
   // Sync selected category when initial category from navigation changes
   useEffect(() => {
@@ -69,7 +93,11 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   // Filter products
   useEffect(() => {
     filterProducts();
-  }, [products, selectedCategory, searchQuery]);
+  }, [products, selectedCategory, searchQuery, sortOption, pricePreset, inStockOnly]);
+
+  useEffect(() => {
+    setCatalogExpanded(false);
+  }, [selectedCategory, searchQuery, sortOption, pricePreset, inStockOnly]);
 
   const loadProducts = async () => {
     try {
@@ -140,26 +168,57 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   };
 
   const filterProducts = () => {
-    let filtered = products;
-    
+    let filtered = [...products];
+
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(p => {
-        const categoryMatch = p.category === selectedCategory || 
+        const categoryMatch = p.category === selectedCategory ||
                              p.category?.toLowerCase() === selectedCategory.toLowerCase();
         return categoryMatch;
       });
     }
-    
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(p => 
+      filtered = filtered.filter(p =>
         p.name.toLowerCase().includes(query) ||
         p.description?.toLowerCase().includes(query)
       );
     }
-    
+
+    if (inStockOnly) {
+      filtered = filtered.filter(p => p.stock === 'In Stock');
+    }
+
+    if (pricePreset === 'lt500') {
+      filtered = filtered.filter(p => p.price < 500);
+    } else if (pricePreset === 'mid') {
+      filtered = filtered.filter(p => p.price >= 500 && p.price <= 2000);
+    } else if (pricePreset === 'gt2000') {
+      filtered = filtered.filter(p => p.price > 2000);
+    }
+
+    if (sortOption === 'price_asc') {
+      filtered.sort((a, b) => a.price - b.price);
+    } else if (sortOption === 'price_desc') {
+      filtered.sort((a, b) => b.price - a.price);
+    } else if (sortOption === 'rating_desc') {
+      filtered.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    }
+
     setFilteredProducts(filtered);
   };
+
+  const resetShopFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('all');
+    setSortOption('default');
+    setPricePreset('any');
+    setInStockOnly(false);
+  };
+
+  const hasAdvancedFilters =
+    sortOption !== 'default' || pricePreset !== 'any' || inStockOnly;
 
   const categories = [
     { id: 'all', label: 'All', icon: <Store className="w-5 h-5 text-gray-600" />, color: 'bg-gray-100 text-gray-700' },
@@ -195,7 +254,12 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 pr-12 h-12 bg-gray-50 border-gray-200 focus:bg-white"
             />
-            <button className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <button
+              type="button"
+              aria-label="Open product filters"
+              onClick={() => setFilterOpen(true)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
               <SlidersHorizontal className="w-5 h-5 text-gray-600" />
             </button>
           </div>
@@ -293,7 +357,11 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
               <TrendingUp className="w-5 h-5 text-red-600" />
               <h2 className="font-bold text-gray-900">🔥 Hot Deals</h2>
             </div>
-            <button className="text-[#FF8C42] text-sm font-medium flex items-center gap-1">
+            <button
+              type="button"
+              onClick={scrollToFullCatalog}
+              className="text-[#FF8C42] text-sm font-medium flex items-center gap-1 shrink-0 hover:opacity-80 active:opacity-70"
+            >
               View All <span>→</span>
             </button>
           </div>
@@ -420,11 +488,21 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         )}
 
         {/* Top Products Grid */}
-        <div className="px-4 mb-6">
+        <div ref={shopProductsSectionRef} id="shop-products-section" className="px-4 mb-6 scroll-mt-24">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Products</h2>
             {filteredProducts.length > 0 && (
-              <button className="text-[#FF8C42] text-sm font-medium">View All →</button>
+              <button
+                type="button"
+                onClick={() =>
+                  catalogExpanded
+                    ? setCatalogExpanded(false)
+                    : scrollToFullCatalog()
+                }
+                className="text-[#FF8C42] text-sm font-medium shrink-0 hover:opacity-80 active:opacity-70"
+              >
+                {catalogExpanded ? 'Show less' : 'View All →'}
+              </button>
             )}
           </div>
 
@@ -445,12 +523,9 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                   ? `No products available in this category yet.`
                   : 'No products listed yet. Products will appear here when vendors list them.'}
               </p>
-              {(searchQuery || selectedCategory !== 'all') && (
+              {(searchQuery || selectedCategory !== 'all' || hasAdvancedFilters) && (
                 <Button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSelectedCategory('all');
-                  }}
+                  onClick={resetShopFilters}
                   className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A2A] hover:to-[#FF5A8D] text-white"
                 >
                   Clear Filters
@@ -459,7 +534,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {filteredProducts.slice(0, 6).map((product, index) => (
+              {(catalogExpanded ? filteredProducts : filteredProducts.slice(0, 6)).map((product, index) => (
                 <Card 
                   key={product.id || index} 
                   onClick={() => onNavigate?.('product_detail', { product })}
@@ -567,6 +642,103 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
           </Card>
         </div>
       </div>
+
+      <Dialog open={filterOpen} onOpenChange={setFilterOpen}>
+        <DialogContent
+          className={cn(
+            'max-w-md sm:max-w-md gap-0 border border-white/20 bg-black p-6 text-white shadow-2xl sm:rounded-2xl',
+            '[&>button]:text-white [&>button]:hover:bg-white/10 [&>button]:ring-offset-black',
+          )}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-white">Filters</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            <div>
+              <p className="mb-2 text-sm font-medium text-white">Sort by</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { id: 'default' as const, label: 'Default' },
+                    { id: 'price_asc' as const, label: 'Price: Low to high' },
+                    { id: 'price_desc' as const, label: 'Price: High to low' },
+                    { id: 'rating_desc' as const, label: 'Rating' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSortOption(opt.id)}
+                    className={`rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                      sortOption === opt.id
+                        ? 'border-[#FF8C42] bg-white/10 text-white'
+                        : 'border-white/20 bg-neutral-900 text-neutral-200 hover:border-white/30 hover:bg-neutral-800'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium text-white">Price</p>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { id: 'any' as const, label: 'Any' },
+                    { id: 'lt500' as const, label: 'Under ₹500' },
+                    { id: 'mid' as const, label: '₹500 – ₹2,000' },
+                    { id: 'gt2000' as const, label: 'Above ₹2,000' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setPricePreset(opt.id)}
+                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      pricePreset === opt.id
+                        ? 'border-[#FF8C42] bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white'
+                        : 'border-white/20 bg-neutral-900 text-neutral-200 hover:border-white/30 hover:bg-neutral-800'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/20 bg-neutral-900/80 p-3 hover:bg-neutral-800/80">
+              <input
+                type="checkbox"
+                checked={inStockOnly}
+                onChange={(e) => setInStockOnly(e.target.checked)}
+                className="h-4 w-4 rounded border-white/30 bg-black text-[#FF8C42] focus:ring-[#FF8C42] focus:ring-offset-0"
+              />
+              <span className="text-sm font-medium text-white">In stock only</span>
+            </label>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full border-white/30 bg-transparent text-white hover:bg-white/10 hover:text-white sm:w-auto"
+              onClick={() => {
+                setSortOption('default');
+                setPricePreset('any');
+                setInStockOnly(false);
+              }}
+            >
+              Reset
+            </Button>
+            <Button
+              type="button"
+              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white hover:from-[#FF7A2A] hover:to-[#FF5A8D] sm:w-auto"
+              onClick={() => setFilterOpen(false)}
+            >
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

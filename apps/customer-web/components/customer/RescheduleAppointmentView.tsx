@@ -65,7 +65,7 @@ export function RescheduleAppointmentView({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -76,7 +76,7 @@ export function RescheduleAppointmentView({
 
   if (!appointment) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-900">Appointment not found</p>
           <button onClick={onBack} className="mt-4 text-[#FF8C42]">Go Back</button>
@@ -87,7 +87,7 @@ export function RescheduleAppointmentView({
 
   if (rescheduling) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Rescheduling appointment...</p>

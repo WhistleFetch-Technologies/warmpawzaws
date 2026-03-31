@@ -111,7 +111,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center max-w-customer mx-auto">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading clinic...</p>
@@ -122,7 +122,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
   if (!center || !facility) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center max-w-customer mx-auto">
         <div className="text-center">
           <p className="text-gray-600">Vet clinic not found</p>
           <button onClick={onBack} className="mt-4 px-4 py-0 bg-primary text-white rounded-lg">
@@ -139,7 +139,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
+      <div className="w-full max-w-customer mx-auto bg-white min-h-screen pb-20">
         {/* Photo Gallery */}
         <div className="relative">
           {hasPhotos ? (
@@ -402,7 +402,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
         </div>
 
         {/* Fixed Bottom CTA */}
-        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4">
+        <div className="fixed bottom-0 left-0 right-0 max-w-customer mx-auto bg-white border-t border-gray-200 p-4">
           <button
             onClick={() => onNavigate('select_service', { centerId })}
             className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-3"

@@ -60,6 +60,10 @@ export function HomeServiceSelectionEnhanced(props: HomeServiceSelectionEnhanced
   };
 
   const handleServiceSelect = (serviceId: string) => {
+    if (serviceId === 'sitting') {
+      props.onNavigate?.('pet-sitter');
+      return;
+    }
     props.onNavigate?.('create-booking', { serviceType: serviceId, homeService: true });
   };
 
