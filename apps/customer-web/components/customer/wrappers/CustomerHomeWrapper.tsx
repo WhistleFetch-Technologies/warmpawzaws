@@ -466,15 +466,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
     else if (service === 'vet-tele-consultation') {
-      const url = buildTeleInstantAutoPayBookingUrl({
-        serviceId: _data?.serviceId,
-        vendorId: _data?.vendorId,
-        petId: _data?.petId,
-        roleId: _data?.roleId,
-        category: _data?.category,
-      });
-      console.log('[CustomerHomeWrapper] vet-tele-consultation → tele instant auto-pay URL (no in-app tele router):', url, _data);
-      router.push(url);
+      setVetServiceData(_data);
+      setCurrentScreen('vet-tele-consultation');
       return;
     }
     else if (service === 'grooming') setCurrentScreen('grooming');
@@ -531,15 +524,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'vet-services-by-style') setCurrentScreen('vet-services-by-style');
     else if (screen === 'vet-tele-consultation') {
-      const url = buildTeleInstantAutoPayBookingUrl({
-        serviceId: data?.serviceId,
-        vendorId: data?.vendorId,
-        petId: data?.petId,
-        roleId: data?.roleId,
-        category: data?.category,
-      });
-      console.log('[CustomerHomeWrapper] handleVetNavigate vet-tele → tele instant auto-pay URL:', url, data);
-      router.push(url);
+      setCurrentScreen('vet-tele-consultation');
       return;
     }
     else if (screen === 'vet-home-visit') setCurrentScreen('vet-home-visit');

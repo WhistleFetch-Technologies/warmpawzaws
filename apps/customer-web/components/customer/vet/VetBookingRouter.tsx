@@ -66,6 +66,18 @@ export function VetBookingRouter({
   onNavigate, 
   onViewBooking 
 }: VetBookingRouterProps) {
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hRaw, mRaw = '00'] = String(time24).split(':');
+    const hour = Number(hRaw);
+    const minute = String(mRaw).slice(0, 2);
+    if (Number.isNaN(hour)) return time24;
+    if (hour === 0) return `12:${minute} AM`;
+    if (hour === 12) return `12:${minute} PM`;
+    if (hour < 12) return `${hour}:${minute} AM`;
+    return `${hour - 12}:${minute} PM`;
+  };
+
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to details
   // ✅ NEW: Also consider selectedServices (multi-service from VetServicesByStyle)
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || (selectedServices && selectedServices.length > 0));
@@ -1042,7 +1054,7 @@ export function VetBookingRouter({
                               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
                       >
-                        {slot.time}
+                        {formatTime12Hour(slot.time)}
                       </button>
                     ))}
                   </div>
@@ -1217,7 +1229,7 @@ export function VetBookingRouter({
                   <p className="font-bold text-orange-600">{formatPriceWithSymbol(selectedServiceOption?.price ?? 0)}</p>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {selectedTime}</span></div>
+              <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
               <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
@@ -1339,7 +1351,7 @@ export function VetBookingRouter({
                 <div className="flex-1 min-w-0">
                   <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
                   <p className="font-medium text-sm sm:text-base">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
+                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}
                   </p>
                 </div>
               </div>
@@ -1531,7 +1543,7 @@ export function VetBookingRouter({
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs sm:text-sm text-gray-500">Time</span>
-                  <span className="font-medium text-xs sm:text-sm">{selectedTime}</span>
+                  <span className="font-medium text-xs sm:text-sm">{formatTime12Hour(selectedTime)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs sm:text-sm text-gray-500">Pet</span>
