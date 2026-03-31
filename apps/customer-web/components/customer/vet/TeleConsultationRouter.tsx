@@ -1050,10 +1050,14 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
   };
 
   const handleProceedToPayment = (bookingData: any) => {
-    // Navigate to universal payment page
+    // Scheduled tele should pick slot only once (inside provider profile),
+    // then proceed directly to payment.
     onNavigate('payment', {
       ...bookingData,
+      vendorId: bookingData?.vendorId || selectedProvider?.vendorId || selectedProvider?.providerId,
+      vendorName: bookingData?.vendorName || selectedProvider?.vendorName || selectedProvider?.name,
       serviceType: 'tele',
+      serviceStyle: 'tele',
       category: 'vet',
       flowType: 'tele-scheduled',
     });
