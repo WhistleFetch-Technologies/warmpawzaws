@@ -238,6 +238,44 @@ export function BoardingBookingRouter({
 
   const [dates] = useState(generateDates());
 
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hRaw, mRaw = '00'] = String(time24).split(':');
+    const hour = Number(hRaw);
+    const minute = String(mRaw).slice(0, 2);
+    if (Number.isNaN(hour)) return time24;
+    if (hour === 0) return `12:${minute} AM`;
+    if (hour === 12) return `12:${minute} PM`;
+    if (hour < 12) return `${hour}:${minute} AM`;
+    return `${hour - 12}:${minute} PM`;
+  };
+
+  const getIstNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const toDateKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const isTodayInIst = (dateStr: string) => {
+    if (!dateStr) return false;
+    return dateStr === toDateKey(getIstNow());
+  };
+
+  const getCurrentIstMinutes = () => {
+    const now = getIstNow();
+    return now.getHours() * 60 + now.getMinutes();
+  };
+
+  const SLOT_INTERVAL_MINUTES = 30;
+  const generateHalfHourSlots = () => {
+    const slots: string[] = [];
+    for (let hour = 0; hour < 24; hour++) {
+      for (let min = 0; min < 60; min += SLOT_INTERVAL_MINUTES) {
+        slots.push(`${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
+      }
+    }
+    return slots;
+  };
+  const allHalfHourSlots = generateHalfHourSlots();
+
   useEffect(() => {
     loadCustomerData();
     if (vendorId) {
@@ -922,24 +960,76 @@ export function BoardingBookingRouter({
                 {checkInDate && (
                   <div className="space-y-4">
                     <h2 className="text-lg font-bold text-gray-900">Visit time</h2>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Start time</label>
-                        <input
-                          type="time"
-                          value={checkInTime}
-                          onChange={(e) => setCheckInTime(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
-                        />
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-gray-600">Start time</label>
+                      <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {allHalfHourSlots.map((slotTime) => {
+                          const [h, m] = slotTime.split(':').map(Number);
+                          const slotMinutes = h * 60 + m;
+                          const istNowMinutes = getCurrentIstMinutes();
+                          const isPastIst = isTodayInIst(checkInDate) && slotMinutes < istNowMinutes;
+                          const isSelected = checkInTime === slotTime;
+                          return (
+                            <button
+                              key={`start-${slotTime}`}
+                              type="button"
+                              onClick={() => {
+                                if (isPastIst) return;
+                                setCheckInTime(slotTime);
+                                const startTs = parseLocalDateTime(checkInDate, slotTime);
+                                const endTs = parseLocalDateTime(checkOutDate || checkInDate, checkOutTime);
+                                if (endTs <= startTs) {
+                                  const [slotHour, slotMin] = slotTime.split(':').map(Number);
+                                  const nextDate = new Date(2000, 0, 1, slotHour, slotMin + SLOT_INTERVAL_MINUTES);
+                                  const nextTime = `${String(nextDate.getHours()).padStart(2, '0')}:${String(
+                                    nextDate.getMinutes()
+                                  ).padStart(2, '0')}`;
+                                  setCheckOutTime(nextTime);
+                                }
+                              }}
+                              disabled={isPastIst}
+                              className={`p-2 rounded-lg border text-xs font-medium transition-colors ${
+                                isSelected
+                                  ? 'bg-[#FF8C42] text-white border-[#FF8C42]'
+                                  : isPastIst
+                                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                    : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF8C42]'
+                              }`}
+                            >
+                              {formatTime12Hour(slotTime)}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">End time</label>
-                        <input
-                          type="time"
-                          value={checkOutTime}
-                          onChange={(e) => setCheckOutTime(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
-                        />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-gray-600">End time</label>
+                      <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {allHalfHourSlots.map((slotTime) => {
+                          const [h, m] = slotTime.split(':').map(Number);
+                          const slotMinutes = h * 60 + m;
+                          const [startH, startM] = checkInTime.split(':').map(Number);
+                          const startMinutes = (startH || 0) * 60 + (startM || 0);
+                          const isInvalid = slotMinutes <= startMinutes;
+                          const isSelected = checkOutTime === slotTime;
+                          return (
+                            <button
+                              key={`end-${slotTime}`}
+                              type="button"
+                              onClick={() => !isInvalid && setCheckOutTime(slotTime)}
+                              disabled={isInvalid}
+                              className={`p-2 rounded-lg border text-xs font-medium transition-colors ${
+                                isSelected
+                                  ? 'bg-[#FF8C42] text-white border-[#FF8C42]'
+                                  : isInvalid
+                                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                    : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF8C42]'
+                              }`}
+                            >
+                              {formatTime12Hour(slotTime)}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -1030,28 +1120,55 @@ export function BoardingBookingRouter({
                       base duration ({getPetSittingPricingBaseMinutes()} minutes) unless they set a different
                       length on the service.
                     </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">
-                          Check-in time
-                        </label>
-                        <input
-                          type="time"
-                          value={checkInTime}
-                          onChange={(e) => setCheckInTime(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
-                        />
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-gray-600">Check-in time</label>
+                      <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {allHalfHourSlots.map((slotTime) => {
+                          const [h, m] = slotTime.split(':').map(Number);
+                          const slotMinutes = h * 60 + m;
+                          const istNowMinutes = getCurrentIstMinutes();
+                          const isPastIst = isTodayInIst(checkInDate) && slotMinutes < istNowMinutes;
+                          const isSelected = checkInTime === slotTime;
+                          return (
+                            <button
+                              key={`multi-start-${slotTime}`}
+                              type="button"
+                              onClick={() => !isPastIst && setCheckInTime(slotTime)}
+                              disabled={isPastIst}
+                              className={`p-2 rounded-lg border text-xs font-medium transition-colors ${
+                                isSelected
+                                  ? 'bg-[#FF8C42] text-white border-[#FF8C42]'
+                                  : isPastIst
+                                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                    : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF8C42]'
+                              }`}
+                            >
+                              {formatTime12Hour(slotTime)}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">
-                          Check-out time
-                        </label>
-                        <input
-                          type="time"
-                          value={checkOutTime}
-                          onChange={(e) => setCheckOutTime(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-gray-900 focus:border-[#FF8C42] focus:outline-none focus:ring-1 focus:ring-[#FF8C42]/30"
-                        />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-gray-600">Check-out time</label>
+                      <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {allHalfHourSlots.map((slotTime) => {
+                          const isSelected = checkOutTime === slotTime;
+                          return (
+                            <button
+                              key={`multi-end-${slotTime}`}
+                              type="button"
+                              onClick={() => setCheckOutTime(slotTime)}
+                              className={`p-2 rounded-lg border text-xs font-medium transition-colors ${
+                                isSelected
+                                  ? 'bg-[#FF8C42] text-white border-[#FF8C42]'
+                                  : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF8C42]'
+                              }`}
+                            >
+                              {formatTime12Hour(slotTime)}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
