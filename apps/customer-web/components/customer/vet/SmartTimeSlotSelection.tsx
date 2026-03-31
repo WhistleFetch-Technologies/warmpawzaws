@@ -38,6 +38,18 @@ export function SmartTimeSlotSelection({
   onBack,
   onSelectSlot
 }: SmartTimeSlotSelectionProps) {
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hRaw, mRaw = '00'] = String(time24).split(':');
+    const hour = Number(hRaw);
+    const minute = String(mRaw).slice(0, 2);
+    if (Number.isNaN(hour)) return time24;
+    if (hour === 0) return `12:${minute} AM`;
+    if (hour === 12) return `12:${minute} PM`;
+    if (hour < 12) return `${hour}:${minute} AM`;
+    return `${hour - 12}:${minute} PM`;
+  };
+
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -223,7 +235,7 @@ export function SmartTimeSlotSelection({
                           : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                       }`}
                     >
-                      {time}
+                      {formatTime12Hour(time)}
                     </button>
                   );
                 })}

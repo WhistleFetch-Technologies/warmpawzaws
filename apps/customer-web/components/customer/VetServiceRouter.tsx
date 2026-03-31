@@ -9,11 +9,9 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
-import { useRouter } from 'next/navigation';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { StandardizedFooter } from './shared/StandardizedFooter';
-import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -27,7 +25,6 @@ interface VetServiceRouterProps {
  * Vet services require a pet to be selected before booking
  */
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
-  const router = useRouter();
   const vetProblems = useProblemGridByRole('vet');
   const [loading, setLoading] = useState(true);
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
@@ -542,7 +539,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <Button 
                   size="sm" 
                   className="bg-blue-600 text-white hover:bg-blue-700 h-8"
-                  onClick={() => router.push(buildTeleInstantAutoPayBookingUrl())}
+                  onClick={() => handleNavigate('vet-tele-consultation')}
                 >
                   Book Now
                 </Button>
@@ -611,9 +608,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     console.log('🔵 [VetServiceRouter] Navigating to vet-clinic-list');
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    const teleUrl = buildTeleInstantAutoPayBookingUrl();
-                    console.log('🔵 [VetServiceRouter] Tele service → instant auto-pay booking:', teleUrl);
-                    router.push(teleUrl);
+                    console.log('🔵 [VetServiceRouter] Navigating to vet-tele-consultation');
+                    handleNavigate('vet-tele-consultation');
                   } else if (service.id === 'home') {
                     // ✅ NEW: Home Visit with provider list → profile → booking
                     console.log('🔵 [VetServiceRouter] Navigating to vet-home-visit');
@@ -771,11 +767,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               role="button"
               tabIndex={0}
               className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
-              onClick={() => router.push(buildTeleInstantAutoPayBookingUrl())}
+              onClick={() => handleNavigate('vet-tele-consultation')}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  router.push(buildTeleInstantAutoPayBookingUrl());
+                  handleNavigate('vet-tele-consultation');
                 }
               }}
             >
