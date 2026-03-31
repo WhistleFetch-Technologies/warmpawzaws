@@ -217,6 +217,28 @@ function coerceProfileUpdateShape(raw: Record<string, unknown>): Record<string, 
   return out;
 }
 
+/**
+ * Combine camelCase + snake_case house fields. `houseNo ?? house_no` is wrong when `houseNo` is ""
+ * (empty string is not nullish) but `house_no` has the real value — common with mixed API/client payloads.
+ */
+function mergeHouseNoFromPayload(raw: Record<string, any>): {
+  hasHouseKey: boolean;
+  merged: string | undefined;
+} {
+  const hasHouseKey =
+    raw != null && typeof raw === 'object' && ('houseNo' in raw || 'house_no' in raw);
+  const tc =
+    raw?.houseNo === undefined || raw?.houseNo === null ? '' : String(raw.houseNo).trim();
+  const ts =
+    raw?.house_no === undefined || raw?.house_no === null ? '' : String(raw.house_no).trim();
+  const mergedNonEmpty = tc || ts;
+
+  if (!hasHouseKey) {
+    return { hasHouseKey: false, merged: mergedNonEmpty || undefined };
+  }
+  return { hasHouseKey: true, merged: mergedNonEmpty };
+}
+
 async function resolveCustomerId(identifier: string): Promise<string | null> {
   // Check if it's a UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -633,32 +655,26 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       // Frontend sends: { phone, profile: { firstName, lastName, ... }, journeyType }
       // Backend expects: { firstName, lastName, ... }
       const rawProfilePayload = body.profile || body;
-      const rawForLog = rawProfilePayload as Record<string, unknown>;
-      console.log('[PROFILE POST] update request profile houseNo/floor:', {
-        houseNo: rawForLog?.houseNo ?? rawForLog?.house_no,
-        floor: rawForLog?.floor,
-      });
-      const coercedSource =
-        typeof rawProfilePayload === 'object' && rawProfilePayload !== null
-          ? coerceProfileUpdateShape(rawProfilePayload as Record<string, unknown>)
-          : {};
-      const hasHouseNoField = payloadHasHouseNoKey(rawProfilePayload);
-      const hasFloorField = payloadHasFloorKey(rawProfilePayload);
+      const { hasHouseKey: hasHouseNoField, merged: mergedHouseNo } = mergeHouseNoFromPayload(
+        rawProfilePayload as Record<string, any>
+      );
+      const hasFloorField =
+        typeof rawProfilePayload === 'object' && rawProfilePayload !== null && 'floor' in rawProfilePayload;
 
       // Clean the payload - remove empty strings for optional URL fields (photo)
       // and remove extra fields (phone) that aren't in the schema
       const profilePayload: Record<string, any> = {};
-      if (coercedSource.firstName) profilePayload.firstName = coercedSource.firstName;
-      if (coercedSource.lastName) profilePayload.lastName = coercedSource.lastName;
-      if (coercedSource.email) profilePayload.email = coercedSource.email;
-      if (coercedSource.address) profilePayload.address = coercedSource.address;
-      if (coercedSource.pincode) profilePayload.pincode = coercedSource.pincode;
-      if (coercedSource.city) profilePayload.city = coercedSource.city;
-      if (coercedSource.state) profilePayload.state = coercedSource.state;
-      const rawHouseNo = coercedSource.houseNo ?? coercedSource.house_no;
-      if (rawHouseNo !== undefined && rawHouseNo !== null) {
-        const hn = sanitizeProfileDetailText(rawHouseNo);
-        if (hn !== '') profilePayload.houseNo = hn;
+      if (rawProfilePayload.firstName) profilePayload.firstName = rawProfilePayload.firstName;
+      if (rawProfilePayload.lastName) profilePayload.lastName = rawProfilePayload.lastName;
+      if (rawProfilePayload.email) profilePayload.email = rawProfilePayload.email;
+      if (rawProfilePayload.address) profilePayload.address = rawProfilePayload.address;
+      if (rawProfilePayload.pincode) profilePayload.pincode = rawProfilePayload.pincode;
+      if (rawProfilePayload.city) profilePayload.city = rawProfilePayload.city;
+      if (rawProfilePayload.state) profilePayload.state = rawProfilePayload.state;
+      if (hasHouseNoField) {
+        profilePayload.houseNo = mergedHouseNo ?? '';
+      } else if (mergedHouseNo) {
+        profilePayload.houseNo = mergedHouseNo;
       }
       if (coercedSource.floor !== undefined && coercedSource.floor !== null) {
         const fl = sanitizeProfileDetailText(coercedSource.floor);
@@ -903,8 +919,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         floor: normalizedBody.floor,
       });
 
+      const bodyForSchema: Record<string, any> = { ...body };
+      const { hasHouseKey, merged: mergedPutHouse } = mergeHouseNoFromPayload(bodyForSchema);
+      if (hasHouseKey) {
+        bodyForSchema.houseNo = mergedPutHouse ?? '';
+      }
+      if ('house_no' in bodyForSchema) {
+        delete bodyForSchema.house_no;
+      }
+
       // Validate request with Zod schema
-      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(normalizedBody);
+      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(bodyForSchema);
       if (!validationResult.success) {
         return c.json({
           success: false,
