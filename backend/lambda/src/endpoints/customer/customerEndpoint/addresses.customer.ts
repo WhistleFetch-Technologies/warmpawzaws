@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
+import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
@@ -92,40 +93,6 @@ function normalizeCoordinates(coordinates: any): string | null {
   }
 
   return null;
-}
-
-function normalizePhoneToLast10(phone: string): string {
-  return String(phone || '').replace(/\D/g, '').slice(-10);
-}
-
-async function findCustomerByPhone(phone: string): Promise<any | null> {
-  const raw = String(phone || '').trim();
-  if (!raw) return null;
-
-  const exact = await select('customers', { phone: raw });
-  if (exact.length > 0) return exact[0];
-
-  const last10 = normalizePhoneToLast10(raw);
-  if (last10.length !== 10) return null;
-
-  const candidates = [last10, `+91${last10}`];
-  const matched = await query(
-    `SELECT * FROM customers
-     WHERE phone = ANY($1::text[])
-        OR RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $2
-     ORDER BY
-       CASE
-         WHEN phone = $1[1] THEN 0
-         WHEN phone = $1[2] THEN 1
-         ELSE 2
-       END,
-       updated_at DESC NULLS LAST,
-       created_at DESC NULLS LAST
-     LIMIT 1`,
-    [candidates, last10]
-  ).catch(() => ({ rows: [] as any[] }));
-
-  return matched.rows.length > 0 ? matched.rows[0] : null;
 }
 
 export function registerAddressEndpoints(app: Hono) {

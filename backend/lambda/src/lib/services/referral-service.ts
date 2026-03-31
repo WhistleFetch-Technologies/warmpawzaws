@@ -370,12 +370,10 @@ export async function processVendorReferralSignup(
 }
 
 /**
- * Handle vendor referral reward when referred vendor completes first booking.
- * This is invoked by the loyalty events consumer for action:
- * vendor_refer_friend_who_joins
+ * Handle vendor reward when a referred customer completes booking flow.
+ * Invoked by loyalty consumer for action: vendor_refer_friend_who_joins (booking reference).
  */
-
-export async function processVendorReferralFirstBookingReward(
+export async function processVendorReferralFirstBookingRewardVendorToCustomer(
   params: VendorReferralFirstBookingRewardParams
 ): Promise<void> {
   const { eventId, bookingId } = params;
@@ -385,50 +383,58 @@ export async function processVendorReferralFirstBookingReward(
     return;
   }
 
-  // 1) Resolve referred vendor from booking
+  // 1) Resolve booking with customer/vendor context
   const bookingRes = await query(
     `SELECT id, vendor_id, customer_id, status FROM bookings WHERE id = $1`,
     [bookingId]
   );
   const booking = bookingRes.rows?.[0];
-  if (!booking || !booking.vendor_id) {
-    console.warn('[VENDOR-REFERRAL-FIRST-BOOKING] Booking not found or missing vendor_id, skipping', {
+  if (!booking || !booking.customer_id || !booking.vendor_id) {
+    console.warn('[VENDOR-REFERRAL-FIRST-BOOKING] Booking missing customer/vendor context, skipping', {
       eventId,
       bookingId,
     });
     return;
   }
 
-  const referredVendorId = booking.vendor_id as string;
+  const referredCustomerId = booking.customer_id as string;
+  const bookingVendorId = booking.vendor_id as string;
 
-  // 2) Resolve referral owner (referrer vendor)
+  // 2) Resolve referral owner from customer_referrals (vendor -> customer flow)
   const referralRes = await query(
-    `SELECT id, referrer_vendor_id, referred_vendor_id, status
-     FROM vendor_referrals
-     WHERE referred_vendor_id = $1
-     ORDER BY approved_at DESC NULLS LAST, applied_at DESC NULLS LAST, created_at DESC
+    `SELECT id, referrer_vendor_id, referred_customer_id, referred_phone, referral_code, status
+     FROM customer_referrals
+     WHERE referred_customer_id = $1
+       AND referrer_vendor_id IS NOT NULL
+     ORDER BY approved_at DESC NULLS LAST, applied_at DESC NULLS LAST, created_at DESC, updated_at DESC
      LIMIT 1`,
-    [referredVendorId]
+    [referredCustomerId]
   );
   const referral = referralRes.rows?.[0];
   if (!referral || !referral.referrer_vendor_id) {
-    console.warn('[VENDOR-REFERRAL-FIRST-BOOKING] Referral not found for referred vendor, skipping', {
+    console.warn('[VENDOR-REFERRAL-FIRST-BOOKING] Referral not found for referred customer, skipping', {
       eventId,
-      referredVendorId,
+      referredCustomerId,
+      bookingVendorId,
     });
     return;
   }
 
-  // 3) Qualification: referred vendor must have at least one completed booking
+  // 3) Qualification: referred customer must have at least one booking with this vendor
   const completedCountRes = await query(
-    `SELECT COUNT(*)::int AS cnt FROM bookings WHERE vendor_id = $1 AND status = 'completed'`,
-    [referredVendorId]
+    `SELECT COUNT(*)::int AS cnt
+     FROM bookings
+     WHERE customer_id = $1
+       AND vendor_id = $2
+       AND status IN ('confirmed', 'completed')`,
+    [referredCustomerId, bookingVendorId]
   );
   const completedCount = parseInt(completedCountRes.rows?.[0]?.cnt || '0', 10);
   if (completedCount <= 0) {
-    console.info('[VENDOR-REFERRAL-FIRST-BOOKING] Referred vendor has no completed bookings yet, skipping', {
+    console.info('[VENDOR-REFERRAL-FIRST-BOOKING] Referred customer has no qualifying bookings yet, skipping', {
       eventId,
-      referredVendorId,
+      referredCustomerId,
+      bookingVendorId,
     });
     return;
   }
@@ -436,9 +442,9 @@ export async function processVendorReferralFirstBookingReward(
   // 4) Idempotency: one reward per referral record
   const existingTxn = await query(
     `SELECT 1 FROM loyalty_transactions
-     WHERE (vendor_id = $1 OR customer_id = $1)
-       AND reference_type = 'vendor_referral'
-       AND reference_id = $2
+     WHERE vendor_id = $1
+       AND reference_type = 'customer_referral'
+       AND reference_id = $2  
      LIMIT 1`,
     [referral.referrer_vendor_id, referral.id]
   );
@@ -450,33 +456,64 @@ export async function processVendorReferralFirstBookingReward(
     return;
   }
 
-  // 5) Award points to referrer vendor using rule engine
+  // 5) Award points to referrer vendor using rule engine.
+  // Keep recipient explicit so this path can never drift to customer-wallet flow.
+  const referrerVendorId = referral.referrer_vendor_id as string;
   const result = await loyaltyPointsService.awardPoints({
-    vendorId: referral.referrer_vendor_id,
+    customerId: undefined,
+    vendorId: referrerVendorId,
     actionName: 'vendor_refer_friend_who_joins',
-    referenceType: 'vendor_referral',
+    referenceType: 'customer_referral',
     referenceId: referral.id,
-    description: `Referral reward: referred vendor completed first booking (booking ${bookingId})`,
+    description: `Referral reward: referred customer completed booking ${bookingId}`,
+    metadata: {
+      reward_recipient_type: 'vendor',
+      referredCustomerId,
+      bookingVendorId,
+      bookingId,
+    },
   });
 
   console.info('[VENDOR-REFERRAL-FIRST-BOOKING] Awarded referral reward', {
     eventId,
-    referrerVendorId: referral.referrer_vendor_id,
+    referrerVendorId,
     referralId: referral.id,
     points: result.points,
     walletCredited: result.walletCredited,
   });
 
-  // 6) Mark referral approved (idempotent update)
+  // 6) Mark customer_referrals approved (idempotent update)
   await query(
-    `UPDATE vendor_referrals
+    `UPDATE customer_referrals
      SET status = 'approved',
          approved_at = COALESCE(approved_at, NOW()),
          updated_at = NOW()
      WHERE id = $1`,
     [referral.id]
   ).catch(() => undefined);
+
+  // 7) Keep vendor_referrals in sync for vendor-app list (same phone rows stay pending otherwise).
+  const phoneDigits = String(referral.referred_phone || '')
+    .replace(/\D/g, '')
+    .slice(-10);
+  if (phoneDigits.length >= 10) {
+    await query(
+      `UPDATE vendor_referrals
+       SET status = 'approved',
+           approved_at = COALESCE(approved_at, NOW()),
+           updated_at = NOW()
+       WHERE referrer_vendor_id = $1
+         AND referred_phone = $2`,
+      [referrerVendorId, phoneDigits]
+    ).catch(() => undefined);
+  }
 }
+
+// Backward compatibility for any stale imports.
+export const processVendorReferralFirstBookingReward =
+  processVendorReferralFirstBookingRewardVendorToCustomer;
+export const processVendorReferralFirstBookingRewardCustomer =
+  processVendorReferralFirstBookingRewardVendorToCustomer;
 
 /**
  * Handle vendor referral reward when referred vendor is approved (no booking required).

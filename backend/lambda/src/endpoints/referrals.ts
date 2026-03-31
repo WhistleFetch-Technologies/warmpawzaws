@@ -469,15 +469,32 @@ export function registerReferralEndpoints(app: Hono) {
           vr.*,
           v.business_name as referred_vendor_name,
           v.phone as referred_vendor_phone,
-          CASE 
-            WHEN vr.status = 'approved' THEN
-          (SELECT COALESCE(SUM(lt.points), 0) 
-           FROM loyalty_transactions lt 
-           WHERE lt.customer_id = CAST($1 AS uuid)
-           AND lt.reference_type = 'vendor_referral' 
-               AND lt.reference_id = vr.id::text)
-            ELSE 0
-          END as points_earned
+          (SELECT c.full_name
+           FROM customers c
+           WHERE vr.referred_vendor_id IS NULL
+             AND NULLIF(TRIM(vr.referred_phone), '') IS NOT NULL
+             AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = NULLIF(TRIM(vr.referred_phone), '')
+           ORDER BY c.updated_at DESC NULLS LAST
+           LIMIT 1
+          ) AS referred_customer_name,
+          (SELECT COALESCE(SUM(lt.points), 0)
+           FROM loyalty_transactions lt
+           WHERE lt.vendor_id = CAST($1 AS uuid)
+             AND lt.transaction_type = 'earned'
+             AND (
+               (lt.reference_type = 'vendor_referral' AND lt.reference_id = vr.id::text)
+               OR (
+                 lt.reference_type = 'customer_referral'
+                 AND NULLIF(TRIM(vr.referred_phone), '') IS NOT NULL
+                 AND lt.reference_id IN (
+                   SELECT cr.id::text
+                   FROM customer_referrals cr
+                   WHERE cr.referrer_vendor_id = CAST($1 AS uuid)
+                     AND cr.referred_phone = NULLIF(TRIM(vr.referred_phone), '')
+                 )
+               )
+             )
+          ) AS points_earned
          FROM vendor_referrals vr
          LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
          WHERE vr.referrer_vendor_id = CAST($1 AS uuid)

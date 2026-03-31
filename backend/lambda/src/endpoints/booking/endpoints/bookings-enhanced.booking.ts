@@ -1373,6 +1373,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         console.error('Failed to publish booking created event:', error);
       }
 
+      if (booking.status === 'confirmed') {
+        try {
+          const { publishVendorReferralBookingConfirmedAction } = await import(
+            '../../../lib/services/loyalty-action-publisher'
+          );
+          await publishVendorReferralBookingConfirmedAction(booking.id);
+        } catch (loyaltyPubErr) {
+          console.warn('[BOOKING-CREATE] vendor referral loyalty publish failed:', loyaltyPubErr);
+        }
+      }
+
       // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
       try {
         const customers = await select('customers', { id: booking.customer_id });
