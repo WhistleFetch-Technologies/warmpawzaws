@@ -19,6 +19,9 @@ export const VerifyOtpRequestSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
   otp: z.string().length(6, 'OTP must be 6 digits'),
   role: z.enum(['customer', 'vendor', 'admin']).optional(),
+  /** Peer or vendor referral code (optional) */
+  referralCode: z.string().max(64).optional(),
+  pendingReferralCode: z.string().max(64).optional(),
 });
 
 export const AdminLoginRequestSchema = z.object({

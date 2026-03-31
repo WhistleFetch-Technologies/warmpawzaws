@@ -314,54 +314,57 @@ export function registerLoyaltyEndpoints(app: Hono) {
    */
   app.post("/referrals/apply", async (c) => {
     try {
-      const { customerId, referralCode } = await c.req.json();
+      const body = await c.req.json();
+      const customerId = body.customerId || body.newUserId;
+      const referralCode = body.referralCode;
 
       if (!customerId || !referralCode) {
         return c.json({ error: 'customerId and referralCode are required' }, 400);
       }
 
-      // Find referral
-      const referrals = await select('referrals', { referral_code: referralCode });
-      if (referrals.length === 0) {
-        return c.json({ error: 'Invalid referral code' }, 400);
-      }
-
-      const referral = referrals[0];
-
-      // Check if customer is trying to use their own code
-      if (referral.referrer_id === customerId) {
-        return c.json({ error: 'Cannot use your own referral code' }, 400);
-      }
-
-      // Check if already used
-      const existing = await query(
-        'SELECT * FROM referrals WHERE referred_id = $1',
-        [customerId]
+      const { processReferralSignup, processVendorReferralForCustomerSignup } = await import(
+        '../../../lib/services/referral-service'
       );
 
-      if (existing.rows.length > 0) {
-        return c.json({ error: 'Referral code already used' }, 400);
-      }
+      const customers = await select('customers', { id: customerId });
+      const phoneForVendor =
+        customers[0]?.phone != null ? String(customers[0].phone) : '';
 
-      // Use referral service to process referral and award points
-      const { processReferralSignup } = await import('../../../lib/services/referral-service');
       const referralResult = await processReferralSignup({
-        customerId: customerId,
-        referralCode: referralCode,
+        customerId,
+        referralCode: String(referralCode).trim(),
+        phone: phoneForVendor || undefined,
       });
 
-      if (!referralResult.success) {
-        return c.json({ 
-          error: referralResult.error || 'Failed to process referral code' 
-        }, 400);
+      if (referralResult.success) {
+        return c.json({
+          success: true,
+          message: 'Referral code applied successfully',
+          referredPoints: referralResult.referredPoints,
+          referrerPoints: referralResult.referrerPoints,
+        });
       }
 
-      return c.json({
-        success: true,
-        message: 'Referral code applied successfully',
-        referredPoints: referralResult.referredPoints,
-        referrerPoints: referralResult.referrerPoints,
-      });
+      if (referralResult.error === 'Invalid referral code' && phoneForVendor) {
+        const vendorRes = await processVendorReferralForCustomerSignup({
+          customerId,
+          phone: phoneForVendor,
+          referralCode: String(referralCode).trim(),
+        });
+        if (vendorRes.success) {
+          return c.json({
+            success: true,
+            message: 'Vendor referral code applied successfully',
+          });
+        }
+      }
+
+      return c.json(
+        {
+          error: referralResult.error || 'Failed to process referral code',
+        },
+        400
+      );
     } catch (error: any) {
       console.error('Error applying referral code:', error);
       return c.json({ error: error.message }, 500);

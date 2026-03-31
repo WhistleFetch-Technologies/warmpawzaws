@@ -242,7 +242,7 @@ export async function processVendorReferralSignup(
     const normalizedCode = referralCode.trim().toUpperCase();
 
     // 1. Find referral record by code and phone
-    let referralRecords = await query(
+    let referralRecords: { rows: any[] } = await query(
       `SELECT * FROM vendor_referrals 
        WHERE referral_code = $1 AND referred_phone = $2 
        ORDER BY created_at DESC LIMIT 1`,
@@ -269,7 +269,7 @@ export async function processVendorReferralSignup(
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
-        referralRecords = { rows: newReferral };
+        referralRecords = { rows: Array.isArray(newReferral) ? newReferral : [newReferral] };
         console.log(`[VENDOR-REFERRAL] Created new referral record for phone: ${normalizedPhone}`);
       }
     }
@@ -384,6 +384,107 @@ export async function processVendorReferralSignup(
     return {
       success: false,
       error: error.message || 'Failed to process vendor referral code',
+    };
+  }
+}
+
+/**
+ * Customer signup/login with a vendor referral code (e.g. VENDOR…): vendor_referrals + customer_referrals.
+ */
+export async function processVendorReferralForCustomerSignup(params: {
+  customerId: string;
+  phone: string;
+  referralCode: string;
+}): Promise<ProcessReferralSignupResult> {
+  const { customerId, phone, referralCode } = params;
+  try {
+    const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+    if (normalizedPhone.length < 10) {
+      return { success: false, error: 'Invalid phone number' };
+    }
+    const normalizedCode = referralCode.trim().toUpperCase();
+
+    let referralRecords = await query(
+      `SELECT * FROM vendor_referrals 
+       WHERE referral_code = $1 AND referred_phone = $2 
+       ORDER BY created_at DESC LIMIT 1`,
+      [normalizedCode, normalizedPhone]
+    );
+
+    let referralRecord = referralRecords.rows[0];
+
+    if (!referralRecord) {
+      const codeRecords = await query(
+        `SELECT * FROM vendor_referrals 
+         WHERE referral_code = $1 
+         AND referrer_vendor_id IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [normalizedCode]
+      );
+      if (codeRecords.rows.length === 0) {
+        return { success: false, error: 'Invalid referral code' };
+      }
+      const newReferral = await insert('vendor_referrals', {
+        referrer_vendor_id: codeRecords.rows[0].referrer_vendor_id,
+        referred_phone: normalizedPhone,
+        referral_code: normalizedCode,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      referralRecord = newReferral[0];
+    }
+
+    const referrerVendorId = referralRecord.referrer_vendor_id;
+    if (!referrerVendorId) {
+      return { success: false, error: 'Invalid referral code' };
+    }
+
+    const now = new Date().toISOString();
+    try {
+      const dup = await query(
+        `SELECT id FROM customer_referrals 
+         WHERE referrer_vendor_id = $1 AND referred_phone = $2 LIMIT 1`,
+        [referrerVendorId, normalizedPhone]
+      );
+      if (dup.rows.length > 0) {
+        await query(
+          `UPDATE customer_referrals
+           SET referred_customer_id = $1,
+               referral_code = $2,
+               status = 'approved',
+               applied_at = COALESCE(applied_at, NOW()),
+               approved_at = COALESCE(approved_at, NOW()),
+               updated_at = NOW()
+           WHERE id = $3`,
+          [customerId, normalizedCode, dup.rows[0].id]
+        );
+      } else {
+        await insert('customer_referrals', {
+          referrer_vendor_id: referrerVendorId,
+          referred_customer_id: customerId,
+          referred_phone: normalizedPhone,
+          referral_code: normalizedCode,
+          status: 'approved',
+          applied_at: now,
+          approved_at: now,
+          created_at: now,
+          updated_at: now,
+        });
+      }
+    } catch (crErr: any) {
+      console.warn('[VENDOR-REFERRAL-CUSTOMER] customer_referrals upsert:', crErr?.message || crErr);
+    }
+
+    console.log(
+      `[VENDOR-REFERRAL-CUSTOMER] ✅ customer ${customerId} linked to vendor ${referrerVendorId} code ${normalizedCode}`
+    );
+    return { success: true };
+  } catch (error: any) {
+    console.error('[VENDOR-REFERRAL-CUSTOMER]', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to process vendor referral for customer',
     };
   }
 }

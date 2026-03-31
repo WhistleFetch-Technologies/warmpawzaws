@@ -27,6 +27,19 @@ function AuthPageContent() {
       if (redirect) {
         setRedirectAfterLogin(redirect);
       }
+      const refParam =
+        (params.get('ref') || params.get('referral') || params.get('referralCode') || '').trim();
+      if (refParam) {
+        const normalized = refParam.toUpperCase();
+        setReferralCode(normalized);
+        setShowReferralModal(true);
+        setReferralApplied(true);
+        try {
+          localStorage.setItem('pendingReferralCode', normalized);
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }, []);
   const [phone, setPhone] = useState('');
@@ -205,10 +218,21 @@ function AuthPageContent() {
       setError(null);
 
       const fullPhoneForApi = `${countryCode}${phone}`;
+      let pendingFromStorage = '';
+      try {
+        pendingFromStorage = (localStorage.getItem('pendingReferralCode') || '').trim();
+      } catch {
+        pendingFromStorage = '';
+      }
+      const effectiveReferral = (referralCode || pendingFromStorage || '').trim();
+      const referralPayload = effectiveReferral ? effectiveReferral.toUpperCase() : undefined;
+
       const response = await apiClient.post<any>('/auth/otp/verify', {
         phone: fullPhoneForApi,
         otp,
-        referralCode: referralCode || undefined
+        role: 'customer',
+        referralCode: referralPayload,
+        pendingReferralCode: referralPayload,
       });
 
       // Handle nested response structure: { success: true, data: { success: true, data: {...} } }
@@ -265,6 +289,22 @@ function AuthPageContent() {
         sessionStorage.setItem('_warmpawz_has_session', 'true');
         sessionStorage.setItem('_warmpawz_just_logged_in', 'true'); // ✅ FIX: Prevent session clearing right after login
         console.log('✅ [Auth] sessionStorage flags set after OTP verification');
+
+        if (referralPayload && responseData?.user?.id) {
+          try {
+            await apiClient.post('/referrals/apply', {
+              customerId: responseData.user.id,
+              referralCode: referralPayload,
+            });
+            try {
+              localStorage.removeItem('pendingReferralCode');
+            } catch {
+              /* ignore */
+            }
+          } catch (applyErr) {
+            console.warn('[Auth] referrals/apply after verify (non-fatal):', applyErr);
+          }
+        }
 
         // Get customer profile and pets to check onboarding status
         try {

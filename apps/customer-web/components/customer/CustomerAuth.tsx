@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +22,23 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
   const [referralCode, setReferralCode] = useState('');
   const [showReferralInput, setShowReferralInput] = useState(false);
   const [referralApplied, setReferralApplied] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams(window.location.search);
+    const refParam = (p.get('ref') || p.get('referral') || p.get('referralCode') || '').trim();
+    if (refParam) {
+      const u = refParam.toUpperCase();
+      setReferralCode(u);
+      setShowReferralInput(true);
+      setReferralApplied(true);
+      try {
+        localStorage.setItem('pendingReferralCode', u);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
 
   // Format phone number with spaces
   const formatPhoneDisplay = (num: string) => {
@@ -72,41 +89,59 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
       
       console.log('🔐 Verifying OTP for:', `${countryCode}${cleanPhone}`);
-      
-      const data = await apiClient.post('/auth/verify-otp', { 
-        phone: `${countryCode}${cleanPhone}`, 
-        otp: otpCode, 
+
+      let pendingFromStorage = '';
+      try {
+        pendingFromStorage = (localStorage.getItem('pendingReferralCode') || '').trim();
+      } catch {
+        pendingFromStorage = '';
+      }
+      const effectiveReferral = (referralCode || pendingFromStorage || '').trim();
+      const referralPayload = effectiveReferral ? effectiveReferral.toUpperCase() : undefined;
+
+      const data = await apiClient.post('/auth/verify-otp', {
+        phone: `${countryCode}${cleanPhone}`,
+        otp: otpCode,
         role: 'customer',
-        referralCode: referralCode || undefined
+        referralCode: referralPayload,
+        pendingReferralCode: referralPayload,
       }) as any;
       console.log('✅ OTP verified:', data);
-      
-      // Apply referral code if provided (for new users)
-      if (referralCode && data.isNewUser) {
+
+      const inner = data?.data?.data ?? data?.data ?? data;
+      const userId = inner?.user?.id as string | undefined;
+      const isNewUser = inner?.state === 'new';
+
+      if (referralPayload && userId) {
         try {
-          console.log('🎁 Applying referral code:', referralCode);
+          console.log('🎁 Applying referral code (backup):', referralPayload);
           const referralData = await apiClient.post('/referrals/apply', {
-            referralCode: referralCode,
-            newUserId: data.customer.id,
-            userType: 'customer'
+            customerId: userId,
+            referralCode: referralPayload,
           }) as any;
           console.log('✅ Referral code applied:', referralData);
           toast.success('Referral code applied! You\'ll earn bonus points!', { duration: 4000 });
+          try {
+            localStorage.removeItem('pendingReferralCode');
+          } catch {
+            /* ignore */
+          }
         } catch (refError: any) {
           console.error('❌ Referral code error:', refError);
-          // Don't block signup if referral fails
         }
       }
-      
-      // Check if user has completed onboarding
-      const hasCompletedOnboarding = data.customer.onboardingComplete;
-      const hasPets = data.customer.petIds && data.customer.petIds.length > 0;
-      
+
+      const hasCompletedOnboarding =
+        inner?.profile?.profile_completed === true ||
+        inner?.customer?.onboardingComplete === true;
+      const hasPets =
+        (inner?.customer?.petIds && inner.customer.petIds.length > 0) || false;
+
       console.log('📊 User state:', {
-        isNewUser: data.isNewUser,
+        isNewUser,
         hasCompletedOnboarding,
         hasPets,
-        customer: data.customer
+        userId,
       });
       
       // Set sessionStorage flags for hard refresh detection
@@ -121,13 +156,13 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       onAuthSuccess({
         phone: cleanPhone,
         countryCode: countryCode,
-        customerId: data.customer.id,
-        customer: data.customer,
-        sessionToken: data.sessionToken,
+        customerId: userId,
+        customer: inner?.profile || inner?.user || { id: userId },
+        sessionToken: inner?.token?.access_token || data.sessionToken,
         verified: true,
-        isNewUser: data.isNewUser,
+        isNewUser,
         hasCompletedOnboarding,
-        hasPets
+        hasPets,
       });
       
       setLoading(false);

@@ -34,7 +34,10 @@ import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
 import { generateUATJWTToken } from '../../utils/jwt-generator';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
-import { processReferralSignup } from 'src/lib/services/referral-service';
+import {
+  processReferralSignup,
+  processVendorReferralForCustomerSignup,
+} from 'src/lib/services/referral-service';
 import { loyaltyPointsService } from 'src/lib/services/loyalty&reward/loyalty-points-service';
 
 // ============================================================================
@@ -55,6 +58,59 @@ function normalizePhoneForOtp(phone: string): string {
     if (/^[6-9]\d{9}$/.test(last10)) return last10; // Indian mobile
   }
   return digits || phone;
+}
+
+/** Same SIM (+91 vs 10-digit); ordering aligned with customer profile. */
+async function selectCustomersByLast10Digits(last10: string): Promise<any[]> {
+  const key = last10.replace(/\D/g, '').slice(-10);
+  if (!key || key.length < 10) return [];
+  const res = await query(
+    `SELECT * FROM customers
+     WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+     ORDER BY
+       LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g')) ASC,
+       (profile_completed IS TRUE) DESC,
+       updated_at DESC NULLS LAST,
+       created_at DESC NULLS LAST`,
+    [key]
+  );
+  return (res as any).rows || [];
+}
+
+async function applyCustomerReferralOnAuth(
+  userId: string,
+  phone: string,
+  referralCodeRaw: string | undefined
+): Promise<void> {
+  if (!referralCodeRaw || !userId || userId.startsWith('temp_')) return;
+  const normalizedCode = String(referralCodeRaw).trim().toUpperCase();
+  try {
+    const referralResult = await processReferralSignup({
+      customerId: userId,
+      referralCode: normalizedCode,
+      phone,
+    });
+    if (referralResult.success) {
+      console.log(`[AUTH] ✅ Peer referral applied: ${normalizedCode}`);
+      return;
+    }
+    if (referralResult.error === 'Invalid referral code') {
+      const vr = await processVendorReferralForCustomerSignup({
+        customerId: userId,
+        phone,
+        referralCode: normalizedCode,
+      });
+      if (vr.success) {
+        console.log(`[AUTH] ✅ Vendor referral applied for customer: ${normalizedCode}`);
+      } else {
+        console.warn(`[AUTH] ⚠️ Vendor referral failed: ${vr.error}`);
+      }
+    } else {
+      console.warn(`[AUTH] ⚠️ Referral not applied: ${referralResult.error}`);
+    }
+  } catch (refError: any) {
+    console.error('[AUTH] ❌ Referral processing error:', refError?.message || refError);
+  }
 }
 
 async function createOtp(phone: string, code: string, purpose: string = 'login'): Promise<void> {
@@ -465,10 +521,18 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       // REGULAR CUSTOMER/VENDOR LOGIN
       // ============================================================================
       if (role === 'customer') {
-        // ✅ FIX: Add timeout protection to customer queries
+        const last10ForCustomer =
+          phoneDigits.length >= 10 ? phoneDigits.slice(-10) : phone.replace(/\D/g, '').slice(-10);
+
         let customers: any[] = [];
         try {
-          const customerQueryPromise = select('customers', { phone });
+          const customerQueryPromise = (async () => {
+            if (last10ForCustomer.length >= 10) {
+              const byDigits = await selectCustomersByLast10Digits(last10ForCustomer);
+              if (byDigits.length > 0) return byDigits;
+            }
+            return select('customers', { phone });
+          })();
           const customerQueryTimeout = new Promise<any[]>((_, reject) =>
             setTimeout(() => reject(new Error('Customer query timeout')), 5000)
           );
@@ -476,6 +540,22 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         } catch (customerQueryError: any) {
           console.warn('[AUTH] Customer query timed out or failed, treating as new customer:', customerQueryError.message);
           customers = [];
+        }
+
+        if (customers.length > 0 && last10ForCustomer.length >= 10) {
+          try {
+            const canon = await selectCustomersByLast10Digits(last10ForCustomer);
+            if (canon.length > 0) {
+              if (canon.length > 1 && customers[0]?.id !== canon[0]?.id) {
+                console.warn(
+                  `[AUTH] Using canonical customer ${canon[0].id} for SIM …${last10ForCustomer.slice(-4)} (lookup had ${customers[0].id})`
+                );
+              }
+              customers = canon;
+            }
+          } catch (e: any) {
+            console.warn('[AUTH] Could not canonicalize customer row:', e?.message || e);
+          }
         }
 
         let isNewCustomer = false;
@@ -527,6 +607,10 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               console.warn('[AUTH] Could not link customer identity:', linkError.message);
               // Continue - linking is not critical
             }
+          }
+
+          if (referralCode) {
+            await applyCustomerReferralOnAuth(userId, phone, referralCode);
           }
         } else {
           // Create customer with proper state
@@ -607,47 +691,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
 
-          // Process referral code if provided (before signup bonus)
           console.log(`[AUTH] 🔍 Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith('temp_')}`);
-
-          if (referralCode && userId && !userId.startsWith('temp_')) {
-            try {
-              // Normalize referral code (trim and uppercase)
-              //const { processReferralSignup } = await import('../lib/services/referral-service');
-
-              const normalizedCode = String(referralCode).trim().toUpperCase();
-              console.log(`[AUTH] 🎁 Processing referral code: ${normalizedCode} for customer: ${userId}`);
-              console.log(`[AUTH] 🎁 Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
-
-              const startTime = Date.now();
-              const referralResult = await processReferralSignup({
-                customerId: userId,
-                referralCode: normalizedCode,
-              });
-              const duration = Date.now() - startTime;
-
-              console.log(`[AUTH] 🎁 processReferralSignup completed in ${duration}ms`);
-              console.log(`[AUTH] 🎁 Result: ${JSON.stringify(referralResult)}`);
-
-              if (referralResult.success) {
-                console.log(`[AUTH] ✅ Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
-              } else {
-                console.warn(`[AUTH] ⚠️ Referral code processing failed: ${referralResult.error}`);
-                console.warn(`[AUTH] ⚠️ Full error details: ${JSON.stringify(referralResult)}`);
-              }
-            } catch (refError: any) {
-              console.error('[AUTH] ❌ Error processing referral code during signup:', refError);
-              console.error('[AUTH] ❌ Error message:', refError.message);
-              console.error('[AUTH] ❌ Error stack:', refError.stack);
-              // Don't fail signup if referral processing fails
-            }
-          } else {
-            if (referralCode) {
-              console.warn(`[AUTH] ⚠️ Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith('temp_')}`);
-            } else {
-              console.log(`[AUTH] ℹ️ No referral code provided in request`);
-            }
-          }
+          await applyCustomerReferralOnAuth(userId, phone, referralCode);
 
           // Award signup bonus (100 points) - auto-converts to wallet
           //const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');

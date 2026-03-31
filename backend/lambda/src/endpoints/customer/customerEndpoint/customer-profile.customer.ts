@@ -26,18 +26,50 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+async function selectCanonicalCustomerRowsByLast10Digits(digits: string): Promise<any[]> {
+  const last10 = normalizePhone(digits).slice(-10);
+  if (!last10 || last10.length < 10) return [];
+  const res = await query(
+    `SELECT * FROM customers
+     WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+     ORDER BY
+       LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g')) ASC,
+       (profile_completed IS TRUE) DESC,
+       updated_at DESC NULLS LAST,
+       created_at DESC NULLS LAST`,
+    [last10]
+  );
+  return (res as any).rows || [];
+}
+
 async function resolveCustomerId(identifier: string): Promise<string | null> {
-  // Check if it's a UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidRegex.test(identifier)) {
     const customers = await select('customers', { id: identifier });
-    return customers.length > 0 ? customers[0].id : null;
+    if (customers.length === 0) return null;
+    const last10 = normalizePhone(String(customers[0].phone || '')).slice(-10);
+    if (last10.length >= 10) {
+      const canon = await selectCanonicalCustomerRowsByLast10Digits(last10);
+      if (canon.length > 0) {
+        if (canon[0].id !== identifier) {
+          console.warn(
+            `[resolveCustomerId] UUID ${identifier} → canonical ${canon[0].id} (same SIM)`
+          );
+        }
+        return canon[0].id;
+      }
+    }
+    return customers[0].id;
   }
 
-  // Check if it's a phone number
-  const cleanPhone = normalizePhone(identifier);
-  const customers = await select('customers', { phone: cleanPhone });
-  return customers.length > 0 ? customers[0].id : null;
+  const rows = await selectCanonicalCustomerRowsByLast10Digits(identifier);
+  if (rows.length > 0) {
+    if (rows.length > 1) {
+      console.warn(`[resolveCustomerId] ${rows.length} rows share last-10; using ${rows[0].id}`);
+    }
+    return rows[0].id;
+  }
+  return null;
 }
 
 export function registerCustomerProfileEndpoints(app: Hono) {
@@ -237,16 +269,13 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
-      // Lines 239-264: Replace with this
       let customers: any[];
       try {
-        // Get customer profile
-        const customerResult = await query(
-          `SELECT * FROM customers WHERE phone = $1`,
-          [cleanPhone]
-        );
-        customers = customerResult.rows;
-
+        const customerIdResolved = await resolveCustomerId(cleanPhone);
+        if (!customerIdResolved) {
+          return c.json({ error: 'Customer not found' }, 404);
+        }
+        customers = await select('customers', { id: customerIdResolved });
         if (customers.length === 0) {
           return c.json({ error: 'Customer not found' }, 404);
         }
