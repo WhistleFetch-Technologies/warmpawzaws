@@ -67,6 +67,9 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const houseNoInputRef = useRef<HTMLInputElement>(null);
+  const latestProfileRef = useRef(profile);
+  latestProfileRef.current = profile;
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,16 +101,17 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
         });
         
         if (result.success && result.publicUrl) {
-          setProfile({ ...profile, photo: result.publicUrl });
+          // Functional update so a slow upload cannot overwrite fields typed after pick (e.g. houseNo).
+          setProfile((prev) => ({ ...prev, photo: result.publicUrl }));
           console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
         } else {
           alert(result.error || 'Failed to upload photo. Please try again.');
-          setPhotoPreview(profile.photo || '');
+          setPhotoPreview(latestProfileRef.current.photo || '');
         }
       } catch (error: any) {
         console.error('Error uploading photo to S3:', error);
         alert(error.message || 'Failed to upload photo. Please try again.');
-        setPhotoPreview(profile.photo || '');
+        setPhotoPreview(latestProfileRef.current.photo || '');
       } finally {
         setUploadingPhoto(false);
         setUploadProgress(0);
@@ -116,8 +120,22 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   };
 
   const handleSubmit = async () => {
+    const houseFromDom = houseNoInputRef.current?.value?.trim() ?? '';
+    const houseFromState = String((profile as UserProfile & { house_no?: string }).houseNo ?? '').trim();
+    const houseFromSnake = String((profile as UserProfile & { house_no?: string }).house_no ?? '').trim();
+    const effectiveHouseNo = houseFromDom || houseFromState || houseFromSnake;
+
     // Validation
-    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city || !profile.houseNo?.trim()) {
+    if (
+      !profile.firstName ||
+      !profile.lastName ||
+      !profile.email ||
+      !profile.phone ||
+      !profile.address ||
+      !profile.pincode ||
+      !profile.city ||
+      !effectiveHouseNo
+    ) {
       alert('Please fill in all required fields (including house / flat number)');
       return;
     }
@@ -136,15 +154,30 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
 
     setLoading(true);
     try {
+      const trimmedHouse = effectiveHouseNo;
+      const profileBody: UserProfile = {
+        ...profile,
+        firstName: profile.firstName.trim(),
+        lastName: profile.lastName.trim(),
+        email: profile.email.trim(),
+        address: profile.address.trim(),
+        houseNo: trimmedHouse,
+        floor: profile.floor.trim(),
+        pincode: profile.pincode.trim(),
+        city: profile.city.trim(),
+        state: profile.state.trim(),
+      };
+      delete (profileBody as UserProfile & { house_no?: string }).house_no;
       // Save user profile to backend - AWS Serverless compatible
       await apiClient.post('/customer/profile', {
         phone: session.phone,
-        profile: profile,
+        profile: profileBody,
         journeyType: journeyStage, // Save journey type
       });
 
       console.log('User profile saved successfully');
-      onComplete(profile);
+      setProfile(profileBody);
+      onComplete(profileBody);
     } catch (error) {
       console.error('Error saving user profile:', error);
       alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -247,7 +280,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.firstName}
-                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, firstName: e.target.value }))}
                 placeholder="John"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -259,7 +292,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.lastName}
-                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, lastName: e.target.value }))}
                 placeholder="Doe"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -274,7 +307,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             <input
               type="email"
               value={profile.email}
-              onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+              onChange={(e) => setProfile((prev) => ({ ...prev, email: e.target.value }))}
               placeholder="john.doe@example.com"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
@@ -340,9 +373,13 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               House No / Flat No <span className="text-red-500">*</span>
             </label>
             <input
+              ref={houseNoInputRef}
               type="text"
+              name="customerHouseFlatNo"
               value={profile.houseNo}
-              onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+              onChange={(e) => setProfile((prev) => ({ ...prev, houseNo: e.target.value }))}
+              autoComplete="off"
+              data-lpignore="true"
               placeholder="e.g., A-101, Flat 12B"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
@@ -356,7 +393,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             <input
               type="text"
               value={profile.floor}
-              onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+              onChange={(e) => setProfile((prev) => ({ ...prev, floor: e.target.value }))}
               placeholder="e.g., 1st Floor"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
@@ -371,7 +408,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.city}
-                onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
                 placeholder="Mumbai"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -383,7 +420,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.state}
-                onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))}
                 placeholder="Maharashtra"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -400,7 +437,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               value={profile.pincode}
               onChange={(e) => {
                 const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                setProfile({ ...profile, pincode: value });
+                setProfile((prev) => ({ ...prev, pincode: value }));
               }}
               placeholder="400001"
               maxLength={6}

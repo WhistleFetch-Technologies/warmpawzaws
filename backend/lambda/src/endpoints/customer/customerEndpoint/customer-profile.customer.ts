@@ -36,6 +36,28 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+/**
+ * Combine camelCase + snake_case house fields. `houseNo ?? house_no` is wrong when `houseNo` is ""
+ * (empty string is not nullish) but `house_no` has the real value — common with mixed API/client payloads.
+ */
+function mergeHouseNoFromPayload(raw: Record<string, any>): {
+  hasHouseKey: boolean;
+  merged: string | undefined;
+} {
+  const hasHouseKey =
+    raw != null && typeof raw === 'object' && ('houseNo' in raw || 'house_no' in raw);
+  const tc =
+    raw?.houseNo === undefined || raw?.houseNo === null ? '' : String(raw.houseNo).trim();
+  const ts =
+    raw?.house_no === undefined || raw?.house_no === null ? '' : String(raw.house_no).trim();
+  const mergedNonEmpty = tc || ts;
+
+  if (!hasHouseKey) {
+    return { hasHouseKey: false, merged: mergedNonEmpty || undefined };
+  }
+  return { hasHouseKey: true, merged: mergedNonEmpty };
+}
+
 async function resolveCustomerId(identifier: string): Promise<string | null> {
   // Check if it's a UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -446,10 +468,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       // Frontend sends: { phone, profile: { firstName, lastName, ... }, journeyType }
       // Backend expects: { firstName, lastName, ... }
       const rawProfilePayload = body.profile || body;
-      const hasHouseNoField =
-        typeof rawProfilePayload === 'object' &&
-        rawProfilePayload !== null &&
-        ('houseNo' in rawProfilePayload || 'house_no' in rawProfilePayload);
+      const { hasHouseKey: hasHouseNoField, merged: mergedHouseNo } = mergeHouseNoFromPayload(
+        rawProfilePayload as Record<string, any>
+      );
       const hasFloorField =
         typeof rawProfilePayload === 'object' && rawProfilePayload !== null && 'floor' in rawProfilePayload;
 
@@ -463,9 +484,10 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (rawProfilePayload.pincode) profilePayload.pincode = rawProfilePayload.pincode;
       if (rawProfilePayload.city) profilePayload.city = rawProfilePayload.city;
       if (rawProfilePayload.state) profilePayload.state = rawProfilePayload.state;
-      const rawHouseNo = rawProfilePayload.houseNo ?? rawProfilePayload.house_no;
-      if (rawHouseNo !== undefined && rawHouseNo !== null) {
-        profilePayload.houseNo = typeof rawHouseNo === 'string' ? rawHouseNo : String(rawHouseNo);
+      if (hasHouseNoField) {
+        profilePayload.houseNo = mergedHouseNo ?? '';
+      } else if (mergedHouseNo) {
+        profilePayload.houseNo = mergedHouseNo;
       }
       if (rawProfilePayload.floor !== undefined && rawProfilePayload.floor !== null) {
         profilePayload.floor =
@@ -696,8 +718,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
       const hasFloorInPut = 'floor' in body;
 
+      const bodyForSchema: Record<string, any> = { ...body };
+      const { hasHouseKey, merged: mergedPutHouse } = mergeHouseNoFromPayload(bodyForSchema);
+      if (hasHouseKey) {
+        bodyForSchema.houseNo = mergedPutHouse ?? '';
+      }
+      if ('house_no' in bodyForSchema) {
+        delete bodyForSchema.house_no;
+      }
+
       // Validate request with Zod schema
-      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
+      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(bodyForSchema);
       if (!validationResult.success) {
         return c.json({
           success: false,
