@@ -936,7 +936,13 @@ app.onError((err, c) => {
       console.log('[Hono Error Handler] MATCHED customer/appointments list - Returning 200 empty');
     }
     return c.json(
-      { appointments: [], count: 0, _degraded: true, message: errorMessage },
+      {
+        appointments: [],
+        count: 0,
+        message: 'No booking',
+        _degraded: true,
+        error: errorMessage,
+      },
       200,
       corsHeaders
     );
@@ -948,7 +954,13 @@ app.onError((err, c) => {
       console.log('[Hono Error Handler] MATCHED appointment/customer list - Returning 200 empty');
     }
     return c.json(
-      { appointments: [], count: 0, _degraded: true, message: errorMessage },
+      {
+        appointments: [],
+        count: 0,
+        message: 'No booking',
+        _degraded: true,
+        error: errorMessage,
+      },
       200,
       corsHeaders
     );

@@ -87,6 +87,8 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
   const [rawRows, setRawRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Server hint when list is empty (e.g. `No booking` from GET /appointment/customer/:id). */
+  const [emptyListMessage, setEmptyListMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'completed' | 'cancelled'>('all');
 
   const loadAppointments = useCallback(async () => {
@@ -105,6 +107,12 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
         `/appointment/customer/${encodeURIComponent(customerUuid)}`
       );
       const list = extractAppointmentsFromResponse(data);
+      const top = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      const serverEmptyMsg =
+        list.length === 0 && top && typeof top.message === 'string' && top.message.trim()
+          ? top.message.trim()
+          : null;
+      setEmptyListMessage(serverEmptyMsg);
       const rows: Row[] = [];
       for (const item of list) {
         if (!item || typeof item !== 'object') continue;
@@ -118,6 +126,7 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
     } catch (e) {
       console.error('Error loading appointments:', e);
       setRawRows([]);
+      setEmptyListMessage(null);
       if (e instanceof ApiError && e.message) {
         setLoadError(e.message);
       } else {
@@ -272,7 +281,9 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
             <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
               <Sparkles className="w-7 h-7 text-purple-600" />
             </div>
-            <p className="text-gray-900 font-semibold mb-1">No appointments here</p>
+            <p className="text-gray-900 font-semibold mb-1">
+              {rawRows.length === 0 && emptyListMessage ? emptyListMessage : 'No appointments here'}
+            </p>
             <p className="text-sm text-gray-500 px-6">
               {filter === 'all'
                 ? 'Book a service from the home screen to see it listed here.'
