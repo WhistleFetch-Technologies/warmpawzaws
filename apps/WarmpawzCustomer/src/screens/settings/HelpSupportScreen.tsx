@@ -4,7 +4,7 @@
  * Identical functionality to web app
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -46,8 +46,34 @@ export function HelpSupportScreen({
   const [showContactForm, setShowContactForm] = useState(false);
   const [contactSubject, setContactSubject] = useState('');
   const [contactMessage, setContactMessage] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+  const faqsSectionOffsetY = useRef(0);
 
   const categories = ['all', 'bookings', 'payments', 'account', 'services', 'other'];
+
+  const goToFaqs = () => {
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, faqsSectionOffsetY.current - 12),
+      animated: true,
+    });
+  };
+
+  const openChat = () => {
+    if (onNavigate) {
+      const digits = phone.replace(/\D/g, '') || 'guest';
+      onNavigate('Chat', {
+        type: 'support',
+        matchId: `customer-support-${digits}`,
+        recipientName: 'Warmpawz Support',
+      });
+    }
+  };
+
+  const openAiAssistant = () => {
+    if (onNavigate) {
+      onNavigate('AIChatbot');
+    }
+  };
 
   useEffect(() => {
     loadFAQs();
@@ -103,32 +129,69 @@ export function HelpSupportScreen({
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={[styles.quickActionButton, styles.aiChatbotButton]}
-            onPress={() => onNavigate && onNavigate('AIChatbot')}
-          >
-            <Text style={styles.quickActionIcon}>🤖</Text>
-            <Text style={styles.quickActionText}>AI Assistant</Text>
-            <Text style={styles.quickActionSubtext}>Symptoms, Booking, Support</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickActionButton}
-            onPress={() => setShowContactForm(!showContactForm)}
-          >
-            <Text style={styles.quickActionIcon}>✉️</Text>
-            <Text style={styles.quickActionText}>Contact Support</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickActionButton}
-            onPress={() => onNavigate && onNavigate('Chat', { type: 'support' })}
-          >
-            <Text style={styles.quickActionIcon}>💬</Text>
-            <Text style={styles.quickActionText}>Live Chat</Text>
-          </TouchableOpacity>
-        </View>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Primary support entry points (FAQ / chat / email) */}
+        <TouchableOpacity
+          style={styles.supportMenuRow}
+          onPress={goToFaqs}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.supportMenuIconWrap, { backgroundColor: '#e0f2fe' }]}>
+            <Text style={styles.supportMenuIcon}>?</Text>
+          </View>
+          <View style={styles.supportMenuTextCol}>
+            <Text style={styles.supportMenuTitle}>FAQ</Text>
+            <Text style={styles.supportMenuSubtitle}>Find answers to common questions</Text>
+          </View>
+          <Text style={styles.supportMenuChevron}>›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.supportMenuRow}
+          onPress={openChat}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.supportMenuIconWrap, { backgroundColor: '#dcfce7' }]}>
+            <Text style={styles.supportMenuIcon}>💬</Text>
+          </View>
+          <View style={styles.supportMenuTextCol}>
+            <Text style={styles.supportMenuTitle}>Chat with Us</Text>
+            <Text style={styles.supportMenuSubtitle}>Get instant support</Text>
+          </View>
+          <Text style={styles.supportMenuChevron}>›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.supportMenuRow}
+          onPress={() => setShowContactForm(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.supportMenuIconWrap, { backgroundColor: '#ede9fe' }]}>
+            <Text style={styles.supportMenuIcon}>✉️</Text>
+          </View>
+          <View style={styles.supportMenuTextCol}>
+            <Text style={styles.supportMenuTitle}>Email Support</Text>
+            <Text style={styles.supportMenuSubtitle}>Send us a message</Text>
+          </View>
+          <Text style={styles.supportMenuChevron}>›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.aiAssistantRow}
+          onPress={openAiAssistant}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.quickActionIcon}>🤖</Text>
+          <View style={styles.supportMenuTextCol}>
+            <Text style={styles.supportMenuTitle}>AI Assistant</Text>
+            <Text style={styles.supportMenuSubtitle}>Symptoms, booking, general questions</Text>
+          </View>
+          <Text style={styles.supportMenuChevron}>›</Text>
+        </TouchableOpacity>
 
         {/* Contact Form */}
         {showContactForm && (
@@ -196,7 +259,12 @@ export function HelpSupportScreen({
         </View>
 
         {/* FAQs */}
-        <View style={styles.faqsContainer}>
+        <View
+          style={styles.faqsContainer}
+          onLayout={(e) => {
+            faqsSectionOffsetY.current = e.nativeEvent.layout.y;
+          }}
+        >
           <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -266,28 +334,58 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: spacing.md,
   },
-  quickActions: {
+  supportMenuRow: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  quickActionButton: {
-    flex: 1,
+    alignItems: 'center',
     backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  supportMenuIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  supportMenuIcon: {
+    fontSize: 20,
+  },
+  supportMenuTextCol: {
+    flex: 1,
+  },
+  supportMenuTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  supportMenuSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  supportMenuChevron: {
+    fontSize: 22,
+    color: colors.textMuted,
+    fontWeight: '300',
+  },
+  aiAssistantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
   },
   quickActionIcon: {
-    fontSize: 32,
-    marginBottom: spacing.xs,
-  },
-  quickActionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
+    fontSize: 28,
+    marginRight: spacing.md,
   },
   contactForm: {
     backgroundColor: colors.white,

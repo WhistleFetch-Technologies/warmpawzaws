@@ -315,46 +315,68 @@ export function AIChatbotWidget({
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-96 h-[600px] bg-white rounded-lg shadow-2xl flex flex-col border border-gray-200">
+    <>
+      {/* Mobile: dim background so chat is clearly a layer above the home shell (not a broken split view). */}
+      <button
+        type="button"
+        className="fixed inset-0 z-[49] bg-black/40 sm:hidden"
+        aria-label="Close chat"
+        onClick={() => {
+          setIsOpen(false);
+          onClose?.();
+        }}
+      />
+      <div
+        className={[
+          'fixed z-[50] flex min-h-0 flex-col bg-white rounded-lg shadow-2xl border border-gray-200',
+          /* Home shell keeps bottom tabs at all widths — stay above bar + home indicator + safe area */
+          'left-3 right-3 bottom-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))]',
+          'max-h-[min(600px,calc(100dvh-7.5rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
+          'sm:left-auto sm:right-6 sm:w-96',
+        ].join(' ')}
+      >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-primary-600 text-white rounded-t-lg">
-        <div className="flex items-center gap-2">
-          <Bot className="w-5 h-5" />
-          <h3 className="font-semibold">AI Assistant</h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1">
-            <button
-              onClick={() => setMode('chat')}
-              className={`px-2 py-1 text-xs rounded ${mode === 'chat' ? 'bg-white text-primary-600' : 'bg-primary-500'}`}
-            >
-              Chat
-            </button>
-            <button
-              onClick={() => setMode('symptoms')}
-              className={`px-2 py-1 text-xs rounded ${mode === 'symptoms' ? 'bg-white text-primary-600' : 'bg-primary-500'}`}
-            >
-              Symptoms
-            </button>
-            <button
-              onClick={() => setMode('booking')}
-              className={`px-2 py-1 text-xs rounded ${mode === 'booking' ? 'bg-white text-primary-600' : 'bg-primary-500'}`}
-            >
-              Booking
-            </button>
+      <div className="flex flex-col gap-2 p-4 border-b border-gray-200 bg-primary-600 text-white rounded-t-lg shrink-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bot className="w-5 h-5 shrink-0" />
+            <h3 className="font-semibold truncate">AI Assistant</h3>
           </div>
           <button
             onClick={() => {
               setIsOpen(false);
               onClose?.();
             }}
-            className="ml-2 hover:bg-primary-700 rounded p-1"
+            className="shrink-0 hover:bg-primary-700 rounded p-1"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-[11px] text-white/85 leading-snug pr-10">
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => setMode('chat')}
+            className={`px-2 py-1 text-xs rounded ${mode === 'chat' ? 'bg-white text-primary-600' : 'bg-primary-500'}`}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('symptoms')}
+            className={`px-2 py-1 text-xs rounded ${mode === 'symptoms' ? 'bg-white text-primary-600' : 'bg-primary-500'}`}
+          >
+            Symptoms
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('booking')}
+            className={`px-2 py-1 text-xs rounded ${mode === 'booking' ? 'bg-white text-primary-600' : 'bg-primary-500'}`}
+          >
+            Booking
+          </button>
+        </div>
+        <p className="text-[11px] text-white/85 leading-snug">
           {mode === 'symptoms' &&
             'Describe symptoms — we match care areas from our catalog and suggest providers you can book.'}
           {mode === 'booking' &&
@@ -470,6 +492,7 @@ export function AIChatbotWidget({
         </div>
       </div>
     </div>
+    </>
   );
 }
 

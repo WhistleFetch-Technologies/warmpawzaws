@@ -54,24 +54,25 @@ function pathToRegex(pattern: string): RegExp {
 }
 
 async function getMappings(): Promise<Record<string, ActionSource[]>> {
-	console.log('getMappings--------------------->');
 	const now = Date.now();
 	if (now - cache.at < CACHE_TTL_MS && Object.keys(cache.byMethod).length > 0) return cache.byMethod;
 
-	const res = await query(
-		`SELECT * FROM action_sources WHERE enabled = true ORDER BY priority DESC, updated_at DESC`
-	);
-	console.log('res--------------------->', res.rows);
-	const byMethod: Record<string, ActionSource[]> = {};
-	for (const row of res.rows as ActionSource[]) {
-		const method = (row.method || 'POST').toUpperCase();
-		(byMethod[method] ||= []).push(row);
+	try {
+		const res = await query(
+			`SELECT * FROM action_sources WHERE enabled = true ORDER BY priority DESC, updated_at DESC`
+		);
+		const byMethod: Record<string, ActionSource[]> = {};
+		for (const row of res.rows as ActionSource[]) {
+			const method = (row.method || 'POST').toUpperCase();
+			(byMethod[method] ||= []).push(row);
+		}
+		cache = { at: now, byMethod };
+		return byMethod;
+	} catch (e: any) {
+		console.warn('[action-source-middleware] getMappings failed (local DB or missing table):', e?.message || e);
+		cache = { at: now, byMethod: {} };
+		return cache.byMethod;
 	}
-	console.log('byMethod--------------------->', byMethod);
-
-	cache = { at: now, byMethod };
-	console.log('cache--------------------->', cache);
-	return byMethod;
 }
 
 function getByPath(obj: any, path: string) {
@@ -185,12 +186,14 @@ export function actionSourceMiddleware() {
 			} catch { /* ignore */ }
 			if (candidates.length === 0) return;
 
-
-			// Response JSON
+			// Response JSON: only read from a clone so the handler/outbound path can still read c.res body.
+			if (!c.res || typeof c.res.clone !== 'function') {
+				return;
+			}
 			let responseJson: any = {};
 			try {
-				const clone = c.res.clone?.() ?? c.res;
-				const txt = await clone.text?.();
+				const clone = c.res.clone();
+				const txt = await clone.text();
 				responseJson = txt ? JSON.parse(txt) : {};
 			} catch {
 				/* ignore */

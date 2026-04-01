@@ -8,13 +8,16 @@ interface CustomerScreenWrapperProps {
   currentScreen: string;
   onNavigate: (screen: string) => void;
   onProfileClick?: () => void;
+  /** Profile drawer from bottom nav; rendered here so every tabbed screen shows it immediately */
+  accountSidebar?: ReactNode;
 }
 
 export function CustomerScreenWrapper({ 
   children, 
   currentScreen, 
   onNavigate, 
-  onProfileClick 
+  onProfileClick,
+  accountSidebar,
 }: CustomerScreenWrapperProps) {
   return (
     <>
@@ -27,6 +30,7 @@ export function CustomerScreenWrapper({
         onNavigate={onNavigate}
         onProfileClick={onProfileClick}
       />
+      {accountSidebar}
     </>
   );
 }

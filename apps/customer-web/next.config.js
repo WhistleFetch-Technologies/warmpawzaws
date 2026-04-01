@@ -26,7 +26,9 @@ const nextConfig = {
   // Only use static export in production builds, not in development
   // This allows dynamic routes to work in dev mode
   ...(process.env.NODE_ENV === 'production' ? { output: 'export' } : {}),
-  distDir: 'dist',
+  // Dev: default `.next` avoids missing clientReferenceManifest races (custom distDir + Windows/OneDrive sync).
+  // Prod build: `dist` for static export + deploy scripts (see scripts/deploy-customer-web.sh).
+  distDir: process.env.NODE_ENV === 'production' ? 'dist' : '.next',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
   swcMinify: true,

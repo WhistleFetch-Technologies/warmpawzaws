@@ -153,7 +153,7 @@ export function StandardizedHeader({
       {showPets && pets.length > 0 && (
         <div className="flex items-center gap-2 mt-2">
           <span className="text-white/90 text-[10px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-1">
+          <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-hide flex-1 py-0.5 -my-0.5 px-2">
             {pets.map((pet) => (
               <div key={pet.id} className="relative flex-shrink-0">
                 <button
@@ -163,14 +163,16 @@ export function StandardizedHeader({
                   className="flex flex-col items-center gap-0.5"
                 >
                   <div 
-                    className={`w-9 h-9 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${
+                    className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all duration-200 ${
                       selectedPet?.id === pet.id
-                        ? 'ring-2 ring-white bg-white shadow-md scale-105'
-                        : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
+                        ? 'bg-white shadow-md ring-2 ring-inset ring-[#FF8C42]'
+                        : 'overflow-hidden bg-white/25 backdrop-blur-sm hover:bg-white/35'
                     }`}
                   >
                     {pet.photo || pet.image ? (
-                      <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                      <div className="h-full w-full overflow-hidden rounded-full">
+                        <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="h-full w-full object-cover" />
+                      </div>
                     ) : (
                       pet.type === 'Dog' ? (
                         <Dog className={`w-4 h-4 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />

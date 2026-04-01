@@ -15,6 +15,8 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -22,13 +24,17 @@ interface BookingListScreenProps {
   phone: string;
   onSelectBooking: (bookingId: string) => void;
   onBack?: () => void;
+  /** Root stack navigate; tab roots use `MainTabs` + `{ screen }`; Profile from this screen uses stack `CustomerProfile` so Back returns here. */
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
 export function BookingListScreen({
   phone,
   onSelectBooking,
   onBack,
+  onNavigate,
 }: BookingListScreenProps) {
+  const insets = useSafeAreaInsets();
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -124,6 +130,8 @@ export function BookingListScreen({
     </TouchableOpacity>
   );
 
+  const footerPad = 52 + Math.max(insets.bottom, spacing.sm);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -154,26 +162,82 @@ export function BookingListScreen({
         ))}
       </View>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+      <View style={styles.body}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            style={styles.list}
+            data={bookings}
+            keyExtractor={(item) => item.id}
+            renderItem={renderBookingItem}
+            contentContainerStyle={[styles.listContent, { paddingBottom: onNavigate ? footerPad : spacing.md }]}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>No bookings found</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
+
+      {onNavigate ? (
+        <View
+          style={[
+            styles.bookingFooter,
+            {
+              paddingBottom: Math.max(insets.bottom, spacing.sm),
+              borderTopColor: colors.border,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.footerItem}
+            onPress={() => onNavigate('MainTabs', { screen: 'Home' })}
+            accessibilityRole="button"
+            accessibilityLabel="Home"
+          >
+            <Icon name="home-outline" size={22} color={colors.textMuted} />
+            <Text style={styles.footerLabel}>Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.footerItem}
+            onPress={() => onNavigate('MainTabs', { screen: 'Store' })}
+            accessibilityRole="button"
+            accessibilityLabel="Store"
+          >
+            <Icon name="shopping-outline" size={22} color={colors.textMuted} />
+            <Text style={styles.footerLabel}>Store</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.footerItem}
+            onPress={() => onNavigate('ShoppingCart')}
+            accessibilityRole="button"
+            accessibilityLabel="Cart"
+          >
+            <Icon name="cart-outline" size={22} color={colors.textMuted} />
+            <Text style={styles.footerLabel}>Cart</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.footerItem} accessibilityRole="button" accessibilityLabel="Bookings">
+            <Icon name="calendar-check" size={22} color={colors.primary} />
+            <Text style={[styles.footerLabel, styles.footerLabelActive]}>Bookings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.footerItem}
+            onPress={() => onNavigate('CustomerProfile')}
+            accessibilityRole="button"
+            accessibilityLabel="Profile"
+          >
+            <Icon name="account-outline" size={22} color={colors.textMuted} />
+            <Text style={styles.footerLabel}>Profile</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={bookings}
-          keyExtractor={(item) => item.id}
-          renderItem={renderBookingItem}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>No bookings found</Text>
-            </View>
-          }
-        />
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -182,6 +246,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  body: {
+    flex: 1,
+  },
+  list: {
+    flex: 1,
   },
   header: {
     padding: spacing.lg,
@@ -292,6 +362,29 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
+  },
+  bookingFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingTop: spacing.sm,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+  },
+  footerItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 56,
+    paddingVertical: spacing.xs,
+  },
+  footerLabel: {
+    marginTop: 2,
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
+    fontWeight: typography.fontWeights.medium,
+  },
+  footerLabelActive: {
+    color: colors.primary,
   },
 });
 

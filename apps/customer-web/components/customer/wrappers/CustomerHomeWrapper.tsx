@@ -593,6 +593,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleAccountNavigate = (path: string) => {
+    setUserSidebarOpen(false);
     if (path === 'home') setCurrentScreen('home');
     else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
@@ -600,7 +601,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'appointments') setCurrentScreen('appointments');
-    else if (path === 'account/settings') {
+    else if (path === 'support_help') {
+      setCurrentScreen('support_help');
+    } else if (path === 'account/settings') {
       // Navigate to settings page
       if (typeof window !== 'undefined') {
         window.location.href = '/settings';
@@ -610,6 +613,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
 
   const handleBottomNav = (screen: string) => {
     if (screen === 'home') {
+      setUserSidebarOpen(false);
       setScreenBeforePets(null);
       setCurrentScreen('home');
       setSelectedPetId(null);
@@ -620,8 +624,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedProblem(null);
       setCurrentServiceType(null);
     } else if (screen === 'cart') {
+      setUserSidebarOpen(false);
       setCurrentScreen('cart');
     } else if (screen === 'my-bookings') {
+      setUserSidebarOpen(false);
       setCurrentScreen('my-bookings');
     } else if (screen === 'profile') {
       handleProfileClick();
@@ -629,6 +635,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleBack = () => {
+    setUserSidebarOpen(false);
     setScreenBeforePets(null);
     setCurrentScreen('home');
     setSelectedPetId(null);
@@ -702,6 +709,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   };
 
+  const accountSidebarOverlay =
+    userSidebarOpen ? (
+      <UserAccountSidebar
+        phone={phone}
+        onClose={() => setUserSidebarOpen(false)}
+        onViewBooking={handleViewBooking}
+        onViewCustomerProfile={handleViewCustomerProfile}
+        onNavigate={handleAccountNavigate}
+      />
+    ) : null;
+
   // ✅ FIX: Helper function to render screens with consistent StandardizedHeader layout
   // This ensures all service landing pages have the same header/footer as the home page
   const renderScreenWithLayout = (
@@ -721,6 +739,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={screen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         {/* Mobile-first shell: max-w-customer (fluid, see tailwind.config.js) */}
         <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
@@ -746,15 +765,6 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             />
           )}
           {component}
-          {userSidebarOpen && (
-            <UserAccountSidebar 
-              phone={phone}
-              onClose={() => setUserSidebarOpen(false)}
-              onViewBooking={handleViewBooking}
-              onViewCustomerProfile={handleViewCustomerProfile}
-              onNavigate={handleAccountNavigate}
-            />
-          )}
         </div>
       </CustomerScreenWrapper>
     );
@@ -768,6 +778,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <CustomerHome 
           phone={phone}
@@ -850,15 +861,6 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           onAddPet={handleAddPet}
           onViewBooking={handleViewBooking}
         />
-        {userSidebarOpen && (
-          <UserAccountSidebar 
-            phone={phone}
-            onClose={() => setUserSidebarOpen(false)}
-            onViewBooking={handleViewBooking}
-            onViewCustomerProfile={handleViewCustomerProfile}
-            onNavigate={handleAccountNavigate}
-          />
-        )}
       </CustomerScreenWrapper>
     );
   }
@@ -899,6 +901,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
       </CustomerScreenWrapper>
@@ -1596,7 +1599,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // ✅ Nutritionist Tele - Video consultation flow (scheduled or instant)
   if (currentScreen === 'nutritionist-tele') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <NutritionistTeleRouter
           phone={phone}
           onBack={() => { setCurrentScreen(previousScreen || 'nutritionist'); setPreviousScreen(null); }}
@@ -1655,6 +1658,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <NutritionistServicesLanding 
           phone={phone} 
@@ -1701,6 +1705,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <DietConsultationVendors 
           phone={phone} 
@@ -1734,6 +1739,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <MealPlansList 
           phone={phone} 
@@ -1896,6 +1902,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <ShopDashboard phone={phone} category={selectedShopCategory} onBack={() => { setSelectedShopCategory(undefined); handleBack(); }} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />
       </CustomerScreenWrapper>
@@ -1927,6 +1934,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <ShoppingCartView onBack={() => setCurrentScreen('shop')} onCheckout={() => setCurrentScreen('checkout')} onContinueShopping={() => setCurrentScreen('shop')} />
       </CustomerScreenWrapper>
@@ -1959,7 +1967,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     />
   );
   if (currentScreen === 'wallet') return (
-    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
       <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />
     </CustomerScreenWrapper>
   );
@@ -1977,6 +1985,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <MyBookings 
           phone={phone} 
@@ -2009,6 +2018,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <AppointmentsList
           phone={phone}
@@ -2027,6 +2037,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <AppointmentDetailsView
           appointmentId={selectedAppointmentId}
@@ -2050,6 +2061,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
       >
         <RescheduleAppointmentView
           appointmentId={selectedAppointmentId}
@@ -2126,7 +2138,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
   if (currentScreen === 'grooming_center') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <GroomingServicesByStyle
             phone={phone}
@@ -2142,7 +2154,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }
   if (currentScreen === 'grooming_home') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <GroomingServicesByStyle
             phone={phone}
@@ -2202,7 +2214,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
   if (currentScreen === 'training_center') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <UniversalServicesByStyle
             phone={phone}
@@ -2220,7 +2232,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }
   if (currentScreen === 'training_home') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
           <UniversalServicesByStyle
             phone={phone}
@@ -2387,7 +2399,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
   // profile: map to customer-profile (e.g. from VetBookingRouter tab)
   if (currentScreen === 'profile') return (
-    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
       <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
     </CustomerScreenWrapper>
   );

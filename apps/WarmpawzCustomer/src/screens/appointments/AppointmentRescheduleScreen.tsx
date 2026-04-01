@@ -24,6 +24,7 @@ interface AppointmentRescheduleScreenProps {
   currentDate?: string;
   currentTime?: string;
   phone: string;
+  customerId?: string;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onSuccess?: () => void;
@@ -34,6 +35,7 @@ export function AppointmentRescheduleScreen({
   currentDate,
   currentTime,
   phone,
+  customerId,
   onBack,
   onNavigate,
   onSuccess,
@@ -90,7 +92,8 @@ export function AppointmentRescheduleScreen({
         appointmentId,
         selectedDate,
         selectedTime,
-        reason || undefined
+        reason || undefined,
+        customerId
       );
 
       Alert.alert(
