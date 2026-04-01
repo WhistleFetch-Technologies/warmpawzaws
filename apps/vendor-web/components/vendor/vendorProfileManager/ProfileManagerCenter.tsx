@@ -463,10 +463,10 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] text-white sticky top-0 z-10">
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] text-white sticky top-0 z-10 safe-area-top">
           <div className="px-4 py-3">
             <div className="flex items-center gap-3">
-              <button onClick={onBack} className="p-1.5 hover:bg-white/20 rounded-lg -ml-1">
+              <button onClick={onBack} className="w-11 h-11 min-w-[44px] flex items-center justify-center hover:bg-white/20 rounded-xl -ml-2 transition-colors">
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div className="flex-1 min-w-0">
@@ -476,8 +476,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
               <Button
                 onClick={handleSave}
                 disabled={saving || uploading}
-                size="sm"
-                className="bg-white text-[#FF8C42] hover:bg-white/90 text-xs"
+                className="min-h-[40px] bg-white text-[#FF8C42] hover:bg-white/90 text-xs px-4"
               >
                 <Save className="w-3.5 h-3.5 mr-1" />
                 {saving ? 'Saving...' : 'Save'}

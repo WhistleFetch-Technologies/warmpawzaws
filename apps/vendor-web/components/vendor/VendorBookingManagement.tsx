@@ -937,16 +937,12 @@ export function VendorBookingManagement({
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <button onClick={onBack} className="w-11 h-11 flex items-center justify-center -ml-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
-            <div className="flex-1">
-              <h1 className="font-semibold text-gray-900">{vendorData?.businessName || vendorData?.fullName || 'Booking Management'}</h1>
-              <p className="text-xs text-gray-500">{vendorData?.address || 'India'}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Search className="w-5 h-5 text-gray-400" />
-              <Filter className="w-5 h-5 text-gray-400" />
+            <div className="flex-1 min-w-0">
+              <h1 className="font-semibold text-gray-900 truncate">{vendorData?.businessName || vendorData?.fullName || 'Booking Management'}</h1>
+              <p className="text-xs text-gray-500 truncate">{vendorData?.address || 'India'}</p>
             </div>
           </div>
 

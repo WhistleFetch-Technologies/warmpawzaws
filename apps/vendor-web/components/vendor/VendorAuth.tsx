@@ -641,7 +641,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             <div className="space-y-2">
               <p className="text-sm text-gray-600">
                 Trouble with verification?{' '}
-                <a href="#" className="text-[#FF8C42] underline">Get Help</a>
+                <a href="mailto:support@warmpawz.com" className="text-[#FF8C42] underline">Get Help</a>
               </p>
               <button
                 type="button"
@@ -844,9 +844,9 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             </div>
 
             <div className="pt-6 space-y-1 text-xs text-gray-400">
-              <p>Need Help?</p>
+              <a href="mailto:support@warmpawz.com" className="text-[#FF8C42] underline block">Need Help?</a>
               <p>WARMPAWS Provider v2.1.0</p>
-              <p>© 2025 WARMPAWZ Inc. All rights reserved</p>
+              <p>&copy; 2025 WARMPAWZ Inc. All rights reserved</p>
             </div>
           </div>
         </div>

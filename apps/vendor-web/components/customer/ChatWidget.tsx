@@ -142,7 +142,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
       {(!isOpen || isMinimized) && (
         <button
           onClick={isMinimized ? handleMaximize : toggleOpen}
-          className="fixed bottom-6 right-6 z-50 group"
+          className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-4 z-40 group"
           aria-label="Open chat"
         >
           {/* Pulse ring animation */}
@@ -170,7 +170,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
 
       {/* Chat Panel */}
       {isOpen && !isMinimized && (
-        <div className="fixed bottom-6 right-6 z-50 w-[360px] h-[520px] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+        <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 left-2 sm:left-auto sm:right-4 z-40 sm:w-[360px] h-[min(520px,calc(100vh-8rem))] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
           {/* Header */}
           <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">

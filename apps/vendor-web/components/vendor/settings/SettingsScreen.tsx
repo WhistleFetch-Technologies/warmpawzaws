@@ -151,13 +151,13 @@ export function SettingsScreen({ vendorId, onBack, onNavigate }: SettingsScreenP
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm safe-area-top">
           <div className="px-4 py-4">
             <div className="flex items-center gap-3">
               {onBack && (
                 <button
                   onClick={onBack}
-                  className="p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-11 h-11 -ml-2 rounded-xl flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
@@ -183,7 +183,7 @@ export function SettingsScreen({ vendorId, onBack, onNavigate }: SettingsScreenP
                   return (
                     <button
                       key={item.id}
-                      className={`w-full px-4 py-4 flex items-center gap-4 hover:bg-gray-50 transition-all active:bg-gray-100 ${
+                      className={`w-full px-4 py-4 min-h-[56px] flex items-center gap-4 hover:bg-gray-50 transition-all active:bg-gray-100 ${
                         index !== section.items.length - 1 ? 'border-b border-gray-100' : ''
                       }`}
                       onClick={() => onNavigate?.(item.screen, { vendorId })}

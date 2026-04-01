@@ -721,40 +721,40 @@ export function VendorDashboard({
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200">
+        <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${colorScheme.secondary} rounded-lg flex items-center justify-center`}>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className={`w-10 h-10 flex-shrink-0 ${colorScheme.secondary} rounded-lg flex items-center justify-center`}>
                 <RoleIcon className={`w-6 h-6 ${colorScheme.primary}`} />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">
+              <div className="min-w-0 flex-1">
+                <h1 className="font-semibold text-gray-900 truncate">
                   {isSoloProvider
                     ? (vendor?.ownerName || vendor?.owner_name || vendor?.fullName || 'Service Provider')
                     : (vendor?.businessName || vendor?.business_name || vendor?.fullName || 'Vendor Dashboard')
                   }
                 </h1>
-                <p className="text-xs text-gray-500">
-                  {isSoloProvider ? 'Solo Provider' : (vendorData?.address || vendor?.address || 'Business Center')} • {roleName || 'Service Provider'}
+                <p className="text-xs text-gray-500 truncate">
+                  {isSoloProvider ? 'Solo Provider' : (vendorData?.address || vendor?.address || 'Business Center')} {'\u00B7'} {roleName || 'Service Provider'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => fetchDashboardData(true)} disabled={refreshing} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors">
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
 
               {capabilities.chat && (
                 <button
                   type="button"
-                  className="relative p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                   onClick={() => setChatConversationsOpen(true)}
                   title="Messages"
                   aria-label="Open messages"
                 >
-                  <MessageSquare className="w-5 h-5 text-gray-400 hover:text-[#FF8C42]" />
+                  <MessageSquare className="w-5 h-5 text-gray-400" />
                   {chatUnreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-medium">
+                    <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-medium">
                       {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
                     </span>
                   )}
@@ -762,10 +762,10 @@ export function VendorDashboard({
               )}
 
               <button
-                className="relative"
+                className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                 onClick={() => setNotificationModalOpen(true)}
               >
-                <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
+                <Bell className="w-5 h-5 text-gray-400" />
                 {notifications.filter(n => !n.isRead).length > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
@@ -1415,10 +1415,14 @@ export function VendorDashboard({
                 </p>
                 <button
                   onClick={async () => {
+                    const customerAppUrl = typeof window !== 'undefined' && window.__WARMPAWZ_RUNTIME_CONFIG__?.customerAppUrl
+                      ? window.__WARMPAWZ_RUNTIME_CONFIG__.customerAppUrl
+                      : window.location.origin.replace('vendor', 'app');
+                    const profileUrl = `${customerAppUrl}/vendor/${vendorId}`;
                     const shareData = {
                       title: vendor?.businessName || 'My Pet Service',
                       text: `Book your pet appointment with ${vendor?.businessName || 'us'} on Warmpawz!`,
-                      url: window.location.origin
+                      url: profileUrl
                     };
 
                     if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
@@ -1428,8 +1432,8 @@ export function VendorDashboard({
                         console.error('Share failed:', err);
                       }
                     } else {
-                      copyTextToClipboard(window.location.origin);
-                      alert('Profile link copied to clipboard!');
+                      copyTextToClipboard(profileUrl);
+                      toast.success('Profile link copied to clipboard!');
                     }
                   }}
                   className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
@@ -1710,25 +1714,24 @@ export function VendorDashboard({
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 safe-area-bottom">
+          <div className="max-w-[430px] mx-auto flex items-center justify-around py-2">
             <button
               onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <Home className="w-6 h-6" />
-              <span className="text-xs">Home</span>
+              <Home className="w-5 h-5" />
+              <span className="text-[10px]">Home</span>
             </button>
 
-            {/* ✅ PHARMACY: Orders tab goes to Pharmacy Orders page (accept orders, prescriptions, proforma) */}
             {isPharmacy ? (
               <button
                 onClick={() => router.push('/pharmacy/orders')}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
+                className="flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 text-gray-400 active:text-[#FF8C42]"
               >
-                <ClipboardList className="w-6 h-6" />
-                <span className="text-xs">Orders</span>
+                <ClipboardList className="w-5 h-5" />
+                <span className="text-[10px]">Orders</span>
               </button>
             ) : (
               <button
@@ -1736,30 +1739,30 @@ export function VendorDashboard({
                   onNavigateToBookingManagement?.();
                   setActiveBottomTab('bookings');
                 }}
-                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
                   }`}
               >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">{labels.bookings}</span>
+                <Calendar className="w-5 h-5" />
+                <span className="text-[10px]">{labels.bookings}</span>
               </button>
             )}
 
             <button
               onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
+              <BarChart3 className="w-5 h-5" />
+              <span className="text-[10px]">Reporting</span>
             </button>
 
             <button
               onClick={() => router.push('/settings')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
+              <Settings className="w-5 h-5" />
+              <span className="text-[10px]">Settings</span>
             </button>
           </div>
         </div>

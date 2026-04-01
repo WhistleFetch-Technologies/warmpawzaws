@@ -45,21 +45,28 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
     }
   };
 
+  const isLowStock = (p: any) => {
+    const threshold = p.min_stock || p.minStock || 10;
+    return (p.stock ?? p.stock_quantity ?? 0) <= threshold && (p.stock ?? p.stock_quantity ?? 0) > 0;
+  };
+  const isOutOfStock = (p: any) => (p.stock ?? p.stock_quantity ?? 0) === 0;
+  const isHealthy = (p: any) => (p.stock ?? p.stock_quantity ?? 0) > (p.min_stock || p.minStock || 10);
+
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = 
       filter === 'all' ? true :
-      filter === 'low' ? product.stock <= 10 && product.stock > 0 :
-      filter === 'out' ? product.stock === 0 :
-      filter === 'good' ? product.stock > 10 : true;
+      filter === 'low' ? isLowStock(product) :
+      filter === 'out' ? isOutOfStock(product) :
+      filter === 'good' ? isHealthy(product) : true;
     return matchesSearch && matchesFilter;
   });
 
   const stats = {
     total: products.length,
-    lowStock: products.filter(p => p.stock <= 10 && p.stock > 0).length,
-    outOfStock: products.filter(p => p.stock === 0).length,
-    healthy: products.filter(p => p.stock > 10).length
+    lowStock: products.filter(isLowStock).length,
+    outOfStock: products.filter(isOutOfStock).length,
+    healthy: products.filter(isHealthy).length
   };
 
   if (loading) {

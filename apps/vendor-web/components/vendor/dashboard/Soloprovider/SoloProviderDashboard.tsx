@@ -898,24 +898,24 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 safe-area-bottom">
+          <div className="max-w-[430px] mx-auto flex items-center justify-around py-2">
             <button
               onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <div className="w-6 h-6">🏠</div>
-              <span className="text-xs">Home</span>
+              <div className="w-5 h-5 text-center">🏠</div>
+              <span className="text-[10px]">Home</span>
             </button>
 
             {isPharmacy ? (
               <button
                 onClick={() => router.push('/pharmacy/orders')}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
+                className="flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 text-gray-400 active:text-[#FF8C42]"
               >
-                <ClipboardList className="w-6 h-6" />
-                <span className="text-xs">Orders</span>
+                <ClipboardList className="w-5 h-5" />
+                <span className="text-[10px]">Orders</span>
               </button>
             ) : (
               <button
@@ -923,30 +923,30 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   router.push('/bookings');
                   setActiveBottomTab('bookings');
                 }}
-                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
                   }`}
               >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">Bookings</span>
+                <Calendar className="w-5 h-5" />
+                <span className="text-[10px]">Bookings</span>
               </button>
             )}
 
             <button
               onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
+              <BarChart3 className="w-5 h-5" />
+              <span className="text-[10px]">Reporting</span>
             </button>
 
             <button
               onClick={() => router.push('/settings')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
+              <Settings className="w-5 h-5" />
+              <span className="text-[10px]">Settings</span>
             </button>
           </div>
         </div>
