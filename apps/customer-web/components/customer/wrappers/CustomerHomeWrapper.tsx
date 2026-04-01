@@ -599,6 +599,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
+    else if (path === 'appointments') setCurrentScreen('appointments');
     else if (path === 'account/settings') {
       // Navigate to settings page
       if (typeof window !== 'undefined') {
@@ -2002,9 +2003,66 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       </CustomerScreenWrapper>
     );
   }
-  if (currentScreen === 'appointments') return <AppointmentsList customerId={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
-  if (currentScreen === 'appointment-details' && selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={() => setCurrentScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-reschedule'); }} onCancel={() => { setCurrentScreen('appointments'); setSelectedAppointmentId(null); }} />;
-  if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={() => setCurrentScreen('appointment-details')} onSuccess={() => { setCurrentScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
+  if (currentScreen === 'appointments') {
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <AppointmentsList
+          phone={phone}
+          onBack={handleBack}
+          onSelectAppointment={(appointmentId) => {
+            setSelectedAppointmentId(appointmentId);
+            setCurrentScreen('appointment-details');
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'appointment-details' && selectedAppointmentId) {
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <AppointmentDetailsView
+          appointmentId={selectedAppointmentId}
+          phone={phone}
+          onBack={() => setCurrentScreen('appointments')}
+          onReschedule={(appointmentId) => {
+            setSelectedAppointmentId(appointmentId);
+            setCurrentScreen('appointment-reschedule');
+          }}
+          onCancel={() => {
+            setCurrentScreen('appointments');
+            setSelectedAppointmentId(null);
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) {
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <RescheduleAppointmentView
+          appointmentId={selectedAppointmentId}
+          phone={phone}
+          onBack={() => setCurrentScreen('appointment-details')}
+          onSuccess={() => {
+            setCurrentScreen('appointment-details');
+            toast.success('Rescheduled successfully');
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
+  }
   
   // if (currentScreen === 'wallet') return <WalletView phone={phone} onBack={handleBack} />;
   if (currentScreen === 'category-mapper') return <ProblemCategoryMapper />;

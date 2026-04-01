@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -331,41 +332,41 @@ export function EnhancedAddPetModal({
   const handleSavePet = async () => {
     setLoading(true);
     try {
-      // Get existing pets
-      const response = await apiClient.get(`/customer/pets/${phone}`) as any;
-      let existingPets: any[] = [];
-      
-      if (Array.isArray(response)) {
-        existingPets = response;
-      } else if (Array.isArray(response?.pets)) {
-        existingPets = response.pets;
+      const customerId = await resolveCustomerIdForPetMutation();
+      if (!customerId) {
+        toast.error('Customer not found. Try signing out and back in.');
+        return;
       }
-      
-      // ✅ FIX: Map frontend fields to backend expected format
-      const petToSave = {
-        id: petData.id,
-        name: petData.name,
-        type: petData.type,           // Backend maps this to species
-        species: petData.type,        // Also send as species for compatibility
-        breed: petData.breed,
+
+      const ageFromDob = (() => {
+        if (!petData.dateOfBirth) return undefined;
+        const birthDate = new Date(petData.dateOfBirth);
+        if (Number.isNaN(birthDate.getTime())) return undefined;
+        const now = new Date();
+        const ageInMonths =
+          (now.getFullYear() - birthDate.getFullYear()) * 12 +
+          (now.getMonth() - birthDate.getMonth());
+        return Math.max(0, Math.floor(ageInMonths / 12));
+      })();
+
+      const payload: Record<string, unknown> = {
+        customerId,
+        name: petData.name.trim(),
+        petType: petData.type,
+        species: petData.type,
+        breed: petData.breed || undefined,
+        age: ageFromDob,
+        ageUnit: 'years',
         gender: petData.gender?.toLowerCase(),
-        weight: petData.weight,
-        color: petData.color,
-        size: petData.size,
-        photo: petData.photo,         // Backend expects 'photo', not 'photos'
-        dob: petData.dateOfBirth,     // Backend expects 'dob'
-        age: calculateAge(petData.dateOfBirth),
-        microchipId: petData.microchipId,
-        
-        // ✅ Enhanced health data
-        allergies: petData.allergies,
-        chronicConditions: petData.chronicConditions,
-        currentMedications: petData.currentMedications,
-        dietaryRestrictions: petData.dietaryRestrictions,
-        spayedNeutered: petData.isSpayedNeutered,
-        
-        // ✅ Vaccination records
-        vaccinations: petData.vaccinations.map(v => ({
+        weight: petData.weight ? Number(petData.weight) : undefined,
+        color: petData.color || undefined,
+        size: petData.size || undefined,
+        photo: petData.photo || undefined,
+        dob: petData.dateOfBirth || undefined,
+        microchipId: petData.microchipId || undefined,
+        allergies: petData.allergies || [],
+        chronicConditions: petData.chronicConditions || [],
+        vaccinations: petData.vaccinations.map((v) => ({
           type: v.name,
           name: v.name,
           date: v.lastDate,
@@ -373,56 +374,42 @@ export function EnhancedAddPetModal({
           nextDue: v.nextDueDate,
           nextDueDate: v.nextDueDate,
         })),
-        
-        // ✅ Behavior data
-        behaviorNotes: petData.specialNeeds || petData.temperament,
-        temperament: petData.temperament,
-        activityLevel: petData.activityLevel,
-        isGoodWithKids: petData.isGoodWithKids,
-        isGoodWithOtherPets: petData.isGoodWithOtherPets,
-        specialNeeds: petData.specialNeeds,
-        
-        // ✅ Additional fields
-        coatType: petData.coatType,
-        eyeColor: petData.eyeColor,
-        distinguishingMarks: petData.distinguishingMarks,
-        bloodType: petData.bloodType,
-        hasInsurance: petData.hasInsurance,
-        insuranceProvider: petData.insuranceProvider,
-        insurancePolicyNumber: petData.insurancePolicyNumber,
-        
-        // ✅ Fallback health records for backward compatibility
-        healthRecords: {
-          allergies: petData.allergies,
-          chronicConditions: petData.chronicConditions,
-          currentMedications: petData.currentMedications,
-          isSpayedNeutered: petData.isSpayedNeutered,
+        behaviorNotes: petData.specialNeeds || petData.temperament || undefined,
+        specialNeeds: petData.specialNeeds || undefined,
+        dietaryRestrictions: petData.dietaryRestrictions || undefined,
+        spayedNeutered: petData.isSpayedNeutered,
+        medicalHistory: {
+          allergies: petData.allergies || [],
+          chronicConditions: petData.chronicConditions || [],
+          currentMedications: petData.currentMedications || [],
+          temperament: petData.temperament || undefined,
+          activityLevel: petData.activityLevel || undefined,
+          isGoodWithKids: petData.isGoodWithKids,
+          isGoodWithOtherPets: petData.isGoodWithOtherPets,
+          coatType: petData.coatType || undefined,
+          eyeColor: petData.eyeColor || undefined,
+          distinguishingMarks: petData.distinguishingMarks || undefined,
+          bloodType: petData.bloodType || undefined,
+          hasInsurance: petData.hasInsurance,
+          insuranceProvider: petData.insuranceProvider || undefined,
+          insurancePolicyNumber: petData.insurancePolicyNumber || undefined,
+          emergencyVetName: petData.emergencyVetName || undefined,
+          emergencyVetPhone: petData.emergencyVetPhone || undefined,
         },
-        
-        createdAt: (editPet as any)?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       };
-      
-      // Update or add pet
-      let updatedPets;
+
       if (editPet) {
-        updatedPets = existingPets.map(p => p.id === editPet.id ? petToSave : p);
+        await apiClient.put(`/pets/${editPet.id}`, payload);
       } else {
-        updatedPets = [...existingPets, petToSave];
+        await apiClient.post('/pets', payload);
       }
-      
-      // Save to backend
-      await apiClient.post('/customer/pets', {
-        phone,
-        pets: updatedPets,
-      });
-      
+
       toast.success(`${petData.name} ${editPet ? 'updated' : 'added'} successfully!`);
       onSuccess();
       onClose();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error saving pet:', error);
-      toast.error('Failed to save pet. Please try again.');
+      toast.error(addPetErrorMessage(error));
     } finally {
       setLoading(false);
     }

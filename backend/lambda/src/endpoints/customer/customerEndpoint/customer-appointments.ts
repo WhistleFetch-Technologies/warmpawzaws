@@ -50,6 +50,7 @@ class GetCustomerAppointmentsHandler extends BaseHandler {
           b.service_id,
           b.vendor_id,
           b.pet_id,
+          b.total_amount,
           s.name as service_name,
           s.service_style,
           v.name as vendor_name,
@@ -83,7 +84,10 @@ class GetAppointmentDetailsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const appointmentId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || context.userId;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        (context.event.queryStringParameters as Record<string, string> | undefined)?.customerId ||
+        context.userId;
 
       if (!appointmentId) {
         return this.error('Appointment ID is required', 400);
@@ -160,7 +164,10 @@ class RescheduleAppointmentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const appointmentId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || context.userId;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        (context.event.queryStringParameters as Record<string, string> | undefined)?.customerId ||
+        context.userId;
       const body = this.parseBody(context.event);
       const { appointment_date, appointment_time, reason } = body || {};
 
@@ -244,7 +251,10 @@ class CancelAppointmentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const appointmentId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || context.userId;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        (context.event.queryStringParameters as Record<string, string> | undefined)?.customerId ||
+        context.userId;
       const body = this.parseBody(context.event);
       const { reason, refundMethod = 'wallet' } = body || {};
 
