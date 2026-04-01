@@ -919,7 +919,7 @@ export function AdvancedAvailabilityManager({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-20">
+      <div className="bg-white border-b">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">

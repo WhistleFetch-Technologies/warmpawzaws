@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { UnifiedAdminSidebar } from './admin/layout/UnifiedAdminSidebar';
 import { TaxManagement } from './admin/finance/TaxManagement';
@@ -243,9 +243,7 @@ export function AdminApp() {
       setLoading(true);
       setError(null);
 
-      // Check if API base URL is configured
-      const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl || 
-                         process.env.NEXT_PUBLIC_API_BASE_URL;
+      const apiBaseUrl = getApiBaseUrl();
       
       if (!apiBaseUrl) {
         setError('API_BASE_URL is not configured. Please check runtime-config.js or NEXT_PUBLIC_API_BASE_URL environment variable.');
