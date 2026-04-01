@@ -34,7 +34,7 @@ class GetCustomerAppointmentsHandler extends BaseHandler {
       console.log('[appointments] list customerId:', customerId ?? '(none)', 'appointmentId:', '(n/a)');
       
       if (!customerId) {
-        return this.success({ appointments: [], count: 0 });
+        return this.success({ appointments: [], count: 0, message: 'No booking' });
       }
 
       // Bookings are the source of truth (RDS has no legacy `appointments` table in many envs).
@@ -72,13 +72,17 @@ class GetCustomerAppointmentsHandler extends BaseHandler {
         return { rows: [] as Record<string, unknown>[] };
       });
 
+      const rows = appointments.rows;
+      if (rows.length === 0) {
+        return this.success({ appointments: [], count: 0, message: 'No booking' });
+      }
       return this.success({
-        appointments: appointments.rows,
-        count: appointments.rows.length
+        appointments: rows,
+        count: rows.length,
       });
     } catch (error: any) {
       console.warn('[appointments] list handler error (returning empty):', error);
-      return this.success({ appointments: [], count: 0 });
+      return this.success({ appointments: [], count: 0, message: 'No booking' });
     }
   }
 }
@@ -489,24 +493,47 @@ class CancelAppointmentHandler extends BaseHandler {
 // REGISTER ENDPOINTS
 // ============================================================================
 
-const LIST_FALLBACK = { appointments: [] as unknown[], count: 0 };
+const LIST_FALLBACK = {
+  appointments: [] as unknown[],
+  count: 0,
+  message: 'No booking',
+};
 const NOT_FOUND_FALLBACK = { error: 'Appointment not found' };
+
+const LIST_EMPTY_OK = { appointments: [] as unknown[], count: 0, message: 'No booking' };
 
 async function runAppointmentHandler(
   c: { json: (b: object, s?: number) => Response },
   exec: () => Promise<{ statusCode: number; body: string }>,
   parseFallbackBody: object,
-  parseFallbackStatus: number
+  parseFallbackStatus: number,
+  options?: { coerceListErrorsToEmpty?: boolean }
 ): Promise<Response> {
   try {
     const result = await exec();
     const raw = result?.body;
+
+    // Legacy/stale handlers may return 5xx (e.g. SQL against missing `appointments` table). My Bookings must stay 200.
+    if (options?.coerceListErrorsToEmpty && result.statusCode >= 400) {
+      console.warn(
+        '[appointments] list coerced from error status:',
+        result.statusCode,
+        typeof raw === 'string' ? raw.slice(0, 400) : raw
+      );
+      return c.json(LIST_EMPTY_OK, 200);
+    }
+
     if (raw == null || raw === '') {
       console.warn('[appointments] empty handler body, using fallback');
       return c.json(parseFallbackBody, parseFallbackStatus);
     }
     try {
-      return c.json(JSON.parse(raw), result.statusCode);
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (options?.coerceListErrorsToEmpty && parsed.error != null && !Array.isArray(parsed.appointments)) {
+        console.warn('[appointments] list coerced from error payload:', parsed.error);
+        return c.json(LIST_EMPTY_OK, 200);
+      }
+      return c.json(parsed, result.statusCode);
     } catch {
       console.warn('[appointments] invalid handler JSON body, using fallback');
       return c.json(parseFallbackBody, parseFallbackStatus);
@@ -530,7 +557,8 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
       c,
       () => getAppointmentsHandler.execute(event, context),
       LIST_FALLBACK,
-      200
+      200,
+      { coerceListErrorsToEmpty: true }
     );
   });
 
@@ -588,7 +616,8 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
       c,
       () => getAppointmentsHandler.execute(event, context),
       LIST_FALLBACK,
-      200
+      200,
+      { coerceListErrorsToEmpty: true }
     );
   });
 
