@@ -778,6 +778,12 @@ class VerifyPaymentHandler extends BaseHandler {
           'system',
           'Payment verified'
         );
+        if (bookingStatusChange.to === 'confirmed') {
+          const { publishVendorReferralBookingConfirmedAction } = await import(
+            '../../../lib/services/loyalty-action-publisher'
+          );
+          await publishVendorReferralBookingConfirmedAction(bookingStatusChange.bookingId);
+        }
       }
 
       if (bookingToNotify) {
@@ -975,6 +981,14 @@ class RazorpayWebhookHandler extends BaseHandler {
           'system',
           'Payment captured (webhook)'
         ).catch((e) => console.error('[RAZORPAY-WEBHOOK] Audit log failed:', e));
+        if (bookingStatusChange.to === 'confirmed') {
+          const { publishVendorReferralBookingConfirmedAction } = await import(
+            '../../../lib/services/loyalty-action-publisher'
+          );
+          await publishVendorReferralBookingConfirmedAction(bookingStatusChange.bookingId).catch((e) =>
+            console.error('[RAZORPAY-WEBHOOK] Loyalty action publish failed:', e)
+          );
+        }
       }
 
       if (bookingToNotify) {

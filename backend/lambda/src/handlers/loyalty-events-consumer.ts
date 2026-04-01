@@ -1,7 +1,7 @@
 import type { SQSHandler, SQSRecord, SQSBatchItemFailure } from 'aws-lambda';
 import { query, insert } from '../database/rds-connection';
 import { loyaltyPointsService } from 'src/lib/services/loyalty&reward/loyalty-points-service';
-import { processVendorReferralFirstBookingReward, processVendorReferralApprovalReward } from 'src/lib/services/referral-service';
+import { processVendorReferralFirstBookingReward, processVendorReferralApprovalReward, processVendorReferralFirstBookingRewardVendorToCustomer } from 'src/lib/services/referral-service';
 
 // Avoid circular import at module init by dynamic import inside handler for heavy deps.
 
@@ -69,7 +69,7 @@ export const handler: SQSHandler = async (event) => {
 			if (evt.actionName === 'vendor_refer_friend_who_joins') {
 				if (evt.reference?.type === 'booking') {
 					try {
-						await processVendorReferralFirstBookingReward({
+						await processVendorReferralFirstBookingRewardVendorToCustomer({
 							eventId: evt.eventId,
 							bookingId: evt.reference?.id,
 						});
