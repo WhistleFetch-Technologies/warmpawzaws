@@ -20,22 +20,46 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
+const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+function normalizeDevApiBaseUrl(url: string | undefined): string {
+  if (!url || typeof url !== 'string') return '';
+  const t = url.trim().replace(/\/+$/, '');
+  if (t.includes(LEGACY_DEV_API_GATEWAY_SUBDOMAIN)) {
+    return DEV_API_GATEWAY_URL;
+  }
+  return t;
+}
+
 /**
  * Determine if we're in production environment
  * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
  */
 function isProductionEnvironment(): boolean {
-  // ✅ FIX: Check hostname FIRST as it's the most reliable signal
-  // This prevents any race condition where runtime config hasn't loaded yet
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // Development indicators - check FIRST
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
       return false;
     }
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
-        hostname.includes('warmpawz.com')) {
+    // Dev hostnames and dev admin CloudFront (not prod distributions)
+    if (hostname.startsWith('dev.') && hostname.includes('warmpawz.com')) {
+      return false;
+    }
+    if (hostname === 'dfof7mguaa0a5.cloudfront.net') {
+      return false;
+    }
+    // Production: exact prod domains or prod CloudFront URLs (not dev.*)
+    const isProdHostname =
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'vendor.warmpawz.com' ||
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'warmpawz.com' ||
+      hostname === 'www.warmpawz.com';
+    if (isProdHostname) {
+      return true;
+    }
+    if (hostname.includes('cloudfront.net')) {
       return true;
     }
   }
@@ -70,37 +94,46 @@ function getApiGatewayUrl(): string {
   const isProd = isProductionEnvironment();
   return isProd
     ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
-    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    : DEV_API_GATEWAY_URL;
 }
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
-  
-  // Priority: runtime-config.js (deploy-time) → build-time env → environment-based fallback
+
+  let raw = '';
   if (cfg.apiBaseUrl) {
-    return cfg.apiBaseUrl;
+    raw = cfg.apiBaseUrl;
+  } else if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
+    raw = (window as any).__NEXT_PUBLIC_API_BASE_URL__;
+  } else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+    raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  } else {
+    return getApiGatewayUrl();
   }
-  
-  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  
-  // ✅ FIX: Use environment-aware API Gateway selection (no hardcoded fallback)
-  return getApiGatewayUrl();
+
+  const normalized = normalizeDevApiBaseUrl((raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, ''));
+  return normalized || getApiGatewayUrl();
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
 // ✅ FIX: NEVER allow UAT mode on production hostnames
 export function isUatMode(): boolean {
   if (typeof window !== 'undefined') {
-    // ✅ FIX: Check production hostname - NEVER return true for production
     const hostname = window.location.hostname || '';
-    const isProductionHostname = hostname.includes('cloudfront.net') || 
-                                 hostname.includes('warmpawz.com');
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    
-    if (isProductionHostname && !isLocalhost) {
-      return false; // NEVER UAT mode on production hostnames
+    const isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+    const isProductionHostname =
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'vendor.warmpawz.com' ||
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'warmpawz.com' ||
+      hostname === 'www.warmpawz.com' ||
+      hostname === 'dbr09zyoq9akb.cloudfront.net' ||
+      hostname === 'd1y5ywletev82x.cloudfront.net' ||
+      hostname === 'dg69gqp2frh39.cloudfront.net';
+
+    if (isProductionHostname && !isDevSubdomain && !isLocalhost) {
+      return false;
     }
     
     // Check prod mode flag
@@ -190,10 +223,9 @@ export class ApiClient {
     
     // If still empty, wait a bit and retry (runtime-config.js might be loading)
     if (!currentBaseUrl && typeof window !== 'undefined') {
-      // Check window config directly
       const windowConfig = window.__WARMPAWZ_RUNTIME_CONFIG__;
       if (windowConfig?.apiBaseUrl) {
-        currentBaseUrl = windowConfig.apiBaseUrl;
+        currentBaseUrl = normalizeDevApiBaseUrl(windowConfig.apiBaseUrl) || '';
       }
     }
     

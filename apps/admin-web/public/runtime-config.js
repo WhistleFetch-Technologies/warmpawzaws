@@ -3,11 +3,17 @@
 (function () {
   const defaultUatMode = true;
 
+  function normalizeLegacyDevApiUrl(u) {
+    if (!u || typeof u !== 'string') return u;
+    var t = u.trim().replace(/\/+$/, '');
+    return t.indexOf('iixwc3fzfl') >= 0 ? 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com' : t;
+  }
+
   // If config is already set (e.g., by layout.tsx for production mode), preserve it
   if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
     // ✅ FIX: If NEXT_PUBLIC_API_BASE_URL is set (local dev), use it instead
     if (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) {
-      window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = window.__NEXT_PUBLIC_API_BASE_URL__;
+      window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = normalizeLegacyDevApiUrl(window.__NEXT_PUBLIC_API_BASE_URL__);
       console.log('🔧 Runtime config loaded (local dev - using NEXT_PUBLIC_API_BASE_URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
       return;
     }
@@ -33,8 +39,16 @@
           hostname === 'vendor.warmpawz.com' ||
           hostname === 'customer.warmpawz.com' ||
           hostname === 'warmpawz.com' ||
-          hostname === 'www.warmpawz.com' ||
-          hostname.includes('cloudfront.net')) {
+          hostname === 'www.warmpawz.com') {
+        return true;
+      }
+
+      // Dev admin CloudFront (alternate domain maps here) — not production API
+      if (hostname === 'dfof7mguaa0a5.cloudfront.net') {
+        return false;
+      }
+
+      if (hostname.includes('cloudfront.net')) {
         return true;
       }
 
@@ -64,19 +78,23 @@
     'dev.admin.warmpawz.com': 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
   };
   // Priority: host mapping → window.__NEXT_PUBLIC_API_BASE_URL__ → __API_BASE_URL__ → getApiGatewayUrl()
-  const apiBaseUrl = mappedByHost[host] ||
-                     (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) ||
-                     (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') ||
-                     getApiGatewayUrl();
+  const apiBaseUrl = normalizeLegacyDevApiUrl(
+    mappedByHost[host] ||
+      (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) ||
+      (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') ||
+      getApiGatewayUrl()
+  );
 
   const hostname = typeof window !== 'undefined' && window.location ? window.location.hostname : '';
   const isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
-  const isProdHostname = hostname === 'admin.warmpawz.com' ||
-                         hostname === 'vendor.warmpawz.com' ||
-                         hostname === 'customer.warmpawz.com' ||
-                         hostname === 'warmpawz.com' ||
-                         hostname === 'www.warmpawz.com' ||
-                         hostname.includes('cloudfront.net');
+  const isDevAdminCf = hostname === 'dfof7mguaa0a5.cloudfront.net';
+  const isProdHostname =
+    hostname === 'admin.warmpawz.com' ||
+    hostname === 'vendor.warmpawz.com' ||
+    hostname === 'customer.warmpawz.com' ||
+    hostname === 'warmpawz.com' ||
+    hostname === 'www.warmpawz.com' ||
+    (hostname.includes('cloudfront.net') && !isDevAdminCf);
 
   const environment = (isProdHostname && !isDevSubdomain) ? 'production' : 'development';
 

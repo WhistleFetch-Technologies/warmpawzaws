@@ -167,12 +167,7 @@ export function PrescriptionHistoryModal({
     setUploadingFile(file);
   };
 
-  const getBaseUrl = (): string => {
-    if (typeof window !== 'undefined' && (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl) {
-      return (window as any).__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl;
-    }
-    return process.env.NEXT_PUBLIC_API_BASE_URL || getApiBaseUrl() || '';
-  };
+  const getBaseUrl = (): string => getApiBaseUrl() || '';
 
   const handleUpload = async () => {
     if (!uploadingFile || !recordDate) {

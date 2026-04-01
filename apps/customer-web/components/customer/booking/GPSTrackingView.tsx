@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { MapPin, Navigation, Clock, Route } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 
 interface GPSTrackingViewProps {
   bookingId: string;
@@ -26,9 +26,7 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
 
     // Try to connect via SSE first
     try {
-      const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl 
-        || process.env.NEXT_PUBLIC_API_BASE_URL 
-        || '';
+      const apiBaseUrl = getApiBaseUrl();
       const sseUrl = `${apiBaseUrl.replace(/\/+$/, '')}/tracking/booking/${bookingId}/stream`;
       
       // Get auth token for SSE connection

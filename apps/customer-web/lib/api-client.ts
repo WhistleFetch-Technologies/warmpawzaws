@@ -27,6 +27,19 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
+/** Current dev API Gateway (replaces retired gateway IDs in stale runtime-config.js / env). */
+const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+function normalizeDevApiBaseUrl(url: string | undefined): string {
+  if (!url || typeof url !== 'string') return '';
+  const t = url.trim().replace(/\/+$/, '');
+  if (t.includes(LEGACY_DEV_API_GATEWAY_SUBDOMAIN)) {
+    return DEV_API_GATEWAY_URL;
+  }
+  return t;
+}
+
 /**
  * Determine if we're in production environment
  * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
@@ -49,18 +62,19 @@ function isProductionEnvironment(): boolean {
     return process.env.NODE_ENV === 'production';
   }
   
-  // 4. Check hostname (production CloudFront domains)
+  // 4. Check hostname (production hosts — not dev.* or dev CloudFront)
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
+    if (hostname === 'd2aoyjj8ine0wk.cloudfront.net' || hostname.startsWith('dev.')) {
+      return false;
+    }
+    if (hostname.includes('cloudfront.net') ||
         hostname.includes('warmpawz.com') ||
         hostname.includes('admin.warmpawz.com') ||
         hostname.includes('vendor.warmpawz.com') ||
         hostname.includes('customer.warmpawz.com')) {
       return true;
     }
-    // Development indicators
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
       return false;
     }
@@ -79,7 +93,7 @@ function getApiGatewayUrl(): string {
   const isProd = isProductionEnvironment();
   return isProd
     ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
-    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    : DEV_API_GATEWAY_URL;
 }
 
 /**
@@ -157,7 +171,9 @@ export function getApiBaseUrl(): string {
     }
   }
   
-  const result = (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
+  const result = normalizeDevApiBaseUrl(
+    (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '')
+  );
   
   // Debug log in UAT mode
   if (typeof window !== 'undefined' && isUatMode()) {

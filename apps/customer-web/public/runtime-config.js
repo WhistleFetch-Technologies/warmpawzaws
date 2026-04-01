@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Runtime Configuration for Warmpawz customer-web
  * 
  * This file is loaded at runtime and provides API configuration.
@@ -40,6 +40,12 @@
   
   // DEPLOYED ENVIRONMENT: Choose endpoint based on hostname
   // Default remains production, but specific dev/stage hostnames are mapped here.
+  function normalizeLegacyDevApiUrl(u) {
+    if (!u || typeof u !== 'string') return u;
+    var t = u.trim().replace(/\/+$/, '');
+    return t.indexOf('iixwc3fzfl') >= 0 ? 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com' : t;
+  }
+
   const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
   const configByHost = {
     // Dev customer web
@@ -53,11 +59,15 @@
   
   const mapped = configByHost[host];
   if (mapped) {
-    window.__WARMPAWZ_RUNTIME_CONFIG__ = mapped;
+    window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+      apiBaseUrl: normalizeLegacyDevApiUrl(mapped.apiBaseUrl),
+      uatMode: mapped.uatMode,
+      environment: mapped.environment
+    };
   } else {
     // Fallback to production
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-      apiBaseUrl: 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com',
+      apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
       environment: 'production'
     };
