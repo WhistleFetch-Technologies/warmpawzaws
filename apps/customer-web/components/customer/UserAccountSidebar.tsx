@@ -39,7 +39,8 @@ interface UserProfile {
 
 interface Booking {
   id: string;
-  serviceType: 'walker' | 'grooming' | 'vet' | 'boarding';
+  /** Normalized from API (may be camelCase or snake_case source). */
+  serviceType: string;
   petId: string;
   petName: string;
   petPhoto?: string;
@@ -123,6 +124,73 @@ interface NotificationSettings {
   promotions: boolean;
   newServices: boolean;
   newsletter: boolean;
+}
+
+function normalizeCustomerBookingRow(raw: Record<string, unknown>): Booking {
+  const r = raw as Record<string, any>;
+  const serviceTypeRaw =
+    r.serviceType ??
+    r.service_type ??
+    r.service_category ??
+    r.serviceCategory ??
+    '';
+  const serviceType = String(serviceTypeRaw).trim() || 'service';
+
+  const statusRaw = String(r.status ?? '').toLowerCase();
+  let status: Booking['status'];
+  if (statusRaw === 'completed') status = 'completed';
+  else if (statusRaw === 'cancelled' || statusRaw === 'canceled') status = 'cancelled';
+  else status = 'active';
+
+  const id = String(r.id ?? r.booking_id ?? '');
+  const petId = String(r.pet_id ?? r.petId ?? '');
+  const petName = String(r.pet_name ?? r.petName ?? 'Pet');
+  const vendorId = String(r.vendor_id ?? r.vendorId ?? '');
+  const vendorName = String(r.vendor_name ?? r.vendorName ?? 'Vendor');
+
+  const totalSessions = Math.max(1, Number(r.total_sessions ?? r.totalSessions ?? 1) || 1);
+  const completedSessions = Number(r.completed_sessions ?? r.completedSessions ?? 0) || 0;
+  const upcomingSessions =
+    Number(r.upcoming_sessions ?? r.upcomingSessions ?? Math.max(0, totalSessions - completedSessions)) || 0;
+
+  const price = Number(r.price ?? r.amount ?? r.total_amount ?? 0) || 0;
+  const startDate = String(
+    r.booking_date ?? r.start_date ?? r.startDate ?? r.created_at ?? r.bookingDate ?? ''
+  );
+
+  const freq = (r.frequency ?? 'single') as Booking['frequency'];
+  const sched = (r.schedule ?? 'anytime') as Booking['schedule'];
+
+  return {
+    id,
+    serviceType,
+    petId,
+    petName,
+    petPhoto: r.pet_photo ?? r.petPhoto,
+    vendorId,
+    vendorName,
+    vendorPhoto: r.vendor_photo ?? r.vendorPhoto,
+    startDate,
+    endDate: r.end_date ?? r.endDate,
+    duration: String(r.duration ?? r.duration_minutes ?? '—'),
+    frequency: ['single', 'weekly', 'monthly'].includes(freq) ? freq : 'single',
+    schedule: ['morning', 'evening', 'anytime'].includes(sched) ? sched : 'anytime',
+    sessionsPerDay: r.sessions_per_day ?? r.sessionsPerDay,
+    totalSessions,
+    completedSessions,
+    upcomingSessions,
+    status,
+    price,
+    requiresOTP: Boolean(r.requires_otp ?? r.requiresOTP ?? r.requires_start_otp),
+    completionOTP: r.completion_otp ?? r.completionOTP ?? r.otp_code ?? r.otpCode,
+    otpVerifiedAt: r.otp_verified_at ?? r.otpVerifiedAt,
+  };
+}
+
+function formatServiceTypeLabel(serviceType: string | undefined): string {
+  const t = (serviceType ?? '').trim().replace(/_/g, ' ');
+  if (!t) return 'Service';
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 interface UserAccountSidebarProps {
@@ -419,9 +487,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadBookings = async () => {
     try {
       setLoadingBookings(true);
-      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${encodeURIComponent(phone)}`);
+      const result = await apiClient.get<{ bookings?: Record<string, unknown>[] }>(
+        `/customer/bookings?phone=${encodeURIComponent(phone)}`
+      );
       console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
-      setBookings(result.bookings || []);
+      const rows = Array.isArray(result.bookings) ? result.bookings : [];
+      setBookings(rows.map((row) => normalizeCustomerBookingRow(row)));
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -1132,7 +1203,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-2">
                             <h4 className="font-bold text-gray-800">
-                              {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)}
+                              {formatServiceTypeLabel(booking.serviceType)}
                             </h4>
                             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                               {booking.status}
@@ -1179,12 +1250,19 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                             <div className="mb-3">
                               <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
                                 <span>{booking.completedSessions}/{booking.totalSessions} sessions</span>
-                                <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
+                                <span>
+                                  {Math.round(
+                                    (booking.completedSessions / Math.max(booking.totalSessions, 1)) * 100
+                                  )}
+                                  %
+                                </span>
                               </div>
                               <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                                 <div 
                                   className="h-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35]"
-                                  style={{ width: `${(booking.completedSessions / booking.totalSessions) * 100}%` }}
+                                  style={{
+                                    width: `${(booking.completedSessions / Math.max(booking.totalSessions, 1)) * 100}%`,
+                                  }}
                                 />
                               </div>
                             </div>
