@@ -9,6 +9,8 @@ interface ChatWidgetProps {
   userId?: string;
   userName?: string;
   userType?: 'customer' | 'vendor';
+  defaultOpen?: boolean;
+  onClose?: () => void;
 }
 
 interface Message {
@@ -17,8 +19,8 @@ interface Message {
   timestamp: Date;
 }
 
-export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidgetProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen = false, onClose }: ChatWidgetProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -60,13 +62,12 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
     setIsTyping(true);
 
     try {
-      // Call AI chatbot API
-      const response = await apiClient.post('/ai/chatbot', {
+      const response = await apiClient.post('/ai-chatbot/chat', {
         message: userMessage.content,
-        userId,
-        userType,
+        customerId: userId || null,
         context: {
           userName,
+          userType,
           previousMessages: messages.slice(-5).map(m => ({
             role: m.role,
             content: m.content,
@@ -76,7 +77,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
 
       const assistantMessage: Message = {
         role: 'assistant',
-        content: response?.message || response?.response || "I'm here to help! How can I assist you today?",
+        content: response?.response || response?.message || "I'm here to help! How can I assist you today?",
         timestamp: new Date(),
       };
 
@@ -112,6 +113,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor' }: ChatWidget
       setIsMinimized(false);
     } else {
       setIsOpen(false);
+      onClose?.();
     }
   };
 

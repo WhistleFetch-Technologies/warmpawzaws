@@ -201,7 +201,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img 
-                src="/logo.png" 
+                src="/warmpawz-logo.svg" 
                 alt="Warmpawz" 
                 className="w-12 h-12 rounded-2xl object-contain bg-white/20 p-2"
               />

@@ -9,7 +9,7 @@ import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { CapabilityGate } from '../../CapabilityGate';
 import { useVendorCapabilities } from '../../hooks/useVendorCapabilities';
 // AWS Serverless: apiClient with Cognito auth
-import { getVendorIconTheme, getRoleIconComponent, getRoleColorScheme, renderRoleIcon } from '@/lib/vendor-icon-themes';
+import { getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import { getVendorRoleId, normalizeServiceStyle, hasVendorRole } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -243,6 +243,7 @@ export function VendorDashboard({
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
 
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
+  const logoImage = '/warmpawz-logo.svg';
 
   // ✅ BIG LOGGING: Log vendorData when VendorDashboard loads
   useEffect(() => {
@@ -698,8 +699,7 @@ export function VendorDashboard({
     }
   };
 
-  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
-  const RoleIcon = getRoleIconComponent(vendorData?.roleId);
+  // 🎨 Role-themed accents for quick actions (header always shows WarmPawz logo)
   const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   // 🏷️ GET ROLE-AWARE LABELS
@@ -724,8 +724,8 @@ export function VendorDashboard({
         <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className={`w-10 h-10 flex-shrink-0 ${colorScheme.secondary} rounded-lg flex items-center justify-center`}>
-                <RoleIcon className={`w-6 h-6 ${colorScheme.primary}`} />
+              <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain p-1" />
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="font-semibold text-gray-900 truncate">

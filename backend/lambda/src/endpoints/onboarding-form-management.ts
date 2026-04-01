@@ -59,10 +59,11 @@ async function incrementFormVersion(roleId: string) {
  * Role name aliases/mappings for common variations
  */
 const ROLE_NAME_ALIASES: Record<string, string[]> = {
-  'veterinarian': ['veterinarian', 'vet', 'Veterinarian', 'vet_solo', 'vet_clinic', 'veterinary_clinic'],
+  // Do not map clinic names onto veterinarian — clinic uses vet_clinic / veterinary_clinic onboarding + KYC
+  'veterinarian': ['veterinarian', 'vet', 'Veterinarian', 'vet_solo'],
   'vet_solo': ['vet_solo', 'veterinarian', 'vet', 'Veterinarian'],
-  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'veterinarian', 'vet'],
-  'veterinary_clinic': ['veterinary_clinic', 'vet_clinic', 'veterinarian', 'vet'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic'],
+  'veterinary_clinic': ['veterinary_clinic', 'vet_clinic'],
   'pet_walker': ['pet_walker', 'walker', 'Pet Walker'],
   'pet_groomer': ['pet_groomer', 'groomer', 'Pet Grooming Salon'],
   'diagnostics_center': ['diagnostics_center', 'diagnostic_center', 'diagnostics'],

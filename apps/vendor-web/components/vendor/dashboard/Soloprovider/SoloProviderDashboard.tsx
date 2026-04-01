@@ -15,9 +15,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
-import { getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import { hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
+
+const logoImage = '/warmpawz-logo.svg';
 import {
   Calendar,
   Clock,
@@ -167,8 +168,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const hasPackages = hasPackagesCapability || isTrainerWalkerSitter;
 
   // Get role theme
-  const roleIcon = getRoleIcon(vendorData?.roleId);
-  const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   const vendorId = session.vendorId;
 
@@ -526,14 +525,14 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200">
+        <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${colorScheme.primary} rounded-lg flex items-center justify-center`}>
-                <span className="text-2xl">{roleIcon}</span>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain p-1" />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">
+              <div className="min-w-0">
+                <h1 className="font-semibold text-gray-900 truncate">
                   {vendor?.ownerName || vendor?.owner_name || vendor?.fullName || vendor?.full_name || session.ownerName || 'Solo Provider'}
                 </h1>
                 <p className="text-xs text-gray-500">Solo Provider • {session.roleName || roleName || 'Service Provider'}</p>
