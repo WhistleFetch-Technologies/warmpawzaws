@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface Order {
@@ -31,6 +33,7 @@ interface MyOrdersProps {
 }
 
 export function MyOrders({ customerPhone }: MyOrdersProps) {
+  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
@@ -118,8 +121,15 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
       {/* Header */}
       <header className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md sticky top-0 z-40 rounded-b-2xl">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <a href="/" className="text-2xl text-white hover:opacity-90">←</a>
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="w-4 h-4 text-white" />
+          </button>
           <h1 className="text-xl font-bold text-white">My Orders</h1>
         </div>
       </header>
