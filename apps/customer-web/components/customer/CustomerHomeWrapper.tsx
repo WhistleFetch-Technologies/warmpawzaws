@@ -396,6 +396,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
+    else if (path === 'appointments') navigateToScreen('appointments');
     else if (path === 'account/settings') toast.info('Settings not available.');
   };
 
@@ -765,13 +766,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'sample-collection-tracking' && data?.bookingId) { setSelectedBookingId(data.bookingId); navigateToScreen('sample-collection-tracking'); }
     else handleNavigateToService(screen);
   }} />;
-  if (currentScreen === 'appointments') return <AppointmentsList customerId={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-details'); }} />;
+  if (currentScreen === 'appointments') return <AppointmentsList phone={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-details'); }} />;
   if (currentScreen === 'appointment-details') {
-    if (selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={handleBack} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-reschedule'); }} onCancel={() => { setSelectedAppointmentId(null); handleBack(); }} />;
+    if (selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} phone={phone} onBack={() => navigateToScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-reschedule'); }} onCancel={() => { setSelectedAppointmentId(null); navigateToScreen('appointments'); }} />;
     return <NotAvailable label="Appointment details" onBack={handleBack} />;
   }
   if (currentScreen === 'appointment-reschedule') {
-    if (selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={handleBack} onSuccess={() => { handleBack(); toast.success('Rescheduled successfully'); }} />;
+    if (selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} phone={phone} onBack={() => navigateToScreen('appointment-details')} onSuccess={() => { navigateToScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
     return <NotAvailable label="Appointment reschedule" onBack={handleBack} />;
   }
   

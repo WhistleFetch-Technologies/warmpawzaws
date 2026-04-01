@@ -15,14 +15,20 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
   const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  const prodApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-  
+  const isUatBuild = process.env.NEXT_PUBLIC_UAT_MODE === 'true';
+  const rawApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  // Retired dev gateway in CI secrets → always use current dev API for injects
+  const prodApiUrl =
+    rawApiUrl && rawApiUrl.includes('iixwc3fzfl')
+      ? 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com'
+      : rawApiUrl;
+  const injectProdRuntime = isProd && !!prodApiUrl && !isUatBuild;
+
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* ✅ FIX: Inject NEXT_PUBLIC_API_BASE_URL for ALL environments (local dev + production) */}
+        {/* Inject NEXT_PUBLIC_API_BASE_URL for builds that embed API URL (normalized for dev). */}
         {prodApiUrl && (
           <script
             dangerouslySetInnerHTML={{
@@ -32,8 +38,8 @@ export default function RootLayout({
             }}
           />
         )}
-        {/* Inject production config if running in prod mode */}
-        {isProd && prodApiUrl && (
+        {/* Production runtime only for real prod builds — never when UAT_MODE is baked in (e.g. dev CI). */}
+        {injectProdRuntime && (
           <script
             dangerouslySetInnerHTML={{
               __html: `

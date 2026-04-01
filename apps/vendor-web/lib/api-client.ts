@@ -20,6 +20,19 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
+/** Current dev API Gateway (replaces retired gateway IDs in env / secrets). */
+const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+function normalizeDevApiBaseUrl(url: string | undefined): string {
+  if (!url || typeof url !== 'string') return '';
+  const t = url.trim().replace(/\/+$/, '');
+  if (t.includes(LEGACY_DEV_API_GATEWAY_SUBDOMAIN)) {
+    return DEV_API_GATEWAY_URL;
+  }
+  return t;
+}
+
 /**
  * Determine if we're in production environment
  * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
@@ -42,11 +55,14 @@ function isProductionEnvironment(): boolean {
     return process.env.NODE_ENV === 'production';
   }
   
-  // 4. Check hostname (production CloudFront domains)
+  // 4. Check hostname (production CloudFront / prod hosts — not dev.* or dev CloudFront)
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
+    if (hostname === 'd1s6ykkj381k58.cloudfront.net' || hostname.startsWith('dev.')) {
+      return false;
+    }
+    // Production CloudFront domains (non-dev)
+    if (hostname.includes('cloudfront.net') ||
         hostname.includes('warmpawz.com') ||
         hostname.includes('admin.warmpawz.com') ||
         hostname.includes('vendor.warmpawz.com') ||
@@ -72,7 +88,7 @@ function getApiGatewayUrl(): string {
   const isProd = isProductionEnvironment();
   return isProd
     ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
-    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    : DEV_API_GATEWAY_URL;
 }
 
 export function getApiBaseUrl(): string {
@@ -80,11 +96,11 @@ export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
   
   if (cfg.apiBaseUrl) {
-    return cfg.apiBaseUrl;
+    return normalizeDevApiBaseUrl(cfg.apiBaseUrl);
   }
   
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+    const envBase = normalizeDevApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
     // Guard against accidental localhost build env leaking into deployed hosts.
     if (typeof window !== 'undefined' && window.location) {
       const host = window.location.hostname || '';
@@ -98,7 +114,6 @@ export function getApiBaseUrl(): string {
     }
   }
   
-  // ✅ FIX: Use environment-aware API Gateway selection (no hardcoded fallback)
   return getApiGatewayUrl();
 }
 
@@ -117,13 +132,6 @@ export class ApiClient {
 
   constructor(baseUrl: string = getApiBaseUrl()) {
     this.baseUrl = baseUrl || '';
-    
-    // UAT Mode: Log API configuration for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
-      console.log('🔧 [UAT Mode] API Client Initialized (Vendor)');
-      console.log('   Base URL:', this.baseUrl);
-      console.log('   Environment:', process.env.NODE_ENV);
-    }
   }
 
   private getAuthToken(): string | null {
@@ -178,12 +186,6 @@ export class ApiClient {
     // ✅ UAT Mode: Send header to backend so it knows to use mock data
     if (UAT_MODE) {
       headers['X-UAT-Mode'] = 'true';
-    }
-    
-    // UAT Mode: Log API requests for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
-      console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
-      console.log('   Full URL:', url);
     }
     
     // ✅ FIX: Add timeout to prevent requests from hanging indefinitely (30 seconds)
@@ -247,15 +249,6 @@ export class ApiClient {
           errorMessage = `Too many requests. Please wait ${retryAfterSeconds} second${retryAfterSeconds > 1 ? 's' : ''} before trying again.`;
         }
         
-        // Log rate limit error with details
-        if (UAT_MODE && typeof window !== 'undefined') {
-          console.error('❌ [UAT] Rate Limit Error (429):', {
-            endpoint,
-            retryAfter: retryAfterSeconds,
-            errorData
-          });
-        }
-        
         // Create error with retry information
         const rateLimitError = new Error(errorMessage);
         (rateLimitError as any).statusCode = 429;
@@ -301,12 +294,6 @@ export class ApiClient {
         } else {
           errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
         }
-      }
-      
-      // Log the full error for debugging in UAT mode
-      if (UAT_MODE && typeof window !== 'undefined') {
-        console.error('❌ [UAT] API Error Response:', errorData);
-        console.error('❌ [UAT] Extracted error message:', errorMessage);
       }
       
       // Attach status code to error for better handling

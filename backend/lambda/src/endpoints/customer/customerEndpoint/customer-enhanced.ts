@@ -31,6 +31,7 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
+import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 
 // ============================================================================
@@ -569,24 +570,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // Clean phone - remove non-digits and country code
-      let cleanPhone = phone.replace(/\D/g, '');
-      // Remove leading country code (91 for India) if present
-      if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
-        cleanPhone = cleanPhone.slice(2);
-      }
-
-      // Get customer by phone - try both original and cleaned
-      let customers = await select('customers', { phone: cleanPhone });
-      if (customers.length === 0) {
-        // Try with original phone (in case it's stored differently)
-        customers = await select('customers', { phone });
-      }
-      if (customers.length === 0) {
-        // Try with +91 prefix
-        customers = await select('customers', { phone: `+91${cleanPhone}` });
-      }
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ 
           success: false, 
           error: { code: 'NOT_FOUND', message: 'Customer not found' },
@@ -594,8 +579,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           count: 0
         }, 404);
       }
-
-      const customer = customers[0];
 
       // Get pets
       const pets = await select('pets',
@@ -726,28 +709,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         });
       }
 
-      const phone = param;
-
-      // Clean phone - remove non-digits and country code
-      let cleanPhone = phone.replace(/\D/g, '');
-      // Remove leading country code (91 for India) if present
-      if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
-        cleanPhone = cleanPhone.slice(2);
-      }
-
-      // Get customer by phone - try multiple formats
-      let customers = await select('customers', { phone: cleanPhone });
-      if (customers.length === 0) {
-        customers = await select('customers', { phone });
-      }
-      if (customers.length === 0) {
-        customers = await select('customers', { phone: `+91${cleanPhone}` });
-      }
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(param);
+      if (!customer) {
         return c.json({ pets: [], count: 0 });
       }
-
-      const customer = customers[0];
 
       // Get pets
       const pets = await select('pets',
@@ -822,13 +787,11 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         return c.json({ error: 'pets array is required' }, 400);
       }
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found. Please create profile first.' }, 404);
       }
 
-      const customer = customers[0];
       const savedPets = [];
 
       for (const pet of pets) {
@@ -1192,13 +1155,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         otherPetTypes,
       } = body;
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found. Please create profile first.' }, 404);
       }
-
-      const customer = customers[0];
 
       // Check if preferences exist
       const existingPrefs = await query(

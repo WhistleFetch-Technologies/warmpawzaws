@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Runtime Configuration for Warmpawz vendor-web
  * 
  * This file is loaded at runtime and provides API configuration.
@@ -41,10 +41,16 @@
   // DEPLOYED ENVIRONMENT: Choose endpoint based on hostname
   // Default remains production, but specific dev/stage hostnames are mapped here.
   const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
+  const devApi = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   const configByHost = {
-    // Dev vendor web should use the specified API gateway only
     'dev.vendor.warmpawz.com': {
-      apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+      apiBaseUrl: devApi,
+      uatMode: true,
+      environment: 'development'
+    },
+    // Dev vendor CloudFront (alternate domain)
+    'd1s6ykkj381k58.cloudfront.net': {
+      apiBaseUrl: devApi,
       uatMode: true,
       environment: 'development'
     },

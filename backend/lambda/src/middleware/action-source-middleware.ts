@@ -79,12 +79,12 @@ function getByPath(obj: any, path: string) {
 	return path.split('.').reduce((acc: any, key: string) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj);
 }
 
-	function resolveDotPath(expr: string, ctx: { res: any; req: any; jwt: any; param?: any }) {
+function resolveDotPath(expr: string, ctx: { res: any; req: any; jwt: any; param?: any }) {
 	const t = (expr || '').trim();
 	if (!t.startsWith('$.')) return undefined;
 	if (t.startsWith('$.jwt.')) return getByPath(ctx.jwt, t.substring('$.jwt.'.length));
 	if (t.startsWith('$.body.')) return getByPath(ctx.req, t.substring('$.body.'.length));
-		if (t.startsWith('$.param.')) return getByPath((ctx as any).param || {}, t.substring('$.param.'.length));
+	if (t.startsWith('$.param.')) return getByPath((ctx as any).param || {}, t.substring('$.param.'.length));
 	return getByPath(ctx.res, t.substring('$.'.length));
 }
 
@@ -98,17 +98,17 @@ function resolveExpr(expr: string | null | undefined, ctx: { res: any; req: any;
 	return undefined;
 }
 
-function evalPredicate(predicate: string | null | undefined, resBody: any): boolean {
+function  evalPredicate(predicate: string | null | undefined, resBody: any): boolean {
 	if (!predicate || !predicate.trim()) return true;
-		const trimmed = predicate.trim().toLowerCase();
-		// Literal booleans
-		if (trimmed === 'true') return true;
-		if (trimmed === 'false') return false;
-		// Numeric truthiness
-		if (trimmed === '1') return true;
-		if (trimmed === '0') return false;
+	const trimmed = predicate.trim().toLowerCase();
+	// Literal booleans
+	if (trimmed === 'true') return true;
+	if (trimmed === 'false') return false;
+	// Numeric truthiness
+	if (trimmed === '1') return true;
+	if (trimmed === '0') return false;
 	// Support conjunctions: "$.a == 'x' && $.b == 'y'"
-		if (trimmed.includes('&&')) {
+	if (trimmed.includes('&&')) {
 		return predicate
 			.split('&&')
 			.map(p => p.trim())
@@ -116,7 +116,7 @@ function evalPredicate(predicate: string | null | undefined, resBody: any): bool
 			.every(p => evalPredicate(p, resBody));
 	}
 	// Support disjunctions: "$.a == 'x' || $.b == 'y'"
-		if (trimmed.includes('||')) {
+	if (trimmed.includes('||')) {
 		return predicate
 			.split('||')
 			.map(p => p.trim())
@@ -168,20 +168,13 @@ export function actionSourceMiddleware() {
 
 		try {
 			const method = (c.req.method || 'POST').toUpperCase();
-			console.log('method--------------------->', method);
 			const path = c.req.path || c.req.url || '/';
 			const status = c.res.status || 200;
-			console.log('status--------------------->', status);
 			const mappingsByMethod = await getMappings();
-			console.log('mappingsByMethod--------------------->', mappingsByMethod, method, mappingsByMethod[method]);
 			const candidates = (mappingsByMethod[method] || []).filter(m => {
-				console.log('m--------------------->', m);
 				if (status < (m.status_min ?? 200) || status > (m.status_max ?? 299)) return false;
-				console.log('pathToRegex(m.route_pattern).test(path)--------------------->', pathToRegex(m.route_pattern).test(path));
 				return pathToRegex(m.route_pattern).test(path);
 			});
-			console.log('candidates.length--------------------->', candidates.length);
-			// Diagnostics: route-level matches
 			try {
 				console.log('[ASDIAG] routeMatch', JSON.stringify({
 					method,
@@ -191,7 +184,8 @@ export function actionSourceMiddleware() {
 				}));
 			} catch { /* ignore */ }
 			if (candidates.length === 0) return;
-			console.log('candidates--------------------->', candidates);
+
+
 			// Response JSON
 			let responseJson: any = {};
 			try {
@@ -199,15 +193,17 @@ export function actionSourceMiddleware() {
 				const txt = await clone.text?.();
 				responseJson = txt ? JSON.parse(txt) : {};
 			} catch {
-				// ignore non-JSON
+				/* ignore */
 			}
-			console.log('responseJson--------------------->', responseJson);
+
+
 			// Request JSON
 			let requestJson: any = {};
 			try {
 				requestJson = c.env?.parsedBody || {};
 			} catch { /* ignore */ }
-			console.log('requestJson--------------------->', requestJson);
+
+
 			// JWT claims (optional)
 			const jwt: any = {};
 			try {
@@ -215,9 +211,12 @@ export function actionSourceMiddleware() {
 				const claims = event?.requestContext?.authorizer?.claims || {};
 				Object.assign(jwt, claims);
 			} catch { /* ignore */ }
-			console.log('jwt--------------------->', jwt);
+
+			// Filter mappings based on success predicate
 			const matchedMappings = candidates.filter(m => evalPredicate(m.success_predicate, responseJson));
 			if (matchedMappings.length === 0) return;
+
+
 			// Diagnostics: predicate-level matches
 			try {
 				console.log('[ASDIAG] predicateMatch', JSON.stringify({
@@ -226,7 +225,8 @@ export function actionSourceMiddleware() {
 					matched: matchedMappings.map(m => ({ id: m.id, action: m.action_name }))
 				}));
 			} catch { /* ignore */ }
-			console.log('matchedMappings--------------------->', matchedMappings.map((m) => ({ id: m.id, action: m.action_name })));
+
+
 			const routeParams = (() => {
 				try {
 					return c.req.param?.() || {};
@@ -234,11 +234,15 @@ export function actionSourceMiddleware() {
 					return {};
 				}
 			})();
+
 			const ctx = { res: responseJson, req: requestJson, jwt, param: routeParams };
+
 			// Diagnostics: params
 			try {
 				console.log('[ASDIAG] routeParams', JSON.stringify(routeParams));
 			} catch { /* ignore */ }
+
+
 			for (const matched of matchedMappings) {
 				try {
 					// Diagnostics: mapping entry
@@ -251,7 +255,7 @@ export function actionSourceMiddleware() {
 							reference_id_resolver: matched.reference_id_resolver
 						}));
 					} catch { /* ignore */ }
-			const entityId = String(resolveExpr(matched.entity_resolver, ctx) || '');
+					const entityId = String(resolveExpr(matched.entity_resolver, ctx) || '');
 					if (!entityId) {
 						try {
 							console.log('[ASDIAG] skipEmptyEntityId', JSON.stringify({
@@ -262,17 +266,15 @@ export function actionSourceMiddleware() {
 						console.warn('[action-source-middleware] skip mapping: empty entityId', { mappingId: matched.id, action: matched.action_name });
 						continue;
 					}
-			console.log('entityId--------------------->', entityId);
-			const entityType = (matched.entity_type || 'auto') as 'customer' | 'vendor' | 'auto';
-			const amountVal = resolveExpr(matched.amount_resolver || undefined, ctx);
-			const referenceId = resolveExpr(matched.reference_id_resolver || undefined, ctx);
-			console.log('referenceId--------------------->', referenceId);
-			const metadata: Json = {};
-			if (matched.metadata_resolvers && typeof matched.metadata_resolvers === 'object') {
-				for (const [k, v] of Object.entries(matched.metadata_resolvers)) {
-					metadata[k] = resolveExpr(String(v), ctx);
-				}
-			}
+					const entityType = (matched.entity_type || 'auto') as 'customer' | 'vendor' | 'auto';
+					const amountVal = resolveExpr(matched.amount_resolver || undefined, ctx);
+					const referenceId = resolveExpr(matched.reference_id_resolver || undefined, ctx);
+					const metadata: Json = {};
+					if (matched.metadata_resolvers && typeof matched.metadata_resolvers === 'object') {
+						for (const [k, v] of Object.entries(matched.metadata_resolvers)) {
+							metadata[k] = resolveExpr(String(v), ctx);
+						}
+					}
 					// Diagnostics: resolved fields
 					try {
 						console.log('[ASDIAG] resolved', JSON.stringify({
@@ -282,26 +284,22 @@ export function actionSourceMiddleware() {
 							referenceId: referenceId ? String(referenceId) : undefined
 						}));
 					} catch { /* ignore */ }
-			console.log('metadata--------------------->', metadata);
-			const evt: EventPayload = {
-				eventId: randomUUID(),
-				eventType: 'ActionOccurred',
-				occurredAt: new Date().toISOString(),
-				actionName: matched.action_name,
-				entity: { type: entityType, id: entityId },
-				actor: { type: entityType, id: entityId },
-				amount: amountVal !== undefined ? Number(amountVal) : undefined,
-				reference: matched.reference_type ? { type: matched.reference_type, id: referenceId ? String(referenceId) : undefined } : undefined,
-				metadata,
-			};
-			console.log('evt--------------------->', evt);
-			console.log('matched.dry_run--------------------->', matched.dry_run);
-			if (matched.dry_run) {
-				console.log('[ActionOccurred][dry-run]', JSON.stringify(evt).substring(0, 800));
+					const evt: EventPayload = {
+						eventId: randomUUID(),
+						eventType: 'ActionOccurred',
+						occurredAt: new Date().toISOString(),
+						actionName: matched.action_name,
+						entity: { type: entityType, id: entityId },
+						actor: { type: entityType, id: entityId },
+						amount: amountVal !== undefined ? Number(amountVal) : undefined,
+						reference: matched.reference_type ? { type: matched.reference_type, id: referenceId ? String(referenceId) : undefined } : undefined,
+						metadata,
+					};
+					if (matched.dry_run) {
+						console.log('[ActionOccurred][dry-run]', JSON.stringify(evt).substring(0, 800));
 						continue;
-			}
-			console.log('publishActionOccurred--------------------->');
-			await publishActionOccurred(evt);
+					}
+					await publishActionOccurred(evt);
 				} catch (mappingErr: any) {
 					console.warn('[action-source-middleware] mapping failed (continuing):', {
 						mappingId: matched.id,
