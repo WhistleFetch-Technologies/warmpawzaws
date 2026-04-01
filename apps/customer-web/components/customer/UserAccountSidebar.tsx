@@ -22,6 +22,17 @@ import {
   mergeStreetAddressLineOnly,
   PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
+import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+
+const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
+
+function setSupportInitialTab(tab: 'faq' | 'contact' | 'tickets') {
+  try {
+    sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, tab);
+  } catch {
+    /* ignore */
+  }
+}
 
 interface UserProfile {
   firstName: string;
@@ -1801,7 +1812,14 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
             <div className="p-5 pb-8">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Help & Support</h3>
               <div className="space-y-3">
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportInitialTab('faq');
+                    onNavigate?.('support_help');
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <HelpCircle className="w-6 h-6 text-blue-600" />
                   </div>
@@ -1812,7 +1830,14 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportInitialTab('contact');
+                    onNavigate?.('support_help');
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <MessageSquare className="w-6 h-6 text-green-600" />
                   </div>
@@ -1823,18 +1848,33 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.location.href = `mailto:${CUSTOMER_SUPPORT_EMAIL}`;
+                    }
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <Mail className="w-6 h-6 text-purple-600" />
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-semibold text-gray-800">Email Support</p>
-                    <p className="text-sm text-gray-600">support@warmpawz.com</p>
+                    <p className="text-sm text-gray-600">{CUSTOMER_SUPPORT_EMAIL}</p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportInitialTab('contact');
+                    onNavigate?.('support_help');
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-red-100 to-red-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <AlertCircle className="w-6 h-6 text-red-600" />
                   </div>

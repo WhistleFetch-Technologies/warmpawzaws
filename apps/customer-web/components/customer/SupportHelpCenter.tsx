@@ -24,6 +24,7 @@ interface Ticket {
 interface SupportHelpCenterProps {
   phone?: string;
   onBack: () => void;
+  initialTab?: 'faq' | 'contact' | 'tickets';
 }
 
 export function SupportHelpCenter({ phone, onBack, initialTab }: SupportHelpCenterProps) {

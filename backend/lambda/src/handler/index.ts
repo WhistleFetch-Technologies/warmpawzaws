@@ -519,6 +519,8 @@ registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
 // GET/POST /customer/orders MUST register before /customer/:customerId or "orders" is treated as a customer id → HTTP 404.
 registerCustomerOrdersEndpoints(app);
+// /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
+registerCustomerAppointmentsEndpoints(app);
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
 registerSpecializedServiceFlows(app);
@@ -621,7 +623,7 @@ registerAdminGovernanceEnhancedEndpoints(app);
 registerAdminAdvancedEndpoints(app);
 registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering
-registerCustomerAppointmentsEndpoints(app);
+// registerCustomerAppointmentsEndpoints registered before /customer/:customerId (see block after registerCustomerOrdersEndpoints)
 registerVendorAnalyticsEndpoints(app);
 registerPetCafeEndpoints(app);
 registerVendorRadarEndpoints(app);
@@ -915,6 +917,53 @@ app.onError((err, c) => {
       console.log('[Hono Error Handler] MATCHED reviews/pending - Returning 200 empty');
     }
     return c.json({ success: true, reviews: [], pending: [] }, 200, corsHeaders);
+  }
+
+  // Mobile: GET /customer/appointments?customerId= (list) and GET /customer/appointments/:id (detail)
+  if (requestPath.includes('customer/appointments')) {
+    const idSegment = requestPath.match(/\/customer\/appointments\/([^/?#]+)/);
+    if (idSegment?.[1]) {
+      if (process.env.DEBUG === 'true') {
+        console.log('[Hono Error Handler] MATCHED customer/appointments/:id - Returning 404 degraded');
+      }
+      return c.json(
+        { error: 'Appointment not found', _degraded: true, message: errorMessage },
+        404,
+        corsHeaders
+      );
+    }
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED customer/appointments list - Returning 200 empty');
+    }
+    return c.json(
+      { appointments: [], count: 0, _degraded: true, message: errorMessage },
+      200,
+      corsHeaders
+    );
+  }
+
+  // Customer appointments list (web + mobile compatibility path)
+  if (requestPath.includes('/appointment/customer')) {
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED appointment/customer list - Returning 200 empty');
+    }
+    return c.json(
+      { appointments: [], count: 0, _degraded: true, message: errorMessage },
+      200,
+      corsHeaders
+    );
+  }
+
+  // GET /appointment/:id (detail), cancel, reschedule — avoid raw 500 for customer bookings UI
+  if (requestPath.includes('/appointment/')) {
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED /appointment/* detail - Returning 404 degraded');
+    }
+    return c.json(
+      { error: 'Appointment not found', _degraded: true, message: errorMessage },
+      404,
+      corsHeaders
+    );
   }
   
   // Default error response - CRITICAL: Must include CORS headers

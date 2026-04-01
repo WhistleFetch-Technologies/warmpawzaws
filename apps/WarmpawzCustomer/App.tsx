@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, CommonActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
@@ -107,6 +107,8 @@ import { colors } from './src/theme/colors';
 
 const Stack = createNativeStackNavigator();
 
+const navigationRef = createNavigationContainerRef();
+
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -194,9 +196,28 @@ export default function App() {
   };
 
   const handleNavigate = (screen: string, data?: any) => {
-    // Handle navigation to different screens
     console.log('Navigate to:', screen, data);
-    // Navigation handled via Stack Navigator
+    if (!navigationRef.isReady()) return;
+    // Bottom tabs: use merge so stack returns to MainTabs and the correct tab is focused (names match BottomTabNavigator Tab.Screen).
+    if (screen === 'MainTabs' && data && typeof data === 'object' && typeof data.screen === 'string') {
+      const tabParams: { screen: string; params?: object } = { screen: data.screen };
+      if (data.params != null && typeof data.params === 'object') {
+        tabParams.params = data.params;
+      }
+      navigationRef.dispatch(
+        CommonActions.navigate({
+          name: 'MainTabs',
+          params: tabParams,
+          merge: true,
+        })
+      );
+      return;
+    }
+    if (data === undefined || data === null) {
+      (navigationRef.navigate as (name: string) => void)(screen);
+    } else {
+      (navigationRef.navigate as (name: string, params: object) => void)(screen, data);
+    }
   };
 
   const handleServiceSelect = (serviceId: string, vendorId: string) => {
@@ -218,7 +239,7 @@ export default function App() {
       <SafeAreaProvider>
         <PaperProvider>
           <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
-          <NavigationContainer>
+          <NavigationContainer ref={navigationRef}>
             <Stack.Navigator
               screenOptions={{
                 headerShown: false,
@@ -283,6 +304,7 @@ export default function App() {
                         phone={session.phone}
                         customerId={session.customerId}
                         onNavigate={handleNavigate}
+                        // Home header avatar: stack CustomerProfile; My Bookings footer also uses CustomerProfile so Back returns to BookingList.
                         onProfileClick={() => handleNavigate('CustomerProfile')}
                         onPetClick={(petId) => handleNavigate('PetProfileDashboard', { petId })}
                         onAddPet={() => handleNavigate('CustomerPetsPage')}
@@ -475,6 +497,7 @@ export default function App() {
                       <BookingListScreen
                         {...props}
                         phone={session.phone}
+                        onNavigate={handleNavigate}
                         onSelectBooking={(bookingId) => handleNavigate('BookingDetail', { bookingId })}
                         onBack={() => setSession({ ...session, navigationTarget: null })}
                       />
@@ -587,7 +610,13 @@ export default function App() {
                       <CustomerProfileScreen
                         {...props}
                         phone={session.phone}
-                        onBack={() => setSession({ ...session, navigationTarget: null })}
+                        onBack={() => {
+                          if (props.navigation.canGoBack()) {
+                            props.navigation.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -805,7 +834,15 @@ export default function App() {
                         recipientName={props.route?.params?.recipientName}
                         recipientAvatar={props.route?.params?.recipientAvatar}
                         phone={session.phone}
-                        onBack={() => handleNavigate('BookingDetail', { bookingId: props.route?.params?.bookingId })}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else if (props.route?.params?.bookingId) {
+                            handleNavigate('BookingDetail', { bookingId: props.route?.params?.bookingId });
+                          } else {
+                            handleNavigate('MainTabs');
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -926,6 +963,7 @@ export default function App() {
                         currentDate={props.route?.params?.currentDate}
                         currentTime={props.route?.params?.currentTime}
                         phone={session.phone}
+                        customerId={session.customerId}
                         onBack={() => handleNavigate('AppointmentDetail', { appointmentId: props.route?.params?.appointmentId })}
                         onNavigate={handleNavigate}
                         onSuccess={() => handleNavigate('AppointmentDetail', { appointmentId: props.route?.params?.appointmentId })}

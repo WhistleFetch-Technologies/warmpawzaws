@@ -1450,7 +1450,7 @@ export function CustomerHomeComplete({
           {userData.pets.length > 0 ? (
             <div className="flex items-center gap-3">
               <span className="text-white/90 text-[11px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
-              <div className="flex gap-2.5 overflow-x-auto scrollbar-hide flex-1">
+              <div className="flex min-w-0 gap-2.5 overflow-x-auto scrollbar-hide flex-1 py-1 -my-1 px-2">
                 {userData.pets.map((pet) => (
                   <div key={pet.id} className="relative flex-shrink-0">
                     <button
@@ -1458,13 +1458,15 @@ export function CustomerHomeComplete({
                       className="flex flex-col items-center gap-1"
                     >
                       <div
-                        className={`w-11 h-11 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${selectedPet?.id === pet.id
-                          ? 'ring-2 ring-white bg-white shadow-md scale-105'
-                          : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
+                        className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all duration-200 ${selectedPet?.id === pet.id
+                          ? 'bg-white shadow-md ring-2 ring-inset ring-[#FF8C42]'
+                          : 'overflow-hidden bg-white/25 backdrop-blur-sm hover:bg-white/35'
                           }`}
                       >
                         {pet.photo || pet.image ? (
-                          <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                          <div className="h-full w-full overflow-hidden rounded-full">
+                            <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="h-full w-full object-cover" />
+                          </div>
                         ) : (
                           pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
                         )}

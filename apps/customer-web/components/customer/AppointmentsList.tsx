@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Calendar, Clock, MapPin, ChevronRight, Sparkles, PawPrint } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ApiError } from '@/lib/error-handling';
 import {
   getResolvedCustomerId,
   isCustomerDatabaseUuid,
@@ -28,6 +29,20 @@ type Row = {
   petName?: string;
   amount: number;
 };
+
+/** Normalize list payloads from `{ appointments }`, `{ data: { appointments } }`, or a bare array. */
+function extractAppointmentsFromResponse(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== 'object') return [];
+  const d = data as Record<string, unknown>;
+  if (Array.isArray(d.appointments)) return d.appointments;
+  const inner = d.data;
+  if (inner && typeof inner === 'object') {
+    const i = inner as Record<string, unknown>;
+    if (Array.isArray(i.appointments)) return i.appointments;
+  }
+  return [];
+}
 
 function mapRow(raw: Record<string, unknown>): Row {
   const date = String(raw.appointment_date ?? raw.date ?? '');
@@ -85,15 +100,29 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
         return;
       }
 
-      const data = await apiClient.get<{ appointments?: unknown[] }>(
-        `/customer/appointments?customerId=${encodeURIComponent(customerUuid)}`
+      // My Appointments list: only this route on load (no GET /appointment/:id, no alternate list URL).
+      const data = await apiClient.get<unknown>(
+        `/appointment/customer/${encodeURIComponent(customerUuid)}`
       );
-      const list = Array.isArray(data.appointments) ? data.appointments : [];
-      setRawRows(list.map((r) => mapRow(r as Record<string, unknown>)));
+      const list = extractAppointmentsFromResponse(data);
+      const rows: Row[] = [];
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        try {
+          rows.push(mapRow(item as Record<string, unknown>));
+        } catch {
+          /* skip malformed row */
+        }
+      }
+      setRawRows(rows);
     } catch (e) {
       console.error('Error loading appointments:', e);
       setRawRows([]);
-      setLoadError('Unable to load appointments. Try again in a moment.');
+      if (e instanceof ApiError && e.message) {
+        setLoadError(e.message);
+      } else {
+        setLoadError('Unable to load appointments. Try again in a moment.');
+      }
     } finally {
       setLoading(false);
     }
@@ -177,9 +206,18 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
         serviceIcon={Calendar}
         iconColor="text-white"
         stats={[
-          { value: loading ? '…' : String(rawRows.length), label: 'Total' },
-          { value: loading ? '…' : String(upcomingCount), label: 'Upcoming' },
-          { value: loading ? '…' : String(completedCount), label: 'Completed' },
+          {
+            value: loading ? '…' : loadError ? '—' : String(rawRows.length),
+            label: 'Total',
+          },
+          {
+            value: loading ? '…' : loadError ? '—' : String(upcomingCount),
+            label: 'Upcoming',
+          },
+          {
+            value: loading ? '…' : loadError ? '—' : String(completedCount),
+            label: 'Completed',
+          },
         ]}
         onBack={onBack}
         showBackButton
@@ -210,8 +248,15 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
         </div>
 
         {loadError && (
-          <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-3 text-sm">
-            {loadError}
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-3 text-sm space-y-3">
+            <p>{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void loadAppointments()}
+              className="text-sm font-semibold text-amber-950 underline underline-offset-2 hover:text-amber-800"
+            >
+              Try again
+            </button>
           </div>
         )}
 

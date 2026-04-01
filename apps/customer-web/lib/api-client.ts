@@ -138,9 +138,9 @@ export function getApiBaseUrl(): string {
     else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
       raw = process.env.NEXT_PUBLIC_API_BASE_URL;
     }
-    // 4. Fall back to API Gateway (matches vendor-web getApiBaseUrl)
+    // 4. Local Lambda (serverless-offline in backend/lambda, default httpPort 3000)
     else {
-      raw = getApiGatewayUrl();
+      raw = 'http://localhost:3000';
     }
   } else {
     // When NOT on localhost (deployed environments like CloudFront):

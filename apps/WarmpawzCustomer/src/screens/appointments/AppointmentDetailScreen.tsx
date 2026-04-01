@@ -45,7 +45,7 @@ export function AppointmentDetailScreen({
   const loadAppointment = async () => {
     try {
       setLoading(true);
-      const response = await AppointmentApi.getAppointment(appointmentId);
+      const response = await AppointmentApi.getAppointment(appointmentId, customerId);
       setAppointment(response.appointment || response);
 
       // Load prescriptions
@@ -70,7 +70,7 @@ export function AppointmentDetailScreen({
           style: 'destructive',
           onPress: async () => {
             try {
-              await AppointmentApi.cancelAppointment(appointmentId);
+              await AppointmentApi.cancelAppointment(appointmentId, undefined, customerId);
               Alert.alert('Success', 'Appointment cancelled');
               if (onNavigate) {
                 onNavigate('AppointmentList');

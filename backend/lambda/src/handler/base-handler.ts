@@ -241,7 +241,9 @@ export abstract class BaseHandler {
   protected success(data: any, statusCode: number = 200): HandlerResponse {
     return {
       statusCode,
-      body: JSON.stringify(data),
+      body: JSON.stringify(data, (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ),
     };
   }
 
@@ -251,7 +253,9 @@ export abstract class BaseHandler {
   protected error(message: string, statusCode: number = 400): HandlerResponse {
     return {
       statusCode,
-      body: JSON.stringify({ error: message }),
+      body: JSON.stringify({ error: message }, (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ),
     };
   }
 

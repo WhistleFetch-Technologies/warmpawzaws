@@ -266,6 +266,36 @@ export const CustomerApi = {
   getSupportTickets: (phone: string) => ApiService.get(`/crm/tickets?customerPhone=${phone}`),
   createSupportTicket: (phone: string, ticketData: any) => 
     ApiService.post('/crm/tickets', { customerPhone: phone, ...ticketData }),
+  /** FAQs for Help & Support (falls back to empty list if route missing) */
+  getFAQs: async () => {
+    try {
+      return await ApiService.get('/customer/faqs');
+    } catch {
+      try {
+        return await ApiService.get('/support/faqs');
+      } catch {
+        return { faqs: [] };
+      }
+    }
+  },
+  /** Help & Support contact form → support ticket */
+  contactSupport: async (data: { subject: string; message: string; customerId?: string }) => {
+    const phone = data.customerId || '';
+    try {
+      return await ApiService.post('/support/tickets', {
+        customerPhone: phone,
+        subject: data.subject,
+        message: data.message,
+        source: 'customer',
+      });
+    } catch {
+      return ApiService.post('/crm/tickets', {
+        customerPhone: phone,
+        subject: data.subject,
+        message: data.message,
+      });
+    }
+  },
   
   // Pet Bookings
   getPetBookings: (phone: string, petId: string) => 
@@ -504,12 +534,32 @@ export const PaymentApi = {
 // ✅ NEW: Appointment API (SQL-migrated endpoints)
 export const AppointmentApi = {
   // Use new customer-appointments endpoints
-  getAppointments: (customerId: string) => ApiService.get(`/customer/appointments?customerId=${customerId}`),
-  getAppointment: (appointmentId: string) => ApiService.get(`/customer/appointments/${appointmentId}`),
-  cancelAppointment: (appointmentId: string, reason?: string) => 
-    ApiService.post(`/customer/appointments/${appointmentId}/cancel`, { reason }),
-  rescheduleAppointment: (appointmentId: string, newDate: string, newTime: string, reason?: string) =>
-    ApiService.post(`/customer/appointments/${appointmentId}/reschedule`, { appointment_date: newDate, appointment_time: newTime, reason }),
+  getAppointments: (customerId: string) =>
+    ApiService.get(`/customer/appointments?customerId=${encodeURIComponent(customerId)}`),
+  /** Pass DB customer UUID when available so detail matches list (JWT sub may differ from customers.id). */
+  getAppointment: (appointmentId: string, customerId?: string) => {
+    const q = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return ApiService.get(`/customer/appointments/${encodeURIComponent(appointmentId)}${q}`);
+  },
+  cancelAppointment: (appointmentId: string, reason?: string, customerId?: string) => {
+    const q = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return ApiService.post(`/customer/appointments/${encodeURIComponent(appointmentId)}/cancel${q}`, {
+      reason,
+    });
+  },
+  rescheduleAppointment: (
+    appointmentId: string,
+    newDate: string,
+    newTime: string,
+    reason?: string,
+    customerId?: string
+  ) => {
+    const q = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return ApiService.post(
+      `/customer/appointments/${encodeURIComponent(appointmentId)}/reschedule${q}`,
+      { appointment_date: newDate, appointment_time: newTime, reason }
+    );
+  },
 };
 
 // ✅ NEW: Booking OTP API (SQL-migrated endpoints)

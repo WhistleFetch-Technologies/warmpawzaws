@@ -99,6 +99,9 @@ export function AppointmentDetailsView({
   const [cancelling, setCancelling] = useState(false);
 
   const loadAppointmentDetails = useCallback(async () => {
+    if (!appointmentId || appointmentId === 'undefined') return;
+    const id = appointmentId.trim();
+    if (!id) return;
     try {
       setLoading(true);
       const cid = await resolveCustomerDatabaseIdForPhone(phone);
@@ -112,7 +115,7 @@ export function AppointmentDetailsView({
       }
       const q = `customerId=${encodeURIComponent(cid)}`;
       const data = await apiClient.get<{ appointment?: Record<string, unknown> }>(
-        `/appointment/${appointmentId}?${q}`
+        `/appointment/${id}?${q}`
       );
       const raw = data.appointment ?? (data as any).data?.appointment;
       const normalized = normalizeAppointmentDetailPayload(
@@ -133,6 +136,10 @@ export function AppointmentDetailsView({
   useEffect(() => {
     loadAppointmentDetails();
   }, [loadAppointmentDetails]);
+
+  if (!appointmentId || appointmentId === 'undefined' || !appointmentId.trim()) {
+    return null;
+  }
 
   const handleGetDirections = () => {
     if (location?.latitude && location?.longitude) {
@@ -160,7 +167,7 @@ export function AppointmentDetailsView({
     try {
       setCancelling(true);
       const data = await apiClient.post<{ success?: boolean }>(
-        `/appointment/${appointmentId}/cancel?customerId=${encodeURIComponent(customerDbId)}`,
+        `/appointment/${appointmentId.trim()}/cancel?customerId=${encodeURIComponent(customerDbId)}`,
         {
           reason: cancelReason,
           refundMethod
