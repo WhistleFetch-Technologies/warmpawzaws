@@ -314,13 +314,13 @@ export function registerRewardsEndpoints(app: Hono) {
         const history = await query(
           `SELECT 
             id,
-            type,
+            transaction_type AS type,
             points,
             description,
-            created_at as date,
-            reference_type as source
+            created_at AS date,
+            reference_type AS source
            FROM loyalty_transactions
-           WHERE customer_id = $1
+           WHERE customer_id = $1::uuid
            ORDER BY created_at DESC
            LIMIT $2 OFFSET $3`,
           [customerId, limit, offset]
@@ -448,12 +448,11 @@ export function registerRewardsEndpoints(app: Hono) {
       // Record transaction
       await insert('loyalty_transactions', {
         customer_id: customerId,
-        type: 'redeemed',
+        transaction_type: 'redeemed',
         points: -reward.points_cost,
         description: `Redeemed: ${reward.name}`,
         reference_type: 'reward_redemption',
         reference_id: rewardId,
-        created_at: new Date().toISOString(),
       });
 
       // Create redemption record

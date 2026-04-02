@@ -2373,7 +2373,6 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Rewards & Loyalty
   if (currentScreen === 'rewards-loyalty') return <RewardsLoyaltyPage
     customerPhone={phone}
-    customerId={phone}
     onBack={handleBack}
   />;
 
