@@ -11,7 +11,7 @@
  * - Service styles restricted (no at_center style - solo providers visit customer or do tele)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
@@ -88,6 +88,19 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
+  const effectiveVendor = useMemo(() => {
+    const merged = { ...(vendorData || {}), ...(vendor || {}) };
+    const bn =
+      vendorData?.businessName ||
+      vendorData?.business_name ||
+      vendor?.businessName ||
+      vendor?.business_name;
+    if (bn) {
+      merged.businessName = bn;
+      merged.business_name = bn;
+    }
+    return merged;
+  }, [vendor, vendorData]);
 
   // Modals
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
@@ -267,9 +280,29 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         }));
       }
 
-      // Check profile completion
+      // Check profile completion + merge display name from API (stale local state fix)
       if (profileRes && profileRes.success) {
         const profile = profileRes.vendor || profileRes;
+        const biz = profile.businessName || profile.business_name || profile.name;
+        const owner =
+          profile.ownerName ||
+          profile.owner_name ||
+          profile.fullName ||
+          profile.full_name;
+        if (biz || owner) {
+          setVendor((prev: any) => ({
+            ...(prev || {}),
+            ...(biz ? { businessName: biz, business_name: biz } : {}),
+            ...(owner
+              ? {
+                  ownerName: profile.ownerName || profile.owner_name,
+                  owner_name: profile.owner_name || profile.ownerName,
+                  fullName: profile.fullName || profile.full_name,
+                  full_name: profile.full_name || profile.fullName,
+                }
+              : {}),
+          }));
+        }
         const isProfileComplete = !!(
           (profile.owner_name || profile.full_name) &&
           profile.phone &&
@@ -535,7 +568,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </div>
               <div className="min-w-0">
                 <h1 className="font-semibold text-gray-900 truncate">
-                  {vendor?.ownerName || vendor?.owner_name || vendor?.fullName || vendor?.full_name || session.ownerName || 'Solo Provider'}
+                  {effectiveVendor?.ownerName || effectiveVendor?.owner_name || effectiveVendor?.fullName || effectiveVendor?.full_name || session.ownerName || 'Solo Provider'}
                 </h1>
                 <p className="text-xs text-gray-500">Solo Provider • {session.roleName || roleName || 'Service Provider'}</p>
                 {displayAddress && (
@@ -968,7 +1001,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         <VendorChatConversationsModal
           vendorId={vendorId}
           vendorPhone={vendorData?.phone || vendorData?.mobile}
-          vendorName={vendorData?.fullName || vendorData?.businessName}
+          vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name}
           open={chatConversationsOpen}
           onClose={() => {
             setChatConversationsOpen(false);
@@ -993,7 +1026,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           bookingId={selectedChatConversation.bookingId}
           vendorId={vendorId}
           vendorPhone={vendorData?.phone || vendorData?.mobile}
-          vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
           customerPhone={selectedChatConversation.customerPhone}
           customerName={selectedChatConversation.customerName}
           bookingStatus={selectedChatConversation.bookingStatus}
@@ -1012,7 +1045,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           mode={communicationMode}
           bookingId={selectedAppointment.bookingId}
           userId={vendorData?.phone || vendorData?.mobile || '+91'}
-          userName={vendorData?.fullName || vendorData?.businessName || 'Provider'}
+          userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Provider'}
           otherUserName={selectedAppointment.customerName}
           userType="vendor"
           onClose={() => {
@@ -1133,7 +1166,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       {/* AI Support Chat (same widget as business vendor dashboard) */}
       <ChatWidget
         userId={vendorId}
-        userName={vendor?.fullName || vendor?.businessName || 'Provider'}
+        userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Provider'}
         userType="vendor"
       />
 

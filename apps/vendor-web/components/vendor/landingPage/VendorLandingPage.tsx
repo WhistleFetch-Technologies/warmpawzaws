@@ -1082,7 +1082,27 @@ export function VendorLandingPage({
           <ProfileManager
             vendorId={vendorId}
             vendorData={vendorData}
-            onBack={() => setShowProfile(false)}
+            onBack={async () => {
+              setShowProfile(false);
+              try {
+                const res = await apiClient.get('/vendor/profile') as any;
+                const v = res?.vendor;
+                if (res?.success && v) {
+                  const biz = v.businessName ?? v.business_name ?? v.name;
+                  setVendorData((prev: any) => ({
+                    ...(prev || {}),
+                    ...(biz
+                      ? { businessName: biz, business_name: biz }
+                      : {}),
+                    ownerName: v.ownerName ?? v.owner_name ?? prev?.ownerName,
+                    owner_name: v.owner_name ?? v.ownerName ?? prev?.owner_name,
+                    profilePhotoUrl: v.profilePhotoUrl ?? v.profile_photo_url ?? prev?.profilePhotoUrl,
+                  }));
+                }
+              } catch {
+                /* non-blocking */
+              }
+            }}
           />
         );
       }
