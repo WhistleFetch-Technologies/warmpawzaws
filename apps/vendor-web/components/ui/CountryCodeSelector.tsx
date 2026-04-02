@@ -107,9 +107,9 @@ export function CountryCodeSelector({
     country.iso.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking/touching outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
         setSearchTerm('');
@@ -117,7 +117,11 @@ export function CountryCodeSelector({
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
   }, []);
 
   // Focus search input when dropdown opens
@@ -157,7 +161,7 @@ export function CountryCodeSelector({
 
       {/* Dropdown */}
       {isOpen && !disabled && (
-        <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-2 w-[min(18rem,calc(100vw-2rem))] bg-white rounded-2xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
           {/* Search Input */}
           <div className="p-3 border-b border-gray-100">
             <div className="relative">
@@ -197,8 +201,8 @@ export function CountryCodeSelector({
                     setSearchTerm('');
                   }}
                   className={`
-                    w-full flex items-center gap-3 px-4 py-3 text-left
-                    hover:bg-[#FF8C42]/10 transition-colors
+                    w-full flex items-center gap-3 px-4 py-3 min-h-[44px] text-left
+                    hover:bg-[#FF8C42]/10 active:bg-[#FF8C42]/20 transition-colors
                     ${selectedCode === country.code && selectedCountry.iso === country.iso 
                       ? 'bg-[#FF8C42]/10 border-l-4 border-[#FF8C42]' 
                       : ''

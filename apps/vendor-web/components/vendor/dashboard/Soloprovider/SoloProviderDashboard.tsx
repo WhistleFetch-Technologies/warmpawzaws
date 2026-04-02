@@ -15,9 +15,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
-import { getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import { hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
+
+const logoImage = '/warmpawz-logo.svg';
 import {
   Calendar,
   Clock,
@@ -60,10 +61,10 @@ import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
 import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
-import { AIChatBot } from '@/components/customer/AIChatBot';
+import { ChatWidget } from '@/components/customer/ChatWidget';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { useVendorCapabilities } from '@/hooks/useVendorCapabilities';
-import { formatBookingTime } from '../helpers';
+import { formatBookingTime, vendorNotificationUnreadCount, SHOW_VENDOR_FOOTER_REPORTING_TAB } from '../helpers';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
 import { DashboardStats } from '@/components/shared/DashboardStats';
 
@@ -102,7 +103,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   // OTP modal for completing appointments
@@ -167,8 +168,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const hasPackages = hasPackagesCapability || isTrainerWalkerSitter;
 
   // Get role theme
-  const roleIcon = getRoleIcon(vendorData?.roleId);
-  const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   const vendorId = session.vendorId;
 
@@ -240,9 +239,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       // Fetch notifications
       const notificationsRes = await apiClient.get<any>(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] }));
-      if (notificationsRes && notificationsRes.success) {
-        setNotifications(notificationsRes.notifications || []);
-      }
+      setNotificationUnreadCount(
+        notificationsRes && notificationsRes.success
+          ? vendorNotificationUnreadCount(notificationsRes)
+          : 0
+      );
 
       // Chat unread count for message icon badge
       if (capabilities.chat) {
@@ -526,14 +527,14 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200">
+        <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${colorScheme.primary} rounded-lg flex items-center justify-center`}>
-                <span className="text-2xl">{roleIcon}</span>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain p-1" />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">
+              <div className="min-w-0">
+                <h1 className="font-semibold text-gray-900 truncate">
                   {vendor?.ownerName || vendor?.owner_name || vendor?.fullName || vendor?.full_name || session.ownerName || 'Solo Provider'}
                 </h1>
                 <p className="text-xs text-gray-500">Solo Provider • {session.roleName || roleName || 'Service Provider'}</p>
@@ -572,7 +573,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 onClick={() => setNotificationModalOpen(true)}
               >
                 <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {notifications.filter((n: any) => !n.isRead).length > 0 && (
+                {notificationUnreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -898,24 +899,24 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 safe-area-bottom">
+          <div className="max-w-[430px] mx-auto flex items-center justify-around py-2">
             <button
               onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <div className="w-6 h-6">🏠</div>
-              <span className="text-xs">Home</span>
+              <div className="w-5 h-5 text-center">🏠</div>
+              <span className="text-[10px]">Home</span>
             </button>
 
             {isPharmacy ? (
               <button
                 onClick={() => router.push('/pharmacy/orders')}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
+                className="flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 text-gray-400 active:text-[#FF8C42]"
               >
-                <ClipboardList className="w-6 h-6" />
-                <span className="text-xs">Orders</span>
+                <ClipboardList className="w-5 h-5" />
+                <span className="text-[10px]">Orders</span>
               </button>
             ) : (
               <button
@@ -923,30 +924,32 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   router.push('/bookings');
                   setActiveBottomTab('bookings');
                 }}
-                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
                   }`}
               >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">Bookings</span>
+                <Calendar className="w-5 h-5" />
+                <span className="text-[10px]">Bookings</span>
+              </button>
+            )}
+
+            {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+              <button
+                onClick={() => setActiveBottomTab('reporting')}
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                  }`}
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span className="text-[10px]">Reporting</span>
               </button>
             )}
 
             <button
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
-            </button>
-
-            <button
               onClick={() => router.push('/settings')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
+              <Settings className="w-5 h-5" />
+              <span className="text-[10px]">Settings</span>
             </button>
           </div>
         </div>
@@ -1127,10 +1130,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       {/* Vendor Settings - navigates to /settings (mobile-optimized VendorSettingsScreen) */}
 
-      {/* AI Support Bot */}
-      <AIChatBot
-        customerId={vendorId}
-        customerName={vendor?.fullName || vendor?.businessName || 'Provider'}
+      {/* AI Support Chat (same widget as business vendor dashboard) */}
+      <ChatWidget
+        userId={vendorId}
+        userName={vendor?.fullName || vendor?.businessName || 'Provider'}
+        userType="vendor"
       />
 
       {/* Debug Overlay */}

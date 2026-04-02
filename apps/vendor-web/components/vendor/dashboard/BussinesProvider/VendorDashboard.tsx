@@ -9,13 +9,12 @@ import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { CapabilityGate } from '../../CapabilityGate';
 import { useVendorCapabilities } from '../../hooks/useVendorCapabilities';
 // AWS Serverless: apiClient with Cognito auth
-import { getVendorIconTheme, getRoleIconComponent, getRoleColorScheme, renderRoleIcon } from '@/lib/vendor-icon-themes';
+import { getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import { getVendorRoleId, normalizeServiceStyle, hasVendorRole } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
 // Removed unused import: Analytics
-import { copyTextToClipboard } from '@/lib/shareUtils';
 import {
   Calendar,
   Clock,
@@ -58,8 +57,13 @@ import {
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Badge } from '../../../ui/badge';
 import { VendorNotificationModal } from '../../modals/VendorNotificationModal';
-import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
-import { formatBookingTime } from '../helpers';
+import { Dashboardstats, DashboardWarnings, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
+import {
+  formatBookingTime,
+  vendorNotificationUnreadCount,
+  SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS,
+  SHOW_VENDOR_FOOTER_REPORTING_TAB,
+} from '../helpers';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
 
@@ -94,6 +98,9 @@ const VendorChatModal = lazy(() =>
 const TeleTracker = lazy(() =>
   import('../../teleCommunication/TeleTracker').then((m) => ({ default: m.TeleTracker }))
 );
+
+/** Dashboard Additional Features only. Routes, handlers, and capabilities stay wired; set true to show these tiles again. */
+const SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR = false;
 
 export function VendorDashboard({
   vendorId,
@@ -155,7 +162,7 @@ export function VendorDashboard({
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,6 +250,7 @@ export function VendorDashboard({
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
 
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
+  const logoImage = '/warmpawz-logo.svg';
 
   // ✅ BIG LOGGING: Log vendorData when VendorDashboard loads
   useEffect(() => {
@@ -453,10 +461,12 @@ export function VendorDashboard({
           setWatchlist(watchlistRes.watchlist || []);
         }
 
-        // Process notifications
-        if (notificationsRes && notificationsRes.success) {
-          setNotifications(notificationsRes.notifications || []);
-        }
+        // Process notifications (badge uses server unreadCount; list rows use is_read not isRead)
+        setNotificationUnreadCount(
+          notificationsRes && notificationsRes.success
+            ? vendorNotificationUnreadCount(notificationsRes)
+            : 0
+        );
 
         // Process services
         if (servicesRes && servicesRes.success) {
@@ -698,8 +708,7 @@ export function VendorDashboard({
     }
   };
 
-  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
-  const RoleIcon = getRoleIconComponent(vendorData?.roleId);
+  // 🎨 Role-themed accents for quick actions (header always shows WarmPawz logo)
   const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   // 🏷️ GET ROLE-AWARE LABELS
@@ -721,40 +730,40 @@ export function VendorDashboard({
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200">
+        <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${colorScheme.secondary} rounded-lg flex items-center justify-center`}>
-                <RoleIcon className={`w-6 h-6 ${colorScheme.primary}`} />
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain p-1" />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">
+              <div className="min-w-0 flex-1">
+                <h1 className="font-semibold text-gray-900 truncate">
                   {isSoloProvider
                     ? (vendor?.ownerName || vendor?.owner_name || vendor?.fullName || 'Service Provider')
                     : (vendor?.businessName || vendor?.business_name || vendor?.fullName || 'Vendor Dashboard')
                   }
                 </h1>
-                <p className="text-xs text-gray-500">
-                  {isSoloProvider ? 'Solo Provider' : (vendorData?.address || vendor?.address || 'Business Center')} • {roleName || 'Service Provider'}
+                <p className="text-xs text-gray-500 truncate">
+                  {isSoloProvider ? 'Solo Provider' : (vendorData?.address || vendor?.address || 'Business Center')} {'\u00B7'} {roleName || 'Service Provider'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => fetchDashboardData(true)} disabled={refreshing} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors">
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
 
               {capabilities.chat && (
                 <button
                   type="button"
-                  className="relative p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                   onClick={() => setChatConversationsOpen(true)}
                   title="Messages"
                   aria-label="Open messages"
                 >
-                  <MessageSquare className="w-5 h-5 text-gray-400 hover:text-[#FF8C42]" />
+                  <MessageSquare className="w-5 h-5 text-gray-400" />
                   {chatUnreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-medium">
+                    <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-medium">
                       {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
                     </span>
                   )}
@@ -762,11 +771,11 @@ export function VendorDashboard({
               )}
 
               <button
-                className="relative"
+                className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                 onClick={() => setNotificationModalOpen(true)}
               >
-                <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {notifications.filter(n => !n.isRead).length > 0 && (
+                <Bell className="w-5 h-5 text-gray-400" />
+                {notificationUnreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -967,9 +976,8 @@ export function VendorDashboard({
           )}
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS — hidden for pharmacy (flow is Orders + Profile only) */}
-        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
           capabilities.controlled_substances ||
-          capabilities.prescription ||
           capabilities.prescription_verification ||
           capabilities.delivery ||
           hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
@@ -1010,8 +1018,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* CCTV Access */}
-                {onNavigateToCCTV && capabilities.cctv_access && (
+                {/* CCTV Access — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
+                {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToCCTV && capabilities.cctv_access && (
                   <button
                     onClick={onNavigateToCCTV}
                     className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
@@ -1032,9 +1040,9 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Prescription Builder */}
+                {/* Prescription Builder — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
                 <CapabilityGate capability="prescription_create">
-                  {onNavigateToPrescription && (
+                  {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPrescription && (
                     <button
                       onClick={onNavigateToPrescription}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1046,9 +1054,9 @@ export function VendorDashboard({
                   )}
                 </CapabilityGate>
 
-                {/* Prescription List */}
+                {/* Prescription List — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
                 <CapabilityGate capability="prescription_create">
-                  {onNavigateToPrescriptionList && (
+                  {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPrescriptionList && (
                     <button
                       onClick={onNavigateToPrescriptionList}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1165,8 +1173,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Patient Monitoring */}
-                {onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
+                {/* Patient Monitoring — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
+                {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
                   <button
                     onClick={onNavigateToPatientMonitoring}
                     className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
@@ -1295,6 +1303,9 @@ export function VendorDashboard({
             >Month</button>
           </div>
 
+          {(isPharmacy ||
+            capabilities.orders ||
+            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS) && (
           <div className="grid grid-cols-3 gap-3">
             {/* ✅ PHARMACY FIX: Show Orders first for Pharmacy, Appointments for others */}
             {isPharmacy ? (
@@ -1314,8 +1325,8 @@ export function VendorDashboard({
               </>
             ) : (
               <>
-                {/* ✅ Stat card with role-aware labels - Always show for non-pharmacy (receive bookings) */}
-                {!isPharmacy && (
+                {/* ✅ Stat card with role-aware labels — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
+                {!isPharmacy && SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS && (
                   <button
                     key="stat-appointments"
                     onClick={() => {
@@ -1340,8 +1351,10 @@ export function VendorDashboard({
                   </div>
                 )}
 
-                {/* ✅ Sessions/Consultations Stat with role-aware labels - Always show for non-pharmacy */}
-                {!isPharmacy && (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
+                {/* ✅ Sessions/Consultations Stat — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
+                {!isPharmacy &&
+                  SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS &&
+                  (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
                   <button
                     key="stat-consultations"
                     onClick={() => {
@@ -1371,6 +1384,7 @@ export function VendorDashboard({
               <div className="text-xs text-gray-500">Earnings</div>
             </div> */}
           </div>
+          )}
         </div>
 
         {/* 🗓️ TODAY'S SCHEDULE - Open appointments on landing page (always for non-pharmacy) */}
@@ -1413,30 +1427,6 @@ export function VendorDashboard({
                 <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
                   Share your profile with {labels.customers.toLowerCase()} to start getting {labels.bookings.toLowerCase()}!
                 </p>
-                <button
-                  onClick={async () => {
-                    const shareData = {
-                      title: vendor?.businessName || 'My Pet Service',
-                      text: `Book your pet appointment with ${vendor?.businessName || 'us'} on Warmpawz!`,
-                      url: window.location.origin
-                    };
-
-                    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-                      try {
-                        await navigator.share(shareData);
-                      } catch (err) {
-                        console.error('Share failed:', err);
-                      }
-                    } else {
-                      copyTextToClipboard(window.location.origin);
-                      alert('Profile link copied to clipboard!');
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Share Profile
-                </button>
               </div>
             ) : (
               <>
@@ -1710,25 +1700,24 @@ export function VendorDashboard({
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 safe-area-bottom">
+          <div className="max-w-[430px] mx-auto flex items-center justify-around py-2">
             <button
               onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <Home className="w-6 h-6" />
-              <span className="text-xs">Home</span>
+              <Home className="w-5 h-5" />
+              <span className="text-[10px]">Home</span>
             </button>
 
-            {/* ✅ PHARMACY: Orders tab goes to Pharmacy Orders page (accept orders, prescriptions, proforma) */}
             {isPharmacy ? (
               <button
                 onClick={() => router.push('/pharmacy/orders')}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
+                className="flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 text-gray-400 active:text-[#FF8C42]"
               >
-                <ClipboardList className="w-6 h-6" />
-                <span className="text-xs">Orders</span>
+                <ClipboardList className="w-5 h-5" />
+                <span className="text-[10px]">Orders</span>
               </button>
             ) : (
               <button
@@ -1736,30 +1725,32 @@ export function VendorDashboard({
                   onNavigateToBookingManagement?.();
                   setActiveBottomTab('bookings');
                 }}
-                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
                   }`}
               >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">{labels.bookings}</span>
+                <Calendar className="w-5 h-5" />
+                <span className="text-[10px]">{labels.bookings}</span>
+              </button>
+            )}
+
+            {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+              <button
+                onClick={() => setActiveBottomTab('reporting')}
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                  }`}
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span className="text-[10px]">Reporting</span>
               </button>
             )}
 
             <button
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
-            </button>
-
-            <button
               onClick={() => router.push('/settings')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
+              <Settings className="w-5 h-5" />
+              <span className="text-[10px]">Settings</span>
             </button>
           </div>
         </div>

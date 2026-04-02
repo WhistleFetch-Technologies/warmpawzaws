@@ -1221,7 +1221,10 @@ export function VendorLandingPage({
             <div className="max-w-6xl mx-auto px-4 py-6">
               <DiagnosticsOrderDashboard
                 vendorId={vendorId}
-                onBack={() => setShowDiagnosticsOrders(false)}
+                onBack={() => {
+                  setShowDiagnosticsOrders(false);
+                  setShowDiagnostics(true);
+                }}
                 onSelectBooking={(bookingId) => setSelectedDiagnosticsBookingId(bookingId)}
               />
               {selectedDiagnosticsBookingId && (
@@ -1255,10 +1258,7 @@ export function VendorLandingPage({
                 vendorData={vendorData}
                 onBack={() => {
                   setShowDiagnostics(false);
-                  // ✅ FIX: Use proper role detection helper
-                  if (isDiagnosticsCenter(vendorData)) {
-                    setShowDiagnosticsOrders(true);
-                  }
+                  // Back from test catalog → main vendor dashboard (home). Lab orders: explicit "Lab Orders" row (onNavigateToOrders).
                 }}
                 onNavigateToOrders={() => {
                   setShowDiagnostics(false);

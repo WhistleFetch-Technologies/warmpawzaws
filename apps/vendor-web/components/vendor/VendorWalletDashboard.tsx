@@ -43,12 +43,21 @@ export function VendorWalletDashboard({ vendorId }: VendorWalletDashboardProps) 
       setLoading(true);
       setError(null);
       try {
-        const walletRes = await apiClient.get<VendorWalletResponse>(`/vendor/wallet/${vendorId}`);
-        const txRes = await apiClient.get<{ transactions: VendorWalletTransaction[] }>(
-          `/vendor/wallet/${vendorId}/transactions?limit=20`
-        );
-        setWallet(walletRes?.data || null);
-        setTransactions(txRes?.transactions || []);
+        const [walletRes, txRes] = await Promise.allSettled([
+          apiClient.get<VendorWalletResponse>(`/vendor/wallet/${vendorId}`),
+          apiClient.get<{ transactions: VendorWalletTransaction[] }>(
+            `/vendor/wallet/${vendorId}/transactions?limit=20`
+          ),
+        ]);
+        if (walletRes.status === 'fulfilled') {
+          setWallet(walletRes.value?.data || null);
+        }
+        if (txRes.status === 'fulfilled') {
+          setTransactions(txRes.value?.transactions || []);
+        }
+        if (walletRes.status === 'rejected' && txRes.status === 'rejected') {
+          setError('Failed to load wallet data. Please try again.');
+        }
       } catch (e: any) {
         setError(e?.message || 'Failed to load vendor wallet');
       } finally {
@@ -68,14 +77,14 @@ export function VendorWalletDashboard({ vendorId }: VendorWalletDashboardProps) 
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Vendor Wallet</h1>
-            <p className="text-sm text-gray-600 mt-1">Track loyalty wallet credits and transaction history.</p>
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-[430px] mx-auto space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-gray-900">Vendor Wallet</h1>
+            <p className="text-xs text-gray-600 mt-0.5">Track wallet credits and transactions</p>
           </div>
-          <Link href="/finance/settlements" className="text-sm text-orange-700 hover:text-orange-800 font-medium">
+          <Link href="/finance/settlements" className="text-xs text-orange-700 hover:text-orange-800 font-medium whitespace-nowrap min-h-[44px] flex items-center">
             View Settlements
           </Link>
         </div>

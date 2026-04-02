@@ -246,10 +246,10 @@ export default function DiagnosticsPage() {
   };
 
   const handleDelete = async (test: DiagnosticTest) => {
-    if (!confirm('Remove this test? It will no longer be visible.')) return;
+    if (!confirm('Remove this test? This cannot be undone.')) return;
     if (!vendorId) return;
     try {
-      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${test.id}`, { isAvailable: false });
+      await apiClient.delete(`/vendor/${vendorId}/diagnostics/tests/${test.id}`);
       toast.success('Test removed');
       await fetchTests();
     } catch (error: any) {

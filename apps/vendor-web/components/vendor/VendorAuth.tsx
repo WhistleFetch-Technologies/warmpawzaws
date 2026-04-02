@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import { ChatWidget } from '@/components/customer/ChatWidget';
 import {
   PlatformLegalPolicyDialog,
   type PlatformPolicyType,
@@ -39,6 +40,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+  const [showChatBot, setShowChatBot] = useState(false);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -55,6 +57,14 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       policyType={legalDialogType}
     />
   );
+
+  const chatBotWidget = showChatBot ? (
+    <ChatWidget
+      userType="vendor"
+      defaultOpen
+      onClose={() => setShowChatBot(false)}
+    />
+  ) : null;
   
   // Update cooldown countdown timer
   useEffect(() => {
@@ -546,6 +556,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         </div>
       </div>
       {legalDialog}
+      {chatBotWidget}
       </Fragment>
     );
   }
@@ -641,7 +652,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             <div className="space-y-2">
               <p className="text-sm text-gray-600">
                 Trouble with verification?{' '}
-                <a href="#" className="text-[#FF8C42] underline">Get Help</a>
+                <button type="button" onClick={() => setShowChatBot(true)} className="text-[#FF8C42] underline">Get Help</button>
               </p>
               <button
                 type="button"
@@ -664,6 +675,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         </div>
       </div>
       {legalDialog}
+      {chatBotWidget}
       </Fragment>
     );
   }
@@ -672,28 +684,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   if (isSignUp && currentStep === 1 && !showOtpScreen) {
     return (
       <Fragment>
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
-        {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-          <span className="text-sm font-medium text-black">09:41</span>
-          <div className="flex gap-1.5 items-center">
-            <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-            </svg>
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-            </svg>
-          </div>
-        </div>
-
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto safe-area-top">
         {/* Orange Header Section */}
         <div className="px-6 pt-8 pb-20 flex flex-col items-center">
           {/* Logo */}
@@ -727,11 +718,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <Label htmlFor="phone" className="text-gray-700 mb-2 block text-sm font-medium">
                 Phone Number
               </Label>
-              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
                 <CountryCodeSelector
                   selectedCode={countryCode}
                   onSelect={setCountryCode}
                   disabled={false}
+                  className="rounded-l-2xl"
                 />
                 <input
                   id="phone"
@@ -741,7 +733,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                   maxLength={10}
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="flex-1 py-4 px-4 text-lg outline-none"
+                  className="flex-1 py-4 px-4 text-lg outline-none rounded-r-2xl"
                   placeholder="74493 38923"
                   required
                   autoFocus
@@ -843,15 +835,22 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               </button>
             </div>
 
-            <div className="pt-6 space-y-1 text-xs text-gray-400">
-              <p>Need Help?</p>
+            <div className="pt-6 space-y-1 text-xs text-gray-400 text-center">
+              <button
+                type="button"
+                onClick={() => setShowChatBot(true)}
+                className="text-[#FF8C42] underline block w-full text-center"
+              >
+                Need Help?
+              </button>
               <p>WARMPAWS Provider v2.1.0</p>
-              <p>© 2025 WARMPAWZ Inc. All rights reserved</p>
+              <p>&copy; 2025 WARMPAWZ Inc. All rights reserved</p>
             </div>
           </div>
         </div>
       </div>
       {legalDialog}
+      {chatBotWidget}
       </Fragment>
     );
   }
@@ -954,6 +953,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         </div>
       </div>
       {legalDialog}
+      {chatBotWidget}
       </Fragment>
     );
   }
@@ -1300,6 +1300,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       </div>
     </div>
     {legalDialog}
+    {chatBotWidget}
     </Fragment>
   );
 }
