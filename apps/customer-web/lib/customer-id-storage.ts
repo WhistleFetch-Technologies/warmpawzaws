@@ -70,12 +70,13 @@ export function ensureCustomerIdStorageReconciledOnce(): void {
 
 /**
  * Paths where the first segment after `/customer/` must be a DB customer UUID (not phone).
+ * Excludes `addresses`: the backend resolves `/customer/:customerId/addresses` by UUID or phone.
  * Returns null if this path does not require UUID validation.
  */
 export function customerUuidSegmentInPath(path: string): string | null {
   const p = path.replace(/^\/+/, '/');
   const m = p.match(
-    /^\/customer\/([^/?#]+)\/(wishlist|pets|returns|rewards|profile|bookings|addresses|preferences|search-history)(?:\/|$|\?)/
+    /^\/customer\/([^/?#]+)\/(wishlist|pets|returns|rewards|profile|bookings|preferences|search-history)(?:\/|$|\?)/
   );
   if (m) {
     try {

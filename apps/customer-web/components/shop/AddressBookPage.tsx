@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Plus, Edit2, Trash2, Check, X, Home, Building2, Briefcase } from 'lucide-react';
+import { ChevronLeft, MapPin, Plus, Edit2, Trash2, Check, X, Home, Building2, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,8 @@ import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 interface AddressBookPageProps {
   phone: string;
   onBack: () => void;
+  /** Full exit to home / shell reset (same as global back). Defaults to `onBack` if omitted. */
+  onCloseToHome?: () => void;
   onSelect?: (address: Address) => void;
   onNavigate?: (path: string) => void;
 }
@@ -39,7 +41,8 @@ interface Address {
   apartmentName?: string;
 }
 
-export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: AddressBookPageProps) {
+export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavigate }: AddressBookPageProps) {
+  const exitToHome = onCloseToHome ?? onBack;
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -66,6 +69,11 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
     streetName: '',
     apartmentName: ''
   });
+
+  const handleFormBack = () => {
+    setShowForm(false);
+    setEditingAddress(null);
+  };
 
   useEffect(() => {
     loadAddresses();
@@ -104,7 +112,13 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
     setShowForm(true);
   };
 
+  const isProfileSyntheticAddress = (id: string) => id === 'profile';
+
   const handleDelete = async (addressId: string) => {
+    if (isProfileSyntheticAddress(addressId)) {
+      toast.info('This address comes from your profile. You cannot delete it from the address book.');
+      return;
+    }
     if (!confirm('Are you sure you want to delete this address?')) return;
 
     try {
@@ -150,11 +164,21 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
       };
 
       if (editingAddress) {
-        const response = await apiClient.put<any>(`/customer/${phone}/addresses/${editingAddress.id}`, addressData);
-        if (response.success !== false) {
-          toast.success('Address updated successfully');
+        const savingProfileFallback = isProfileSyntheticAddress(editingAddress.id);
+        if (savingProfileFallback) {
+          const response = await apiClient.post<any>(`/customer/${phone}/addresses`, addressData);
+          if (response.success !== false || response.addressId) {
+            toast.success('Address added successfully');
+          } else {
+            throw new Error(response.error || 'Failed to add address');
+          }
         } else {
-          throw new Error(response.error || 'Failed to update address');
+          const response = await apiClient.put<any>(`/customer/${phone}/addresses/${editingAddress.id}`, addressData);
+          if (response.success !== false) {
+            toast.success('Address updated successfully');
+          } else {
+            throw new Error(response.error || 'Failed to update address');
+          }
         }
       } else {
         const response = await apiClient.post<any>(`/customer/${phone}/addresses`, addressData);
@@ -238,25 +262,28 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
   if (showForm) {
     return (
       <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 py-4 rounded-b-2xl shadow-md">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setShowForm(false);
-                setEditingAddress(null);
-              }}
-              className="rounded-full text-white hover:bg-white/20"
+        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 pt-4 pb-4 rounded-b-2xl shadow-md">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <button
+              type="button"
+              onClick={exitToHome}
+              className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform shrink-0"
+              aria-label="Close to home"
             >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-white">
-                {editingAddress ? 'Edit Address' : 'Add New Address'}
-              </h1>
-            </div>
+              <X className="w-6 h-6 text-white" />
+            </button>
+            <button
+              type="button"
+              onClick={handleFormBack}
+              className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+            >
+              <ChevronLeft className="w-5 h-5" />
+              <span className="font-medium">Back</span>
+            </button>
           </div>
+          <h1 className="text-xl font-bold text-white">
+            {editingAddress ? 'Edit Address' : 'Add New Address'}
+          </h1>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
@@ -472,7 +499,13 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
               disabled={saving}
               className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-12 text-lg font-semibold shadow-lg disabled:opacity-50"
             >
-              {saving ? 'Saving...' : editingAddress ? 'Update Address' : 'Save Address'}
+              {saving
+                ? 'Saving...'
+                : editingAddress
+                  ? isProfileSyntheticAddress(editingAddress.id)
+                    ? 'Save Address'
+                    : 'Update Address'
+                  : 'Save Address'}
             </Button>
           </div>
         </form>
@@ -483,20 +516,30 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 py-4 rounded-b-2xl shadow-md">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="rounded-full text-white hover:bg-white/20"
+      <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 pt-4 pb-4 rounded-b-2xl shadow-md">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <button
+            type="button"
+            onClick={exitToHome}
+            className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform shrink-0"
+            aria-label="Close to home"
           >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-white">Address Book</h1>
-            <p className="text-sm text-white/90">{addresses.length} saved {addresses.length === 1 ? 'address' : 'addresses'}</p>
-          </div>
+            <X className="w-6 h-6 text-white" />
+          </button>
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+          >
+            <ChevronLeft className="w-5 h-5" />
+            <span className="font-medium">Back</span>
+          </button>
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-white">Address Book</h1>
+          <p className="text-sm text-white/90 mt-0.5">
+            {addresses.length} saved {addresses.length === 1 ? 'address' : 'addresses'}
+          </p>
         </div>
       </div>
 
@@ -564,26 +607,40 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
                     </p>
                   </div>
                   <div className="flex flex-col gap-2">
+                    {onSelect && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          onSelect(address);
+                          onBack();
+                        }}
+                        className="rounded-full"
+                        aria-label="Select address"
+                      >
+                        <Check className="w-4 h-4 text-green-600" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
-                        if (onSelect) {
-                          onSelect(address);
-                          onBack();
-                        } else {
-                          handleEdit(address);
-                        }
-                      }}
+                      onClick={() => handleEdit(address)}
                       className="rounded-full"
+                      aria-label="Edit address"
                     >
-                      {onSelect ? <Check className="w-4 h-4 text-green-600" /> : <Edit2 className="w-4 h-4 text-blue-600" />}
+                      <Edit2 className="w-4 h-4 text-blue-600" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
+                      disabled={isProfileSyntheticAddress(address.id)}
+                      title={
+                        isProfileSyntheticAddress(address.id)
+                          ? 'Profile address cannot be deleted here'
+                          : undefined
+                      }
                       onClick={() => handleDelete(address.id)}
-                      className="rounded-full"
+                      className="rounded-full disabled:opacity-40"
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </Button>

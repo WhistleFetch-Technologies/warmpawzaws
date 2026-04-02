@@ -4,9 +4,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, ordersApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
 import {
-  Package, Truck, Clock, Check, X as XIcon, ArrowLeft,
+  goBackOrHome,
+  rememberShopBackFromCurrentUrl,
+  rememberShopBackToSpaScreen,
+} from '@/lib/go-back-or-replace';
+import type { ShopReturnSpaScreen } from '@/lib/go-back-or-replace';
+import {
+  Package, Truck, Clock, Check, X as XIcon, ArrowLeft, ChevronLeft, X,
   Phone, Calendar, ChevronDown, ChevronUp, Star,
   RefreshCcw, AlertCircle, Search, Download, ShoppingBag,
 } from 'lucide-react';
@@ -144,10 +149,22 @@ function normalizeOrder(raw: any): Order {
 
 export interface CustomerShopOrdersScreenProps {
   onBack?: () => void;
+  onCloseToHome?: () => void;
+  /** When My Orders lives on `/` (profile), remember this SPA screen so `/shop` back restores it. */
+  spaShopReturnScreen?: ShopReturnSpaScreen;
 }
 
-export function CustomerShopOrdersScreen({ onBack }: CustomerShopOrdersScreenProps) {
+export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnScreen }: CustomerShopOrdersScreenProps) {
   const router = useRouter();
+
+  const goToShop = () => {
+    if (spaShopReturnScreen) {
+      rememberShopBackToSpaScreen(spaShopReturnScreen);
+    } else {
+      rememberShopBackFromCurrentUrl();
+    }
+    router.push('/shop');
+  };
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +178,14 @@ export function CustomerShopOrdersScreen({ onBack }: CustomerShopOrdersScreenPro
       return;
     }
     goBackOrHome(router);
+  };
+
+  const handleCloseToHome = () => {
+    if (onCloseToHome) {
+      onCloseToHome();
+      return;
+    }
+    handleBack();
   };
 
   const loadOrders = useCallback(async () => {
@@ -272,19 +297,49 @@ export function CustomerShopOrdersScreen({ onBack }: CustomerShopOrdersScreenPro
     <div className="min-h-[100dvh] bg-neutral-200/90 sm:bg-neutral-200 flex justify-center">
       <div className="min-h-[100dvh] w-full max-w-[min(100%,28rem)] bg-gradient-to-b from-orange-50 via-amber-50/90 to-orange-50/80 pb-[max(7rem,env(safe-area-inset-bottom,0px))] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)] sm:border-x border-black/[0.04]">
         <header className="sticky top-0 z-40 w-full bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md rounded-b-2xl pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
-          <div className="px-3 sm:px-4 py-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleBack}
-              className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-full hover:bg-white/15 active:bg-white/25 transition-colors touch-manipulation"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="w-5 h-5" strokeWidth={2.25} />
-            </button>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-base sm:text-lg font-bold truncate tracking-tight">My Orders</h1>
-              <p className="text-xs text-white/90 truncate">{loading ? '…' : orderCountLabel}</p>
-            </div>
+          <div className="px-3 sm:px-4 py-3">
+            {onCloseToHome ? (
+              <>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseToHome}
+                    className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 active:scale-95 transition-transform touch-manipulation"
+                    aria-label="Close to home"
+                  >
+                    <X className="w-6 h-6 text-white" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0 touch-manipulation"
+                    aria-label="Go back"
+                  >
+                    <ChevronLeft className="w-5 h-5" strokeWidth={2.25} />
+                    <span className="font-medium">Back</span>
+                  </button>
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-lg font-bold truncate tracking-tight">My Orders</h1>
+                  <p className="text-xs text-white/90 truncate">{loading ? '…' : orderCountLabel}</p>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-full hover:bg-white/15 active:bg-white/25 transition-colors touch-manipulation"
+                  aria-label="Go back"
+                >
+                  <ArrowLeft className="w-5 h-5" strokeWidth={2.25} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base sm:text-lg font-bold truncate tracking-tight">My Orders</h1>
+                  <p className="text-xs text-white/90 truncate">{loading ? '…' : orderCountLabel}</p>
+                </div>
+              </div>
+            )}
           </div>
         </header>
 
@@ -353,7 +408,7 @@ export function CustomerShopOrdersScreen({ onBack }: CustomerShopOrdersScreenPro
               <div className="flex flex-col gap-2.5 max-w-xs mx-auto">
                 <button
                   type="button"
-                  onClick={() => router.push('/shop')}
+                  onClick={goToShop}
                   className="min-h-12 w-full inline-flex items-center justify-center gap-2 text-[15px] font-semibold bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-2xl shadow-md active:scale-[0.98] transition-transform touch-manipulation"
                 >
                   <ShoppingBag className="w-5 h-5 shrink-0" />
@@ -361,7 +416,7 @@ export function CustomerShopOrdersScreen({ onBack }: CustomerShopOrdersScreenPro
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push('/shop')}
+                  onClick={goToShop}
                   className="min-h-11 w-full text-[15px] font-medium text-orange-600 rounded-2xl border border-orange-200 bg-orange-50/50 hover:bg-orange-50 active:scale-[0.99] transition-all touch-manipulation"
                 >
                   Browse products

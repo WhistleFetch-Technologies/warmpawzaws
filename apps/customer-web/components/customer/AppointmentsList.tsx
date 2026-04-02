@@ -15,6 +15,7 @@ export interface AppointmentsListProps {
   /** Customer login phone (used to resolve DB customer UUID). */
   phone: string;
   onBack: () => void;
+  onCloseToHome?: () => void;
   onSelectAppointment: (appointmentId: string) => void;
 }
 
@@ -83,7 +84,7 @@ async function resolveCustomerDatabaseId(phone: string): Promise<string | null> 
   return null;
 }
 
-export function AppointmentsList({ phone, onBack, onSelectAppointment }: AppointmentsListProps) {
+export function AppointmentsList({ phone, onBack, onCloseToHome, onSelectAppointment }: AppointmentsListProps) {
   const [rawRows, setRawRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -230,6 +231,7 @@ export function AppointmentsList({ phone, onBack, onSelectAppointment }: Appoint
         ]}
         onBack={onBack}
         showBackButton
+        onCloseToHome={onCloseToHome}
       />
 
       <div className="px-4 pt-4 space-y-4">

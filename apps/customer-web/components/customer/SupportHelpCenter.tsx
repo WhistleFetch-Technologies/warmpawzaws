@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, HelpCircle, MessageCircle, Phone, Mail, FileText, ChevronRight, Send, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,10 +25,11 @@ interface Ticket {
 interface SupportHelpCenterProps {
   phone?: string;
   onBack: () => void;
+  onCloseToHome?: () => void;
   initialTab?: 'faq' | 'contact' | 'tickets';
 }
 
-export function SupportHelpCenter({ phone, onBack, initialTab }: SupportHelpCenterProps) {
+export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: SupportHelpCenterProps) {
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
   const [searchQuery, setSearchQuery] = useState('');
   const [showContactForm, setShowContactForm] = useState(false);
@@ -196,23 +198,32 @@ export function SupportHelpCenter({ phone, onBack, initialTab }: SupportHelpCent
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white px-4 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="rounded-full text-white hover:bg-white/20"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Help & Support</h1>
-            <p className="text-white/90 text-sm">We're here to help</p>
+      {onCloseToHome ? (
+        <ProfileAccountScreenHeader
+          onCloseToHome={onCloseToHome}
+          onBack={onBack}
+          title="Help & Support"
+          subtitle="We're here to help"
+          className="sticky top-0 z-50"
+        />
+      ) : (
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white px-4 py-4 sticky top-0 z-50">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onBack}
+              className="rounded-full text-white hover:bg-white/20"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div className="flex-1">
+              <h1 className="text-xl font-bold">Help & Support</h1>
+              <p className="text-white/90 text-sm">We're here to help</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 sticky top-[72px] z-40">

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Star, LucideIcon, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, LucideIcon, CheckCircle2, X } from 'lucide-react';
 import { ReactNode } from 'react';
 
 export interface StatCard {
@@ -31,6 +31,8 @@ export interface ServiceDashboardHeaderProps {
   // Navigation
   onBack?: () => void;
   showBackButton?: boolean;
+  /** When set: X (left) = home, Back (right) = previous — same pattern as profile / address book */
+  onCloseToHome?: () => void;
   
   // Custom styling
   // ✅ FIX: Standardized to match customer home header color (#FF8C42)
@@ -47,6 +49,7 @@ export function ServiceDashboardHeader({
   steps,
   onBack,
   showBackButton = true,
+  onCloseToHome,
   // ✅ FIX: Standardized orange color matching customer home header
   headerColor = 'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]',
   headerGradient
@@ -60,35 +63,74 @@ export function ServiceDashboardHeader({
       <div
         className={`${headerGradient || headerColor} text-white pb-8 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
       >
-        {/* Top Row - Back Button and Service Info */}
-        <div className="flex items-start gap-3 mb-4">
-          {showBackButton && onBack && (
-            <button
-              onClick={onBack}
-              className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors mt-1"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="w-4 h-4 text-white" />
-            </button>
-          )}
-          
-          {/* Service Icon Container - Frosted Effect */}
-          <div className="w-14 h-14 flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg">
-            {isLucideIcon ? (
-              <IconComponent className={`w-7 h-7 ${iconColor}`} />
-            ) : (
-              <div className={iconColor}>{ServiceIcon as ReactNode}</div>
+        {/* Profile-style header: X = home, Back = previous */}
+        {onCloseToHome ? (
+          <>
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <button
+                type="button"
+                onClick={onCloseToHome}
+                className="w-11 h-11 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+                aria-label="Close to home"
+              >
+                <X className="w-6 h-6 text-white" />
+              </button>
+              {showBackButton && onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+                  aria-label="Go back"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  <span className="font-medium">Back</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-14 h-14 flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg">
+                {isLucideIcon ? (
+                  <IconComponent className={`w-7 h-7 ${iconColor}`} />
+                ) : (
+                  <div className={iconColor}>{ServiceIcon as ReactNode}</div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 pt-1">
+                <h1 className="text-2xl font-bold text-white mb-1">{serviceName}</h1>
+                {serviceSubtitle && (
+                  <p className="text-white/90 text-sm leading-tight">{serviceSubtitle}</p>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-start gap-3 mb-4">
+            {showBackButton && onBack && (
+              <button
+                onClick={onBack}
+                className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors mt-1"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-4 h-4 text-white" />
+              </button>
             )}
+
+            <div className="w-14 h-14 flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg">
+              {isLucideIcon ? (
+                <IconComponent className={`w-7 h-7 ${iconColor}`} />
+              ) : (
+                <div className={iconColor}>{ServiceIcon as ReactNode}</div>
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0 pt-1">
+              <h1 className="text-2xl font-bold text-white mb-1">{serviceName}</h1>
+              {serviceSubtitle && (
+                <p className="text-white/90 text-sm leading-tight">{serviceSubtitle}</p>
+              )}
+            </div>
           </div>
-          
-          {/* Service Title and Subtitle */}
-          <div className="flex-1 min-w-0 pt-1">
-            <h1 className="text-2xl font-bold text-white mb-1">{serviceName}</h1>
-            {serviceSubtitle && (
-              <p className="text-white/90 text-sm leading-tight">{serviceSubtitle}</p>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Stats Cards - Frosted Effect */}
         <div className="grid grid-cols-3 gap-2 mt-4">

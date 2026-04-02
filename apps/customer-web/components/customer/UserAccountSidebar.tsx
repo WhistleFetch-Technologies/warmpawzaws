@@ -8,10 +8,10 @@ import {
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag,
-  Gift, Users, Award
+  Gift, Users, Award, Smartphone, Building2
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
@@ -23,6 +23,7 @@ import {
   PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
 
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
 
@@ -127,6 +128,215 @@ interface PaymentMethod {
   updatedAt: string;
 }
 
+/** Path/query segment for phone-based payment routes (avoids broken URLs when phone contains + or spaces). */
+function encodePaymentPhoneForPath(phone: string): string {
+  return encodeURIComponent(String(phone).trim());
+}
+
+const PAYMENT_METHODS_LS_PREFIX = 'warmpawz_payments_v2_';
+
+function paymentMethodsLocalStorageKey(phone: string): string {
+  const d = String(phone).replace(/\D/g, '');
+  const k = d.length >= 10 ? d.slice(-10) : d || 'unknown';
+  return PAYMENT_METHODS_LS_PREFIX + k;
+}
+
+function readLocalPaymentMethods(phone: string): PaymentMethod[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(paymentMethodsLocalStorageKey(phone));
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((item) =>
+        item && typeof item === 'object'
+          ? normalizePaymentMethodFromApi(item as Record<string, unknown>)
+          : null
+      )
+      .filter((pm): pm is PaymentMethod => pm != null);
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalPaymentMethods(phone: string, methods: PaymentMethod[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(paymentMethodsLocalStorageKey(phone), JSON.stringify(methods));
+  } catch {
+    /* quota */
+  }
+}
+
+/** API list wins on id clash; keeps local-only rows when API returns empty (refresh resilience). */
+function mergePaymentMethodLists(apiList: PaymentMethod[], localList: PaymentMethod[]): PaymentMethod[] {
+  const map = new Map<string, PaymentMethod>();
+  for (const p of localList) {
+    if (p.id) map.set(p.id, p);
+  }
+  for (const p of apiList) {
+    if (p.id) map.set(p.id, p);
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  );
+}
+
+type PaymentFormState = {
+  type: 'card' | 'upi' | 'netbanking';
+  cardNumber: string;
+  cardHolderName: string;
+  expiryMonth: string;
+  expiryYear: string;
+  cvv: string;
+  cardType: 'visa' | 'mastercard' | 'rupay' | 'amex';
+  upiId: string;
+  bankName: string;
+  isDefault: boolean;
+};
+
+/** POST only fields for the selected type so backend does not see leftover card defaults. */
+function buildPaymentMethodPostBody(np: PaymentFormState): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    type: np.type,
+    isDefault: np.isDefault,
+  };
+  if (np.type === 'card') {
+    base.cardNumber = np.cardNumber;
+    base.cardHolderName = np.cardHolderName;
+    base.expiryMonth = np.expiryMonth;
+    base.expiryYear = np.expiryYear;
+    base.cvv = np.cvv;
+    base.cardType = np.cardType;
+    return base;
+  }
+  if (np.type === 'upi') {
+    base.upiId = np.upiId.trim();
+    return base;
+  }
+  base.bankName = np.bankName.trim();
+  return base;
+}
+
+/**
+ * Prefer real payload fields over `payment_type` (DB often stores everything as "card").
+ * Order: UPI handle → net banking (bank name, no card digits) → card (≥4 digits).
+ */
+function inferPaymentKindFromFields(
+  last4Str: string,
+  upiRaw: string | undefined,
+  bankRaw: string | undefined
+): PaymentMethod['type'] | null {
+  const upi = upiRaw != null ? String(upiRaw).trim() : '';
+  const bank = bankRaw != null ? String(bankRaw).trim() : '';
+  const digits = last4Str.replace(/\D/g, '');
+  if (upi.length > 0) return 'upi';
+  if (bank.length > 0 && digits.length < 4) return 'netbanking';
+  if (digits.length >= 4) return 'card';
+  return null;
+}
+
+/** Map API/DB type strings + present fields → UI payment kind (fallback when fields are ambiguous). */
+function resolvePaymentMethodKind(
+  row: Record<string, unknown>,
+  last4Str: string,
+  upiStr: string | undefined,
+  bankStr: string | undefined
+): PaymentMethod['type'] {
+  const fromFields = inferPaymentKindFromFields(last4Str, upiStr, bankStr);
+  if (fromFields) return fromFields;
+
+  const upiT = upiStr != null ? String(upiStr).trim() : '';
+  if (upiT.includes('@')) return 'upi';
+
+  const raw = String(row.type ?? row.payment_type ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  const c = raw.replace(/_/g, '');
+  if (raw === 'upi' || c === 'upi' || raw.includes('upi')) return 'upi';
+  if (
+    c === 'netbanking' ||
+    raw === 'net_banking' ||
+    c === 'banktransfer' ||
+    raw === 'bank_transfer' ||
+    c === 'nb'
+  ) {
+    return 'netbanking';
+  }
+  if (
+    c === 'card' ||
+    c === 'debitcard' ||
+    c === 'creditcard' ||
+    raw === 'debit_card' ||
+    raw === 'credit_card'
+  ) {
+    return 'card';
+  }
+
+  const last4 = last4Str.replace(/\D/g, '');
+  const hasUpi = Boolean(upiStr && upiStr.trim());
+  const hasBank = Boolean(bankStr && bankStr.trim());
+  if (hasUpi && last4.length < 4) return 'upi';
+  if (hasBank && last4.length < 4 && !hasUpi) return 'netbanking';
+  return 'card';
+}
+
+/** Use in list UI so labels match data even if `pm.type` was wrong in state/localStorage. */
+function effectivePaymentDisplayKind(pm: PaymentMethod): PaymentMethod['type'] {
+  return (
+    inferPaymentKindFromFields(pm.cardNumber || '', pm.upiId, pm.bankName) ?? pm.type
+  );
+}
+
+/** Normalize GET payload whether API returns mapped fields, raw DB rows, or enhanced `methods` items (last4/brand). */
+function normalizePaymentMethodFromApi(row: Record<string, unknown>): PaymentMethod | null {
+  const id = row.id != null ? String(row.id) : '';
+  if (!id) return null;
+  const last4 =
+    row.cardNumber ?? row.card_last4 ?? row.last4 ?? row.last_four ?? '';
+  const last4Str = String(last4 || '');
+  const upiStr = (row.upiId ?? row.upi_id) as string | undefined;
+  const bankStr = (row.bankName ?? row.bank_name) as string | undefined;
+  const type = resolvePaymentMethodKind(row, last4Str, upiStr, bankStr);
+
+  return {
+    id,
+    type,
+    cardNumber: last4Str,
+    cardHolderName: (row.cardHolderName ?? row.card_holder_name) as string | undefined,
+    expiryMonth:
+      row.expiryMonth != null
+        ? String(row.expiryMonth)
+        : row.card_expiry_month != null
+          ? String(row.card_expiry_month)
+          : undefined,
+    expiryYear:
+      row.expiryYear != null
+        ? String(row.expiryYear)
+        : row.card_expiry_year != null
+          ? String(row.card_expiry_year)
+          : undefined,
+    cardType: (row.cardType ?? row.card_brand ?? row.brand ?? row.cardBrand) as PaymentMethod['cardType'],
+    upiId: upiStr != null && String(upiStr).trim() !== '' ? String(upiStr).trim() : undefined,
+    bankName: bankStr != null && String(bankStr).trim() !== '' ? String(bankStr).trim() : undefined,
+    isDefault: Boolean(row.isDefault ?? row.is_default),
+    createdAt:
+      row.createdAt != null
+        ? String(row.createdAt)
+        : row.created_at != null
+          ? String(row.created_at)
+          : '',
+    updatedAt:
+      row.updatedAt != null
+        ? String(row.updatedAt)
+        : row.updated_at != null
+          ? String(row.updated_at)
+          : '',
+  };
+}
+
 interface NotificationSettings {
   push: boolean;
   email: boolean;
@@ -135,6 +345,34 @@ interface NotificationSettings {
   promotions: boolean;
   newServices: boolean;
   newsletter: boolean;
+}
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  push: true,
+  email: false,
+  sms: true,
+  bookingUpdates: true,
+  promotions: true,
+  newServices: false,
+  newsletter: false,
+};
+
+function notificationSettingsStorageKey(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  return `warmpawz_notification_settings_${clean || 'unknown'}`;
+}
+
+function httpStatusFromApiError(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const o = err as { statusCode?: number; status?: number };
+  return o.statusCode ?? o.status;
+}
+
+function mergeNotificationSettings(partial: Partial<NotificationSettings> | undefined | null): NotificationSettings {
+  if (!partial || typeof partial !== 'object') {
+    return { ...DEFAULT_NOTIFICATION_SETTINGS };
+  }
+  return { ...DEFAULT_NOTIFICATION_SETTINGS, ...partial };
 }
 
 function normalizeCustomerBookingRow(raw: Record<string, unknown>): Booking {
@@ -207,6 +445,8 @@ function formatServiceTypeLabel(serviceType: string | undefined): string {
 interface UserAccountSidebarProps {
   phone: string;
   onClose: () => void;
+  /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
+  onNavigateHome?: () => void;
   onViewBooking?: (bookingId: string, petId: string) => void;
   onViewCustomerProfile?: () => void;
   onViewAppointments?: () => void;
@@ -214,7 +454,7 @@ interface UserAccountSidebarProps {
   onNavigate?: (path: string) => void;
 }
 
-export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustomerProfile, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
+export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooking, onViewCustomerProfile, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'>('menu');
   
@@ -269,15 +509,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   });
   
   // Notification states
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
-    push: true,
-    email: false,
-    sms: true,
-    bookingUpdates: true,
-    promotions: true,
-    newServices: false,
-    newsletter: false
-  });
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => ({
+    ...DEFAULT_NOTIFICATION_SETTINGS,
+  }));
   const [loadingNotifications, setLoadingNotifications] = useState(true);
   
   const [loading, setLoading] = useState(true);
@@ -289,6 +523,15 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     setTimeout(() => setIsOpen(true), 50);
     loadProfile();
     loadBookings();
+    try {
+      const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+      if (v === 'bookings') {
+        setActiveView('bookings');
+        sessionStorage.removeItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
   }, [phone]);
 
   // Handle scroll to hide indicator
@@ -578,7 +821,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadAddresses = async () => {
     try {
       setLoadingAddresses(true);
-      const result = await apiClient.get<{ addresses?: Address[] }>(`/customer/addresses/${phone}`);
+      const result = await apiClient.get<{ addresses?: Address[] }>(
+        `/customer/addresses?phone=${encodeURIComponent(phone)}`
+      );
       setAddresses(result.addresses || []);
     } catch (error) {
       console.error('Error loading addresses:', error);
@@ -637,11 +882,56 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   // PAYMENT FUNCTIONS
   // ============================================
   
+  /** Fetch list from API (query route first — avoids some API Gateway path-param quirks). */
+  const fetchPaymentMethodsFromApi = async (): Promise<PaymentMethod[]> => {
+    const phoneSeg = encodePaymentPhoneForPath(phone);
+    const qPhone = encodeURIComponent(phone.trim());
+    type PayGet = {
+      paymentMethods?: unknown[];
+      methods?: unknown[];
+      success?: boolean;
+    };
+    let raw: unknown[] = [];
+    try {
+      const alt = await apiClient.get<PayGet>(
+        `/customer/payment-methods?phone=${qPhone}`
+      );
+      raw = Array.isArray(alt.paymentMethods)
+        ? alt.paymentMethods
+        : Array.isArray(alt.methods)
+          ? alt.methods
+          : [];
+    } catch (e) {
+      console.warn('GET /customer/payment-methods failed, trying path route:', e);
+    }
+    if (raw.length === 0) {
+      try {
+        const primary = await apiClient.get<PayGet>(`/customer/payments/${phoneSeg}`);
+        raw = Array.isArray(primary.paymentMethods) ? primary.paymentMethods : [];
+      } catch (e) {
+        console.warn('GET /customer/payments/:phone failed:', e);
+      }
+    }
+    const apiList = raw
+      .map((row) =>
+        row && typeof row === 'object'
+          ? normalizePaymentMethodFromApi(row as Record<string, unknown>)
+          : null
+      )
+      .filter((pm): pm is PaymentMethod => pm != null);
+
+    const localList = readLocalPaymentMethods(phone);
+    return mergePaymentMethodLists(apiList, localList);
+  };
+
   const loadPayments = async () => {
     try {
       setLoadingPayments(true);
-      const result = await apiClient.get<{ paymentMethods?: PaymentMethod[] }>(`/customer/payments/${phone}`);
-      setPaymentMethods(result.paymentMethods || []);
+      const normalized = await fetchPaymentMethodsFromApi();
+      setPaymentMethods(normalized);
+      if (normalized.length > 0) {
+        writeLocalPaymentMethods(phone, normalized);
+      }
     } catch (error) {
       console.error('Error loading payment methods:', error);
     } finally {
@@ -677,8 +967,17 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         }
       }
 
-      await apiClient.post(`/customer/payments/${phone}`, newPayment);
-      alert('✅ Payment method added successfully!');
+      const phoneSeg = encodePaymentPhoneForPath(phone);
+      const postBody = buildPaymentMethodPostBody(newPayment);
+      const created = await apiClient.post<{
+        success?: boolean;
+        paymentMethod?: Record<string, unknown>;
+      }>(`/customer/payments/${phoneSeg}`, postBody);
+      const added =
+        created?.paymentMethod && typeof created.paymentMethod === 'object'
+          ? normalizePaymentMethodFromApi(created.paymentMethod as Record<string, unknown>)
+          : null;
+
       setShowPaymentForm(false);
       setNewPayment({
         type: 'card',
@@ -692,10 +991,30 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         bankName: '',
         isDefault: false
       });
-      await loadPayments();
-    } catch (error) {
+
+      // Single list update: refetch, then append POST response if GET missed it (avoids loadPayments wiping merged state).
+      setLoadingPayments(true);
+      try {
+        let list = await fetchPaymentMethodsFromApi();
+        if (added && !list.some((p) => p.id === added.id)) {
+          list = [...list, added];
+        }
+        setPaymentMethods(list);
+        writeLocalPaymentMethods(phone, list);
+      } finally {
+        setLoadingPayments(false);
+      }
+
+      alert('✅ Payment method added successfully!');
+    } catch (error: unknown) {
       console.error('Error saving payment method:', error);
-      alert('❌ Failed to save payment method');
+      const msg =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error !== null && 'message' in error
+            ? String((error as { message?: string }).message)
+            : 'Failed to save payment method';
+      alert(`❌ ${msg}`);
     }
   };
 
@@ -703,7 +1022,13 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     if (!confirm('Are you sure you want to remove this payment method?')) return;
 
     try {
-      await apiClient.delete(`/customer/payments/${phone}/${paymentId}`);
+      await apiClient.delete(
+        `/customer/payments/${encodePaymentPhoneForPath(phone)}/${encodeURIComponent(paymentId)}`
+      );
+      writeLocalPaymentMethods(
+        phone,
+        readLocalPaymentMethods(phone).filter((p) => p.id !== paymentId)
+      );
       alert('✅ Payment method removed!');
       await loadPayments();
     } catch (error) {
@@ -715,29 +1040,84 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   // NOTIFICATION FUNCTIONS
   // ============================================
   
+  const notificationSettingsQueryUrl = `/customer/notifications?phone=${encodeURIComponent(phone)}`;
+
   const loadNotificationSettings = async () => {
     try {
       setLoadingNotifications(true);
-      const result = await apiClient.get<{ settings?: NotificationSettings }>(`/customer/notifications/${phone}`);
-      if (result.settings) {
-        setNotificationSettings(result.settings);
+      // Query-string URL matches GET /customer/notifications; POST uses the same path (deployed Lambda must include POST handler).
+      const result = await apiClient.get<{ settings?: Partial<NotificationSettings> }>(
+        `${notificationSettingsQueryUrl}&limit=1`
+      );
+      const merged = mergeNotificationSettings(result.settings);
+      setNotificationSettings(merged);
+      try {
+        if (typeof window !== 'undefined' && result.settings) {
+          localStorage.setItem(notificationSettingsStorageKey(phone), JSON.stringify(merged));
+        }
+      } catch {
+        /* ignore quota */
       }
     } catch (error) {
       console.error('Error loading notification settings:', error);
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = localStorage.getItem(notificationSettingsStorageKey(phone));
+          if (raw) {
+            const parsed = JSON.parse(raw) as Partial<NotificationSettings>;
+            setNotificationSettings(mergeNotificationSettings(parsed));
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     } finally {
       setLoadingNotifications(false);
     }
   };
 
   const toggleNotification = async (key: keyof NotificationSettings) => {
-    const newSettings = { ...notificationSettings, [key]: !notificationSettings[key] };
-    setNotificationSettings(newSettings);
+    const previous = notificationSettings;
+    const next = { ...previous, [key]: !previous[key] };
+    // Normalize so every channel key is an explicit boolean in state and in JSON (matches backend merge).
+    const payload = mergeNotificationSettings(next);
+    setNotificationSettings(payload);
+
+    const persistLocal = () => {
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(notificationSettingsStorageKey(phone), JSON.stringify(payload));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
 
     try {
-      await apiClient.put(`/customer/notifications/${phone}`, newSettings);
-    } catch (error) {
-      console.error('Error updating notification settings:', error);
-      setNotificationSettings(notificationSettings);
+      // PUT is present on older Lambda bundles; POST matches GET /customer/notifications on current code.
+      await apiClient.put(`/customer/notifications/${encodeURIComponent(phone)}`, payload);
+      persistLocal();
+    } catch (putErr) {
+      try {
+        await apiClient.post(notificationSettingsQueryUrl, payload);
+        persistLocal();
+      } catch (postErr) {
+        const put404 = httpStatusFromApiError(putErr) === 404;
+        const post404 = httpStatusFromApiError(postErr) === 404;
+        // Remote dev API may not have POST yet; PUT may 404 if phone has no DB row. In UAT, keep toggles in localStorage.
+        if (isUatMode() && put404 && post404) {
+          if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            console.warn(
+              '[notifications] PUT and POST returned 404 — saved toggles locally only. ' +
+                'For a real API: run backend/lambda `npm run start:local` and set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000 in apps/customer-web/.env.local, or deploy the Lambda.'
+            );
+          }
+          persistLocal();
+        } else {
+          console.error('Error updating notification settings:', putErr, postErr);
+          setNotificationSettings(previous);
+        }
+      }
     }
   };
 
@@ -749,6 +1129,35 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     setIsOpen(false);
     setTimeout(onClose, 300);
   };
+
+  const handleHeaderCloseToHome = () => {
+    if (onNavigateHome) {
+      onNavigateHome();
+      return;
+    }
+    handleClose();
+  };
+
+  const handleSidebarBack = () => {
+    if (showAddressForm) {
+      setShowAddressForm(false);
+      setEditingAddress(null);
+      return;
+    }
+    if (showPaymentForm) {
+      setShowPaymentForm(false);
+      return;
+    }
+    if (activeView !== 'menu') {
+      setActiveView('menu');
+      setEditMode(false);
+      setShowAddressForm(false);
+      setShowPaymentForm(false);
+      setEditingAddress(null);
+    }
+  };
+
+  const showProfileMenuBack = activeView !== 'menu' || showAddressForm || showPaymentForm;
 
   const getServiceIcon = (type: string) => {
     switch (type) {
@@ -800,22 +1209,20 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         {/* Header - Fixed */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-6">
-            <button 
-              onClick={handleClose}
+            <button
+              type="button"
+              onClick={handleHeaderCloseToHome}
               className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform"
+              aria-label="Close to home"
             >
               <X className="w-6 h-6 text-white" />
             </button>
-            {activeView !== 'menu' && (
-              <button 
-                onClick={() => {
-                  setActiveView('menu');
-                  setEditMode(false);
-                  setShowAddressForm(false);
-                  setShowPaymentForm(false);
-                  setEditingAddress(null);
-                }}
-                className="text-white flex items-center gap-2 active:opacity-70 transition-opacity"
+            {showProfileMenuBack && (
+              <button
+                type="button"
+                onClick={handleSidebarBack}
+                className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+                aria-label="Go back"
               >
                 <ChevronLeft className="w-5 h-5" />
                 <span className="font-medium">Back</span>
@@ -858,7 +1265,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {/* Scroll Indicator - Shows user can scroll */}
-          {showScrollIndicator && activeView !== 'menu' && (
+          {showScrollIndicator &&
+            activeView !== 'menu' &&
+            !(activeView === 'cart' && !loadingCart && cartItems.length === 0) && (
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none animate-bounce">
               <div className="bg-[#FF8C42] text-white rounded-full p-2 shadow-lg">
                 <ChevronDown className="w-5 h-5" />
@@ -1307,7 +1716,15 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                   <ShoppingCart className="w-20 h-20 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-gray-800 font-semibold text-lg mb-2">Your cart is empty</h3>
                   <p className="text-gray-600 mb-6">Add products to get started</p>
-                  <Button onClick={handleClose} className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white h-12 px-8">
+                  <Button
+                    onClick={() => {
+                      if (onNavigate) {
+                        onNavigate('shop');
+                      }
+                      handleClose();
+                    }}
+                    className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white h-12 px-8"
+                  >
                     Continue Shopping
                   </Button>
                 </div>
@@ -1505,21 +1922,86 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {paymentMethods.map((pm) => (
-                    <div key={pm.id} className="bg-white border border-gray-200 rounded-2xl p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <h4 className="font-bold text-gray-800 text-lg">
-                              {pm.type === 'card' ? `${pm.cardType?.toUpperCase()} ****${pm.cardNumber}` : 
-                               pm.type === 'upi' ? pm.upiId : pm.bankName}
-                            </h4>
+                  {paymentMethods.map((pm) => {
+                    const kind = effectivePaymentDisplayKind(pm);
+                    const last4Digits = (pm.cardNumber || '').replace(/\D/g, '').slice(-4);
+                    const brandRaw = pm.cardType ? String(pm.cardType).replace(/_/g, ' ').trim() : '';
+                    const brandPretty =
+                      brandRaw.length > 0 && brandRaw.length <= 24 ? brandRaw.toUpperCase() : '';
+                    const cardHeadline =
+                      last4Digits.length > 0
+                        ? `${brandPretty ? `${brandPretty} · ` : ''}•••• ${last4Digits}`
+                        : brandPretty || 'Saved card';
+
+                    const typeMeta =
+                      kind === 'card'
+                        ? {
+                            label: 'Card',
+                            sub: 'Debit or credit card',
+                            Icon: CreditCard,
+                            badgeClass: 'bg-orange-500 text-white',
+                          }
+                        : kind === 'upi'
+                          ? {
+                              label: 'UPI',
+                              sub: 'Unified Payments',
+                              Icon: Smartphone,
+                              badgeClass: 'bg-violet-600 text-white',
+                            }
+                          : {
+                              label: 'Net banking',
+                              sub: 'Bank account',
+                              Icon: Building2,
+                              badgeClass: 'bg-sky-600 text-white',
+                            };
+
+                    const TypeIcon = typeMeta.Icon;
+
+                    return (
+                    <div
+                      key={pm.id}
+                      className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm"
+                    >
+                      <div className="flex gap-3 mb-3">
+                        <div
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${typeMeta.badgeClass}`}
+                          aria-hidden
+                        >
+                          <TypeIcon className="h-6 w-6 text-white" strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className={`text-xs font-bold uppercase tracking-wide px-2 py-0.5 rounded-md ${typeMeta.badgeClass}`}>
+                              {typeMeta.label}
+                            </span>
                             {pm.isDefault && (
-                              <span className="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-lg">Default</span>
+                              <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-lg">
+                                Default
+                              </span>
                             )}
                           </div>
-                          {pm.type === 'card' && <p className="text-sm text-gray-600">{pm.cardHolderName}</p>}
-                          {pm.type === 'card' && <p className="text-sm text-gray-600">Expires: {pm.expiryMonth}/{pm.expiryYear}</p>}
+                          <p className="text-xs text-gray-500 mb-1">{typeMeta.sub}</p>
+                          <h4 className="font-bold text-gray-900 text-base break-all leading-snug">
+                            {kind === 'card'
+                              ? cardHeadline
+                              : kind === 'upi'
+                                ? pm.upiId || 'UPI ID on file'
+                                : pm.bankName || 'Bank on file'}
+                          </h4>
+                          {kind === 'card' && pm.cardHolderName ? (
+                            <p className="text-sm text-gray-600 mt-1">{pm.cardHolderName}</p>
+                          ) : null}
+                          {kind === 'card' && (pm.expiryMonth || pm.expiryYear) ? (
+                            <p className="text-sm text-gray-600">
+                              Expires {pm.expiryMonth || '—'}/{pm.expiryYear || '—'}
+                            </p>
+                          ) : null}
+                          {kind === 'upi' && pm.upiId ? (
+                            <p className="text-sm text-gray-500 mt-1">Pay with this UPI ID at checkout.</p>
+                          ) : null}
+                          {kind === 'netbanking' && pm.bankName ? (
+                            <p className="text-sm text-gray-600 mt-1">Net banking · {pm.bankName}</p>
+                          ) : null}
                         </div>
                       </div>
                       <Button 
@@ -1531,7 +2013,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         Remove
                       </Button>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               )}
                 </>
@@ -1920,7 +2403,14 @@ function NotificationToggle({ label, description, enabled, onToggle }: {
         <p className="text-sm text-gray-600 mt-0.5">{description}</p>
       </div>
       <button
-        onClick={onToggle}
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggle();
+        }}
         className={`w-14 h-8 rounded-full relative transition-colors flex-shrink-0 ml-4 ${
           enabled ? 'bg-[#FF8C42]' : 'bg-gray-300'
         }`}
