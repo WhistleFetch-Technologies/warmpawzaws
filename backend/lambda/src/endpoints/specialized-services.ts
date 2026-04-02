@@ -19,7 +19,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
+import { select, insert, update, query, deleteRows } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendorProfile.vendor';
 import { resolveVendorId } from '../utils/vendor-resolve';
@@ -879,6 +879,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error updating diagnostic test:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/diagnostics/tests/:testId
+   * Permanently remove a catalog row (vendor UI "delete" — not the same as unpublish/draft).
+   */
+  app.delete('/vendor/:vendorId/diagnostics/tests/:testId', async (c) => {
+    try {
+      const { vendorId, testId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      const actualVendorId = vendor.id;
+
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
+        await checkVendorCapability(vendorId, 'diagnostics') ||
+        await checkVendorCapability(vendorId, 'test_catalog') ||
+        await checkVendorCapability(vendorId, 'diagnostic_lab') ||
+        await checkVendorCapability(vendorId, 'diagnostic lab');
+      if (!hasDiagnosticsCapability) {
+        return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
+      }
+
+      const removed = await deleteRows('diagnostic_tests', { id: testId, vendor_id: actualVendorId });
+      if (removed === 0) {
+        return c.json({ error: 'Test not found or access denied' }, 404);
+      }
+      return c.json({ success: true, message: 'Diagnostic test deleted' });
+    } catch (error: any) {
+      console.error('Error deleting diagnostic test:', error);
       return c.json({ error: error.message }, 500);
     }
   });

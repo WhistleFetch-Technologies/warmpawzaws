@@ -15,7 +15,6 @@ import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
 // Removed unused import: Analytics
-import { copyTextToClipboard } from '@/lib/shareUtils';
 import {
   Calendar,
   Clock,
@@ -58,8 +57,13 @@ import {
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Badge } from '../../../ui/badge';
 import { VendorNotificationModal } from '../../modals/VendorNotificationModal';
-import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
-import { formatBookingTime } from '../helpers';
+import { Dashboardstats, DashboardWarnings, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
+import {
+  formatBookingTime,
+  vendorNotificationUnreadCount,
+  SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS,
+  SHOW_VENDOR_FOOTER_REPORTING_TAB,
+} from '../helpers';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
 
@@ -94,6 +98,9 @@ const VendorChatModal = lazy(() =>
 const TeleTracker = lazy(() =>
   import('../../teleCommunication/TeleTracker').then((m) => ({ default: m.TeleTracker }))
 );
+
+/** Dashboard Additional Features only. Routes, handlers, and capabilities stay wired; set true to show these tiles again. */
+const SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR = false;
 
 export function VendorDashboard({
   vendorId,
@@ -155,7 +162,7 @@ export function VendorDashboard({
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -454,10 +461,12 @@ export function VendorDashboard({
           setWatchlist(watchlistRes.watchlist || []);
         }
 
-        // Process notifications
-        if (notificationsRes && notificationsRes.success) {
-          setNotifications(notificationsRes.notifications || []);
-        }
+        // Process notifications (badge uses server unreadCount; list rows use is_read not isRead)
+        setNotificationUnreadCount(
+          notificationsRes && notificationsRes.success
+            ? vendorNotificationUnreadCount(notificationsRes)
+            : 0
+        );
 
         // Process services
         if (servicesRes && servicesRes.success) {
@@ -766,7 +775,7 @@ export function VendorDashboard({
                 onClick={() => setNotificationModalOpen(true)}
               >
                 <Bell className="w-5 h-5 text-gray-400" />
-                {notifications.filter(n => !n.isRead).length > 0 && (
+                {notificationUnreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -967,9 +976,8 @@ export function VendorDashboard({
           )}
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS — hidden for pharmacy (flow is Orders + Profile only) */}
-        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
           capabilities.controlled_substances ||
-          capabilities.prescription ||
           capabilities.prescription_verification ||
           capabilities.delivery ||
           hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
@@ -1010,8 +1018,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* CCTV Access */}
-                {onNavigateToCCTV && capabilities.cctv_access && (
+                {/* CCTV Access — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
+                {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToCCTV && capabilities.cctv_access && (
                   <button
                     onClick={onNavigateToCCTV}
                     className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
@@ -1032,9 +1040,9 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Prescription Builder */}
+                {/* Prescription Builder — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
                 <CapabilityGate capability="prescription_create">
-                  {onNavigateToPrescription && (
+                  {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPrescription && (
                     <button
                       onClick={onNavigateToPrescription}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1046,9 +1054,9 @@ export function VendorDashboard({
                   )}
                 </CapabilityGate>
 
-                {/* Prescription List */}
+                {/* Prescription List — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
                 <CapabilityGate capability="prescription_create">
-                  {onNavigateToPrescriptionList && (
+                  {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPrescriptionList && (
                     <button
                       onClick={onNavigateToPrescriptionList}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1165,8 +1173,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Patient Monitoring */}
-                {onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
+                {/* Patient Monitoring — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
+                {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
                   <button
                     onClick={onNavigateToPatientMonitoring}
                     className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
@@ -1295,6 +1303,9 @@ export function VendorDashboard({
             >Month</button>
           </div>
 
+          {(isPharmacy ||
+            capabilities.orders ||
+            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS) && (
           <div className="grid grid-cols-3 gap-3">
             {/* ✅ PHARMACY FIX: Show Orders first for Pharmacy, Appointments for others */}
             {isPharmacy ? (
@@ -1314,8 +1325,8 @@ export function VendorDashboard({
               </>
             ) : (
               <>
-                {/* ✅ Stat card with role-aware labels - Always show for non-pharmacy (receive bookings) */}
-                {!isPharmacy && (
+                {/* ✅ Stat card with role-aware labels — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
+                {!isPharmacy && SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS && (
                   <button
                     key="stat-appointments"
                     onClick={() => {
@@ -1340,8 +1351,10 @@ export function VendorDashboard({
                   </div>
                 )}
 
-                {/* ✅ Sessions/Consultations Stat with role-aware labels - Always show for non-pharmacy */}
-                {!isPharmacy && (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
+                {/* ✅ Sessions/Consultations Stat — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
+                {!isPharmacy &&
+                  SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS &&
+                  (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
                   <button
                     key="stat-consultations"
                     onClick={() => {
@@ -1371,6 +1384,7 @@ export function VendorDashboard({
               <div className="text-xs text-gray-500">Earnings</div>
             </div> */}
           </div>
+          )}
         </div>
 
         {/* 🗓️ TODAY'S SCHEDULE - Open appointments on landing page (always for non-pharmacy) */}
@@ -1413,34 +1427,6 @@ export function VendorDashboard({
                 <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
                   Share your profile with {labels.customers.toLowerCase()} to start getting {labels.bookings.toLowerCase()}!
                 </p>
-                <button
-                  onClick={async () => {
-                    const customerAppUrl = typeof window !== 'undefined' && window.__WARMPAWZ_RUNTIME_CONFIG__?.customerAppUrl
-                      ? window.__WARMPAWZ_RUNTIME_CONFIG__.customerAppUrl
-                      : window.location.origin.replace('vendor', 'app');
-                    const profileUrl = `${customerAppUrl}/vendor/${vendorId}`;
-                    const shareData = {
-                      title: vendor?.businessName || 'My Pet Service',
-                      text: `Book your pet appointment with ${vendor?.businessName || 'us'} on Warmpawz!`,
-                      url: profileUrl
-                    };
-
-                    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-                      try {
-                        await navigator.share(shareData);
-                      } catch (err) {
-                        console.error('Share failed:', err);
-                      }
-                    } else {
-                      copyTextToClipboard(profileUrl);
-                      toast.success('Profile link copied to clipboard!');
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Share Profile
-                </button>
               </div>
             ) : (
               <>
@@ -1747,14 +1733,16 @@ export function VendorDashboard({
               </button>
             )}
 
-            <button
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <BarChart3 className="w-5 h-5" />
-              <span className="text-[10px]">Reporting</span>
-            </button>
+            {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+              <button
+                onClick={() => setActiveBottomTab('reporting')}
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                  }`}
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span className="text-[10px]">Reporting</span>
+              </button>
+            )}
 
             <button
               onClick={() => router.push('/settings')}

@@ -120,6 +120,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
       );
 
       toast.success('Notification deleted');
+      onNotificationsRead?.();
     } catch (error) {
       console.error('Error deleting notification:', error);
       toast.error('Failed to delete notification');

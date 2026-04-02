@@ -122,11 +122,10 @@ export default function TestCatalogPage() {
   };
 
   const handleDelete = async (testId: string) => {
-    if (!confirm('Are you sure you want to delete this test?')) return;
+    if (!confirm('Are you sure you want to delete this test? This cannot be undone.')) return;
     if (!vendorId) return;
     try {
-      // Note: DELETE endpoint may need to be added to backend
-      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${testId}`, { is_available: false });
+      await apiClient.delete(`/vendor/${vendorId}/diagnostics/tests/${testId}`);
       toast.success('Test removed successfully');
       loadTests();
     } catch (err: any) {

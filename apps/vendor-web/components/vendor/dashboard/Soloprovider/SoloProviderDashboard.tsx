@@ -61,10 +61,10 @@ import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
 import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
-import { AIChatBot } from '@/components/customer/AIChatBot';
+import { ChatWidget } from '@/components/customer/ChatWidget';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { useVendorCapabilities } from '@/hooks/useVendorCapabilities';
-import { formatBookingTime } from '../helpers';
+import { formatBookingTime, vendorNotificationUnreadCount, SHOW_VENDOR_FOOTER_REPORTING_TAB } from '../helpers';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
 import { DashboardStats } from '@/components/shared/DashboardStats';
 
@@ -103,7 +103,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   // OTP modal for completing appointments
@@ -239,9 +239,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       // Fetch notifications
       const notificationsRes = await apiClient.get<any>(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] }));
-      if (notificationsRes && notificationsRes.success) {
-        setNotifications(notificationsRes.notifications || []);
-      }
+      setNotificationUnreadCount(
+        notificationsRes && notificationsRes.success
+          ? vendorNotificationUnreadCount(notificationsRes)
+          : 0
+      );
 
       // Chat unread count for message icon badge
       if (capabilities.chat) {
@@ -571,7 +573,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 onClick={() => setNotificationModalOpen(true)}
               >
                 <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {notifications.filter((n: any) => !n.isRead).length > 0 && (
+                {notificationUnreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -930,14 +932,16 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             )}
 
-            <button
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <BarChart3 className="w-5 h-5" />
-              <span className="text-[10px]">Reporting</span>
-            </button>
+            {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+              <button
+                onClick={() => setActiveBottomTab('reporting')}
+                className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                  }`}
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span className="text-[10px]">Reporting</span>
+              </button>
+            )}
 
             <button
               onClick={() => router.push('/settings')}
@@ -1126,10 +1130,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       {/* Vendor Settings - navigates to /settings (mobile-optimized VendorSettingsScreen) */}
 
-      {/* AI Support Bot */}
-      <AIChatBot
-        customerId={vendorId}
-        customerName={vendor?.fullName || vendor?.businessName || 'Provider'}
+      {/* AI Support Chat (same widget as business vendor dashboard) */}
+      <ChatWidget
+        userId={vendorId}
+        userName={vendor?.fullName || vendor?.businessName || 'Provider'}
+        userType="vendor"
       />
 
       {/* Debug Overlay */}
