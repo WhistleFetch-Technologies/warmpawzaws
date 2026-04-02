@@ -497,14 +497,12 @@ export function AdvancedAvailabilityManager({
     });
   };
 
-  // Update slot (with overlap validation: no overlap with other slots or breaks on same day)
+  // Update slot — overlap with other slots/breaks is allowed while editing; handleSave blocks invalid saves.
   const updateSlot = (slotIdx: number, updates: Partial<TimeSlot>) => {
     const hasTimeChange = 'startTime' in updates || 'endTime' in updates;
-    const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === selectedDay);
 
     setSchedule(prev => {
-      const newSchedule = [...prev];
-      const daySlots = newSchedule[selectedDay]?.slots ?? [];
+      const daySlots = prev[selectedDay]?.slots ?? [];
       const merged = { ...daySlots[slotIdx], ...updates };
       const start = merged.startTime ?? '';
       const end = merged.endTime ?? '';
@@ -514,24 +512,13 @@ export function AdvancedAvailabilityManager({
           toast.error('End time must be after start time');
           return prev;
         }
-        for (let i = 0; i < daySlots.length; i++) {
-          if (i === slotIdx) continue;
-          const s = daySlots[i];
-          if (timeRangesOverlap(start, end, s.startTime, s.endTime)) {
-            toast.error('This slot overlaps another slot. Please choose a different time.');
-            return prev;
-          }
-        }
-        for (const b of dayBreaks) {
-          if (timeRangesOverlap(start, end, b.startTime, b.endTime)) {
-            toast.error('This slot overlaps a break. Please choose a different time.');
-            return prev;
-          }
-        }
       }
 
-      newSchedule[selectedDay].slots[slotIdx] = merged;
-      return newSchedule;
+      return prev.map((day, idx) =>
+        idx === selectedDay
+          ? { ...day, slots: day.slots.map((s, i) => (i === slotIdx ? merged : s)) }
+          : day
+      );
     });
   };
 

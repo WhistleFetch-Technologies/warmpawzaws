@@ -168,6 +168,20 @@ export function VendorDashboard({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
+  /** Prefer parent vendorData + profile API for business name; local vendor state alone can stay stale after profile save */
+  const effectiveVendor = useMemo(() => {
+    const merged = { ...(vendorData || {}), ...(vendor || {}) };
+    const bn =
+      vendorData?.businessName ||
+      vendorData?.business_name ||
+      vendor?.businessName ||
+      vendor?.business_name;
+    if (bn) {
+      merged.businessName = bn;
+      merged.business_name = bn;
+    }
+    return merged;
+  }, [vendor, vendorData]);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   // ✅ NEW: Add state for formatted availability text
   const [availabilityText, setAvailabilityText] = useState<string>('Mon-Fri 9AM-6PM');
@@ -502,13 +516,26 @@ export function VendorDashboard({
           }));
         }
 
-        // Check profile completion
+        // Check profile completion + merge display name (fixes stale header after profile save)
         if (profileRes && profileRes.success) {
           const profile = profileRes.vendor || profileRes;
+          const biz =
+            profile.businessName ||
+            profile.business_name ||
+            profile.name;
+          if (biz) {
+            setVendor((prev: any) => ({
+              ...(prev || {}),
+              businessName: biz,
+              business_name: biz,
+            }));
+          }
           // FIX: Check all possible image field names (logo_url, profile_image_url, photo_url, photo)
           const hasLogo = !!(profile.logo_url || profile.profile_image_url || profile.photo_url || profile.photo);
+          const hasBusinessLabel =
+            !!(profile.business_name || profile.businessName || profile.name);
           const isProfileComplete = !!(
-            profile.business_name &&
+            hasBusinessLabel &&
             profile.phone &&
             profile.address &&
             (hasLogo || profileType === 'professional')
@@ -517,7 +544,7 @@ export function VendorDashboard({
             ...prev,
             profileIncomplete: !isProfileComplete,
             reasonProfileIncomplete: !isProfileComplete
-              ? `Missing: ${!profile.business_name ? 'Business Name, ' : ''}${!profile.phone ? 'Phone, ' : ''}${!profile.address ? 'Address, ' : ''}${!hasLogo && profileType !== 'professional' ? 'Logo' : ''}`.replace(/, $/, '')
+              ? `Missing: ${!hasBusinessLabel ? 'Business Name, ' : ''}${!profile.phone ? 'Phone, ' : ''}${!profile.address ? 'Address, ' : ''}${!hasLogo && profileType !== 'professional' ? 'Logo' : ''}`.replace(/, $/, '')
               : undefined,
           }));
         }
@@ -739,12 +766,12 @@ export function VendorDashboard({
               <div className="min-w-0 flex-1">
                 <h1 className="font-semibold text-gray-900 truncate">
                   {isSoloProvider
-                    ? (vendor?.ownerName || vendor?.owner_name || vendor?.fullName || 'Service Provider')
-                    : (vendor?.businessName || vendor?.business_name || vendor?.fullName || 'Vendor Dashboard')
+                    ? (effectiveVendor?.ownerName || effectiveVendor?.owner_name || effectiveVendor?.fullName || 'Service Provider')
+                    : (effectiveVendor?.businessName || effectiveVendor?.business_name || effectiveVendor?.fullName || 'Vendor Dashboard')
                   }
                 </h1>
                 <p className="text-xs text-gray-500 truncate">
-                  {isSoloProvider ? 'Solo Provider' : (vendorData?.address || vendor?.address || 'Business Center')} {'\u00B7'} {roleName || 'Service Provider'}
+                  {isSoloProvider ? 'Solo Provider' : (effectiveVendor?.address || vendorData?.address || 'Business Center')} {'\u00B7'} {roleName || 'Service Provider'}
                 </p>
               </div>
             </div>
@@ -824,7 +851,7 @@ export function VendorDashboard({
             <Suspense fallback={null}>
               <PharmacyOrderAlerts
                 pharmacyId={vendorId}
-                pharmacyName={vendor?.businessName || vendor?.business_name || 'Pharmacy'}
+                pharmacyName={effectiveVendor?.businessName || effectiveVendor?.business_name || 'Pharmacy'}
               />
             </Suspense>
           </div>
@@ -1771,7 +1798,7 @@ export function VendorDashboard({
           <VendorChatConversationsModal
             vendorId={vendorId}
             vendorPhone={vendorData?.phone || vendorData?.mobile}
-            vendorName={vendorData?.fullName || vendorData?.businessName}
+            vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name}
             open={chatConversationsOpen}
             onClose={() => {
               setChatConversationsOpen(false);
@@ -1798,7 +1825,7 @@ export function VendorDashboard({
             bookingId={selectedChatConversation.bookingId}
             vendorId={vendorId}
             vendorPhone={vendorData?.phone || vendorData?.mobile}
-            vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+            vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
             customerPhone={selectedChatConversation.customerPhone}
             customerName={selectedChatConversation.customerName}
             bookingStatus={selectedChatConversation.bookingStatus}
@@ -1819,7 +1846,7 @@ export function VendorDashboard({
             mode={communicationMode}
             bookingId={selectedAppointment.bookingId}
             userId={vendorData?.phone || vendorData?.mobile || '+91'}
-            userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+            userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
             otherUserName={selectedAppointment.customerName}
             userType="vendor"
             onClose={() => {
@@ -1939,7 +1966,7 @@ export function VendorDashboard({
       <Suspense fallback={null}>
         <ChatWidget
           userId={vendorId}
-          userName={vendor?.fullName || vendor?.businessName || 'Vendor'}
+          userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
           userType="vendor"
         />
       </Suspense>
