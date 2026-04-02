@@ -391,6 +391,7 @@ export async function insert(
     'criteria',                  // loyalty_segments.criteria
     'conditions',                // loyalty_action_rules.conditions
     'multiplier_conditions',     // loyalty_action_rules.multiplier_conditions
+    'metadata_resolvers',        // action_sources.metadata_resolvers
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -401,7 +402,8 @@ export async function insert(
            key.endsWith('_payload') ||
            key.endsWith('_data') ||
            key.endsWith('_settings') ||
-           key.endsWith('_details');
+           key.endsWith('_details') ||
+           key.endsWith('_resolvers');
   };
   
   // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
@@ -473,6 +475,7 @@ export async function update(
     'criteria',        // loyalty_segments.criteria
     'conditions',      // loyalty_action_rules.conditions
     'multiplier_conditions',
+    'metadata_resolvers', // action_sources.metadata_resolvers
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -483,7 +486,8 @@ export async function update(
            key.endsWith('_payload') ||
            key.endsWith('_data') ||
            key.endsWith('_settings') ||
-           key.endsWith('_details');
+           key.endsWith('_details') ||
+           key.endsWith('_resolvers');
   };
 
   // Build SET clause

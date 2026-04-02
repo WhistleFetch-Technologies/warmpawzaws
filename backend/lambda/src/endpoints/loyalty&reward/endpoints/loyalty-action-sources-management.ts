@@ -76,41 +76,135 @@ function validateCreateOrUpdate(body: any): { ok: boolean; message?: string } {
 	return { ok: true };
 }
 
+/** Columns that exist on action_sources — avoid SET id/created_at or stray client keys (prevents 500 on UPDATE). */
+const ACTION_SOURCE_UPDATABLE_KEYS = new Set([
+	'source_type',
+	'route_pattern',
+	'method',
+	'status_min',
+	'status_max',
+	'success_predicate',
+	'action_name',
+	'entity_resolver',
+	'entity_type',
+	'amount_resolver',
+	'reference_type',
+	'reference_id_resolver',
+	'metadata_resolvers',
+	'enabled',
+	'priority',
+	'dry_run',
+	'notes',
+]);
+
+function buildActionSourceUpdateRow(body: Partial<ActionSource>): Record<string, any> {
+	const row: Record<string, any> = {};
+	for (const key of ACTION_SOURCE_UPDATABLE_KEYS) {
+		if (!(key in body)) continue;
+		const v = (body as any)[key];
+		if (v === undefined) continue;
+		if (key === 'method') {
+			row.method = String(v).toUpperCase();
+			continue;
+		}
+		if (key === 'status_min' || key === 'status_max' || key === 'priority') {
+			const n = Number(v);
+			if (!Number.isNaN(n)) row[key] = n;
+			continue;
+		}
+		if (key === 'metadata_resolvers') {
+			if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+				row.metadata_resolvers = v;
+			} else if (v === null) {
+				row.metadata_resolvers = null;
+			}
+			continue;
+		}
+		row[key] = v;
+	}
+	return row;
+}
+
 // ============================================================================
 // LIST
 // ============================================================================
+
+function firstQueryValue(v: string | string[] | undefined | null): string | undefined {
+	if (v === undefined || v === null) return undefined;
+	if (Array.isArray(v)) return v[0] !== undefined && v[0] !== null ? String(v[0]) : undefined;
+	const s = String(v).trim();
+	return s === '' ? undefined : s;
+}
+
+/** Shared method + route_pattern filters (same semantics as list). */
+function actionSourceListFilterClause(method?: string, route?: string): { clause: string; params: any[] } {
+	const params: any[] = [];
+	const parts: string[] = [];
+	if (method) {
+		params.push(String(method).toUpperCase());
+		parts.push(`method = $${params.length}`);
+	}
+	if (route) {
+		const escaped = route.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+		params.push(`%${escaped}%`);
+		parts.push(`route_pattern ILIKE $${params.length} ESCAPE '\\'`);
+	}
+	const clause = parts.length ? ` AND ${parts.join(' AND ')}` : '';
+	return { clause, params };
+}
 
 class ListActionSourcesHandler extends BaseHandler {
 	async handle(context: HandlerContext): Promise<HandlerResponse> {
 		try {
 			const qs = context.event.queryStringParameters || {};
-			const { method, route, enabled } = qs;
+			const method = firstQueryValue(qs.method as any);
+			const route = firstQueryValue(qs.route as any);
+			const enabledRaw = firstQueryValue(qs.enabled as any);
 
-			let sql = `
+			const { clause, params: baseParams } = actionSourceListFilterClause(method, route);
+
+			let enabledFilter: 'all' | true | false = 'all';
+			if (enabledRaw !== undefined) {
+				const e = enabledRaw.toLowerCase();
+				if (e === 'true' || e === '1') enabledFilter = true;
+				else if (e === 'false' || e === '0') enabledFilter = false;
+			}
+
+			const listParams = [...baseParams];
+			let enabledSql = '';
+			if (enabledFilter === true) {
+				listParams.push(true);
+				enabledSql = ` AND enabled = $${listParams.length}`;
+			} else if (enabledFilter === false) {
+				listParams.push(false);
+				enabledSql = ` AND enabled = $${listParams.length}`;
+			}
+
+			const sql = `
         SELECT * FROM action_sources
-        WHERE 1=1
-      `;
-			const params: any[] = [];
+        WHERE 1=1${clause}${enabledSql}
+        ORDER BY priority DESC, updated_at DESC, route_pattern ASC`;
 
-			if (method) {
-				params.push(String(method).toUpperCase());
-				sql += ` AND method = $${params.length}`;
-			}
-			if (route) {
-				params.push(String(route));
-				sql += ` AND route_pattern = $${params.length}`;
-			}
-			if (enabled !== undefined) {
-				params.push(enabled === 'true');
-				sql += ` AND enabled = $${params.length}`;
+			const result = await query(sql, listParams);
+
+			let hidden_disabled_count: number | undefined;
+			if (enabledFilter === true) {
+				const countParams = [...baseParams, false];
+				const countSql = `
+          SELECT COUNT(*)::int AS n FROM action_sources
+          WHERE 1=1${clause} AND enabled = $${countParams.length}`;
+				const cr = await query(countSql, countParams);
+				hidden_disabled_count = parseInt(String(cr.rows?.[0]?.n ?? 0), 10);
 			}
 
-			sql += ` ORDER BY priority DESC, updated_at DESC, route_pattern ASC`;
-
-			const result = await query(sql, params);
 			return {
 				statusCode: 200,
-				body: JSON.stringify({ success: true, sources: result.rows }),
+				body: JSON.stringify({
+					success: true,
+					sources: result.rows,
+					total: result.rows.length,
+					...(hidden_disabled_count !== undefined ? { hidden_disabled_count } : {}),
+				}),
 			};
 		} catch (error: any) {
 			console.error('[action-sources] list error:', error);
@@ -229,19 +323,20 @@ class UpdateActionSourceHandler extends BaseHandler {
 				if (dup.rows.length > 0) return this.error('Duplicate mapping exists for method+route_pattern+action_name', 409);
 			}
 
-			const updated = await update('action_sources', { id }, {
-				...body,
-				method: body.method ? String(body.method).toUpperCase() : undefined,
-				updated_at: new Date().toISOString(),
-			});
+			const patch = buildActionSourceUpdateRow(body);
+			patch.updated_at = new Date().toISOString();
+
+			const updated = await update('action_sources', { id }, patch);
 
 			return {
 				statusCode: 200,
 				body: JSON.stringify({ success: true, source: updated[0] }),
 			};
 		} catch (error: any) {
-			console.error('[action-sources] update error:', error);
-			return this.error('Failed to update action_source', 500);
+			const msg = error?.message || String(error);
+			console.error('[action-sources] update error:', msg, error?.stack || '');
+			const safe = msg.length > 400 ? `${msg.slice(0, 400)}…` : msg;
+			return this.error(`Failed to update action_source: ${safe}`, 500);
 		}
 	}
 }

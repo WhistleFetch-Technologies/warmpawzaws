@@ -61,7 +61,10 @@ export function LoyaltyActionSourcesManagement() {
 	const [items, setItems] = useState<ActionSource[]>([]);
 	const [methodFilter, setMethodFilter] = useState<string>('all');
 	const [routeFilter, setRouteFilter] = useState<string>('');
-	const [onlyEnabled, setOnlyEnabled] = useState<boolean>(true);
+	/** When false, list includes disabled triggers (no `enabled` query → API returns all). */
+	const [onlyEnabled, setOnlyEnabled] = useState<boolean>(false);
+	/** Set when API returns `hidden_disabled_count` (enabled=true filter). */
+	const [hiddenDisabledCount, setHiddenDisabledCount] = useState<number | null>(null);
 
 	const [isOpen, setIsOpen] = useState(false);
 	const [editing, setEditing] = useState<ActionSource | null>(null);
@@ -112,16 +115,36 @@ export function LoyaltyActionSourcesManagement() {
 		String(!!src.dry_run),
 	]).join('|');
 
+	const normalizeSources = (raw: unknown): ActionSource[] => {
+		if (!raw || typeof raw !== 'object') return [];
+		const o = raw as Record<string, unknown>;
+		if (Array.isArray(o.sources)) return o.sources as ActionSource[];
+		const data = o.data;
+		if (data && typeof data === 'object' && Array.isArray((data as Record<string, unknown>).sources)) {
+			return (data as { sources: ActionSource[] }).sources;
+		}
+		return [];
+	};
+
 	const load = async () => {
 		setLoading(true);
 		try {
 			const qs = new URLSearchParams();
 			if (methodFilter !== 'all') qs.set('method', methodFilter);
-			if (routeFilter) qs.set('route', routeFilter);
+			const routeTrim = routeFilter.trim();
+			if (routeTrim) qs.set('route', routeTrim);
 			if (onlyEnabled) qs.set('enabled', 'true');
 			const url = qs.toString() ? `/admin/action-sources?${qs.toString()}` : '/admin/action-sources';
-			const res = await apiClient.get<{ success: boolean; sources: ActionSource[] }>(url);
-			setItems(res.sources || []);
+			const res = await apiClient.get<Record<string, unknown>>(url);
+			const sources = normalizeSources(res);
+			setItems(sources);
+			const hdc = res.hidden_disabled_count;
+			setHiddenDisabledCount(
+				typeof hdc === 'number' && Number.isFinite(hdc) ? hdc : null
+			);
+			if (sources.length === 0 && !routeTrim && methodFilter === 'all' && !onlyEnabled) {
+				console.warn('[ActionSources] List returned 0 rows — check API / DB or auth.');
+			}
 		} catch (e: any) {
 			notifications.setError(e.message || 'Failed to load triggers');
 		} finally {
@@ -129,7 +152,11 @@ export function LoyaltyActionSourcesManagement() {
 		}
 	};
 
-	useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+	useEffect(() => {
+		void load();
+		// Refetch when enabled toggle or HTTP method filter changes. Route still needs Apply (avoid refetch per keystroke).
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [onlyEnabled, methodFilter]);
 
 	const filtered = useMemo(() => items, [items]);
 
@@ -307,23 +334,42 @@ export function LoyaltyActionSourcesManagement() {
 							</Select>
 						</div>
 						<div className="grow min-w-[220px]">
-							<Label>Route</Label>
-							<Input value={routeFilter} onChange={(e: any) => setRouteFilter(e.target.value)} placeholder="/payments" />
+							<Label>Route (substring, Apply)</Label>
+							<Input value={routeFilter} onChange={(e: any) => setRouteFilter(e.target.value)} placeholder="e.g. bookings or /payments" />
 						</div>
-						<div className="flex items-center gap-2">
-							<Switch checked={onlyEnabled} onCheckedChange={(v: boolean) => setOnlyEnabled(v)} />
-							<Label>Only enabled</Label>
+						<div className="flex flex-col gap-1">
+							<div className="flex items-center gap-2">
+								<Switch checked={onlyEnabled} onCheckedChange={(v: boolean) => setOnlyEnabled(v)} />
+								<Label>Only enabled</Label>
+							</div>
+							{onlyEnabled ? (
+								<p className="text-xs text-amber-700 dark:text-amber-400 max-w-xl">
+									Rows with <code className="font-mono">enabled = false</code> in RDS are omitted from this list (e.g.{' '}
+									<code className="font-mono">/admin/vendor/application/:applicationId/approve</code>). Turn this off to see them marked{' '}
+									<span className="font-medium">Disabled</span>.
+								</p>
+							) : null}
 						</div>
 						<Button variant="outline" onClick={load}>
 							<Filter className="w-4 h-4 mr-2" />
 							Apply
 						</Button>
 					</div>
+					{!loading && onlyEnabled && hiddenDisabledCount != null && hiddenDisabledCount > 0 ? (
+						<p className="text-sm text-amber-800 dark:text-amber-300 mb-2 rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 px-3 py-2">
+							{hiddenDisabledCount} disabled trigger row(s) hidden by this filter (same method/route filters). Turn off &quot;Only enabled&quot; to list them.
+						</p>
+					) : null}
+					{!loading && filtered.length > 0 ? (
+						<p className="text-sm text-muted-foreground mb-2">Showing {filtered.length} trigger row(s). Same route can appear more than once (different action_name).</p>
+					) : null}
 
 					{loading ? (
 						<div className="text-sm text-muted-foreground">Loading...</div>
 					) : filtered.length === 0 ? (
-						<div className="text-sm text-muted-foreground">No triggers found</div>
+						<div className="text-sm text-muted-foreground">
+							No triggers match the current filters. Clear the route field, set Method to All, turn off &quot;Only enabled&quot;, then Apply.
+						</div>
 					) : (
 						<Table>
 							<TableHeader>
@@ -339,12 +385,18 @@ export function LoyaltyActionSourcesManagement() {
 							</TableHeader>
 							<TableBody>
 								{filtered.map(it => (
-									<TableRow key={it.id}>
+									<TableRow key={it.id} className={it.enabled ? undefined : 'opacity-90 bg-muted/40'}>
 										<TableCell className="font-mono text-xs">{it.method}</TableCell>
 										<TableCell className="font-mono text-xs">{it.route_pattern}</TableCell>
 										<TableCell className="font-mono text-xs">{it.action_name}</TableCell>
 										<TableCell>
-											<Badge variant={it.enabled ? 'default' : 'secondary'}>{it.enabled ? 'Enabled' : 'Disabled'}</Badge>
+											{it.enabled ? (
+												<Badge variant="default">Enabled</Badge>
+											) : (
+												<Badge variant="destructive" className="font-medium">
+													Disabled
+												</Badge>
+											)}
 											{it.dry_run && <Badge className="ml-2" variant="secondary">Dry-run</Badge>}
 										</TableCell>
 										<TableCell>{it.priority}</TableCell>
