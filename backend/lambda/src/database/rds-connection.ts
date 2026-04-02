@@ -388,6 +388,9 @@ export async function insert(
     'attachments',               // support_tickets (URLs / metadata array)
     'documents',                 // insurance_claims, insurance_policies JSONB arrays
     'coverage',                  // insurance_plans.coverage (019 legacy JSONB)
+    'criteria',                  // loyalty_segments.criteria
+    'conditions',                // loyalty_action_rules.conditions
+    'multiplier_conditions',     // loyalty_action_rules.multiplier_conditions
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -467,6 +470,9 @@ export async function update(
     'setting_value',   // admin_settings
     'attachments',     // support_tickets
     'documents',       // insurance_claims, insurance_policies JSONB arrays
+    'criteria',        // loyalty_segments.criteria
+    'conditions',      // loyalty_action_rules.conditions
+    'multiplier_conditions',
   ]);
   
   // Also check for columns ending with common JSONB suffixes

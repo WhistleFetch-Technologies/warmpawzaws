@@ -5051,7 +5051,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ────────────────────────────────────────────────────────
       // 8. SORT
       // ────────────────────────────────────────────────────────
-      console.log('sortBy_______________________________>', results);
       results.sort((a, b) => {
         switch (sortBy) {
           case 'distance':
@@ -5077,7 +5076,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       });
 
-      console.log('results_______________________________>', results);
       // ────────────────────────────────────────────────────────
       // 9. RESPOND
       // ────────────────────────────────────────────────────────
