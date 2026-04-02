@@ -1,10 +1,44 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
+import { getResolvedCustomerId, isCustomerDatabaseUuid } from '@/lib/customer-id-storage';
+
+/**
+ * Phone for `/customer/by-phone` — matches MyBookings / api-client fallbacks.
+ * (Some sessions only set `customer_phone` or store phone inside profile JSON.)
+ */
+function readStoredPhoneForCustomer(): string | null {
+  if (typeof window === 'undefined') return null;
+  const a = localStorage.getItem('customerPhone')?.trim();
+  if (a) return a;
+  const b = localStorage.getItem('customer_phone')?.trim();
+  if (b) return b;
+  for (const key of ['customerData', 'customerProfile'] as const) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw?.trim()) continue;
+      const d = JSON.parse(raw) as Record<string, unknown>;
+      const p = d.phone ?? d.customerPhone;
+      if (p != null && String(p).replace(/\D/g, '').length >= 10) {
+        return String(p).trim();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+function pickUuidFromByPhoneResponse(res: any): string | null {
+  const c = res?.customer ?? res;
+  if (!c || typeof c !== 'object') return null;
+  const raw = (c as any).id ?? (c as any).customer_id ?? (c as any).customerId;
+  const s = raw != null ? String(raw).trim() : '';
+  return isCustomerDatabaseUuid(s) ? s : null;
+}
 
 interface RewardsLoyaltyPageProps {
   phone?: string;
@@ -17,7 +51,6 @@ interface RewardsLoyaltyPageProps {
   preSelectedVendorId?: string;
   vendorId?: string;
   onBack: () => void;
-  onCloseToHome?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onSuccess?: (bookingId?: string) => void;
   onComplete?: () => void;
@@ -55,8 +88,11 @@ interface PointsHistory {
 }
 
 export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
-  const phone = props.customerPhone || props.phone || (typeof window !== 'undefined' ? localStorage.getItem('customerPhone') : null);
-  
+  const phone =
+    props.customerPhone?.trim() ||
+    props.phone?.trim() ||
+    readStoredPhoneForCustomer();
+
   const [balance, setBalance] = useState<RewardsBalance | null>(null);
   const [rewards, setRewards] = useState<RewardItem[]>([]);
   const [history, setHistory] = useState<PointsHistory[]>([]);
@@ -64,41 +100,51 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'rewards' | 'history'>('rewards');
-  const [customerId, setCustomerId] = useState<string | null>(props.customerId || null);
+  /** Postgres `customers.id` (UUID). API routes `/customer/:customerId/rewards/*` require this, not phone. */
+  const [customerId, setCustomerId] = useState<string | null>(() => {
+    const p = props.customerId?.trim();
+    return p && isCustomerDatabaseUuid(p) ? p : null;
+  });
   const [redeeming, setRedeeming] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (phone) {
-      loadData();
+  const resolveCustomerUuid = useCallback(async (): Promise<string | null> => {
+    const fromProp = props.customerId?.trim();
+    if (fromProp && isCustomerDatabaseUuid(fromProp)) {
+      return fromProp;
     }
-  }, [phone]);
+    if (typeof window !== 'undefined') {
+      const fromStorage = getResolvedCustomerId();
+      if (fromStorage) return fromStorage;
+    }
+    if (phone) {
+      try {
+        const customerResponse = await apiClient.get<any>(
+          `/customer/by-phone?phone=${encodeURIComponent(phone)}`
+        );
+        const id = pickUuidFromByPhoneResponse(customerResponse);
+        if (id) return id;
+      } catch (err) {
+        console.error('Error getting customer ID:', err);
+      }
+    }
+    return null;
+  }, [phone, props.customerId]);
 
-  const loadData = async () => {
-    if (!phone) return;
-
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Get customer ID if not provided
-      let id = customerId;
+      const id = await resolveCustomerUuid();
       if (!id) {
-        try {
-          const customerResponse = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`);
-          id = customerResponse.customer?.id;
-          if (id) setCustomerId(id);
-        } catch (err) {
-          console.error('Error getting customer ID:', err);
-        }
-      }
-
-      if (!id) {
+        setCustomerId(null);
         setError('Customer not found. Please login again.');
-        setLoading(false);
         return;
       }
+      setCustomerId(id);
 
-      // Load balance, rewards, and history
+      // apiClient rejects non-UUID first path segment for /customer/*/rewards/* (see customerUuidSegmentInPath).
+      // Using a phone here fails synchronously — no network entry and empty UI; UUID is required.
       const [balanceRes, rewardsRes, historyRes] = await Promise.all([
         apiClient.get<any>(`/customer/${id}/rewards/points`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/rewards/available`).catch(() => null),
@@ -128,7 +174,11 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [resolveCustomerUuid]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleRedeem = async (reward: RewardItem) => {
     if (!customerId) {
@@ -199,37 +249,28 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-orange-50 to-amber-50 flex justify-center">
       <div className="w-full max-w-customer mx-auto min-h-screen min-h-[100dvh] flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
-        {props.onCloseToHome ? (
-          <ProfileAccountScreenHeader
-            onCloseToHome={props.onCloseToHome}
-            onBack={props.onBack}
-            title="Rewards & Loyalty"
-            subtitle="Earn points and redeem amazing rewards"
-            className="sticky top-0 z-10"
-          />
-        ) : (
-          <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)]">
-            <div className="px-4 pb-3 pt-2">
-              <div className="flex items-start gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={props.onBack}
-                  className="rounded-full shrink-0 h-10 w-10 -ml-1"
-                  aria-label="Go back"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </Button>
-                <div className="flex-1 min-w-0 pt-0.5 pr-1">
-                  <h1 className="text-lg font-bold text-gray-800 leading-snug">Rewards & Loyalty</h1>
-                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                    Earn points and redeem amazing rewards
-                  </p>
-                </div>
+        {/* Header — compact app-style bar */}
+        <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)]">
+          <div className="px-4 pb-3 pt-2">
+            <div className="flex items-start gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={props.onBack}
+                className="rounded-full shrink-0 h-10 w-10 -ml-1"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div className="flex-1 min-w-0 pt-0.5 pr-1">
+                <h1 className="text-lg font-bold text-gray-800 leading-snug">Rewards & Loyalty</h1>
+                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                  Earn points and redeem amazing rewards
+                </p>
               </div>
             </div>
-          </header>
-        )}
+          </div>
+        </header>
 
         {/* Hero Section */}
         {balance && (

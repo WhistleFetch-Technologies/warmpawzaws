@@ -19,6 +19,31 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { resolveVendorId as resolveVendorIdFromUtils } from '../../../utils/vendor-resolve';
 
+/** Ensures migration-605 columns exist (UAT/prod DBs sometimes lag behind code). Cached per Lambda instance. */
+let ensureVendors605ColumnsPromise: Promise<void> | null = null;
+async function ensureVendors605Columns(): Promise<void> {
+  if (!ensureVendors605ColumnsPromise) {
+    ensureVendors605ColumnsPromise = (async () => {
+      await query(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'availability_configured') THEN ALTER TABLE vendors ADD COLUMN availability_configured BOOLEAN DEFAULT false; END IF; END $$`
+      );
+      await query(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'services_configured') THEN ALTER TABLE vendors ADD COLUMN services_configured BOOLEAN DEFAULT false; END IF; END $$`
+      );
+      await query(
+        `CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON vendors(availability_configured) WHERE availability_configured = false`
+      );
+      await query(
+        `CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`
+      );
+    })().catch((err) => {
+      ensureVendors605ColumnsPromise = null;
+      throw err;
+    });
+  }
+  await ensureVendors605ColumnsPromise;
+}
+
 // ============================================================================
 // PHASE 12: POST-APPROVAL SETUP
 // ============================================================================
@@ -214,6 +239,7 @@ class UpdateVendorAvailabilityHandler extends BaseHandler {
         }
       }
       
+      await ensureVendors605Columns();
       await update('vendors', { id: vendorId }, {
         metadata: updatedMetadata,
         operating_hours: operatingHoursText,

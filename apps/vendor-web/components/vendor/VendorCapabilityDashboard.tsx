@@ -201,7 +201,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img 
-                src="/logo.png" 
+                src="/warmpawz-logo.svg" 
                 alt="Warmpawz" 
                 className="w-12 h-12 rounded-2xl object-contain bg-white/20 p-2"
               />
@@ -324,7 +324,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
       </div>
 
       {/* Bottom Navigation for Mobile */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg lg:hidden z-30 safe-area-bottom">
         <div className="flex justify-around py-2">
           {['dashboard', 'bookings', 'services', 'earnings', 'profile'].map((section) => {
             const cap = ALL_CAPABILITIES.find(c => c.name === section);
@@ -333,12 +333,12 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
               <button
                 key={section}
                 onClick={() => setActiveSection(section)}
-                className={`flex flex-col items-center py-2 px-4 ${
+                className={`flex flex-col items-center justify-center min-h-[44px] min-w-[3rem] px-2 gap-0.5 ${
                   activeSection === section ? 'text-orange-500' : 'text-gray-500'
                 }`}
               >
-                <span className="text-2xl">{cap.icon}</span>
-                <span className="text-xs mt-1">{cap.display_name}</span>
+                <span className="text-lg">{cap.icon}</span>
+                <span className="text-[10px]">{cap.display_name}</span>
               </button>
             );
           })}

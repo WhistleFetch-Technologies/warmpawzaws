@@ -281,11 +281,11 @@ async function executeSQL(sql, expectResult = false) {
         secretArn: clusterInfo.secretArn,
         database: DATABASE_NAME,
         sql,
-        ...(expectResult ? { formatRecordsAs: 'JSON' } : {})
+        // Do not set formatRecordsAs: 'JSON' — that omits records/columnMetadata and breaks parseRecords().
       })
     );
 
-    if (expectResult && result.records) {
+    if (expectResult && result.records?.length) {
       console.log(`   ✅ Query executed successfully (${result.records.length} records)`);
     } else {
       console.log(`   ✅ Statement executed successfully`);

@@ -188,14 +188,13 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-[#FF8C42] text-white p-4">
+      <div className="bg-[#FF8C42] text-white p-4 safe-area-top">
         <div className="flex items-center gap-3 mb-4">
           {onBack && (
             <Button
               onClick={onBack}
               variant="ghost"
-              size="sm"
-              className="text-white hover:bg-white/20 -ml-2"
+              className="w-11 h-11 min-w-[44px] text-white hover:bg-white/20 -ml-2 rounded-xl"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>

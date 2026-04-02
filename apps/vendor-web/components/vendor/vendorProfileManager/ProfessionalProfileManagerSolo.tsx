@@ -347,14 +347,14 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white sticky top-0 z-10">
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white sticky top-0 z-10 safe-area-top">
           <div className="px-4 py-3">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onBack || (() => router.back())}
-                className="rounded-full text-white hover:bg-white/20 -ml-2"
+                className="w-11 h-11 min-w-[44px] rounded-full text-white hover:bg-white/20 -ml-2"
               >
                 <ArrowLeft className="w-5 h-5" />
               </Button>
@@ -687,12 +687,11 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
 
           {/* Save Button (if changes) */}
           {hasChanges && (
-            <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-3">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-3 safe-area-bottom">
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="flex-1"
+                  className="flex-1 min-h-[48px]"
                   onClick={() => {
                     loadProfile();
                     setHasChanges(false);
@@ -704,8 +703,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  size="sm"
-                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white"
+                  className="flex-1 min-h-[48px] bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white"
                 >
                   <Save className="w-4 h-4 mr-1" />
                   {saving ? 'Saving...' : 'Save'}

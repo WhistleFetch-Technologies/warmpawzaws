@@ -834,9 +834,9 @@ export function VendorServiceCatalogView({
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-        <div className="bg-white border-b border-gray-200 p-4">
+        <div className="bg-white border-b border-gray-200 p-4 safe-area-top">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack} title="Back to Service Management">
+            <Button variant="ghost" size="icon" onClick={onBack} className="w-11 h-11 min-w-[44px]" title="Back to Service Management">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
@@ -858,9 +858,9 @@ export function VendorServiceCatalogView({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-20">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10 safe-area-top">
         <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="icon" onClick={onBack} title="Back to Service Management">
+          <Button variant="ghost" size="icon" onClick={onBack} className="w-11 h-11 min-w-[44px]" title="Back to Service Management">
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>

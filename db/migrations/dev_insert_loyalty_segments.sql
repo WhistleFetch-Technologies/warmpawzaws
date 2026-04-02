@@ -1,6 +1,6 @@
 -- Create table if missing
 CREATE TABLE IF NOT EXISTS loyalty_segments (
-  id uuid PRIMARY KEY,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   segment_name text NOT NULL UNIQUE,
   segment_type text NOT NULL CHECK (segment_type IN ('customer','vendor','both')),
   description text,

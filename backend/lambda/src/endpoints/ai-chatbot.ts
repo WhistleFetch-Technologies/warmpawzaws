@@ -53,6 +53,54 @@ function normalizeCustomerBookingUrl(serviceType: string, bookingQuery: string):
   return `/search?category=${safeCat}&q=${q}`;
 }
 
+function formatChatPreviousTurns(contextObj: Record<string, unknown>): string {
+  const pm = contextObj.previousMessages;
+  if (!Array.isArray(pm) || pm.length === 0) return '';
+  const lines = pm
+    .slice(-4)
+    .map((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') return '';
+      const m = entry as { role?: string; content?: string };
+      const role = m.role === 'assistant' ? 'Assistant' : 'User';
+      const content = String(m.content || '').slice(0, 240);
+      if (!content) return '';
+      return `${role}: ${content}`;
+    })
+    .filter(Boolean);
+  if (lines.length === 0) return '';
+  return `\nRECENT CONVERSATION (last turns):\n${lines.join('\n')}\n`;
+}
+
+/** Optional per-vendor AI tuning in vendors.other_config JSON: { "ai_chat": { ... } } */
+type VendorAiChatConfig = {
+  systemPromptSuffix?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+};
+
+function parseVendorAiChatFromOtherConfig(otherConfig: unknown): VendorAiChatConfig {
+  if (!otherConfig || typeof otherConfig !== 'object') return {};
+  const oc = otherConfig as Record<string, unknown>;
+  const ac = oc.ai_chat;
+  if (!ac || typeof ac !== 'object') return {};
+  const c = ac as Record<string, unknown>;
+  const out: VendorAiChatConfig = {};
+  if (typeof c.systemPromptSuffix === 'string' && c.systemPromptSuffix.trim()) {
+    out.systemPromptSuffix = c.systemPromptSuffix.trim().slice(0, 4000);
+  }
+  if (typeof c.temperature === 'number' && Number.isFinite(c.temperature)) {
+    out.temperature = Math.min(1, Math.max(0, c.temperature));
+  }
+  if (typeof c.maxTokens === 'number' && Number.isFinite(c.maxTokens)) {
+    out.maxTokens = Math.min(4096, Math.max(256, Math.round(c.maxTokens)));
+  }
+  if (typeof c.topP === 'number' && Number.isFinite(c.topP)) {
+    out.topP = Math.min(1, Math.max(0.01, c.topP));
+  }
+  return out;
+}
+
 /** Match problem-grid specializations + sample providers for symptom text (DB-backed). */
 async function lookupCareForSymptoms(symptomsText: string): Promise<{
   specializations: Array<{ id: string; name: string; categoryId: string; matchedSymptom?: string }>;
@@ -273,26 +321,108 @@ export function registerAIChatbotEndpoints(app: Hono) {
    */
   app.post("/ai-chatbot/chat", async (c) => {
     try {
-      const { message, customerId, customerPhone, conversationId, context, petId } = await c.req.json();
+      const body = await c.req.json();
+      const {
+        message,
+        customerId,
+        customerPhone,
+        conversationId,
+        context,
+        petId,
+        vendorId: vendorIdFromBody,
+      } = body;
 
       if (!message) {
         return c.json({ error: 'message is required' }, 400);
       }
 
+      const ctx =
+        context && typeof context === 'object' && !Array.isArray(context)
+          ? (context as Record<string, unknown>)
+          : {};
+      const ctxUserType = ctx.userType === 'vendor' ? 'vendor' : 'customer';
+      const ctxUserName = typeof ctx.userName === 'string' ? ctx.userName.trim() : '';
+
+      const effectiveVendorId =
+        (typeof vendorIdFromBody === 'string' && vendorIdFromBody) ||
+        (ctxUserType === 'vendor' && typeof customerId === 'string' && customerId ? customerId : '') ||
+        '';
+      const isVendorSession = ctxUserType === 'vendor' || !!effectiveVendorId;
+
+      const transcriptHint = formatChatPreviousTurns(ctx);
+
       // Generate or use conversation ID
       const currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
-      // Fetch customer context
       let customerContext = '';
+      let vendorContext = '';
+      let vendorProfileBlock = '';
+      let vendorAiSuffix = '';
+      /** Bedrock generation params — only applied when isVendorSession; customer path uses fixed defaults below. */
+      let vendorBedrockOpts = { maxTokens: 1024, temperature: 0.45, topP: 0.9 };
       let petContext = '';
       let bookingContext = '';
 
-      if (customerId || customerPhone) {
+      if (isVendorSession && effectiveVendorId) {
+        try {
+          const vendorRes = await query(
+            `SELECT v.business_name, v.owner_name, v.category, v.tier, v.city, v.state, v.specialization,
+                    v.home_service_enabled, v.other_config,
+                    COALESCE(NULLIF(TRIM(r.display_name), ''), r.name) AS role_name
+             FROM vendors v
+             LEFT JOIN roles r ON r.id = v.role_id
+             WHERE v.id = $1
+             LIMIT 1`,
+            [effectiveVendorId]
+          );
+          const row = vendorRes.rows?.[0] as Record<string, unknown> | undefined;
+          if (row) {
+            const label =
+              (row.business_name as string) ||
+              (row.owner_name as string) ||
+              ctxUserName ||
+              'Vendor';
+            vendorContext = `Vendor provider: ${label} (id: ${effectiveVendorId})`;
+            const profileLines = [
+              `- Business / display name: ${label}`,
+              row.role_name ? `- Provider role: ${String(row.role_name)}` : null,
+              row.category ? `- Category: ${String(row.category)}` : null,
+              row.tier ? `- Tier: ${String(row.tier)}` : null,
+              row.city || row.state
+                ? `- Location: ${[row.city, row.state].filter(Boolean).join(', ')}`
+                : null,
+              row.specialization
+                ? `- Specialization (summary): ${String(row.specialization).slice(0, 240)}`
+                : null,
+              `- Home visits offered: ${row.home_service_enabled ? 'yes' : 'no'}`,
+            ].filter(Boolean);
+            vendorProfileBlock = `VENDOR PROFILE (personalize tone and examples; never invent payouts, bank details, or private data):\n${profileLines.join('\n')}\n`;
+
+            const aiCfg = parseVendorAiChatFromOtherConfig(row.other_config);
+            if (aiCfg.systemPromptSuffix) {
+              vendorAiSuffix = aiCfg.systemPromptSuffix;
+            }
+            vendorBedrockOpts = {
+              maxTokens: aiCfg.maxTokens ?? 1024,
+              temperature: aiCfg.temperature ?? 0.45,
+              topP: aiCfg.topP ?? 0.9,
+            };
+          } else if (ctxUserName) {
+            vendorContext = `Vendor provider (signed in as): ${ctxUserName}`;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch vendor context', e);
+        }
+      } else if (isVendorSession && ctxUserName) {
+        vendorContext = `Vendor provider (signed in as): ${ctxUserName}`;
+      }
+
+      if (!isVendorSession && (customerId || customerPhone)) {
         try {
           const customerResult = customerId
             ? await select('customers', { id: customerId })
             : await query(`SELECT * FROM customers WHERE phone = $1 LIMIT 1`, [customerPhone]);
-          
+
           const customers = Array.isArray(customerResult) ? customerResult : customerResult.rows || [];
           if (customers.length > 0) {
             const cust = customers[0];
@@ -316,8 +446,24 @@ export function registerAIChatbotEndpoints(app: Hono) {
         }
       }
 
-      // Fetch recent bookings context
-      if (customerId || customerPhone) {
+      // Fetch recent bookings context (vendor vs customer)
+      if (isVendorSession && effectiveVendorId) {
+        try {
+          const bookings = await query(
+            `SELECT id, service_type, booking_date, status 
+             FROM bookings 
+             WHERE vendor_id = $1
+             ORDER BY created_at DESC 
+             LIMIT 5`,
+            [effectiveVendorId]
+          );
+          if (bookings.rows && bookings.rows.length > 0) {
+            bookingContext = `Recent bookings for this provider: ${bookings.rows.map((b: any) => `${b.service_type} (${b.status})`).join(', ')}`;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch vendor booking context', e);
+        }
+      } else if (!isVendorSession && (customerId || customerPhone)) {
         try {
           const bookings = await query(
             `SELECT id, service_type, booking_date, status 
@@ -335,26 +481,27 @@ export function registerAIChatbotEndpoints(app: Hono) {
         }
       }
 
-      // Fetch store context (products/services)
+      // Featured products — customer chat only (vendor assistant does not need shop catalog in context)
       let storeContext = '';
-      try {
-        const products = await query(
-          `SELECT name, sale_price, base_price FROM products WHERE is_active = true ORDER BY created_at DESC LIMIT 5`
-        );
-        if (products.rows && products.rows.length > 0) {
-          storeContext = `Featured Products:\n${products.rows.map((p: any) => `- ${p.name} (₹${p.sale_price || p.base_price || 0})`).join('\n')}`;
+      if (!isVendorSession) {
+        try {
+          const products = await query(
+            `SELECT name, sale_price, base_price FROM products WHERE is_active = true ORDER BY created_at DESC LIMIT 5`
+          );
+          if (products.rows && products.rows.length > 0) {
+            storeContext = `Featured Products:\n${products.rows.map((p: any) => `- ${p.name} (₹${p.sale_price || p.base_price || 0})`).join('\n')}`;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch product context', e);
         }
-      } catch (e) {
-        console.warn('Failed to fetch product context', e);
       }
 
-      // Build system prompt
-      const systemPrompt = `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
+      const customerSystemPrompt = `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
 
 ROLE: Help customers with pet care, shopping, bookings, and support.
 
 CONTEXT:
-${customerContext ? `- ${customerContext}\n` : ''}${petContext ? `- ${petContext}\n` : ''}${bookingContext ? `- ${bookingContext}\n` : ''}${storeContext ? `- ${storeContext}\n` : ''}
+${customerContext ? `- ${customerContext}\n` : ''}${petContext ? `- ${petContext}\n` : ''}${bookingContext ? `- ${bookingContext}\n` : ''}${storeContext ? `- ${storeContext}\n` : ''}${transcriptHint}
 
 CAPABILITIES:
 1. Symptoms Checker: Analyze pet symptoms and provide general guidance (ALWAYS recommend seeing a vet for serious issues)
@@ -388,6 +535,43 @@ IMPORTANT RULES:
 - For support: Provide helpful information or escalate to agent if needed
 - If confidence < 0.7 or user requests human agent, set requiresAgent: true`;
 
+      const vendorSystemPrompt = `You are the Warmpawz AI Assistant for **vendors** (pet care providers using the Warmpawz vendor app / dashboard).
+
+ROLE: Help providers manage their business on Warmpawz — services, schedule/bookings, earnings and settlements, profile and settings, and how to contact platform support. Do NOT tell them to use customer-only flows like "Symptoms" or "Booking" tabs in the consumer app unless they are asking as a pet owner.
+
+CONTEXT:
+${vendorContext ? `- ${vendorContext}\n` : ''}${vendorProfileBlock ? `${vendorProfileBlock}\n` : ''}${bookingContext ? `- ${bookingContext}\n` : ''}${storeContext ? `- ${storeContext}\n` : ''}${transcriptHint}
+
+CAPABILITIES (vendor):
+1. Services: Adding/editing services, pricing, availability, service catalog vs custom services (solo vs business)
+2. Bookings: Dashboard schedule, confirming visits, status updates, customer communication
+3. Payments & settlements: Earnings, payouts, reporting — give high-level guidance; never fabricate account numbers or amounts
+4. Support: How to reach Warmpawz support for disputes or account issues
+
+INTENT CLASSIFICATION (vendor):
+Use intents such as: 'vendor_services', 'vendor_bookings', 'vendor_payouts', 'vendor_support', 'general'.
+
+OUTPUT FORMAT:
+Respond with a VALID JSON object ONLY:
+{
+  "response": "Your helpful response text here...",
+  "intent": "detected_intent",
+  "confidence": 0.95,
+  "suggestedActions": ["action1", "action2"],
+  "requiresAgent": false
+}
+
+IMPORTANT RULES:
+- Be concise and actionable; reference app areas: Bookings tab, Settings, Reporting, Services
+- If the user needs human help (payout disputes, account lock), set requiresAgent: true
+- If confidence < 0.7 or they ask for a human, set requiresAgent: true
+${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when relevant):\n${vendorAiSuffix}\n` : ''}`;
+
+      const systemPrompt = isVendorSession ? vendorSystemPrompt : customerSystemPrompt;
+
+      const customerBedrockOpts = { maxTokens: 1024, temperature: 0.5, topP: 0.9 } as const;
+      const bedrockOpts = isVendorSession ? vendorBedrockOpts : customerBedrockOpts;
+
       let responseText = '';
       let intent = 'general';
       let confidence = 0.5;
@@ -398,11 +582,12 @@ IMPORTANT RULES:
       // Try AWS Bedrock with retry
       try {
         const completion = await withRetry(
-          () => invokeBedrock(message, systemPrompt, {
-            maxTokens: 1024,
-            temperature: 0.5,
-            topP: 0.9,
-          }),
+          () =>
+            invokeBedrock(message, systemPrompt, {
+              maxTokens: bedrockOpts.maxTokens,
+              temperature: bedrockOpts.temperature,
+              topP: bedrockOpts.topP,
+            }),
           {
             maxAttempts: 3,
             initialDelayMs: 1000,
@@ -439,21 +624,89 @@ IMPORTANT RULES:
       // Fallback to rule-based responses if Bedrock failed
       if (!usedBedrock) {
         const lowerMessage = message.toLowerCase();
-        
-        if (lowerMessage.includes('symptom') || lowerMessage.includes('sick') || lowerMessage.includes('ill') || 
-            lowerMessage.includes('vomit') || lowerMessage.includes('diarrhea') || lowerMessage.includes('fever')) {
+
+        if (isVendorSession) {
+          if (
+            /\b(service|services|catalog|pricing|manage my services|add service|edit service|what i offer)\b/.test(
+              lowerMessage
+            )
+          ) {
+            intent = 'vendor_services';
+            responseText =
+              'To **manage services**, use **Settings** and your **Services** section from the vendor dashboard. There you can add or edit what you offer, set availability, and update pricing. Solo providers manage custom services there; business locations may use the catalog tied to your center.';
+            confidence = 0.88;
+            suggestedActions = ['Open Services', 'Settings'];
+          } else if (
+            /\b(booking|bookings|appointment|appointments|schedule|calendar|today)\b/.test(lowerMessage)
+          ) {
+            intent = 'vendor_bookings';
+            responseText =
+              'Use the **Bookings** tab on your dashboard to see your schedule, open a booking for details, update status, and message the customer. You can complete or start services from the appointment card when supported.';
+            confidence = 0.88;
+            suggestedActions = ['Bookings', 'Dashboard'];
+          } else if (
+            /\b(payment|payout|payouts|settlement|settlements|earning|earnings|razorpay|bank|payout history)\b/.test(
+              lowerMessage
+            )
+          ) {
+            intent = 'vendor_payouts';
+            responseText =
+              'For **payments and settlements**, open **Reporting** on your dashboard for earnings summaries, and check **Settings** for payout / bank details (labels may vary by app version). For a missing payout or dispute, use **Contact support** and include dates and booking references.';
+            confidence = 0.85;
+            suggestedActions = ['Reporting', 'Contact support'];
+          } else if (/\b(contact support|support team|help desk|human agent|talk to someone)\b/.test(lowerMessage)) {
+            intent = 'vendor_support';
+            responseText =
+              'Reach Warmpawz support from **Help** or **Contact support** in the vendor app. Include your business name and a short summary of the issue for faster help.';
+            confidence = 0.88;
+            suggestedActions = ['Contact Support'];
+          } else if (/\b(hi|hello|hey|hii)\b/.test(lowerMessage) && lowerMessage.length < 40) {
+            intent = 'general';
+            responseText =
+              "Hi! I'm the Warmpawz vendor assistant. Ask about **services**, **bookings**, **payments & settlements**, or **contact support** for account issues.";
+            confidence = 0.9;
+            suggestedActions = ['Services', 'Bookings', 'Reporting'];
+          } else if (/\b(help)\b/.test(lowerMessage)) {
+            intent = 'vendor_support';
+            responseText =
+              'I can help with **services**, **bookings**, **payments**, and **settings**. Say what you are trying to do (e.g. add a service, check a booking, or a payout question), or use **Contact support** for account-specific problems.';
+            confidence = 0.84;
+            suggestedActions = ['Services', 'Bookings', 'Contact support'];
+          } else {
+            intent = 'support';
+            responseText =
+              "I'm not sure I understood. Try asking about **services**, **bookings**, **payments & settlements**, or **contact support**. You can also tap a quick question in the chat.";
+            confidence = 0.75;
+            suggestedActions = ['Services', 'Bookings', 'Contact support'];
+          }
+        } else if (
+          lowerMessage.includes('symptom') ||
+          lowerMessage.includes('sick') ||
+          lowerMessage.includes('ill') ||
+          lowerMessage.includes('vomit') ||
+          lowerMessage.includes('diarrhea') ||
+          lowerMessage.includes('fever')
+        ) {
           intent = 'symptoms';
-          responseText = "I understand you're concerned about your pet's health. While I can provide general guidance, it's important to consult with a veterinarian for proper diagnosis and treatment. Would you like me to help you find a nearby vet clinic or book a consultation?";
+          responseText =
+            "I understand you're concerned about your pet's health. While I can provide general guidance, it's important to consult with a veterinarian for proper diagnosis and treatment. Would you like me to help you find a nearby vet clinic or book a consultation?";
           confidence = 0.8;
           suggestedActions = ['Find Vet Clinic', 'Book Consultation'];
         } else if (lowerMessage.includes('book') || lowerMessage.includes('appointment') || lowerMessage.includes('schedule')) {
           intent = 'booking';
-          responseText = "I'd be happy to help you book a service! What type of service are you looking for? (e.g., Vet consultation, Grooming, Training, etc.)";
+          responseText =
+            "I'd be happy to help you book a service! What type of service are you looking for? (e.g., Vet consultation, Grooming, Training, etc.)";
           confidence = 0.85;
           suggestedActions = ['Browse Services', 'Book Now'];
-        } else if (lowerMessage.includes('order') || lowerMessage.includes('product') || lowerMessage.includes('buy') || lowerMessage.includes('shop')) {
+        } else if (
+          lowerMessage.includes('order') ||
+          lowerMessage.includes('product') ||
+          lowerMessage.includes('buy') ||
+          lowerMessage.includes('shop')
+        ) {
           intent = 'shopping';
-          responseText = "I can help you with shopping! You can browse our products in the Shop section. What are you looking for?";
+          responseText =
+            'I can help you with shopping! You can browse our products in the Shop section. What are you looking for?';
           confidence = 0.8;
           suggestedActions = ['Browse Shop', 'View Cart'];
         } else if (
@@ -463,7 +716,7 @@ IMPORTANT RULES:
         ) {
           intent = 'knowledge';
           responseText =
-            "Warmpawz lists pet care providers (vets, groomers, and more) in the app — we do not have a single physical storefront. Open Search or Vet Care to find clinics and book a provider near you.";
+            'Warmpawz lists pet care providers (vets, groomers, and more) in the app — we do not have a single physical storefront. Open Search or Vet Care to find clinics and book a provider near you.';
           confidence = 0.88;
           suggestedActions = ['Find Vet Clinic', 'Search Providers'];
         } else if (
@@ -472,7 +725,7 @@ IMPORTANT RULES:
         ) {
           intent = 'support';
           responseText =
-            "You can update your profile details from the Profile / Settings section. Open Profile from the bottom menu, then edit your name or contact information.";
+            'You can update your profile details from the Profile / Settings section. Open Profile from the bottom menu, then edit your name or contact information.';
           confidence = 0.88;
           suggestedActions = ['Open Settings'];
         } else if (/\b(hi|hello|hey|hii)\b/.test(lowerMessage) && lowerMessage.length < 40) {
@@ -484,7 +737,7 @@ IMPORTANT RULES:
         } else if (/\b(help|support|agent|human|talk to someone)\b/.test(lowerMessage)) {
           intent = 'support';
           responseText =
-            "I can help with common questions here. For account or order issues, contact our support team from Help & Support.";
+            'I can help with common questions here. For account or order issues, contact our support team from Help & Support.';
           confidence = 0.85;
           suggestedActions = ['Contact Support', 'Browse Services'];
         } else {
@@ -500,8 +753,8 @@ IMPORTANT RULES:
       try {
         await insert('ai_chatbot_conversations', {
           conversation_id: currentConversationId,
-          customer_id: customerId || null,
-          customer_phone: customerPhone || null,
+          customer_id: !isVendorSession ? customerId || null : null,
+          customer_phone: !isVendorSession ? customerPhone || null : null,
           user_message: message,
           bot_response: responseText,
           intent,
@@ -520,10 +773,10 @@ IMPORTANT RULES:
         // Create support ticket for agent handoff
         try {
           await insert('support_tickets', {
-            customer_id: customerId || null,
-            customer_phone: customerPhone || null,
+            customer_id: !isVendorSession ? customerId || null : null,
+            customer_phone: !isVendorSession ? customerPhone || null : null,
             subject: `AI Chatbot Handoff - ${intent}`,
-            message: `User: ${message}\n\nAI Response: ${responseText}\n\nIntent: ${intent}, Confidence: ${confidence}`,
+            message: `User: ${message}\n\nAI Response: ${responseText}\n\nIntent: ${intent}, Confidence: ${confidence}${effectiveVendorId ? `\nVendorId: ${effectiveVendorId}` : ''}`,
             source: 'ai_chatbot',
             status: 'open',
             priority: 'medium',

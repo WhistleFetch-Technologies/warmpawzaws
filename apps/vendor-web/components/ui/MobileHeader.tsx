@@ -36,7 +36,7 @@ export function MobileHeader({
 }: MobileHeaderProps) {
   return (
     <header
-      className={`sticky top-0 z-40 w-full ${
+      className={`sticky top-0 z-40 w-full safe-area-top ${
         transparent 
           ? 'bg-transparent' 
           : 'bg-white border-b border-gray-100 shadow-sm'
@@ -48,7 +48,7 @@ export function MobileHeader({
           {showBack && onBack && (
             <button
               onClick={onBack}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors -ml-2"
+              className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors -ml-2"
               aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5 text-gray-700" />
@@ -69,7 +69,7 @@ export function MobileHeader({
           {onNotifications && (
             <button
               onClick={onNotifications}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors relative"
+              className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors relative"
               aria-label="Notifications"
             >
               <Bell className="w-5 h-5 text-gray-600" />
@@ -84,7 +84,7 @@ export function MobileHeader({
           {onSettings && (
             <button
               onClick={onSettings}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+              className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
               aria-label="Settings"
             >
               <Settings className="w-5 h-5 text-gray-600" />
@@ -94,7 +94,7 @@ export function MobileHeader({
           {onMenu && (
             <button
               onClick={onMenu}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+              className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
               aria-label="Menu"
             >
               <Menu className="w-5 h-5 text-gray-600" />

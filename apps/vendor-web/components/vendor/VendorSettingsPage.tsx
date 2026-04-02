@@ -147,7 +147,7 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
         <div className="sticky top-0 z-20 bg-white border-b">
           <div className="p-4 flex items-center gap-3">
             {onBack && (
-              <button onClick={onBack} className="w-8 h-8 flex items-center justify-center -ml-1">
+              <button onClick={onBack} className="w-11 h-11 flex items-center justify-center -ml-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors">
                 <ArrowLeft className="w-5 h-5 text-gray-700" />
               </button>
             )}
@@ -338,13 +338,15 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
                 </div>
               </div>
 
-              <button
-                onClick={handleSaveProfile}
-                disabled={saving}
-                className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Saving...' : 'Save Profile'}
-              </button>
+              <div className="sticky bottom-0 bg-white pt-3 pb-[env(safe-area-inset-bottom,0.5rem)]">
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={saving}
+                  className="w-full py-3.5 min-h-[48px] bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? 'Saving...' : 'Save Profile'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -396,13 +398,15 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
                 </div>
               </div>
 
-              <button
-                onClick={handleSaveBankDetails}
-                disabled={saving}
-                className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Saving...' : bankDetails?.is_verified ? 'Update & Re-verify' : 'Save & Verify'}
-              </button>
+              <div className="sticky bottom-0 bg-white pt-3 pb-[env(safe-area-inset-bottom,0.5rem)]">
+                <button
+                  onClick={handleSaveBankDetails}
+                  disabled={saving}
+                  className="w-full py-3.5 min-h-[48px] bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? 'Saving...' : bankDetails?.is_verified ? 'Update & Re-verify' : 'Save & Verify'}
+                </button>
+              </div>
             </div>
           )}
 
