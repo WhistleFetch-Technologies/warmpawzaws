@@ -24,9 +24,9 @@ const PUBLIC_ENDPOINTS = [
   '/auth/otp/verify',
   '/auth/login',
   '/auth/register',
-  '/admin/auth/login',  // ✅ FIX: Admin login should be public
-  '/admin/auth/signup', // ✅ FIX: Admin signup should be public
-  '/admin/test/ping',   // ✅ FIX: Test endpoint should be public
+  '/admin/auth/login', 
+  '/admin/auth/signup',
+  '/admin/test/ping',  
   '/vendor/onboarding/status',
   '/service-catalog/categories',
   '/service-catalog/services',

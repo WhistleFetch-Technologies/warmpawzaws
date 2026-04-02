@@ -176,7 +176,7 @@ export function actionSourceMiddleware() {
 				if (status < (m.status_min ?? 200) || status > (m.status_max ?? 299)) return false;
 				return pathToRegex(m.route_pattern).test(path);
 			});
-			try {
+			try {-+
 				console.log('[ASDIAG] routeMatch', JSON.stringify({
 					method,
 					path,
