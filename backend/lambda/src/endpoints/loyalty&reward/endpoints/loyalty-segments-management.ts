@@ -17,6 +17,49 @@ import { loyaltySegmentationService } from 'src/lib/services/loyalty-segmentatio
 // LOYALTY SEGMENTS MANAGEMENT
 // ============================================================================
 
+const SEGMENT_WRITABLE_KEYS = new Set([
+  'segment_name',
+  'segment_type',
+  'description',
+  'criteria',
+  'match_type',
+  'is_active',
+  'priority',
+]);
+
+function coerceSegmentPriority(v: unknown): number {
+  const n = typeof v === 'number' ? v : parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function coerceSegmentIsActive(v: unknown): boolean {
+  if (typeof v === 'boolean') return v;
+  if (v === 'false' || v === 0 || v === '0') return false;
+  if (v === 'true' || v === 1 || v === '1') return true;
+  return Boolean(v);
+}
+
+function normalizeSegmentCriteria(raw: unknown): Record<string, unknown> {
+  if (raw === null || raw === undefined) {
+    throw new Error('criteria is required (send {} for empty rules)');
+  }
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      if (typeof p !== 'object' || p === null || Array.isArray(p)) {
+        throw new Error('criteria JSON must be an object');
+      }
+      return p as Record<string, unknown>;
+    } catch (e: any) {
+      throw new Error(e?.message?.includes('criteria') ? e.message : 'criteria must be valid JSON object');
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  throw new Error('criteria must be an object');
+}
+
 class GetLoyaltySegmentsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
@@ -100,9 +143,21 @@ class CreateLoyaltySegmentHandler extends BaseHandler {
         priority = 100,
       } = body;
 
-      // Validate required fields
-      if (!segment_name || !segment_type || !criteria) {
-        return this.error('segment_name, segment_type, and criteria are required', 400);
+      const name = String(segment_name ?? '').trim();
+      if (!name || !segment_type) {
+        return this.error('segment_name and segment_type are required', 400);
+      }
+
+      let criteriaObj: Record<string, unknown>;
+      try {
+        criteriaObj = normalizeSegmentCriteria(criteria);
+      } catch (e: any) {
+        return this.error(e?.message || 'Invalid criteria', 400);
+      }
+
+      const priorityNum = coerceSegmentPriority(priority);
+      if (!Number.isFinite(priorityNum)) {
+        return this.error('priority must be a number', 400);
       }
 
       // Validate enums
@@ -116,32 +171,36 @@ class CreateLoyaltySegmentHandler extends BaseHandler {
         return this.error(`match_type must be one of: ${validMatchTypes.join(', ')}`, 400);
       }
 
-      // Check if segment_name already exists
-      const existing = await select('loyalty_segments', { segment_name });
+      const existing = await select('loyalty_segments', { segment_name: name });
       if (existing.length > 0) {
         return this.error('Segment name already exists', 409);
       }
 
-      const segment = await insert('loyalty_segments', {
-        segment_name,
+      // Always set id in app: some RDS envs have loyalty_segments.id NOT NULL without DEFAULT
+      // (CREATE TABLE IF NOT EXISTS never backfills default on an existing table).
+      const rows = await insert('loyalty_segments', {
+        id: randomUUID(),
+        segment_name: name,
         segment_type,
-        description: description || null,
-        criteria: typeof criteria === 'string' ? JSON.parse(criteria) : criteria,
+        description: description ? String(description) : null,
+        criteria: criteriaObj,
         match_type,
-        is_active,
-        priority,
+        is_active: coerceSegmentIsActive(is_active),
+        priority: priorityNum,
       });
 
       return {
         statusCode: 201,
         body: JSON.stringify({
           success: true,
-          segment,
+          segment: rows[0],
         }),
       };
     } catch (error: any) {
-      console.error('Error creating loyalty segment:', error);
-      return this.error('Failed to create loyalty segment', 500);
+      const msg = error?.message || String(error);
+      console.error('Error creating loyalty segment:', msg, error?.stack || '');
+      const safe = msg.length > 400 ? `${msg.slice(0, 400)}…` : msg;
+      return this.error(`Failed to create loyalty segment: ${safe}`, 500);
     }
   }
 }
@@ -185,15 +244,59 @@ class UpdateLoyaltySegmentHandler extends BaseHandler {
         }
       }
 
-      // Parse criteria if it's a string
-      if (body.criteria && typeof body.criteria === 'string') {
-        body.criteria = JSON.parse(body.criteria);
+      const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+      for (const key of SEGMENT_WRITABLE_KEYS) {
+        if (!(key in body)) continue;
+        const v = (body as any)[key];
+        if (v === undefined) continue;
+        if (key === 'segment_name') {
+          const n = String(v).trim();
+          if (n) patch.segment_name = n;
+          continue;
+        }
+        if (key === 'priority') {
+          const n = coerceSegmentPriority(v);
+          if (!Number.isFinite(n)) {
+            return this.error('priority must be a number', 400);
+          }
+          patch.priority = n;
+          continue;
+        }
+        if (key === 'is_active') {
+          patch.is_active = coerceSegmentIsActive(v);
+          continue;
+        }
+        if (key === 'criteria') {
+          try {
+            patch.criteria = normalizeSegmentCriteria(v);
+          } catch (e: any) {
+            return this.error(e?.message || 'Invalid criteria', 400);
+          }
+          continue;
+        }
+        if (key === 'description') {
+          patch.description = v === null || v === '' ? null : String(v);
+          continue;
+        }
+        if (key === 'segment_type') {
+          const validSegmentTypes = ['customer', 'vendor', 'both'];
+          if (!validSegmentTypes.includes(v)) {
+            return this.error(`segment_type must be one of: ${validSegmentTypes.join(', ')}`, 400);
+          }
+          patch.segment_type = v;
+          continue;
+        }
+        if (key === 'match_type') {
+          const validMatchTypes = ['all', 'any'];
+          if (!validMatchTypes.includes(v)) {
+            return this.error(`match_type must be one of: ${validMatchTypes.join(', ')}`, 400);
+          }
+          patch.match_type = v;
+          continue;
+        }
       }
 
-      const updated = await update('loyalty_segments', { id }, {
-        ...body,
-        updated_at: new Date().toISOString(),
-      });
+      const updated = await update('loyalty_segments', { id }, patch);
 
       // Invalidate cached segment assignments when segment is updated
       await query(
@@ -209,12 +312,14 @@ class UpdateLoyaltySegmentHandler extends BaseHandler {
         statusCode: 200,
         body: JSON.stringify({
           success: true,
-          segment: updated,
+          segment: updated[0],
         }),
       };
     } catch (error: any) {
-      console.error('Error updating loyalty segment:', error);
-      return this.error('Failed to update loyalty segment', 500);
+      const msg = error?.message || String(error);
+      console.error('Error updating loyalty segment:', msg, error?.stack || '');
+      const safe = msg.length > 400 ? `${msg.slice(0, 400)}…` : msg;
+      return this.error(`Failed to update loyalty segment: ${safe}`, 500);
     }
   }
 }
