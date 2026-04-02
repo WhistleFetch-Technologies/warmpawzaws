@@ -66,6 +66,10 @@ import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import {
+  WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY,
+} from '@/lib/go-back-or-replace';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { useNotificationService } from '../useNotificationService';
@@ -295,6 +299,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedShopCategory, setSelectedShopCategory] = useState<string | undefined>(undefined);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
+  /** Opened from account menu (orders, wallet, address book, etc.): Back reopens sidebar on the previous screen */
+  const [reopenAccountSidebarOnProfileBack, setReopenAccountSidebarOnProfileBack] = useState(false);
+  /** Profile sheet → tap booking → full My Bookings: back restores sheet (separate from `previousScreen`, which GPS/video reuse). */
+  const [returnToAccountSidebarFromMyBookings, setReturnToAccountSidebarFromMyBookings] = useState(false);
+  const [screenBeforeMyBookingsFromSidebar, setScreenBeforeMyBookingsFromSidebar] = useState<ScreenType | null>(null);
   /** Screen to return to when leaving My Pets (embedded list), if opened via navigateToPets */
   const [screenBeforePets, setScreenBeforePets] = useState<ScreenType | null>(null);
   const [selectedAddressFromBook, setSelectedAddressFromBook] = useState<any>(null); // Address selected in address book (return to provider profile)
@@ -329,6 +338,23 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     };
     window.addEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
     return () => window.removeEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
+  }, []);
+
+  /** After `/shop` back → `/`, reopen embedded account screen (e.g. My Orders on `/`). */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const screen = sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+    if (!screen) return;
+    sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+    if (screen === 'order_history') {
+      setReopenAccountSidebarOnProfileBack(true);
+      setPreviousScreen('home');
+      setCurrentScreen('order_history');
+      setUserSidebarOpen(false);
+    } else if (screen === 'my-bookings') {
+      setCurrentScreen('my-bookings');
+      setUserSidebarOpen(false);
+    }
   }, []);
 
   // ✅ FIX: Load user profile for header display
@@ -462,6 +488,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setCurrentScreen('home');
   };
 
+  /** Open address book and remember the current screen for in-app Back (skip if already on address book). */
+  const openAddressBookPreservingReturn = () => {
+    if (currentScreen !== 'address_book') {
+      setPreviousScreen(currentScreen);
+    }
+    setCurrentScreen('address_book');
+  };
+
   const handleNavigateToService = (service: string, _data?: any) => {
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
@@ -554,8 +588,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
     else if (screen === 'add-address') {
       // Open address book (add/select address); back returns to current vet flow (e.g. vet-home-visit)
-      setPreviousScreen(currentScreen);
-      setCurrentScreen('address_book');
+      openAddressBookPreservingReturn();
     }
     else if (screen === 'profile') {
       setCurrentScreen('customer-profile');
@@ -592,17 +625,32 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   };
 
+  const openFromAccountMenu = (screen: ScreenType) => {
+    setReopenAccountSidebarOnProfileBack(true);
+    if (currentScreen !== screen) {
+      setPreviousScreen(currentScreen);
+    }
+    setCurrentScreen(screen);
+  };
+
   const handleAccountNavigate = (path: string) => {
     setUserSidebarOpen(false);
     if (path === 'home') setCurrentScreen('home');
-    else if (path === 'account/orders') setCurrentScreen('order_history');
-    else if (path === 'account/addresses') setCurrentScreen('address_book');
-    else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
-    else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
-    else if (path === 'referral-system') setCurrentScreen('referral-system');
-    else if (path === 'appointments') setCurrentScreen('appointments');
+    else if (path === 'shop') {
+      if (currentScreen !== 'shop') setPreviousScreen(currentScreen);
+      setCurrentScreen('shop');
+    }
+    else if (path === 'account/orders') openFromAccountMenu('order_history');
+    else if (path === 'account/addresses') {
+      setReopenAccountSidebarOnProfileBack(true);
+      openAddressBookPreservingReturn();
+    }
+    else if (path === 'account/wallet' || path === 'wallet') openFromAccountMenu('wallet');
+    else if (path === 'rewards-loyalty') openFromAccountMenu('rewards-loyalty');
+    else if (path === 'referral-system') openFromAccountMenu('referral-system');
+    else if (path === 'appointments') openFromAccountMenu('appointments');
     else if (path === 'support_help') {
-      setCurrentScreen('support_help');
+      openFromAccountMenu('support_help');
     } else if (path === 'account/settings') {
       // Navigate to settings page
       if (typeof window !== 'undefined') {
@@ -614,6 +662,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleBottomNav = (screen: string) => {
     if (screen === 'home') {
       setUserSidebarOpen(false);
+      setReturnToAccountSidebarFromMyBookings(false);
+      setScreenBeforeMyBookingsFromSidebar(null);
       setScreenBeforePets(null);
       setCurrentScreen('home');
       setSelectedPetId(null);
@@ -625,9 +675,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setCurrentServiceType(null);
     } else if (screen === 'cart') {
       setUserSidebarOpen(false);
+      setReturnToAccountSidebarFromMyBookings(false);
+      setScreenBeforeMyBookingsFromSidebar(null);
       setCurrentScreen('cart');
     } else if (screen === 'my-bookings') {
       setUserSidebarOpen(false);
+      setReopenAccountSidebarOnProfileBack(false);
+      setPreviousScreen(null);
+      setReturnToAccountSidebarFromMyBookings(false);
+      setScreenBeforeMyBookingsFromSidebar(null);
       setCurrentScreen('my-bookings');
     } else if (screen === 'profile') {
       handleProfileClick();
@@ -636,6 +692,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
 
   const handleBack = () => {
     setUserSidebarOpen(false);
+    setReopenAccountSidebarOnProfileBack(false);
     setScreenBeforePets(null);
     setCurrentScreen('home');
     setSelectedPetId(null);
@@ -645,6 +702,28 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setSelectedVendorId(undefined);
     setSelectedProblem(null);
     setCurrentServiceType(null);
+  };
+
+  /** Back from account menu sub-screens: reopen profile menu when opened from sidebar; else pop previousScreen */
+  const profileAccountSubBack = () => {
+    if (reopenAccountSidebarOnProfileBack) {
+      setReopenAccountSidebarOnProfileBack(false);
+      setCurrentScreen(previousScreen ?? 'home');
+      setPreviousScreen(null);
+      setUserSidebarOpen(true);
+      return;
+    }
+    if (previousScreen) {
+      setCurrentScreen(previousScreen);
+      setPreviousScreen(null);
+      return;
+    }
+    handleBack();
+  };
+
+  const profileAccountCloseToHome = () => {
+    setReopenAccountSidebarOnProfileBack(false);
+    handleBack();
   };
 
   const navigateToPets = () => {
@@ -673,10 +752,37 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setCurrentScreen('home');
   };
 
+  /** Full-screen My Bookings: back should return to the prior shell (e.g. profile sheet → My Bookings list), not home. */
+  const handleMyBookingsBack = () => {
+    if (returnToAccountSidebarFromMyBookings) {
+      try {
+        sessionStorage.setItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY, 'bookings');
+      } catch {
+        /* ignore */
+      }
+      setReturnToAccountSidebarFromMyBookings(false);
+      setCurrentScreen(screenBeforeMyBookingsFromSidebar ?? 'home');
+      setScreenBeforeMyBookingsFromSidebar(null);
+      setUserSidebarOpen(true);
+      return;
+    }
+    if (previousScreen) {
+      setCurrentScreen(previousScreen);
+      setPreviousScreen(null);
+      return;
+    }
+    handleBack();
+  };
+
   const handleViewBooking = (bookingId: string, petId?: string) => {
+    const fromAccountSidebar = userSidebarOpen;
     setSelectedBookingId(bookingId);
     if (petId) setSelectedPetId(petId);
     setSidebarOpen(false);
+    if (fromAccountSidebar) {
+      setReturnToAccountSidebarFromMyBookings(true);
+      setScreenBeforeMyBookingsFromSidebar(currentScreen);
+    }
     setUserSidebarOpen(false);
     setCurrentScreen('my-bookings');
   };
@@ -714,6 +820,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       <UserAccountSidebar
         phone={phone}
         onClose={() => setUserSidebarOpen(false)}
+        onNavigateHome={profileAccountCloseToHome}
         onViewBooking={handleViewBooking}
         onViewCustomerProfile={handleViewCustomerProfile}
         onNavigate={handleAccountNavigate}
@@ -1270,8 +1377,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
           setCurrentScreen('grooming_home');
         } else if (screen === 'add-address') {
-          setPreviousScreen(currentScreen);
-          setCurrentScreen('address_book');
+          openAddressBookPreservingReturn();
         } else if (screen === 'profile') {
           setCurrentScreen('customer-profile');
         } else if (screen === 'purchase-package') {
@@ -1312,8 +1418,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           handleBack();
           toast.info('Not available.');
         } else if (screen === 'add-address') {
-          setPreviousScreen(currentScreen);
-          setCurrentScreen('address_book');
+          openAddressBookPreservingReturn();
         } else if (screen === 'profile') {
           setCurrentScreen('customer-profile');
         } else if (screen === 'purchase-package') {
@@ -1942,35 +2047,42 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }
   if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} />;
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
-  if (currentScreen === 'order_history') return <OrderHistoryPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
-  if (currentScreen === 'address_book') return (
-    <AddressBookPage
-      phone={phone}
-      onBack={previousScreen ? () => { setCurrentScreen(previousScreen); setPreviousScreen(null); } : handleBack}
-      onSelect={(address) => {
-        toast.success('Address selected');
-        setSelectedAddressFromBook(address);
-        if (previousScreen) { setCurrentScreen(previousScreen); setPreviousScreen(null); } else handleBack();
-      }}
-    />
-  );
-  // Add Address: must show address book, not fall through to default fallback
-  if (currentScreen === 'add-address') return (
-    <AddressBookPage
-      phone={phone}
-      onBack={previousScreen ? () => { setCurrentScreen(previousScreen); setPreviousScreen(null); } : handleBack}
-      onSelect={(address) => {
-        toast.success('Address selected');
-        setSelectedAddressFromBook(address);
-        if (previousScreen) { setCurrentScreen(previousScreen); setPreviousScreen(null); } else handleBack();
-      }}
-    />
-  );
-  if (currentScreen === 'wallet') return (
-    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />
-    </CustomerScreenWrapper>
-  );
+  if (currentScreen === 'order_history') {
+    return (
+      <OrderHistoryPage
+        onBack={profileAccountSubBack}
+        onCloseToHome={profileAccountCloseToHome}
+        onNavigate={handleAccountNavigate}
+        spaShopReturnScreen="order_history"
+      />
+    );
+  }
+  if (currentScreen === 'address_book' || currentScreen === 'add-address') {
+    const addressBookOnSelect = (address: any) => {
+      toast.success('Address selected');
+      setSelectedAddressFromBook(address);
+      profileAccountSubBack();
+    };
+    return (
+      <AddressBookPage
+        phone={phone}
+        onBack={profileAccountSubBack}
+        onCloseToHome={profileAccountCloseToHome}
+        onSelect={addressBookOnSelect}
+      />
+    );
+  }
+  if (currentScreen === 'wallet') {
+    return (
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+        <WalletPage
+          onBack={profileAccountSubBack}
+          onCloseToHome={profileAccountCloseToHome}
+          onNavigate={handleAccountNavigate}
+        />
+      </CustomerScreenWrapper>
+    );
+  }
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
   if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); setCurrentScreen('shop'); }} onHelp={() => setCurrentScreen('support_help')} />;
   if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
@@ -1989,7 +2101,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       >
         <MyBookings 
           phone={phone} 
-          onBack={handleBack} 
+          onBack={handleMyBookingsBack} 
           initialBookingId={selectedBookingId || undefined} 
           onReorderMedicine={handleReorderMedicine} 
           onNavigate={(screen, data) => { 
@@ -2022,7 +2134,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       >
         <AppointmentsList
           phone={phone}
-          onBack={handleBack}
+          onBack={profileAccountSubBack}
+          onCloseToHome={profileAccountCloseToHome}
           onSelectAppointment={(appointmentId) => {
             setSelectedAppointmentId(appointmentId);
             setCurrentScreen('appointment-details');
@@ -2330,7 +2443,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
   
   // Support & Help Center
-  if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
+  if (currentScreen === 'support_help') {
+    return (
+      <SupportHelpCenter
+        phone={phone}
+        onBack={profileAccountSubBack}
+        onCloseToHome={profileAccountCloseToHome}
+      />
+    );
+  }
 
   // ✅ NEW: Create Booking
   if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
@@ -2371,18 +2492,28 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // Rewards & Loyalty
-  if (currentScreen === 'rewards-loyalty') return <RewardsLoyaltyPage
-    customerPhone={phone}
-    customerId={phone}
-    onBack={handleBack}
-  />;
+  if (currentScreen === 'rewards-loyalty') {
+    return (
+      <RewardsLoyaltyPage
+        customerPhone={phone}
+        customerId={phone}
+        onBack={profileAccountSubBack}
+        onCloseToHome={profileAccountCloseToHome}
+      />
+    );
+  }
 
   // Referral System
-  if (currentScreen === 'referral-system') return <ReferralSystemPage
-    customerPhone={phone}
-    customerId={phone}
-    onBack={handleBack}
-  />;
+  if (currentScreen === 'referral-system') {
+    return (
+      <ReferralSystemPage
+        customerPhone={phone}
+        customerId={phone}
+        onBack={profileAccountSubBack}
+        onCloseToHome={profileAccountCloseToHome}
+      />
+    );
+  }
 
   // Package Booking
   if (currentScreen === 'package-booking') return <PackageBookingPage

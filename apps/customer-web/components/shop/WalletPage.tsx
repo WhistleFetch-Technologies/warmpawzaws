@@ -1,16 +1,18 @@
 "use client";
 
 import { CustomerWallet } from '@/components/customer/CustomerWallet';
+import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export interface WalletPageProps {
   onBack?: () => void;
+  onCloseToHome?: () => void;
   onNavigate?: (path: string) => void;
 }
 
-export function WalletPage({ onBack, onNavigate }: WalletPageProps = {}) {
+export function WalletPage({ onBack, onCloseToHome, onNavigate }: WalletPageProps = {}) {
   const [phone, setPhone] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,7 +20,16 @@ export function WalletPage({ onBack, onNavigate }: WalletPageProps = {}) {
     setPhone(storedPhone);
   }, []);
 
-  const headerBar = (
+  const title = phone ? 'My Wallet' : 'Wallet';
+
+  const headerBar = onCloseToHome ? (
+    <ProfileAccountScreenHeader
+      onCloseToHome={onCloseToHome}
+      onBack={onBack}
+      title={title}
+      className="mb-4"
+    />
+  ) : (
     <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-5 rounded-b-[1.75rem] shadow-md mb-4">
       <div className="flex items-center gap-2">
         {onBack && (
@@ -33,7 +44,7 @@ export function WalletPage({ onBack, onNavigate }: WalletPageProps = {}) {
             <ArrowLeft className="w-5 h-5" />
           </Button>
         )}
-        <h1 className="text-xl font-bold">{phone ? 'My Wallet' : 'Wallet'}</h1>
+        <h1 className="text-xl font-bold">{title}</h1>
       </div>
     </header>
   );

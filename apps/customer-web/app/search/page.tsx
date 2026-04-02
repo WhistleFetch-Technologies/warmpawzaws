@@ -178,7 +178,7 @@ function SearchContent() {
     'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]';
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+    <div className="mx-auto flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
       {/* App shell: fixed top block (no wide desktop layout) */}
       <div className="shrink-0 border-b border-orange-200/80 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md supports-[backdrop-filter]:bg-white/85">
         <div className="relative flex h-14 items-center justify-center px-2">
@@ -254,7 +254,9 @@ function SearchContent() {
       </div>
 
       {/* Results — scrolls under header; padding for tab bar + home indicator */}
-      <main className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 ${mainBottomPad}`}>
+      <main
+        className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 [-webkit-overflow-scrolling:touch] ${mainBottomPad}`}
+      >
         {showVendorServices && vendorIdParam ? (
           // Show vendor services
           <div>

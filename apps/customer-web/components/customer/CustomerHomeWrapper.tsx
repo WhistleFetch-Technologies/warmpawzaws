@@ -391,7 +391,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleAccountNavigate = (path: string) => {
-    if (path === 'account/orders') navigateToScreen('order_history');
+    if (path === 'shop') navigateToScreen('shop');
+    else if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');

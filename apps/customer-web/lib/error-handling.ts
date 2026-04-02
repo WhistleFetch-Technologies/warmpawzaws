@@ -17,7 +17,8 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   baseDelayMs: 500,  // Reduced from 1000ms to 500ms for faster initial retry
   maxDelayMs: 15000,  // Increased from 10000ms to 15000ms to allow longer waits for cold starts
   backoffMultiplier: 2,
-  retryableStatusCodes: [408, 429, 500, 502, 503, 504],
+  // Omit 500: app/logic errors retrying 5× adds ~30s+ per call and spams the API (see resilientFetch).
+  retryableStatusCodes: [408, 429, 502, 503, 504],
   retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'Failed to fetch'],
 };
 

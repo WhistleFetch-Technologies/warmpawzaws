@@ -15,7 +15,8 @@
  * - DELETE /customer/saved/:phone/items/:itemId - Remove saved item by phone
  * - GET /customer/wallet?phone=... - Get wallet by phone
  * - GET /customer/wallet/transactions?phone=... - Get wallet transactions by phone
- * - GET /customer/notifications/:phone - Get notifications by phone
+ * - GET /customer/notifications/:phone - Inbox + notification channel settings (preferences.notificationSettings)
+ * - PUT /customer/notifications/:phone - Save notification channel settings
  * - POST /customer/payments/:phone - Create payment by phone
  * 
  * Date: 2026-01-12
@@ -27,24 +28,184 @@ import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
+import {
+  DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+  fetchCustomerNotificationSettings,
+  normalizeCustomerNotificationSettings,
+  persistCustomerNotificationSettings,
+} from '../../../utils/customer-notification-settings';
+
+/** First image URL from products.images JSONB (array of strings or { url } objects). */
+function firstProductImageUrl(images: unknown): string | undefined {
+  if (images == null) return undefined;
+  let arr: unknown;
+  try {
+    arr = typeof images === 'string' ? JSON.parse(images) : images;
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(arr) || arr.length === 0) return undefined;
+  const first = arr[0];
+  if (typeof first === 'string' && first.trim()) return first;
+  if (first && typeof first === 'object') {
+    const o = first as Record<string, unknown>;
+    const u = o.url ?? o.src ?? o.image_url;
+    return typeof u === 'string' && u.trim() ? u : undefined;
+  }
+  return undefined;
+}
 
 /**
  * Helper to resolve phone to customer ID
+ * Tries multiple stored shapes: 10-digit, +91XXXXXXXXXX, 91XXXXXXXXXX in DB, etc.
  */
 async function resolveCustomerIdFromPhone(phone: string): Promise<string | null> {
-  const cleanPhone = phone.replace(/[^0-9]/g, '');
-  if (!cleanPhone || cleanPhone.length < 10) {
+  const trimmed = String(phone || '').trim();
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits || digits.length < 10) {
     return null;
   }
-  // Try exact match first
-  let customers = await select('customers', { phone: cleanPhone });
-  if (customers.length > 0) return customers[0].id;
-  // Try with +91 prefix (Indian format)
-  if (cleanPhone.length === 10) {
-    customers = await select('customers', { phone: `+91${cleanPhone}` });
-    if (customers.length > 0) return customers[0].id;
+
+  const candidates: string[] = [];
+  const add = (v: string) => {
+    if (v && !candidates.includes(v)) candidates.push(v);
+  };
+
+  add(trimmed);
+  add(digits);
+  if (digits.length === 10) {
+    add(`+91${digits}`);
   }
+  // IN mobile with country code in UI/storage: 919XXXXXXXXX (12 digits)
+  if (digits.length >= 10) {
+    const last10 = digits.slice(-10);
+    add(last10);
+    add(`+91${last10}`);
+    if (digits.startsWith('91') && digits.length >= 12) {
+      add(digits);
+    }
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    const rest = digits.slice(1);
+    add(rest);
+    add(`+91${rest}`);
+  }
+
+  for (const candidate of candidates) {
+    const rows = await select('customers', { phone: candidate });
+    if (rows.length > 0) return rows[0].id;
+  }
+
   return null;
+}
+
+/** Include row in list unless explicitly deactivated (soft-delete). NULL/missing is_active = show (legacy rows). */
+function isPaymentMethodRowVisible(row: Record<string, unknown>): boolean {
+  const v = row.is_active;
+  if (v === null || v === undefined) return true;
+  if (v === false || v === 'f' || v === 'false' || v === 0 || v === '0') return false;
+  return true;
+}
+
+/** Decode `:phone` path or query param (handles encodeURIComponent from client). */
+function decodePhoneParam(phone: string): string {
+  try {
+    return decodeURIComponent(phone);
+  } catch {
+    return phone;
+  }
+}
+
+/** Normalize DB `payment_type` + row fields → customer-web union. */
+function clientPaymentTypeFromRow(m: Record<string, unknown>): 'card' | 'upi' | 'netbanking' {
+  const upiVal = m.upi_id != null ? String(m.upi_id).trim() : '';
+  const bankVal = m.bank_name != null ? String(m.bank_name).trim() : '';
+  const last4Val = m.card_last4 != null ? String(m.card_last4).replace(/\D/g, '') : '';
+  if (upiVal.length > 0) return 'upi';
+  if (bankVal.length > 0 && last4Val.length < 4) return 'netbanking';
+  if (last4Val.length >= 4) return 'card';
+
+  const raw = String(m.payment_type ?? m.type ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  const c = raw.replace(/_/g, '');
+  if (raw === 'upi' || c === 'upi' || raw.includes('upi')) return 'upi';
+  if (
+    c === 'netbanking' ||
+    raw === 'net_banking' ||
+    c === 'banktransfer' ||
+    raw === 'bank_transfer' ||
+    c === 'nb' ||
+    raw === 'nb'
+  ) {
+    return 'netbanking';
+  }
+  if (
+    c === 'card' ||
+    c === 'debitcard' ||
+    c === 'creditcard' ||
+    raw === 'debit_card' ||
+    raw === 'credit_card'
+  ) {
+    return 'card';
+  }
+
+  return 'card';
+}
+
+/** Body → stored payment_type (must match what we can read back). */
+function normalizeIncomingPaymentType(body: Record<string, any>): 'card' | 'upi' | 'netbanking' {
+  const req = String(body.type ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  const collapsed = req.replace(/_/g, '');
+  if (req === 'upi' || collapsed === 'upi') return 'upi';
+  if (
+    collapsed === 'netbanking' ||
+    req === 'net_banking' ||
+    collapsed === 'banktransfer' ||
+    req === 'bank_transfer'
+  ) {
+    return 'netbanking';
+  }
+  if (req === 'card' || collapsed === 'debitcard' || collapsed === 'creditcard') return 'card';
+
+  const hasCardDigits =
+    typeof (body.cardNumber ?? body.card_number) === 'string' &&
+    (body.cardNumber ?? body.card_number).replace(/\D/g, '').length >= 4;
+  const upi = body.upiId ?? body.upi_id;
+  const bank = body.bankName ?? body.bank_name;
+  if (upi != null && String(upi).trim() !== '' && !hasCardDigits) return 'upi';
+  if (bank != null && String(bank).trim() !== '' && !hasCardDigits && !(upi && String(upi).trim())) {
+    return 'netbanking';
+  }
+  return 'card';
+}
+
+/** Map `customer_payment_methods` row → shape expected by customer-web Payment Settings (UserAccountSidebar). */
+function mapPaymentMethodRowForCustomerWeb(m: Record<string, unknown>) {
+  const last4 = m.card_last4 != null ? String(m.card_last4) : '';
+  const resolvedType = clientPaymentTypeFromRow(m);
+  return {
+    id: String(m.id),
+    type: resolvedType,
+    payment_type: resolvedType,
+    cardNumber: last4,
+    cardHolderName:
+      m.card_holder_name != null ? String(m.card_holder_name) : undefined,
+    expiryMonth:
+      m.card_expiry_month != null ? String(m.card_expiry_month) : undefined,
+    expiryYear:
+      m.card_expiry_year != null ? String(m.card_expiry_year) : undefined,
+    cardType: (m.card_brand as string) || undefined,
+    upiId: m.upi_id != null ? String(m.upi_id) : undefined,
+    bankName: m.bank_name != null ? String(m.bank_name) : undefined,
+    isDefault: Boolean(m.is_default),
+    createdAt: m.created_at != null ? String(m.created_at) : '',
+    updatedAt: m.updated_at != null ? String(m.updated_at) : '',
+  };
 }
 
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
@@ -284,11 +445,22 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
 
       const customerId = await resolveCustomerIdFromPhone(phone);
       if (!customerId) {
-        return c.json({ error: 'Customer not found' }, 404);
+        return c.json({ success: true, cartItems: [], totalPrice: 0 });
       }
 
-      const cartItems = await query(
-        `SELECT ci.*, p.name, p.sale_price, p.base_price, p.image_url, v.business_name as vendor_name
+      // products table uses price + images (JSONB); sale_price/base_price/image_url are not guaranteed
+      const cartResult = await query(
+        `SELECT ci.id,
+                ci.customer_id,
+                ci.product_id,
+                ci.quantity,
+                ci.created_at,
+                ci.updated_at,
+                p.name AS product_name,
+                p.price AS product_price,
+                p.images AS product_images,
+                p.vendor_id AS product_vendor_id,
+                v.business_name AS vendor_name
          FROM cart_items ci
          LEFT JOIN products p ON ci.product_id = p.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
@@ -298,18 +470,38 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       );
 
       let totalPrice = 0;
-      cartItems.rows.forEach((item: any) => {
-        totalPrice += (item.sale_price || item.base_price || 0) * (item.quantity || 1);
+      const cartItems = (cartResult.rows || []).map((row: any) => {
+        const unit = parseFloat(String(row.product_price ?? 0)) || 0;
+        const qty = Number(row.quantity) || 1;
+        totalPrice += unit * qty;
+        return {
+          id: row.id,
+          itemId: row.id,
+          type: 'product' as const,
+          name: String(row.product_name || 'Product'),
+          price: unit,
+          quantity: qty,
+          photo: firstProductImageUrl(row.product_images),
+          vendorId: row.product_vendor_id,
+          vendor_name: row.vendor_name,
+        };
       });
 
       return c.json({
         success: true,
-        cartItems: cartItems.rows,
-        totalPrice: totalPrice,
+        cartItems,
+        totalPrice,
       });
     } catch (error: any) {
       console.error('Error fetching cart by phone:', error);
-      return c.json({ error: error.message }, 500);
+      if (
+        typeof error?.message === 'string' &&
+        error.message.includes('does not exist') &&
+        error.message.includes('relation')
+      ) {
+        return c.json({ success: true, cartItems: [], totalPrice: 0 });
+      }
+      return c.json({ success: true, cartItems: [], totalPrice: 0, _error: 'Unable to load cart' });
     }
   });
 
@@ -565,18 +757,25 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
 
   /**
    * GET /customer/notifications/:phone
-   * Get notifications by phone (convenience endpoint)
+   * Inbox + unread count + notification channel settings (stored under customers.preferences.notificationSettings)
    */
   app.get("/customer/notifications/:phone", async (c) => {
+    const { phone } = c.req.param();
+    const limit = parseInt(c.req.query('limit') || '50', 10);
+
+    const customerId = await resolveCustomerIdFromPhone(phone);
+    if (!customerId) {
+      return c.json({
+        success: true,
+        notifications: [],
+        unreadCount: 0,
+        settings: { ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS },
+      });
+    }
+
+    const settings = await fetchCustomerNotificationSettings(customerId);
+
     try {
-      const { phone } = c.req.param();
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-
-      const customerId = await resolveCustomerIdFromPhone(phone);
-      if (!customerId) {
-        return c.json({ error: 'Customer not found' }, 404);
-      }
-
       const notifications = await query(
         `SELECT * FROM notifications
          WHERE recipient_id = $1 AND recipient_type = 'customer'
@@ -595,39 +794,78 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         success: true,
         notifications: notifications.rows,
         unreadCount: parseInt(unreadCount.rows[0]?.count || '0', 10),
+        settings,
       });
     } catch (error: any) {
       console.error('[notifications] Error fetching notifications by phone:', error);
       console.error('[notifications] Error stack:', error?.stack);
-      
+
       const errorMessage = error?.message || 'Unknown error';
-      
-      // ✅ FIX: Handle missing table gracefully - return empty notifications
+
       if (errorMessage.includes('relation') && errorMessage.includes('does not exist')) {
         console.log('[notifications] Table does not exist, returning empty notifications');
         return c.json({
           success: true,
           notifications: [],
           unreadCount: 0,
+          settings,
         });
       }
-      
-      // ✅ FIX: Return 200 with empty on pool exhaustion so customer home loads (non-critical)
+
       if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
-        return c.json({ 
-          success: true, 
-          notifications: [], 
-          unreadCount: 0 
+        return c.json({
+          success: true,
+          notifications: [],
+          unreadCount: 0,
+          settings,
         });
       }
-      
-      // ✅ FIX: Return graceful fallback for other errors - don't break the UI
-      return c.json({ 
-        success: true, 
-        notifications: [], 
+
+      return c.json({
+        success: true,
+        notifications: [],
         unreadCount: 0,
-        _error: 'Unable to fetch notifications'
+        settings,
+        _error: 'Unable to fetch notifications',
       });
+    }
+  });
+
+  /**
+   * PUT /customer/notifications/:phone
+   * Persist channel toggles to customers.preferences.notificationSettings (JSONB)
+   */
+  app.put("/customer/notifications/:phone", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
+      const customerId = await resolveCustomerIdFromPhone(phone);
+
+      if (!customerId) {
+        const merged = normalizeCustomerNotificationSettings({
+          ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+          ...(typeof body === 'object' && body ? body : {}),
+        });
+        return c.json({ success: true, settings: merged, persisted: false });
+      }
+
+      try {
+        const merged = await persistCustomerNotificationSettings(customerId, body);
+        return c.json({ success: true, settings: merged, persisted: true });
+      } catch (err: any) {
+        const msg = err?.message || '';
+        if (msg.includes('column "preferences"')) {
+          const merged = normalizeCustomerNotificationSettings({
+            ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+            ...(typeof body === 'object' && body ? body : {}),
+          });
+          return c.json({ success: true, settings: merged, persisted: false });
+        }
+        throw err;
+      }
+    } catch (error: any) {
+      console.error('[notifications] Error saving notification settings:', error);
+      return c.json({ error: error?.message || 'Failed to save notification settings' }, 500);
     }
   });
 
@@ -644,23 +882,35 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ success: true, paymentMethods: [] });
       }
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
+      const customerId = await resolveCustomerIdFromPhone(decodePhoneParam(phone));
       if (!customerId) {
         // Return empty payment methods for unregistered customers
         return c.json({ success: true, paymentMethods: [] });
       }
 
-      let paymentMethods: any[] = [];
+      let rows: any[] = [];
       try {
-        paymentMethods = await select('customer_payment_methods', { customer_id: customerId });
-      } catch (dbError) {
-        // Table might not exist - return empty array
-        console.warn('[PAYMENT-METHODS] Database query failed, returning empty array');
+        const r = await query(
+          `SELECT * FROM customer_payment_methods
+           WHERE customer_id = $1
+           ORDER BY is_default DESC NULLS LAST, created_at DESC NULLS LAST`,
+          [customerId]
+        );
+        rows = (r.rows || []).filter((row: Record<string, unknown>) =>
+          isPaymentMethodRowVisible(row)
+        );
+      } catch (dbError: any) {
+        console.warn(
+          '[PAYMENT-METHODS] Database query failed, returning empty array:',
+          dbError?.message
+        );
       }
 
       return c.json({
         success: true,
-        paymentMethods: paymentMethods || []
+        paymentMethods: rows.map((row) =>
+          mapPaymentMethodRowForCustomerWeb(row as Record<string, unknown>)
+        ),
       });
     } catch (error: any) {
       console.error('Error getting payment methods:', error);
@@ -677,17 +927,34 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
     try {
       const { phone } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
+      const customerId = await resolveCustomerIdFromPhone(decodePhoneParam(phone));
       if (!customerId) {
         return c.json({ paymentMethods: [], success: true });
       }
 
-      const paymentMethods = await select('customer_payment_methods', { customer_id: customerId })
-        .catch(() => []);
+      let rows: any[] = [];
+      try {
+        const r = await query(
+          `SELECT * FROM customer_payment_methods
+           WHERE customer_id = $1
+           ORDER BY is_default DESC NULLS LAST, created_at DESC NULLS LAST`,
+          [customerId]
+        );
+        rows = (r.rows || []).filter((row: Record<string, unknown>) =>
+          isPaymentMethodRowVisible(row)
+        );
+      } catch (dbError: any) {
+        console.warn(
+          '[PAYMENTS/:phone] Database query failed, returning empty array:',
+          dbError?.message
+        );
+      }
 
       return c.json({
         success: true,
-        paymentMethods: paymentMethods || []
+        paymentMethods: rows.map((row) =>
+          mapPaymentMethodRowForCustomerWeb(row as Record<string, unknown>)
+        ),
       });
     } catch (error: any) {
       console.error('Error getting payment methods:', error);
@@ -702,29 +969,134 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   app.post("/customer/payments/:phone", async (c) => {
     try {
       const { phone } = c.req.param();
-      const body = await c.req.json();
+      const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
+      const customerId = await resolveCustomerIdFromPhone(decodePhoneParam(phone));
       if (!customerId) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      // Create payment method
-      const newPaymentMethod = await insert('customer_payment_methods', {
+      const type = normalizeIncomingPaymentType(body);
+      const digitsOnly = (s: string) => s.replace(/\D/g, '');
+
+      let cardLast4: string | undefined;
+      if (type === 'card') {
+        const raw = body.cardNumber ?? body.card_number;
+        const d = typeof raw === 'string' ? digitsOnly(raw) : '';
+        cardLast4 = d.length >= 4 ? d.slice(-4) : undefined;
+        if (!cardLast4) {
+          return c.json({ error: 'Valid card number is required' }, 400);
+        }
+      }
+
+      if (type === 'upi') {
+        const upi = body.upiId ?? body.upi_id;
+        if (!upi || String(upi).trim() === '') {
+          return c.json({ error: 'UPI ID is required' }, 400);
+        }
+      }
+
+      if (type === 'netbanking') {
+        const bank = body.bankName ?? body.bank_name;
+        if (!bank || String(bank).trim() === '') {
+          return c.json({ error: 'Bank name is required' }, 400);
+        }
+      }
+
+      const isDefault = Boolean(body.isDefault ?? body.is_default);
+
+      if (isDefault) {
+        await query(
+          `UPDATE customer_payment_methods SET is_default = false WHERE customer_id = $1`,
+          [customerId]
+        ).catch((e) =>
+          console.warn('[POST /customer/payments] clear defaults:', e?.message)
+        );
+      }
+
+      // Per-type row: never send card_brand (e.g. default "visa") or card_last4 for UPI/netbanking.
+      const insertRow: Record<string, unknown> = {
         customer_id: customerId,
-        type: body.type || 'card',
-        last_four: body.last_four || body.cardNumber?.slice(-4),
-        card_brand: body.card_brand || body.cardType,
-        expiry: body.expiry,
-        is_default: body.is_default || false,
-        nickname: body.nickname,
-        created_at: new Date().toISOString()
-      }).catch(() => [{ id: 'pm_' + Date.now() }]);
+        payment_type: type,
+        is_default: isDefault || false,
+        is_active: true,
+      };
+      const rt = body.razorpayToken ?? body.razorpay_token;
+      if (rt != null && String(rt).trim() !== '') {
+        insertRow.razorpay_token = rt;
+      }
+
+      if (type === 'card') {
+        insertRow.card_last4 = cardLast4 ?? body.last4 ?? body.last_four;
+        insertRow.card_brand = body.cardType ?? body.card_brand ?? body.brand ?? null;
+        const holder = body.cardHolderName ?? body.card_holder_name;
+        if (holder != null && String(holder).trim() !== '') {
+          insertRow.card_holder_name = String(holder).trim().slice(0, 200);
+        }
+        const em = body.expiryMonth ?? body.expiry_month;
+        const ey = body.expiryYear ?? body.expiry_year;
+        if (em != null && String(em).trim() !== '') {
+          const mn = parseInt(String(em).replace(/\D/g, ''), 10);
+          if (!Number.isNaN(mn) && mn >= 1 && mn <= 12) {
+            insertRow.card_expiry_month = String(mn).padStart(2, '0');
+          }
+        }
+        if (ey != null && String(ey).trim() !== '') {
+          let y = String(ey).replace(/\D/g, '');
+          if (y.length === 2) y = `20${y}`;
+          if (y.length === 4) insertRow.card_expiry_year = y;
+        }
+      } else if (type === 'upi') {
+        insertRow.upi_id = String(body.upiId ?? body.upi_id ?? '').trim();
+      } else if (type === 'netbanking') {
+        insertRow.bank_name = String(body.bankName ?? body.bank_name ?? '').trim();
+      }
+
+      let inserted: any[];
+      try {
+        inserted = await insert('customer_payment_methods', insertRow);
+      } catch (insertErr: any) {
+        const errMsg = String(insertErr?.message || insertErr);
+        const optionalCols = /card_holder_name|card_expiry_month|card_expiry_year/i.test(
+          errMsg
+        );
+        if (optionalCols && /column/i.test(errMsg)) {
+          delete insertRow.card_holder_name;
+          delete insertRow.card_expiry_month;
+          delete insertRow.card_expiry_year;
+          try {
+            inserted = await insert('customer_payment_methods', insertRow);
+          } catch (retryErr: any) {
+            console.error(
+              '[POST /customer/payments] insert retry failed:',
+              retryErr?.message || retryErr
+            );
+            const msg = retryErr?.message || 'Failed to save payment method';
+            const isClient =
+              /not null|violates|invalid input|check constraint/i.test(String(msg));
+            return c.json({ error: msg }, isClient ? 400 : 500);
+          }
+        } else {
+          console.error(
+            '[POST /customer/payments] insert customer_payment_methods failed:',
+            errMsg
+          );
+          const msg = insertErr?.message || 'Failed to save payment method';
+          const isClient =
+            /not null|violates|invalid input|check constraint/i.test(String(msg));
+          return c.json({ error: msg }, isClient ? 400 : 500);
+        }
+      }
+
+      const row = inserted[0] as Record<string, unknown> | undefined;
+      if (!row) {
+        return c.json({ error: 'Payment method was not created' }, 500);
+      }
 
       return c.json({
         success: true,
         message: 'Payment method added successfully',
-        paymentMethod: newPaymentMethod[0]
+        paymentMethod: mapPaymentMethodRowForCustomerWeb(row),
       });
     } catch (error: any) {
       console.error('Error creating payment method:', error);
@@ -740,7 +1112,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
     try {
       const { phone, paymentId } = c.req.param();
 
-      const customerId = await resolveCustomerIdFromPhone(phone);
+      const customerId = await resolveCustomerIdFromPhone(decodePhoneParam(phone));
       if (!customerId) {
         return c.json({ error: 'Customer not found' }, 404);
       }

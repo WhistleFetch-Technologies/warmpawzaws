@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Share2, Users, Gift, Copy, CheckCircle2, GiftIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
@@ -19,6 +20,7 @@ interface ReferralSystemPageProps {
   preSelectedVendorId?: string;
   vendorId?: string;
   onBack: () => void;
+  onCloseToHome?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onSuccess?: (bookingId?: string) => void;
   onComplete?: () => void;
@@ -101,12 +103,21 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-md mx-auto">
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold">Referral Program</h1>
-          </div>
+          {props.onCloseToHome ? (
+            <ProfileAccountScreenHeader
+              onCloseToHome={props.onCloseToHome}
+              onBack={props.onBack}
+              title="Referral Program"
+              className="mb-6"
+            />
+          ) : (
+            <div className="flex items-center gap-4 mb-6">
+              <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h1 className="text-xl font-semibold">Referral Program</h1>
+            </div>
+          )}
           <Card className="p-6 text-center">
             <p className="text-gray-600">Please login to access referral program</p>
           </Card>
@@ -118,14 +129,23 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 rounded-b-2xl shadow-md">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full text-white hover:bg-white/20">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold text-white">Referral Program</h1>
+        {props.onCloseToHome ? (
+          <ProfileAccountScreenHeader
+            onCloseToHome={props.onCloseToHome}
+            onBack={props.onBack}
+            title="Referral Program"
+            className="sticky top-0 z-10"
+          />
+        ) : (
+          <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 rounded-b-2xl shadow-md">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full text-white hover:bg-white/20">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h1 className="text-xl font-semibold text-white">Referral Program</h1>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="p-4 space-y-4">
           {/* Referral Code Card */}

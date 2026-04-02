@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
 
 interface RewardsLoyaltyPageProps {
   phone?: string;
@@ -16,6 +17,7 @@ interface RewardsLoyaltyPageProps {
   preSelectedVendorId?: string;
   vendorId?: string;
   onBack: () => void;
+  onCloseToHome?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onSuccess?: (bookingId?: string) => void;
   onComplete?: () => void;
@@ -197,28 +199,37 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-orange-50 to-amber-50 flex justify-center">
       <div className="w-full max-w-customer mx-auto min-h-screen min-h-[100dvh] flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
-        {/* Header — compact app-style bar */}
-        <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)]">
-          <div className="px-4 pb-3 pt-2">
-            <div className="flex items-start gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={props.onBack}
-                className="rounded-full shrink-0 h-10 w-10 -ml-1"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div className="flex-1 min-w-0 pt-0.5 pr-1">
-                <h1 className="text-lg font-bold text-gray-800 leading-snug">Rewards & Loyalty</h1>
-                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                  Earn points and redeem amazing rewards
-                </p>
+        {props.onCloseToHome ? (
+          <ProfileAccountScreenHeader
+            onCloseToHome={props.onCloseToHome}
+            onBack={props.onBack}
+            title="Rewards & Loyalty"
+            subtitle="Earn points and redeem amazing rewards"
+            className="sticky top-0 z-10"
+          />
+        ) : (
+          <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)]">
+            <div className="px-4 pb-3 pt-2">
+              <div className="flex items-start gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={props.onBack}
+                  className="rounded-full shrink-0 h-10 w-10 -ml-1"
+                  aria-label="Go back"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </Button>
+                <div className="flex-1 min-w-0 pt-0.5 pr-1">
+                  <h1 className="text-lg font-bold text-gray-800 leading-snug">Rewards & Loyalty</h1>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                    Earn points and redeem amazing rewards
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        </header>
+          </header>
+        )}
 
         {/* Hero Section */}
         {balance && (

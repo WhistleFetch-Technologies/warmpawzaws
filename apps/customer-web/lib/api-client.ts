@@ -263,6 +263,15 @@ export function getCustomerAuthHeadersForUpload(): Record<string, string> {
   return headers;
 }
 
+/**
+ * JSON body for fetch. Avoid `data ? JSON.stringify(data)` — that drops valid JSON when `data` is
+ * `0`, `false`, or `""` (truthiness bug). `undefined` / `null` mean no body.
+ */
+function requestJsonBody(data: unknown): string | undefined {
+  if (data === undefined || data === null) return undefined;
+  return JSON.stringify(data);
+}
+
 export class ApiClient {
   private _baseUrl: string;
 
@@ -553,21 +562,21 @@ export class ApiClient {
     return this.request<T>(endpoint, {
       method: 'POST',
       // CRITICAL: Don't stringify FormData - pass it directly
-      body: data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined),
+      body: data instanceof FormData ? data : requestJsonBody(data),
     }, retryConfig, customTimeoutMs);
   }
 
   async put<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
-      body: data ? JSON.stringify(data) : undefined,
+      body: requestJsonBody(data),
     }, retryConfig);
   }
 
   async delete<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
     return this.request<T>(endpoint, { 
       method: 'DELETE',
-      body: data ? JSON.stringify(data) : undefined
+      body: requestJsonBody(data),
     }, retryConfig);
   }
 
