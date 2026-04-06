@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, Moon, Sun, Calendar, Clock, MapPin, User, 
-  CheckCircle2, Package, Plus, X, Upload, Building2, Home, Dog, Cat
+  CheckCircle2, Package, Plus, X, Upload, Building2, Home, Dog, Cat, CalendarRange
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -107,11 +107,12 @@ export function BoardingBookingRouter({
 
   const [loading, setLoading] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState(() => {
+    if (serviceId) return serviceId;
     if (serviceStyle && serviceStyle !== "sitting" && serviceStyle !== "boarding") {
       return serviceStyle;
     }
     if (isPetSitting) return "overnight_sitting";
-    if (serviceType === "daycare") return "daycare";
+    if (serviceType === "daycare" || serviceType === "full-day") return "full-day";
     return "overnight";
   });
   const [checkInDate, setCheckInDate] = useState('');
@@ -148,10 +149,13 @@ export function BoardingBookingRouter({
   // Modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
 
-  // Default boarding service options
+  // Default boarding service options (no vendor / offline demo only — real bookings need vendor UUID rows)
   const defaultServiceTypeOptions = [
-    { id: 'overnight', name: 'Overnight Stay', icon: Moon, price: 999, duration: 1440, desc: 'Full night accommodation', color: 'indigo' },
-    { id: 'daycare', name: 'Day Care', icon: Sun, price: 499, duration: 480, desc: 'Daily care & supervision', color: 'orange' },
+    { id: 'overnight', name: 'Overnight Boarding', icon: Moon, price: 999, duration: 1440, desc: 'Full night accommodation', color: 'indigo' },
+    { id: 'full-day', name: 'Full Day Boarding', icon: Sun, price: 499, duration: 480, desc: 'All-day care & supervision', color: 'orange' },
+    { id: 'half-day', name: 'Half Day Boarding', icon: Clock, price: 349, duration: 240, desc: 'Flexible daytime stay', color: 'orange' },
+    { id: 'weekend', name: 'Weekend Boarding', icon: CalendarRange, price: 2499, duration: 4320, desc: 'Fri–Sun packages', color: 'indigo' },
+    { id: 'weekly', name: 'Weekly Boarding', icon: Calendar, price: 5999, duration: 10080, desc: '7-day stay packages', color: 'indigo' },
   ];
 
   const defaultPetSittingOptions = [
@@ -164,6 +168,9 @@ export function BoardingBookingRouter({
   const pickVendorServiceIcon = (styleRaw: string | undefined) => {
     const st = (styleRaw || '').toLowerCase();
     if (st.includes('overnight') || st.includes('night')) return Moon;
+    if (st.includes('weekend')) return CalendarRange;
+    if (st.includes('weekly') || /\bweek\b/.test(st)) return Calendar;
+    if (st.includes('half')) return Clock;
     if (st.includes('day')) return Sun;
     if (st.includes('drop') || st.includes('visit') || st.includes('check')) return Clock;
     if (st.includes('extend')) return Calendar;
@@ -173,7 +180,9 @@ export function BoardingBookingRouter({
   const pickVendorServiceColor = (styleRaw: string | undefined): string => {
     const st = (styleRaw || '').toLowerCase();
     if (st.includes('overnight') || st.includes('night')) return 'indigo';
+    if (st.includes('weekend') || st.includes('weekly') || /\bweek\b/.test(st)) return 'indigo';
     if (st.includes('day')) return 'orange';
+    if (st.includes('half')) return 'orange';
     if (st.includes('extend')) return 'orange';
     if (st.includes('drop') || st.includes('visit')) return 'rose';
     return 'orange';
@@ -203,7 +212,9 @@ export function BoardingBookingRouter({
         ? []
         : fallbackDefaults;
 
-  const selectedServiceOption = serviceOptions.find((s) => s.id === selectedServiceType);
+  const selectedServiceOption = serviceOptions.find((s) => s.id === selectedServiceType) as
+    | { id: string; name: string; serviceStyle?: string; desc?: string; price?: number; duration?: number }
+    | undefined;
   const sittingStyleLower = String(selectedServiceOption?.serviceStyle || '').toLowerCase();
 
   /** Overnight / extended: multi-night dates + times (e.g. 1440+ min unit). */

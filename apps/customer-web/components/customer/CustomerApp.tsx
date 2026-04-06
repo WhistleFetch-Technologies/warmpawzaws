@@ -14,15 +14,28 @@ interface CustomerSession {
   hasPets?: boolean;
 }
 
-type CustomerInitialScreen = 'home' | 'problem_grid';
+type CustomerInitialScreen =
+  | 'home'
+  | 'problem_grid'
+  | 'pet-boarding-vendors'
+  | 'pet-boarding-profile';
 
 interface CustomerAppProps {
   initialSession: CustomerSession;
   /** When set (e.g. /services/all), refresh keeps this screen instead of resetting to home */
   initialScreen?: CustomerInitialScreen;
+  /** Deep link: /pet-boarding/vendor/[id] */
+  petBoardingVendorId?: string;
+  /** Query param service= slug for boarding list/profile context */
+  petBoardingServiceSlug?: string;
 }
 
-export function CustomerApp({ initialSession, initialScreen = 'home' }: CustomerAppProps) {
+export function CustomerApp({
+  initialSession,
+  initialScreen = 'home',
+  petBoardingVendorId,
+  petBoardingServiceSlug,
+}: CustomerAppProps) {
   const [session, setSession] = useState<CustomerSession>(initialSession);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -69,6 +82,8 @@ export function CustomerApp({ initialSession, initialScreen = 'home' }: Customer
     <CustomerHomeWrapper
       phone={session.phone}
       initialScreen={initialScreen}
+      petBoardingVendorId={petBoardingVendorId}
+      petBoardingServiceSlug={petBoardingServiceSlug}
       onNavigate={handleLogoutNavigate}
     />
   );

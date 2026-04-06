@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Home as HomeIcon, Star, MapPin, Calendar, Sparkles, ChevronRight, Camera, Moon, Sun, RefreshCw, Building2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Star, ChevronRight, Moon, Sun, RefreshCw, Building2, Clock, CalendarRange, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 
 interface BoardingServiceRouterProps {
   phone: string;
@@ -16,7 +18,22 @@ interface BoardingServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+const BOARDING_CARD_LINKS: {
+  slug: BoardingServiceSlug;
+  title: string;
+  subtitle: string;
+  Icon: typeof Moon;
+  badge?: string;
+}[] = [
+  { slug: 'overnight', title: 'Overnight', subtitle: 'Extended stays', Icon: Moon, badge: 'Popular' },
+  { slug: 'full-day', title: 'Full Day', subtitle: 'All-day care', Icon: Sun },
+  { slug: 'half-day', title: 'Half Day', subtitle: 'Flexible hours', Icon: Clock },
+  { slug: 'weekend', title: 'Weekend', subtitle: 'Fri–Sun stays', Icon: CalendarRange },
+  { slug: 'weekly', title: 'Weekly', subtitle: '7-day packages', Icon: Calendar },
+];
+
 export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: BoardingServiceRouterProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [boardingFacilities, setBoardingFacilities] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -227,34 +244,29 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           )}
 
-          {/* Boarding Options */}
+          {/* Boarding Options — deep link: /pet-boarding/vendors?service=<slug> */}
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Boarding Options</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => onNavigate?.('boarding_overnight')}
-                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Moon className="w-5 h-5 text-slate-600" />
-                </div>
-                <h3 className="font-semibold text-slate-900 text-sm mb-0.5">Overnight</h3>
-                <p className="text-xs text-slate-500">Extended stays</p>
-                <span className="absolute top-3 right-3 px-2 py-0.5 bg-orange-100 text-orange-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
-                  Popular
-                </span>
-              </button>
-
-              <button
-                onClick={() => onNavigate?.('daycare')}
-                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
-              >
-                 <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Sun className="w-5 h-5 text-slate-600" />
-                </div>
-                <h3 className="font-semibold text-slate-900 text-sm mb-0.5">Daycare</h3>
-                <p className="text-xs text-slate-500">Daily care</p>
-              </button>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {BOARDING_CARD_LINKS.map(({ slug, title, subtitle, Icon, badge }) => (
+                <button
+                  key={slug}
+                  type="button"
+                  onClick={() => router.push(`/pet-boarding/vendors?service=${encodeURIComponent(slug)}`)}
+                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
+                >
+                  <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <Icon className="w-5 h-5 text-slate-600" />
+                  </div>
+                  <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{title}</h3>
+                  <p className="text-xs text-slate-500">{subtitle}</p>
+                  {badge ? (
+                    <span className="absolute top-3 right-3 px-2 py-0.5 bg-orange-100 text-orange-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
+                      {badge}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -262,9 +274,10 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">Featured Stays</h2>
-              <button 
+              <button
+                type="button"
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('boarding_facility')}
+                onClick={() => router.push('/pet-boarding/vendors?service=overnight')}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>
@@ -279,10 +292,22 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </Card>
               ) : (
                 (boardingFacilities.slice(0, 5).map((facility: any, index) => (
-                  <div 
+                  <div
                     key={facility.id || index}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        const vid = facility.id || facility.vendorId;
+                        if (vid) router.push(`/pet-boarding/vendor/${encodeURIComponent(vid)}?service=overnight`);
+                      }
+                    }}
                     className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                    onClick={() => handleCheckAvailability(facility.id || facility.vendorId)}
+                    onClick={() => {
+                      const vid = facility.id || facility.vendorId;
+                      if (vid) router.push(`/pet-boarding/vendor/${encodeURIComponent(vid)}?service=overnight`);
+                    }}
                   >
                     <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
                        {facility.businessName ? facility.businessName.charAt(0) : 'B'}
