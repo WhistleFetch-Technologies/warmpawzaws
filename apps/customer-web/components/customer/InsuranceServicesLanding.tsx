@@ -27,7 +27,7 @@ export function InsuranceServicesLanding({ phone, onBack, onNavigate }: Insuranc
   const loadProviders = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=insurance&roleId=pet_insurance`;
+      const endpoint = `/customer/discover-services?category=insurance&roleId=pet_insurance&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[]; plans?: any[] }>(endpoint);
       const providerList = data.vendors || data.services || data.plans || [];
       setProviders(providerList);

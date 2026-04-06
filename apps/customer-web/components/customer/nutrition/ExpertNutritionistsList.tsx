@@ -39,7 +39,7 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
   const fetchNutritionists = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist`;
+      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const nutritionistList = data.vendors || data.services || [];
       setNutritionists(nutritionistList);

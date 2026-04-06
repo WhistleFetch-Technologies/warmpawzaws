@@ -368,8 +368,11 @@ export async function insert(
   // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
   const jsonbColumns = new Set([
     'application_payload',
-    'uploaded_documents', 
+    'uploaded_documents',
+    'specifications',
     'metadata',
+    'images',
+    'tags',
     'operating_hours',
     'config',
     'settings',
@@ -452,8 +455,11 @@ export async function update(
   // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
   const jsonbColumns = new Set([
     'application_payload',
-    'uploaded_documents', 
+    'uploaded_documents',
+    'specifications',
     'metadata',
+    'images',
+    'tags',
     'operating_hours',
     'config',
     'settings',

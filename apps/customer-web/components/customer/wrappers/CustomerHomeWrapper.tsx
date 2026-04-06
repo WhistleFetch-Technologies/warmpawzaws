@@ -339,7 +339,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         if (profileResponse?.profile || profileResponse) {
           const profile = profileResponse.profile || profileResponse;
           setUserName(profile.name || profile.fullName || profile.full_name || 'User');
-          setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+          setUserProfilePhoto(
+            profile.profilePhoto ||
+              profile.profile_photo_url ||
+              profile.profile_image_url ||
+              profile.photo
+          );
         }
         
         // Also load pets for header pet selector

@@ -20,6 +20,11 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  presignProductRowForDisplay,
+  presignS3GetUrlIfApplicable,
+  stripPresignFromProductImagesJsonb,
+} from '../../../utils/s3-media-presign';
 import { resolveVendorById } from './vendorProfile.vendor';
 
 // PHASE 1.3: S3 client for product image uploads
@@ -28,6 +33,189 @@ const s3Client = new S3Client({
 });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
 const S3_BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
+
+/** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
+const PRODUCTS_COLUMN_CACHE: { until: number; cols: Set<string> | null } = { until: 0, cols: null };
+const PRODUCTS_COLUMN_CACHE_TTL_MS = 60_000;
+
+async function getProductsColumnSet(): Promise<Set<string>> {
+  const now = Date.now();
+  if (PRODUCTS_COLUMN_CACHE.cols && now < PRODUCTS_COLUMN_CACHE.until) {
+    return PRODUCTS_COLUMN_CACHE.cols;
+  }
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products'`,
+  );
+  const cols = new Set<string>((r.rows || []).map((row: { column_name: string }) => row.column_name));
+  PRODUCTS_COLUMN_CACHE.cols = cols;
+  PRODUCTS_COLUMN_CACHE.until = now + PRODUCTS_COLUMN_CACHE_TTL_MS;
+  return cols;
+}
+
+function productsOptionalSelectExprs(cols: Set<string>) {
+  return {
+    metadata: cols.has('metadata') ? 'p.metadata' : `'{}'::jsonb AS metadata`,
+    status: cols.has('status') ? 'p.status' : 'NULL::text AS status',
+  };
+}
+
+/** Client may send JSONB fields as strings; pg jsonb columns need valid JSON (see rds-connection insert). */
+function normalizeProductJsonbField(raw: unknown, kind: 'images' | 'tags' | 'generic'): unknown {
+  if (raw === null || raw === undefined) {
+    return kind === 'generic' ? raw : [];
+  }
+  if (typeof raw === 'object') {
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (
+      (t.startsWith('[') && t.endsWith(']')) ||
+      (t.startsWith('{') && t.endsWith('}')) ||
+      t.startsWith('"')
+    ) {
+      try {
+        return JSON.parse(t);
+      } catch {
+        return kind === 'generic' ? raw : [raw];
+      }
+    }
+    return kind === 'generic' ? raw : [raw];
+  }
+  return kind === 'generic' ? raw : [raw];
+}
+
+function normalizeDeliveryRegions(raw: unknown): unknown {
+  if (raw === null || raw === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (t.startsWith('[')) {
+      try {
+        return JSON.parse(t);
+      } catch {
+        return [raw];
+      }
+    }
+    return [raw];
+  }
+  return [String(raw)];
+}
+
+const AWS_REGION_EFFECTIVE = process.env.AWS_REGION || 'ap-south-1';
+
+async function uploadProductImageBufferToS3(
+  vendorId: string,
+  buffer: Buffer,
+  contentType: string,
+  fileExtension: string,
+): Promise<string> {
+  const timestamp = Date.now();
+  const randomStr = Math.random().toString(36).substring(2, 15);
+  const ext = fileExtension.replace(/^\./, '') || 'jpg';
+  const fileKey = `products/${vendorId}/${timestamp}_${randomStr}.${ext}`;
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: fileKey,
+      Body: buffer,
+      ContentType: contentType || 'image/jpeg',
+    }),
+  );
+  return `https://${S3_BUCKET_NAME}.s3.${AWS_REGION_EFFECTIVE}.amazonaws.com/${fileKey}`;
+}
+
+async function tryUploadDataImageUrlToS3(vendorId: string, dataUrl: string): Promise<string | null> {
+  const m = dataUrl.match(/^data:image\/([\w.+-]+);base64,(.+)$/i);
+  if (!m) {
+    return null;
+  }
+  const mimeSubtype = m[1].toLowerCase();
+  const ext = mimeSubtype === 'jpeg' || mimeSubtype === 'pjpeg' ? 'jpg' : mimeSubtype.split('+')[0] || 'jpg';
+  const contentType = `image/${m[1]}`;
+  try {
+    const buf = Buffer.from(m[2], 'base64');
+    if (!buf.length) {
+      return null;
+    }
+    return await uploadProductImageBufferToS3(vendorId, buf, contentType, ext);
+  } catch (e) {
+    console.error('[VendorProducts] Failed to decode/upload data: image', e);
+    return null;
+  }
+}
+
+/**
+ * Replace inline/base64 images with permanent S3 HTTPS URLs. Keeps existing http(s) URLs as-is.
+ * Skips blob: URLs (not resolvable on the server).
+ */
+async function processProductImagesForS3Storage(vendorId: string, raw: unknown): Promise<unknown> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return raw;
+  }
+  const out: string[] = [];
+  for (const item of raw) {
+    const url = await resolveSingleProductImageToS3Url(vendorId, item);
+    if (url) {
+      out.push(url);
+    }
+  }
+  return out;
+}
+
+async function resolveSingleProductImageToS3Url(vendorId: string, item: unknown): Promise<string | null> {
+  if (typeof item === 'string') {
+    const s = item.trim();
+    if (!s) {
+      return null;
+    }
+    if (s.startsWith('blob:')) {
+      console.warn('[VendorProducts] Skipping blob: URL (client-only; cannot upload from Lambda)');
+      return null;
+    }
+    if (s.startsWith('data:image/')) {
+      return tryUploadDataImageUrlToS3(vendorId, s);
+    }
+    return s;
+  }
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const o = item as Record<string, unknown>;
+    const dataUrl =
+      typeof o.dataUrl === 'string'
+        ? o.dataUrl
+        : typeof o.data_url === 'string'
+          ? o.data_url
+          : null;
+    const existing =
+      typeof o.url === 'string' ? o.url : typeof o.src === 'string' ? o.src : typeof o.image_url === 'string' ? o.image_url : null;
+    if (dataUrl?.startsWith('data:image/')) {
+      return tryUploadDataImageUrlToS3(vendorId, dataUrl);
+    }
+    if (existing?.startsWith('data:image/')) {
+      return tryUploadDataImageUrlToS3(vendorId, existing);
+    }
+    const b64 = typeof o.base64 === 'string' ? o.base64 : typeof o.photo === 'string' ? o.photo : null;
+    if (b64 && (!existing || !/^https?:\/\//i.test(existing))) {
+      const payload = b64.includes(',') ? (b64.split(',').pop() || '').trim() : b64.trim();
+      try {
+        const buf = Buffer.from(payload, 'base64');
+        if (buf.length > 32) {
+          return await uploadProductImageBufferToS3(vendorId, buf, 'image/jpeg', 'jpg');
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    if (existing && typeof existing === 'string') {
+      return existing.trim() || null;
+    }
+  }
+  return null;
+}
 
 // ============================================================================
 // GET /vendor/:vendorId/products - List vendor products
@@ -67,6 +255,9 @@ class GetVendorProductsHandler extends BaseHandler {
         console.log(`[VendorProducts] Resolved vendorId ${vendorId} to ${resolvedVendorId}`);
       }
 
+      const cols = await getProductsColumnSet();
+      const { metadata: metadataSelect, status: statusSelect } = productsOptionalSelectExprs(cols);
+
       // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
       // Use explicit column selection to avoid issues with p.* and missing columns
       let productQuery = `
@@ -79,13 +270,13 @@ class GetVendorProductsHandler extends BaseHandler {
           p.sku,
           p.price,
           COALESCE(p.stock, 0) as stock,
-        p.status,
+          ${statusSelect},
           p.is_active,
           p.created_at,
           p.updated_at,
           p.images,
           p.tags,
-          p.metadata,
+          ${metadataSelect},
           p.hsn_code,
           p.gst_rate,
           p.category,
@@ -171,8 +362,13 @@ class GetVendorProductsHandler extends BaseHandler {
         throw error;
       }
 
+      const rows = products.rows || [];
+      const productsOut = await Promise.all(
+        rows.map((row: Record<string, unknown>) => presignProductRowForDisplay(row)),
+      );
+
       return this.success({
-        products: products.rows,
+        products: productsOut,
         total,
         limit,
         offset,
@@ -239,20 +435,66 @@ class CreateVendorProductHandler extends BaseHandler {
         is_active: false,
       };
 
-      // PHASE 1.3: Handle variants, images, delivery_regions in metadata
-      if (body.variants || body.images || body.delivery_regions) {
-        productData.metadata = {
-          ...(body.variants && { variants: body.variants }),
-          ...(body.images && { images: body.images }),
-          ...(body.delivery_regions && { delivery_regions: body.delivery_regions }),
-        };
+      const cols = await getProductsColumnSet();
+      const hasMetadataCol = cols.has('metadata');
+
+      const deliveryNorm =
+        body.delivery_regions !== undefined && body.delivery_regions !== null
+          ? normalizeDeliveryRegions(body.delivery_regions)
+          : undefined;
+      let imagesNorm =
+        body.images !== undefined && body.images !== null
+          ? normalizeProductJsonbField(body.images, 'images')
+          : undefined;
+      if (imagesNorm !== undefined && Array.isArray(imagesNorm) && imagesNorm.length > 0) {
+        imagesNorm = await processProductImagesForS3Storage(resolvedVendorId, imagesNorm);
+      }
+      if (imagesNorm !== undefined) {
+        imagesNorm = stripPresignFromProductImagesJsonb(imagesNorm);
+      }
+
+      const hasExtraPayload =
+        (body.variants !== undefined && body.variants !== null) ||
+        body.images !== undefined ||
+        (body.delivery_regions !== undefined && body.delivery_regions !== null);
+
+      // PHASE 1.3: variants / images / delivery_regions — use metadata when migrated, else first-class columns
+      if (hasExtraPayload) {
+        if (hasMetadataCol) {
+          productData.metadata = {
+            ...(body.variants != null && { variants: body.variants }),
+            ...(imagesNorm !== undefined && { images: imagesNorm }),
+            ...(deliveryNorm !== undefined && { delivery_regions: deliveryNorm }),
+          };
+        } else {
+          if (imagesNorm !== undefined && cols.has('images')) {
+            productData.images = imagesNorm;
+          }
+          const specPatch: Record<string, unknown> = {};
+          if (body.variants !== undefined && body.variants !== null) {
+            specPatch.variants = body.variants;
+          }
+          if (deliveryNorm !== undefined) {
+            specPatch.delivery_regions = deliveryNorm;
+          }
+          if (Object.keys(specPatch).length > 0) {
+            if (cols.has('specifications')) {
+              productData.specifications = specPatch;
+            } else {
+              console.warn(
+                '[VendorProducts] products.metadata column missing; variants/delivery_regions not stored (run db/migrations/034_add_metadata_columns.sql or add products.specifications)',
+              );
+            }
+          }
+        }
       }
 
       // Create product
       const newProduct = await insert('products', productData);
+      const productOut = await presignProductRowForDisplay(newProduct[0] as Record<string, unknown>);
 
       return this.success({
-        product: newProduct[0],
+        product: productOut,
         message: 'Product created successfully',
       });
     } catch (error: any) {
@@ -284,6 +526,9 @@ class GetVendorProductHandler extends BaseHandler {
       }
       const resolvedVendorId = vendor.id;
 
+      const cols = await getProductsColumnSet();
+      const { metadata: metadataSelect, status: statusSelect } = productsOptionalSelectExprs(cols);
+
       // ✅ FIX: Use explicit column selection to avoid stock_quantity column error
       const products = await query(
         `SELECT 
@@ -295,13 +540,13 @@ class GetVendorProductHandler extends BaseHandler {
                 p.sku,
                 p.price,
                 COALESCE(p.stock, 0) as stock,
-        p.status,
+                ${statusSelect},
                 p.is_active,
                 p.created_at,
                 p.updated_at,
                 p.images,
                 p.tags,
-                p.metadata,
+                ${metadataSelect},
                 p.hsn_code,
                 p.gst_rate,
                 p.category,
@@ -317,8 +562,10 @@ class GetVendorProductHandler extends BaseHandler {
         return this.error('Product not found', 404);
       }
 
+      const product = await presignProductRowForDisplay(products.rows[0] as Record<string, unknown>);
+
       return this.success({
-        product: products.rows[0],
+        product,
       });
     } catch (error: any) {
       console.error('Error fetching product:', error);
@@ -356,6 +603,9 @@ class UpdateVendorProductHandler extends BaseHandler {
         return this.error('Product not found or access denied', 404);
       }
 
+      const cols = await getProductsColumnSet();
+      const hasMetadataCol = cols.has('metadata');
+
       // Prepare update data
       const updateData: any = {};
 
@@ -374,24 +624,64 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.sku !== undefined) updateData.sku = body.sku;
       if (body.hsn_code !== undefined) updateData.hsn_code = body.hsn_code;
       if (body.gst_rate !== undefined) updateData.gst_rate = body.gst_rate ? parseFloat(body.gst_rate) : null;
-      if (body.images !== undefined) updateData.images = body.images;
+      let normalizedImages: unknown | undefined;
+      if (body.images !== undefined) {
+        normalizedImages =
+          body.images === null ? [] : normalizeProductJsonbField(body.images, 'images');
+        if (Array.isArray(normalizedImages) && normalizedImages.length > 0) {
+          normalizedImages = await processProductImagesForS3Storage(resolvedVendorId, normalizedImages);
+        }
+        if (normalizedImages !== undefined) {
+          normalizedImages = stripPresignFromProductImagesJsonb(normalizedImages);
+        }
+        updateData.images = normalizedImages;
+      }
       if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
-      // PHASE 1.3: Handle variants, images, delivery_regions in metadata
+      let normalizedDelivery: unknown | undefined;
+      if (body.delivery_regions !== undefined) {
+        normalizedDelivery =
+          body.delivery_regions === null ? null : normalizeDeliveryRegions(body.delivery_regions);
+      }
+
+      // PHASE 1.3: variants / images / delivery_regions
       if (body.variants !== undefined || body.images !== undefined || body.delivery_regions !== undefined) {
-        // Get existing metadata if available
-        const existingProducts = await query(
-          'SELECT metadata FROM products WHERE id = $1',
-          [productId]
-        );
-        const existingMetadata = existingProducts.rows[0]?.metadata || {};
-        
-        updateData.metadata = {
-          ...existingMetadata,
-          ...(body.variants !== undefined && { variants: body.variants }),
-          ...(body.images !== undefined && { images: body.images }),
-          ...(body.delivery_regions !== undefined && { delivery_regions: body.delivery_regions }),
-        };
+        if (hasMetadataCol) {
+          const existingMetaRows = await query('SELECT metadata FROM products WHERE id = $1', [productId]);
+          const existingMetadata = existingMetaRows.rows[0]?.metadata || {};
+          updateData.metadata = {
+            ...existingMetadata,
+            ...(body.variants !== undefined && { variants: body.variants }),
+            ...(body.images !== undefined && { images: normalizedImages }),
+            ...(body.delivery_regions !== undefined && { delivery_regions: normalizedDelivery }),
+          };
+        } else if (
+          (body.variants !== undefined || body.delivery_regions !== undefined) &&
+          cols.has('specifications')
+        ) {
+          const specRes = await query('SELECT specifications FROM products WHERE id = $1', [productId]);
+          let base: Record<string, unknown> = {};
+          const raw = specRes.rows[0]?.specifications;
+          if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            base = { ...(raw as Record<string, unknown>) };
+          } else if (typeof raw === 'string') {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                base = parsed as Record<string, unknown>;
+              }
+            } catch {
+              /* keep base */
+            }
+          }
+          if (body.variants !== undefined) base.variants = body.variants;
+          if (body.delivery_regions !== undefined) base.delivery_regions = normalizedDelivery;
+          updateData.specifications = base;
+        } else if (body.variants !== undefined || body.delivery_regions !== undefined) {
+          console.warn(
+            '[VendorProducts] products.metadata column missing; variants/delivery_regions not stored (run db/migrations/034_add_metadata_columns.sql or add products.specifications)',
+          );
+        }
       }
 
       updateData.updated_at = new Date().toISOString();
@@ -403,8 +693,10 @@ class UpdateVendorProductHandler extends BaseHandler {
         return this.error('Failed to update product', 500);
       }
 
+      const productOut = await presignProductRowForDisplay(updated[0] as Record<string, unknown>);
+
       return this.success({
-        product: updated[0],
+        product: productOut,
         message: 'Product updated successfully',
       });
     } catch (error: any) {
@@ -457,7 +749,7 @@ class DeleteVendorProductHandler extends BaseHandler {
       }
 
       // Hard delete if no orders
-      await deleteRows('products', { id: productId, vendor_id: vendorId });
+      await deleteRows('products', { id: productId, vendor_id: resolvedVendorId });
 
       return this.success({
         message: 'Product deleted successfully',
@@ -503,6 +795,9 @@ export function registerVendorProductsEndpoints(app: Hono) {
       const vendorId = vendor.id;
       console.log(`[VendorProducts] Resolved vendorId ${paramVendorId} to ${vendorId}`);
 
+      const cols = await getProductsColumnSet();
+      const { metadata: metadataSelect, status: statusSelect } = productsOptionalSelectExprs(cols);
+
       // Get query parameters
       const search = c.req.query('search') || '';
       const category = c.req.query('category') || '';
@@ -525,13 +820,13 @@ export function registerVendorProductsEndpoints(app: Hono) {
           p.sku,
           p.price,
           COALESCE(p.stock, 0) as stock,
-                p.status,
+          ${statusSelect},
           p.is_active,
           p.created_at,
           p.updated_at,
           p.images,
           p.tags,
-          p.metadata,
+          ${metadataSelect},
           p.hsn_code,
           p.gst_rate,
           p.category,
@@ -592,9 +887,14 @@ export function registerVendorProductsEndpoints(app: Hono) {
         throw dbError;
       }
 
+      const rawRows = products?.rows || [];
+      const productsOut = await Promise.all(
+        rawRows.map((row: Record<string, unknown>) => presignProductRowForDisplay(row)),
+      );
+
       return c.json({
-        products: products?.rows || [],
-        count: products?.rows?.length || 0,
+        products: productsOut,
+        count: productsOut.length,
         total,
         limit,
         offset,
@@ -750,30 +1050,28 @@ export function registerVendorProductsEndpoints(app: Hono) {
         return c.json({ error: 'Image file is required' }, 400);
       }
 
-      // Generate unique file key
-      const timestamp = Date.now();
-      const randomStr = Math.random().toString(36).substring(2, 15);
+      const buffer = Buffer.from(await imageFile.arrayBuffer());
       const fileExtension = imageFile.name.split('.').pop() || 'jpg';
-      const fileKey = `products/${vendorId}/${timestamp}_${randomStr}.${fileExtension}`;
-
-      // Upload file directly to S3
-      const buffer = await imageFile.arrayBuffer();
-      const command = new PutObjectCommand({
-        Bucket: S3_BUCKET_NAME,
-        Key: fileKey,
-        Body: Buffer.from(buffer),
-        ContentType: imageFile.type || 'image/jpeg',
-      });
-
-      await s3Client.send(command);
-
-      // Public URL
-      const imageUrl = `https://${S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileKey}`;
+      const imageUrl = await uploadProductImageBufferToS3(
+        vendorId,
+        buffer,
+        imageFile.type || 'image/jpeg',
+        fileExtension,
+      );
+      const displayUrl = (await presignS3GetUrlIfApplicable(imageUrl)) ?? imageUrl;
+      let fileKey = '';
+      try {
+        const u = new URL(imageUrl);
+        fileKey = u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+      } catch {
+        fileKey = '';
+      }
 
       return c.json({
         success: true,
-        image_url: imageUrl,
-        url: imageUrl, // Support both naming conventions
+        s3_url: imageUrl,
+        image_url: displayUrl,
+        url: displayUrl,
         fileKey,
         message: 'Image uploaded successfully',
       });

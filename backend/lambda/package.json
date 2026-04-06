@@ -4,7 +4,7 @@
   "description": "AWS Lambda handlers for Warmpawz platform",
   "main": "dist/handler.js",
   "scripts": {
-    "build:contracts": "npm run build --prefix ../../packages/api-contracts",
+    "build:contracts": "npm install --prefix ../../packages/api-contracts --no-audit --no-fund && npm run build --prefix ../../packages/api-contracts",
     "build": "npm run build:contracts && npm run clean && npm run build:bundle && npm run package",
     "build:ts": "tsc --noEmit",
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
@@ -14,7 +14,7 @@
     "test": "jest",
     "test:local": "./test-local.sh",
     "test:sentry": "node scripts/test-sentry.js",
-    "start:local": "npm run build:bundle && dotenv -e .env.local -- npx serverless offline --config serverless.local.yml",
+    "start:local": "npm run build:contracts && npm run build:bundle && dotenv -e .env.local -- npx serverless offline --config serverless.local.yml",
     "start:local:logs": "powershell -ExecutionPolicy Bypass -File ./start-local-with-logs.ps1",
     "lint": "eslint src --ext .ts",
     "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')) fs.rmSync('dist',{recursive:true,force:true}); if(fs.existsSync('api-handler.zip')) fs.unlinkSync('api-handler.zip')\""

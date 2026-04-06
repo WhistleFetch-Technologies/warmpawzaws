@@ -45,23 +45,85 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const loadBoardingFacilities = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        roleId: 'pet_boarding'
-      });
 
-      // Use the correct endpoint for discovering services
-      const endpoint = `/customer/discover-services?category=boarding&roleId=pet_boarding`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const facilityList = data.vendors || data.services || [];
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      try {
+        const profileRes = (await apiClient.get(
+          `/customer/profile?phone=${encodeURIComponent(phone)}`
+        )) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          latitude = String(profile.latitude);
+          longitude = String(profile.longitude);
+        }
+      } catch {
+        /* ignore */
+      }
+      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 5000,
+              maximumAge: 300000,
+            });
+          });
+          latitude = String(pos.coords.latitude);
+          longitude = String(pos.coords.longitude);
+        } catch {
+          /* ignore */
+        }
+      }
+      const locationParams =
+        latitude && longitude
+          ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
+          : '';
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+
+      let facilityList: any[] = [];
+
+      try {
+        const endpoint = `/customer/discover-services?category=boarding&roleId=pet_boarding&serviceStyle=at_center${locationParams}${phoneParam}`;
+        const data = await apiClient.get<any>(endpoint);
+        if (Array.isArray(data)) {
+          facilityList = data;
+        } else if (data?.vendors && Array.isArray(data.vendors)) {
+          facilityList = data.vendors;
+        } else if (data?.providers && Array.isArray(data.providers)) {
+          facilityList = data.providers;
+        } else if (data?.services && Array.isArray(data.services)) {
+          facilityList = data.services;
+        }
+      } catch (err) {
+        console.warn('[BoardingServiceRouter] discover-services failed:', err);
+      }
+
+      if (facilityList.length === 0) {
+        try {
+          const altRes = await apiClient.get<any>(
+            `/customer/services/by-style?style=at_center&category=boarding&roleId=pet_boarding${locationParams}${phoneParam}`
+          );
+          const alt = altRes?.vendors ?? altRes?.providers ?? altRes;
+          if (Array.isArray(alt)) {
+            facilityList = alt;
+          }
+        } catch (err) {
+          console.warn('[BoardingServiceRouter] services/by-style fallback failed:', err);
+        }
+      }
+
       setBoardingFacilities(facilityList);
-      
-      // Set stats based on data
+
       setStats({
         activeFacilities: facilityList.length || 35,
         guests: '5K+',
-        rating: facilityList.length > 0 
-          ? Number(facilityList.reduce((acc: number, f: any) => acc + Number(f.rating || 4.6), 0) / facilityList.length).toFixed(1) 
-          : '4.6'
+        rating:
+          facilityList.length > 0
+            ? Number(
+                facilityList.reduce((acc: number, f: any) => acc + Number(f.rating || 4.6), 0) /
+                  facilityList.length
+              ).toFixed(1)
+            : '4.6',
       });
     } catch (error) {
       console.error('Error loading boarding facilities:', error);

@@ -25,7 +25,7 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
   const loadHolidayPackages = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=holiday&roleId=pet_holiday`;
+      const endpoint = `/customer/discover-services?category=holiday&roleId=pet_holiday&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[]; packages?: any[] }>(endpoint);
       const packageList = data.vendors || data.services || data.packages || [];
       setHolidayPackages(packageList);

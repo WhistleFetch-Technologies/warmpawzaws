@@ -25,7 +25,7 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
   const loadResorts = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=resort&roleId=pet_resort`;
+      const endpoint = `/customer/discover-services?category=resort&roleId=pet_resort&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const resortList = data.vendors || data.services || [];
       setResorts(resortList);

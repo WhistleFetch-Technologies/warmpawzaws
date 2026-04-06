@@ -20,7 +20,34 @@ import { select, update, query, insert } from '../../../database/rds-connection'
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
+import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
+import { regeneratePresignedUrl } from '../../constants/helper';
+
+/**
+ * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
+ * presignS3GetUrlIfApplicable returns any string that already contains X-Amz-* unchanged,
+ * so stale presigned URLs never refresh and the customer app shows a broken profile image.
+ */
+async function resolveCustomerPhotoForDisplay(raw: string | null | undefined): Promise<string | null> {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (s.startsWith('data:')) return s;
+
+  const stripped = stripS3PresignQueryFromUrl(s);
+
+  if (!stripped.includes('://')) {
+    const signed = await regeneratePresignedUrl(stripped);
+    return signed || stripped;
+  }
+
+  const presigned = await presignS3GetUrlIfApplicable(stripped);
+  if (presigned && presigned !== stripped) {
+    return presigned;
+  }
+  const regen = await regeneratePresignedUrl(stripped);
+  return regen || presigned || stripped;
+}
 
 /** Map DB row to API profile with camelCase address detail fields */
 function withProfileAddressFields(row: Record<string, any> | null | undefined) {
@@ -355,10 +382,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           ? customer.address
           : (customer.address && (customer.address as any).street) || '';
 
-      const profilePhoto =
-        (await presignS3GetUrlIfApplicable(customer.profile_photo_url)) ||
-        customer.profile_photo_url ||
-        null;
+      const profilePhoto = await resolveCustomerPhotoForDisplay(customer.profile_photo_url);
 
       // Get pets for this customer with error handling
       let pets: any[] = [];
@@ -372,7 +396,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const petsOut = await Promise.all(
         pets.map(async (p: any) => {
           const rawPhoto = p.profile_photo_url;
-          const signed = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+          const signed = (await resolveCustomerPhotoForDisplay(rawPhoto)) || rawPhoto;
           return {
             id: p.id,
             name: p.name,
@@ -445,8 +469,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Use profile_photo_url directly (preferences column may not exist yet)
-      const photoUrl = customer.profile_photo_url || null;
+      const photoUrl = await resolveCustomerPhotoForDisplay(customer.profile_photo_url);
 
       // Extract address fields from JSONB (if address is stored as JSONB)
       // Otherwise use address as text
@@ -472,6 +495,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           houseNo: (customer as any).house_no ?? null,
           floor: (customer as any).floor ?? null,
           photo: photoUrl || '',
+          profile_photo_url: photoUrl || '',
         },
       });
     } catch (error: any) {

@@ -639,10 +639,22 @@ export function BoardingBookingRouter({
         setBookingIdempotencyKey(idempotencyKey);
       }
 
-      // CreateBookingRequestSchema expects serviceType: at_vendor|at_home|online|at_center|tele|hybrid|product
+      // CreateBookingRequestSchema.serviceType must be an API enum — never a vendor_services.id UUID.
+      // After load, selectedServiceType is usually the bookable row id (UUID), not 'overnight' / 'daycare'.
+      const selectedVsRow =
+        vendorServices.find((vs: any) => String(vs.id) === String(selectedServiceType)) ||
+        vendorServices.find((vs: any) => String(vs.serviceId || vs.service_id) === String(selectedServiceType)) ||
+        selectedVendorService;
+      const vsStyle = String(
+        selectedVsRow?.serviceStyle || selectedVsRow?.service_style || ''
+      ).toLowerCase();
       const bookingServiceType = isPetSitting
         ? 'at_home'
-        : ((selectedServiceType === 'overnight' || selectedServiceType === 'daycare') ? 'at_center' : selectedServiceType);
+        : vsStyle === 'tele'
+          ? 'tele'
+          : vsStyle === 'at_home'
+            ? 'at_home'
+            : 'at_center';
 
       const bookingData: any = {
         customerId: customerId,
@@ -672,6 +684,8 @@ export function BoardingBookingRouter({
       if (isPetSitting) {
         bookingData.totalDurationMinutes = getBilledMinutes();
         bookingData.flowVariant = 'pet_sitting';
+      } else {
+        bookingData.flowVariant = 'boarding';
       }
 
       if (!usePackageSession && totalAmount > 0) {
@@ -790,6 +804,8 @@ export function BoardingBookingRouter({
         serviceStyle={selectedServiceType as 'at_home' | 'at_center' | 'tele'}
         bookingDate={checkInDate}
         bookingTime={checkInTime}
+        checkOutDate={checkOutDate}
+        checkOutTime={checkOutTime}
         petName={selectedPet?.name || ''}
         totalAmount={calculateTotalPrice()}
         onViewDetails={() => onViewBooking?.(bookingId)}
@@ -803,7 +819,7 @@ export function BoardingBookingRouter({
       ? '—'
       : isPetSitting && sittingSameDay
         ? `${checkInDate} · ${checkInTime}–${checkOutTime}`
-        : isPetSitting && checkInDate && checkOutDate
+        : checkInDate && checkOutDate
           ? `${checkInDate} ${checkInTime} → ${checkOutDate} ${checkOutTime}`
           : `${checkInDate} → ${checkOutDate || '—'}`;
 
@@ -1112,14 +1128,21 @@ export function BoardingBookingRouter({
                   </div>
                 )}
 
-                {isPetSitting && checkInDate && checkOutDate && (
+                {checkInDate && checkOutDate && (
                   <div className="space-y-4">
                     <h2 className="text-lg font-bold text-gray-900">Check-in & check-out time</h2>
-                    <p className="text-xs text-gray-500">
-                      Price follows your visit length in 30-minute blocks. Your sitter’s rate applies to their
-                      base duration ({getPetSittingPricingBaseMinutes()} minutes) unless they set a different
-                      length on the service.
-                    </p>
+                    {isPetSitting ? (
+                      <p className="text-xs text-gray-500">
+                        Price follows your visit length in 30-minute blocks. Your sitter’s rate applies to their
+                        base duration ({getPetSittingPricingBaseMinutes()} minutes) unless they set a different
+                        length on the service.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        Choose when you plan to drop off and pick up your pet. These times are saved with your
+                        booking.
+                      </p>
+                    )}
                     <div>
                       <label className="mb-2 block text-xs font-medium text-gray-600">Check-in time</label>
                       <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
@@ -1202,6 +1225,10 @@ export function BoardingBookingRouter({
                         <p className="text-sm text-gray-600">Duration</p>
                         <p className="text-lg font-bold text-gray-900">
                           {calculateNights()} night(s)
+                        </p>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Check-in {formatTime12Hour(checkInTime)} · Check-out{' '}
+                          {formatTime12Hour(checkOutTime)}
                         </p>
                       </div>
                       <Calendar className="h-8 w-8 text-orange-500" />
