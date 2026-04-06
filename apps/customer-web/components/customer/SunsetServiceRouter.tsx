@@ -26,7 +26,7 @@ export function SunsetServiceRouter({ phone, onBack, onViewBooking, onNavigate }
   const loadProviders = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=sunset&roleId=pet_sunset_services`;
+      const endpoint = `/customer/discover-services?category=sunset&roleId=pet_sunset_services&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const providerList = data.vendors || data.services || [];
       setProviders(providerList);

@@ -94,7 +94,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       
       // Try 1: discover-services by category (same pattern as VetServiceRouter)
       try {
-        const endpoint = `/customer/discover-services?category=grooming${locationParams}`;
+        const endpoint = `/customer/discover-services?category=grooming&serviceStyle=at_center${locationParams}`;
         const data = await apiClient.get<any>(endpoint);
         console.log('🔵 [GroomingServiceRouter] discover-services response:', data);
         

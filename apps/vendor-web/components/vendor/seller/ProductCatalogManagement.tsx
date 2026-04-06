@@ -8,6 +8,20 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
+/** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
+function stripAwsPresignFromProductImageUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has('X-Amz-Algorithm') || u.searchParams.has('X-Amz-Credential')) {
+      u.search = '';
+      return u.toString();
+    }
+  } catch {
+    /* ignore */
+  }
+  return url;
+}
+
 interface ProductCatalogManagementProps {
   sellerId: string;
 }
@@ -431,11 +445,27 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
           if (imageUrl) {
             uploadedUrls.push(imageUrl);
           } else {
-            uploadedUrls.push(URL.createObjectURL(file));
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
           }
         } catch (error) {
-          console.warn('Image upload failed, using preview:', error);
-          uploadedUrls.push(URL.createObjectURL(file));
+          console.warn('Image upload failed; sending data URL for server-side S3 upload on save:', error);
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
+          } catch {
+            console.error('Could not read image for upload', error);
+          }
         }
       }
 
@@ -477,7 +507,8 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
         original_price: formData.original_price ? parseFloat(formData.original_price) : null,
         stock: parseInt(formData.stock),
         vendor_id: sellerId,
-        images: images.length > 0 ? images : [],
+        images:
+          images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
         variants: variants.length > 0 ? variants.map(v => ({
           size: v.size || null,
           color: v.color || null,

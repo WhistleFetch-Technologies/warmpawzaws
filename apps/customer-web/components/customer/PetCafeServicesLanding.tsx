@@ -24,7 +24,7 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
   const loadCafes = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=cafe&roleId=pet_cafe`;
+      const endpoint = `/customer/discover-services?category=cafe&roleId=pet_cafe&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const cafeList = data.vendors || data.services || [];
       

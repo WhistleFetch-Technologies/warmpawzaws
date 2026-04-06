@@ -577,6 +577,7 @@ async function getNextAvailableSlot(
       // ✅ FIX: Dynamically check which columns exist to avoid "column does not exist" errors
       // Dev/UAT may only have service_styles (array), while prod may have both service_style and service_styles
       let styleConditions: string[] = [];
+      let cols: { has_service_styles?: boolean; has_service_style?: boolean; has_service_type?: boolean } = {};
       try {
         const colCheck = await query(`
           SELECT 
@@ -584,16 +585,26 @@ async function getNextAvailableSlot(
             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_style') as has_service_style,
             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_availability_v2' AND column_name = 'service_type') as has_service_type
         `);
-        const cols = colCheck.rows[0] || {};
+        cols = colCheck.rows[0] || {};
         if (cols.has_service_styles) styleConditions.push(`COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]`);
         if (cols.has_service_style) styleConditions.push(`service_style = ANY($3::text[])`);
         if (cols.has_service_type) styleConditions.push(`service_type = ANY($3::text[])`);
       } catch (_) {
         // Fallback to just service_styles (safest, present in both dev and prod)
         styleConditions = [`COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]`];
+        cols = { has_service_styles: true };
       }
       if (styleConditions.length > 0) {
-        va2Query += ` AND (${styleConditions.join(' OR ')})`;
+        // Legacy rows: style columns unset → treat as matching any requested style (discovery already scoped vendor_services by style)
+        const legacyParts: string[] = [];
+        if (cols.has_service_type) legacyParts.push('service_type IS NULL');
+        if (cols.has_service_style) legacyParts.push('service_style IS NULL');
+        if (cols.has_service_styles) {
+          legacyParts.push('(service_styles IS NULL OR cardinality(service_styles) = 0)');
+        }
+        const legacyOr =
+          legacyParts.length > 0 ? ` OR (${legacyParts.join(' AND ')})` : '';
+        va2Query += ` AND (${styleConditions.join(' OR ')}${legacyOr})`;
       }
       params.push(serviceStyleFilter);
     }
@@ -1294,6 +1305,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(roleId).toLowerCase().replace(/-/g, '_')
           ));
 
+      /** Pet boarding list uses category=boarding / roleId=pet_boarding; some centers have at_center rows with empty vs.category */
+      const boardingDiscoverySearch =
+        catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
+        (roleId &&
+          ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
+
       // 3) Helpers
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
@@ -1318,6 +1335,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
          */
         const sitterRoleBypass = sittingDiscoveryRelaxed;
 
+        const boardingUncatSql =
+          !sitterRoleBypass &&
+          boardingDiscoverySearch &&
+          _vendorRoleName &&
+          ['boarding', 'pet_boarding'].includes(String(_vendorRoleName).toLowerCase())
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -1325,6 +1349,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
+            ${boardingUncatSql}
           )
         `
             : '';
@@ -1486,7 +1511,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             WHERE
               (va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
               AND COALESCE(va.is_available, true) = true
-              AND va.service_type = ANY($1::text[])
+              AND (va.service_type IS NULL OR va.service_type = ANY($1::text[]))
           )`;
 
       /**
@@ -1497,6 +1522,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const sittingCatalogCategoryOr =
         sittingDiscoveryRelaxed
           ? `OR LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'`
+          : '';
+
+      const boardingRoleUncategorizedOr =
+        !sittingDiscoveryRelaxed && boardingDiscoverySearch
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
           : '';
 
       const vendorServiceCategorySql =
@@ -1515,6 +1545,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
+                ${boardingRoleUncategorizedOr}
               )`
           : '';
 
@@ -4778,6 +4809,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
       const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
 
+      const boardingDiscoverySearchByStyle =
+        catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
+        (roleId &&
+          ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
+
+      const boardingRoleUncategorizedOrByStyle =
+        boardingDiscoverySearchByStyle
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
+          : '';
 
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
@@ -4797,12 +4837,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       };
 
       /** Fetch published vendor_services rows matching the requested styles and targeted categories */
-      const fetchServices = async (vendorId: string) => {
+      const fetchServices = async (vendorId: string, vendorRoleName?: string | null) => {
+        const boardingUncatSqlByStyle =
+          boardingDiscoverySearchByStyle &&
+          vendorRoleName &&
+          ['boarding', 'pet_boarding'].includes(String(vendorRoleName).toLowerCase())
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const categoryFilterSql = (catTextExact.length + catUUIDs.length > 0) ? `
           AND (
             ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
+            ${boardingUncatSqlByStyle}
           )
         ` : '';
         const sql = `
@@ -4857,7 +4904,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
        */
       const enrichVendor = async (vendor: any) => {
         // Eligibility is based on services, not role config
-        const services = await fetchServices(vendor.vendor_id);
+        const services = await fetchServices(vendor.vendor_id, vendor.role_name);
 
         if (services.length === 0) return null;
 
@@ -4980,6 +5027,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
+                ${boardingRoleUncategorizedOrByStyle}
               )` : ``}
           )
  AND EXISTS (
@@ -4994,7 +5042,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     )
     AND COALESCE(va.is_available, true) = true
     AND (
-      va.service_type = ANY($1::text[])   -- scalar text matches requested styles
+      va.service_type IS NULL OR va.service_type = ANY($1::text[])
     )
 )
       `;

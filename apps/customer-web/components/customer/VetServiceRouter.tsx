@@ -165,7 +165,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       
       // Try 1: discover-services endpoint (with location for distance and radius filtering)
       try {
-        const endpoint = `/customer/discover-services?category=vet${locationParams}`;
+        const endpoint = `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`;
         const data = await apiClient.get<any>(endpoint);
         console.log('🔵 [VetServiceRouter] discover-services response:', data);
         

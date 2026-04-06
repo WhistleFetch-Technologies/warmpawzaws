@@ -26,7 +26,7 @@ export function AdoptionServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const loadShelters = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=adoption&roleId=ngo`;
+      const endpoint = `/customer/discover-services?category=adoption&roleId=ngo&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const shelterList = data.vendors || data.services || [];
       setShelters(shelterList);
