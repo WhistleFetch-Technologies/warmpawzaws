@@ -127,18 +127,18 @@ Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
 $distPath = Join-Path $customerWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
-$runtimeConfigContent = @"
+$runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
 // Injected at deployment time with dev API Gateway endpoint
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: "$ApiGatewayEndpoint",
+    apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
     uatMode: true,
-    environment: "development"
+    environment: 'development'
   };
-  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+  console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-"@
+'@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint)
 
 Set-Content -Path $runtimeConfigPath -Value $runtimeConfigContent -Encoding UTF8
 Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
