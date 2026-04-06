@@ -64,7 +64,6 @@ export const handler: SQSHandler = async (event) => {
 			if ((seen as any).rowCount > 0) {
 				return;
 			}
-			console.log('evt------------------------------------------------------------------------------>>>>.>', evt);
 			// Special handling for referrals
 			if (evt.actionName === 'vendor_refer_friend_who_joins') {
 				if (evt.reference?.type === 'booking') {
@@ -143,13 +142,6 @@ export const handler: SQSHandler = async (event) => {
 			}
 
 			// Mark processed on success
-			console.info('[LOYALTY CONSUMER] inserting processed_events', {
-				eventId: evt.eventId,
-				actionName: evt.actionName,
-				entityType: evt.entity.type,
-				entityId: evt.entity.id,
-				reference: evt.reference,
-			});
 			await insert('processed_events', {
 				event_id: evt.eventId,
 				action_name: evt.actionName,
@@ -158,7 +150,6 @@ export const handler: SQSHandler = async (event) => {
 				reference_type: evt.reference?.type || null,
 				reference_id: evt.reference?.id || null,
 			});
-			console.info('[LOYALTY CONSUMER] processed OK', { eventId: evt.eventId });
 		} catch (err) {
 			let parsedEventId: string | undefined;
 			try {

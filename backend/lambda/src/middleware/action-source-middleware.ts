@@ -217,7 +217,7 @@ export function actionSourceMiddleware() {
 
 			// Filter mappings based on success predicate
 			const matchedMappings = candidates.filter(m => evalPredicate(m.success_predicate, responseJson));
-			if (matchedMappings.length === 0) return;
+			if (matchedMappings.length === 0) return;	
 
 
 			// Diagnostics: predicate-level matches
@@ -278,6 +278,8 @@ export function actionSourceMiddleware() {
 							metadata[k] = resolveExpr(String(v), ctx);
 						}
 					}
+
+
 					// Diagnostics: resolved fields
 					try {
 						console.log('[ASDIAG] resolved', JSON.stringify({
@@ -302,6 +304,8 @@ export function actionSourceMiddleware() {
 						console.log('[ActionOccurred][dry-run]', JSON.stringify(evt).substring(0, 800));
 						continue;
 					}
+
+					//Event is being published to event bridge
 					await publishActionOccurred(evt);
 				} catch (mappingErr: any) {
 					console.warn('[action-source-middleware] mapping failed (continuing):', {

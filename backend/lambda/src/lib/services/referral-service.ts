@@ -4,7 +4,7 @@
  * Handles referral code processing during signup and point awarding
  * AWS Serverless compatible (Lambda, RDS)
  * 
- * Supports both customer-to-customer and vendor-to-vendor referrals
+ * Supports customer→customer, vendor→vendor, vendor→customer, and customer→vendor referrals
  */
 
 import { select, query, update, insert } from '../../database/rds-connection';
@@ -29,6 +29,50 @@ export interface ProcessReferralSignupResult {
 export interface VendorReferralFirstBookingRewardParams {
   eventId: string;
   bookingId?: string;
+}
+
+/**
+ * Mark matching vendor_referrals row approved for the vendor-app list.
+ * Joins on customer_referrals row id so phone/vendor matching uses DB values only (avoids driver/param quirks).
+ */
+async function syncVendorReferralsRowAfterCustomerReferralReward(params: {
+  eventId: string;
+  customerReferralRowId: string;
+}): Promise<void> {
+  const { eventId, customerReferralRowId } = params;
+  try {
+    const vrRes = await query(
+      `UPDATE vendor_referrals vr
+       SET status = 'approved',
+           approved_at = COALESCE(vr.approved_at, NOW()),
+           updated_at = NOW()
+       FROM customer_referrals cr
+       WHERE cr.id = $1::uuid
+         AND cr.referrer_vendor_id IS NOT NULL
+         AND vr.referrer_vendor_id = cr.referrer_vendor_id
+         AND vr.referred_phone NOT LIKE 'REFERRER%'
+         AND NULLIF(TRIM(cr.referred_phone), '') IS NOT NULL
+         AND NULLIF(TRIM(vr.referred_phone), '') IS NOT NULL
+         AND (
+           TRIM(vr.referred_phone) = TRIM(cr.referred_phone)
+           OR (
+             LENGTH(REGEXP_REPLACE(COALESCE(vr.referred_phone, ''), '[^0-9]', '', 'g')) >= 10
+             AND LENGTH(REGEXP_REPLACE(COALESCE(cr.referred_phone, ''), '[^0-9]', '', 'g')) >= 10
+             AND RIGHT(REGEXP_REPLACE(COALESCE(vr.referred_phone, ''), '[^0-9]', '', 'g'), 10)
+                 = RIGHT(REGEXP_REPLACE(COALESCE(cr.referred_phone, ''), '[^0-9]', '', 'g'), 10)
+           )
+         )`,
+      [customerReferralRowId]
+    );
+    if ((vrRes as { rowCount?: number }).rowCount === 0) {
+      console.warn('[VENDOR-REFERRAL-FIRST-BOOKING] vendor_referrals sync: no row matched for customer_referrals row', {
+        eventId,
+        customerReferralRowId,
+      });
+    }
+  } catch (e: unknown) {
+    console.warn('[VENDOR-REFERRAL-FIRST-BOOKING] vendor_referrals sync failed:', e instanceof Error ? e.message : e);
+  }
 }
 
 export interface VendorReferralApprovalRewardParams {
@@ -370,6 +414,88 @@ export async function processVendorReferralSignup(
 }
 
 /**
+ * Vendor activation with a customer's WARM referral code (`referrals` table, referrer_id = customer).
+ * Runs after `processVendorReferralSignup` returns Invalid when the code is not a vendor_referrals code.
+ * Rewards: configure loyalty rules + action_sources separately (same pattern as other referral flows).
+ */
+export async function processCustomerReferralForVendorSignup(params: {
+  vendorId: string;
+  referralCode: string;
+  phone: string;
+}): Promise<ProcessReferralSignupResult> {
+  const { vendorId, referralCode, phone } = params;
+
+  try {
+    const normalizedCode = String(referralCode || '').trim().toUpperCase();
+    if (!normalizedCode) {
+      return { success: false, error: 'Invalid referral code' };
+    }
+
+    const dupVendor = await query(
+      `SELECT id FROM referrals WHERE referred_vendor_id = $1 LIMIT 1`,
+      [vendorId]
+    );
+    if ((dupVendor as any).rowCount > 0) {
+      return { success: false, error: 'This vendor account already used a referral link' };
+    }
+
+    const refRes = await query(
+      `SELECT * FROM referrals WHERE UPPER(referral_code) = $1 ORDER BY created_at DESC LIMIT 1`,
+      [normalizedCode]
+    );
+    const referral = refRes.rows[0];
+    if (!referral) {
+      return { success: false, error: 'Invalid referral code' };
+    }
+
+    const cust = await query(`SELECT 1 FROM customers WHERE id = $1 LIMIT 1`, [referral.referrer_id]);
+    if ((cust as any).rowCount === 0) {
+      return { success: false, error: 'Invalid referral code' };
+    }
+
+    if (referral.referrer_id === vendorId) {
+      return { success: false, error: 'Cannot use your own referral code' };
+    }
+
+    if (referral.referred_id) {
+      return { success: false, error: 'This referral code has already been used' };
+    }
+
+    if (referral.referred_vendor_id) {
+      return { success: false, error: 'This referral code has already been used' };
+    }
+
+    const upd = await query(
+      `UPDATE referrals
+       SET referred_vendor_id = $1,
+           status = 'completed',
+           completed_at = COALESCE(completed_at, NOW())
+       WHERE id = $2
+         AND referred_id IS NULL
+         AND referred_vendor_id IS NULL
+       RETURNING id`,
+      [vendorId, referral.id]
+    );
+    if (upd.rows.length === 0) {
+      return { success: false, error: 'This referral code has already been used' };
+    }
+
+    console.log(
+      `[CUSTOMER-REFERRAL-VENDOR] Linked vendor ${vendorId} to customer referrer ${referral.referrer_id} (code ${normalizedCode}, phone ${phone})`
+    );
+
+    return { success: true, referredPoints: 0, referrerPoints: 0 };
+  } catch (error: any) {
+    const msg = String(error?.message || error);
+    if (msg.includes('referrals_one_referred_party_chk') || msg.includes('unique') || msg.includes('duplicate')) {
+      return { success: false, error: 'This referral code has already been used' };
+    }
+    console.error('[CUSTOMER-REFERRAL-VENDOR] ❌', error);
+    return { success: false, error: error.message || 'Failed to process customer referral for vendor' };
+  }
+}
+
+/**
  * Handle vendor reward when a referred customer completes booking flow.
  * Invoked by loyalty consumer for action: vendor_refer_friend_who_joins (booking reference).
  */
@@ -453,6 +579,19 @@ export async function processVendorReferralFirstBookingRewardVendorToCustomer(
       eventId,
       referralId: referral.id,
     });
+    // Retries / duplicate events skip award but must still align vendor_referrals (first attempt may have stopped after customer_referrals).
+    await query(
+      `UPDATE customer_referrals
+       SET status = 'approved',
+           approved_at = COALESCE(approved_at, NOW()),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [referral.id]
+    ).catch(() => undefined);
+    await syncVendorReferralsRowAfterCustomerReferralReward({
+      eventId,
+      customerReferralRowId: referral.id,
+    });
     return;
   }
 
@@ -493,20 +632,10 @@ export async function processVendorReferralFirstBookingRewardVendorToCustomer(
   ).catch(() => undefined);
 
   // 7) Keep vendor_referrals in sync for vendor-app list (same phone rows stay pending otherwise).
-  const phoneDigits = String(referral.referred_phone || '')
-    .replace(/\D/g, '')
-    .slice(-10);
-  if (phoneDigits.length >= 10) {
-    await query(
-      `UPDATE vendor_referrals
-       SET status = 'approved',
-           approved_at = COALESCE(approved_at, NOW()),
-           updated_at = NOW()
-       WHERE referrer_vendor_id = $1
-         AND referred_phone = $2`,
-      [referrerVendorId, phoneDigits]
-    ).catch(() => undefined);
-  }
+  await syncVendorReferralsRowAfterCustomerReferralReward({
+    eventId,
+    customerReferralRowId: referral.id,
+  });
 }
 
 // Backward compatibility for any stale imports.

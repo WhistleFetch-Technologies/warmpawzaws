@@ -72,9 +72,8 @@ export class LoyaltyPointsService {
         return { points: 0, walletCredited: 0 };
       }
 
-      // Calculate points
+      // Calculate points ( hardcoded for now)
       const points = await this.calculatePoints(rule, params);
-
       if (points <= 0) {
         return { points: 0, walletCredited: 0 };
       }
