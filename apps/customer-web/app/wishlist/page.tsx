@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import {
   Heart,
   ShoppingCart,
@@ -301,7 +301,10 @@ export default function WishlistPage() {
             <p className="text-slate-500 mb-6 text-[15px]">Save items you love to your wishlist</p>
             <button
               type="button"
-              onClick={() => router.push('/shop')}
+              onClick={() => {
+                rememberShopBackFromCurrentUrl();
+                router.push('/shop');
+              }}
               className="min-h-11 w-full max-w-xs mx-auto px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-md active:opacity-95"
             >
               Start Shopping

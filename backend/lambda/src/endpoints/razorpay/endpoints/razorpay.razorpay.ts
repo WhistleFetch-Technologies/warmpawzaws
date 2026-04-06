@@ -133,6 +133,72 @@ async function resolveCustomerId(identifier: string): Promise<string | null> {
   }
 }
 
+/**
+ * Normalize POST /razorpay/create-order body so wallet top-up is never mistaken for a booking:
+ * - Strip null/empty bookingId (JSON often sends bookingId: null)
+ * - Alias customer_id / customerID → customerId; purpose / paymentType → type
+ * - Normalize wallet type casing
+ * - If type is missing but payload is amount + customerId only, set type wallet_topup
+ */
+function normalizeCreateOrderRequestBody(raw: unknown): Record<string, any> {
+  const b =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? { ...(raw as Record<string, any>) }
+      : {};
+  if (b.bookingId === null || b.bookingId === undefined || b.bookingId === '') {
+    delete b.bookingId;
+  }
+  if (b.customerId == null && b.customer_id != null) {
+    b.customerId = b.customer_id;
+  }
+  if (b.customerId == null && (b as any).customerID != null) {
+    b.customerId = (b as any).customerID;
+  }
+  if (
+    !b.type &&
+    typeof b.purpose === 'string' &&
+    b.purpose.trim().toLowerCase() === 'wallet'
+  ) {
+    b.type = 'wallet_topup';
+  }
+  if (!b.type && typeof b.paymentType === 'string') {
+    b.type = b.paymentType;
+  }
+  if (!b.type && typeof b.payment_kind === 'string') {
+    b.type = b.payment_kind;
+  }
+  if (typeof b.type === 'string') {
+    const t = b.type.trim().toLowerCase().replace(/-/g, '_');
+    if (t === 'wallet_topup' || t === 'wallet') b.type = 'wallet_topup';
+    else if (t === 'pharmacy_order') b.type = 'pharmacy_order';
+    else if (t === 'diagnostics') b.type = 'diagnostics';
+    else if (t === 'booking_prepaid') b.type = 'booking_prepaid';
+  }
+  const cid =
+    b.customerId != null && String(b.customerId).trim() !== ''
+      ? String(b.customerId).trim()
+      : '';
+  const amtNum =
+    b.amount != null && b.amount !== '' ? Number(b.amount) : NaN;
+  const hasPharmacyOrder =
+    b.orderId != null && String(b.orderId).trim() !== '';
+  const hasVendor = b.vendorId != null && String(b.vendorId).trim() !== '';
+  const hasBooking =
+    b.bookingId != null && String(b.bookingId).trim() !== '';
+  if (
+    !b.type &&
+    cid &&
+    Number.isFinite(amtNum) &&
+    amtNum > 0 &&
+    !hasBooking &&
+    !hasPharmacyOrder &&
+    !hasVendor
+  ) {
+    b.type = 'wallet_topup';
+  }
+  return b;
+}
+
 // ============================================================================
 // RAZORPAY HANDLERS
 // ============================================================================
@@ -140,12 +206,27 @@ async function resolveCustomerId(identifier: string): Promise<string | null> {
 class CreateRazorpayOrderHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const body = this.parseBody(context.event);
+      const body = normalizeCreateOrderRequestBody(this.parseBody(context.event));
       const { bookingId, orderId: pharmacyOrderId, amount, currency = 'INR', customerId, vendorId, type } = body;
 
       const isPharmacyOrder = type === 'pharmacy_order';
       const isDiagnosticsOrder = type === 'diagnostics';
       const isBookingPrepaid = type === 'booking_prepaid';
+      const isWalletTopupExplicit = type === 'wallet_topup';
+      // Minimal/legacy payloads: amount + customerId without booking/pharmacy (matches old customer-web body)
+      const isWalletTopupInferred =
+        !isPharmacyOrder &&
+        !isDiagnosticsOrder &&
+        !isBookingPrepaid &&
+        !isWalletTopupExplicit &&
+        (type == null || type === '') &&
+        !body.vendorId &&
+        customerId != null &&
+        customerId !== '' &&
+        amount != null &&
+        !bookingId &&
+        !pharmacyOrderId;
+      const isWalletTopup = isWalletTopupExplicit || isWalletTopupInferred;
       if (isPharmacyOrder) {
         if (!pharmacyOrderId || amount == null) {
           return this.error('orderId and amount are required for pharmacy_order', 400);
@@ -160,6 +241,19 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const missing = ['amount', 'customerId', 'vendorId'].filter((f) => !body[f]);
         if (missing.length > 0) {
           return this.error(`Missing required fields for diagnostics order: ${missing.join(', ')}`, 400);
+        }
+      } else if (isWalletTopup) {
+        const cid =
+          body.customerId != null && String(body.customerId).trim() !== ''
+            ? String(body.customerId).trim()
+            : '';
+        const amtNum =
+          body.amount != null && body.amount !== '' ? Number(body.amount) : NaN;
+        if (!cid) {
+          return this.error('Missing required fields for wallet_topup: customerId', 400);
+        }
+        if (!Number.isFinite(amtNum) || amtNum <= 0) {
+          return this.error('Invalid amount for wallet_topup (must be a positive number)', 400);
         }
       } else {
         // ✅ bookingId is REQUIRED for booking orders (booking created before payment)
@@ -277,6 +371,21 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const shortId = String(Date.now()).replace(/-/g, '').substring(0, 32);
         receipt = `bk_pre_${shortId}`;
         notes = { type: 'booking_prepaid', customerId: customerIdFinal, vendorId: vendorIdFinal };
+      } else if (isWalletTopup) {
+        if (customerId) {
+          const resolvedId = await resolveCustomerId(customerId);
+          if (!resolvedId) {
+            return this.error(`Customer not found for identifier: ${customerId}`, 404);
+          }
+          customerIdFinal = resolvedId;
+        } else {
+          return this.error('customerId is required for wallet_topup', 400);
+        }
+        vendor = null;
+        vendorIdFinal = '';
+        const shortId = String(Date.now()).replace(/-/g, '').substring(0, 32);
+        receipt = `wal_${shortId}`;
+        notes = { type: 'wallet_topup', customerId: customerIdFinal };
       } else {
         // ✅ bookingId is REQUIRED - booking should already exist (created before payment)
         const bookingResult = await Promise.race([
@@ -393,6 +502,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           booking_id: null,
           customer_id: customerIdFinal,
           vendor_id: vendorIdFinal,
+          razorpay_order_id: razorpayOrder.id,
+          amount: Number(amount),
+          currency: currency,
+          payment_method: 'razorpay',
+          payment_status: 'pending',
+        });
+      } else if (isWalletTopup) {
+        await insert('payments', {
+          booking_id: null,
+          customer_id: customerIdFinal,
+          vendor_id: null,
           razorpay_order_id: razorpayOrder.id,
           amount: Number(amount),
           currency: currency,
@@ -1483,9 +1603,18 @@ export function registerRazorpayEndpoints(app: Hono) {
     // ✅ FIX: Add overall timeout wrapper to prevent Lambda timeout (25s to leave buffer)
     const handlerPromise = (async () => {
       try {
-        // ✅ FIX: Parse body from Hono context FIRST
-        const requestBody = await c.req.json().catch(() => ({}));
-        console.log('📥 [RAZORPAY-CREATE-ORDER] Raw request body from Hono:', JSON.stringify(requestBody));
+        const fromReq = await c.req.json().catch(() => ({}));
+        let requestBody = normalizeCreateOrderRequestBody(mergeRazorpayCreateOrderBody(c, fromReq));
+        if (!String(requestBody.customerId || '').trim() && requestBody.customerPhone) {
+          const rid = await resolveCustomerId(String(requestBody.customerPhone).trim());
+          if (rid) {
+            requestBody = normalizeCreateOrderRequestBody({
+              ...requestBody,
+              customerId: rid,
+            });
+          }
+        }
+        console.log('📥 [RAZORPAY-CREATE-ORDER] Merged/normalized body:', JSON.stringify(requestBody));
         const event = createApiGatewayEventWithBody(c.req, requestBody);
         const context = createLambdaContext();
         const result = await createOrderHandler.execute(event, context);
@@ -1769,6 +1898,23 @@ export function registerRazorpayEndpoints(app: Hono) {
       }, 500);
     }
   });
+}
+
+/**
+ * Merge API Gateway–parsed body (c.env.parsedBody) with Hono c.req.json().
+ * If the Request stream was already consumed or empty, env still has the real JSON.
+ */
+function mergeRazorpayCreateOrderBody(c: any, reqJson: unknown): Record<string, any> {
+  const env = c?.env as { parsedBody?: Record<string, unknown> | null } | undefined;
+  const fromEnv =
+    env?.parsedBody && typeof env.parsedBody === 'object' && !Array.isArray(env.parsedBody)
+      ? { ...(env.parsedBody as Record<string, any>) }
+      : {};
+  const fromReq =
+    reqJson && typeof reqJson === 'object' && !Array.isArray(reqJson)
+      ? { ...(reqJson as Record<string, any>) }
+      : {};
+  return { ...fromEnv, ...fromReq };
 }
 
 // ✅ FIX: Accept pre-parsed body since Hono doesn't have req.body
