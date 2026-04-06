@@ -280,21 +280,20 @@ export function CustomerHomeWrapper({
   petBoardingVendorId?: string;
   petBoardingServiceSlug?: string;
 }) {
-/**
- * Entering shop from these screens must not overwrite the stored return target (nested browse/checkout).
- * Note: `cart` is intentionally excluded so Cart → Shop (e.g. Continue shopping) restores Cart on back.
- */
-const SHOP_SUBFLOW_SCREENS = new Set<ScreenType>([
-  'shop',
-  'product_detail',
-  'product_reviews',
-  'vendor_profile',
-  'checkout',
-  'pharmacy_store',
-  'pharmacy_checkout',
-]);
+  /**
+   * Entering shop from these screens must not overwrite the stored return target (nested browse/checkout).
+   * Note: `cart` is intentionally excluded so Cart → Shop (e.g. Continue shopping) restores Cart on back.
+   */
+  const SHOP_SUBFLOW_SCREENS = new Set<ScreenType>([
+    'shop',
+    'product_detail',
+    'product_reviews',
+    'vendor_profile',
+    'checkout',
+    'pharmacy_store',
+    'pharmacy_checkout',
+  ]);
 
-export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
   const router = useRouter();
   const pathname = usePathname() || '/';
