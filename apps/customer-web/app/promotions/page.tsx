@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { handlePromotionsPageBack, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import {
-  Tag, Percent, Gift, Clock, Copy, Check, ArrowLeft,
+  Tag, Percent, Clock, Copy, Check, ArrowLeft,
   ShoppingCart, Star, Sparkles, AlertCircle, Search
 } from 'lucide-react';
 
@@ -79,156 +80,177 @@ export default function PromotionsPage() {
   const featuredPromotions = promotions.filter(p => p.discount_value >= 20);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-xl border-b border-purple-100/50 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
-          <button
-            onClick={() => router.push('/shop')}
-            className="p-2 hover:bg-slate-100 rounded-xl"
-          >
-            <ArrowLeft className="w-5 h-5 text-slate-600" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-              Offers & Coupons
-            </h1>
-            <p className="text-sm text-slate-500">Save more on your pet shopping</p>
-          </div>
-          <button
-            onClick={() => router.push('/cart')}
-            className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl"
-          >
-            <ShoppingCart className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Featured Banner */}
-        <div className="mb-8 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 rounded-3xl p-8 text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/2" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="w-6 h-6" />
-              <span className="font-semibold">Special Offers</span>
-            </div>
-            <h2 className="text-3xl font-bold mb-2">Save up to 50% on Pet Products</h2>
-            <p className="text-white/80 mb-4">Use our exclusive coupons and enjoy amazing discounts on premium pet care</p>
+    <div className="min-h-[100dvh] w-full flex justify-center bg-slate-200/60">
+      <div
+        className="flex min-h-[100dvh] w-full max-w-customer flex-col bg-gradient-to-b from-purple-50/95 via-pink-50/90 to-orange-50/85 sm:border-x sm:border-black/[0.06] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]"
+      >
+        {/* App-style header: safe area + rounded sheet */}
+        <header className="sticky top-0 z-40 shrink-0 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/88 rounded-b-[1.75rem] border-b border-purple-100/40 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pb-3">
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push('/shop')}
-              className="px-6 py-3 bg-white text-purple-600 rounded-xl font-semibold hover:shadow-lg transition-all"
+              type="button"
+              onClick={() => handlePromotionsPageBack(router)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100/90 text-slate-700 active:scale-[0.98] transition-transform"
+              aria-label="Go back"
             >
-              Shop Now
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-lg font-bold tracking-tight text-[#5b1f7a]">
+                Offers & Coupons
+              </h1>
+              <p className="truncate text-xs text-slate-500">
+                Save more on your pet shopping
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push('/cart')}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#712796] via-purple-600 to-pink-500 text-white shadow-md shadow-purple-500/25 active:scale-[0.98] transition-transform"
+              aria-label="Open cart"
+            >
+              <ShoppingCart className="h-5 w-5" />
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Search */}
-        <div className="mb-6 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search coupons..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 bg-white"
-          />
-        </div>
+        <main className="flex-1 px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]">
+          {/* Hero — vertical, thumb-friendly */}
+          <div className="relative mb-5 overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#5b1f7a] via-purple-600 to-[#FF6B35] p-5 text-white shadow-lg shadow-purple-900/15">
+            <div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-white/10" />
+            <div className="pointer-events-none absolute -bottom-12 -left-10 h-40 w-40 rounded-full bg-white/10" />
+            <div className="relative z-10">
+              <div className="mb-3 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 shrink-0 text-white/95" />
+                <span className="text-sm font-semibold text-white/95">Special Offers</span>
+              </div>
+              <h2 className="mb-2 text-2xl font-bold leading-tight tracking-tight">
+                Save up to 50% on Pet Products
+              </h2>
+              <p className="mb-4 text-sm leading-relaxed text-white/85">
+                Use our exclusive coupons and enjoy amazing discounts on premium pet care
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  rememberShopBackFromCurrentUrl();
+                  router.push('/shop');
+                }}
+                className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-[#712796] shadow-sm active:scale-[0.98] transition-transform"
+              >
+                Shop Now
+              </button>
+            </div>
+          </div>
 
-        {/* Content */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-200 border-t-purple-500" />
+          {/* Search — pill field */}
+          <div className="relative mb-5">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              enterKeyHint="search"
+              placeholder="Search coupons..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="min-h-12 w-full rounded-2xl border border-slate-200/90 bg-white py-3 pl-12 pr-4 text-[15px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+            />
           </div>
-        ) : error ? (
-          <div className="text-center py-20 bg-white rounded-2xl border border-slate-100">
-            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-300" />
-            <p className="text-slate-600">{error}</p>
-            <button onClick={loadPromotions} className="mt-4 px-6 py-2 bg-purple-500 text-white rounded-lg">
-              Retry
-            </button>
-          </div>
-        ) : filteredPromotions.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl border border-slate-100">
-            <Tag className="w-16 h-16 mx-auto mb-4 text-slate-200" />
-            <p className="text-slate-500">No active promotions found</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Featured Coupons */}
-            {featuredPromotions.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <Star className="w-5 h-5 text-amber-500" />
-                  Featured Offers
-                </h3>
-                <div className="grid md:grid-cols-2 gap-4">
-                  {featuredPromotions.slice(0, 2).map(promo => (
+
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-purple-100 border-t-purple-600" />
+              <p className="mt-4 text-sm text-slate-500">Loading offers…</p>
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-slate-100 bg-white p-8 text-center shadow-sm">
+              <AlertCircle className="mx-auto mb-3 h-12 w-12 text-red-300" />
+              <p className="text-sm text-slate-600">{error}</p>
+              <button
+                type="button"
+                onClick={loadPromotions}
+                className="mt-4 min-h-11 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 px-6 text-sm font-semibold text-white active:scale-[0.98] transition-transform"
+              >
+                Retry
+              </button>
+            </div>
+          ) : filteredPromotions.length === 0 ? (
+            <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center shadow-sm">
+              <Tag className="mx-auto mb-3 h-14 w-14 text-sky-200" />
+              <p className="text-sm font-medium text-slate-700">No active promotions</p>
+              <p className="mt-1 text-xs text-slate-500">Check back soon for new coupons</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {featuredPromotions.length > 0 && (
+                <section>
+                  <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+                    <Star className="h-5 w-5 text-amber-500" />
+                    Featured Offers
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {featuredPromotions.slice(0, 2).map((promo) => (
+                      <CouponCard
+                        key={promo.id}
+                        promotion={promo}
+                        onCopy={copyCode}
+                        copied={copiedCode === promo.code}
+                        featured
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section>
+                <h3 className="mb-3 text-base font-semibold text-slate-900">All Coupons</h3>
+                <div className="flex flex-col gap-3">
+                  {filteredPromotions.map((promo) => (
                     <CouponCard
                       key={promo.id}
                       promotion={promo}
                       onCopy={copyCode}
                       copied={copiedCode === promo.code}
-                      featured
                     />
                   ))}
                 </div>
-              </div>
-            )}
+              </section>
+            </div>
+          )}
 
-            {/* All Coupons */}
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">All Coupons</h3>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredPromotions.map(promo => (
-                  <CouponCard
-                    key={promo.id}
-                    promotion={promo}
-                    onCopy={copyCode}
-                    copied={copiedCode === promo.code}
-                  />
-                ))}
+          <div className="mt-8 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-slate-900">How to Use Coupons</h3>
+            <div className="flex flex-col gap-4">
+              <div className="flex gap-3 rounded-xl bg-purple-50/80 p-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-100">
+                  <span className="font-bold text-purple-700">1</span>
+                </div>
+                <div className="min-w-0 pt-0.5">
+                  <p className="font-medium text-slate-900">Copy code</p>
+                  <p className="text-sm text-slate-500">Tap copy on the coupon you want</p>
+                </div>
+              </div>
+              <div className="flex gap-3 rounded-xl bg-pink-50/80 p-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pink-100">
+                  <span className="font-bold text-pink-600">2</span>
+                </div>
+                <div className="min-w-0 pt-0.5">
+                  <p className="font-medium text-slate-900">Add products</p>
+                  <p className="text-sm text-slate-500">Shop and add items to your cart</p>
+                </div>
+              </div>
+              <div className="flex gap-3 rounded-xl bg-orange-50/80 p-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100">
+                  <span className="font-bold text-orange-600">3</span>
+                </div>
+                <div className="min-w-0 pt-0.5">
+                  <p className="font-medium text-slate-900">Apply at checkout</p>
+                  <p className="text-sm text-slate-500">Paste the code and enjoy savings</p>
+                </div>
               </div>
             </div>
           </div>
-        )}
-
-        {/* How to Use */}
-        <div className="mt-12 bg-white rounded-2xl border border-slate-100 p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">How to Use Coupons</h3>
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <span className="font-bold text-purple-600">1</span>
-              </div>
-              <div>
-                <p className="font-medium text-slate-900">Copy Code</p>
-                <p className="text-sm text-slate-500">Click on the coupon code to copy it</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-pink-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <span className="font-bold text-pink-600">2</span>
-              </div>
-              <div>
-                <p className="font-medium text-slate-900">Add Products</p>
-                <p className="text-sm text-slate-500">Shop and add items to your cart</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <span className="font-bold text-orange-600">3</span>
-              </div>
-              <div>
-                <p className="font-medium text-slate-900">Apply at Checkout</p>
-                <p className="text-sm text-slate-500">Paste the code and enjoy savings</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
@@ -243,9 +265,11 @@ function CouponCard({ promotion, onCopy, copied, featured }: {
   const isExpiringSoon = daysRemaining <= 3;
 
   return (
-    <div className={`bg-white rounded-2xl border overflow-hidden transition-all hover:shadow-lg ${
-      featured ? 'border-2 border-purple-200' : 'border-slate-100'
-    }`}>
+    <div
+      className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow ${
+        featured ? 'border-2 border-purple-200/90 ring-1 ring-purple-100/50' : 'border-slate-100'
+      }`}
+    >
       {/* Top Section */}
       <div className={`p-4 ${
         featured 
@@ -305,14 +329,16 @@ function CouponCard({ promotion, onCopy, copied, featured }: {
             <span className="font-mono font-bold text-slate-900 tracking-wider">{promotion.code}</span>
           </div>
           <button
+            type="button"
             onClick={() => onCopy(promotion.code)}
-            className={`px-4 py-2 rounded-xl font-medium transition-all ${
+            className={`flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl font-medium active:scale-[0.97] transition-transform ${
               copied
                 ? 'bg-emerald-500 text-white'
-                : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg'
+                : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/20'
             }`}
+            aria-label={copied ? 'Copied' : 'Copy coupon code'}
           >
-            {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+            {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
           </button>
         </div>
       </div>

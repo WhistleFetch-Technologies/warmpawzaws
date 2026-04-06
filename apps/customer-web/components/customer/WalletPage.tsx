@@ -55,7 +55,7 @@ export function WalletPage({ customerPhone, customerId, onBack, onNavigate }: Wa
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6">
-          <CustomerWallet customerPhone={phone} />
+          <CustomerWallet customerPhone={phone} onNavigate={onNavigate} />
         </div>
       </div>
     </div>

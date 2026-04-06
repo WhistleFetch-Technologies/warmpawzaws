@@ -268,6 +268,21 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
 
   // ✅ Wrapper for components that use (screen: string, data?: any) signature
   const handleNavigate = (screen: string, data?: any) => {
+    if (screen === 'help') {
+      if (typeof window !== 'undefined' && data?.initialTab) {
+        try {
+          sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, data.initialTab);
+        } catch {
+          /* ignore */
+        }
+      }
+      navigateToScreen('support_help');
+      return;
+    }
+    if (screen === 'offers' || screen === 'promotions') {
+      if (typeof window !== 'undefined') window.location.href = '/promotions';
+      return;
+    }
     navigateToScreen(screen as ScreenType);
     // Handle data if needed (e.g., set vetServiceData, etc.)
     if (data) {
@@ -359,7 +374,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'resort') navigateToScreen('resort');
     else if (service === 'holiday') navigateToScreen('holiday');
     else if (service === 'mating-dating-hub') navigateToScreen('mating-dating-hub');
-    else if (service === 'support_help') {
+    else if (service === 'help' || service === 'support_help') {
       if (typeof window !== 'undefined' && data?.initialTab) {
         try {
           sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, data.initialTab);
@@ -368,6 +383,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         }
       }
       navigateToScreen('support_help');
+    }
+    else if (service === 'offers' || service === 'promotions') {
+      if (typeof window !== 'undefined') window.location.href = '/promotions';
     }
     else {
       setSelectedService(service);
@@ -398,6 +416,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'appointments') navigateToScreen('appointments');
+    else if (path === 'support_help' || path === 'help') navigateToScreen('support_help');
+    else if (path === 'promotions' || path === 'offers') {
+      if (typeof window !== 'undefined') window.location.href = '/promotions';
+    }
     else if (path === 'account/settings') toast.info('Settings not available.');
   };
 
@@ -890,6 +912,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerPhone={phone}
     customerId={phone}
     onBack={handleBack}
+    onNavigate={handleAccountNavigate}
   />;
 
   // ✅ MATING & DATING SERVICE - P2P Matchmaking

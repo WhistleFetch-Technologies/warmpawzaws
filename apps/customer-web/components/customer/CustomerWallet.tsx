@@ -1,8 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
+import {
+  rememberHelpBackFromCurrentUrl,
+  rememberPromotionsBackFromCurrentUrl,
+} from '@/lib/go-back-or-replace';
+import {
+  fetchCustomerUuidByPhone,
+  formatWalletTopUpError,
+  normalizeRazorpayCreateOrderResponse,
+} from '@/lib/wallet-razorpay-helpers';
 
 interface WalletData {
   balance: number;
@@ -178,45 +186,64 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
       return;
     }
 
-    if (!customerId) {
-      alert('Customer not found. Please refresh the page.');
-      return;
-    }
-
     setProcessingTopUp(true);
     try {
-      // Create Razorpay order
-      const orderResponse = await apiClient.post<any>('/razorpay/create-order', {
-        bookingId: null, // Wallet top-up doesn't need booking
-        amount: amount,
-        currency: 'INR',
-        customerId: customerId,
-      });
-
-      if (!orderResponse.orderId) {
-        throw new Error('Failed to create payment order');
+      let resolvedCustomerId = customerId;
+      if (!resolvedCustomerId) {
+        resolvedCustomerId = await fetchCustomerUuidByPhone((p) => apiClient.get(p), customerPhone);
+        if (resolvedCustomerId) setCustomerId(resolvedCustomerId);
+      }
+      if (!resolvedCustomerId) {
+        alert('Customer not found. Please refresh the page.');
+        setProcessingTopUp(false);
+        return;
       }
 
-      // Initialize Razorpay checkout
+      const orderRaw = await apiClient.post<any>('/razorpay/create-order', {
+        type: 'wallet_topup',
+        paymentType: 'wallet_topup',
+        purpose: 'wallet',
+        amount,
+        currency: 'INR',
+        customerId: resolvedCustomerId,
+        customerPhone,
+      });
+
+      const order = normalizeRazorpayCreateOrderResponse(orderRaw);
+      if (!order) {
+        console.error('[wallet top-up] Unexpected create-order response:', orderRaw);
+        const er =
+          orderRaw && typeof orderRaw === 'object'
+            ? (orderRaw as { error?: string; message?: string }).error ||
+              (orderRaw as { message?: string }).message
+            : undefined;
+        throw new Error(typeof er === 'string' && er.trim() ? er : 'Failed to create payment order');
+      }
+
+      const payAmountPaise = Math.round(order.amount * 100);
+
       const options = {
-        key: orderResponse.keyId,
-        amount: orderResponse.amount * 100, // Convert to paise
-        currency: orderResponse.currency,
+        key: order.keyId,
+        amount: payAmountPaise,
+        currency: order.currency,
         name: 'Warmpawz',
         description: `Wallet Top-up of ₹${amount}`,
-        order_id: orderResponse.orderId,
+        order_id: order.orderId,
         handler: async (response: any) => {
           try {
-            // Verify payment with retry
-            let verifyResponse: any = null;
             const MAX_RETRIES = 3;
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
               try {
-                verifyResponse = await apiClient.post<any>('/razorpay/verify-payment', {
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                }, undefined, 30000);
+                await apiClient.post<any>(
+                  '/razorpay/verify-payment',
+                  {
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                  },
+                  undefined,
+                  30000
+                );
                 break;
               } catch (verifyErr: any) {
                 console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
@@ -225,28 +252,22 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
               }
             }
 
-            if (verifyResponse?.success) {
-              // Credit wallet
-              await apiClient.post<any>(`/wallet/${customerId}/credit`, {
-                amount: amount,
-                referenceType: 'topup',
-                referenceId: response.razorpay_payment_id,
-                description: `Wallet top-up via Razorpay`,
-              });
+            await apiClient.post<any>(`/wallet/${resolvedCustomerId}/credit`, {
+              amount: Number(amount),
+              referenceType: 'topup',
+              referenceId: response.razorpay_payment_id,
+              description: `Wallet top-up via Razorpay`,
+            });
 
-              // Reload wallet data
-              await loadWalletData();
-              await loadTransactions();
-              
-              setShowTopUpModal(false);
-              setTopUpAmount('');
-              alert('Wallet topped up successfully!');
-            } else {
-              throw new Error('Payment verification failed');
-            }
+            await loadWalletData();
+            await loadTransactions();
+
+            setShowTopUpModal(false);
+            setTopUpAmount('');
+            alert('Wallet topped up successfully!');
           } catch (error: any) {
             console.error('Error processing top-up:', error);
-            alert('Failed to process top-up. Please contact support.');
+            alert(formatWalletTopUpError(error) || 'Failed to process top-up. Please contact support.');
           } finally {
             setProcessingTopUp(false);
           }
@@ -268,7 +289,7 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
       razorpay.open();
     } catch (error: any) {
       console.error('Error initiating top-up:', error);
-      alert('Failed to initiate top-up. Please try again.');
+      alert(formatWalletTopUpError(error));
       setProcessingTopUp(false);
     }
   };
@@ -334,13 +355,15 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={() => setShowTopUpModal(true)}
-              className={`${gridTileClass} bg-white border-2 border-[#FF8C42] shadow-sm`}
+              disabled
+              aria-disabled="true"
+              aria-label="Add money (unavailable)"
+              className={`${gridTileClass} bg-white border-2 border-stone-200 opacity-60 cursor-not-allowed shadow-sm disabled:pointer-events-none disabled:active:scale-100`}
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-2xl leading-none">
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-2xl leading-none grayscale">
                 💳
               </span>
-              <span className="text-[10px] text-center text-gray-700 font-semibold leading-tight px-0.5">
+              <span className="text-[10px] text-center text-gray-500 font-semibold leading-tight px-0.5">
                 Add Money
               </span>
             </button>
@@ -366,14 +389,40 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
             </button>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <Link href="/offers" className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}>
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('promotions');
+                  return;
+                }
+                if (typeof window !== 'undefined') {
+                  rememberPromotionsBackFromCurrentUrl();
+                  window.location.href = '/promotions';
+                }
+              }}
+              className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
+            >
               <span className="text-2xl">🎁</span>
               <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Offers</span>
-            </Link>
-            <Link href="/help" className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('support_help');
+                  return;
+                }
+                if (typeof window !== 'undefined') {
+                  rememberHelpBackFromCurrentUrl();
+                  window.location.href = '/help';
+                }
+              }}
+              className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
+            >
               <span className="text-2xl">❓</span>
               <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Help</span>
-            </Link>
+            </button>
           </div>
         </div>
       </div>

@@ -147,16 +147,18 @@ export async function resilientFetch(
 
       clearTimeout(timeoutId);
 
-      // Check if response is retryable
+      // Non-retryable HTTP errors (4xx, etc.): return the Response so api-client can read the body
+      // and show the real message (e.g. Razorpay validation). Throwing here caused only "HTTP 400".
       if (!response.ok) {
         const isRetryable = retryConfig.retryableStatusCodes.includes(response.status);
-        const error = new ApiError(
-          `HTTP ${response.status}`,
-          response.status >= 500 ? 'server_error' : 'client_error',
-          response.status,
-          isRetryable
-        );
-        throw error;
+        if (isRetryable) {
+          throw new ApiError(
+            `HTTP ${response.status}`,
+            response.status >= 500 ? 'server_error' : 'client_error',
+            response.status,
+            true
+          );
+        }
       }
 
       return response;

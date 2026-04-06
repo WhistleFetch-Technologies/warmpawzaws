@@ -138,9 +138,9 @@ export function getApiBaseUrl(): string {
     else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
       raw = process.env.NEXT_PUBLIC_API_BASE_URL;
     }
-    // 4. Local Lambda (serverless-offline in backend/lambda, default httpPort 3000)
+    // 4. Default: dev API Gateway (same as next.config urls.json). For serverless-offline use NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
     else {
-      raw = 'http://localhost:3000';
+      raw = getApiGatewayUrl();
     }
   } else {
     // When NOT on localhost (deployed environments like CloudFront):
@@ -270,6 +270,26 @@ export function getCustomerAuthHeadersForUpload(): Record<string, string> {
 function requestJsonBody(data: unknown): string | undefined {
   if (data === undefined || data === null) return undefined;
   return JSON.stringify(data);
+}
+
+/** Prefer server JSON message over generic `HTTP 400` when error is a string or nested object. */
+function extractHttpErrorMessage(errorData: any, status: number): string {
+  if (!errorData || typeof errorData !== 'object') {
+    return `HTTP ${status}`;
+  }
+  const e = errorData.error;
+  if (typeof e === 'string' && e.trim()) return e.trim();
+  if (e && typeof e === 'object') {
+    if (typeof e.message === 'string' && e.message.trim()) return e.message.trim();
+    if (typeof e.detail === 'string' && e.detail.trim()) return e.detail.trim();
+  }
+  if (typeof errorData.message === 'string' && errorData.message.trim()) {
+    return errorData.message.trim();
+  }
+  if (typeof errorData.detail === 'string' && errorData.detail.trim()) {
+    return errorData.detail.trim();
+  }
+  return `HTTP ${status}`;
 }
 
 export class ApiClient {
@@ -489,7 +509,7 @@ export class ApiClient {
         }
         
         // Create ApiError with full error data preserved
-        const errorMessage = errorData.error?.message || errorData.error || errorData.message || `HTTP ${response.status}`;
+        const errorMessage = extractHttpErrorMessage(errorData, response.status);
         const apiError = new ApiError(
           errorMessage,
           errorData.error?.code || (response.status >= 500 ? 'server_error' : 'client_error'),

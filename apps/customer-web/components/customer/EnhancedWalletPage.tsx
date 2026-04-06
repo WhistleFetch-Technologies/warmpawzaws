@@ -11,6 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  fetchCustomerUuidByPhone,
+  formatWalletTopUpError,
+  normalizeRazorpayCreateOrderResponse,
+} from '@/lib/wallet-razorpay-helpers';
 import { toast } from 'sonner';
 
 // Razorpay type declaration
@@ -211,41 +216,64 @@ export function EnhancedWalletPage({
       return;
     }
 
-    if (!customerId) {
-      toast.error('Please refresh and try again');
-      return;
-    }
-
     setProcessingTopUp(true);
     try {
-      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        amount,
-        currency: 'INR',
-        customerId,
-      });
-
-      if (!orderRes.orderId) {
-        throw new Error('Failed to create payment order');
+      let resolvedCustomerId = customerId;
+      if (!resolvedCustomerId) {
+        resolvedCustomerId = await fetchCustomerUuidByPhone((p) => apiClient.get(p), customerPhone);
+        if (resolvedCustomerId) setCustomerId(resolvedCustomerId);
+      }
+      if (!resolvedCustomerId) {
+        toast.error('Please refresh and try again');
+        setProcessingTopUp(false);
+        return;
       }
 
-      const options = {
-        key: orderRes.keyId,
-        amount: amount * 100,
+      const orderRaw = await apiClient.post<any>('/razorpay/create-order', {
+        type: 'wallet_topup',
+        paymentType: 'wallet_topup',
+        purpose: 'wallet',
+        amount,
         currency: 'INR',
+        customerId: resolvedCustomerId,
+        customerPhone,
+      });
+
+      const order = normalizeRazorpayCreateOrderResponse(orderRaw);
+      if (!order) {
+        console.error('[wallet top-up] Unexpected create-order response:', orderRaw);
+        const er =
+          orderRaw && typeof orderRaw === 'object'
+            ? (orderRaw as { error?: string; message?: string }).error ||
+              (orderRaw as { message?: string }).message
+            : undefined;
+        throw new Error(typeof er === 'string' && er.trim() ? er : 'Failed to create payment order');
+      }
+
+      const payAmountPaise = Math.round(order.amount * 100);
+
+      const options = {
+        key: order.keyId,
+        amount: payAmountPaise,
+        currency: order.currency || 'INR',
         name: 'Warmpawz',
         description: `Add ₹${amount} to Wallet`,
-        order_id: orderRes.orderId,
+        order_id: order.orderId,
         handler: async (response: any) => {
           try {
-            // Verify payment with retry
             const MAX_RETRIES = 3;
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
               try {
-                await apiClient.post<any>('/razorpay/verify-payment', {
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                }, undefined, 30000);
+                await apiClient.post<any>(
+                  '/razorpay/verify-payment',
+                  {
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                  },
+                  undefined,
+                  30000
+                );
                 break;
               } catch (verifyErr: any) {
                 console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
@@ -254,8 +282,8 @@ export function EnhancedWalletPage({
               }
             }
 
-            await apiClient.post<any>(`/wallet/${customerId}/credit`, {
-              amount,
+            await apiClient.post<any>(`/wallet/${resolvedCustomerId}/credit`, {
+              amount: Number(amount),
               referenceType: 'topup',
               referenceId: response.razorpay_payment_id,
               description: 'Wallet top-up via Razorpay',
@@ -263,13 +291,13 @@ export function EnhancedWalletPage({
 
             await loadData();
             await loadTransactions();
-            
+
             setShowTopUpModal(false);
             setTopUpAmount('');
             toast.success('Wallet topped up successfully!');
           } catch (error) {
             console.error('Error processing top-up:', error);
-            toast.error('Failed to process top-up');
+            toast.error(formatWalletTopUpError(error) || 'Failed to process top-up');
           } finally {
             setProcessingTopUp(false);
           }
@@ -285,7 +313,7 @@ export function EnhancedWalletPage({
       razorpay.open();
     } catch (error) {
       console.error('Error initiating top-up:', error);
-      toast.error('Failed to initiate top-up');
+      toast.error(formatWalletTopUpError(error));
       setProcessingTopUp(false);
     }
   };
