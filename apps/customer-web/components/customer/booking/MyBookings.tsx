@@ -74,12 +74,14 @@ interface Booking {
 interface MyBookingsProps {
   phone: string;
   onBack: () => void;
+  /** Left X: full exit to home (shell reset). When set with onBack, header matches profile-style X + Back. */
+  onCloseToHome?: () => void;
   initialBookingId?: string; // To open a specific booking
   onReorderMedicine?: (medications: any[]) => void;
   onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
 }
 
-export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
+export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
   const effectivePhone =
     phone ||
@@ -459,6 +461,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
+        onCloseToHome={onCloseToHome}
         headerColor="bg-[#FF8C42]"
       />
 

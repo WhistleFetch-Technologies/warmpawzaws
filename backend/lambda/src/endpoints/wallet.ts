@@ -1247,7 +1247,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /customer/wallet?phone=... - Get wallet by phone number
   app.get('/customer/wallet', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await getWalletByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1255,7 +1255,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /customer/wallet/transactions?phone=... - Get transactions by phone number
   app.get('/customer/wallet/transactions', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await getTransactionsByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1263,7 +1263,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /customer/wallet/add-funds - Add funds by phone number
   app.post('/customer/wallet/add-funds', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await addFundsByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1271,7 +1271,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /customer/wallet/use - Use wallet balance by phone number
   app.post('/customer/wallet/use', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await useWalletByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1283,7 +1283,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /wallet/:customerId - Get wallet by customer UUID
   app.get('/wallet/:customerId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result = await getWalletHandler.execute(event, context);
@@ -1292,7 +1292,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /wallet/:customerId/credit - Credit wallet by customer UUID
   app.post('/wallet/:customerId/credit', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result = await creditWalletHandler.execute(event, context);
@@ -1301,7 +1301,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // POST /wallet/:customerId/debit - Debit wallet by customer UUID
   app.post('/wallet/:customerId/debit', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result = await debitWalletHandler.execute(event, context);
@@ -1310,7 +1310,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /wallet/:customerId/transactions - Get transactions by customer UUID
   app.get('/wallet/:customerId/transactions', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result = await getTransactionsHandler.execute(event, context);
@@ -1323,7 +1323,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /vendor/wallet/:vendorId - Get vendor wallet by vendor UUID
   app.get('/vendor/wallet/:vendorId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
     const context = createLambdaContext();
     const result = await getVendorWalletHandler.execute(event, context);
@@ -1332,7 +1332,7 @@ export function registerWalletEndpoints(app: Hono) {
 
   // GET /vendor/wallet/:vendorId/transactions - Get vendor wallet transactions
   app.get('/vendor/wallet/:vendorId/transactions', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEvent(c);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
     const context = createLambdaContext();
     const result = await getVendorTransactionsHandler.execute(event, context);
@@ -1340,12 +1340,36 @@ export function registerWalletEndpoints(app: Hono) {
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+/**
+ * Build a Lambda-shaped event from Hono context.
+ * POST/PUT bodies must come from c.env.parsedBody (set by handler/index.ts); Hono Request has no req.body object.
+ */
+function createApiGatewayEvent(c: any): any {
+  const req = c.req;
+  const contextData = c.env as { parsedBody?: Record<string, unknown> | null } | undefined;
+  const parsedBody = contextData?.parsedBody;
+  const bodyString =
+    parsedBody != null && typeof parsedBody === 'object'
+      ? JSON.stringify(parsedBody)
+      : null;
+
+  let headers: Record<string, string> = {};
+  try {
+    const h = req.raw?.headers ?? req.headers;
+    if (h && typeof (h as Headers).forEach === 'function') {
+      (h as Headers).forEach((value: string, key: string) => {
+        headers[key] = value;
+      });
+    }
+  } catch {
+    headers = {};
+  }
+
   return {
     httpMethod: req.method,
     path: req.url,
-    headers: Object.fromEntries(req.headers || []),
-    body: JSON.stringify(req.body || {}),
+    headers,
+    body: bodyString,
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {

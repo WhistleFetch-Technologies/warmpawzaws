@@ -10,7 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 
 interface CartItem {
   id: string;
@@ -351,7 +351,10 @@ export default function CheckoutPage() {
           <h2 className="text-xl font-bold text-gray-800 mb-2">Your cart is empty</h2>
           <p className="text-gray-500 mb-6">Add some products to proceed to checkout</p>
           <button
-            onClick={() => router.push('/shop')}
+            onClick={() => {
+              rememberShopBackFromCurrentUrl();
+              router.push('/shop');
+            }}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg transition"
           >
             Continue Shopping
@@ -807,7 +810,10 @@ export default function CheckoutPage() {
                     View Orders
                   </button>
                   <button
-                    onClick={() => router.push('/shop')}
+                    onClick={() => {
+                      rememberShopBackFromCurrentUrl();
+                      router.push('/shop');
+                    }}
                     className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
                   >
                     Continue Shopping

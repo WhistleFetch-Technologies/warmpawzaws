@@ -19,7 +19,10 @@ export default function RootLayout({
 }) {
   // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
   const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  const prodApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  /** Align with next.config env + api-client dev gateway when env is unset (avoids missing script → wrong API base). */
+  const prodApiUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 
   return (
     <html lang="en">
@@ -74,20 +77,18 @@ export default function RootLayout({
           - Sets window.__NEXT_PUBLIC_API_BASE_URL__ = production API Gateway
           - Also sets production runtime config below
         */}
-        {prodApiUrl && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
                 window.__NEXT_PUBLIC_API_BASE_URL__ = "${prodApiUrl}";
               `,
-            }}
-          />
-        )}
+          }}
+        />
         {/* 
           Inject production runtime config ONLY when NEXT_PUBLIC_ENVIRONMENT=production.
           This ensures prod:customer, prod:vendor, prod:admin use production API Gateway.
         */}
-        {isProd && prodApiUrl && (
+        {isProd && (
           <script
             dangerouslySetInnerHTML={{
               __html: `

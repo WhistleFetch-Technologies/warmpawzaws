@@ -2,7 +2,11 @@
 
 import { CustomerWallet } from '@/components/customer/CustomerWallet';
 import { Button } from '@/components/ui/button';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import {
+  goBackOrHome,
+  rememberHelpBackFromCurrentUrl,
+  rememberPromotionsBackFromCurrentUrl,
+} from '@/lib/go-back-or-replace';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -60,6 +64,16 @@ export default function WalletPage() {
     }
     if (path === 'referral-system') {
       router.push('/referrals');
+      return;
+    }
+    if (path === 'support_help' || path === 'help') {
+      rememberHelpBackFromCurrentUrl();
+      router.push('/help');
+      return;
+    }
+    if (path === 'promotions' || path === 'offers') {
+      rememberPromotionsBackFromCurrentUrl();
+      router.push('/promotions');
       return;
     }
     router.push(`/${path.replace(/^\//, '')}`);

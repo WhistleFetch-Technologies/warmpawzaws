@@ -66,6 +66,11 @@ import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import {
+  WARMPAWZ_HOME_RESUME_SCREENS,
+  WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  rememberPromotionsBackSpaScreen,
+} from '@/lib/go-back-or-replace';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { useNotificationService } from '../useNotificationService';
@@ -257,6 +262,20 @@ type ScreenType =
   | 'behaviorist'
   | 'instant-connecting';
 
+/**
+ * Entering shop from these screens must not overwrite the stored return target (nested browse/checkout).
+ * Note: `cart` is intentionally excluded so Cart → Shop (e.g. Continue shopping) restores Cart on back.
+ */
+const SHOP_SUBFLOW_SCREENS = new Set<ScreenType>([
+  'shop',
+  'product_detail',
+  'product_reviews',
+  'vendor_profile',
+  'checkout',
+  'pharmacy_store',
+  'pharmacy_checkout',
+]);
+
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
   const router = useRouter();
@@ -274,6 +293,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       router.replace('/onboarding');
     }
   }, [pathname, searchParams, router]);
+
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -293,6 +313,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [selectedShopCategory, setSelectedShopCategory] = useState<string | undefined>(undefined);
+  /** Screen to restore when leaving Shop via header back (SPA stack is not browser history). */
+  const [shopReturnScreen, setShopReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
   /** Screen to return to when leaving My Pets (embedded list), if opened via navigateToPets */
@@ -312,6 +334,21 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any | null>(null);
+
+  /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
+  useEffect(() => {
+    if (pathname !== '/' || typeof window === 'undefined') return;
+    const raw = sessionStorage.getItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
+    if (WARMPAWZ_HOME_RESUME_SCREENS.has(raw)) {
+      const next = raw as ScreenType;
+      if (next === 'shop') {
+        setShopReturnScreen('home');
+      }
+      setCurrentScreen(next);
+    }
+  }, [pathname]);
 
   // ✅ FIX: Listen for orderMedicineFromPrescription event (fallback when onOrderMedicine not passed)
   useEffect(() => {
@@ -462,6 +499,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setCurrentScreen('home');
   };
 
+  const goToShopFromParent = (opts?: { category?: string }) => {
+    if (!SHOP_SUBFLOW_SCREENS.has(currentScreen)) {
+      setShopReturnScreen(currentScreen);
+    }
+    if (opts && opts.category !== undefined) {
+      setSelectedShopCategory(opts.category);
+    } else {
+      setSelectedShopCategory(undefined);
+    }
+    setCurrentScreen('shop');
+  };
+
   const handleNavigateToService = (service: string, _data?: any) => {
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
@@ -480,8 +529,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'insurance') setCurrentScreen('insurance');
     else if (service === 'cafes') setCurrentScreen('cafes');
     else if (service === 'shop') {
-      setSelectedShopCategory(undefined);
-      setCurrentScreen('shop');
+      goToShopFromParent();
     }
     else if (service === 'cart') setCurrentScreen('cart');
     else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
@@ -503,7 +551,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setCurrentScreen('package-booking');
     }
     else if (service === 'services') setCurrentScreen('services');
-    else if (service === 'support_help') setCurrentScreen('support_help');
+    else if (service === 'help' || service === 'support_help') setCurrentScreen('support_help');
+    else if (service === 'offers' || service === 'promotions') {
+      rememberPromotionsBackSpaScreen(currentScreen);
+      router.push('/promotions');
+    }
     else if (service === 'whats-new') router.push('/whats-new');
     else if (service === 'articles' || service === 'customer-articles') router.push('/articles');
     else if (service === 'wishlist') router.push('/wishlist');
@@ -595,14 +647,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleAccountNavigate = (path: string) => {
     setUserSidebarOpen(false);
     if (path === 'home') setCurrentScreen('home');
+    else if (path === 'shop') goToShopFromParent();
     else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'appointments') setCurrentScreen('appointments');
-    else if (path === 'support_help') {
+    else if (path === 'support_help' || path === 'help') {
       setCurrentScreen('support_help');
+    } else if (path === 'promotions' || path === 'offers') {
+      rememberPromotionsBackSpaScreen(currentScreen);
+      router.push('/promotions');
     } else if (path === 'account/settings') {
       // Navigate to settings page
       if (typeof window !== 'undefined') {
@@ -645,6 +701,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setSelectedVendorId(undefined);
     setSelectedProblem(null);
     setCurrentServiceType(null);
+  };
+
+  /** Profile / account full-screen pages: Back returns to home with account sidebar open (not full shell reset). */
+  const backToAccountMenu = () => {
+    setCurrentScreen('home');
+    setUserSidebarOpen(true);
   };
 
   const navigateToPets = () => {
@@ -714,6 +776,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       <UserAccountSidebar
         phone={phone}
         onClose={() => setUserSidebarOpen(false)}
+        onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
         onViewCustomerProfile={handleViewCustomerProfile}
         onNavigate={handleAccountNavigate}
@@ -836,8 +899,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
               setCurrentServiceType(data?.roleId || 'general');
               setCurrentScreen('problem_grid');
             } else if (screen === 'shop' && data?.category) {
-              setSelectedShopCategory(data.category);
-              setCurrentScreen('shop');
+              goToShopFromParent({ category: data.category });
             } else if (screen === 'support_help') {
               if (typeof window !== 'undefined' && data?.initialTab) {
                 try {
@@ -1904,7 +1966,22 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        <ShopDashboard phone={phone} category={selectedShopCategory} onBack={() => { setSelectedShopCategory(undefined); handleBack(); }} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />
+        <ShopDashboard
+          phone={phone}
+          category={selectedShopCategory}
+          onBack={() => {
+            setUserSidebarOpen(false);
+            setSelectedShopCategory(undefined);
+            const back = shopReturnScreen;
+            setShopReturnScreen(null);
+            if (back != null) {
+              setCurrentScreen(back);
+            } else {
+              handleBack();
+            }
+          }}
+          onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }}
+        />
       </CustomerScreenWrapper>
     );
   }
@@ -1936,17 +2013,43 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        <ShoppingCartView onBack={() => setCurrentScreen('shop')} onCheckout={() => setCurrentScreen('checkout')} onContinueShopping={() => setCurrentScreen('shop')} />
+        <ShoppingCartView
+          onBack={() => {
+            setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
+            setCurrentScreen('shop');
+          }}
+          onCheckout={() => setCurrentScreen('checkout')}
+          onContinueShopping={() => {
+            setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
+            setCurrentScreen('shop');
+          }}
+        />
       </CustomerScreenWrapper>
     );
   }
   if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} />;
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
-  if (currentScreen === 'order_history') return <OrderHistoryPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'order_history')
+    return (
+      <OrderHistoryPage
+        onBack={backToAccountMenu}
+        onCloseToHome={handleBack}
+        onNavigate={handleAccountNavigate}
+        spaShopReturnScreen="order_history"
+      />
+    );
   if (currentScreen === 'address_book') return (
     <AddressBookPage
       phone={phone}
-      onBack={previousScreen ? () => { setCurrentScreen(previousScreen); setPreviousScreen(null); } : handleBack}
+      onCloseToHome={handleBack}
+      onBack={
+        previousScreen
+          ? () => {
+              setCurrentScreen(previousScreen);
+              setPreviousScreen(null);
+            }
+          : backToAccountMenu
+      }
       onSelect={(address) => {
         toast.success('Address selected');
         setSelectedAddressFromBook(address);
@@ -1958,7 +2061,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'add-address') return (
     <AddressBookPage
       phone={phone}
-      onBack={previousScreen ? () => { setCurrentScreen(previousScreen); setPreviousScreen(null); } : handleBack}
+      onCloseToHome={handleBack}
+      onBack={
+        previousScreen
+          ? () => {
+              setCurrentScreen(previousScreen);
+              setPreviousScreen(null);
+            }
+          : backToAccountMenu
+      }
       onSelect={(address) => {
         toast.success('Address selected');
         setSelectedAddressFromBook(address);
@@ -1968,11 +2079,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   );
   if (currentScreen === 'wallet') return (
     <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />
+      <WalletPage onBack={backToAccountMenu} onCloseToHome={handleBack} onNavigate={handleAccountNavigate} />
     </CustomerScreenWrapper>
   );
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
-  if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); setCurrentScreen('shop'); }} onHelp={() => setCurrentScreen('support_help')} />;
+  if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); goToShopFromParent(); }} onHelp={() => setCurrentScreen('support_help')} />;
   if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
   
   if (currentScreen === 'pharmacy_store') return <PharmacyStore phone={phone} onBack={() => setCurrentScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'cart') setCurrentScreen('cart'); }} />;
@@ -1989,7 +2100,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       >
         <MyBookings 
           phone={phone} 
-          onBack={handleBack} 
+          onBack={backToAccountMenu}
+          onCloseToHome={handleBack}
           initialBookingId={selectedBookingId || undefined} 
           onReorderMedicine={handleReorderMedicine} 
           onNavigate={(screen, data) => { 
@@ -2022,7 +2134,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       >
         <AppointmentsList
           phone={phone}
-          onBack={handleBack}
+          onBack={backToAccountMenu}
+          onCloseToHome={handleBack}
           onSelectAppointment={(appointmentId) => {
             setSelectedAppointmentId(appointmentId);
             setCurrentScreen('appointment-details');
@@ -2330,7 +2443,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
   
   // Support & Help Center
-  if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
+  if (currentScreen === 'support_help')
+    return <SupportHelpCenter phone={phone} onBack={backToAccountMenu} />;
 
   // ✅ NEW: Create Booking
   if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
@@ -2371,17 +2485,25 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // Rewards & Loyalty
-  if (currentScreen === 'rewards-loyalty') return <RewardsLoyaltyPage
-    customerPhone={phone}
-    onBack={handleBack}
-  />;
+  if (currentScreen === 'rewards-loyalty')
+    return (
+      <RewardsLoyaltyPage
+        customerPhone={phone}
+        onBack={backToAccountMenu}
+        onCloseToHome={handleBack}
+      />
+    );
 
   // Referral System
-  if (currentScreen === 'referral-system') return <ReferralSystemPage
-    customerPhone={phone}
-    customerId={phone}
-    onBack={handleBack}
-  />;
+  if (currentScreen === 'referral-system')
+    return (
+      <ReferralSystemPage
+        customerPhone={phone}
+        customerId={phone}
+        onBack={backToAccountMenu}
+        onCloseToHome={handleBack}
+      />
+    );
 
   // Package Booking
   if (currentScreen === 'package-booking') return <PackageBookingPage
@@ -2430,6 +2552,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerPhone={phone}
     customerId={phone}
     onBack={handleBack}
+    onNavigate={handleAccountNavigate}
   />;
 
   // ✅ MATING & DATING SERVICE - P2P Matchmaking
@@ -2439,7 +2562,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // ✅ GAP FIXES: Rule 2 & 6
-  if (currentScreen === 'integrated-services') return <IntegratedServicesHub />;
+  if (currentScreen === 'integrated-services')
+    return (
+      <IntegratedServicesHub
+        onBack={() => setCurrentScreen('home')}
+        onNavigate={(service) => handleNavigateToService(service)}
+      />
+    );
 
   if (currentScreen === 'home-service-selection') return <HomeServiceSelectionEnhanced
     customerId={phone}
