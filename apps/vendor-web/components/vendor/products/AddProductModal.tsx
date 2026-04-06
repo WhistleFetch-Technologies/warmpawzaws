@@ -4,6 +4,19 @@ import { X, ShoppingBag, Plus, Trash2, Upload, Image as ImageIcon, MapPin } from
 import { useState } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 
+function stripAwsPresignFromProductImageUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has('X-Amz-Algorithm') || u.searchParams.has('X-Amz-Credential')) {
+      u.search = '';
+      return u.toString();
+    }
+  } catch {
+    /* ignore */
+  }
+  return url;
+}
+
 interface AddProductModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -81,13 +94,27 @@ export function AddProductModal({
           if (imageUrl) {
             uploadedUrls.push(imageUrl);
           } else {
-            // Fallback: Create object URL for preview (temporary)
-            uploadedUrls.push(URL.createObjectURL(file));
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
           }
         } catch (error) {
-          // Fallback: Create object URL for preview (temporary)
-          console.warn('Image upload failed, using preview:', error);
-          uploadedUrls.push(URL.createObjectURL(file));
+          console.warn('Image upload failed; using data URL for server-side S3 on save:', error);
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
+          } catch {
+            console.error('Could not read image for upload', error);
+          }
         }
       }
 
@@ -144,7 +171,8 @@ export function AddProductModal({
         gst_rate: formData.gst_rate ? parseFloat(formData.gst_rate) : null,
         sku: formData.sku || null,
         is_active: formData.is_active,
-        images: images.length > 0 ? images : [],
+        images:
+          images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
         variants: variants.length > 0 ? variants.map(v => ({
           size: v.size || null,
           color: v.color || null,

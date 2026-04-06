@@ -126,7 +126,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       
       // Try 1: discover-services by category (same pattern as VetServiceRouter)
       try {
-        const endpoint = `/customer/discover-services?category=training${locationParams}`;
+        const endpoint = `/customer/discover-services?category=training&serviceStyle=at_center${locationParams}`;
         const data = await apiClient.get<any>(endpoint);
         console.log('🔵 [TrainingServiceRouter] discover-services response:', data);
         

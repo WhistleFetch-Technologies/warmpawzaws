@@ -23,6 +23,9 @@ interface BookingConfirmationPageProps {
   vendorName: string;
   bookingDate?: string;
   bookingTime?: string;
+  /** Multi-day boarding / sitting: end of stay */
+  checkOutDate?: string;
+  checkOutTime?: string;
   petName?: string;
   address?: {
     label?: string;
@@ -55,6 +58,8 @@ export function BookingConfirmationPage({
   vendorName,
   bookingDate,
   bookingTime,
+  checkOutDate,
+  checkOutTime,
   petName,
   address,
   serviceStyle,
@@ -358,7 +363,7 @@ export function BookingConfirmationPage({
             </div>
             
             {/* Schedule (for bookings) */}
-            {type === 'booking' && (bookingDate || bookingTime) && (
+            {type === 'booking' && (bookingDate || bookingTime || checkOutDate || checkOutTime) && (
               <div className="flex items-start gap-3">
                 <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div className="flex-1">
@@ -367,8 +372,22 @@ export function BookingConfirmationPage({
                     {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', { 
                       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
                     })}
-                    {bookingTime && ` at ${bookingTime}`}
+                    {bookingTime && ` · ${bookingTime}`}
                   </p>
+                  {(checkOutDate || checkOutTime) && (
+                    <p className="mt-1 text-sm text-gray-700">
+                      <span className="text-gray-500">Check-out: </span>
+                      {checkOutDate
+                        ? new Date(checkOutDate).toLocaleDateString('en-IN', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })
+                        : null}
+                      {checkOutTime ? ` · ${checkOutTime}` : ''}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

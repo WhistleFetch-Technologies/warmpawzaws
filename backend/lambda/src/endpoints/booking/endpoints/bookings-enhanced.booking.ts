@@ -197,8 +197,18 @@ function generateEventMetadata(requestId?: string) {
 
 class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const body = this.parseBody(context.event);
+    const body = this.parseBody(context.event) || {};
     const requestId = context.requestId;
+
+    // Strip sub-second fragments from time strings (some clients send HH:MM:SS.mmm — Zod allows SS but not .mmm)
+    if (body && typeof body === 'object') {
+      for (const key of ['bookingTime', 'booking_time', 'checkOutTime', 'check_out_time'] as const) {
+        const v = (body as Record<string, unknown>)[key];
+        if (typeof v === 'string' && v.includes('.')) {
+          (body as Record<string, unknown>)[key] = v.replace(/\.\d+Z?$/, '').replace(/Z$/, '');
+        }
+      }
+    }
 
     //Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
     if (!body.customerId && body.customerPhone) {
@@ -345,6 +355,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       : validateBookingDate(bookingDate, bookingTime, minNoticeHours);
     if (!dateValidation.valid) {
       return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    const isBoardingFlow = flowVariantNorm === 'boarding';
+    if (isBoardingFlow && isMultiDayStay && reqCheckOutDate) {
+      const cot =
+        reqCheckOutTime != null && String(reqCheckOutTime).trim() !== ''
+          ? String(reqCheckOutTime).trim()
+          : '';
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+      if (!cot || !timeRegex.test(cot)) {
+        return this.error(
+          'Check-out time is required for boarding stays (use HH:MM).',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
     }
 
     // Validate service exists and belongs to vendor
@@ -542,14 +570,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       console.log(`[BOOKING] Service object keys: ${Object.keys(service).join(', ')}`);
       console.log(`[BOOKING] Will use service.id=${service.id} for booking insert (instead of serviceId=${serviceId})`);
       
-      // Check if service is active/live (if state/status fields exist)
-      if (service.state && service.state !== 'active' && service.state !== 'live') {
-        console.error(`[BOOKING] Service ${serviceId} state is ${service.state}, not active/live`);
-        return this.error(`Service is not available (state: ${service.state})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+      // vendor_services uses publish_status for go-live; some rows also set status/state to published/enabled.
+      // Only reject known inactive values — do not treat "published" as invalid.
+      const bookableLifecycle = new Set(
+        ['active', 'live', 'published', 'auto_published', 'enabled', 'true', '1'].map((s) => s.toLowerCase())
+      );
+      if (service.state) {
+        const st = String(service.state).toLowerCase();
+        if (!bookableLifecycle.has(st)) {
+          console.error(`[BOOKING] Service ${serviceId} state is ${service.state}, not bookable`);
+          return this.error(`Service is not available (state: ${service.state})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+        }
       }
-      if (service.status && service.status !== 'active' && service.status !== 'live') {
-        console.error(`[BOOKING] Service ${serviceId} status is ${service.status}, not active/live`);
-        return this.error(`Service is not available (status: ${service.status})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+      if (service.status) {
+        const st = String(service.status).toLowerCase();
+        if (!bookableLifecycle.has(st)) {
+          console.error(`[BOOKING] Service ${serviceId} status is ${service.status}, not bookable`);
+          return this.error(`Service is not available (status: ${service.status})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+        }
       }
       if (service.is_active === false || service.is_live === false) {
         console.error(`[BOOKING] Service ${serviceId} is not active/live`);
@@ -1176,6 +1214,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           address_id: addressIdToStore,
           delivery_latitude: bookingLatitude,
           delivery_longitude: bookingLongitude,
+          // Multi-day boarding / pet sitting / resort: stay window (migration 621+)
+          ...(reqCheckOutDate && /^\d{4}-\d{2}-\d{2}$/.test(String(reqCheckOutDate))
+            ? {
+                check_in_date: bookingDate,
+                check_out_date: String(reqCheckOutDate),
+                ...(reqCheckOutTime &&
+                /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/.test(String(reqCheckOutTime))
+                  ? { check_out_time: String(reqCheckOutTime) }
+                  : {}),
+              }
+            : {}),
         };
         
         // Add optional columns to bookingData
@@ -1183,13 +1232,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           bookingData[key] = value;
         }
 
-        // ✅ Phase 2.3: Add roomId if provided (for boarding/resort bookings)
-        if (roomId) {
+        // ✅ Phase 2.3: room_id is UUID in DB — UI placeholders like "standard"/"deluxe" must not be inserted
+        if (roomId && isValidUUID(String(roomId))) {
           bookingData.room_id = roomId;
+        } else if (roomId) {
+          const hint = `Room preference: ${roomId}`;
+          bookingData.notes = bookingData.notes ? `${bookingData.notes} | ${hint}` : hint;
+          console.log(`[BOOKING] Non-UUID roomId kept in notes only: ${roomId}`);
         }
 
-        // ✅ Phase 2.3: Add promotionId if provided (for applied promotions)
-        if (promotionId) {
+        if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
         }
 

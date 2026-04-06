@@ -26,7 +26,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
   const loadRelocationServices = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=relocation&roleId=pet_relocation`;
+      const endpoint = `/customer/discover-services?category=relocation&roleId=pet_relocation&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const serviceList = data.vendors || data.services || [];
       setRelocationServices(serviceList);

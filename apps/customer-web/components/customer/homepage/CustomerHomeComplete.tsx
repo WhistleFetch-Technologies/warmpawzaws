@@ -530,10 +530,28 @@ export function CustomerHomeComplete({
     try {
       setServicesLoading(true);
 
-      // Use Promise.allSettled to handle failures gracefully
+      let locationParams = '';
+      if (typeof window !== 'undefined') {
+        try {
+          const customerLat = localStorage.getItem('customer_latitude');
+          const customerLng = localStorage.getItem('customer_longitude');
+          if (customerLat && customerLng) {
+            locationParams = `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
+
+      // discover-services requires serviceStyle (backend 400 if omitted)
       const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
-        apiClient.get<any>('/customer/discover-services?category=grooming'),
-        apiClient.get<any>('/customer/discover-services?category=vet'),
+        apiClient.get<any>(
+          `/customer/discover-services?category=grooming&serviceStyle=at_center${locationParams}${phoneParam}`
+        ),
+        apiClient.get<any>(
+          `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${phoneParam}`
+        ),
         apiClient.get<any>('/products?featured=true&limit=3'),
       ]);
 

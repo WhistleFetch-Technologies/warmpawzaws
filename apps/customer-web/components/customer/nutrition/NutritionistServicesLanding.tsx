@@ -52,7 +52,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   const loadNutritionists = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist`;
+      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const nutritionistList = data.vendors || data.services || [];
       setNutritionists(nutritionistList);

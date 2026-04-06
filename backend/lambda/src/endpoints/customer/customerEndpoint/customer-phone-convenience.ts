@@ -34,6 +34,7 @@ import {
   normalizeCustomerNotificationSettings,
   persistCustomerNotificationSettings,
 } from '../../../utils/customer-notification-settings';
+import { presignProductImagesJsonb } from '../../../utils/s3-media-presign';
 
 /** First image URL from products.images JSONB (array of strings or { url } objects). */
 function firstProductImageUrl(images: unknown): string | undefined {
@@ -470,22 +471,26 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       );
 
       let totalPrice = 0;
-      const cartItems = (cartResult.rows || []).map((row: any) => {
-        const unit = parseFloat(String(row.product_price ?? 0)) || 0;
-        const qty = Number(row.quantity) || 1;
-        totalPrice += unit * qty;
-        return {
-          id: row.id,
-          itemId: row.id,
-          type: 'product' as const,
-          name: String(row.product_name || 'Product'),
-          price: unit,
-          quantity: qty,
-          photo: firstProductImageUrl(row.product_images),
-          vendorId: row.product_vendor_id,
-          vendor_name: row.vendor_name,
-        };
-      });
+      const rows = cartResult.rows || [];
+      const cartItems = await Promise.all(
+        rows.map(async (row: any) => {
+          const unit = parseFloat(String(row.product_price ?? 0)) || 0;
+          const qty = Number(row.quantity) || 1;
+          totalPrice += unit * qty;
+          const signedImages = await presignProductImagesJsonb(row.product_images);
+          return {
+            id: row.id,
+            itemId: row.id,
+            type: 'product' as const,
+            name: String(row.product_name || 'Product'),
+            price: unit,
+            quantity: qty,
+            photo: firstProductImageUrl(signedImages),
+            vendorId: row.product_vendor_id,
+            vendor_name: row.vendor_name,
+          };
+        }),
+      );
 
       return c.json({
         success: true,

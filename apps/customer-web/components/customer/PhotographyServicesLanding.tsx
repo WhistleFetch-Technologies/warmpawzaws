@@ -26,7 +26,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
   const loadPhotographers = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=photography&roleId=pet_photographer`;
+      const endpoint = `/customer/discover-services?category=photography&roleId=pet_photographer&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const photographerList = data.vendors || data.services || [];
       setPhotographers(photographerList);

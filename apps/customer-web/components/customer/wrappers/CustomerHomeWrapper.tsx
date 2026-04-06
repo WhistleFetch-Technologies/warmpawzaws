@@ -33,6 +33,9 @@ import { GroomingBookingRouter } from '../grooming/GroomingBookingRouter';
 import { UniversalServicesByStyle } from '../shared/UniversalServicesByStyle';
 import { BoardingServiceRouter } from '../BoardingServiceRouter';
 import { BoardingBookingRouter } from '../boarding/BoardingBookingRouter';
+import { BoardingVendorListView } from '../boarding/BoardingVendorListView';
+import { BoardingVendorProfileView } from '../boarding/BoardingVendorProfileView';
+import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
 import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
 import { SunsetServiceRouter } from '../SunsetServiceRouter';
@@ -168,6 +171,8 @@ type ScreenType =
   | 'training_home'
   | 'boarding'
   | 'boarding_facility'
+  | 'pet-boarding-vendors'
+  | 'pet-boarding-profile'
   | 'pet-sitter'
   | 'pet-sitter-facility'
   | 'pet-sitter-booking'
@@ -262,6 +267,19 @@ type ScreenType =
   | 'behaviorist'
   | 'instant-connecting';
 
+export function CustomerHomeWrapper({
+  phone,
+  onNavigate,
+  initialScreen,
+  petBoardingVendorId,
+  petBoardingServiceSlug,
+}: {
+  phone: string;
+  onNavigate: (screen: string) => void;
+  initialScreen?: ScreenType;
+  petBoardingVendorId?: string;
+  petBoardingServiceSlug?: string;
+}) {
 /**
  * Entering shop from these screens must not overwrite the stored return target (nested browse/checkout).
  * Note: `cart` is intentionally excluded so Cart → Shop (e.g. Continue shopping) restores Cart on back.
@@ -376,7 +394,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         if (profileResponse?.profile || profileResponse) {
           const profile = profileResponse.profile || profileResponse;
           setUserName(profile.name || profile.fullName || profile.full_name || 'User');
-          setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+          setUserProfilePhoto(
+            profile.profilePhoto ||
+              profile.profile_photo_url ||
+              profile.profile_image_url ||
+              profile.photo
+          );
         }
         
         // Also load pets for header pet selector
@@ -1135,6 +1158,48 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+
+  if (currentScreen === 'pet-boarding-vendors') {
+    const slug = normalizeBoardingServiceSlug(petBoardingServiceSlug ?? null);
+    return (
+      <BoardingVendorListView
+        phone={phone}
+        serviceSlug={slug}
+        onBack={() => router.push('/')}
+      />
+    );
+  }
+
+  if (currentScreen === 'pet-boarding-profile' && petBoardingVendorId) {
+    const slug = normalizeBoardingServiceSlug(petBoardingServiceSlug ?? null);
+    return (
+      <BoardingVendorProfileView
+        phone={phone}
+        vendorId={petBoardingVendorId}
+        serviceSlug={slug}
+        onBack={() =>
+          router.push(`/pet-boarding/vendors?service=${encodeURIComponent(slug)}`)
+        }
+        onNavigate={(screen, data) => {
+          if (screen === 'boarding-booking') {
+            setPreviousScreen('pet-boarding-profile');
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: 'boarding',
+              serviceId: data?.serviceId,
+              serviceName: data?.serviceName,
+              price: data?.price,
+              duration: data?.duration,
+              serviceStyle: data?.serviceStyle,
+              facility: data?.facility,
+            });
+            setCurrentScreen('boarding-booking');
+          }
+        }}
+      />
+    );
+  }
+
   if (currentScreen === 'vet-services-by-style') return <VetServicesByStyle phone={phone} serviceStyle={vetServiceData?.serviceStyle || 'tele'} serviceTypeName={vetServiceData?.serviceTypeName} category={vetServiceData?.category || 'vet'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   // ✅ FIX: Tele Consultation Router
   if (currentScreen === 'vet-tele-consultation') {
@@ -2420,7 +2485,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       selectedService={vetServiceData?.serviceId}
       serviceType={vetServiceData?.serviceType || (sittingBooking ? 'sitting' : 'boarding')}
       serviceId={vetServiceData?.serviceId}
-      serviceName={vetServiceData?.service?.name}
+      serviceName={vetServiceData?.serviceName || vetServiceData?.service?.name}
       serviceStyle={vetServiceData?.serviceStyle}
       price={vetServiceData?.price}
       duration={vetServiceData?.duration}
