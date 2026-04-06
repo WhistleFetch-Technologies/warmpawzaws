@@ -887,7 +887,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading your profile...</p>
@@ -1169,7 +1169,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
   // Default: still determining status – show loading only when we truly have no data (avoid infinite "Loading your profile..." after 401)
   return (
-    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+    <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
         <p className="text-gray-600">Loading your profile...</p>

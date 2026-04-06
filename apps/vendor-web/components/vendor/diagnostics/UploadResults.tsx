@@ -125,7 +125,7 @@ export function UploadResults({ vendorId, editingTest, onBack, onSuccess }: Uplo
   };
 
   return (
-    <div className="w-full max-w-[430px] mx-auto space-y-4">
+    <div className="vendor-app-column space-y-4">
       <div className="flex items-center gap-3">
         {onBack && (
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">

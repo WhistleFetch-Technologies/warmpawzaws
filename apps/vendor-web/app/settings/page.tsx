@@ -21,7 +21,7 @@ function SettingsContent() {
   if (!vendorId) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-full max-w-[430px] mx-auto bg-white p-6 text-center">
+        <div className="vendor-app-column bg-white p-6 text-center">
           <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl">🔒</span>
           </div>

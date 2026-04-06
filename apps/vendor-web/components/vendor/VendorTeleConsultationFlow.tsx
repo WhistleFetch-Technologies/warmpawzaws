@@ -385,7 +385,7 @@ export function VendorTeleConsultationFlow({
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 w-full max-w-[430px] mx-auto flex flex-col relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 vendor-app-column flex flex-col relative overflow-hidden">
       {/* Animated Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#FF8C42]/10 rounded-full blur-3xl animate-pulse"></div>

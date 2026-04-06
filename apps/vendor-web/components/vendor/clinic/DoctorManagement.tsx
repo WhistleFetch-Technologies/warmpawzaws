@@ -181,7 +181,7 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading staff...</p>
@@ -194,7 +194,7 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
   const roleLabelPlural = clinicData?.roleId === 'pet_clinic' || clinicData?.roleId === 'veterinary_clinic' ? 'Doctors' : 'Staff';
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-[#5D4037] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
@@ -706,7 +706,7 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-white rounded-t-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-t-3xl vendor-modal-sheet max-h-[90vh] overflow-y-auto mx-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 z-10">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">

@@ -86,7 +86,7 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-4 py-4">
         {onBack && (
           <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3">

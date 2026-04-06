@@ -1212,7 +1212,7 @@ export function VendorServiceConfigurationScreen({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading services...</p>
@@ -1223,7 +1223,7 @@ export function VendorServiceConfigurationScreen({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-24">
+      <div className="vendor-app-column bg-white min-h-screen pb-24">
         {/* Header - Service Management > [Style] with Browse Catalog link */}
         <div className="p-4 bg-white border-b sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-3">
@@ -1643,7 +1643,7 @@ export function VendorServiceConfigurationScreen({
       {/* Bottom Action Bar */}
       {enabledCount > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
-          <div className="max-w-[430px] mx-auto p-4 flex gap-2">
+          <div className="vendor-app-column-inner p-4 flex flex-wrap gap-2">
             {hasChanges && (
               <Button
                 onClick={saveConfiguration}

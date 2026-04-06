@@ -148,7 +148,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading analytics...</p>
@@ -173,7 +173,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
     }
     return (
       <div className="min-h-screen bg-gray-50 w-full flex justify-center">
-        <div className="w-full max-w-[430px] mx-auto">
+        <div className="vendor-app-column">
           <EarningsTabErrorBoundary onBack={onBack}>
             <VendorEarningsSettlementDashboard
               vendorId={vendorId.trim()}
@@ -186,7 +186,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-[#FF8C42] text-white p-4 safe-area-top">
         <div className="flex items-center gap-3 mb-4">

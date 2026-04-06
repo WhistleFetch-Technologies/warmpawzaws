@@ -182,7 +182,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-[430px] max-h-[85vh] overflow-hidden flex flex-col p-0 bg-white border-2 border-[#FF8C42]/20 shadow-2xl">
+      <DialogContent className="vendor-modal-sheet max-h-[85vh] overflow-hidden flex flex-col p-0 bg-white border-2 border-[#FF8C42]/20 shadow-2xl sm:mx-4">
         {/* Header */}
         <DialogHeader className="px-4 pt-4 pb-3 border-b border-gray-200">
           <DialogTitle className="sr-only">Notifications</DialogTitle>

@@ -278,7 +278,7 @@ export function WalkerActiveSession({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 flex flex-col vendor-app-column">
       {/* Header */}
       <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white p-4 sticky top-0 z-20">
         <div className="flex items-center justify-between mb-2">

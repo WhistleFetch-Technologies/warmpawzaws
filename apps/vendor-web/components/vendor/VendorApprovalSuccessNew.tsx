@@ -38,7 +38,7 @@ export function VendorApprovalSuccessNew({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white w-full max-w-[430px] mx-auto flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white vendor-app-column flex flex-col items-center justify-center px-6">
       {/* Success Icon */}
       <div className="flex flex-col items-center mb-8">
         <div className="w-32 h-32 bg-green-500 rounded-full flex items-center justify-center shadow-2xl mb-6 animate-bounce">

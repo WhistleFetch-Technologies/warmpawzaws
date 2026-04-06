@@ -861,7 +861,7 @@ export function VendorLandingPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -876,7 +876,7 @@ export function VendorLandingPage({
     console.log('📝 Rendering re-onboarding screen with mode:', reEditMode);
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="w-full max-w-[430px] mx-auto p-4 bg-blue-50 border-b-2 border-blue-200">
+        <div className="vendor-app-column p-4 bg-blue-50 border-b-2 border-blue-200">
           <div className="flex items-start gap-3">
             <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
               <span className="text-white text-sm">!</span>
@@ -910,7 +910,7 @@ export function VendorLandingPage({
         <div className="min-h-screen bg-gray-50">
           {/* Show warning banner if documents are required */}
           {status === 'documents_required' && (
-            <div className="w-full max-w-[430px] mx-auto p-4 bg-orange-50 border-b-2 border-orange-200">
+            <div className="vendor-app-column p-4 bg-orange-50 border-b-2 border-orange-200">
               <div className="flex items-start gap-3">
                 <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                   <span className="text-white text-sm">!</span>

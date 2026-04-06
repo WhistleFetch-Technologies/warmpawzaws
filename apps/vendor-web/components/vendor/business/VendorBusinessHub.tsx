@@ -118,7 +118,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
   const lowStockItems = inventory.filter(item => item.quantity <= item.minStock);
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-0 text-white">
         <div className="flex items-center gap-4 mb-4">
           <button onClick={onBack} className="p-0 hover:bg-white/10 rounded-lg">

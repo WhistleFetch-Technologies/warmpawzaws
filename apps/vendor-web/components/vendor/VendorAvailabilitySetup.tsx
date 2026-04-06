@@ -148,7 +148,7 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
 
   return (
     <div className="min-h-screen bg-[#E8F5E3] flex items-center justify-center p-4">
-      <div className="w-full max-w-[430px] bg-white rounded-3xl shadow-lg p-6 space-y-6">
+      <div className="vendor-modal-sheet w-full bg-white rounded-3xl shadow-lg p-6 space-y-6 mx-auto">
         {/* Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-[#FF8C42] rounded-full">

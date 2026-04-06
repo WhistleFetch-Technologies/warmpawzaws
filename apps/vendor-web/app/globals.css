@@ -152,6 +152,39 @@ body {
   gap: 1.5rem;
 }
 
+/* --------------------------------------------------------------------------
+ * Vendor responsive layout (aligned with Login: mobile-first, ~430px feel,
+ * then sm/md/lg/xl — Tailwind sm=640px, lg=1024px)
+ * -------------------------------------------------------------------------- */
+@layer components {
+  .vendor-page-shell {
+    @apply min-h-screen w-full overflow-x-hidden;
+  }
+
+  /**
+   * Main app content column: same max width family as Login phone shell on small
+   * screens, expands on tablet/desktop so dashboards and services use full width.
+   */
+  .vendor-app-column {
+    @apply w-full max-w-[430px] sm:max-w-2xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto;
+  }
+
+  /** Narrow column for orange OTP / phone Login flows only */
+  .vendor-auth-column {
+    @apply w-full max-w-[430px] mx-auto;
+  }
+
+  /** Bottom bars and fixed footers: match .vendor-app-column max-width */
+  .vendor-app-column-inner {
+    @apply w-full max-w-[430px] sm:max-w-2xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto;
+  }
+
+  /** Modal / sheet panels that should grow on larger breakpoints */
+  .vendor-modal-sheet {
+    @apply w-full max-w-[430px] sm:max-w-lg md:max-w-xl lg:max-w-2xl;
+  }
+}
+
 .stat-card {
   @apply bg-white rounded-2xl p-6 shadow-card;
 }

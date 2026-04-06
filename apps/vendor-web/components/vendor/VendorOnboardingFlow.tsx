@@ -163,7 +163,7 @@ export function VendorOnboardingFlow({
 
     case 'completed':
       return (
-        <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+        <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
           <div className="text-center">
             <div className="w-16 h-16 bg-green-500 rounded-full mx-auto mb-4 flex items-center justify-center">
               <span className="text-3xl">✓</span>

@@ -334,7 +334,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-full max-w-[430px] mx-auto bg-white py-12 text-center">
+        <div className="vendor-app-column bg-white py-12 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
         </div>
       </div>
@@ -345,7 +345,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+      <div className="vendor-app-column bg-white min-h-screen">
         {/* Header - Mobile optimized */}
         <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white sticky top-0 z-10 safe-area-top">
           <div className="px-4 py-3">

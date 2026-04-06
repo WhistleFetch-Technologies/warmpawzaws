@@ -215,7 +215,7 @@ export function VendorCustomServiceCreationEnhanced({
   // ✅ FIX: Handle missing vendorId gracefully
   if (!vendorId) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto px-6 py-8">
+      <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column px-6 py-8">
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-4">
             <button 
@@ -814,7 +814,7 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto px-6 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column px-6 py-8">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">

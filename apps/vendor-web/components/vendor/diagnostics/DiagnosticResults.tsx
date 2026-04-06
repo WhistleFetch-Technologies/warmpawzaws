@@ -134,7 +134,7 @@ export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOr
       showDisabledMessage
       disabledMessage="Diagnostic tests management is not available for your account"
     >
-      <div className="space-y-4 w-full max-w-[430px] mx-auto">
+      <div className="space-y-4 vendor-app-column">
         {/* Header with Back Arrow */}
         <div className="flex items-center gap-3">
           {onBack && (

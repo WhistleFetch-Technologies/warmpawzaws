@@ -32,14 +32,14 @@ export function VendorControlledSubstances({ vendorId, onBack }: VendorControlle
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       <div className="bg-[#FF8C42] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3">
           {onBack && (

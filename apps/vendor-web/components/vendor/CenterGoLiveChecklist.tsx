@@ -93,7 +93,7 @@ export function CenterGoLiveChecklist({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-[#FF8C42] animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Loading checklist...</p>
@@ -105,7 +105,7 @@ export function CenterGoLiveChecklist({
   const centerName = vendorData?.business_name || vendorData?.businessName || 'Your Center';
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white p-6 rounded-b-3xl">
         <div className="flex items-center gap-4 mb-4">

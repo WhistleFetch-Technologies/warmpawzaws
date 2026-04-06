@@ -63,7 +63,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex flex-col items-center justify-center w-full max-w-[430px] mx-auto px-6">
+    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex flex-col items-center justify-center vendor-app-column px-6">
       <div className="w-full bg-white rounded-3xl shadow-sm border border-green-100 p-8 text-center">
         <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
           <Check className="w-10 h-10 text-white" strokeWidth={3} />
