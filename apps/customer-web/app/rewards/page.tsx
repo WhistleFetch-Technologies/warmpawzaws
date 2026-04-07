@@ -309,7 +309,7 @@ export default function RewardsPage() {
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-orange-50 to-amber-50 flex justify-center">
       <div className="w-full max-w-customer mx-auto min-h-screen min-h-[100dvh] flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
-        <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)] shrink-0">
+        <header className="sticky top-0 z-20 shrink-0 border-b border-orange-200/80 bg-white/90 backdrop-blur-sm cw-header-safe-top">
           <div className="px-4 pb-3 pt-2 flex items-start gap-1">
             <Link
               href="/"

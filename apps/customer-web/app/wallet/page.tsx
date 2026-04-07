@@ -28,7 +28,7 @@ export default function WalletPage() {
     return (
       <div className="min-h-[100dvh] flex justify-center bg-[#FAF6F0]">
         <div className={shellClass}>
-          <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-5 rounded-b-[1.75rem] shadow-md">
+          <header className="shrink-0 rounded-b-[1.75rem] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top cw-header-safe-x pb-4 md:pb-5">
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -82,7 +82,7 @@ export default function WalletPage() {
   return (
     <div className="min-h-[100dvh] flex justify-center bg-[#FAF6F0]">
       <div className={shellClass}>
-        <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-5 rounded-b-[1.75rem] shadow-md">
+        <header className="shrink-0 rounded-b-[1.75rem] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top cw-header-safe-x pb-4 md:pb-5">
           <div className="flex items-center gap-2">
             <Button
               type="button"

@@ -943,17 +943,17 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   return (
     <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex flex-col bg-stone-100">
       {/* Mobile app shell: safe areas + capped column like rest of customer app */}
-      <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm sticky top-0 z-40 shrink-0">
-        <div className="flex items-center gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+      <header className="sticky top-0 z-40 shrink-0 bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm">
+        <div className="cw-header-safe-top cw-header-safe-x flex min-h-[56px] items-center gap-3 py-2 pb-3">
           <button
             type="button"
             onClick={() =>
               step === 'details' ? (onBack ? onBack() : goBackOrHome(router)) : setStep('details')
             }
-            className="w-10 h-10 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-95 transition-transform"
+            className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform active:scale-95 pointer-events-auto touch-manipulation"
             aria-label="Go back"
           >
-            <ArrowLeft className="w-5 h-5 text-white" />
+            <ArrowLeft className="h-5 w-5 text-white" />
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-base sm:text-lg font-bold text-white leading-tight truncate">{service.name}</h1>

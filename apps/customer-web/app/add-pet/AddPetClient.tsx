@@ -250,7 +250,7 @@ export default function AddPetClient() {
   return (
     <div className="flex min-h-dvh justify-center bg-zinc-200 supports-[height:100dvh]:min-h-[100dvh]">
       <div className="relative flex min-h-dvh w-full max-w-md flex-col overflow-x-hidden bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] md:my-3 md:h-[calc(100dvh-1.5rem)] md:min-h-0 md:max-h-[calc(100dvh-1.5rem)] md:rounded-3xl md:shadow-xl">
-      <div className="sticky top-0 z-50 shrink-0 border-b border-gray-200 bg-white pt-[env(safe-area-inset-top,0px)]">
+      <div className="sticky top-0 z-50 shrink-0 border-b border-gray-200 bg-white cw-header-safe-top">
         <div className="flex h-14 items-center px-4">
           <button
             type="button"

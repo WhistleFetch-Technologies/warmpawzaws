@@ -30,7 +30,7 @@ export function WalletPage({ onBack, onCloseToHome, onNavigate }: WalletPageProp
       className="mb-4"
     />
   ) : (
-    <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-5 rounded-b-[1.75rem] shadow-md mb-4">
+    <header className="mb-4 shrink-0 rounded-b-[1.75rem] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top cw-header-safe-x pb-4 md:pb-5">
       <div className="flex items-center gap-2">
         {onBack && (
           <Button

@@ -147,6 +147,33 @@ body {
 }
 
 /* Customer-specific utility classes */
+
+/**
+ * Mobile headers: env(safe-area-inset-top) is often 0 on Android Chrome / WebViews.
+ * ~44px minimum below status bar; relax at md+ for desktop.
+ */
+.cw-header-safe-top {
+  padding-top: max(2.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));
+}
+
+@media (min-width: 768px) {
+  .cw-header-safe-top {
+    padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.35rem));
+  }
+}
+
+.cw-header-safe-x {
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
+@media (min-width: 640px) {
+  .cw-header-safe-x {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+}
+
 .pet-card-gradient {
   background: linear-gradient(135deg, #FFF5EE 0%, #FFFFFF 100%);
 }

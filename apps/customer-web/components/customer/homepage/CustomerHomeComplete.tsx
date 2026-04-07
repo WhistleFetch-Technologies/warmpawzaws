@@ -1422,7 +1422,7 @@ export function CustomerHomeComplete({
     <div className={containerClassName}>
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
-        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top,0px))]">
+        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">
           {/* Top Row - User Info & Actions */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">

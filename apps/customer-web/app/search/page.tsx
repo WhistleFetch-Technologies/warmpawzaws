@@ -180,7 +180,7 @@ function SearchContent() {
   return (
     <div className="mx-auto flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
       {/* App shell: fixed top block (no wide desktop layout) */}
-      <div className="shrink-0 border-b border-orange-200/80 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md supports-[backdrop-filter]:bg-white/85">
+      <div className="shrink-0 border-b border-orange-200/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/85 cw-header-safe-top">
         <div className="relative flex h-14 items-center justify-center px-2">
           <div className="absolute left-1 top-1/2 -translate-y-1/2">
             <Button

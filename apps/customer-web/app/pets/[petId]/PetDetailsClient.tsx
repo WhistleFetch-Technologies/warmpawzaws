@@ -173,7 +173,7 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
 
   return (
     <div className="mx-auto min-h-[100dvh] w-full max-w-md bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
-      <header className="sticky top-0 z-50 shrink-0 border-b border-orange-100/80 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md supports-[backdrop-filter]:bg-white/85">
+      <header className="sticky top-0 z-50 shrink-0 border-b border-orange-100/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/85 cw-header-safe-top">
         <div className="relative flex h-[3.25rem] items-center justify-center px-2">
           <div className="absolute left-0.5 top-1/2 -translate-y-1/2">
             <Button

@@ -296,8 +296,8 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
   return (
     <div className="min-h-[100dvh] bg-neutral-200/90 sm:bg-neutral-200 flex justify-center">
       <div className="min-h-[100dvh] w-full max-w-[min(100%,28rem)] bg-gradient-to-b from-orange-50 via-amber-50/90 to-orange-50/80 pb-[max(7rem,env(safe-area-inset-bottom,0px))] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)] sm:border-x border-black/[0.04]">
-        <header className="sticky top-0 z-40 w-full bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md rounded-b-2xl pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
-          <div className="px-3 sm:px-4 py-3">
+        <header className="sticky top-0 z-40 w-full rounded-b-2xl bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top">
+          <div className="cw-header-safe-x py-3">
             {onCloseToHome ? (
               <>
                 <div className="flex items-center justify-between gap-2 mb-2">
