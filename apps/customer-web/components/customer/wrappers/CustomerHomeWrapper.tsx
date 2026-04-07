@@ -1213,17 +1213,11 @@ export function CustomerHomeWrapper({
             // ✅ FIX: Navigate to video call page using router.push with path format
             // Path format /video/[bookingId] works with CloudFront rewrite rules
             if (typeof window !== 'undefined' && data?.bookingId) {
-              const queryParams = new URLSearchParams();
               if (phone) {
-                queryParams.set('customerId', phone);
-                queryParams.set('phone', phone);
+                localStorage.setItem('customerPhone', phone);
+                localStorage.setItem('phone', phone);
               }
-              if (data?.meetingId) {
-                queryParams.set('meetingId', data.meetingId);
-              }
-              const queryString = queryParams.toString();
-              const videoUrl = `/video/${data.bookingId}${queryString ? `?${queryString}` : ''}`;
-              router.push(videoUrl);
+              router.push(`/video/${data.bookingId}`);
             }
           } else if (screen === 'add-pet') {
             setCurrentScreen('add-pet');

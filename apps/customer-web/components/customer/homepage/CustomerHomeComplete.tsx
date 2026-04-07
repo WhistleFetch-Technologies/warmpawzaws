@@ -2547,15 +2547,11 @@ export function CustomerHomeComplete({
         onJoinCall={(bookingId, meetingId) => {
           handleNavigation('video-call', { bookingId, meetingId });
           if (!onNavigate) {
-            // ✅ FIX: Use router.push with path format for CloudFront compatibility
-            const queryParams = new URLSearchParams();
             if (phone) {
-              queryParams.set('customerId', phone);
-              queryParams.set('phone', phone);
+              localStorage.setItem('customerPhone', phone);
+              localStorage.setItem('phone', phone);
             }
-            const queryString = queryParams.toString();
-            const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
-            router.push(videoUrl);
+            router.push(`/video/${bookingId}`);
           }
         }}
         onOpenChat={async (bookingId) => {
@@ -2595,15 +2591,11 @@ export function CustomerHomeComplete({
             // ✅ NEW: For tele consultations, navigate to video call
             handleNavigation('video-call', { bookingId, meetingId });
             if (!onNavigate) {
-              // ✅ FIX: Use router.push with path format for CloudFront compatibility
-              const queryParams = new URLSearchParams();
               if (phone) {
-                queryParams.set('customerId', phone);
-                queryParams.set('phone', phone);
+                localStorage.setItem('customerPhone', phone);
+                localStorage.setItem('phone', phone);
               }
-              const queryString = queryParams.toString();
-              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
-              router.push(videoUrl);
+              router.push(`/video/${bookingId}`);
             }
           }}
           onCall={(vendorPhone) => {
@@ -2675,15 +2667,11 @@ export function CustomerHomeComplete({
           onStartCall={(bookingId, meetingId) => {
             handleNavigation('video-call', { bookingId, meetingId });
             if (!onNavigate) {
-              // ✅ FIX: Use router.push with path format for CloudFront compatibility
-              const queryParams = new URLSearchParams();
               if (phone) {
-                queryParams.set('customerId', phone);
-                queryParams.set('phone', phone);
+                localStorage.setItem('customerPhone', phone);
+                localStorage.setItem('phone', phone);
               }
-              const queryString = queryParams.toString();
-              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
-              router.push(videoUrl);
+              router.push(`/video/${bookingId}`);
             }
             setUpcomingCall(null);
           }}
@@ -2704,18 +2692,11 @@ export function CustomerHomeComplete({
           onAccept={(bookingId, meetingId) => {
             handleNavigation('video-call', { bookingId, meetingId });
             if (!onNavigate) {
-              // ✅ FIX: Use router.push with path format for CloudFront compatibility
-              const queryParams = new URLSearchParams();
               if (phone) {
-                queryParams.set('customerId', phone);
-                queryParams.set('phone', phone);
+                localStorage.setItem('customerPhone', phone);
+                localStorage.setItem('phone', phone);
               }
-              if (meetingId) {
-                queryParams.set('meetingId', meetingId);
-              }
-              const queryString = queryParams.toString();
-              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
-              router.push(videoUrl);
+              router.push(`/video/${bookingId}`);
             }
             setIncomingCall(null);
           }}
@@ -2737,15 +2718,11 @@ export function CustomerHomeComplete({
           onStartVideoCall={(bookingId) => {
             handleNavigation('video-call', { bookingId });
             if (!onNavigate) {
-              // ✅ FIX: Use router.push with path format for CloudFront compatibility
-              const queryParams = new URLSearchParams();
               if (phone) {
-                queryParams.set('customerId', phone);
-                queryParams.set('phone', phone);
+                localStorage.setItem('customerPhone', phone);
+                localStorage.setItem('phone', phone);
               }
-              const queryString = queryParams.toString();
-              const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
-              router.push(videoUrl);
+              router.push(`/video/${bookingId}`);
             }
             setChatFromNotification(null);
           }}

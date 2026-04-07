@@ -111,20 +111,13 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         return '';
       }
 
-      // 1. First, try URL query parameter (most reliable after page reload)
       const urlParams = new URLSearchParams(window.location.search);
-      const urlVendorId = urlParams.get('vendorId');
-      console.log('[VideoPageClient] URL search:', window.location.search, 'vendorId from URL:', urlVendorId);
-
-      if (urlVendorId) {
-        console.log('[VideoPageClient] ✅ Found vendorId in URL:', urlVendorId);
-        // Store it in localStorage for future use
-        localStorage.setItem('vendorId', urlVendorId);
-        localStorage.setItem('vendor_id', urlVendorId);
-        return urlVendorId;
+      if (urlParams.get('vendorId') || urlParams.get('customerId')) {
+        const pathOnly = window.location.pathname;
+        window.history.replaceState({}, '', pathOnly);
       }
 
-      // 2. Fallback to localStorage/sessionStorage
+      // 1. localStorage/sessionStorage (never put vendorId in the URL — leaks in screenshots/referrers)
       const storedVendorId =
         localStorage.getItem('vendorId') ||
         localStorage.getItem('vendor_id') ||
@@ -150,7 +143,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         return storedVendorId;
       }
 
-      // 3. Final fallback: fetch profile using auth token (mobile/webview cases)
+      // 2. Fetch profile using auth token (mobile/webview cases)
       try {
         const profile = await apiClient.get<any>('/vendor/profile');
         const fetchedVendorId =
@@ -191,7 +184,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         }
       } else {
         // If not found, show error immediately (don't retry - URL param is most reliable)
-        console.error('[VideoPageClient] ❌ No vendorId found in URL or storage. Redirecting to dashboard.');
+        console.error('[VideoPageClient] ❌ No vendorId found in storage or profile. Redirecting to dashboard.');
         setLoading(false);
         // Redirect to dashboard after a short delay to show error
         setTimeout(() => {
@@ -448,6 +441,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
    The ChimeVideoCall component can handle missing booking data*/ }
   if (participantId) {
     return (
+      <div className="min-h-[100dvh] h-[100dvh] max-h-[100dvh] overflow-hidden bg-slate-900">
       <ChimeVideoCall
         bookingId={bookingId}
         participantType="vendor"
@@ -501,6 +495,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           window.location.href = '/dashboard';
         }}
       />
+      </div>
     );
   }
 

@@ -41,7 +41,6 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Prefer query params (mobile WebView/deep links), then localStorage
       const urlParams = new URLSearchParams(window.location.search);
       const qpCustomerId =
         urlParams.get('customerId') ||
@@ -71,6 +70,12 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         '';
 
       setParticipantId(qpCustomerId || qpPhone || storedId);
+
+      // Strip sensitive query params from the address bar (keep path-only /video/{id})
+      if (qpCustomerId || qpPhone || urlParams.get('meetingId')) {
+        const pathOnly = window.location.pathname;
+        window.history.replaceState({}, '', pathOnly);
+      }
     }
     void loadBookingData();
   }, [bookingId]);
@@ -173,19 +178,20 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
   // This component handles the entire flow including joining
   if (participantId) {
     return (
-      <ChimeVideoCall
-        bookingId={bookingId}
-        participantType="customer"
-        participantId={participantId}
-        vendorName={bookingData?.vendorName || bookingData?.staffName || 'Service Provider'}
-        customerName={bookingData?.customerName || 'Customer'}
-        serviceName={bookingData?.serviceName || 'Tele Consultation'}
-        onEndCall={(duration) => {
-          console.log('Call ended, duration:', duration);
-          // Navigate back to homepage after call ends
-          router.push('/');
-        }}
-      />
+      <div className="min-h-[100dvh] h-[100dvh] max-h-[100dvh] overflow-hidden bg-slate-900">
+        <ChimeVideoCall
+          bookingId={bookingId}
+          participantType="customer"
+          participantId={participantId}
+          vendorName={bookingData?.vendorName || bookingData?.staffName || 'Service Provider'}
+          customerName={bookingData?.customerName || 'Customer'}
+          serviceName={bookingData?.serviceName || 'Tele Consultation'}
+          onEndCall={(duration) => {
+            console.log('Call ended, duration:', duration);
+            router.push('/');
+          }}
+        />
+      </div>
     );
   }
 
