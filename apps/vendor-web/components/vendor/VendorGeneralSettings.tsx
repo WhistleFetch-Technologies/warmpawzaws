@@ -632,7 +632,12 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
                         <tbody className="bg-white divide-y divide-gray-200">
                           {referralList.map((referral: any, index: number) => {
                             const vendorName = referral.referred_vendor_name?.trim() || null;
-                            const displayName = vendorName || 'Unknown Vendor';
+                            const customerName = referral.referred_customer_name?.trim() || null;
+                            const displayName =
+                              vendorName ||
+                              customerName ||
+                              (referral.referred_phone ? String(referral.referred_phone).trim() : null) ||
+                              'Unknown';
                             
                             const formatDate = (dateString: string) => {
                               if (!dateString) return '-';

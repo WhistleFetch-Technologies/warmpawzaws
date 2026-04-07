@@ -1518,25 +1518,34 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
-      // Link vendor referral if metadata contains referral info.
-      // Reward is now action-source controlled (issued when referred vendor completes first booking).
+      // Link referral: VENDOR… (vendor→vendor) or WARM… (customer→vendor).
       if (identity.metadata && identity.metadata.referral_code_id) {
         try {
-          const { processVendorReferralSignup } = await import('../lib/services/referral-service');
-          const referralResult = await processVendorReferralSignup({
+          const {
+            processVendorReferralSignup,
+            processCustomerReferralForVendorSignup,
+          } = await import('../lib/services/referral-service');
+          const refCode = String(identity.metadata.referral_code || '').trim();
+          let referralResult = await processVendorReferralSignup({
             vendorId: vendor.id,
-            referralCode: identity.metadata.referral_code || '',
+            referralCode: refCode,
             phone: identity.phone,
           });
+          if (!referralResult.success && referralResult.error === 'Invalid referral code') {
+            referralResult = await processCustomerReferralForVendorSignup({
+              vendorId: vendor.id,
+              referralCode: refCode,
+              phone: identity.phone,
+            });
+          }
 
           if (referralResult.success) {
-            console.log(`[VENDOR-ACTIVATION] ✅ Vendor referral linked (reward via action-source on first booking completion)`);
+            console.log(`[VENDOR-ACTIVATION] ✅ Referral linked (vendor or customer code)`);
           } else {
-            console.warn(`[VENDOR-ACTIVATION] Vendor referral linking failed: ${referralResult.error}`);
+            console.warn(`[VENDOR-ACTIVATION] Referral linking failed: ${referralResult.error}`);
           }
         } catch (refError: any) {
-          console.error('[VENDOR-ACTIVATION] Error linking vendor referral:', refError);
-          // Don't fail activation if referral linking fails
+          console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
         }
       }
 

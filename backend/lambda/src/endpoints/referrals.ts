@@ -473,7 +473,10 @@ export function registerReferralEndpoints(app: Hono) {
            FROM customers c
            WHERE vr.referred_vendor_id IS NULL
              AND NULLIF(TRIM(vr.referred_phone), '') IS NOT NULL
-             AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = NULLIF(TRIM(vr.referred_phone), '')
+             AND vr.referred_phone NOT LIKE 'REFERRER%'
+             AND LENGTH(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g')) >= 10
+             AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10)
+                 = RIGHT(REGEXP_REPLACE(COALESCE(NULLIF(TRIM(vr.referred_phone), ''), ''), '[^0-9]', '', 'g'), 10)
            ORDER BY c.updated_at DESC NULLS LAST
            LIMIT 1
           ) AS referred_customer_name,
@@ -891,6 +894,17 @@ export function registerReferralEndpoints(app: Hono) {
         [customerId]
       );
 
+      let vendorsReferred = 0;
+      try {
+        const vr = await query(
+          `SELECT COUNT(*)::int AS count FROM referrals WHERE referrer_id = $1 AND referred_vendor_id IS NOT NULL`,
+          [customerId]
+        );
+        vendorsReferred = parseInt(String(vr.rows[0]?.count ?? '0'), 10);
+      } catch {
+        vendorsReferred = 0;
+      }
+
       return c.json({
         success: true,
         stats: {
@@ -899,6 +913,7 @@ export function registerReferralEndpoints(app: Hono) {
           successful_referrals: parseInt(completedReferrals.rows[0]?.count || '0', 10),
           pending_referrals: parseInt(pendingReferrals.rows[0]?.count || '0', 10),
           total_rewards: parseInt(earnings.rows[0]?.total_earnings || '0', 10),
+          vendors_referred: vendorsReferred,
         },
       });
     } catch (error: any) {

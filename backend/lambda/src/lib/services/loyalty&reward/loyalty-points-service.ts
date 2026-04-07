@@ -52,7 +52,73 @@ export interface LoyaltyActionRule {
   priority: number;
 }
 
+type LoyaltyWalletPolicy = {
+  /** When false, points are still earned but no wallet credit (from loyalty_rules.auto_convert_to_wallet). */
+  autoConvert: boolean;
+  /** Points required for ₹1 wallet credit; matches POST /loyalty/redeem cashValue = points / redemption_rate. */
+  pointsPerRupee: number;
+};
+
 export class LoyaltyPointsService {
+  private walletPolicyCache: { at: number; policy: LoyaltyWalletPolicy } | null = null;
+  private static readonly WALLET_POLICY_TTL_MS = 60_000;
+
+  /**
+   * Exactly one active row in loyalty_rules ("basic" / platform rule). No defaults.
+   * redemption_rate = points per ₹1 (same as POST /loyalty/redeem).
+   */
+  private async getWalletPolicy(): Promise<LoyaltyWalletPolicy> {
+    const now = Date.now();
+    if (
+      this.walletPolicyCache &&
+      now - this.walletPolicyCache.at < LoyaltyPointsService.WALLET_POLICY_TTL_MS
+    ) {
+      return this.walletPolicyCache.policy;
+    }
+
+    const res = await query(
+      `SELECT rule_name, auto_convert_to_wallet, redemption_rate
+       FROM loyalty_rules
+       WHERE is_active = true`
+    );
+    const rows = res.rows as Array<{
+      rule_name?: string | null;
+      auto_convert_to_wallet?: boolean | null;
+      redemption_rate?: string | number | null;
+    }>;
+
+    if (rows.length === 0) {
+      throw new Error(
+        'loyalty_rules: no active basic rule — configure exactly one row with is_active = true'
+      );
+    }
+    if (rows.length > 1) {
+      const names = rows.map((r) => r.rule_name || '(unnamed)').join(', ');
+      throw new Error(
+        `loyalty_rules: ${rows.length} active basic rules (${names}) — only one is_active = true allowed`
+      );
+    }
+
+    const row = rows[0];
+    if (row.auto_convert_to_wallet === null || row.auto_convert_to_wallet === undefined) {
+      throw new Error(
+        `loyalty_rules: auto_convert_to_wallet must be set on active rule "${row.rule_name || ''}"`
+      );
+    }
+    const autoConvert = row.auto_convert_to_wallet === true;
+
+    const rr = parseFloat(String(row.redemption_rate ?? ''));
+    if (Number.isNaN(rr) || rr <= 0) {
+      throw new Error(
+        `loyalty_rules: redemption_rate must be a positive number on active rule "${row.rule_name || ''}"`
+      );
+    }
+
+    const policy: LoyaltyWalletPolicy = { autoConvert, pointsPerRupee: rr };
+    this.walletPolicyCache = { at: now, policy };
+    return policy;
+  }
+
   /**
    * Award points for an action (with auto-conversion to wallet)
    */
@@ -72,15 +138,16 @@ export class LoyaltyPointsService {
         return { points: 0, walletCredited: 0 };
       }
 
-      // Calculate points
+      // Calculate points ( hardcoded for now)
       const points = await this.calculatePoints(rule, params);
-
       if (points <= 0) {
         return { points: 0, walletCredited: 0 };
       }
 
       // Apply multipliers (e.g., birthday month 2x)
       const finalPoints = await this.applyMultipliers(rule, points, params);
+
+      const walletPolicy = await this.getWalletPolicy();
 
       // Award points and auto-convert to wallet.
       // ✅ CRITICAL: ALL database operations MUST use `client.query()` (the transaction
@@ -128,9 +195,16 @@ export class LoyaltyPointsService {
           [finalPoints, userId]
         );
 
-        // 4. Auto-convert to wallet (100 points = ₹1)
-        const conversionRate = 100;
-        const walletAmount = Math.round((finalPoints / conversionRate) * 100) / 100;
+        if (!walletPolicy.autoConvert) {
+          console.info(
+            `[LOYALTY] Points awarded without wallet conversion (auto_convert_to_wallet=false) action=${params.actionName}`
+          );
+          return { points: finalPoints, walletCredited: 0 };
+        }
+
+        const ppr = walletPolicy.pointsPerRupee;
+        const walletAmount = Math.round((finalPoints / ppr) * 100) / 100;
+        const walletConvLabel = `${ppr} points = ₹1`;
 
         // ---------- Vendor wallet flow ----------
         if (isVendor) {
@@ -192,7 +266,7 @@ export class LoyaltyPointsService {
                 wallet.id, userId, 'credit', walletAmount, newBalance,
                 params.referenceType || params.actionName,
                 params.referenceId || null,
-                `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`,
+                `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (${walletConvLabel})`,
                 'loyalty_points',
               ]
             );
@@ -210,7 +284,7 @@ export class LoyaltyPointsService {
                   wallet.id, userId, 'credit', walletAmount, newBalance,
                   params.referenceType || params.actionName,
                   params.referenceId || null,
-                  `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`,
+                  `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (${walletConvLabel})`,
                 ]
               );
             } else {
@@ -267,7 +341,7 @@ export class LoyaltyPointsService {
         );
         const newBalance = parseFloat(balAfterRes.rows[0]?.balance || '0');
 
-        const walletTxnDesc = `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (100 points = ₹1)`;
+        const walletTxnDesc = `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (${walletConvLabel})`;
         // Dev/prod schemas differ: some wallet_transactions use wallet_id (FK to customer_wallets.id), others customer_id.
         await client.query('SAVEPOINT cwt_insert');
         try {

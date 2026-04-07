@@ -172,14 +172,35 @@ export function registerLoyaltyEndpoints(app: Hono) {
         return c.json({ error: 'customerId and points are required' }, 400);
       }
 
-      // Get active loyalty rule
-      const rules = await select('loyalty_rules', { is_active: true });
+      const rulesRes = await query(`SELECT * FROM loyalty_rules WHERE is_active = true`);
+      const rules = rulesRes.rows || [];
       if (rules.length === 0) {
-        return c.json({ error: 'Loyalty points redemption is not configured' }, 400);
+        return c.json(
+          { error: 'Loyalty redemption is not configured (no active loyalty_rules row)' },
+          400
+        );
+      }
+      if (rules.length > 1) {
+        return c.json(
+          {
+            error: `Loyalty misconfigured: ${rules.length} active loyalty_rules rows; exactly one required`,
+          },
+          400
+        );
       }
 
-      const rule = rules[0];
-      const minRedemption = parseInt(rule.min_redemption_points || '100', 10);
+      const rule = rules[0] as Record<string, any>;
+      if (rule.auto_convert_to_wallet === null || rule.auto_convert_to_wallet === undefined) {
+        return c.json({ error: 'Active loyalty_rules row must set auto_convert_to_wallet' }, 500);
+      }
+      const rr = parseFloat(String(rule.redemption_rate ?? ''));
+      if (Number.isNaN(rr) || rr <= 0) {
+        return c.json({ error: 'Active loyalty_rules row has invalid redemption_rate' }, 500);
+      }
+      const minRedemption = parseInt(String(rule.min_redemption_points ?? ''), 10);
+      if (Number.isNaN(minRedemption) || minRedemption < 1) {
+        return c.json({ error: 'Active loyalty_rules row has invalid min_redemption_points' }, 500);
+      }
 
       if (points < minRedemption) {
         return c.json({ error: `Minimum ${minRedemption} points required for redemption` }, 400);
@@ -211,7 +232,7 @@ export function registerLoyaltyEndpoints(app: Hono) {
       );
 
       const updatedProfile = await select('customer_loyalty_points', { customer_id: customerId });
-      const cashValue = points / parseFloat(rule.redemption_rate || '100');
+      const cashValue = points / rr;
 
       return c.json({
         success: true,
