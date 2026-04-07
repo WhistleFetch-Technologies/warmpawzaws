@@ -19,6 +19,15 @@ import { RateServiceModal } from './RateServiceModal';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
 
+function isTeleBookingRowAlt(b: { serviceStyle?: string; serviceType?: string; serviceName?: string }) {
+  return (
+    ['tele', 'video_consultation', 'video', 'online'].includes(b.serviceStyle || '') ||
+    ['tele', 'video_consultation', 'video', 'online'].includes(b.serviceType || '') ||
+    (b.serviceName || '').toLowerCase().includes('video') ||
+    (b.serviceName || '').toLowerCase().includes('tele')
+  );
+}
+
 interface BookingOccurrence {
   occurrenceId: string;
   sessionNumber: number;
@@ -69,6 +78,7 @@ interface Booking {
   otpCode?: string;
   otpVerified?: boolean;
   paymentStatus?: string;
+  completedAt?: string;
 }
 
 interface MyBookingsProps {
@@ -262,6 +272,12 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         otpCode: b.otp_code || b.otpCode,
         otpVerified: b.otp_verified || b.otpVerified,
         paymentStatus: b.payment_status || b.paymentStatus,
+        completedAt:
+          b.completed_at ||
+          b.completedAt ||
+          b.video_call_ended_at ||
+          b.videoCallEndedAt ||
+          '',
         };
       });
       
@@ -530,7 +546,13 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               <div className="space-y-2 text-sm text-gray-600">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  <span>{new Date(booking.bookingDate).toLocaleDateString()} at {booking.bookingTime}</span>
+                  <span>
+                    {booking.status === 'completed' &&
+                    isTeleBookingRowAlt(booking) &&
+                    booking.completedAt
+                      ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
+                      : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
@@ -1032,7 +1054,11 @@ function RescheduleModal({
             <p className="text-sm text-gray-600">Current Appointment</p>
             <p className="font-medium">{booking.serviceName}</p>
             <p className="text-sm text-gray-700">
-              {new Date(booking.bookingDate).toLocaleDateString()} at {booking.bookingTime}
+              {booking.status === 'completed' &&
+              isTeleBookingRowAlt(booking) &&
+              booking.completedAt
+                ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
+                : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
             </p>
           </div>
 

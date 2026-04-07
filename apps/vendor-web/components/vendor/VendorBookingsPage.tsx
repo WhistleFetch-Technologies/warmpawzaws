@@ -11,10 +11,13 @@ interface Booking {
   service_name: string;
   booking_date: string;
   booking_time: string;
+  completed_at?: string;
+  video_call_ended_at?: string;
   status: string;
   payment_status: string;
   total_amount: number;
   service_type: string;
+  service_style?: string;
   notes?: string;
   otp_code?: string;
   otp_verified?: boolean;
@@ -24,6 +27,16 @@ interface Booking {
 
 interface VendorBookingsPageProps {
   vendorId: string;
+}
+
+function isVendorTeleBooking(b: Pick<Booking, 'service_type' | 'service_style' | 'service_name'>) {
+  const st = (b.service_style || b.service_type || '').toLowerCase();
+  const name = (b.service_name || '').toLowerCase();
+  return (
+    ['tele', 'video_consultation', 'video', 'online'].includes(st) ||
+    name.includes('tele') ||
+    name.includes('video consult')
+  );
 }
 
 export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
@@ -242,7 +255,14 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                     <p className="text-sm text-gray-500">{booking.service_name}</p>
                     <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
-                      <span>⏰ {booking.booking_time}</span>
+                      <span>
+                        ⏰{' '}
+                        {booking.status === 'completed' &&
+                        isVendorTeleBooking(booking) &&
+                        (booking.video_call_ended_at || booking.completed_at)
+                          ? `Completed ${new Date(booking.video_call_ended_at || booking.completed_at || '').toLocaleString()}`
+                          : booking.booking_time}
+                      </span>
                       <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
                     </div>
                     {booking.notes && (

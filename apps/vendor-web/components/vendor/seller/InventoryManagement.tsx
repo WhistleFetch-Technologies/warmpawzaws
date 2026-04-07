@@ -1,25 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search, Filter, RefreshCcw } from 'lucide-react';
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+export type InventoryManagementHandle = {
+  refresh: () => Promise<void>;
+};
 
 interface InventoryManagementProps {
   sellerId: string;
 }
 
-export function InventoryManagement({ sellerId }: InventoryManagementProps) {
+export const InventoryManagement = forwardRef<InventoryManagementHandle, InventoryManagementProps>(
+  function InventoryManagement({ sellerId }, ref) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [updating, setUpdating] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadInventory();
-  }, [sellerId]);
-
-  const loadInventory = async () => {
+  const loadInventory = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<{ products?: any[] }>(`/vendor/${sellerId}/products`);
@@ -30,7 +31,13 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sellerId]);
+
+  useImperativeHandle(ref, () => ({ refresh: () => loadInventory() }), [loadInventory]);
+
+  useEffect(() => {
+    void loadInventory();
+  }, [loadInventory]);
 
   const updateStock = async (productId: string, newStock: number) => {
     setUpdating(productId);
@@ -81,17 +88,7 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-end">
-        <button
-          onClick={loadInventory}
-          className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-        >
-          <RefreshCcw className="w-4 h-4" />
-          Refresh
-        </button>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
@@ -248,4 +245,5 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
       </div>
     </div>
   );
-}
+  }
+);

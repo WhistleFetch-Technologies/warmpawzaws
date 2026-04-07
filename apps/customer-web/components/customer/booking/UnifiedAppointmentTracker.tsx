@@ -418,14 +418,11 @@ export function UnifiedAppointmentTracker({
                           // ✅ FIX: Use router.push with path format for CloudFront compatibility
                           // Path format /video/[bookingId] works with CloudFront rewrite rules
                           // This enables client-side navigation without full page refresh
-                          const queryParams = new URLSearchParams();
                           if (customerPhone) {
-                            queryParams.set('customerId', customerPhone);
-                            queryParams.set('phone', customerPhone);
+                            localStorage.setItem('customerPhone', customerPhone);
+                            localStorage.setItem('phone', customerPhone);
                           }
-                          const queryString = queryParams.toString();
-                          const videoUrl = `/video/${item.bookingId}${queryString ? `?${queryString}` : ''}`;
-                          router.push(videoUrl);
+                          router.push(`/video/${item.bookingId}`);
                         }
                       }}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs"

@@ -422,10 +422,10 @@ function TeleConsultationContent() {
             ]}
             onBack={() => goBackOrHome(router)}
             onSuccess={(bookingId, _orderId, _otp, meta) => {
-              const queryParams = new URLSearchParams();
-              if (customerId) queryParams.set('customerId', customerId);
-              const qs = queryParams.toString();
-              const videoUrl = `/video/${bookingId}${qs ? `?${qs}` : ''}`;
+              if (typeof window !== 'undefined' && customerId) {
+                localStorage.setItem('customerId', customerId);
+              }
+              const videoUrl = `/video/${bookingId}`;
               if (meta?.isInstantTele) {
                 router.push(videoUrl);
                 return;
@@ -458,17 +458,11 @@ function TeleConsultationContent() {
           onQueueJoined={(queueId) => {
             console.log('Joined queue:', queueId);
           }}
-          onAccepted={(bookingId, meetingId) => {
-            const queryParams = new URLSearchParams();
-            if (meetingId) {
-              queryParams.set('meetingId', meetingId);
+          onAccepted={(bookingId, _meetingId) => {
+            if (typeof window !== 'undefined' && customerId) {
+              localStorage.setItem('customerId', customerId);
             }
-            if (customerId) {
-              queryParams.set('customerId', customerId);
-            }
-            const queryString = queryParams.toString();
-            const videoUrl = `/video/${bookingId}${queryString ? `?${queryString}` : ''}`;
-            router.push(videoUrl);
+            router.push(`/video/${bookingId}`);
           }}
         />
       </div>

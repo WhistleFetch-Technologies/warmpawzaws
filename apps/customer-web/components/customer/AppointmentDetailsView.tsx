@@ -443,13 +443,10 @@ export function AppointmentDetailsView({
               <Button
                 onClick={() => {
                   // ✅ FIX: Use router.push with path format for CloudFront compatibility
-                  const queryParams = new URLSearchParams();
-                  if (customerDbId) {
-                    queryParams.set('customerId', customerDbId);
+                  if (customerDbId && isCustomerDatabaseUuid(customerDbId)) {
+                    persistCustomerDatabaseId(customerDbId);
                   }
-                  const queryString = queryParams.toString();
-                  const videoUrl = `/video/${appointmentId}${queryString ? `?${queryString}` : ''}`;
-                  router.push(videoUrl);
+                  router.push(`/video/${appointmentId}`);
                 }}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white"
               >

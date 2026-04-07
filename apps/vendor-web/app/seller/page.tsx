@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   SellerHubSidebar,
@@ -9,8 +9,11 @@ import {
   type SellerHubTab,
 } from '@/components/vendor/seller/SellerHub';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Button } from '@/components/ui/button';
+import type { SellerSettingsHandle } from '@/components/vendor/seller/SellerSettings';
+import type { InventoryManagementHandle } from '@/components/vendor/seller/InventoryManagement';
 import { apiClient } from '@/lib/api-client';
-import { Bell, HelpCircle } from 'lucide-react';
+import { Bell, HelpCircle, RefreshCcw } from 'lucide-react';
 
 export default function SellerPage() {
   const router = useRouter();
@@ -19,6 +22,8 @@ export default function SellerPage() {
   const [activeTab, setActiveTab] = useState<SellerHubTab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [notifications] = useState(0);
+  const settingsRef = useRef<SellerSettingsHandle | null>(null);
+  const inventoryRef = useRef<InventoryManagementHandle | null>(null);
 
   useEffect(() => {
     loadVendorData();
@@ -95,6 +100,58 @@ export default function SellerPage() {
 
   const activeNav = SELLER_HUB_NAVIGATION.find((n) => n.id === activeTab);
 
+  const headerActions = useMemo(() => {
+    const actions: ReactNode[] = [];
+    if (activeTab === 'settings') {
+      actions.push(
+        <Button
+          key="save-settings"
+          type="button"
+          size="sm"
+          className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
+          onClick={() => void settingsRef.current?.save()}
+        >
+          Save
+        </Button>
+      );
+    }
+    if (activeTab === 'inventory') {
+      actions.push(
+        <button
+          key="refresh-inventory"
+          type="button"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+          aria-label="Refresh inventory"
+          onClick={() => void inventoryRef.current?.refresh()}
+        >
+          <RefreshCcw className="h-5 w-5 text-slate-600" />
+        </button>
+      );
+    }
+    actions.push(
+      <button
+        key="bell"
+        type="button"
+        className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+        aria-label="Notifications"
+      >
+        <Bell className="h-5 w-5 text-slate-600" />
+        {notifications > 0 && (
+          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+        )}
+      </button>,
+      <button
+        key="help"
+        type="button"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+        aria-label="Help"
+      >
+        <HelpCircle className="h-5 w-5 text-slate-600" />
+      </button>
+    );
+    return actions;
+  }, [activeTab, notifications]);
+
   return (
     <div className="flex h-[100dvh] min-h-0 bg-gradient-to-br from-slate-50 to-orange-50/30">
       <SellerHubSidebar
@@ -112,30 +169,17 @@ export default function SellerPage() {
           subtitle={activeNav?.description}
           showBack
           onBack={handleBack}
-          actions={[
-            <button
-              key="bell"
-              type="button"
-              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
-              aria-label="Notifications"
-            >
-              <Bell className="h-5 w-5 text-slate-600" />
-              {notifications > 0 && (
-                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              )}
-            </button>,
-            <button
-              key="help"
-              type="button"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
-              aria-label="Help"
-            >
-              <HelpCircle className="h-5 w-5 text-slate-600" />
-            </button>,
-          ]}
+          actions={headerActions}
         />
-        <main className="min-h-0 flex-1 overflow-y-auto">
-          <SellerHubMainPanels activeTab={activeTab} vendorData={vendorData} />
+        <main className="vendor-app-column mx-auto min-h-0 w-full flex-1 overflow-y-auto">
+          <div className="px-4 py-4 sm:px-6 sm:py-6">
+            <SellerHubMainPanels
+              activeTab={activeTab}
+              vendorData={vendorData}
+              settingsRef={settingsRef}
+              inventoryRef={inventoryRef}
+            />
+          </div>
         </main>
       </div>
     </div>
