@@ -85,7 +85,7 @@ export default function PromotionsPage() {
         className="flex min-h-[100dvh] w-full max-w-customer flex-col bg-gradient-to-b from-purple-50/95 via-pink-50/90 to-orange-50/85 sm:border-x sm:border-black/[0.06] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]"
       >
         {/* App-style header: safe area + rounded sheet */}
-        <header className="sticky top-0 z-40 shrink-0 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/88 rounded-b-[1.75rem] border-b border-purple-100/40 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pb-3">
+        <header className="sticky top-0 z-40 shrink-0 rounded-b-[1.75rem] border-b border-purple-100/40 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/88 cw-header-safe-top cw-header-safe-x pb-3">
           <div className="flex items-center gap-3">
             <button
               type="button"

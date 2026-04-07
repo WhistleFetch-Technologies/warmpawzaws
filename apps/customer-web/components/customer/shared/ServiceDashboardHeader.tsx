@@ -58,31 +58,31 @@ export function ServiceDashboardHeader({
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
   
   return (
-    <div className="relative mx-auto w-full max-w-customer">
+    <div className="relative z-10 isolate mx-auto w-full max-w-customer">
       {/* Orange Header Background */}
       <div
-        className={`${headerGradient || headerColor} text-white pb-8 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
+        className={`${headerGradient || headerColor} cw-header-safe-top cw-header-safe-x text-white pb-4 md:pb-6 sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
       >
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (
           <>
-            <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="relative z-20 mb-3 flex items-center justify-between gap-2 md:mb-4">
               <button
                 type="button"
                 onClick={onCloseToHome}
-                className="w-11 h-11 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+                className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto"
                 aria-label="Close to home"
               >
-                <X className="w-6 h-6 text-white" />
+                <X className="h-6 w-6 text-white" />
               </button>
               {showBackButton && onBack && (
                 <button
                   type="button"
                   onClick={onBack}
-                  className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+                  className="relative z-30 flex min-h-[44px] shrink-0 items-center gap-2 px-2 text-white transition-opacity pointer-events-auto active:opacity-70"
                   aria-label="Go back"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="h-5 w-5" />
                   <span className="font-medium">Back</span>
                 </button>
               )}
@@ -104,14 +104,15 @@ export function ServiceDashboardHeader({
             </div>
           </>
         ) : (
-          <div className="flex items-start gap-3 mb-4">
+          <div className="relative z-20 mb-3 flex items-start gap-3 md:mb-4">
             {showBackButton && onBack && (
               <button
+                type="button"
                 onClick={onBack}
-                className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors mt-1"
+                className="relative z-30 mt-0.5 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto md:mt-1"
                 aria-label="Go back"
               >
-                <ArrowLeft className="w-4 h-4 text-white" />
+                <ArrowLeft className="h-5 w-5 text-white" />
               </button>
             )}
 

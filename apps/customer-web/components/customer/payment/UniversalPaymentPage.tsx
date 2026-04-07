@@ -2348,12 +2348,12 @@ export function UniversalPaymentPage({
 
   return (
     <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col bg-orange-50">
-      <header className="sticky top-0 z-50 min-h-[120px] shrink-0 rounded-b-2xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-5 shadow-sm">
-        <div className="relative flex min-h-[88px] items-center">
+      <header className="sticky top-0 z-50 shrink-0 rounded-b-2xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029] shadow-sm cw-header-safe-top cw-header-safe-x pb-4">
+        <div className="relative flex min-h-[56px] items-center">
           <button
             type="button"
             onClick={onBack}
-            className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-all duration-150 active:scale-[0.98] active:bg-white/10 touch-manipulation"
+            className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl text-white transition-all duration-150 active:scale-[0.98] active:bg-white/10 touch-manipulation pointer-events-auto"
             aria-label="Go back"
           >
             <ArrowLeft className="h-6 w-6" strokeWidth={2.25} />
@@ -2362,7 +2362,7 @@ export function UniversalPaymentPage({
             <h1 className="text-lg font-bold tracking-tight text-white">Payment</h1>
             <p className="text-sm font-medium text-white/90">Secure checkout</p>
           </div>
-          <div className="relative z-10 ml-auto flex h-10 w-10 shrink-0 items-center justify-center text-white" aria-hidden>
+          <div className="relative z-10 ml-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-white" aria-hidden>
             <Shield className="h-6 w-6" strokeWidth={1.75} />
           </div>
         </div>

@@ -155,7 +155,7 @@ function PetsPageContent() {
     'px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]';
 
   const header = (
-    <header className="sticky top-0 z-50 shrink-0 border-b border-gray-200 bg-white/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md supports-[backdrop-filter]:bg-white/80">
+    <header className="sticky top-0 z-50 shrink-0 border-b border-gray-200 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/80 cw-header-safe-top">
       <div className="relative flex h-14 items-center justify-center px-2">
         <div className="absolute left-1 top-1/2 -translate-y-1/2">
           <Button

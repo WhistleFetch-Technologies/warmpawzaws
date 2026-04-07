@@ -256,7 +256,7 @@ export default function WishlistPage() {
   return (
     <div className="min-h-[100dvh] min-h-screen w-full max-w-customer mx-auto bg-gradient-to-br from-slate-50 to-orange-50/30 flex flex-col relative">
       {/* Mobile app–style header */}
-      <header className="sticky top-0 z-40 shrink-0 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm pt-[env(safe-area-inset-top,0px)]">
+      <header className="sticky top-0 z-40 shrink-0 border-b border-slate-100 bg-white/95 shadow-sm backdrop-blur-md cw-header-safe-top">
         <div className="px-3 py-3 flex items-center gap-2 min-h-[52px]">
           <button
             type="button"

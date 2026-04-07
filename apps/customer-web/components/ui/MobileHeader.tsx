@@ -32,22 +32,23 @@ export function MobileHeader({
 }: MobileHeaderProps) {
   return (
     <header
-      className={`sticky top-0 z-40 w-full ${
+      className={`sticky top-0 z-40 isolate w-full ${
         transparent 
           ? 'bg-transparent' 
           : 'bg-white border-b border-gray-100 shadow-sm'
       } ${className}`}
     >
-      <div className="flex items-center justify-between px-4 py-3 min-h-[56px]">
+      <div className="cw-header-safe-top cw-header-safe-x flex h-auto min-h-[56px] items-center justify-between py-2">
         {/* Left Section - Back Button */}
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {showBack && onBack && (
             <button
+              type="button"
               onClick={onBack}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors -ml-2"
+              className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-gray-100 active:bg-gray-200 touch-manipulation"
               aria-label="Go back"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
+              <ArrowLeft className="h-5 w-5 text-gray-700" />
             </button>
           )}
           
@@ -61,24 +62,26 @@ export function MobileHeader({
         </div>
 
         {/* Right Section - Actions */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {onNotifications && (
             <button
+              type="button"
               onClick={onNotifications}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors relative"
+              className="relative flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl transition-colors hover:bg-gray-100 active:bg-gray-200 touch-manipulation"
               aria-label="Notifications"
             >
-              <Bell className="w-5 h-5 text-gray-600" />
+              <Bell className="h-5 w-5 text-gray-600" />
             </button>
           )}
           
           {onMenu && (
             <button
+              type="button"
               onClick={onMenu}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+              className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl transition-colors hover:bg-gray-100 active:bg-gray-200 touch-manipulation"
               aria-label="Menu"
             >
-              <Menu className="w-5 h-5 text-gray-600" />
+              <Menu className="h-5 w-5 text-gray-600" />
             </button>
           )}
           

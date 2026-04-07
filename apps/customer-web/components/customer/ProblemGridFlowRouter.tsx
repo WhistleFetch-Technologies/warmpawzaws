@@ -353,11 +353,17 @@ export function ProblemGridFlowRouter({
   const renderServiceStyleSelection = () => (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <ArrowLeft className="w-5 h-5" />
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          className="relative z-10 h-11 min-h-[44px] min-w-[44px] shrink-0 p-0 touch-manipulation"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-bold text-gray-900">
             {selectedProblem?.name || 'Select Service Type'}
           </h2>
@@ -468,13 +474,19 @@ export function ProblemGridFlowRouter({
   const renderDiscovery = () => (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={goBack}>
-          <ArrowLeft className="w-5 h-5" />
+      <div className="flex min-w-0 items-center gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={goBack}
+          className="relative z-10 h-11 min-h-[44px] min-w-[44px] shrink-0 p-0 touch-manipulation"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-gray-900">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-lg font-bold text-gray-900">
               {selectedProblem?.name}
             </h2>
             {selectedServiceStyle && (
@@ -657,8 +669,8 @@ export function ProblemGridFlowRouter({
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-lg mx-auto">
+    <div className="min-h-screen min-h-[100dvh] bg-gray-50 cw-header-safe-top cw-header-safe-x pb-8">
+      <div className="mx-auto max-w-lg">
         {currentStep === 'service-style' && renderServiceStyleSelection()}
         {currentStep === 'discovery' && renderDiscovery()}
         {currentStep === 'booking' && renderBooking()}

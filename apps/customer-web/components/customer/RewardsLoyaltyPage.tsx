@@ -272,7 +272,7 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
             className="shrink-0 z-10"
           />
         ) : (
-          <header className="bg-white/90 backdrop-blur-sm border-b border-orange-200/80 sticky top-0 z-10 pt-[env(safe-area-inset-top,0px)]">
+          <header className="sticky top-0 z-20 border-b border-orange-200/80 bg-white/90 backdrop-blur-sm cw-header-safe-top">
             <div className="px-4 pb-3 pt-2">
               <div className="flex items-start gap-1">
                 <Button

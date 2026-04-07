@@ -78,22 +78,24 @@ export function StandardizedHeader({
   const topRowMb = hasPetsRow ? 'mb-2' : 'mb-0';
 
   return (
-    <div className="mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
+    <div className="relative z-20 isolate mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-2 sm:pb-3 md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
       {/* Top Row - Match footer height: compact py-3, same width */}
-      <div className={`flex items-center justify-between ${topRowMb}`}>
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      <div className={`flex items-center justify-between min-h-0 ${topRowMb}`}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {showBackButton && onBack && (
             <button
+              type="button"
               onClick={onBack}
-              className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+              className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto"
               aria-label="Go back"
             >
-              <ArrowLeft className="w-4 h-4 text-white" />
+              <ArrowLeft className="h-5 w-5 text-white" />
             </button>
           )}
           <button
+            type="button"
             onClick={() => onProfileClick && onProfileClick()}
-            className="w-9 h-9 flex-shrink-0 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-sm"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm transition-all hover:ring-2 hover:ring-white/60 md:h-9 md:w-9"
           >
             {userProfilePhoto ? (
               <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
