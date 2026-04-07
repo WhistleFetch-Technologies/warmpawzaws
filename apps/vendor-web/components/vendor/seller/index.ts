@@ -1,4 +1,9 @@
-export { SellerHub } from './SellerHub';
+export {
+  SellerHubSidebar,
+  SellerHubMainPanels,
+  SELLER_HUB_NAVIGATION,
+  type SellerHubTab,
+} from './SellerHub';
 export { SellerDashboard } from './SellerDashboard';
 export { ProductCatalogManagement } from './ProductCatalogManagement';
 export { InventoryManagement } from './InventoryManagement';

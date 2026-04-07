@@ -12,6 +12,8 @@ export interface VendorHeaderProps {
   /** Icon-sized controls only (max 2–3); use shrink-0 on each */
   actions?: ReactNode[];
   className?: string;
+  /** Brand (orange) bar — use instead of duplicate gradient/sticky top bars */
+  tone?: 'default' | 'brand';
 }
 
 /**
@@ -25,6 +27,7 @@ export function VendorHeader({
   onBack,
   actions,
   className = '',
+  tone = 'default',
 }: VendorHeaderProps) {
   const router = useRouter();
 
@@ -34,10 +37,15 @@ export function VendorHeader({
   };
 
   const hasActions = Boolean(actions?.length);
+  const isBrand = tone === 'brand';
 
   return (
     <header
-      className={`sticky top-0 z-10 shrink-0 bg-white border-b border-gray-200 safe-area-top ${className}`.trim()}
+      className={`sticky top-0 z-10 shrink-0 safe-area-top border-b ${
+        isBrand
+          ? 'border-orange-300/40 bg-[#FF8C42]'
+          : 'border-gray-200 bg-white'
+      } ${className}`.trim()}
     >
       <div className="flex items-center justify-between gap-2 p-4 flex-nowrap min-h-[56px]">
         <div className="flex items-center gap-2 shrink-0">
@@ -45,10 +53,17 @@ export function VendorHeader({
             <button
               type="button"
               onClick={handleBack}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                isBrand
+                  ? 'hover:bg-white/15 active:bg-white/25'
+                  : 'hover:bg-gray-100 active:bg-gray-200'
+              }`}
               aria-label="Go back"
             >
-              <ArrowLeft className="w-6 h-6 text-gray-700" aria-hidden />
+              <ArrowLeft
+                className={`w-6 h-6 ${isBrand ? 'text-white' : 'text-gray-700'}`}
+                aria-hidden
+              />
             </button>
           ) : (
             <div className="h-11 w-11 shrink-0" aria-hidden />
@@ -56,17 +71,29 @@ export function VendorHeader({
         </div>
 
         <div className="flex-1 min-w-0 text-center px-1">
-          <h1 className="text-lg font-bold text-gray-900 truncate overflow-hidden text-ellipsis whitespace-nowrap">
+          <h1
+            className={`text-lg font-bold truncate overflow-hidden text-ellipsis whitespace-nowrap ${
+              isBrand ? 'text-white' : 'text-gray-900'
+            }`}
+          >
             {title}
           </h1>
           {subtitle ? (
-            <p className="text-xs text-gray-500 truncate overflow-hidden text-ellipsis whitespace-nowrap">
+            <p
+              className={`text-xs truncate overflow-hidden text-ellipsis whitespace-nowrap ${
+                isBrand ? 'text-white/85' : 'text-gray-500'
+              }`}
+            >
               {subtitle}
             </p>
           ) : null}
         </div>
 
-        <div className="flex h-11 min-w-[44px] items-center gap-3 shrink-0 flex-nowrap justify-end">
+        <div
+          className={`flex h-11 min-w-[44px] items-center gap-3 shrink-0 flex-nowrap justify-end ${
+            isBrand ? 'text-white [&_button]:hover:bg-white/15 [&_svg]:text-white' : ''
+          }`}
+        >
           {hasActions
             ? actions!.map((node, i) => (
                 <span key={i} className="flex shrink-0 items-center">

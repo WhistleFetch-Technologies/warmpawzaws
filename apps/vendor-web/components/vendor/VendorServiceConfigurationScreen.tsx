@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, IndianRupee, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
+import { Plus, Save, Check, AlertCircle, Clock, IndianRupee, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -1222,33 +1223,36 @@ export function VendorServiceConfigurationScreen({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="vendor-app-column bg-white min-h-screen pb-24">
-        {/* Header - Service Management > [Style] with Browse Catalog link */}
-        <div className="p-4 bg-white border-b sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" title="Back to Service Management">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{getStyleIcon()}</span>
-                <h1 className="font-semibold text-gray-900">{getStyleName()}</h1>
-              </div>
-              <p className="text-xs text-gray-500">Service Management · {vendorData?.businessName || vendorData?.fullName}</p>
-            </div>
-            {onBrowseCatalog && (
-              <button
-                onClick={onBrowseCatalog}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                title="Browse platform catalog"
-              >
-                <Package className="w-4 h-4" />
-                Add from Catalog
-              </button>
-            )}
-          </div>
-
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column flex min-h-screen flex-col bg-white pb-24">
+        <VendorHeader
+          title={`${getStyleIcon()} ${getStyleName()}`}
+          subtitle={
+            vendorData?.businessName || vendorData?.fullName
+              ? `Service Management · ${vendorData?.businessName || vendorData?.fullName}`
+              : 'Service Management'
+          }
+          onBack={onBack}
+          actions={
+            onBrowseCatalog
+              ? [
+                  <Button
+                    key="browse-catalog"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 border-blue-200 text-xs text-blue-600 hover:bg-blue-50"
+                    onClick={onBrowseCatalog}
+                  >
+                    <Package className="mr-1 inline h-4 w-4" />
+                    Catalog
+                  </Button>,
+                ]
+              : []
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="space-y-3 border-b border-gray-200 bg-white p-4">
           {/* ✅ Search Bar */}
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -1369,7 +1373,7 @@ export function VendorServiceConfigurationScreen({
         </div>
 
         {/* Info Banner */}
-        <div className="mx-4 mt-4 p-3 rounded-lg bg-orange-50 border border-orange-200">
+        <div className="mx-4 mt-4 rounded-lg border border-orange-200 bg-orange-50 p-3">
           <div className="flex items-start gap-2">
             <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-orange-500" />
             <div className="flex-1 text-xs">
@@ -1637,6 +1641,7 @@ export function VendorServiceConfigurationScreen({
               ))}
             </>
           )}
+        </div>
         </div>
       </div>
 
