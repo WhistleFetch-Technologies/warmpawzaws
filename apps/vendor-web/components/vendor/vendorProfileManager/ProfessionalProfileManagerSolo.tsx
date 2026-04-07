@@ -16,7 +16,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle } from 'lucide-react';
+import { Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +30,7 @@ import { SpecializationSelector } from '../SpecializationSelector';
 import { ProfessionalProfile, ProfessionalProfileManagerProps } from './constants/interface';
 import { parseSpecializations } from './constants/helpers';
 import { hasVendorRole } from '@/lib/vendor-utils';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 // ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
 // This ensures specializations are always up-to-date and role-specific based on admin configuration
@@ -344,39 +345,29 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const completionPercentage = calculateCompletion();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="vendor-page-shell bg-gray-50">
       <div className="vendor-app-column bg-white min-h-screen">
-        {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white sticky top-0 z-10 safe-area-top">
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onBack || (() => router.back())}
-                className="w-11 h-11 min-w-[44px] rounded-full text-white hover:bg-white/20 -ml-2"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div className="flex-1">
-                <h1 className="text-lg font-bold">Professional Profile</h1>
-                <p className="text-xs text-white/80">
-                  {vendorRoleName} • Solo Provider
-                </p>
-              </div>
-              {hasChanges && (
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  size="sm"
-                  className="bg-white text-blue-600 hover:bg-white/90 text-xs"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+        <VendorHeader
+          title="Professional Profile"
+          subtitle={`${vendorRoleName} • Solo Provider`}
+          onBack={onBack || (() => router.back())}
+          actions={
+            hasChanges
+              ? [
+                  <Button
+                    key="save"
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    size="sm"
+                    className="h-9 bg-orange-500 px-3 text-xs text-white hover:bg-orange-600"
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </Button>,
+                ]
+              : []
+          }
+        />
 
         {/* Main Content */}
         <div className="p-4">

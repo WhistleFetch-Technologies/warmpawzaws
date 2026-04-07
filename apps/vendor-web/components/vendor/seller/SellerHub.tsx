@@ -16,6 +16,7 @@ import { PromotionsManagement } from './PromotionsManagement';
 import { BannerManagement } from './BannerManagement';
 import { SellerAnalytics } from './SellerAnalytics';
 import { SellerSettings } from './SellerSettings';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface SellerHubProps {
   vendorData: any;
@@ -55,6 +56,8 @@ export function SellerHub({ vendorData, onLogout, onBack }: SellerHubProps) {
     { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance data' },
     { id: 'settings', label: 'Settings', icon: Settings, description: 'Account settings' }
   ];
+
+  const activeNav = navigationItems.find((n) => n.id === activeTab);
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-50 to-orange-50/30">
@@ -165,27 +168,34 @@ export function SellerHub({ vendorData, onLogout, onBack }: SellerHubProps) {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Bar */}
-        <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-orange-100/50 flex items-center justify-between px-8 shadow-sm">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 capitalize">{activeTab.replace('_', ' ')}</h2>
-            <p className="text-sm text-slate-500">
-              {navigationItems.find(n => n.id === activeTab)?.description}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button className="relative p-3 hover:bg-orange-50 rounded-xl transition-colors">
-              <Bell className="w-5 h-5 text-slate-600" />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <VendorHeader
+          title={activeNav?.label ?? 'Seller Hub'}
+          subtitle={activeNav?.description}
+          showBack={Boolean(onBack)}
+          onBack={onBack}
+          actions={[
+            <button
+              key="bell"
+              type="button"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5 text-slate-600" />
               {notifications > 0 && (
-                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white"></span>
+                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
               )}
-            </button>
-            <button className="p-3 hover:bg-orange-50 rounded-xl transition-colors">
-              <HelpCircle className="w-5 h-5 text-slate-600" />
-            </button>
-          </div>
-        </header>
+            </button>,
+            <button
+              key="help"
+              type="button"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+              aria-label="Help"
+            >
+              <HelpCircle className="h-5 w-5 text-slate-600" />
+            </button>,
+          ]}
+        />
 
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, X, Package } from 'lucide-react';
+import { Plus, X, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
@@ -13,6 +13,7 @@ import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import CapabilityHelper from '@/lib/capability-helper';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
@@ -434,20 +435,19 @@ export function VendorServiceManagementComplete({
     false;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="vendor-page-shell bg-gray-50">
       <div className="vendor-app-column bg-white min-h-screen">
-        {/* Header */}
-        <div className="p-4 bg-white border-b sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-semibold text-gray-900">Service Management</h1>
-              <p className="text-xs text-gray-500">{vendorData?.businessName || vendorData?.fullName}</p>
-            </div>
-          </div>
-        </div>
+        <VendorHeader
+          title="Service Management"
+          subtitle={
+            vendorData?.businessName ||
+            vendorData?.business_name ||
+            vendorData?.fullName ||
+            vendorData?.full_name ||
+            undefined
+          }
+          onBack={onBack}
+        />
 
         {/* ❌ REMOVED: Staff management banner - staff has been decommissioned */}
 

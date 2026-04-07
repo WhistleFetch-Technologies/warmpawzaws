@@ -3,7 +3,9 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 // ============================================================================
 // TYPES
@@ -38,6 +40,7 @@ interface UPIAccount {
 // ============================================================================
 
 export default function BankDetailsPage() {
+  const router = useRouter();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [upiAccounts, setUpiAccounts] = useState<UPIAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -286,23 +289,15 @@ export default function BankDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
-              <h1 className="text-2xl font-bold text-gray-800">Bank & Payment Details</h1>
-              <p className="text-sm text-gray-500 mt-1">Manage your settlement accounts</p>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Bank & Payment Details"
+          subtitle="Manage your settlement accounts"
+          onBack={() => router.back()}
+        />
 
-      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="w-full px-4 py-6 sm:px-6">
 
         {/* Messages */}
         {error && (
@@ -477,7 +472,6 @@ export default function BankDetailsPage() {
             </div>
           </div>
         </div>
-          </div>
         </div>
 
       {/* Bank Account Modal */}
@@ -656,6 +650,7 @@ export default function BankDetailsPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
