@@ -41,6 +41,16 @@ interface Address {
   apartmentName?: string;
 }
 
+/** Min ~44px top inset when env(safe-area-inset-top) is 0 (many Android WebViews); add breathing room below real notch when set. */
+const ADDRESS_HEADER_BAR =
+  'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-[60] isolate pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-4 rounded-b-2xl shadow-md';
+
+const HEADER_CLOSE_BTN =
+  'touch-manipulation relative z-10 w-12 h-12 min-h-[3rem] min-w-[3rem] bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform shrink-0';
+
+const HEADER_BACK_BTN =
+  'touch-manipulation relative z-10 text-white flex items-center gap-1.5 min-h-11 min-w-11 px-3 py-2 rounded-xl active:bg-white/15 transition-colors shrink-0 justify-center';
+
 export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavigate }: AddressBookPageProps) {
   const exitToHome = onCloseToHome ?? onBack;
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -261,24 +271,24 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
 
   if (showForm) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 pt-4 pb-4 rounded-b-2xl shadow-md">
+      <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] max-w-md mx-auto">
+        <div className={ADDRESS_HEADER_BAR}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <button
               type="button"
               onClick={exitToHome}
-              className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform shrink-0"
+              className={HEADER_CLOSE_BTN}
               aria-label="Close to home"
             >
-              <X className="w-6 h-6 text-white" />
+              <X className="w-6 h-6 text-white pointer-events-none" />
             </button>
             <button
               type="button"
               onClick={handleFormBack}
-              className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+              className={HEADER_BACK_BTN}
             >
-              <ChevronLeft className="w-5 h-5" />
-              <span className="font-medium">Back</span>
+              <ChevronLeft className="w-5 h-5 shrink-0 pointer-events-none" />
+              <span className="font-medium pointer-events-none">Back</span>
             </button>
           </div>
           <h1 className="text-xl font-bold text-white">
@@ -493,7 +503,7 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
           </div>
 
           {/* Submit Button */}
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto shadow-lg">
+          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pt-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-w-md mx-auto shadow-lg">
             <Button
               type="submit"
               disabled={saving}
@@ -514,25 +524,25 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
+    <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-24 max-w-md mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 pt-4 pb-4 rounded-b-2xl shadow-md">
+      <div className={ADDRESS_HEADER_BAR}>
         <div className="flex items-center justify-between gap-2 mb-3">
           <button
             type="button"
             onClick={exitToHome}
-            className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform shrink-0"
+            className={HEADER_CLOSE_BTN}
             aria-label="Close to home"
           >
-            <X className="w-6 h-6 text-white" />
+            <X className="w-6 h-6 text-white pointer-events-none" />
           </button>
           <button
             type="button"
             onClick={onBack}
-            className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
+            className={HEADER_BACK_BTN}
           >
-            <ChevronLeft className="w-5 h-5" />
-            <span className="font-medium">Back</span>
+            <ChevronLeft className="w-5 h-5 shrink-0 pointer-events-none" />
+            <span className="font-medium pointer-events-none">Back</span>
           </button>
         </div>
         <div>

@@ -24,7 +24,7 @@ export function ProfileAccountScreenHeader({
 }: ProfileAccountScreenHeaderProps) {
   return (
     <div
-      className={`bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 rounded-b-2xl shadow-md ${className}`}
+      className={`bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-4 rounded-b-2xl shadow-md ${className}`}
     >
       <div className="flex items-center justify-between gap-2 mb-3">
         <button
