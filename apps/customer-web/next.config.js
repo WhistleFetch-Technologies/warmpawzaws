@@ -26,9 +26,14 @@ const nextConfig = {
   // Only use static export in production builds, not in development
   // This allows dynamic routes to work in dev mode
   ...(process.env.NODE_ENV === 'production' ? { output: 'export' } : {}),
-  // Dev: default `.next` avoids missing clientReferenceManifest races (custom distDir + Windows/OneDrive sync).
-  // Prod build: `dist` for static export + deploy scripts (see scripts/deploy-customer-web.sh).
-  distDir: process.env.NODE_ENV === 'production' ? 'dist' : '.next',
+  // Prod: `dist` for static export + deploy scripts (see scripts/deploy-customer-web.sh).
+  // Dev must stay under this app dir (e.g. `.next`): output outside the project breaks `require('react/...')`
+  // resolution for compiled server chunks. If OneDrive causes EBUSY on `.next`, move the repo off OneDrive,
+  // pause sync while developing, or exclude `apps/customer-web/.next` from backup/sync tools.
+  distDir:
+    process.env.NODE_ENV === 'production'
+      ? 'dist'
+      : process.env.NEXT_DEV_DIST_DIR || '.next',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
   swcMinify: true,

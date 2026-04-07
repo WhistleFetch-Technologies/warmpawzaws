@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  ChevronLeft, Camera, Edit2, Save, X, User, Calendar, 
+  Camera, Edit2, Save, X, User, Calendar, 
   MessageSquare, Heart, Settings, ChevronRight, Package,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
@@ -24,6 +24,7 @@ import {
 } from '@/lib/profile-address-format';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
 
@@ -1204,59 +1205,31 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
       }`}
     >
       {/* Full Screen Mobile Container */}
-      <div className="w-full max-w-customer mx-auto h-full bg-white flex flex-col">
-        
-        {/* Header - Fixed */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-6 flex-shrink-0">
-          <div className="flex items-center justify-between mb-6">
-            <button
-              type="button"
-              onClick={handleHeaderCloseToHome}
-              className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform"
-              aria-label="Close to home"
-            >
-              <X className="w-6 h-6 text-white" />
-            </button>
-            {showProfileMenuBack && (
-              <button
-                type="button"
-                onClick={handleSidebarBack}
-                className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0"
-                aria-label="Go back"
-              >
-                <ChevronLeft className="w-5 h-5" />
-                <span className="font-medium">Back</span>
-              </button>
-            )}
-          </div>
-
-          {/* User Profile Section */}
-          {loading ? (
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-white/20 rounded-full animate-pulse"></div>
-              <div className="flex-1">
-                <div className="h-5 bg-white/20 rounded w-32 mb-2"></div>
-                <div className="h-4 bg-white/20 rounded w-24"></div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-white rounded-full overflow-hidden flex items-center justify-center">
-                {photoPreview ? (
-                  <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <User className="w-8 h-8 text-[#FF8C42]" />
-                )}
-              </div>
-              <div>
-                <h2 className="text-white font-bold text-lg">
-                  {profile?.firstName || 'User'} {profile?.lastName || ''}
-                </h2>
-                <p className="text-white/90 text-sm">{phone}</p>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="w-full max-w-customer mx-auto h-full bg-gray-50 flex flex-col">
+        <ServiceDashboardHeader
+          serviceName={
+            loading
+              ? 'Account'
+              : [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account'
+          }
+          serviceSubtitle={loading ? undefined : phone}
+          serviceIcon={
+            <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white">
+              {loading ? (
+                <span className="h-8 w-8 animate-pulse rounded-full bg-white/40" aria-hidden />
+              ) : photoPreview ? (
+                <PresignableImage src={photoPreview} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <User className="h-6 w-6 text-[#FF8C42]" />
+              )}
+            </span>
+          }
+          iconColor="text-white"
+          stats={[]}
+          onCloseToHome={handleHeaderCloseToHome}
+          onBack={showProfileMenuBack ? handleSidebarBack : undefined}
+          showBackButton={showProfileMenuBack}
+        />
 
         {/* Scrollable Content Area - Fixed Height with Proper Overflow */}
         <div 
