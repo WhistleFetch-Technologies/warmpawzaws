@@ -142,7 +142,7 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-4">
+      <div className="vendor-app-column bg-white min-h-screen pb-4">
         {/* Header */}
         <div className="sticky top-0 z-20 bg-white border-b">
           <div className="p-4 flex items-center gap-3">

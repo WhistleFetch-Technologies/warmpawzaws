@@ -491,7 +491,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
   const totalResults = Object.values(filteredGroups).reduce((sum, roles) => sum + roles.length, 0);
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column">
       {/* Header with Back/Logout */}
       <div className="px-4 pt-3 pb-2 flex justify-between items-center">
         <button

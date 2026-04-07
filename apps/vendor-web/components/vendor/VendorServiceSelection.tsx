@@ -111,7 +111,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto pb-24">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column pb-24">
       {/* Header */}
       <div className="px-6 pt-12 pb-8 text-center">
         {/* Logo */}
@@ -312,7 +312,8 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
       </div>
 
       {/* Fixed Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20 safe-area-bottom">
+        <div className="vendor-app-column-inner px-4 sm:px-6 py-4">
         <Button
           onClick={handleContinue}
           disabled={selectedServices.length === 0 || !selectedStyle}
@@ -321,6 +322,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
           Start your pet service business
           <ChevronRight className="w-5 h-5 ml-2" />
         </Button>
+        </div>
       </div>
     </div>
   );

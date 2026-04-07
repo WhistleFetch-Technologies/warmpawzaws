@@ -157,7 +157,7 @@ export function ProgressTrackingDashboard({ vendorId, roleType = 'trainer', onBa
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading progress trackers...</p>
@@ -167,7 +167,7 @@ export function ProgressTrackingDashboard({ vendorId, roleType = 'trainer', onBa
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B2C] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
@@ -327,7 +327,7 @@ function AddNoteModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-      <div className="bg-white w-full max-w-[430px] rounded-t-3xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white vendor-modal-sheet rounded-t-3xl max-h-[90vh] overflow-y-auto mx-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Add Progress Note</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>

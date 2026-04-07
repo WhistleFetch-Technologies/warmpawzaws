@@ -277,7 +277,7 @@ export function CreatePackageFlow({
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] p-4 text-white sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-3">

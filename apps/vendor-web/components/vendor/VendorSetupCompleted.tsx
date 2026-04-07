@@ -10,7 +10,7 @@ interface VendorSetupCompletedProps {
 export function VendorSetupCompleted({ onContinue }: VendorSetupCompletedProps) {
   return (
     <div className="min-h-screen bg-[#E8F5E3] flex items-center justify-center p-4">
-      <div className="w-full max-w-[430px] bg-white rounded-3xl shadow-lg p-8 text-center space-y-6">
+      <div className="vendor-modal-sheet w-full bg-white rounded-3xl shadow-lg p-6 sm:p-8 text-center space-y-6 mx-auto">
         {/* Green Success Badge */}
         <div className="flex justify-center">
           <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center">

@@ -557,8 +557,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   })();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
           <div className="flex items-center justify-between mb-3">
@@ -933,7 +933,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
         {/* Bottom Navigation */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 safe-area-bottom">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-2">
+          <div className="vendor-app-column-inner flex items-center justify-around py-2">
             <button
               onClick={() => setActiveBottomTab('home')}
               className={`flex flex-col items-center justify-center gap-0.5 min-w-[3rem] min-h-[44px] px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'

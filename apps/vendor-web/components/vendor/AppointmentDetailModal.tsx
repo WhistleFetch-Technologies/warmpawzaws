@@ -1316,7 +1316,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl w-full max-w-[430px] h-[90vh] flex items-center justify-center">
+        <div className="bg-white rounded-2xl vendor-modal-sheet h-[90vh] flex items-center justify-center mx-auto">
           <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin"></div>
         </div>
       </div>
@@ -1326,7 +1326,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   if (!booking) {
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl w-full max-w-[430px] p-6">
+        <div className="bg-white rounded-2xl vendor-modal-sheet p-6 mx-auto">
           <p className="text-center text-gray-600">Appointment not found</p>
           <button
             onClick={onClose}
@@ -1342,7 +1342,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-        <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] h-[90vh] flex flex-col">
+        <div className="bg-white vendor-modal-sheet rounded-t-[32px] sm:rounded-[32px] h-[90vh] flex flex-col mx-auto">
           {/* Header */}
           <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-4 flex items-center justify-between rounded-t-[32px]">
             <div className="flex-1">

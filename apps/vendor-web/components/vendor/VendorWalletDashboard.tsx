@@ -78,7 +78,7 @@ export function VendorWalletDashboard({ vendorId }: VendorWalletDashboardProps) 
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-[430px] mx-auto space-y-4">
+      <div className="vendor-app-column space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-gray-900">Vendor Wallet</h1>

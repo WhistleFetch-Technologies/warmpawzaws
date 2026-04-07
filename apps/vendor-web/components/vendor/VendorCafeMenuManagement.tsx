@@ -279,7 +279,7 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="p-4 flex items-center gap-3">

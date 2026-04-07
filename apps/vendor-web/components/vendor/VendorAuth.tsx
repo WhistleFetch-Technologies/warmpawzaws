@@ -569,7 +569,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
     return (
       <Fragment>
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column">
 
 
         {/* Orange Header Section */}
@@ -684,7 +684,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   if (isSignUp && currentStep === 1 && !showOtpScreen) {
     return (
       <Fragment>
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto safe-area-top">
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column safe-area-top">
         {/* Orange Header Section */}
         <div className="px-6 pt-8 pb-20 flex flex-col items-center">
           {/* Logo */}
@@ -1061,7 +1061,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <div className="space-y-4">
                 <h3 className="text-lg mb-4">Select Services You Offer *</h3>
                 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {serviceOptions.map((service) => (
                     <div
                       key={service}
@@ -1107,7 +1107,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="city">City *</Label>
                     <Input

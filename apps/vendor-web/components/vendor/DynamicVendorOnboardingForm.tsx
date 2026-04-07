@@ -1566,7 +1566,7 @@ export function DynamicVendorOnboardingForm({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading...</p>
@@ -1577,8 +1577,8 @@ export function DynamicVendorOnboardingForm({
 
   if (!form) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] flex items-center justify-center max-w-[430px] mx-auto p-6">
-        <div className="bg-white rounded-3xl p-8 w-full text-center shadow-sm">
+      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Available</h3>
           <p className="text-gray-600 mb-6 text-sm">Unable to load the onboarding form for this role.</p>
@@ -1601,8 +1601,8 @@ console.log("------------------------------------->",formData);
   // ✅ Check if form has empty sections (no published form)
   if (form.sections.length === 0) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] flex items-center justify-center max-w-[430px] mx-auto p-6">
-        <div className="bg-white rounded-3xl p-8 w-full text-center shadow-sm">
+      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Published</h3>
           <p className="text-gray-600 mb-6 text-sm">
@@ -1619,7 +1619,7 @@ console.log("------------------------------------->",formData);
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex flex-col">
+    <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex flex-col">
       {/* Header Section */}
       <div className="pt-8 pb-8 px-6 text-center relative">
         {onBack && (
@@ -1779,8 +1779,8 @@ console.log("------------------------------------->",formData);
       </div>
 
       {/* Fixed Bottom Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md px-6 py-4 max-w-[430px] mx-auto border-t border-gray-100 z-50">
-        <div className="flex flex-col gap-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-100 z-50 safe-area-bottom">
+        <div className="vendor-app-column-inner px-4 sm:px-6 py-4 flex flex-col gap-3">
           <Button
             onClick={handleSubmit}
             disabled={submitting}
