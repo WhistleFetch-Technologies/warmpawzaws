@@ -38,6 +38,8 @@ interface VendorBookingManagementProps {
   vendorPhone?: string;
   /** Vendor name for chat display */
   vendorName?: string;
+  /** When true, omit outer shell and VendorHeader (parent provides them, e.g. VendorRouteShell). */
+  embedded?: boolean;
 }
 
 interface Booking {
@@ -158,13 +160,14 @@ function formatDbTimeTo12h(raw: string): string {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-export function VendorBookingManagement({ 
-  vendorId, 
-  vendorData, 
+export function VendorBookingManagement({
+  vendorId,
+  vendorData,
   onBack,
   chatEnabled = true,
   vendorPhone,
-  vendorName
+  vendorName,
+  embedded = false,
 }: VendorBookingManagementProps) {
   const router = useRouter();
   
@@ -931,15 +934,8 @@ export function VendorBookingManagement({
     setShowPrescriptionModal(true);
   };
 
-  return (
-    <div className="vendor-page-shell bg-gray-50">
-      <div className="vendor-app-column min-h-screen bg-white pb-20">
-        <VendorHeader
-          title={vendorData?.businessName || vendorData?.fullName || 'Booking Management'}
-          subtitle={vendorData?.address || 'India'}
-          onBack={onBack}
-        />
-
+  const bookingMainBody = (
+    <>
         <div className="border-b border-gray-200 bg-white px-4 pb-4">
           {/* Tab Navigation */}
           <div className="flex gap-2">
@@ -1671,8 +1667,28 @@ export function VendorBookingManagement({
             )}
           </>
         )}
-      </div>
-      
+    </>
+  );
+
+  return (
+    <>
+      {!embedded ? (
+        <div className="vendor-page-shell bg-gray-50">
+          <div className="vendor-app-column min-h-screen bg-white pb-20">
+            <VendorHeader
+              title={vendorData?.businessName || vendorData?.fullName || 'Booking Management'}
+              subtitle={vendorData?.address || 'India'}
+              onBack={onBack}
+            />
+            {bookingMainBody}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-20">{bookingMainBody}</div>
+        </div>
+      )}
+
       {/* OTP VERIFICATION MODAL */}
       {showOTPModal && selectedBooking && (() => {
         const isDogWalking = selectedBooking.serviceName?.toLowerCase().includes('walk') || 
@@ -1821,6 +1837,6 @@ export function VendorBookingManagement({
           onUploadSuccess={() => loadBookings()}
         />
       )}
-    </div>
+    </>
   );
 }

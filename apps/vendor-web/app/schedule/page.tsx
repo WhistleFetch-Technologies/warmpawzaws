@@ -51,12 +51,10 @@ export default function SchedulePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      <AdvancedAvailabilityManager
-        vendorId={vendorId}
-        vendorData={vendorData}
-        onBack={() => router.push('/')}
-      />
-    </div>
+    <AdvancedAvailabilityManager
+      vendorId={vendorId}
+      vendorData={vendorData}
+      onBack={() => router.push('/')}
+    />
   );
 }

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Briefcase, TrendingUp, Package, Settings, ArrowLeft, Stethoscope, Ambulance, Microscope, Plus, Edit2, Trash2, Search, AlertTriangle } from 'lucide-react';
+import { Package, Stethoscope, Ambulance, Microscope, Plus, Edit2, Trash2, Search, AlertTriangle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Button } from '@/components/ui/button';
 
 interface InventoryItem {
   id: string;
@@ -117,30 +119,83 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
 
   const lowStockItems = inventory.filter(item => item.quantity <= item.minStock);
 
-  return (
-    <div className="min-h-screen bg-gray-50 vendor-app-column">
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-0 text-white">
-        <div className="flex items-center gap-4 mb-4">
-          <button onClick={onBack} className="p-0 hover:bg-white/10 rounded-lg">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold">Business Hub</h2>
-            <p className="text-white/70 text-sm">
-              {isVet ? 'Manage vet services & equipment' : 'Manage inventory & store settings'}
-            </p>
-          </div>
-        </div>
-      </div>
+  const closeItemModal = () => {
+    setShowAddModal(false);
+    setEditingItem(null);
+    setItemForm({ name: '', sku: '', category: '', quantity: 0, minStock: 5, price: 0, unit: 'pcs' });
+  };
 
-      <div className="p-4">
+  const inFormMode = showAddModal;
+
+  const listTitle =
+    isVet && activeTab === 'vet-services'
+      ? 'Business Hub'
+      : isVet && activeTab === 'inventory'
+        ? 'Pharmacy'
+        : 'Inventory';
+
+  const listSubtitle =
+    isVet && activeTab === 'vet-services'
+      ? 'Manage vet services & equipment'
+      : isVet && activeTab === 'inventory'
+        ? 'Manage inventory & stock'
+        : 'Manage inventory & store settings';
+
+  return (
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen bg-white">
+        <VendorHeader
+          title={
+            inFormMode
+              ? editingItem
+                ? 'Edit item'
+                : 'Add item'
+              : listTitle
+          }
+          subtitle={inFormMode ? 'Enter product details below' : listSubtitle}
+          onBack={inFormMode ? closeItemModal : onBack}
+          actions={
+            inFormMode
+              ? [
+                  <Button
+                    key="save-item"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
+                    onClick={handleSaveItem}
+                  >
+                    {editingItem ? 'Save' : 'Add'}
+                  </Button>,
+                ]
+              : activeTab === 'inventory'
+                ? [
+                    <Button
+                      key="add-inv"
+                      type="button"
+                      size="sm"
+                      className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
+                      onClick={() => {
+                        setEditingItem(null);
+                        setItemForm({ name: '', sku: '', category: '', quantity: 0, minStock: 5, price: 0, unit: 'pcs' });
+                        setShowAddModal(true);
+                      }}
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      Add
+                    </Button>,
+                  ]
+                : undefined
+          }
+        />
+
+      <div className="px-4 py-4 sm:px-6">
         <div className="flex gap-3 mb-4">
           {isVet && (
             <button
               onClick={() => setActiveTab('vet-services')}
-              className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-3 ${
+              className={`flex flex-1 items-center justify-center gap-3 rounded-lg px-4 py-2 font-medium ${
                 activeTab === 'vet-services'
-                  ? 'bg-[primary] text-white'
+                  ? 'bg-orange-500 text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -150,9 +205,9 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
           )}
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-3 ${
+            className={`flex flex-1 items-center justify-center gap-3 rounded-lg px-4 py-2 font-medium ${
               activeTab === 'inventory'
-                ? 'bg-[primary] text-white'
+                ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}
           >
@@ -205,24 +260,16 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
               </div>
             )}
 
-            {/* Search and Add */}
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search inventory..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm"
-                />
-              </div>
-              <button
-                onClick={() => { setShowAddModal(true); setEditingItem(null); setItemForm({ name: '', sku: '', category: '', quantity: 0, minStock: 5, price: 0, unit: 'pcs' }); }}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Add
-              </button>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search inventory..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-4 text-sm"
+              />
             </div>
 
             {/* Inventory List */}
@@ -273,9 +320,8 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
 
             {/* Add/Edit Modal */}
             {showAddModal && (
-              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl w-full max-w-md p-4">
-                  <h3 className="text-lg font-bold mb-4">{editingItem ? 'Edit Item' : 'Add New Item'}</h3>
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="w-full max-w-md rounded-xl bg-white p-4">
                   <div className="space-y-3">
                     <input
                       type="text"
@@ -331,18 +377,13 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                     />
                   </div>
-                  <div className="flex gap-2 mt-4">
+                  <div className="mt-4">
                     <button
-                      onClick={() => { setShowAddModal(false); setEditingItem(null); }}
-                      className="flex-1 py-2 border border-gray-200 rounded-lg font-medium"
+                      type="button"
+                      onClick={closeItemModal}
+                      className="w-full rounded-lg border border-gray-200 py-2 font-medium"
                     >
                       Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveItem}
-                      className="flex-1 py-2 bg-orange-500 text-white rounded-lg font-medium"
-                    >
-                      {editingItem ? 'Update' : 'Add Item'}
                     </button>
                   </div>
                 </div>
@@ -350,6 +391,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

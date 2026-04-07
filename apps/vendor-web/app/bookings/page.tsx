@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { VendorBookingManagement } from '@/components/vendor/VendorBookingManagement';
+import { VendorRouteShell } from '@/components/vendor/layout/VendorRouteShell';
 import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
 
 export default function BookingsPage() {
@@ -56,14 +57,27 @@ export default function BookingsPage() {
   const vendorId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '';
   const effectiveVendorData = vendorData || (typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('vendorData') || '{}') : {});
 
+  const headerTitle =
+    effectiveVendorData?.businessName ||
+    effectiveVendorData?.fullName ||
+    'Bookings';
+  const headerSubtitle = effectiveVendorData?.address || 'India';
+
   return (
-    <VendorBookingManagement
-      vendorId={vendorId}
-      vendorData={effectiveVendorData}
-      onBack={handleBack}
-      chatEnabled={true}
-      vendorPhone={effectiveVendorData?.phone || effectiveVendorData?.mobile}
-      vendorName={effectiveVendorData?.fullName || effectiveVendorData?.businessName || effectiveVendorData?.business_name}
-    />
+    <VendorRouteShell title={headerTitle} subtitle={headerSubtitle} onBack={handleBack}>
+      <VendorBookingManagement
+        embedded
+        vendorId={vendorId}
+        vendorData={effectiveVendorData}
+        onBack={handleBack}
+        chatEnabled={true}
+        vendorPhone={effectiveVendorData?.phone || effectiveVendorData?.mobile}
+        vendorName={
+          effectiveVendorData?.fullName ||
+          effectiveVendorData?.businessName ||
+          effectiveVendorData?.business_name
+        }
+      />
+    </VendorRouteShell>
   );
 }
