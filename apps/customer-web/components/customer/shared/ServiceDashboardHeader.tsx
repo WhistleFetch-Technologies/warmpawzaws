@@ -22,8 +22,8 @@ export interface ServiceDashboardHeaderProps {
   serviceIcon: LucideIcon | ReactNode;
   iconColor?: string;
   
-  // Stats
-  stats: StatCard[];
+  // Stats (omit or pass [] to hide the stat row)
+  stats?: StatCard[];
   
   // Step indicators (for booking flows)
   steps?: StepInfo[];
@@ -45,7 +45,7 @@ export function ServiceDashboardHeader({
   serviceSubtitle,
   serviceIcon: ServiceIcon,
   iconColor = 'text-white',
-  stats,
+  stats = [],
   steps,
   onBack,
   showBackButton = true,
@@ -134,20 +134,22 @@ export function ServiceDashboardHeader({
         )}
 
         {/* Stats Cards - Frosted Effect */}
-        <div className="grid grid-cols-3 gap-2 mt-4">
-          {stats.map((stat, index) => (
-            <div
-              key={index}
-              className="bg-white/20 backdrop-blur-md rounded-2xl p-3 border border-white/30 text-center"
-            >
-              <div className="text-xl font-bold text-white mb-1 flex items-center justify-center gap-1">
-                {stat.icon && <span className="text-white">{stat.icon}</span>}
-                <span>{stat.value}</span>
+        {stats.length > 0 && (
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            {stats.map((stat, index) => (
+              <div
+                key={index}
+                className="bg-white/20 backdrop-blur-md rounded-2xl p-3 border border-white/30 text-center"
+              >
+                <div className="text-xl font-bold text-white mb-1 flex items-center justify-center gap-1">
+                  {stat.icon && <span className="text-white">{stat.icon}</span>}
+                  <span>{stat.value}</span>
+                </div>
+                <div className="text-white/90 text-xs font-medium">{stat.label}</div>
               </div>
-              <div className="text-white/90 text-xs font-medium">{stat.label}</div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* ✅ FIX: Step Indicators in Orange Header Area */}
         {steps && steps.length > 0 && (

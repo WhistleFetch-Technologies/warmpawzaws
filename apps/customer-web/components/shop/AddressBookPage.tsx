@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, MapPin, Plus, Edit2, Trash2, Check, X, Home, Building2, Briefcase } from 'lucide-react';
+import { MapPin, Plus, Edit2, Trash2, Check, Home, Building2, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 interface AddressBookPageProps {
   phone: string;
@@ -40,16 +41,6 @@ interface Address {
   streetName?: string;
   apartmentName?: string;
 }
-
-/** Min ~44px top inset when env(safe-area-inset-top) is 0 (many Android WebViews); add breathing room below real notch when set. */
-const ADDRESS_HEADER_BAR =
-  'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-[60] isolate pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-4 rounded-b-2xl shadow-md';
-
-const HEADER_CLOSE_BTN =
-  'touch-manipulation relative z-10 w-12 h-12 min-h-[3rem] min-w-[3rem] bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform shrink-0';
-
-const HEADER_BACK_BTN =
-  'touch-manipulation relative z-10 text-white flex items-center gap-1.5 min-h-11 min-w-11 px-3 py-2 rounded-xl active:bg-white/15 transition-colors shrink-0 justify-center';
 
 export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavigate }: AddressBookPageProps) {
   const exitToHome = onCloseToHome ?? onBack;
@@ -263,7 +254,7 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-customer mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
@@ -271,30 +262,17 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
 
   if (showForm) {
     return (
-      <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] max-w-md mx-auto">
-        <div className={ADDRESS_HEADER_BAR}>
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <button
-              type="button"
-              onClick={exitToHome}
-              className={HEADER_CLOSE_BTN}
-              aria-label="Close to home"
-            >
-              <X className="w-6 h-6 text-white pointer-events-none" />
-            </button>
-            <button
-              type="button"
-              onClick={handleFormBack}
-              className={HEADER_BACK_BTN}
-            >
-              <ChevronLeft className="w-5 h-5 shrink-0 pointer-events-none" />
-              <span className="font-medium pointer-events-none">Back</span>
-            </button>
-          </div>
-          <h1 className="text-xl font-bold text-white">
-            {editingAddress ? 'Edit Address' : 'Add New Address'}
-          </h1>
-        </div>
+      <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] max-w-customer mx-auto">
+        <ServiceDashboardHeader
+          serviceName={editingAddress ? 'Edit Address' : 'Add New Address'}
+          serviceSubtitle="Save delivery locations"
+          serviceIcon={MapPin}
+          iconColor="text-white"
+          stats={[]}
+          onCloseToHome={exitToHome}
+          onBack={handleFormBack}
+          showBackButton
+        />
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           {/* Label Selection */}
@@ -523,35 +501,24 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
     );
   }
 
+  const defaultCount = addresses.filter((a) => a.isDefault).length;
+
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className={ADDRESS_HEADER_BAR}>
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <button
-            type="button"
-            onClick={exitToHome}
-            className={HEADER_CLOSE_BTN}
-            aria-label="Close to home"
-          >
-            <X className="w-6 h-6 text-white pointer-events-none" />
-          </button>
-          <button
-            type="button"
-            onClick={onBack}
-            className={HEADER_BACK_BTN}
-          >
-            <ChevronLeft className="w-5 h-5 shrink-0 pointer-events-none" />
-            <span className="font-medium pointer-events-none">Back</span>
-          </button>
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-white">Address Book</h1>
-          <p className="text-sm text-white/90 mt-0.5">
-            {addresses.length} saved {addresses.length === 1 ? 'address' : 'addresses'}
-          </p>
-        </div>
-      </div>
+    <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-24 max-w-customer mx-auto">
+      <ServiceDashboardHeader
+        serviceName="Address Book"
+        serviceSubtitle={`${addresses.length} saved ${addresses.length === 1 ? 'address' : 'addresses'}`}
+        serviceIcon={MapPin}
+        iconColor="text-white"
+        stats={[
+          { value: String(addresses.length), label: 'Saved' },
+          { value: String(defaultCount), label: 'Default' },
+          { value: String(Math.max(0, addresses.length - defaultCount)), label: 'Other' },
+        ]}
+        onCloseToHome={exitToHome}
+        onBack={onBack}
+        showBackButton
+      />
 
       <div className="p-4 space-y-4">
         {/* Add New Button */}

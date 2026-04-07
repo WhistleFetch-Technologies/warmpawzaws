@@ -2089,52 +2089,81 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
   if (currentScreen === 'order_history')
     return (
-      <OrderHistoryPage
-        onBack={backToAccountMenu}
-        onCloseToHome={handleBack}
-        onNavigate={handleAccountNavigate}
-        spaShopReturnScreen="order_history"
-      />
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        <OrderHistoryPage
+          onBack={backToAccountMenu}
+          onCloseToHome={handleBack}
+          onNavigate={handleAccountNavigate}
+          spaShopReturnScreen="order_history"
+        />
+      </CustomerScreenWrapper>
     );
-  if (currentScreen === 'address_book') return (
-    <AddressBookPage
-      phone={phone}
-      onCloseToHome={handleBack}
-      onBack={
-        previousScreen
-          ? () => {
+  if (currentScreen === 'address_book')
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        <AddressBookPage
+          phone={phone}
+          onCloseToHome={handleBack}
+          onBack={
+            previousScreen
+              ? () => {
+                  setCurrentScreen(previousScreen);
+                  setPreviousScreen(null);
+                }
+              : backToAccountMenu
+          }
+          onSelect={(address) => {
+            toast.success('Address selected');
+            setSelectedAddressFromBook(address);
+            if (previousScreen) {
               setCurrentScreen(previousScreen);
               setPreviousScreen(null);
-            }
-          : backToAccountMenu
-      }
-      onSelect={(address) => {
-        toast.success('Address selected');
-        setSelectedAddressFromBook(address);
-        if (previousScreen) { setCurrentScreen(previousScreen); setPreviousScreen(null); } else handleBack();
-      }}
-    />
-  );
+            } else handleBack();
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
   // Add Address: must show address book, not fall through to default fallback
-  if (currentScreen === 'add-address') return (
-    <AddressBookPage
-      phone={phone}
-      onCloseToHome={handleBack}
-      onBack={
-        previousScreen
-          ? () => {
+  if (currentScreen === 'add-address')
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        <AddressBookPage
+          phone={phone}
+          onCloseToHome={handleBack}
+          onBack={
+            previousScreen
+              ? () => {
+                  setCurrentScreen(previousScreen);
+                  setPreviousScreen(null);
+                }
+              : backToAccountMenu
+          }
+          onSelect={(address) => {
+            toast.success('Address selected');
+            setSelectedAddressFromBook(address);
+            if (previousScreen) {
               setCurrentScreen(previousScreen);
               setPreviousScreen(null);
-            }
-          : backToAccountMenu
-      }
-      onSelect={(address) => {
-        toast.success('Address selected');
-        setSelectedAddressFromBook(address);
-        if (previousScreen) { setCurrentScreen(previousScreen); setPreviousScreen(null); } else handleBack();
-      }}
-    />
-  );
+            } else handleBack();
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
   if (currentScreen === 'wallet') return (
     <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
       <WalletPage onBack={backToAccountMenu} onCloseToHome={handleBack} onNavigate={handleAccountNavigate} />

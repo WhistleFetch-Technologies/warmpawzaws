@@ -1,0 +1,35 @@
+diff --git a/node_modules/next/dist/lib/recursive-delete.js b/node_modules/next/dist/lib/recursive-delete.js
+index 52230b1..67d5a56 100644
+--- a/node_modules/next/dist/lib/recursive-delete.js
++++ b/node_modules/next/dist/lib/recursive-delete.js
+@@ -53,13 +53,25 @@ async function recursiveDelete(/** Directory to delete the contents of */ dir, /
+         // readdir does not follow symbolic links
+         // if part is a symbolic link, follow it using stat
+         let isDirectory = part.isDirectory();
+-        const isSymlink = part.isSymbolicLink();
++        let isSymlink = part.isSymbolicLink();
+         if (isSymlink) {
+-            const linkPath = await _fs.promises.readlink(absolutePath);
+             try {
+-                const stats = await _fs.promises.stat((0, _path.isAbsolute)(linkPath) ? linkPath : (0, _path.join)((0, _path.dirname)(absolutePath), linkPath));
+-                isDirectory = stats.isDirectory();
+-            } catch  {}
++                const linkPath = await _fs.promises.readlink(absolutePath);
++                try {
++                    const stats = await _fs.promises.stat((0, _path.isAbsolute)(linkPath) ? linkPath : (0, _path.join)((0, _path.dirname)(absolutePath), linkPath));
++                    isDirectory = stats.isDirectory();
++                } catch  {}
++            } catch (e) {
++                // OneDrive / cloud placeholders: isSymbolicLink() may be true but readlink fails (EINVAL, etc.).
++                // Treat any readlink failure as "not a usable symlink" — Windows can surface many error codes.
++                isSymlink = false;
++                try {
++                    const st = await _fs.promises.lstat(absolutePath);
++                    isDirectory = st.isDirectory();
++                } catch  {
++                    isDirectory = part.isDirectory();
++                }
++            }
+         }
+         const pp = (0, _path.join)(previousPath, part.name);
+         const isNotExcluded = !exclude || !exclude.test(pp);

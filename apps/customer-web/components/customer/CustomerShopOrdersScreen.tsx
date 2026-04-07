@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, ordersApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
@@ -11,10 +11,11 @@ import {
 } from '@/lib/go-back-or-replace';
 import type { ShopReturnSpaScreen } from '@/lib/go-back-or-replace';
 import {
-  Package, Truck, Clock, Check, X as XIcon, ArrowLeft, ChevronLeft, X,
+  Package, Truck, Clock, Check, X as XIcon,
   Phone, Calendar, ChevronDown, ChevronUp, Star,
   RefreshCcw, AlertCircle, Search, Download, ShoppingBag,
 } from 'lucide-react';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 /** Backend may return 404 for “no orders” or missing route — show empty state, not an error. */
 function isOrdersListTreatAsEmpty(err: unknown): boolean {
@@ -293,55 +294,31 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
       ? 'No orders yet'
       : `${orders.length} order${orders.length === 1 ? '' : 's'}`;
 
+  const dashboardStats = useMemo(() => {
+    const active = orders.filter((o) =>
+      ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery'].includes(o.status)
+    ).length;
+    const done = orders.filter((o) => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'returned').length;
+    return [
+      { value: loading ? '…' : String(orders.length), label: 'Total' },
+      { value: loading ? '…' : String(active), label: 'Active' },
+      { value: loading ? '…' : String(done), label: 'Done' },
+    ];
+  }, [orders, loading]);
+
   return (
     <div className="min-h-[100dvh] bg-neutral-200/90 sm:bg-neutral-200 flex justify-center">
-      <div className="min-h-[100dvh] w-full max-w-[min(100%,28rem)] bg-gradient-to-b from-orange-50 via-amber-50/90 to-orange-50/80 pb-[max(7rem,env(safe-area-inset-bottom,0px))] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)] sm:border-x border-black/[0.04]">
-        <header className="sticky top-0 z-40 w-full rounded-b-2xl bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top">
-          <div className="cw-header-safe-x py-3">
-            {onCloseToHome ? (
-              <>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <button
-                    type="button"
-                    onClick={handleCloseToHome}
-                    className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 active:scale-95 transition-transform touch-manipulation"
-                    aria-label="Close to home"
-                  >
-                    <X className="w-6 h-6 text-white" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    className="text-white flex items-center gap-2 active:opacity-70 transition-opacity shrink-0 touch-manipulation"
-                    aria-label="Go back"
-                  >
-                    <ChevronLeft className="w-5 h-5" strokeWidth={2.25} />
-                    <span className="font-medium">Back</span>
-                  </button>
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-base sm:text-lg font-bold truncate tracking-tight">My Orders</h1>
-                  <p className="text-xs text-white/90 truncate">{loading ? '…' : orderCountLabel}</p>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center rounded-full hover:bg-white/15 active:bg-white/25 transition-colors touch-manipulation"
-                  aria-label="Go back"
-                >
-                  <ArrowLeft className="w-5 h-5" strokeWidth={2.25} />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base sm:text-lg font-bold truncate tracking-tight">My Orders</h1>
-                  <p className="text-xs text-white/90 truncate">{loading ? '…' : orderCountLabel}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </header>
+      <div className="min-h-[100dvh] w-full max-w-customer bg-gradient-to-b from-orange-50 via-amber-50/90 to-orange-50/80 pb-[max(7rem,env(safe-area-inset-bottom,0px))] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)] sm:border-x border-black/[0.04]">
+        <ServiceDashboardHeader
+          serviceName="My Orders"
+          serviceSubtitle={loading ? 'Loading…' : orderCountLabel}
+          serviceIcon={ShoppingBag}
+          iconColor="text-white"
+          stats={dashboardStats}
+          onBack={handleBack}
+          showBackButton
+          onCloseToHome={onCloseToHome ? handleCloseToHome : undefined}
+        />
 
         <main className="w-full px-3 sm:px-4 pt-3 sm:pt-4 space-y-3 sm:space-y-4">
         <div className="flex flex-col gap-2.5 sm:gap-3">

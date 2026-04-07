@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, User, Phone, Mail, MapPin, ChevronRight, Calendar } from 'lucide-react';
+import { User, Phone, Mail, MapPin, ChevronRight, Calendar } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 interface CustomerProfileProps {
   phone: string;
@@ -62,21 +63,22 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
   if (!profile) return <EmptyState message="Profile not found" />;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header - gradient matching customer home (FF8C42 → FF6B35) */}
-      <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pt-4 pb-5 flex items-center gap-3">
-        <button
-          onClick={onBack}
-          className="w-10 h-10 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="w-5 h-5 text-white" />
-        </button>
-        <h1 className="text-lg font-bold text-white tracking-tight">My Profile</h1>
-      </div>
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-customer mx-auto">
+      <ServiceDashboardHeader
+        serviceName="My Profile"
+        serviceSubtitle={profile.phone}
+        serviceIcon={User}
+        iconColor="text-white"
+        stats={[
+          { value: String(profile.pets?.length ?? 0), label: 'Pets' },
+          { value: profile.email ? 'On' : '—', label: 'Email' },
+          { value: profile.address ? 'On' : '—', label: 'Address' },
+        ]}
+        onBack={onBack}
+        showBackButton
+      />
 
-      {/* Content - curved top matching customer home */}
-      <div className="max-w-customer mx-auto -mt-1 rounded-t-[24px] bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-4 pt-6 pb-8">
+      <div className="max-w-customer mx-auto px-4 pt-4 pb-8">
         {/* Personal Information - design system card */}
         <div className="card rounded-2xl p-5 border border-gray-100 mb-4">
           <div className="flex items-center gap-4 mb-4">
