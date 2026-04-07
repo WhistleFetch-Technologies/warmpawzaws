@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { VendorSettingsScreen } from '@/components/vendor/VendorSettingsScreen';
+import { VendorRouteShell } from '@/components/vendor/layout/VendorRouteShell';
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -38,13 +39,18 @@ function SettingsContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <VendorRouteShell
+      title="Settings"
+      subtitle="Account, payments & profile"
+      onBack={() => router.back()}
+    >
       <VendorSettingsScreen
+        embedded
         vendorId={vendorId}
         onBack={() => router.back()}
         initialTab={initialTab}
       />
-    </div>
+    </VendorRouteShell>
   );
 }
 

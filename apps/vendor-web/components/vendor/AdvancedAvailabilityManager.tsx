@@ -16,10 +16,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
-  ArrowLeft, Save, Clock, Plus, X, Copy, Calendar, 
+  Save, Clock, Plus, X, Copy, Calendar, 
   Coffee, Pause, MapPin, Loader2, ToggleLeft, ToggleRight,
   AlertCircle, ChevronDown, ChevronUp, Trash2, Check
 } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -904,31 +905,31 @@ export function AdvancedAvailabilityManager({
   const currentDaySlots = schedule[selectedDay]?.slots || [];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-bold text-gray-900">Advanced Availability</h1>
-              <p className="text-sm text-gray-600">Manage your schedule, breaks, and holidays</p>
-            </div>
+    <div className="vendor-page-shell min-h-screen bg-gray-50">
+      <div className="vendor-app-column flex min-h-screen min-h-0 flex-col bg-white pb-20">
+        <VendorHeader
+          title="Advanced Availability"
+          subtitle="Manage your schedule, breaks, and holidays"
+          onBack={onBack}
+          actions={[
             <Button
+              key="save-all"
+              type="button"
               onClick={handleSave}
               disabled={saving}
-              className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+              className="shrink-0 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
             >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4 shrink-0" />
+              )}
               Save All
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+            </Button>,
+          ]}
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
         {/* Online Toggle - Solo providers only */}
         {isSoloProvider && (
           <div className="bg-white rounded-xl border p-4">
@@ -1511,6 +1512,8 @@ export function AdvancedAvailabilityManager({
               )}
             </div>
           )}
+        </div>
+          </div>
         </div>
       </div>
     </div>
