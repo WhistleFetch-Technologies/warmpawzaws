@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronRight, CreditCard, Settings as SettingsIcon, User } from 'lucide-react';
+import { CreditCard, Settings as SettingsIcon, User } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
 import { VendorGeneralSettings } from './VendorGeneralSettings';
 import { VendorProfileSettings } from './VendorProfileSettings';
@@ -26,15 +27,11 @@ export function VendorSettingsScreen({ vendorId, vendorData, onBack, initialTab 
   }, [initialTab]);
 
   return (
-    <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
-      <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="flex items-center gap-3 mb-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">
-            <ChevronRight className="w-5 h-5 rotate-180 text-gray-600" />
-          </button>
-          <h2 className="text-lg font-semibold text-gray-900">Settings</h2>
-        </div>
-        
+    <div className="fixed inset-0 z-20 flex flex-col bg-gray-50">
+      <div className="vendor-app-column flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <VendorHeader title="Settings" onBack={onBack} />
+
+        <div className="shrink-0 border-b border-gray-200 bg-white px-4 pb-1">
         {/* Tab Navigation */}
         <div className="flex gap-2 border-b border-gray-200">
           <button
@@ -78,9 +75,9 @@ export function VendorSettingsScreen({ vendorId, vendorData, onBack, initialTab 
             </div>
           </button>
         </div>
-      </div>
+        </div>
 
-      <div className="p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-24">
         {activeTab === 'general' && (
           <VendorGeneralSettings vendorId={vendorId} vendorData={vendorData} onBack={onBack} />
         )}
@@ -91,6 +88,7 @@ export function VendorSettingsScreen({ vendorId, vendorData, onBack, initialTab 
         {activeTab === 'profile' && (
           <VendorProfileSettings vendorId={vendorId} vendorData={vendorData} onBack={onBack} />
         )}
+      </div>
       </div>
     </div>
   );

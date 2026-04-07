@@ -31,6 +31,7 @@ const VendorDashboard = React.lazy(() =>
 // ✅ REMOVED: VendorScheduleManagement - Using AdvancedAvailabilityManager as standard
 // import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from '../VendorServiceManagementComplete';
+import { VendorHeader } from '../VendorHeader';
 import { VendorConsultationScreen } from '../VendorConsultationScreen';
 import { VendorBookingManagement } from '../VendorBookingManagement';
 import { VendorTeleConsultationFlow } from '../VendorTeleConsultationFlow';
@@ -73,7 +74,6 @@ import { VendorPolicyManagement } from '../VendorPolicyManagement'; // ✅ NEW: 
 import { VendorDistancePricing } from '../VendorDistancePricing'; // ✅ NEW: Distance pricing
 import { VendorSupportDashboard } from '../VendorSupportDashboard'; // ✅ NEW: Support tickets
 import { ServicePromotionsManagement } from '../ServicePromotionsManagement'; // ✅ NEW: Service Promotions
-import { ArrowLeft } from 'lucide-react'; // ✅ NEW: For navigation
 import { TeleCallNotification } from '../notification/teleNotification/TeleCallNotification'; // ✅ P2P Video Call Notification
 import { VendorNewBookingOrderAlert } from '../VendorNewBookingOrderAlert'; // Rule 4: Large new appointment/order alert
 import { useVendorNotificationService } from '../hooks/useVendorNotificationService';
@@ -1209,26 +1209,28 @@ export function VendorLandingPage({
       // ✅ NEW: Prescription List
       if (showPrescriptionList) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="bg-white border-b sticky top-0 z-10">
-              <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-                <button onClick={() => setShowPrescriptionList(false)} className="p-2 hover:bg-gray-100 rounded-full">
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h1 className="text-xl font-bold">Prescriptions</h1>
-                <button
-                  onClick={() => {
-                    setShowPrescriptionList(false);
-                    setShowPrescription(true);
-                  }}
-                  className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Create New
-                </button>
+          <div className="vendor-page-shell bg-gray-50">
+            <div className="vendor-app-column min-h-screen bg-white">
+              <VendorHeader
+                title="Prescriptions"
+                onBack={() => setShowPrescriptionList(false)}
+                actions={[
+                  <button
+                    key="create-rx"
+                    type="button"
+                    onClick={() => {
+                      setShowPrescriptionList(false);
+                      setShowPrescription(true);
+                    }}
+                    className="h-9 shrink-0 rounded-lg bg-blue-600 px-3 text-sm text-white hover:bg-blue-700"
+                  >
+                    Create New
+                  </button>,
+                ]}
+              />
+              <div className="mx-auto w-full max-w-4xl px-4 py-6">
+                <PrescriptionList vendorId={vendorId} />
               </div>
-            </div>
-            <div className="max-w-4xl mx-auto px-4 py-6">
-              <PrescriptionList vendorId={vendorId} />
             </div>
           </div>
         );

@@ -9,8 +9,8 @@ import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { 
-  ArrowLeft, 
   Search, 
   Filter, 
   Calendar, 
@@ -932,20 +932,15 @@ export function VendorBookingManagement({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="vendor-app-column bg-white min-h-screen pb-20">
-        {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={onBack} className="w-11 h-11 flex items-center justify-center -ml-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <h1 className="font-semibold text-gray-900 truncate">{vendorData?.businessName || vendorData?.fullName || 'Booking Management'}</h1>
-              <p className="text-xs text-gray-500 truncate">{vendorData?.address || 'India'}</p>
-            </div>
-          </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen bg-white pb-20">
+        <VendorHeader
+          title={vendorData?.businessName || vendorData?.fullName || 'Booking Management'}
+          subtitle={vendorData?.address || 'India'}
+          onBack={onBack}
+        />
 
+        <div className="border-b border-gray-200 bg-white px-4 pb-4">
           {/* Tab Navigation */}
           <div className="flex gap-2">
             <button

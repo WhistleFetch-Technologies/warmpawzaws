@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
-  ArrowLeft, 
   Plus, 
   Check, 
   Search, 
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager';
@@ -833,22 +833,14 @@ export function VendorServiceCatalogView({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 vendor-app-column">
-        <div className="bg-white border-b border-gray-200 p-4 safe-area-top">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack} className="w-11 h-11 min-w-[44px]" title="Back to Service Management">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-lg font-semibold">Browse Catalog</h1>
-              <p className="text-xs text-gray-500">Service Management</p>
+      <div className="vendor-page-shell bg-gray-50">
+        <div className="vendor-app-column flex min-h-screen flex-col bg-white">
+          <VendorHeader title="Browse Catalog" subtitle="Service Management" onBack={onBack} />
+          <div className="flex flex-1 items-center justify-center py-16">
+            <div className="text-center">
+              <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500"></div>
+              <p className="text-gray-600">Loading services...</p>
             </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading services...</p>
           </div>
         </div>
       </div>
@@ -856,21 +848,31 @@ export function VendorServiceCatalogView({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 vendor-app-column pb-20">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10 safe-area-top">
-        <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="icon" onClick={onBack} className="w-11 h-11 min-w-[44px]" title="Back to Service Management">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <h1 className="text-lg font-semibold">Browse Catalog</h1>
-            <p className="text-xs text-gray-500">
-              Service Management · {services.length} services · {groupedServices.length} categories
-            </p>
-          </div>
-        </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column flex min-h-screen flex-col bg-white">
+        <VendorHeader
+          title="Browse Catalog"
+          subtitle={`Service Management · ${services.length} services · ${groupedServices.length} categories`}
+          onBack={onBack}
+          actions={
+            mode === 'multi-select' && selectedServices.size > 0
+              ? [
+                  <Button
+                    key="add-selected"
+                    type="button"
+                    onClick={handleAddAllSelected}
+                    disabled={adding}
+                    className="h-9 shrink-0 bg-blue-600 text-xs text-white hover:bg-blue-700"
+                  >
+                    Add Selected
+                  </Button>,
+                ]
+              : []
+          }
+        />
 
+        <div className="min-h-0 flex-1 overflow-y-auto pb-20">
+          <div className="border-b border-gray-200 bg-white p-4">
         {/* Search */}
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -885,25 +887,15 @@ export function VendorServiceCatalogView({
 
         {/* Multi-Select Mode Header */}
         {mode === 'multi-select' && (
-          <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="w-5 h-5 text-blue-600" />
-              <div>
-                <p className="text-sm font-semibold text-blue-900">Multi-Select Mode</p>
-                <p className="text-xs text-blue-700">
-                  {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} selected
-                </p>
-              </div>
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <CheckSquare className="h-5 w-5 shrink-0 text-blue-600" />
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Multi-Select Mode</p>
+              <p className="text-xs text-blue-700">
+                {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} selected
+                {selectedServices.size > 0 ? ' · use Add Selected in the header' : ''}
+              </p>
             </div>
-            {selectedServices.size > 0 && (
-              <Button
-                onClick={handleAddAllSelected}
-                disabled={adding}
-                className="bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs"
-              >
-                Add Selected
-              </Button>
-            )}
           </div>
         )}
 
@@ -933,10 +925,10 @@ export function VendorServiceCatalogView({
             ));
           })()}
         </div>
-      </div>
+          </div>
 
       {/* Services List */}
-      <div className="p-4 space-y-3">
+      <div className="space-y-3 p-4">
         {groupedServices.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-500 mb-2">
@@ -1124,6 +1116,8 @@ export function VendorServiceCatalogView({
             </div>
           ))
         )}
+      </div>
+        </div>
       </div>
     </div>
   );

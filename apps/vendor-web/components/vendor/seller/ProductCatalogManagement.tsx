@@ -532,7 +532,7 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-white border-b border-slate-100 p-6 flex items-center justify-between z-10">
+        <div className="shrink-0 border-b border-slate-100 bg-white p-6 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900">{product ? 'Edit Product' : 'Add New Product'}</h2>
             <p className="text-sm text-slate-500 mt-1">Fill in the details below</p>

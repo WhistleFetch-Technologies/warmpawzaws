@@ -2,13 +2,23 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { SellerHub } from '@/components/vendor/seller/SellerHub';
+import {
+  SellerHubSidebar,
+  SellerHubMainPanels,
+  SELLER_HUB_NAVIGATION,
+  type SellerHubTab,
+} from '@/components/vendor/seller/SellerHub';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { apiClient } from '@/lib/api-client';
+import { Bell, HelpCircle } from 'lucide-react';
 
 export default function SellerPage() {
   const router = useRouter();
   const [vendorData, setVendorData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<SellerHubTab>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [notifications] = useState(0);
 
   useEffect(() => {
     loadVendorData();
@@ -83,11 +93,51 @@ export default function SellerPage() {
     );
   }
 
+  const activeNav = SELLER_HUB_NAVIGATION.find((n) => n.id === activeTab);
+
   return (
-    <SellerHub 
-      vendorData={vendorData} 
-      onLogout={handleLogout}
-      onBack={handleBack}
-    />
+    <div className="flex h-[100dvh] min-h-0 bg-gradient-to-br from-slate-50 to-orange-50/30">
+      <SellerHubSidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        vendorData={vendorData}
+        onLogout={handleLogout}
+        onBack={handleBack}
+      />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
+        <VendorHeader
+          title={activeNav?.label ?? 'Seller Hub'}
+          subtitle={activeNav?.description}
+          showBack
+          onBack={handleBack}
+          actions={[
+            <button
+              key="bell"
+              type="button"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5 text-slate-600" />
+              {notifications > 0 && (
+                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+              )}
+            </button>,
+            <button
+              key="help"
+              type="button"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
+              aria-label="Help"
+            >
+              <HelpCircle className="h-5 w-5 text-slate-600" />
+            </button>,
+          ]}
+        />
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <SellerHubMainPanels activeTab={activeTab} vendorData={vendorData} />
+        </main>
+      </div>
+    </div>
   );
 }
