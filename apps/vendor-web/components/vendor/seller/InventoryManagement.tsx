@@ -82,12 +82,7 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
-          <p className="text-slate-500 mt-1">Track and update your stock levels</p>
-        </div>
+      <div className="flex justify-end">
         <button
           onClick={loadInventory}
           className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"

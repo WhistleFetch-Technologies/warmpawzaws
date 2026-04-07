@@ -1,10 +1,13 @@
 'use client';
 
-import Link from 'next/link';
-
 export const dynamic = 'force-dynamic';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
+
 export default function FinanceHomePage() {
+  const router = useRouter();
   const cards = [
     {
       title: 'Settlements',
@@ -24,25 +27,29 @@ export default function FinanceHomePage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900">Finance</h1>
-        <p className="text-sm text-gray-600 mt-1">Choose a finance section to continue.</p>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Finance"
+          subtitle="Choose a finance section to continue"
+          onBack={() => router.back()}
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          {cards.map((card) => (
-            <Link
-              key={card.href}
-              href={card.href}
-              className="bg-white border border-orange-100 rounded-xl p-5 hover:border-orange-300 transition"
-            >
-              <h2 className="text-lg font-semibold text-gray-900">{card.title}</h2>
-              <p className="text-sm text-gray-600 mt-2">{card.description}</p>
-            </Link>
-          ))}
+        <div className="w-full px-4 py-6 sm:px-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {cards.map((card) => (
+              <Link
+                key={card.href}
+                href={card.href}
+                className="rounded-xl border border-orange-100 bg-white p-5 transition hover:border-orange-300"
+              >
+                <h2 className="text-lg font-semibold text-gray-900">{card.title}</h2>
+                <p className="mt-2 text-sm text-gray-600">{card.description}</p>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

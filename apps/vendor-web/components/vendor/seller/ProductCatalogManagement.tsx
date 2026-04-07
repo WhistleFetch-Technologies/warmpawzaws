@@ -120,12 +120,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   return (
     <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Product Catalog</h1>
-          <p className="text-slate-500 mt-1">Manage your product listings and inventory</p>
-        </div>
+      <div className="flex justify-end">
         <button
           onClick={() => {
             setEditingProduct(null);

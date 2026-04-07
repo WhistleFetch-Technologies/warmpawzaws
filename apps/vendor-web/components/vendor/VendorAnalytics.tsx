@@ -70,9 +70,11 @@ interface VendorAnalyticsProps {
   vendorData?: any;
   onBack?: () => void;
   onClose?: () => void;
+  /** When true, skip orange hero/back row — use with VendorHeader on the route */
+  suppressChrome?: boolean;
 }
 
-export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: VendorAnalyticsProps) {
+export function VendorAnalytics({ vendorId, vendorData, onBack, onClose, suppressChrome }: VendorAnalyticsProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [staffPerformance, setStaffPerformance] = useState<any[]>([]);
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
@@ -186,87 +188,139 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 vendor-app-column">
-      {/* Header */}
-      <div className="bg-[#FF8C42] text-white p-4 safe-area-top">
-        <div className="flex items-center gap-3 mb-4">
-          {onBack && (
-            <Button
-              onClick={onBack}
-              variant="ghost"
-              className="w-11 h-11 min-w-[44px] text-white hover:bg-white/20 -ml-2 rounded-xl"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          )}
-          <div>
-            <h1 className="text-white text-xl">Analytics & Reporting</h1>
-            <p className="text-sm text-white/90">{getRoleLabel(vendorData?.roleId || '')}</p>
+    <div
+      className={
+        suppressChrome
+          ? 'w-full bg-gray-50'
+          : 'min-h-screen bg-gray-50 vendor-app-column'
+      }
+    >
+      {!suppressChrome ? (
+        <div className="bg-[#FF8C42] text-white p-4 safe-area-top">
+          <div className="flex items-center gap-3 mb-4">
+            {onBack && (
+              <Button
+                onClick={onBack}
+                variant="ghost"
+                className="w-11 h-11 min-w-[44px] text-white hover:bg-white/20 -ml-2 rounded-xl"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            )}
+            <div>
+              <h1 className="text-white text-xl">Analytics & Reporting</h1>
+              <p className="text-sm text-white/90">{getRoleLabel(vendorData?.roleId || '')}</p>
+            </div>
           </div>
-        </div>
 
-        {/* Tab Selector */}
-        <div className="flex gap-2 mb-3">
-          <button
-            onClick={() => setActiveTab('performance')}
-            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === 'performance'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4 inline mr-1" />
-            Performance
-          </button>
-          <button
-            onClick={() => setActiveTab('earnings')}
-            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === 'earnings'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
-            }`}
-          >
-            <Wallet className="w-4 h-4 inline mr-1" />
-            Earnings & Settlements
-          </button>
-        </div>
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setActiveTab('performance')}
+              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'performance'
+                  ? 'bg-white text-[#FF8C42]'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 inline mr-1" />
+              Performance
+            </button>
+            <button
+              onClick={() => setActiveTab('earnings')}
+              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'earnings'
+                  ? 'bg-white text-[#FF8C42]'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              <Wallet className="w-4 h-4 inline mr-1" />
+              Earnings & Settlements
+            </button>
+          </div>
 
-        {/* Period Selector - Only for Performance tab */}
-        {activeTab === 'performance' && (
+          {activeTab === 'performance' && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPeriod('week')}
+                className={`px-4 py-2 rounded-lg text-sm ${
+                  period === 'week'
+                    ? 'bg-white text-[#FF8C42]'
+                    : 'bg-white/20 text-white'
+                }`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setPeriod('month')}
+                className={`px-4 py-2 rounded-lg text-sm ${
+                  period === 'month'
+                    ? 'bg-white text-[#FF8C42]'
+                    : 'bg-white/20 text-white'
+                }`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => setPeriod('year')}
+                className={`px-4 py-2 rounded-lg text-sm ${
+                  period === 'year'
+                    ? 'bg-white text-[#FF8C42]'
+                    : 'bg-white/20 text-white'
+                }`}
+              >
+                Year
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="border-b border-gray-200 bg-white px-4 py-3 space-y-3">
           <div className="flex gap-2">
             <button
-              onClick={() => setPeriod('week')}
-              className={`px-4 py-2 rounded-lg text-sm ${
-                period === 'week'
-                  ? 'bg-white text-[#FF8C42]'
-                  : 'bg-white/20 text-white'
+              type="button"
+              onClick={() => setActiveTab('performance')}
+              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'performance'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-100 text-gray-700'
               }`}
             >
-              Week
+              <BarChart3 className="w-4 h-4 inline mr-1" />
+              Performance
             </button>
             <button
-              onClick={() => setPeriod('month')}
-              className={`px-4 py-2 rounded-lg text-sm ${
-                period === 'month'
-                  ? 'bg-white text-[#FF8C42]'
-                  : 'bg-white/20 text-white'
+              type="button"
+              onClick={() => setActiveTab('earnings')}
+              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'earnings'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-100 text-gray-700'
               }`}
             >
-              Month
-            </button>
-            <button
-              onClick={() => setPeriod('year')}
-              className={`px-4 py-2 rounded-lg text-sm ${
-                period === 'year'
-                  ? 'bg-white text-[#FF8C42]'
-                  : 'bg-white/20 text-white'
-              }`}
-            >
-              Year
+              <Wallet className="w-4 h-4 inline mr-1" />
+              Earnings & Settlements
             </button>
           </div>
-        )}
-      </div>
+          {activeTab === 'performance' && (
+            <div className="flex flex-wrap gap-2">
+              {(['week', 'month', 'year'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPeriod(p)}
+                  className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                    period === p
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {analytics && (
         <div className="p-4 space-y-6">

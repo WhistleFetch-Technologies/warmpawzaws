@@ -5,10 +5,11 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Syringe, Calendar, User, Search, Filter, Plus } from 'lucide-react';
+import { Syringe, Calendar, User, Search, Filter, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface VaccinationRecord {
   id: string;
@@ -134,31 +135,15 @@ export default function VaccinationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => router.back()}
-                className="rounded-full"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">Vaccination Records</h1>
-                <p className="text-sm text-gray-500 mt-1">View and manage pet vaccination records</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Vaccination Records"
+          subtitle="View and manage pet vaccination records"
+          onBack={() => router.back()}
+        />
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="w-full px-4 py-6 sm:px-6">
         {/* Search */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
           <div className="relative">
@@ -260,6 +245,7 @@ export default function VaccinationPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
