@@ -166,42 +166,66 @@ export default function TestCatalogPage() {
     return true;
   });
 
+  const closeForm = () => {
+    setShowAddForm(false);
+    setEditingTest(null);
+    resetForm();
+  };
+
+  const navigateBackFromList = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      <div className="vendor-page-shell flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500" />
       </div>
     );
   }
+
+  const inFormMode = showAddForm;
 
   return (
     <div className="vendor-page-shell bg-gray-50">
       <div className="vendor-app-column bg-white min-h-screen">
         <VendorHeader
-          title="Test Catalog"
+          title={inFormMode ? (editingTest ? 'Edit Test' : 'Add Test') : 'Test Catalog'}
           subtitle="Manage diagnostic tests"
-          onBack={() => {
-            if (typeof window !== 'undefined' && window.history.length > 1) {
-              router.back();
-            } else {
-              router.push('/');
-            }
-          }}
-          actions={[
-            <Button
-              key="add-test"
-              type="button"
-              onClick={() => {
-                resetForm();
-                setEditingTest(null);
-                setShowAddForm(true);
-              }}
-              className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
-            >
-              <Plus className="mr-1 inline h-4 w-4" />
-              Add Test
-            </Button>,
-          ]}
+          onBack={inFormMode ? closeForm : navigateBackFromList}
+          actions={
+            inFormMode
+              ? [
+                  <Button
+                    key="save-test"
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={!formData.test_name || !formData.category || !formData.price}
+                    className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
+                  >
+                    {editingTest ? 'Save' : 'Add'}
+                  </Button>,
+                ]
+              : [
+                  <Button
+                    key="add-test"
+                    type="button"
+                    onClick={() => {
+                      resetForm();
+                      setEditingTest(null);
+                      setShowAddForm(true);
+                    }}
+                    className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
+                  >
+                    <Plus className="mr-1 inline h-4 w-4" />
+                    Add Test
+                  </Button>,
+                ]
+          }
         />
 
         <div className="w-full space-y-4 px-4 py-4 sm:px-6">
@@ -326,10 +350,7 @@ export default function TestCatalogPage() {
         {/* Add/Edit Form Modal */}
         {showAddForm && (
           <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
-            <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-lg max-h-[90vh] overflow-y-auto safe-area-bottom">
-              <h2 className="text-xl font-semibold mb-6">
-                {editingTest ? 'Edit Test' : 'Add New Test'}
-              </h2>
+            <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 safe-area-bottom sm:max-w-lg sm:rounded-2xl">
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>

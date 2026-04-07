@@ -48,7 +48,12 @@ export const SELLER_HUB_NAVIGATION: {
 }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'Overview & stats' },
   { id: 'products', label: 'Products', icon: Package, description: 'Manage catalog' },
-  { id: 'inventory', label: 'Inventory', icon: Boxes, description: 'Stock management' },
+  {
+    id: 'inventory',
+    label: 'Inventory',
+    icon: Boxes,
+    description: 'Stock management — levels and quantities',
+  },
   { id: 'orders', label: 'Orders', icon: ShoppingCart, description: 'Order processing' },
   { id: 'invoices', label: 'GST Invoices', icon: FileText, description: 'Tax invoices' },
   { id: 'commission', label: 'Commission', icon: IndianRupee, description: 'Earnings & fees' },
