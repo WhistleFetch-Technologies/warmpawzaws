@@ -111,6 +111,10 @@ const vendorData: Record<string, { name: string; rating: number; reviews: number
   'default': { name: 'Warmpawz Store', rating: 4.7, reviews: 1500, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
+/** Min ~44px top when env(safe-area-inset-top) is 0 (many Android WebViews); same pattern as AddressBookPage gradient header. */
+const CART_HEADER_BAR =
+  'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white flex items-center gap-3 rounded-b-2xl shadow-md isolate pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-3';
+
 export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
   const router = useRouter();
   const { cart, updateQuantity, removeFromCart, addToCart, itemCount } = useCart();
@@ -274,7 +278,7 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
   if (cart.length === 0 && savedItems.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-md mx-auto relative">
-        <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 flex items-center gap-3 z-10 rounded-b-2xl shadow-md">
+        <div className={`sticky top-0 z-10 ${CART_HEADER_BAR}`}>
           <button type="button" onClick={handleNavigateBack} className="p-2 hover:bg-white/20 rounded-full transition-colors text-white" aria-label="Go back">
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -307,7 +311,7 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
   return (
     <div className="relative w-full max-w-md mx-auto min-h-0">
       {/* Header: back + title — sticky with page scroll (wrapper is not a flex scroll parent) */}
-      <header className="sticky top-0 z-30 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 flex items-center gap-3 rounded-b-2xl shadow-md">
+      <header className={`sticky top-0 z-30 ${CART_HEADER_BAR}`}>
         <button
           type="button"
           onClick={handleNavigateBack}

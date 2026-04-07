@@ -24,7 +24,7 @@ export default function HelpPage() {
     return (
       <div className="min-h-[100dvh] flex justify-center bg-[#FAF6F0]">
         <div className={shellClass}>
-          <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-5 rounded-b-[1.75rem] shadow-md">
+          <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-5 rounded-b-[1.75rem] shadow-md">
             <div className="flex items-center gap-2">
               <Button
                 type="button"

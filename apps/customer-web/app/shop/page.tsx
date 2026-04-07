@@ -346,8 +346,8 @@ export default function ShopPage() {
       {/* App shell: fixed readable width like a native shop screen */}
       <div className="w-full max-w-md min-h-[100dvh] md:min-h-0 md:h-[min(100dvh-2.5rem,56rem)] md:rounded-[2rem] bg-white md:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.18)] md:ring-1 md:ring-slate-200/80 overflow-hidden flex flex-col relative min-w-0">
       {/* Sticky app header */}
-      <header className="sticky top-0 z-40 shrink-0 bg-white/95 backdrop-blur-lg border-b border-slate-100 min-w-0 w-full max-w-full">
-        <div className="px-5 pt-3 pb-2 min-w-0">
+      <header className="sticky top-0 z-40 isolate shrink-0 bg-white/95 backdrop-blur-lg border-b border-slate-100 min-w-0 w-full max-w-full">
+        <div className="px-5 min-w-0 pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-2 md:pt-3">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 min-h-[2.75rem]">
             <button
               type="button"

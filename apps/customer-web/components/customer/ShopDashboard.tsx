@@ -233,15 +233,20 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto relative">
-      {/* Header with Search */}
-      <div className="bg-white sticky top-0 z-50 shadow-sm">
-        <div className="px-4 py-3">
+    <div className="min-h-screen bg-gray-50 w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto relative">
+      {/* Header with Search — safe-area-top (viewportFit: cover in root layout) */}
+      <div className="bg-white sticky top-0 z-50 isolate shadow-sm pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
+        <div className="px-4 py-3 sm:px-5">
           <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-              <ArrowLeft className="w-5 h-5" />
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Go back"
+              className="min-h-11 min-w-11 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" aria-hidden />
             </button>
-            <h1 className="text-gray-900 flex-1 font-semibold text-lg">Shop</h1>
+            <h1 className="text-gray-900 flex-1 font-semibold text-lg sm:text-xl">Shop</h1>
           </div>
 
           {/* Search Bar */}
@@ -258,15 +263,15 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
               type="button"
               aria-label="Open product filters"
               onClick={() => setFilterOpen(true)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="absolute right-1 top-1/2 -translate-y-1/2 min-h-11 min-w-11 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <SlidersHorizontal className="w-5 h-5 text-gray-600" />
+              <SlidersHorizontal className="w-5 h-5 text-gray-600" aria-hidden />
             </button>
           </div>
         </div>
 
         {/* Category Pills */}
-        <div className="px-4 pb-3 overflow-x-auto scrollbar-hide">
+        <div className="px-4 pb-3 sm:px-5 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2">
             {categories.map((cat) => (
               <button
@@ -286,24 +291,24 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         </div>
       </div>
 
-      <div className="pb-24">
+      <div className="pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
         {/* PHASE 1.3: Promotion Banners (from Admin Marketing) */}
-        <div className="p-4">
+        <div className="p-4 sm:p-5">
           <PromotionBanner service="shop" onNavigate={onNavigate} />
         </div>
 
         {/* Quick Features */}
-        <div className="px-4 mb-6">
-          <div className="grid grid-cols-4 gap-3">
+        <div className="px-4 sm:px-5 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { icon: Truck, label: 'Free Delivery', color: 'text-blue-600' },
               { icon: Shield, label: '100% Genuine', color: 'text-green-600' },
               { icon: Zap, label: 'Fast Shipping', color: 'text-orange-600' },
               { icon: Package, label: 'Easy Returns', color: 'text-purple-600' }
             ].map((feature, idx) => (
-              <div key={idx} className="bg-white rounded-2xl p-3 text-center shadow-sm">
-                <feature.icon className={`w-6 h-6 mx-auto mb-1 ${feature.color}`} />
-                <p className="text-xs text-gray-700 leading-tight">{feature.label}</p>
+              <div key={idx} className="bg-white rounded-2xl p-3 sm:p-3.5 text-center shadow-sm">
+                <feature.icon className={`w-6 h-6 sm:w-7 sm:h-7 mx-auto mb-1 ${feature.color}`} />
+                <p className="text-xs sm:text-sm text-gray-700 leading-tight">{feature.label}</p>
               </div>
             ))}
           </div>
@@ -311,24 +316,24 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
 
         {/* Featured Vendors Section */}
         <div className="mb-6">
-          <div className="px-4 mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Store className="w-5 h-5 text-[#FF8C42]" />
-              <h2 className="font-bold text-gray-900">✨ Featured Vendors</h2>
+          <div className="px-4 sm:px-5 mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Store className="w-5 h-5 shrink-0 text-[#FF8C42]" />
+              <h2 className="font-bold text-gray-900 text-base sm:text-lg truncate">✨ Featured Vendors</h2>
             </div>
-            <button className="text-[#FF8C42] text-sm font-medium flex items-center gap-1">
+            <button type="button" className="text-[#FF8C42] text-sm font-medium flex items-center gap-1 shrink-0">
               View All <span>→</span>
             </button>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4">
+          <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4 sm:px-5">
             {[
               { name: 'PetMart India', rating: 4.7, products: '1500+', logo: '🏪', verified: true },
               { name: 'Pet Tech Store', rating: 4.8, products: '800+', logo: '🤖', verified: true },
               { name: 'Gadgets4Pets', rating: 4.9, products: '1200+', logo: '⚡', verified: true },
               { name: 'Groom & Care', rating: 4.7, products: '600+', logo: '✨', verified: true }
             ].map((vendor, idx) => (
-              <Card key={idx} className="flex-shrink-0 w-36 p-4 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card key={idx} className="flex-shrink-0 min-w-[9rem] w-36 sm:w-40 p-4 hover:shadow-lg transition-shadow cursor-pointer">
                 <div className="text-center">
                   <div className="text-4xl mb-2">{vendor.logo}</div>
                   <h3 className="font-semibold text-sm text-gray-900 mb-1">{vendor.name}</h3>
@@ -352,10 +357,10 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         {/* Hot Deals Section */}
         {filteredProducts.length > 0 && (
         <div className="mb-6">
-          <div className="px-4 mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-red-600" />
-              <h2 className="font-bold text-gray-900">🔥 Hot Deals</h2>
+          <div className="px-4 sm:px-5 mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <TrendingUp className="w-5 h-5 shrink-0 text-red-600" />
+              <h2 className="font-bold text-gray-900 text-base sm:text-lg truncate">🔥 Hot Deals</h2>
             </div>
             <button
               type="button"
@@ -366,12 +371,12 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
             </button>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4">
+          <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4 sm:px-5">
             {filteredProducts.slice(0, 4).map((deal, index) => (
               <Card 
                 key={deal.id || index} 
                 onClick={() => onNavigate?.('product_detail', { product: deal })}
-                className="flex-shrink-0 w-48 overflow-hidden hover:shadow-xl transition-shadow cursor-pointer"
+                className="flex-shrink-0 min-w-[11rem] w-48 sm:w-52 overflow-hidden hover:shadow-xl transition-shadow cursor-pointer"
               >
                 {/* Product Image */}
                 <div className="h-40 bg-gradient-to-br from-gray-100 to-gray-200 relative flex items-center justify-center text-6xl">
@@ -488,9 +493,13 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         )}
 
         {/* Top Products Grid */}
-        <div ref={shopProductsSectionRef} id="shop-products-section" className="px-4 mb-6 scroll-mt-24">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900">Products</h2>
+        <div
+          ref={shopProductsSectionRef}
+          id="shop-products-section"
+          className="px-4 sm:px-5 mb-6 scroll-mt-[calc(8.5rem+env(safe-area-inset-top,0px))] md:scroll-mt-[calc(6.5rem+env(safe-area-inset-top,0px))]"
+        >
+          <div className="flex items-center justify-between mb-4 gap-2">
+            <h2 className="font-bold text-gray-900 text-base sm:text-lg">Products</h2>
             {filteredProducts.length > 0 && (
               <button
                 type="button"
@@ -533,7 +542,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
               {(catalogExpanded ? filteredProducts : filteredProducts.slice(0, 6)).map((product, index) => (
                 <Card 
                   key={product.id || index} 
@@ -618,9 +627,9 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         </div>
 
         {/* Benefits Section */}
-        <div className="px-4">
+        <div className="px-4 sm:px-5">
           <Card className="p-6 bg-gradient-to-br from-orange-50 to-red-50 border-orange-200">
-            <h3 className="font-bold text-gray-900 mb-4">Why Shop With Us?</h3>
+            <h3 className="font-bold text-gray-900 mb-4 text-base sm:text-lg">Why Shop With Us?</h3>
             <div className="space-y-3">
               {[
                 { icon: '✅', title: '100% Authentic Products', desc: 'Genuine brands & quality guaranteed' },

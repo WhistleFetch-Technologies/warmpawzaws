@@ -11,6 +11,10 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { getSupportPhoneLabel, getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 
+/** Min ~44px top when env(safe-area-inset-top) is 0 (many Android WebViews); same pattern as AddressBookPage. */
+const SUPPORT_HELP_HEADER_BAR =
+  'bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white isolate pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-4 rounded-b-2xl shadow-md';
+
 interface Ticket {
   id: string;
   ticket_number?: string;
@@ -198,66 +202,72 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {onCloseToHome ? (
-        <ProfileAccountScreenHeader
-          onCloseToHome={onCloseToHome}
-          onBack={onBack}
-          title="Help & Support"
-          subtitle="We're here to help"
-          className="sticky top-0 z-50"
-        />
-      ) : (
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white px-4 py-4 sticky top-0 z-50">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              className="rounded-full text-white hover:bg-white/20"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">Help & Support</h1>
-              <p className="text-white/90 text-sm">We're here to help</p>
+      {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
+      <div className="sticky top-0 z-50 isolate">
+        {onCloseToHome ? (
+          <ProfileAccountScreenHeader
+            onCloseToHome={onCloseToHome}
+            onBack={onBack}
+            title="Help & Support"
+            subtitle="We're here to help"
+          />
+        ) : (
+          <div className={SUPPORT_HELP_HEADER_BAR}>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onBack}
+                className="touch-manipulation rounded-full text-white hover:bg-white/20"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl font-bold">Help & Support</h1>
+                <p className="text-white/90 text-sm">We're here to help</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 sticky top-[72px] z-40">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('faq')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'faq'
-                ? 'border-[#FF8C42] text-[#FF8C42]'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            FAQ
-          </button>
-          <button
-            onClick={() => setActiveTab('contact')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'contact'
-                ? 'border-[#FF8C42] text-[#FF8C42]'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Contact
-          </button>
-          <button
-            onClick={() => setActiveTab('tickets')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'tickets'
-                ? 'border-[#FF8C42] text-[#FF8C42]'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            My Tickets
-          </button>
+        {/* Tabs */}
+        <div className="bg-white border-b border-gray-200">
+          <div className="flex">
+            <button
+              type="button"
+              onClick={() => setActiveTab('faq')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'faq'
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              FAQ
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('contact')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'contact'
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Contact
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tickets')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'tickets'
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              My Tickets
+            </button>
+          </div>
         </div>
       </div>
 
