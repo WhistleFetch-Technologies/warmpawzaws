@@ -303,7 +303,7 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto pb-32">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column pb-32">
       {onBack && (
         <div className="px-6 pt-6">
           <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-[#FF8C42]">

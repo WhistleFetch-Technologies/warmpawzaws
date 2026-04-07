@@ -174,10 +174,10 @@ export default function TestCatalogPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="vendor-page-shell bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 safe-area-top">
-        <div className="max-w-[430px] mx-auto px-4 py-3">
+        <div className="vendor-app-column-inner px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <Button
@@ -216,7 +216,7 @@ export default function TestCatalogPage() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-[430px] mx-auto px-4 py-4 space-y-4">
+      <div className="vendor-app-column px-4 sm:px-6 py-4 space-y-4">
         {/* Search and Filters */}
         <div className="space-y-3">
           <div className="relative">

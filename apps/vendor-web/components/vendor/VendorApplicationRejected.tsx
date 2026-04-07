@@ -21,7 +21,7 @@ export function VendorApplicationRejected({
   onGoBack,
 }: VendorApplicationRejectedProps) {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-red-50 to-white w-full max-w-[430px] mx-auto px-6 py-12">
+    <div className="min-h-screen bg-gradient-to-b from-red-50 to-white vendor-app-column px-6 py-12">
       {/* Rejection Icon */}
       <div className="text-center mb-8">
         <div className="w-32 h-32 bg-red-500 rounded-full mx-auto mb-6 flex items-center justify-center shadow-xl">

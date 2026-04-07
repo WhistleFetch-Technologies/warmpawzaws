@@ -277,7 +277,7 @@ export function EnhancedVendorOnboarding({
   // Show loading state while determining role configuration
   if (step === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -288,7 +288,7 @@ export function EnhancedVendorOnboarding({
 
   if (step === 'business_type') {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-0">
+      <div className="min-h-screen bg-gray-50 vendor-app-column p-0">
         <div className="mb-0">
           {onBack && (
             <button onClick={onBack} className="text-primary hover:underline text-sm mb-4">

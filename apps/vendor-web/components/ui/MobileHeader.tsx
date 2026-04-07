@@ -42,7 +42,7 @@ export function MobileHeader({
           : 'bg-white border-b border-gray-100 shadow-sm'
       } ${className}`}
     >
-      <div className="flex items-center justify-between px-4 py-3 min-h-[56px]">
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-3 min-h-[56px] max-w-7xl mx-auto w-full">
         {/* Left Section - Back Button */}
         <div className="flex items-center gap-3 flex-1">
           {showBack && onBack && (

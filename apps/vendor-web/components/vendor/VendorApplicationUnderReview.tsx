@@ -42,7 +42,7 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex items-center justify-center p-4">
-      <div className="w-full max-w-[430px] space-y-6">
+      <div className="vendor-modal-sheet w-full space-y-6 mx-auto">
         {/* Clock Icon */}
         <div className="flex justify-center pt-8">
           <div className="w-24 h-24 rounded-full bg-[#FF8C42] flex items-center justify-center shadow-lg">

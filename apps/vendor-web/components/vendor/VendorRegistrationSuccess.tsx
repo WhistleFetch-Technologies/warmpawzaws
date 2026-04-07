@@ -7,7 +7,7 @@ const logoImage = '/logo.png';
 
 export function VendorRegistrationSuccess({ vendorId }: { vendorId: string }) {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white vendor-app-column">
       {/* Header */}
       <div className="px-6 pt-16 pb-8 text-center">
         {/* Success Icon */}

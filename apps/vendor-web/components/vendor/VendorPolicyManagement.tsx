@@ -222,14 +222,14 @@ export function VendorPolicyManagement({ vendorId, onBack, onClose }: VendorPoli
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-[#FF8C42] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3">
@@ -669,7 +669,7 @@ export function VendorPolicyManagement({ vendorId, onBack, onClose }: VendorPoli
       {/* Request Exception Modal */}
       {showRequestModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-          <div className="bg-white w-full max-w-[430px] rounded-t-2xl p-6 animate-slide-up">
+          <div className="bg-white vendor-modal-sheet rounded-t-2xl p-6 animate-slide-up mx-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Policy Exception</h3>
             
             <div className="space-y-4">

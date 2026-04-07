@@ -4,7 +4,7 @@
  * Diagnostics Management Page
  * Manages diagnostic tests catalog
  * Capability: diagnostics, test_catalog
- * Mobile-first UI (max-w-[430px])
+ * Mobile-first UI (vendor-app-column scales at sm/md/lg/xl)
  */
 
 import { useState, useEffect } from 'react';
@@ -270,8 +270,8 @@ export default function DiagnosticsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto min-h-screen p-4 space-y-4">
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen p-4 sm:p-6 space-y-4">
       {/* Header with Back Arrow */}
       <div className="flex items-center gap-3 p-2 bg-white rounded-xl border-b sticky top-0 z-10 -mx-4 px-4 py-3">
         <Link
@@ -295,7 +295,7 @@ export default function DiagnosticsPage() {
       </div>
 
       {/* Stats - Compact for mobile */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Card className="p-3">
           <CardContent className="p-0 flex items-center gap-2">
             <TestTube className="h-8 w-8 text-purple-500 shrink-0" />
@@ -420,7 +420,7 @@ export default function DiagnosticsPage() {
           className="fixed inset-0 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
           style={{ backgroundColor: 'rgba(0, 0, 0, 0.75)' }}
         >
-          <Card className="w-full max-w-[430px] max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white">
+          <Card className="vendor-modal-sheet w-full max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white mx-auto">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <button

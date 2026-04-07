@@ -82,7 +82,7 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
@@ -90,14 +90,14 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-white vendor-app-column p-6">
         <p className="text-center text-gray-600">Application not found</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto px-6 py-12">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column px-6 py-12">
       {onBack && (
         <div className="flex justify-start -mt-2 mb-4">
           <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full -ml-2">

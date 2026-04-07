@@ -541,7 +541,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-full max-w-[430px] mx-auto bg-white text-center py-12">
+        <div className="vendor-app-column bg-white text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading earnings dashboard...</p>
         </div>
@@ -551,7 +551,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   return (
     <div className="min-h-screen bg-gray-50 w-full flex justify-center">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen shadow-lg sm:shadow-xl">
+      <div className="vendor-app-column bg-white min-h-screen shadow-lg sm:shadow-xl">
         {/* Header - Mobile optimized */}
         <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white sticky top-0 z-10">
           <div className="px-4 py-3">

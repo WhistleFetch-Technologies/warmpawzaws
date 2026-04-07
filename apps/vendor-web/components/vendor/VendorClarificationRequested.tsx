@@ -27,7 +27,7 @@ export function VendorClarificationRequested({
       : [];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto flex flex-col px-6 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column flex flex-col px-6 py-8">
       {onBack && (
         <div className="flex justify-start -mt-2 mb-4">
           <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full -ml-2">
