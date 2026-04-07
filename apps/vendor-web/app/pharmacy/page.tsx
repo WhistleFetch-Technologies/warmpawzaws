@@ -9,11 +9,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { 
   Pill, 
   Plus, 
@@ -124,23 +125,46 @@ export default function PharmacyPage() {
     totalValue: medicines.reduce((sum, m) => sum + (m.price * m.stock), 0),
   };
 
-  return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Pill className="h-8 w-8 text-green-500" />
-            Pharmacy Inventory
-          </h1>
-          <p className="text-muted-foreground">Manage your medicine stock</p>
-        </div>
-        <Button onClick={() => setShowAddModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Medicine
-        </Button>
-      </div>
+  const closeAddModal = () => setShowAddModal(false);
 
+  return (
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen bg-white">
+        <VendorHeader
+          title={showAddModal ? 'Add Medicine' : 'Pharmacy Inventory'}
+          subtitle={
+            showAddModal ? 'Enter medicine details below' : 'Manage your medicine stock'
+          }
+          onBack={showAddModal ? closeAddModal : () => router.back()}
+          actions={
+            showAddModal
+              ? [
+                  <Button
+                    key="save-medicine"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0"
+                    onClick={addMedicine}
+                  >
+                    Save
+                  </Button>,
+                ]
+              : [
+                  <Button
+                    key="add-medicine"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0"
+                    onClick={() => setShowAddModal(true)}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add Medicine
+                  </Button>,
+                ]
+          }
+        />
+
+        <div className="space-y-6 px-4 py-6 sm:px-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -263,12 +287,9 @@ export default function PharmacyPage() {
 
       {/* Add Medicine Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md mx-4">
-            <CardHeader>
-              <CardTitle>Add New Medicine</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="mx-auto w-full max-w-md">
+            <CardContent className="space-y-4 p-4 sm:p-6">
               <div>
                 <label className="text-sm font-medium">Medicine Name *</label>
                 <Input
@@ -314,17 +335,16 @@ export default function PharmacyPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">
+                <Button variant="outline" onClick={closeAddModal} className="w-full">
                   Cancel
-                </Button>
-                <Button onClick={addMedicine} className="flex-1">
-                  Add Medicine
                 </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -25,7 +25,6 @@ import {
   TestTube,
   Beaker,
   FileText,
-  ArrowLeft,
   Truck,
   Edit2,
   Send,
@@ -269,28 +268,59 @@ export default function DiagnosticsPage() {
     categories: [...new Set(tests.map(t => t.category))].length,
   };
 
+  const closeModal = () => {
+    setShowAddModal(false);
+    resetForm();
+  };
+
+  const inFormMode = showAddModal;
+
   return (
     <div className="vendor-page-shell bg-gray-50">
       <div className="vendor-app-column bg-white min-h-screen">
         <VendorHeader
-          title="Diagnostic Tests"
-          subtitle="Manage your test catalog"
-          onBack={() => router.push('/dashboard')}
-          actions={[
-            <Button
-              key="add-test"
-              type="button"
-              size="sm"
-              className="h-9 shrink-0"
-              onClick={() => {
-                resetForm();
-                setShowAddModal(true);
-              }}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Add
-            </Button>,
-          ]}
+          title={
+            inFormMode
+              ? editingTest
+                ? 'Edit Test'
+                : 'Add Diagnostic Test'
+              : 'Diagnostic Tests'
+          }
+          subtitle={
+            inFormMode
+              ? 'Fill in test details below'
+              : 'Manage your test catalog'
+          }
+          onBack={inFormMode ? closeModal : () => router.push('/dashboard')}
+          actions={
+            inFormMode
+              ? [
+                  <Button
+                    key="save-test"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0"
+                    onClick={addTest}
+                  >
+                    {editingTest ? 'Save' : 'Add Test'}
+                  </Button>,
+                ]
+              : [
+                  <Button
+                    key="add-test"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0"
+                    onClick={() => {
+                      resetForm();
+                      setShowAddModal(true);
+                    }}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add
+                  </Button>,
+                ]
+          }
         />
 
         <div className="w-full space-y-4 px-4 py-4 sm:px-6 sm:py-6">
@@ -420,22 +450,8 @@ export default function DiagnosticsPage() {
           className="fixed inset-0 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
           style={{ backgroundColor: 'rgba(0, 0, 0, 0.75)' }}
         >
-          <Card className="vendor-modal-sheet w-full max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white mx-auto">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setShowAddModal(false); resetForm(); }}
-                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-                  aria-label="Back to list"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <CardTitle className="text-lg flex-1">
-                  {editingTest ? 'Edit Test' : 'Add Diagnostic Test'}
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 pb-8">
+          <Card className="vendor-modal-sheet mx-auto w-full max-h-[90vh] overflow-y-auto rounded-t-2xl bg-white sm:rounded-2xl">
+            <CardContent className="space-y-4 px-4 pb-8 pt-4 sm:px-6">
               <div>
                 <label className="text-sm font-medium">Test Name *</label>
                 <Input
@@ -616,11 +632,8 @@ export default function DiagnosticsPage() {
                 />
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { setShowAddModal(false); resetForm(); }} className="flex-1">
+                <Button variant="outline" onClick={closeModal} className="w-full">
                   Cancel
-                </Button>
-                <Button onClick={addTest} className="flex-1">
-                  {editingTest ? 'Save Changes' : 'Add Test'}
                 </Button>
               </div>
             </CardContent>
