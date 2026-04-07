@@ -299,7 +299,7 @@ export default function DiagnosticsPage() {
                     key="save-test"
                     type="button"
                     size="sm"
-                    className="h-9 shrink-0"
+                    className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
                     onClick={addTest}
                   >
                     {editingTest ? 'Save' : 'Add Test'}
@@ -310,14 +310,14 @@ export default function DiagnosticsPage() {
                     key="add-test"
                     type="button"
                     size="sm"
-                    className="h-9 shrink-0"
+                    className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
                     onClick={() => {
                       resetForm();
                       setShowAddModal(true);
                     }}
                   >
                     <Plus className="mr-1 h-4 w-4" />
-                    Add
+                    Add Test
                   </Button>,
                 ]
           }
@@ -378,8 +378,14 @@ export default function DiagnosticsPage() {
               {searchQuery ? 'Try a different search term' : 'Add your first diagnostic test to get started'}
             </p>
             {!searchQuery && (
-              <Button onClick={() => { resetForm(); setShowAddModal(true); }}>
-                <Plus className="h-4 w-4 mr-2" />
+              <Button
+                className="bg-orange-500 text-white hover:bg-orange-600"
+                onClick={() => {
+                  resetForm();
+                  setShowAddModal(true);
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
                 Add Test
               </Button>
             )}
