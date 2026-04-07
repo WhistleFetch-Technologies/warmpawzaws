@@ -1,5 +1,6 @@
 'use client';
 
+import type { RefObject } from 'react';
 import {
   LayoutDashboard,
   Package,
@@ -19,14 +20,14 @@ import {
 } from 'lucide-react';
 import { SellerDashboard } from './SellerDashboard';
 import { ProductCatalogManagement } from './ProductCatalogManagement';
-import { InventoryManagement } from './InventoryManagement';
+import { InventoryManagement, type InventoryManagementHandle } from './InventoryManagement';
 import { SellerOrderManagement } from './SellerOrderManagement';
 import { GSTInvoicing } from './GSTInvoicing';
 import { CommissionCalculator } from './CommissionCalculator';
 import { PromotionsManagement } from './PromotionsManagement';
 import { BannerManagement } from './BannerManagement';
 import { SellerAnalytics } from './SellerAnalytics';
-import { SellerSettings } from './SellerSettings';
+import { SellerSettings, type SellerSettingsHandle } from './SellerSettings';
 
 export type SellerHubTab =
   | 'dashboard'
@@ -60,7 +61,12 @@ export const SELLER_HUB_NAVIGATION: {
   { id: 'promotions', label: 'Promotions', icon: Tag, description: 'Offers & discounts' },
   { id: 'banners', label: 'Banners', icon: ImageIcon, description: 'Marketing assets' },
   { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance data' },
-  { id: 'settings', label: 'Settings', icon: Settings, description: 'Account settings' },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: Settings,
+    description: 'Manage your account and store settings',
+  },
 ];
 
 interface SellerHubSidebarProps {
@@ -206,9 +212,16 @@ export function SellerHubSidebar({
 interface SellerHubMainPanelsProps {
   activeTab: SellerHubTab;
   vendorData: any;
+  settingsRef?: RefObject<SellerSettingsHandle | null>;
+  inventoryRef?: RefObject<InventoryManagementHandle | null>;
 }
 
-export function SellerHubMainPanels({ activeTab, vendorData }: SellerHubMainPanelsProps) {
+export function SellerHubMainPanels({
+  activeTab,
+  vendorData,
+  settingsRef,
+  inventoryRef,
+}: SellerHubMainPanelsProps) {
   const sellerId = vendorData?.id || vendorData?.vendorId;
   const sellerName =
     vendorData?.full_name ||
@@ -221,14 +234,18 @@ export function SellerHubMainPanels({ activeTab, vendorData }: SellerHubMainPane
     <>
       {activeTab === 'dashboard' && <SellerDashboard sellerId={sellerId} sellerName={sellerName} />}
       {activeTab === 'products' && <ProductCatalogManagement sellerId={sellerId} />}
-      {activeTab === 'inventory' && <InventoryManagement sellerId={sellerId} />}
+      {activeTab === 'inventory' && (
+        <InventoryManagement ref={inventoryRef} sellerId={sellerId} />
+      )}
       {activeTab === 'orders' && <SellerOrderManagement sellerId={sellerId} />}
       {activeTab === 'invoices' && <GSTInvoicing sellerId={sellerId} sellerData={vendorData} />}
       {activeTab === 'commission' && <CommissionCalculator sellerId={sellerId} />}
       {activeTab === 'promotions' && <PromotionsManagement sellerId={sellerId} />}
       {activeTab === 'banners' && <BannerManagement sellerId={sellerId} />}
       {activeTab === 'analytics' && <SellerAnalytics sellerId={sellerId} />}
-      {activeTab === 'settings' && <SellerSettings sellerId={sellerId} sellerData={vendorData} />}
+      {activeTab === 'settings' && (
+        <SellerSettings ref={settingsRef} sellerId={sellerId} sellerData={vendorData} />
+      )}
     </>
   );
 }

@@ -323,7 +323,7 @@ export default function DiagnosticsPage() {
           }
         />
 
-        <div className="w-full space-y-4 px-4 py-4 sm:px-6 sm:py-6">
+        <div className="w-full space-y-4 px-4 py-4 sm:px-6">
       {/* Stats - Compact for mobile */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Card className="p-3">

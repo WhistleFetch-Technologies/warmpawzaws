@@ -195,7 +195,9 @@ export default function TestCatalogPage() {
       <div className="vendor-app-column bg-white min-h-screen">
         <VendorHeader
           title={inFormMode ? (editingTest ? 'Edit Test' : 'Add Test') : 'Test Catalog'}
-          subtitle="Manage diagnostic tests"
+          subtitle={
+            inFormMode ? 'Fill in test details below' : 'Manage your test catalog'
+          }
           onBack={inFormMode ? closeForm : navigateBackFromList}
           actions={
             inFormMode
@@ -456,24 +458,9 @@ export default function TestCatalogPage() {
                   </Label>
                 </div>
               </div>
-              <div className="flex gap-3 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setEditingTest(null);
-                    resetForm();
-                  }}
-                  className="flex-1"
-                >
+              <div className="mt-6 flex gap-3">
+                <Button variant="outline" onClick={closeForm} className="w-full">
                   Cancel
-                </Button>
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!formData.test_name || !formData.category || !formData.price}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  {editingTest ? 'Update Test' : 'Add Test'}
                 </Button>
               </div>
             </div>
