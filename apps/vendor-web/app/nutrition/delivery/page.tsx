@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Package, MapPin, Clock } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Package, MapPin, Clock } from 'lucide-react';
 
 interface DeliveryOrder {
   id: string;
@@ -81,27 +82,15 @@ export default function FoodDeliveryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-gray-100 rounded-lg transition"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">🚚 Food Delivery Orders</h1>
-              <p className="text-sm text-gray-500">Manage meal plan delivery orders</p>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="🚚 Food Delivery Orders"
+          subtitle="Manage meal plan delivery orders"
+          onBack={() => router.back()}
+        />
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
+        <main className="w-full px-4 py-6 sm:px-6">
         {/* Filters */}
         <div className="flex gap-2 mb-6 overflow-x-auto">
           {['all', 'pending', 'preparing', 'out_for_delivery', 'delivered'].map((status) => (
@@ -200,6 +189,7 @@ export default function FoodDeliveryPage() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Save, Clock, Building2, MapPin, Image as ImageIcon, Calendar, Sparkles, Check, Search } from 'lucide-react';
+import { Save, Clock, Building2, MapPin, Image as ImageIcon, Calendar, Sparkles, Check, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,6 +14,7 @@ import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { CenterProfile, DAYS, ProfileManagerProps } from './constants/interface';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 // ✅ RENAMED: CenterProfileManager -> ProfileManager (generic naming)
 // Export both names for backward compatibility
@@ -460,30 +461,25 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="vendor-page-shell bg-gray-50">
       <div className="vendor-app-column bg-white min-h-screen">
-        {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] text-white sticky top-0 z-10 safe-area-top">
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-3">
-              <button onClick={onBack} className="w-11 h-11 min-w-[44px] flex items-center justify-center hover:bg-white/20 rounded-xl -ml-2 transition-colors">
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div className="flex-1 min-w-0">
-                <h1 className="font-bold text-lg truncate">Profile & Availability</h1>
-                <p className="text-xs text-white/80 truncate">{profile.centerName}</p>
-              </div>
-              <Button
-                onClick={handleSave}
-                disabled={saving || uploading}
-                className="min-h-[40px] bg-white text-[#FF8C42] hover:bg-white/90 text-xs px-4"
-              >
-                <Save className="w-3.5 h-3.5 mr-1" />
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <VendorHeader
+          title="Profile & Availability"
+          subtitle={profile.centerName}
+          onBack={onBack}
+          actions={[
+            <Button
+              key="save"
+              type="button"
+              onClick={handleSave}
+              disabled={saving || uploading}
+              className="h-9 shrink-0 bg-orange-500 px-3 text-xs text-white hover:bg-orange-600"
+            >
+              <Save className="mr-1 inline h-3.5 w-3.5" />
+              {saving ? 'Saving...' : 'Save'}
+            </Button>,
+          ]}
+        />
 
         {/* Tab Navigation - Mobile scrollable */}
         <div className="bg-white border-b overflow-x-auto">

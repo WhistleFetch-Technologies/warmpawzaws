@@ -9,13 +9,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { 
   Microscope, 
   Plus, 
@@ -271,29 +271,29 @@ export default function DiagnosticsPage() {
 
   return (
     <div className="vendor-page-shell bg-gray-50">
-      <div className="vendor-app-column min-h-screen p-4 sm:p-6 space-y-4">
-      {/* Header with Back Arrow */}
-      <div className="flex items-center gap-3 p-2 bg-white rounded-xl border-b sticky top-0 z-10 -mx-4 px-4 py-3">
-        <Link
-          href="/dashboard"
-          className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-          aria-label="Back to dashboard"
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-700" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-lg font-bold flex items-center gap-2">
-            <Microscope className="h-6 w-6 text-purple-500" />
-            Diagnostic Tests
-          </h1>
-          <p className="text-xs text-muted-foreground">Manage your test catalog</p>
-        </div>
-        <Button size="sm" onClick={() => { resetForm(); setShowAddModal(true); }} className="shrink-0">
-          <Plus className="h-4 w-4 mr-1" />
-          Add
-        </Button>
-      </div>
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Diagnostic Tests"
+          subtitle="Manage your test catalog"
+          onBack={() => router.push('/dashboard')}
+          actions={[
+            <Button
+              key="add-test"
+              type="button"
+              size="sm"
+              className="h-9 shrink-0"
+              onClick={() => {
+                resetForm();
+                setShowAddModal(true);
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Add
+            </Button>,
+          ]}
+        />
 
+        <div className="w-full space-y-4 px-4 py-4 sm:px-6 sm:py-6">
       {/* Stats - Compact for mobile */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Card className="p-3">
@@ -627,6 +627,7 @@ export default function DiagnosticsPage() {
           </Card>
         </div>
       )}
+        </div>
       </div>
     </div>
   );

@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Edit2, Trash2, Utensils } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Plus, Edit2, Trash2, Utensils } from 'lucide-react';
 
 interface MealPlan {
   id: string;
@@ -137,40 +138,30 @@ export default function MealPlansPage() {
   const petTypes = ['Dog', 'Cat', 'Bird', 'Rabbit', 'Hamster', 'Other'];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.back()}
-                className="p-2 hover:bg-gray-100 rounded-lg transition"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">🍲 Meal Plans</h1>
-                <p className="text-sm text-gray-500">Create and manage diet plans for pets</p>
-              </div>
-            </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="🍲 Meal Plans"
+          subtitle="Create and manage diet plans for pets"
+          onBack={() => router.back()}
+          actions={[
             <button
+              key="create-plan"
+              type="button"
               onClick={() => {
                 resetForm();
                 setEditingPlan(null);
                 setShowAddModal(true);
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition"
+              className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white hover:bg-orange-600 transition"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="h-5 w-5 shrink-0" />
               Create Plan
-            </button>
-          </div>
-        </div>
-      </header>
+            </button>,
+          ]}
+        />
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
+        <main className="w-full px-4 py-6 sm:px-6">
         {plans.length === 0 ? (
           <div className="bg-white rounded-xl p-12 text-center shadow-sm">
             <div className="text-5xl mb-4">🍲</div>
@@ -381,6 +372,7 @@ export default function MealPlansPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

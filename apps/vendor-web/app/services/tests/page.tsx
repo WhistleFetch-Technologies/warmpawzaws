@@ -5,12 +5,13 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, FlaskConical, Plus, Edit2, Trash2, Search, Filter } from 'lucide-react';
+import { FlaskConical, Plus, Edit2, Trash2, Search, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface DiagnosticTest {
   id: string;
@@ -175,48 +176,35 @@ export default function TestCatalogPage() {
 
   return (
     <div className="vendor-page-shell bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 safe-area-top">
-        <div className="vendor-app-column-inner px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (window.history.length > 1) {
-                    router.back();
-                  } else {
-                    router.push('/');
-                  }
-                }}
-                className="w-11 h-11 min-w-[44px] rounded-xl hover:bg-gray-100"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-700" />
-              </Button>
-              <div className="min-w-0">
-                <h1 className="text-lg font-bold text-gray-800">Test Catalog</h1>
-                <p className="text-xs text-gray-500">Manage diagnostic tests</p>
-              </div>
-            </div>
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Test Catalog"
+          subtitle="Manage diagnostic tests"
+          onBack={() => {
+            if (typeof window !== 'undefined' && window.history.length > 1) {
+              router.back();
+            } else {
+              router.push('/');
+            }
+          }}
+          actions={[
             <Button
+              key="add-test"
+              type="button"
               onClick={() => {
                 resetForm();
                 setEditingTest(null);
                 setShowAddForm(true);
               }}
-              className="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white min-h-[44px] text-sm flex-shrink-0"
+              className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
             >
-              <Plus className="w-4 h-4 mr-1" />
+              <Plus className="mr-1 inline h-4 w-4" />
               Add Test
-            </Button>
-          </div>
-        </div>
-      </div>
+            </Button>,
+          ]}
+        />
 
-      {/* Main Content */}
-      <div className="vendor-app-column px-4 sm:px-6 py-4 space-y-4">
+        <div className="w-full space-y-4 px-4 py-4 sm:px-6">
         {/* Search and Filters */}
         <div className="space-y-3">
           <div className="relative">
@@ -470,6 +458,7 @@ export default function TestCatalogPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
