@@ -791,6 +791,8 @@ export function BoardingBookingRouter({
     return (
       <UniversalPaymentPage
         type="booking"
+        category="boarding"
+        serviceStyle={isPetSitting ? 'at_home' : 'at_center'}
         customerPhone={phone}
         customerId={phone}
         bookingId={paymentBookingId}

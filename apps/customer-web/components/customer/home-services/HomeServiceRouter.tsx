@@ -176,6 +176,20 @@ interface ActivePackage {
   usageType: string;
 }
 
+function feeCategoryForHomeService(t: HomeServiceType): string {
+  const map: Record<HomeServiceType, string> = {
+    walking: 'walking',
+    grooming: 'grooming',
+    training: 'training',
+    veterinary: 'veterinary',
+    sitting: 'boarding',
+    nutrition: 'nutritionist',
+    behaviourist: 'training',
+    diagnostics: 'veterinary',
+  };
+  return map[t] || '';
+}
+
 export function HomeServiceRouter({
   phone,
   serviceType,
@@ -1516,6 +1530,7 @@ export function HomeServiceRouter({
           <div className="fixed inset-0 z-50 bg-white">
             <UniversalPaymentPage
               type="booking"
+              category={feeCategoryForHomeService(serviceType)}
               bookingId={bookingId}
               vendorId={selectedProvider?.vendorId || ''}
               vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}

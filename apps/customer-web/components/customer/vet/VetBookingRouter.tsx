@@ -1468,6 +1468,7 @@ export function VetBookingRouter({
             return (
               <UniversalPaymentPage
                 type="booking"
+                category="veterinary"
                 vendorId={(vendorId || doctorId || clinicId || '') as string}
                 vendorName={displayVendorName}
                 serviceId={finalServiceId}

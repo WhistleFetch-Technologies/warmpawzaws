@@ -68,6 +68,32 @@ interface TaxCategory {
   updatedAt?: string;
 }
 
+function toFiniteTaxRate(v: unknown): number | undefined {
+  if (v == null || v === '') return undefined;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Coalesce rate across DB/API shapes. If `tax_rate` is 0 but legacy `default_gst_rate` is set (positive),
+ * use legacy — dev DBs often default `tax_rate` to 0 while the real % lives in `default_gst_rate`.
+ */
+function parseTaxCategoryGstRate(c: Record<string, unknown>): number {
+  const t = toFiniteTaxRate(c.tax_rate);
+  const d = toFiniteTaxRate(c.default_gst_rate);
+  const g = toFiniteTaxRate(c.gst_rate);
+  const dg = toFiniteTaxRate(c.defaultGSTRate);
+  if (t !== undefined && t !== 0) return t;
+  if (t === 0 && d !== undefined && d > 0) return d;
+  if (t === 0 && g !== undefined && g > 0) return g;
+  if (t === 0 && dg !== undefined && dg > 0) return dg;
+  if (d !== undefined) return d;
+  if (g !== undefined) return g;
+  if (dg !== undefined) return dg;
+  if (t !== undefined) return t;
+  return 0;
+}
+
 export function GSTConfigurationManagement() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,21 +136,29 @@ export function GSTConfigurationManagement() {
             }))
           : []
       );
-      const rawCat = categoryData.data?.categories ?? categoryData.data?.taxCategories ?? categoryData.categories ?? categoryData.taxCategories ?? [];
+      const rawCat =
+        categoryData?.categories ??
+        categoryData?.data?.categories ??
+        categoryData?.taxCategories ??
+        categoryData?.data?.taxCategories ??
+        [];
       setTaxCategories(
         Array.isArray(rawCat)
-          ? rawCat.map((c: any) => ({
-              id: c.id,
-              name: c.name ?? c.category_name,
-              category_name: c.category_name ?? c.name,
-              description: c.description ?? '',
-              defaultGSTRate: c.tax_rate ?? c.defaultGSTRate ?? 0,
-              tax_rate: c.tax_rate ?? c.defaultGSTRate,
-              applicableServices: c.applicableServices ?? c.applicable_services ?? [],
-              isActive: c.is_active !== false,
-              createdAt: c.created_at,
-              updatedAt: c.updated_at,
-            }))
+          ? rawCat.map((c: any) => {
+              const rate = parseTaxCategoryGstRate(c);
+              return {
+                id: c.id,
+                name: c.name ?? c.category_name,
+                category_name: c.category_name ?? c.name,
+                description: c.description ?? '',
+                defaultGSTRate: rate,
+                tax_rate: rate,
+                applicableServices: c.applicableServices ?? c.applicable_services ?? [],
+                isActive: c.is_active !== false,
+                createdAt: c.created_at,
+                updatedAt: c.updated_at,
+              };
+            })
           : []
       );
     } catch (error) {
@@ -157,7 +191,11 @@ export function GSTConfigurationManagement() {
       setEditingHSN(null);
       loadData();
     } catch (error) {
-      toast.error('Failed to save HSN code');
+      const msg =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Failed to save HSN code';
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -170,7 +208,11 @@ export function GSTConfigurationManagement() {
       toast.success('HSN code deleted');
       loadData();
     } catch (error) {
-      toast.error('Failed to delete HSN code');
+      const msg =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Failed to delete HSN code';
+      toast.error(msg);
     }
   };
 
@@ -192,7 +234,11 @@ export function GSTConfigurationManagement() {
       setEditingCategory(null);
       loadData();
     } catch (error) {
-      toast.error('Failed to save tax category');
+      const msg =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Failed to save tax category';
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -422,7 +468,9 @@ export function GSTConfigurationManagement() {
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Default GST Rate</span>
-                      <span className="font-semibold">{category.defaultGSTRate}%</span>
+                      <span className="font-semibold">
+                        {`${parseTaxCategoryGstRate(category as Partial<Record<string, unknown>>).toFixed(2)}%`}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Applicable Services</span>
@@ -570,13 +618,19 @@ export function GSTConfigurationManagement() {
                 <Label>Default GST Rate (%)</Label>
                 <Input
                   type="number"
-                  value={editingCategory.defaultGSTRate}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  value={
+                    editingCategory.defaultGSTRate != null &&
+                    Number.isFinite(editingCategory.defaultGSTRate)
+                      ? editingCategory.defaultGSTRate
+                      : ''
+                  }
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const v = parseFloat(e.target.value);
                     setEditingCategory({
                       ...editingCategory,
-                      defaultGSTRate: parseFloat(e.target.value),
-                    })
-                  }
+                      defaultGSTRate: Number.isFinite(v) ? v : 0,
+                    });
+                  }}
                 />
               </div>
               <div className="flex items-center justify-between">

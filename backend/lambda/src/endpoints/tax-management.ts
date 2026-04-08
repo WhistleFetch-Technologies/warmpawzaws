@@ -9,6 +9,8 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { applyGstRulesRateFallback, pickTaxCategoryDisplayRate } from '../utils/tax-category-display-rate';
+import { loadGstRuleRatesByTaxCategoryId } from '../utils/tax-category-gst-rule-rates';
 import { isValidUUID } from '../types/entities';
 
 // ============================================================================
@@ -384,12 +386,25 @@ class GetTaxCategoriesHandler extends BaseHandler {
         params.push(isActive === 'true');
       }
 
-      queryStr += ` ORDER BY category_name ASC`;
-
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const gstRuleRatesByCategoryId = await loadGstRuleRatesByTaxCategoryId();
+      const sorted = [...rows].sort((a: any, b: any) =>
+        String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+      const taxCategories = sorted.map((row: Record<string, any>) => {
+        const base = pickTaxCategoryDisplayRate(row);
+        const tax_rate = applyGstRulesRateFallback(base, row.id, gstRuleRatesByCategoryId);
+        return {
+          ...row,
+          category_name: row.category_name ?? row.name,
+          tax_rate,
+        };
+      });
 
-      return this.success({ taxCategories: rows });
+      return this.success({ taxCategories });
     } catch (error: any) {
       console.error('Error fetching tax categories:', error);
       return this.error(`Failed to fetch tax categories: ${error.message}`, 500);

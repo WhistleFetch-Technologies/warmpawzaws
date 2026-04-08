@@ -601,7 +601,7 @@ app.route('/', platformPoliciesApp);
 registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
-registerConfigPoliciesEndpoints(app); // /config/policies, /config/fees, /config/logistics-rules
+registerConfigPoliciesEndpoints(app); // /config/policies, /config/logistics-rules (GET /config/fees → fee-config.ts)
 registerVendorSettingsEndpoints(app);
 registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);

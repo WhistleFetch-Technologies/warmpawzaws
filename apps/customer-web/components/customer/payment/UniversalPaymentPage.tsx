@@ -341,7 +341,7 @@ export function UniversalPaymentPage({
     loadRazorpayOffers();
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
-  }, [customerPhone, baseAmount, category, serviceStyle]);
+  }, [customerPhone, baseAmount, category, serviceStyle, type]);
 
   // Check if customer has active subscription that covers this booking
   useEffect(() => {
@@ -861,41 +861,86 @@ export function UniversalPaymentPage({
 
   const loadPlatformFees = async () => {
     try {
-      // Load platform and convenience fees from fee config endpoint
+      const catParam = category != null && String(category).trim() !== '' ? `&category=${encodeURIComponent(String(category).trim())}` : '';
       const feesRes = await apiClient.get<any>(
-        `/config/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
+        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`
       );
 
-      if (feesRes.success) {
-        const platformFee = feesRes.platformFee || 0;
-        const convenienceFee = feesRes.convenienceFee || 0;
-        // Delivery fee is usually calculated separately by logistics
-        const deliveryFee = serviceStyle === 'at_home' || type === 'order' ? (feesRes.deliveryFee || 0) : 0;
-        const packagingFee = type === 'order' ? (feesRes.packagingFee || 0) : 0;
-
-        console.log('[FEES] Loaded fee configuration:', {
-          platformFee,
-          convenienceFee,
-          deliveryFee,
-          packagingFee,
-          breakdown: feesRes.breakdown,
-        });
-
-        setPlatformFees({
-          platformFee,
-          convenienceFee,
-          deliveryFee,
-          packagingFee,
-          total: platformFee + convenienceFee + deliveryFee + packagingFee,
-        });
+      if (!feesRes?.success) {
+        throw new Error((feesRes && feesRes.error) || 'Fee configuration unavailable');
       }
+
+      let platformFee =
+        typeof feesRes.platformFee === 'number' && Number.isFinite(feesRes.platformFee)
+          ? feesRes.platformFee
+          : NaN;
+      let convenienceFee =
+        typeof feesRes.convenienceFee === 'number' && Number.isFinite(feesRes.convenienceFee)
+          ? feesRes.convenienceFee
+          : NaN;
+      let deliveryFee =
+        typeof feesRes.deliveryFee === 'number' && Number.isFinite(feesRes.deliveryFee)
+          ? feesRes.deliveryFee
+          : NaN;
+      let packagingFee =
+        typeof feesRes.packagingFee === 'number' && Number.isFinite(feesRes.packagingFee)
+          ? feesRes.packagingFee
+          : NaN;
+
+      const legacy = feesRes.fees && typeof feesRes.fees === 'object' ? feesRes.fees : null;
+      if (legacy && !Number.isFinite(platformFee)) {
+        const pct = parseFloat(String(legacy.platformFeePercentage));
+        const flat = parseFloat(String(legacy.platformFeeFlat ?? 0));
+        const max = parseFloat(String(legacy.maxPlatformFee ?? 500));
+        if (Number.isFinite(pct) && baseAmount > 0) {
+          let pf = Math.round((baseAmount * pct) / 100) + (Number.isFinite(flat) ? flat : 0);
+          if (Number.isFinite(max) && max > 0 && pf > max) pf = max;
+          platformFee = Math.max(0, pf);
+        } else {
+          platformFee = 0;
+        }
+      }
+      if (!Number.isFinite(platformFee)) platformFee = 0;
+      if (!Number.isFinite(convenienceFee)) convenienceFee = 0;
+      if (legacy && type === 'order' && !Number.isFinite(convenienceFee) && legacy.convenienceFee != null) {
+        const c = parseFloat(String(legacy.convenienceFee));
+        if (Number.isFinite(c)) convenienceFee = Math.max(0, c);
+      }
+      if (!Number.isFinite(deliveryFee)) deliveryFee = 0;
+      if (!Number.isFinite(packagingFee)) packagingFee = 0;
+
+      if (type === 'booking') {
+        convenienceFee = 0;
+      }
+      if (!(serviceStyle === 'at_home' || type === 'order')) {
+        deliveryFee = 0;
+      }
+      if (type !== 'order') {
+        packagingFee = 0;
+      }
+
+      console.log('[FEES] Loaded fee configuration:', {
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        breakdown: feesRes.breakdown,
+      });
+
+      setPlatformFees({
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        total: platformFee + convenienceFee + deliveryFee + packagingFee,
+      });
     } catch (error) {
       console.error('Error loading platform fees:', error);
       // Resilience-only fallback when /config/fees fails; production should use backend as single source of truth
       if (baseAmount > 0) {
         let defaultPlatformFee = Math.round((baseAmount * 2) / 100);
         defaultPlatformFee = Math.min(defaultPlatformFee, 200);
-        const defaultConvenienceFee = type === 'booking' ? 10 : 0;
+        const defaultConvenienceFee = type === 'order' ? 9 : 0;
         setPlatformFees({
           platformFee: defaultPlatformFee,
           convenienceFee: defaultConvenienceFee,
@@ -1713,6 +1758,10 @@ export function UniversalPaymentPage({
         paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // ✅ Optional enum
         bookingId: currentBookingId, // ✅ Required UUID (booking should already exist)
       };
+
+      if (category != null && String(category).trim() !== '') {
+        paymentPayload.category = String(category).trim();
+      }
 
       // ✅ Optional fields (not in schema but backend may handle)
       if (customerId) {

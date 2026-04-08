@@ -23,6 +23,8 @@ import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { applyGstRulesRateFallback, pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
+import { loadGstRuleRatesByTaxCategoryId } from '../../../utils/tax-category-gst-rule-rates';
 import { isValidUUID } from '../../../types/entities';
 
 // Color constants for charts
@@ -3760,10 +3762,19 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, gstRate, category, categoryId, cgst, sgst, igst, isActive } = body;
+      const { code, description, category, categoryId, cgst, sgst, igst, isActive } = body;
+      const gstRateRaw = body.gstRate ?? body.gst_rate;
 
-      if (!code || !gstRate) {
-        return c.json({ success: false, error: 'HSN code and GST rate are required' }, 400);
+      // Do not use !gstRate — 0 is a valid exempt/zero-rated GST %.
+      if (code == null || String(code).trim() === '') {
+        return c.json({ success: false, error: 'HSN code is required' }, 400);
+      }
+      if (gstRateRaw === undefined || gstRateRaw === null || gstRateRaw === '') {
+        return c.json({ success: false, error: 'GST rate is required' }, 400);
+      }
+      const gstRateNum = parseFloat(String(gstRateRaw));
+      if (!Number.isFinite(gstRateNum) || gstRateNum < 0 || gstRateNum > 100) {
+        return c.json({ success: false, error: 'GST rate must be a number between 0 and 100' }, 400);
       }
 
       const codeColumn = await getHsnCodeColumn();
@@ -3779,7 +3790,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const insertPayload: Record<string, unknown> = {
         [codeColumn]: codeVal,
         description: description || '',
-        gst_rate: parseFloat(gstRate),
+        gst_rate: gstRateNum,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
       };
@@ -3937,8 +3948,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/finance/gst/tax-categories', async (c) => {
     try {
-      const categories = await query('SELECT * FROM tax_categories ORDER BY category_name ASC');
-      return c.json({ success: true, categories: categories.rows });
+      // SELECT * (no ORDER BY on category_name) so both schema variants work:
+      // - platform: category_name + tax_rate
+      // - migration 213: name + default_gst_rate
+      const categories = await query('SELECT * FROM tax_categories');
+      const rows = categories.rows ?? [];
+      const gstRuleRatesByCategoryId = await loadGstRuleRatesByTaxCategoryId();
+      const sorted = [...rows].sort((a: any, b: any) =>
+        String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+      const normalized = sorted.map((row: Record<string, any>) => {
+        const displayName = String(row.category_name ?? row.name ?? '').trim() || '—';
+        const base = pickTaxCategoryDisplayRate(row);
+        const tax_rate = applyGstRulesRateFallback(base, row.id, gstRuleRatesByCategoryId);
+        return {
+          id: row.id,
+          category_name: displayName,
+          name: displayName,
+          description: row.description ?? '',
+          tax_rate,
+          applicable_services: row.applicable_services ?? row.applicableServices ?? [],
+          is_active: row.is_active !== false,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      });
+      return c.json({ success: true, categories: normalized });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
