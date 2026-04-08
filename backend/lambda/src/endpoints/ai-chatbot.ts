@@ -19,6 +19,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { invokeBedrock } from '../utils/bedrock-client';
 import { withRetry } from '../utils/error-recovery';
+import { generateSupportTicketNumber } from '../utils/support-ticket-number';
 
 const SYMPTOM_STOPWORDS = new Set([
   'the', 'and', 'for', 'pet', 'dog', 'cat', 'puppy', 'kitten', 'has', 'have', 'been', 'with', 'from', 'that', 'this',
@@ -773,6 +774,7 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         // Create support ticket for agent handoff
         try {
           await insert('support_tickets', {
+            ticket_number: generateSupportTicketNumber(),
             customer_id: !isVendorSession ? customerId || null : null,
             customer_phone: !isVendorSession ? customerPhone || null : null,
             subject: `AI Chatbot Handoff - ${intent}`,
@@ -780,6 +782,7 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
             source: 'ai_chatbot',
             status: 'open',
             priority: 'medium',
+            metadata: { attachments: [] },
             created_at: new Date().toISOString(),
           }).catch(() => {
             // Graceful fallback
@@ -1075,6 +1078,7 @@ OUTPUT FORMAT (JSON only):
 
       // Create support ticket
       const ticket = await insert('support_tickets', {
+        ticket_number: generateSupportTicketNumber(),
         customer_id: customerId || null,
         customer_phone: customerPhone || null,
         subject: `AI Chatbot Escalation - ${reason || 'User Request'}`,
@@ -1082,6 +1086,7 @@ OUTPUT FORMAT (JSON only):
         source: 'ai_chatbot',
         status: 'open',
         priority: 'high',
+        metadata: { attachments: [] },
         created_at: new Date().toISOString(),
       });
 

@@ -45,11 +45,26 @@ export function registerSupportCrmEndpoints(app: Hono) {
         bookingId,
         orderId,
         attachments,
+        metadata: metadataInput,
       } = await c.req.json();
 
       if (!subject || !message) {
         return c.json({ error: 'subject and message are required' }, 400);
       }
+
+      const metaBase =
+        metadataInput != null && typeof metadataInput === 'object' && !Array.isArray(metadataInput)
+          ? { ...(metadataInput as Record<string, unknown>) }
+          : {};
+      const { attachments: metaAttachments, ...metaRest } = metaBase as {
+        attachments?: unknown;
+        [k: string]: unknown;
+      };
+      const attachmentList = Array.isArray(attachments)
+        ? attachments
+        : Array.isArray(metaAttachments)
+          ? metaAttachments
+          : [];
 
       // Create support ticket
       const ticket = await insert('support_tickets', {
@@ -64,7 +79,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         booking_id: bookingId || null,
         order_id: orderId || null,
         status: 'open',
-        attachments: attachments || [],
+        metadata: { ...metaRest, attachments: attachmentList },
         created_at: new Date().toISOString(),
       });
 
@@ -975,8 +990,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         priority: 'medium',
         category: 'service',
         status: 'open',
-        metadata: crmContext,
-        attachments: [],
+        metadata: { ...crmContext, attachments: [] },
         created_at: new Date().toISOString(),
       });
 

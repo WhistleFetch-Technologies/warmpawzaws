@@ -90,10 +90,12 @@ export function InsuranceServicesLanding({ phone, onBack, onNavigate }: Insuranc
   return (
     <div className="min-h-screen bg-white max-w-md mx-auto">
       {/* Header with Concave Bottom Curve */}
-      <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white px-6 pt-8 pb-16 relative">
+      <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 pb-16 pl-[max(1.5rem,env(safe-area-inset-left,0px))] pr-[max(1.5rem,env(safe-area-inset-right,0px))] text-white cw-header-safe-top">
         <button 
+          type="button"
           onClick={onBack}
-          className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+          className="mb-4 flex min-h-[44px] items-center gap-2 text-white/90 hover:text-white touch-manipulation"
+          aria-label="Go back"
         >
           <ArrowLeft className="w-5 h-5" />
           <span>Back</span>

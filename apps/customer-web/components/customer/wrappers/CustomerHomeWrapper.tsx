@@ -581,9 +581,13 @@ export function CustomerHomeWrapper({
     else if (service === 'whats-new') router.push('/whats-new');
     else if (service === 'articles' || service === 'customer-articles') router.push('/articles');
     else if (service === 'wishlist') router.push('/wishlist');
-    else {
-      setSelectedService(service);
+    else if (service === 'home') {
       handleBack();
+    } else {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[CustomerHomeWrapper] Unhandled navigate service:', service);
+      }
+      toast.message('That action is not available here. Try refreshing the page if this keeps happening.');
     }
   };
 
@@ -2499,28 +2503,39 @@ export function CustomerHomeWrapper({
   // ✅ Boarding Booking Router - step-by-step boarding flow (service → datetime → pet → room → payment → confirmation)
   if (currentScreen === 'boarding-booking' || currentScreen === 'pet-sitter-booking') {
     const sittingBooking = currentScreen === 'pet-sitter-booking';
-    return <BoardingBookingRouter 
-      flowVariant={sittingBooking ? 'pet_sitting' : 'boarding'}
-      phone={phone}
-      vendorId={vetServiceData?.vendorId}
-      facility={vetServiceData?.facility}
-      selectedService={vetServiceData?.serviceId}
-      serviceType={vetServiceData?.serviceType || (sittingBooking ? 'sitting' : 'boarding')}
-      serviceId={vetServiceData?.serviceId}
-      serviceName={vetServiceData?.serviceName || vetServiceData?.service?.name}
-      serviceStyle={vetServiceData?.serviceStyle}
-      price={vetServiceData?.price}
-      duration={vetServiceData?.duration}
-      onBack={() => setCurrentScreen(previousScreen || (sittingBooking ? 'pet-sitter' : 'boarding'))} 
-      onNavigate={(screen, data) => {
-        if (screen === 'booking-details' || screen === 'booking-confirmation') {
-          handleViewBooking(data?.bookingId);
-        } else {
-          handleNavigateToService(screen);
-        }
-      }}
-      onViewBooking={handleViewBooking}
-    />;
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        <div className="min-h-0 w-full bg-gray-50">
+          <BoardingBookingRouter
+            flowVariant={sittingBooking ? 'pet_sitting' : 'boarding'}
+            phone={phone}
+            vendorId={vetServiceData?.vendorId}
+            facility={vetServiceData?.facility}
+            selectedService={vetServiceData?.serviceId}
+            serviceType={vetServiceData?.serviceType || (sittingBooking ? 'sitting' : 'boarding')}
+            serviceId={vetServiceData?.serviceId}
+            serviceName={vetServiceData?.serviceName || vetServiceData?.service?.name}
+            serviceStyle={vetServiceData?.serviceStyle}
+            price={vetServiceData?.price}
+            duration={vetServiceData?.duration}
+            onBack={() => setCurrentScreen(previousScreen || (sittingBooking ? 'pet-sitter' : 'boarding'))}
+            onNavigate={(screen, data) => {
+              if (screen === 'booking-details' || screen === 'booking-confirmation') {
+                handleViewBooking(data?.bookingId);
+              } else {
+                handleNavigateToService(screen);
+              }
+            }}
+            onViewBooking={handleViewBooking}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
   }
 
   // ✅ NEW: Bookings List

@@ -13,7 +13,10 @@ import {
   PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
+import {
+  normalizeCustomerProfileFields,
+  patchCustomerProfileKeysInLocalStorage,
+} from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -180,6 +183,14 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
         phone: phone,
         profile: profileToSave,
       });
+
+      patchCustomerProfileKeysInLocalStorage({
+        pincode: profileToSave.pincode,
+        address: profileToSave.address,
+        city: profileToSave.city,
+        state: profileToSave.state,
+      });
+      setProfile(profileToSave);
 
       setEditMode(false);
       setUploadedPhotoUrl(''); // Reset after save

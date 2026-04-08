@@ -2,8 +2,8 @@
 /**
  * RDS Data API Utilities for Dev Environment
  *
- * Connects to dev RDS using AWS RDS Data API (@aws-sdk/client-rds-data).
- * Uses the SDK (not CLI file://) so Windows paths with 8.3 names do not break.
+ * Connects to dev/prod RDS using AWS RDS Data API (@aws-sdk/client-rds-data).
+ * Cluster + secret discovery uses @aws-sdk/client-rds and client-secrets-manager (no AWS CLI required).
  * 
  * Usage:
  *   const { getClusterInfo, executeSQL, parseRecord, parseRecords } = require('./rds-data-api-utils-dev');
@@ -13,9 +13,43 @@
  *   const records = parseRecords(result);
  */
 
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+/**
+ * Load scripts/.env.local then scripts/.env (gitignored) so migrations work without exporting vars in the shell.
+ * Does not override variables already set in the environment.
+ */
+function loadScriptsDirEnvFiles() {
+  const dir = __dirname;
+  for (const name of ['.env.local', '.env']) {
+    const full = path.join(dir, name);
+    if (!fs.existsSync(full)) continue;
+    const text = fs.readFileSync(full, 'utf8');
+    for (let line of text.split(/\r?\n/)) {
+      line = line.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      let val = line.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (process.env[key] === undefined || process.env[key] === '') {
+        process.env[key] = val;
+      }
+    }
+  }
+}
+
+loadScriptsDirEnvFiles();
+
+const { RDSClient, DescribeDBClustersCommand } = require('@aws-sdk/client-rds');
+const { SecretsManagerClient, DescribeSecretCommand } = require('@aws-sdk/client-secrets-manager');
 const { RDSDataClient, ExecuteStatementCommand } = require('@aws-sdk/client-rds-data');
 
 const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
@@ -197,7 +231,8 @@ function splitPostgresStatements(sql) {
 let cachedClusterInfo = null;
 
 /**
- * Get cluster ARN and secret ARN (cached after first lookup)
+ * Get cluster ARN and secret ARN (cached after first lookup).
+ * Uses AWS SDK (same APIs as `aws rds describe-db-clusters` / `describe-secret`) — no AWS CLI required.
  * @returns {Promise<{clusterArn: string, secretArn: string, httpEndpointEnabled: boolean}>}
  */
 async function getClusterInfo() {
@@ -206,49 +241,53 @@ async function getClusterInfo() {
   }
 
   console.log('📊 Getting RDS cluster information...');
-  
+
   try {
-    // Get cluster info
-    const clusterInfoJson = execSync(
-      `aws rds describe-db-clusters --db-cluster-identifier ${CLUSTER_IDENTIFIER} --region ${REGION} --output json`,
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    const rdsClient = new RDSClient({ region: REGION });
+    const clusterOut = await rdsClient.send(
+      new DescribeDBClustersCommand({ DBClusterIdentifier: CLUSTER_IDENTIFIER }),
     );
-    
-    const clusterInfo = JSON.parse(clusterInfoJson);
-    
-    if (!clusterInfo.DBClusters || clusterInfo.DBClusters.length === 0) {
+
+    if (!clusterOut.DBClusters || clusterOut.DBClusters.length === 0) {
       throw new Error(`RDS cluster not found: ${CLUSTER_IDENTIFIER}`);
     }
-    
-    const cluster = clusterInfo.DBClusters[0];
+
+    const cluster = clusterOut.DBClusters[0];
     const clusterArn = cluster.DBClusterArn;
     const httpEndpointEnabled = cluster.HttpEndpointEnabled || false;
-    
+
     if (!httpEndpointEnabled) {
-      throw new Error(`RDS Data API is not enabled on cluster ${CLUSTER_IDENTIFIER}. HttpEndpointEnabled must be true.`);
+      throw new Error(
+        `RDS Data API is not enabled on cluster ${CLUSTER_IDENTIFIER}. HttpEndpointEnabled must be true.`,
+      );
     }
-    
+
     console.log(`   ✅ Cluster ARN: ${clusterArn}`);
-    console.log(`   ✅ HTTP Endpoint: Enabled`);
-    
-    // Get secret ARN
-    const secretInfoJson = execSync(
-      `aws secretsmanager describe-secret --secret-id "${SECRET_NAME}" --region ${REGION} --output json`,
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    
-    const secretInfo = JSON.parse(secretInfoJson);
-    const secretArn = secretInfo.ARN;
-    
+    console.log('   ✅ HTTP Endpoint: Enabled');
+
+    let secretArn = cluster.MasterUserSecret?.SecretArn;
+    if (!secretArn) {
+      const secretName =
+        ENVIRONMENT === 'prod'
+          ? 'warmpawz-prod-rds-master-20260207201049162400000001'
+          : SECRET_NAME;
+      const smClient = new SecretsManagerClient({ region: REGION });
+      const secOut = await smClient.send(new DescribeSecretCommand({ SecretId: secretName }));
+      secretArn = secOut.ARN;
+      if (!secretArn) {
+        throw new Error(`Could not resolve secret ARN for ${secretName}`);
+      }
+    }
+
     console.log(`   ✅ Secret ARN: ${secretArn}`);
     console.log('');
-    
+
     cachedClusterInfo = {
       clusterArn,
       secretArn,
-      httpEndpointEnabled
+      httpEndpointEnabled,
     };
-    
+
     return cachedClusterInfo;
   } catch (error) {
     console.error('❌ Failed to get cluster information:');

@@ -225,7 +225,7 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
 
   if (!phone) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
+      <div className="min-h-screen bg-gray-50 px-4 pb-4 cw-header-safe-top cw-header-safe-x">
         <div className="max-w-md mx-auto">
           <div className="flex items-center gap-4 mb-6">
             <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
@@ -244,9 +244,15 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
+        <div className="sticky top-0 z-10 border-b border-gray-200 bg-white cw-header-safe-top pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={props.onBack}
+              className="h-11 min-h-[44px] min-w-[44px] shrink-0 rounded-full touch-manipulation"
+              aria-label="Go back"
+            >
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <h1 className="text-xl font-semibold">Mating &amp; Dating</h1>

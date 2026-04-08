@@ -39,6 +39,8 @@ function handler(event) {
     { pattern: /^\/video\/[^/]+.*$/, rewrite: '/video/placeholder.html' },
     { pattern: /^\/booking\/[^/]+$/, rewrite: '/booking/placeholder.html' },
     { pattern: /^\/orders\/[^/]+\/tracking$/, rewrite: '/orders/placeholder/tracking.html' },
+    // Next static export only emits pet-boarding/vendor/placeholder.html; real IDs hydrate client-side.
+    { pattern: /^\/pet-boarding\/vendor\/[^/]+$/, rewrite: '/pet-boarding/vendor/placeholder.html' },
   ];
 
   for (var i = 0; i < dynamicRoutes.length; i++) {
