@@ -471,20 +471,22 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
           </div>
         )}
 
-        {/* Referral Program Button */}
-        <div className="border-t border-gray-200 pt-6">
-          <Button
-            onClick={() => {
-              setShowReferralModal(true);
-              loadReferralData();
-            }}
-            variant="outline"
-            className="w-full border-2 border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-          >
-            <Gift className="w-4 h-4 mr-2" />
-            View Referral Program
-          </Button>
-        </div>
+        {/* Referral Program Button — UI temporarily hidden; replace `false` with `true` to re-enable */}
+        {false && (
+          <div className="border-t border-gray-200 pt-6">
+            <Button
+              onClick={() => {
+                setShowReferralModal(true);
+                loadReferralData();
+              }}
+              variant="outline"
+              className="w-full border-2 border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+            >
+              <Gift className="w-4 h-4 mr-2" />
+              View Referral Program
+            </Button>
+          </div>
+        )}
 
         {/* Save Button */}
         <div className="border-t border-gray-200 pt-6">
