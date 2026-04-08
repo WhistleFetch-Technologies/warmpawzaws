@@ -82,21 +82,25 @@ export function PlatformLegalPolicyDialog({
         }
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto max-w-lg sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{loading ? 'Loading…' : title || 'Legal document'}</DialogTitle>
-        </DialogHeader>
-        {notice && (
-          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-            {notice}
-          </p>
-        )}
-        {err && <p className="text-sm text-red-600">{err}</p>}
-        {!loading && !err && (
-          <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans max-h-[65vh] overflow-y-auto">
-            {body}
-          </pre>
-        )}
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-hidden sm:max-w-2xl bg-white p-6 pt-14 pb-6">
+        <div className="flex max-h-[calc(85vh-5rem)] flex-col gap-4 overflow-y-auto">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="pr-8 text-gray-900">
+              {loading ? 'Loading…' : title || 'Legal document'}
+            </DialogTitle>
+          </DialogHeader>
+          {notice && (
+            <p className="shrink-0 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              {notice}
+            </p>
+          )}
+          {err && <p className="shrink-0 text-sm text-red-600">{err}</p>}
+          {!loading && !err && (
+            <pre className="min-h-0 flex-1 whitespace-pre-wrap rounded-md bg-white text-sm text-gray-800 font-sans">
+              {body}
+            </pre>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

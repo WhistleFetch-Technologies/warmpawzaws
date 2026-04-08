@@ -239,7 +239,7 @@ function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: Instant
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       <ServiceDashboardHeader
         serviceName="Available now"
         serviceSubtitle="Vets ready for instant video call"
@@ -332,7 +332,7 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       {/* ✅ FIX: Add ServiceDashboardHeader for consistent UI */}
       <ServiceDashboardHeader
         serviceName="Instant Consultation"
@@ -422,10 +422,10 @@ function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPe
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       {/* ✅ FIX: Add ServiceDashboardHeader for consistent UI */}
       <ServiceDashboardHeader
-        serviceName="Select Pet"
+        serviceName="Tele-Consultation"
         serviceSubtitle={selectedService.name}
         serviceIcon={PawPrint}
         iconColor="text-white"
@@ -676,7 +676,7 @@ function CallingVendorScreen({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       <ServiceDashboardHeader
         serviceName="Calling..."
         serviceSubtitle={`${vendorName} - ${serviceName}`}
@@ -1224,7 +1224,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
         return null;
       }
       return (
-        <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+        <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
           <ServiceDashboardHeader
             serviceName="Waiting in Queue"
             serviceSubtitle={`${selectedInstantVendor.vendorName} - ${selectedService.name}`}

@@ -13,6 +13,9 @@ import {
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
 
+/** Top padding under notch / status bar (requires viewport-fit=cover in root layout). */
+const authOrangeHeaderStyle = { paddingTop: 'max(2rem, env(safe-area-inset-top))' } as const;
+
 function setCustomerOnboardingCompleteFromAuth(value: 'true' | 'false'): void {
   if (typeof window === 'undefined') return;
   if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
@@ -416,29 +419,8 @@ function AuthPageContent() {
       <div className="min-h-screen flex justify-center bg-[#FF8C42]">
         {/* Centered Container */}
         <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
-          {/* Status Bar Placeholder */}
-          <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-            <span className="text-sm font-medium text-black">09:41</span>
-            <div className="flex gap-1.5 items-center">
-              <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-                <rect y="8" width="3" height="4" rx="0.5" fill="black" />
-                <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black" />
-                <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black" />
-                <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black" />
-              </svg>
-              <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-                <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-                <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5" />
-                <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black" />
-                <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black" />
-              </svg>
-            </div>
-          </div>
-
           {/* Orange Header Section */}
-          <div className="px-6 pt-8 pb-20 flex flex-col items-center">
+          <div className="px-6 pb-20 flex flex-col items-center" style={authOrangeHeaderStyle}>
             {/* Warmpawz Logo */}
             <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
               <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
@@ -587,29 +569,8 @@ function AuthPageContent() {
     <div className="min-h-screen flex justify-center bg-[#FF8C42]">
       {/* Centered Container */}
       <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
-        {/* Status Bar Placeholder */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-          <span className="text-sm font-medium text-black">09:41</span>
-          <div className="flex gap-1.5 items-center">
-            <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black" />
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black" />
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black" />
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black" />
-            </svg>
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5" />
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black" />
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black" />
-            </svg>
-          </div>
-        </div>
-
         {/* Orange Header Section */}
-        <div className="px-6 pt-8 pb-20 flex flex-col items-center">
+        <div className="px-6 pb-20 flex flex-col items-center" style={authOrangeHeaderStyle}>
           {/* Warmpawz Logo */}
           <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
             <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />

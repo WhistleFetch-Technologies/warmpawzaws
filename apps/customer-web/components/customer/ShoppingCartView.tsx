@@ -4,7 +4,6 @@ import { useState, useMemo, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { 
-  ArrowLeft, 
   Plus, 
   Minus, 
   Trash2, 
@@ -38,6 +37,7 @@ import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
 import { CartPromotionsBanner } from './shared/CartPromotionsBanner';
 import { CartPromotionResult } from '@/lib/promotions-engine';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 interface ShoppingCartViewProps {
   onBack: () => void;
@@ -110,10 +110,6 @@ const vendorData: Record<string, { name: string; rating: number; reviews: number
   'vendor3': { name: 'Furry Friends Shop', rating: 4.9, reviews: 3100, deliveryTime: '3-4 days', freeDeliveryMin: 1200 },
   'default': { name: 'Warmpawz Store', rating: 4.7, reviews: 1500, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
-
-/** Min ~44px top when env(safe-area-inset-top) is 0 (many Android WebViews); same pattern as AddressBookPage gradient header. */
-const CART_HEADER_BAR =
-  'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white flex items-center gap-3 rounded-b-2xl shadow-md isolate pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-3';
 
 export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
   const router = useRouter();
@@ -236,6 +232,15 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
     [subtotalForTax, deliveryFees, giftWrapFee, protectionFee, taxAmount]
   );
 
+  const cartHeaderStats = useMemo(() => {
+    const vendorCount = Object.keys(itemsByVendor).length;
+    return [
+      { value: String(itemCount), label: 'Items' },
+      { value: String(vendorCount), label: 'Stores' },
+      { value: `₹${Math.round(totalAmount)}`, label: 'Est. total' },
+    ];
+  }, [itemCount, itemsByVendor, totalAmount]);
+
   const handleApplyCoupon = (coupon: Coupon) => {
     if (cartTotal < coupon.minOrder) {
       alert(`Minimum order of ₹${coupon.minOrder} required for this coupon`);
@@ -277,13 +282,17 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
 
   if (cart.length === 0 && savedItems.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-md mx-auto relative">
-        <div className={`sticky top-0 z-10 ${CART_HEADER_BAR}`}>
-          <button type="button" onClick={handleNavigateBack} className="p-2 hover:bg-white/20 rounded-full transition-colors text-white" aria-label="Go back">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="font-bold text-lg text-white">Shopping Cart</h1>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-customer mx-auto relative">
+        <ServiceDashboardHeader
+          className="sticky top-0 z-30 shrink-0"
+          serviceName="Shopping Cart"
+          serviceSubtitle="Review before checkout"
+          serviceIcon={ShoppingBag}
+          iconColor="text-white"
+          stats={[]}
+          onBack={handleNavigateBack}
+          showBackButton
+        />
 
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="w-32 h-32 bg-gradient-to-br from-orange-100 to-pink-100 rounded-full flex items-center justify-center mb-6">
@@ -309,19 +318,17 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
     'pb-[calc(5.5rem+4.5rem+env(safe-area-inset-bottom,0px)+12px)]';
 
   return (
-    <div className="relative w-full max-w-md mx-auto min-h-0">
-      {/* Header: back + title — sticky with page scroll (wrapper is not a flex scroll parent) */}
-      <header className={`sticky top-0 z-30 ${CART_HEADER_BAR}`}>
-        <button
-          type="button"
-          onClick={handleNavigateBack}
-          className="p-2 hover:bg-white/20 rounded-full transition-colors text-white shrink-0"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="font-bold text-lg text-white truncate">Shopping Cart</h1>
-      </header>
+    <div className="relative w-full max-w-customer mx-auto min-h-0">
+      <ServiceDashboardHeader
+        className="sticky top-0 z-30 shrink-0"
+        serviceName="Shopping Cart"
+        serviceSubtitle={`${itemCount} ${itemCount === 1 ? 'item' : 'items'}`}
+        serviceIcon={ShoppingBag}
+        iconColor="text-white"
+        stats={cartHeaderStats}
+        onBack={handleNavigateBack}
+        showBackButton
+      />
 
       <div className={`${scrollBottomPad}`}>
         {/* Trust Badges */}

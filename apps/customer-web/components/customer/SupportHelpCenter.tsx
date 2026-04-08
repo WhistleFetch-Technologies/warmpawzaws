@@ -1,19 +1,15 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Search, HelpCircle, MessageCircle, Phone, Mail, FileText, ChevronRight, Send, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Search, HelpCircle, MessageCircle, Phone, Mail, FileText, ChevronRight, Send, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { getSupportPhoneLabel, getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
-
-/** Min ~44px top when env(safe-area-inset-top) is 0 (many Android WebViews); same pattern as AddressBookPage. */
-const SUPPORT_HELP_HEADER_BAR =
-  'bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white isolate pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-4 rounded-b-2xl shadow-md';
 
 interface Ticket {
   id: string;
@@ -200,36 +196,27 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
     }
   };
 
+  const openTickets = tickets.filter((t) => t.status === 'open' || t.status === 'in_progress').length;
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-customer mx-auto">
       {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
-      <div className="sticky top-0 z-50 isolate">
-        {onCloseToHome ? (
-          <ProfileAccountScreenHeader
-            onCloseToHome={onCloseToHome}
-            onBack={onBack}
-            title="Help & Support"
-            subtitle="We're here to help"
-          />
-        ) : (
-          <div className={SUPPORT_HELP_HEADER_BAR}>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onBack}
-                className="touch-manipulation rounded-full text-white hover:bg-white/20"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl font-bold">Help & Support</h1>
-                <p className="text-white/90 text-sm">We're here to help</p>
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="sticky top-0 z-50 isolate bg-gray-50">
+        <ServiceDashboardHeader
+          className="z-50"
+          serviceName="Help & Support"
+          serviceSubtitle="We're here to help"
+          serviceIcon={HelpCircle}
+          iconColor="text-white"
+          stats={[
+            { value: String(faqCategories.length), label: 'Topics' },
+            { value: phone ? String(tickets.length) : '—', label: 'Tickets' },
+            { value: phone ? String(openTickets) : '—', label: 'Open' },
+          ]}
+          onCloseToHome={onCloseToHome}
+          onBack={onBack}
+          showBackButton={Boolean(onBack)}
+        />
 
         {/* Tabs */}
         <div className="bg-white border-b border-gray-200">

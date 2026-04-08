@@ -27,17 +27,16 @@ export function ProfileAccountScreenHeader({
   className = '',
 }: ProfileAccountScreenHeaderProps) {
   return (
-    <div className={className}>
-      <ServiceDashboardHeader
-        serviceName={title?.trim() || 'Account'}
-        serviceSubtitle={subtitle?.trim() || undefined}
-        serviceIcon={Icon}
-        iconColor="text-white"
-        stats={[]}
-        onCloseToHome={onCloseToHome}
-        onBack={onBack}
-        showBackButton={Boolean(onBack)}
-      />
-    </div>
+    <ServiceDashboardHeader
+      className={className}
+      serviceName={title?.trim() || 'Account'}
+      serviceSubtitle={subtitle?.trim() || undefined}
+      serviceIcon={Icon}
+      iconColor="text-white"
+      stats={[]}
+      onCloseToHome={onCloseToHome}
+      onBack={onBack}
+      showBackButton={Boolean(onBack)}
+    />
   );
 }

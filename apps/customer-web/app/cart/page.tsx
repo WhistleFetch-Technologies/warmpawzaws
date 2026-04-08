@@ -12,8 +12,8 @@ import {
   CreditCard,
   ArrowRight,
   Package,
-  ArrowLeft,
 } from 'lucide-react';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 interface CartItem {
   product_id: string;
@@ -107,33 +107,33 @@ export default function CartPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex min-h-screen w-full max-w-md items-center justify-center bg-[#F2F4F7]">
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-[#F2F4F7]">
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
       </div>
     );
   }
 
+  const cartRouteStats =
+    cart.length === 0
+      ? []
+      : [
+          { value: String(itemCount), label: 'Items' },
+          { value: `₹${subtotal}`, label: 'Subtotal' },
+          { value: String(cart.length), label: 'Products' },
+        ];
+
   return (
-    <div className="relative mx-auto min-h-screen w-full max-w-md bg-[#F2F4F7]">
-      {/* App-style top bar */}
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
-        <div className="cw-header-safe-top cw-header-safe-x flex items-center gap-3 py-2 pb-3">
-          <button
-            type="button"
-            onClick={() => goBackOrReplace(router, '/shop')}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-700 active:bg-slate-100"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Shopping Cart</h1>
-            <p className="text-sm text-slate-500">
-              {itemCount} {itemCount === 1 ? 'item' : 'items'}
-            </p>
-          </div>
-        </div>
-      </header>
+    <div className="relative mx-auto min-h-screen w-full max-w-customer bg-[#F2F4F7]">
+      <ServiceDashboardHeader
+        className="sticky top-0 z-30 shrink-0"
+        serviceName="Shopping Cart"
+        serviceSubtitle={`${itemCount} ${itemCount === 1 ? 'item' : 'items'}`}
+        serviceIcon={ShoppingCart}
+        iconColor="text-white"
+        stats={cartRouteStats}
+        onBack={() => goBackOrReplace(router, '/shop')}
+        showBackButton
+      />
 
       {cart.length === 0 ? (
         <div className="flex flex-col items-center justify-center px-6 py-16 text-center">

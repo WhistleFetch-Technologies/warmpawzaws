@@ -12,6 +12,9 @@ interface CustomerAuthProps {
   onAuthSuccess: (session: any) => void;
 }
 
+const authOrangeHeaderTop = { paddingTop: 'max(2rem, env(safe-area-inset-top))' } as const;
+const authTopBelowNotch = { paddingTop: 'max(1rem, env(safe-area-inset-top))' } as const;
+
 export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+91'); // Default to India
@@ -140,29 +143,8 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
     return (
       <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-customer mx-auto">
-        {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-          <span className="text-sm font-medium text-black">09:41</span>
-          <div className="flex gap-1.5 items-center">
-            <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-            </svg>
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-            </svg>
-          </div>
-        </div>
-
         {/* Back Button */}
-        <div className="px-6 py-4">
+        <div className="px-6 pb-4" style={authTopBelowNotch}>
           <button
             onClick={() => {
               setShowOtpScreen(false);
@@ -280,29 +262,8 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
   // PHONE NUMBER SCREEN
   return (
     <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-customer mx-auto">
-      {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-sm font-medium text-black">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-          </svg>
-        </div>
-      </div>
-
       {/* Orange Header Section */}
-      <div className="px-6 pt-8 pb-20 flex flex-col items-center">
+      <div className="px-6 pb-20 flex flex-col items-center" style={authOrangeHeaderTop}>
         {/* Logo */}
         <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-3">
           <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
