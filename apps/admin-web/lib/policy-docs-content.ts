@@ -440,7 +440,7 @@ Ecommerce policies define **order cancellation** (before/after dispatch), **retu
 
 ## What is GST Configuration?
 
-GST Configuration lets you manage **GST rates** and **HSN codes** used for invoicing and tax calculation. You can define **HSN codes** (with CGST, SGST, IGST rates) and **tax categories** that map services or products to default GST rates.
+GST Configuration lets you manage **GST rates** and **HSN codes** used for invoicing and tax calculation. Each **HSN code** stores a single **GST rate** (%); at checkout, the platform splits that into **CGST + SGST** (same state) or applies **IGST** (inter-state / missing locations) using the same percentage rules. **Tax categories** map services or products to default GST rates.
 
 ---
 
@@ -467,7 +467,7 @@ GST Configuration lets you manage **GST rates** and **HSN codes** used for invoi
 | Option | Impacts |
 |--------|---------|
 | **HSN Code** | Code (e.g. 9983) used on invoices and for tax classification. |
-| **GST Rate / CGST / SGST / IGST** | Rates for same-state (CGST+SGST) or inter-state (IGST). |
+| **GST rate (HSN)** | One combined % per HSN; checkout derives CGST/SGST or IGST from location. |
 | **Tax Category – Default GST Rate** | Default rate when a service/product is in this category. |
 | **Applicable Services** | Which services or products use this tax category. |
 | **Active** | Only active HSN codes and categories are used. |
@@ -485,7 +485,7 @@ GST Configuration lets you manage **GST rates** and **HSN codes** used for invoi
 
 ## What is the Flexible Tax System?
 
-The Flexible Tax System lets you define **tax rules** with conditions, exemptions, and multiple tax types (GST, CGST, SGST, IGST, cesses, custom). Rules are matched by **priority** (lower number = higher priority); the first matching rule is applied.
+The Flexible Tax System lets you define **tax rules** with conditions (and optional fields for exemptions / multiple tax types in the UI). **Checkout tax math** uses the centralized calculator: it resolves **rate** from HSN → tax category → matching \`gst_rules\` row → default 18%, and picks **CGST+SGST vs IGST** from customer vs vendor state. **Rule selection:** among rules that pass the SQL filters, the row with the **highest \`priority\` number** wins (\`ORDER BY priority DESC LIMIT 1\`). **Exemptions** and **compound taxes** are not applied by that calculator today—treat them as future/invoice-only unless documented otherwise.
 
 ---
 
@@ -502,7 +502,7 @@ The Flexible Tax System lets you define **tax rules** with conditions, exemption
 
 | Where | How |
 |-------|-----|
-| **Checkout / booking** | System evaluates tax rules by priority and applies the first matching rule. |
+| **Checkout / booking** | Matching \`gst_rules\` row (highest \`priority\` among rows that fit conditions); combined rate then HSN/category overrides as implemented. |
 | **Invoicing** | Invoices show tax breakdown (CGST, SGST, IGST) from the applied rule. |
 | **Refunds** | Tax component of refunds uses the same rules. |
 
@@ -514,15 +514,15 @@ The Flexible Tax System lets you define **tax rules** with conditions, exemption
 |--------|---------|
 | **Tax Type** | Which tax is applied (GST, CGST, SGST, IGST, cess, custom). |
 | **Rate / Calculation Method** | Percentage or fixed amount. |
-| **Priority** | Lower number = higher priority; first match wins. |
-| **Conditions / Exemptions** | When this rule applies or is excluded. |
+| **Priority** | **Higher number wins** when several enabled rules match (see tip below). |
+| **Conditions / Exemptions** | Conditions filter which \`gst_rules\` rows match; exemption/compound handling in the live calculator is not implemented yet. |
 | **Active** | Inactive rules are skipped. |
 
 ---
 
 ## Tips
 
-- Put specific rules (e.g. export 0%) at lower priority; default GST at higher priority.
+- Put **broad default** rules at a **lower** \`priority\` number and **specific** rules at a **higher** \`priority\` so the specific rule wins (e.g. default 100, specific 500).
 - Use conditions to apply different rates by transaction type, category, or amount.`,
   },
   'finance-settlements': {

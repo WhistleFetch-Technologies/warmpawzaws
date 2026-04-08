@@ -36,6 +36,7 @@ import {
   X,
   AlertCircle,
 } from 'lucide-react';
+import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
@@ -63,6 +64,8 @@ interface TaxCategory {
   defaultGSTRate?: number;
   tax_rate?: number;
   applicableServices?: string[];
+  /** service_catalog rows with tax_category_id = this category */
+  linkedCatalogServicesCount?: number;
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -128,7 +131,7 @@ export function GSTConfigurationManagement() {
               code: r.hsn_code ?? r.code,
               description: r.description ?? '',
               category: r.tax_category_name ?? r.category,
-              categoryId: r.category_id ?? r.categoryId,
+              categoryId: (r.category_id ?? r.categoryId) || undefined,
               gstRate: r.gst_rate ?? r.gstRate ?? 0,
               isActive: r.is_active !== false,
               createdAt: r.created_at,
@@ -154,6 +157,8 @@ export function GSTConfigurationManagement() {
                 defaultGSTRate: rate,
                 tax_rate: rate,
                 applicableServices: c.applicableServices ?? c.applicable_services ?? [],
+                linkedCatalogServicesCount:
+                  c.linked_catalog_service_count ?? c.linkedCatalogServicesCount ?? 0,
                 isActive: c.is_active !== false,
                 createdAt: c.created_at,
                 updatedAt: c.updated_at,
@@ -472,10 +477,34 @@ export function GSTConfigurationManagement() {
                         {`${parseTaxCategoryGstRate(category as Partial<Record<string, unknown>>).toFixed(2)}%`}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Applicable Services</span>
-                      <span className="font-semibold">{(category.applicableServices ?? []).length}</span>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-sm text-gray-600">
+                        Linked catalog services
+                        <span className="block text-xs font-normal text-gray-500 mt-0.5">
+                          service_catalog.tax_category_id
+                        </span>
+                      </span>
+                      <span className="font-semibold shrink-0">
+                        {category.linkedCatalogServicesCount ?? 0}
+                      </span>
                     </div>
+                    {(category.applicableServices ?? []).length > 0 && (
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>IDs on category row (legacy)</span>
+                        <span>{(category.applicableServices ?? []).length}</span>
+                      </div>
+                    )}
+                    {(category.linkedCatalogServicesCount ?? 0) === 0 && (
+                      <p className="text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-md p-2.5 mt-1 leading-relaxed">
+                        <strong>0</strong> means no row in <code className="text-[11px]">service_catalog</code> has{' '}
+                        <strong>Tax Category</strong> set to this UUID. Checkout tax still can use HSN or{' '}
+                        <strong>Flexible Tax</strong> rules; they are separate from this link. To raise this count, go to{' '}
+                        <Link href="/catalog" className="underline font-medium text-amber-950 hover:text-amber-800">
+                          Catalog
+                        </Link>{' '}
+                        and assign <strong>Tax Category</strong> on each service.
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-2 mt-4">
                     <Button
@@ -545,7 +574,11 @@ export function GSTConfigurationManagement() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500">Link to GST Configuration tax category</p>
+                <p className="text-xs text-gray-500">
+                  Link to GST Configuration tax category. The same HSN code can exist on multiple rows with
+                  different categories; tax resolution prefers the row whose category matches the service when
+                  resolving by code.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>GST Rate (%)</Label>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
@@ -16,6 +16,7 @@ import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -181,6 +182,15 @@ interface RazorpayOffer {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** POST /tax/calculate used to return success:true with empty items + error — treat as failure so UI does not show 9%+9% with ₹0 tax. */
+function taxCalculateResponseHasPayload(res: any): boolean {
+  if (!res || res.success !== true) return false;
+  const err = res.error;
+  if (typeof err === 'string' && err.trim()) return false;
+  if (err != null && typeof err === 'object') return false;
+  return Array.isArray(res.items) && res.items.length > 0;
+}
+
 function petsListForPaymentPicker(data: unknown): { id: string; name: string }[] {
   return petsFromApiResponse(data).map((p) => ({ id: p.id, name: p.name }));
 }
@@ -333,6 +343,118 @@ export function UniversalPaymentPage({
   const [petsListRefreshNonce, setPetsListRefreshNonce] = useState(0);
   const [localPetSelection, setLocalPetSelection] = useState<{ id: string; name: string } | null>(null);
 
+  const customerAddrStateForTax =
+    (typeof selectedAddress?.state === 'string' && selectedAddress.state.trim()
+      ? selectedAddress.state.trim()
+      : undefined) ??
+    (typeof address?.state === 'string' && address.state.trim() ? address.state.trim() : undefined);
+
+  const applyDefaultGstBreakdown = useCallback(
+    (ratePct: number) => {
+      const totalTax = (baseAmount * ratePct) / 100;
+      setTaxBreakdown({
+        subtotal: baseAmount,
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0,
+        totalTax,
+        total: baseAmount + totalTax,
+        taxRate: ratePct,
+        isInterState: false,
+      });
+    },
+    [baseAmount]
+  );
+
+  const calculateTax = useCallback(async () => {
+    const catalogServiceId = resolvedServiceId || serviceId;
+    const addr = selectedAddress || address;
+    const customerLocation =
+      addr?.state && String(addr.state).trim()
+        ? {
+            state: String(addr.state).trim(),
+            city: addr.city,
+            pincode: addr.pincode,
+          }
+        : undefined;
+
+    try {
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [
+          {
+            id: catalogServiceId || productId || 'item',
+            type: type === 'booking' ? 'service' : 'product',
+            serviceId: type === 'booking' ? catalogServiceId : undefined,
+            productId: type === 'order' ? productId : undefined,
+            amount: baseAmount,
+            quantity,
+            category: category || 'pet_services',
+            serviceStyle,
+          },
+        ],
+        vendorId,
+        customerId,
+        customerPhone,
+        customerLocation,
+      });
+
+      if (taxCalculateResponseHasPayload(taxRes)) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const rawRate = Number(taxRes.items?.[0]?.taxRate);
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const taxRate = resolveGstDisplayRatePercent(
+          baseAmount,
+          totalTax,
+          declaredRate,
+          18
+        );
+        const interState =
+          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
+
+        setTaxBreakdown({
+          subtotal: baseAmount,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: baseAmount + totalTax,
+          taxRate,
+          isInterState: interState,
+          taxDetails: taxRes.breakdown || [],
+        });
+        return;
+      }
+
+      if (baseAmount > 0) {
+        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
+        applyDefaultGstBreakdown(18);
+      }
+    } catch (error) {
+      console.error('Tax calculation error, using default 18%:', error);
+      if (baseAmount > 0) {
+        applyDefaultGstBreakdown(18);
+      }
+    }
+  }, [
+    address,
+    applyDefaultGstBreakdown,
+    baseAmount,
+    category,
+    customerId,
+    customerPhone,
+    productId,
+    quantity,
+    resolvedServiceId,
+    selectedAddress,
+    serviceId,
+    serviceStyle,
+    type,
+    vendorId,
+  ]);
+
   useEffect(() => {
     loadPaymentData();
     loadRazorpayScript();
@@ -341,7 +463,21 @@ export function UniversalPaymentPage({
     loadRazorpayOffers();
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
-  }, [customerPhone, baseAmount, category, serviceStyle, type]);
+  }, [
+    customerPhone,
+    baseAmount,
+    category,
+    serviceStyle,
+    type,
+    vendorId,
+    customerId,
+    resolvedServiceId,
+    serviceId,
+    quantity,
+    productId,
+    customerAddrStateForTax,
+    calculateTax,
+  ]);
 
   // Check if customer has active subscription that covers this booking
   useEffect(() => {
@@ -997,61 +1133,6 @@ export function UniversalPaymentPage({
     }
 
     return Math.min(discount, amount);
-  };
-
-  const calculateTax = async () => {
-    try {
-      // Get customer and vendor locations for tax calculation
-      const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [{
-          id: serviceId || productId || 'item',
-          type: type === 'booking' ? 'service' : 'product',
-          serviceId: type === 'booking' ? serviceId : undefined,
-          productId: type === 'order' ? productId : undefined,
-          amount: baseAmount,
-          quantity,
-          category: category || 'pet_services',
-          serviceStyle: serviceStyle,
-        }],
-        vendorId,
-        customerId,
-        customerPhone,
-      });
-
-      if (taxRes.success) {
-        const cgst = taxRes.totalCGST || 0;
-        const sgst = taxRes.totalSGST || 0;
-        const igst = taxRes.totalIGST || 0;
-        const totalTax = taxRes.totalTax || cgst + sgst + igst;
-
-        setTaxBreakdown({
-          subtotal: baseAmount,
-          cgst,
-          sgst,
-          igst,
-          totalTax,
-          total: baseAmount + totalTax,
-          taxRate: taxRes.items?.[0]?.taxRate || 18,
-          isInterState: igst > 0,
-          taxDetails: taxRes.breakdown || [],
-        });
-      }
-    } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
-      // Fallback to 18% GST
-      const taxRate = 18;
-      const totalTax = (baseAmount * taxRate) / 100;
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: baseAmount + totalTax,
-        taxRate,
-        isInterState: false,
-      });
-    }
   };
 
   const handleApplyCoupon = async () => {

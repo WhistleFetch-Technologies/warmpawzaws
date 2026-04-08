@@ -26,6 +26,12 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { applyGstRulesRateFallback, pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
 import { loadGstRuleRatesByTaxCategoryId } from '../../../utils/tax-category-gst-rule-rates';
 import { isValidUUID } from '../../../types/entities';
+import {
+  listFeeSettingsFromDb,
+  scalarFromJsonbSetting,
+  upsertFeeSetting,
+  getFeeGlobalsMap,
+} from '../../../utils/admin-fee-settings-db';
 
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -62,36 +68,6 @@ async function validateApplicableRolesAgainstActiveRoles(applicableRoles: string
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-/**
- * Upsert a setting in admin_settings table
- */
-async function upsertAdminSetting(key: string, value: string, serviceType: string = 'all'): Promise<void> {
-  try {
-    // Try update first
-    const existing = await query(
-      `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = $2 OR (service_type IS NULL AND $2 = 'all')) LIMIT 1`,
-      [key, serviceType]
-    ).catch(() => ({ rows: [] }));
-
-    if (existing.rows.length > 0) {
-      await query(
-        `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = $3 OR (service_type IS NULL AND $3 = 'all'))`,
-        [value, key, serviceType]
-      );
-    } else {
-      await query(
-        `INSERT INTO admin_settings (setting_key, setting_value, service_type, created_at, updated_at)
-         VALUES ($1, $2, $3, NOW(), NOW())`,
-        [key, value, serviceType === 'all' ? null : serviceType]
-      ).catch(() => {
-        // Ignore duplicate key errors
-      });
-    }
-  } catch (error) {
-    console.warn(`Failed to upsert admin setting ${key}:`, error);
-  }
-}
 
 // ============================================================================
 // PHASE 24: CATALOG SELECTORS
@@ -3702,25 +3678,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   }
 
-  /** Returns true if another row has this code (optionally excluding one id). Uses detected column. */
-  async function hsnCodeExistsElsewhere(codeColumn: 'hsn_code' | 'code', code: string, excludeId: string | null): Promise<boolean> {
-    const normalized = String(code ?? '').trim();
-    if (!normalized) return false;
-    const q = await query(
-      `SELECT id FROM hsn_codes WHERE ${codeColumn} = $1 AND ($2::uuid IS NULL OR id != $2) LIMIT 1`,
-      [normalized, excludeId ?? null]
-    );
-    const rows = (q as any)?.rows ?? (Array.isArray(q) ? q : []);
-    return rows.length > 0;
-  }
-
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       let rows: any[];
       try {
         // Try with hsn_code only first (001/600 schema). No reference to hc.code so "column hc.code does not exist" is avoided.
         const result = await query(
-          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at,
+          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
                   tc.category_name as tax_category_name
            FROM hsn_codes hc
            LEFT JOIN tax_categories tc ON hc.category_id = tc.id
@@ -3732,19 +3696,22 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         if (msg.includes('hsn_code') && msg.includes('does not exist')) {
           // Table has "code" only (213 schema), no hsn_code column
           const result = await query(
-            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
-             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
+                    tc.category_name as tax_category_name
+             FROM hsn_codes hc
+             LEFT JOIN tax_categories tc ON hc.category_id = tc.id
+             ORDER BY COALESCE(hc.code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
         } else if (msg.includes('category_id') && msg.includes('does not exist')) {
           const result = await query(
-            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::uuid as category_id, NULL::text as tax_category_name
              FROM hsn_codes hc ORDER BY COALESCE(hc.hsn_code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
         } else if (msg.includes('code') && msg.includes('does not exist')) {
           const result = await query(
-            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::uuid as category_id, NULL::text as tax_category_name
              FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
@@ -3762,7 +3729,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, category, categoryId, cgst, sgst, igst, isActive } = body;
+      const { code, description, category, cgst, sgst, igst, isActive } = body;
+      const categoryId = body.categoryId ?? body.category_id;
       const gstRateRaw = body.gstRate ?? body.gst_rate;
 
       // Do not use !gstRate — 0 is a valid exempt/zero-rated GST %.
@@ -3779,13 +3747,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const codeColumn = await getHsnCodeColumn();
       const codeVal = String(code).trim();
-      if (await hsnCodeExistsElsewhere(codeColumn, codeVal, null)) {
-        console.log('[HSN] Create rejected: duplicate code', { code: codeVal, column: codeColumn });
-        return c.json(
-          { success: false, error: 'An HSN code with this code already exists. Use a different code or edit the existing one.' },
-          409
-        );
-      }
 
       const insertPayload: Record<string, unknown> = {
         [codeColumn]: codeVal,
@@ -3794,7 +3755,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
       };
-      if (categoryId) insertPayload.category_id = categoryId;
+      if (categoryId != null && String(categoryId).trim() !== '') {
+        insertPayload.category_id = String(categoryId).trim();
+      }
 
       let newCode;
       try {
@@ -3859,23 +3822,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         const rows = (existing as any)?.rows ?? (Array.isArray(existing) ? existing : []);
         const currentRow = rows[0];
         const currentCode = currentRow ? String(currentRow.code_val ?? '').trim() : '';
-        if (newCode === currentCode) {
-          // No change to code – don't set it so we don't trigger unique check
-        } else {
-          if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
-            console.log('[HSN] Update rejected: duplicate code', { id, code: newCode, column: codeColumn });
-            return c.json(
-              { success: false, error: 'Another HSN code with this code already exists. Use a different code or edit the existing one.' },
-              409
-            );
-          }
+        if (newCode !== currentCode) {
           updateData[codeColumn] = newCode;
         }
       }
       if (body.description !== undefined) updateData.description = body.description;
       if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
-      if (body.categoryId !== undefined) updateData.category_id = body.categoryId || null;
+      if (body.categoryId !== undefined || body.category_id !== undefined) {
+        const cid = body.categoryId ?? body.category_id;
+        updateData.category_id =
+          cid != null && String(cid).trim() !== '' ? String(cid).trim() : null;
+      }
 
       if (Object.keys(updateData).length === 0) {
         const existing = await query(`SELECT * FROM hsn_codes WHERE id = $1::uuid LIMIT 1`, [id]);
@@ -3954,6 +3912,23 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const categories = await query('SELECT * FROM tax_categories');
       const rows = categories.rows ?? [];
       const gstRuleRatesByCategoryId = await loadGstRuleRatesByTaxCategoryId();
+
+      /** How many service_catalog rows point at each tax category (real checkout linkage). */
+      const catalogCountByTaxCategoryId = new Map<string, number>();
+      try {
+        const cntRes = await query(`
+          SELECT tax_category_id::text AS tid, COUNT(*)::int AS c
+          FROM service_catalog
+          WHERE tax_category_id IS NOT NULL
+          GROUP BY tax_category_id
+        `);
+        for (const r of cntRes.rows ?? []) {
+          if (r?.tid) catalogCountByTaxCategoryId.set(String(r.tid), Number(r.c) || 0);
+        }
+      } catch (countErr: unknown) {
+        console.warn('[tax-categories] service_catalog count skipped:', (countErr as Error)?.message);
+      }
+
       const sorted = [...rows].sort((a: any, b: any) =>
         String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
           sensitivity: 'base',
@@ -3963,6 +3938,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         const displayName = String(row.category_name ?? row.name ?? '').trim() || '—';
         const base = pickTaxCategoryDisplayRate(row);
         const tax_rate = applyGstRulesRateFallback(base, row.id, gstRuleRatesByCategoryId);
+        const linkedCatalogServices = catalogCountByTaxCategoryId.get(String(row.id)) ?? 0;
         return {
           id: row.id,
           category_name: displayName,
@@ -3970,6 +3946,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           description: row.description ?? '',
           tax_rate,
           applicable_services: row.applicable_services ?? row.applicableServices ?? [],
+          linked_catalog_service_count: linkedCatalogServices,
           is_active: row.is_active !== false,
           created_at: row.created_at,
           updated_at: row.updated_at,
@@ -4040,6 +4017,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.delete('/admin/finance/gst/tax-categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await update('tax_categories', { id }, { is_active: false });
+      return c.json({ success: true, message: 'Tax category deactivated successfully' });
+    } catch (error: any) {
+      console.error('Error deleting tax category:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
   app.get('/admin/finance/rate-changes', async (c) => {
     try {
       const changes = await query('SELECT * FROM rate_changes ORDER BY created_at DESC LIMIT 50');
@@ -4072,20 +4060,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // GET /admin/finance/fee-configuration - Get all fee configuration settings
   app.get('/admin/finance/fee-configuration', async (c) => {
     try {
-      // Fetch all fee-related settings from admin_settings table
-      const settings = await query(`
-        SELECT setting_key, setting_value, service_type, description, updated_at
-        FROM admin_settings 
-        WHERE setting_key IN (
-          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold', 'max_delivery_distance',
-          'packaging_fee_enabled', 'packaging_fee_amount'
-        )
-        OR setting_key LIKE 'fee_override_%'
-      `).catch(() => ({ rows: [] }));
+      const settingsRows = await listFeeSettingsFromDb();
+      console.log('[fee-configuration GET] rows from DB (setting_category=fees):', settingsRows.length);
 
-      // Build config object from settings
+      // Build config object from settings (defaults only when a key is missing from DB)
       const config: Record<string, any> = {
         platformFeePercentage: 2,
         platformFeeFlat: 0,
@@ -4120,10 +4098,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const overrides: Record<string, any> = {};
 
-      for (const row of settings.rows) {
+      for (const row of settingsRows) {
         const key = row.setting_key;
-        const value = row.setting_value;
-        const serviceType = row.service_type;
+        const valueStr = scalarFromJsonbSetting(row.setting_value);
 
         if (key.startsWith('fee_override_')) {
           // Service type override
@@ -4136,23 +4113,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           }
 
           if (field === 'platform_fee') {
-            overrides[st].platformFeePercentage = parseFloat(value);
+            overrides[st].platformFeePercentage = parseFloat(valueStr);
           } else if (field === 'convenience_fee') {
-            overrides[st].convenienceFee = parseFloat(value);
+            overrides[st].convenienceFee = parseFloat(valueStr);
           } else if (field === 'enabled') {
-            overrides[st].enabled = value === 'true' || value === '1';
+            overrides[st].enabled = valueStr === 'true' || valueStr === '1';
           }
         } else if (keyMap[key]) {
           const configKey = keyMap[key];
           if (configKey === 'packagingFeeEnabled') {
-            config[configKey] = value === 'true' || value === '1';
+            config[configKey] = valueStr === 'true' || valueStr === '1';
           } else {
-            config[configKey] = parseFloat(value);
+            const n = parseFloat(valueStr);
+            config[configKey] = Number.isFinite(n) ? n : config[configKey];
           }
         }
       }
 
       config.serviceTypeOverrides = Object.values(overrides);
+
+      console.log('[fee-configuration GET] platformFeePercentage:', config.platformFeePercentage);
 
       return c.json({ success: true, config });
     } catch (error: unknown) {
@@ -4172,7 +4152,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Config is required' }, 400);
       }
 
-      // Map config properties to setting_key
+      // Map config properties to setting_key (stored under setting_category = 'fees', setting_value JSONB)
       const keyMap: Record<string, string> = {
         'platformFeePercentage': 'platform_fee_percentage',
         'platformFeeFlat': 'platform_fee_flat',
@@ -4188,38 +4168,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         'packagingFeeAmount': 'packaging_fee_amount',
       };
 
-      // Upsert each setting
       for (const [configKey, settingKey] of Object.entries(keyMap)) {
-        if (config[configKey] !== undefined) {
-          const value = String(config[configKey]);
-
-          // Try to update first, then insert if not exists
-          const existing = await query(
-            `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = 'all' OR service_type IS NULL) LIMIT 1`,
-            [settingKey]
-          ).catch(() => ({ rows: [] }));
-
-          if (existing.rows.length > 0) {
-            await query(
-              `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = 'all' OR service_type IS NULL)`,
-              [value, settingKey]
-            );
-          } else {
-            await query(
-              `INSERT INTO admin_settings (setting_key, setting_value, service_type, description, created_at, updated_at)
-               VALUES ($1, $2, 'all', $3, NOW(), NOW())
-               ON CONFLICT (setting_key, COALESCE(service_type, 'all')) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
-              [settingKey, value, `Fee configuration: ${configKey}`]
-            ).catch(async () => {
-              // Fallback insert without ON CONFLICT (if constraint doesn't exist)
-              await query(
-                `INSERT INTO admin_settings (setting_key, setting_value, service_type, description)
-                 VALUES ($1, $2, 'all', $3)`,
-                [settingKey, value, `Fee configuration: ${configKey}`]
-              ).catch(() => { });
-            });
-          }
-        }
+        if (config[configKey] === undefined) continue;
+        const raw = config[configKey];
+        const valueToStore =
+          configKey === 'packagingFeeEnabled' ? !!raw : typeof raw === 'number' ? raw : parseFloat(String(raw));
+        await upsertFeeSetting(settingKey, valueToStore, `Fee configuration: ${configKey}`);
+        console.log('[fee-configuration PUT] upserted', settingKey, '=', valueToStore);
       }
 
       // Handle service type overrides
@@ -4229,17 +4184,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
           if (!serviceType) continue;
 
-          // Store enabled status
-          await upsertAdminSetting(`fee_override_${serviceType}_enabled`, String(enabled || false), serviceType);
+          await upsertFeeSetting(
+            `fee_override_${serviceType}_enabled`,
+            !!(enabled || false),
+            `Fee override enabled: ${serviceType}`
+          );
 
-          // Store platform fee override
           if (platformFeePercentage !== undefined) {
-            await upsertAdminSetting(`fee_override_${serviceType}_platform_fee`, String(platformFeePercentage), serviceType);
+            await upsertFeeSetting(
+              `fee_override_${serviceType}_platform_fee`,
+              Number(platformFeePercentage),
+              `Fee override platform %: ${serviceType}`
+            );
           }
 
-          // Store convenience fee override
           if (convenienceFee !== undefined) {
-            await upsertAdminSetting(`fee_override_${serviceType}_convenience_fee`, String(convenienceFee), serviceType);
+            await upsertFeeSetting(
+              `fee_override_${serviceType}_convenience_fee`,
+              Number(convenienceFee),
+              `Fee override convenience: ${serviceType}`
+            );
           }
         }
       }
@@ -4259,27 +4223,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const amount = parseFloat(c.req.query('amount') || '0');
       const type = c.req.query('type') || 'booking';
 
-      // Fetch fee configuration
-      const settings = await query(`
-        SELECT setting_key, setting_value, service_type
-        FROM admin_settings 
-        WHERE setting_key IN (
-          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold',
-          'packaging_fee_enabled', 'packaging_fee_amount'
-        )
-        AND (service_type = 'all' OR service_type IS NULL OR service_type = $1)
-        ORDER BY CASE WHEN service_type = $1 THEN 0 ELSE 1 END
-      `, [serviceStyle]).catch(() => ({ rows: [] }));
-
-      // Build settings map (service-specific overrides take precedence)
-      const settingsMap: Record<string, string> = {};
-      for (const row of settings.rows) {
-        if (!settingsMap[row.setting_key] || row.service_type === serviceStyle) {
-          settingsMap[row.setting_key] = row.setting_value;
-        }
-      }
+      const settingsMap = await getFeeGlobalsMap();
 
       // Calculate platform fee
       const platformFeePercentage = parseFloat(settingsMap['platform_fee_percentage'] || '2');

@@ -3,7 +3,7 @@
  * Used by GET /config/fees and payment creation so UI totals match charged amounts.
  */
 
-import { query } from '../database/rds-connection';
+import { listFeeSettingsFromDb, scalarFromJsonbSetting } from './admin-fee-settings-db';
 
 export type FeeTransactionType = 'booking' | 'order';
 
@@ -132,23 +132,13 @@ export async function calculateFinalFees(params: CalculateFinalFeesParams): Prom
   const businessRaw = params.businessServiceType || '';
   const primaryOverrideKey = resolveOverrideServiceType(businessRaw);
 
-  const rows = await query(
-    `SELECT setting_key, setting_value
-     FROM admin_settings
-     WHERE (
-       setting_key IN (
-         'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-         'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-         'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold',
-         'packaging_fee_enabled', 'packaging_fee_amount'
-       )
-       AND (service_type IS NULL OR service_type = 'all')
-     )
-     OR setting_key LIKE 'fee_override_%'`,
-    []
-  ).catch(() => ({ rows: [] as { setting_key: string; setting_value: unknown }[] }));
+  const dbRows = await listFeeSettingsFromDb();
+  const rowsForParse = dbRows.map((r) => ({
+    setting_key: r.setting_key,
+    setting_value: scalarFromJsonbSetting(r.setting_value),
+  }));
 
-  const { globals, overridesByService } = parseOverrideRows(rows.rows || []);
+  const { globals, overridesByService } = parseOverrideRows(rowsForParse);
 
   let platformPct = parseFloat(globals['platform_fee_percentage'] ?? '');
   if (!Number.isFinite(platformPct)) platformPct = DEFAULT_PLATFORM_PCT;

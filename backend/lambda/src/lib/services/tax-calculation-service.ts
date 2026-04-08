@@ -7,6 +7,14 @@
  */
 
 import { query } from '../../database/rds-connection';
+import { resolveGstStateKey } from '../gst-place-of-supply';
+
+/** DB NUMERIC / JSON may return rates as strings; normalize for math and API JSON. */
+function coerceRate(value: unknown, fallback: number): number {
+  if (value === null || value === undefined || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export interface TaxCalculationParams {
   items: TaxItem[];
@@ -84,10 +92,12 @@ export class TaxCalculationService {
   async calculateTax(params: TaxCalculationParams): Promise<TaxCalculationResult> {
     const { items, customerLocation, vendorLocation, vendorId, serviceType, category } = params;
 
-    // Determine if interstate transaction
-    const isInterstate = customerLocation?.state && vendorLocation?.state 
-      ? customerLocation.state !== vendorLocation.state 
-      : true; // Default to interstate if locations not provided
+    // Inter-state only when both places of supply resolve to different states (normalized).
+    // City-only + same city/state inference avoids false IGST when both sides are e.g. Bangalore/Karnataka.
+    const customerStateKey = resolveGstStateKey(customerLocation?.state, customerLocation?.city);
+    const vendorStateKey = resolveGstStateKey(vendorLocation?.state, vendorLocation?.city);
+    const isInterstate =
+      customerStateKey && vendorStateKey ? customerStateKey !== vendorStateKey : true;
 
     const taxBreakdowns: TaxBreakdown[] = [];
     let subtotal = 0;
@@ -107,31 +117,66 @@ export class TaxCalculationService {
         category: category || item.category,
       });
 
-      // Resolution chain: HSN (by ID) → HSN (by code) → Tax Category → Tax Rule → 18%
+      // Resolution chain: HSN (by ID, must match tax category when both set) → HSN (by code + category) → Tax Category → Tax Rule → 18%
       let hsnDetails = null;
       let taxCategoryDetails = null;
+      let hsnCodeToRescope: string | undefined;
       if (item.hsnCodeId) {
-        hsnDetails = await this.getHSNCodeById(item.hsnCodeId);
+        const byId = await this.getHSNCodeById(item.hsnCodeId);
+        if (byId) {
+          const rowCat = byId.category_id ?? byId.tax_category_id;
+          const codeStr = byId.hsn_code || byId.code;
+          if (
+            item.taxCategoryId &&
+            rowCat != null &&
+            String(rowCat) !== String(item.taxCategoryId)
+          ) {
+            // catalog FK can point at another category's row for the same SAC (e.g. 998351 boarding 18% vs vet 16%)
+            hsnCodeToRescope = codeStr;
+            hsnDetails = null;
+          } else if (item.taxCategoryId && rowCat == null && codeStr) {
+            // legacy rows without category_id: prefer HSN row scoped to service tax category when duplicates exist
+            const scoped = await this.getHSNCodeByCode(String(codeStr), item.taxCategoryId);
+            hsnDetails = scoped || byId;
+          } else {
+            hsnDetails = byId;
+          }
+        }
       }
-      if (!hsnDetails && item.hsnCode) {
-        hsnDetails = await this.getHSNCodeByCode(item.hsnCode);
+      if (!hsnDetails && (item.hsnCode || hsnCodeToRescope)) {
+        hsnDetails = await this.getHSNCodeByCode(
+          String(item.hsnCode || hsnCodeToRescope),
+          item.taxCategoryId
+        );
       }
       if (!hsnDetails && item.taxCategoryId) {
         taxCategoryDetails = await this.getTaxCategoryDetails(item.taxCategoryId);
       }
 
-      const gstRate = hsnDetails?.gst_rate
-        ?? taxCategoryDetails?.tax_rate
-        ?? taxCategoryDetails?.default_gst_rate
-        ?? taxRule.gst_rate
-        ?? 18;
-      const cgstRate = taxRule.cgst_percentage || (gstRate / 2);
-      const sgstRate = taxRule.sgst_percentage || (gstRate / 2);
-      const igstRate = taxRule.igst_percentage || gstRate;
+      const gstRate = coerceRate(
+        hsnDetails?.gst_rate ??
+          taxCategoryDetails?.tax_rate ??
+          taxCategoryDetails?.default_gst_rate ??
+          taxRule.gst_rate ??
+          18,
+        18
+      );
 
-      // Calculate tax amounts
-      const taxRate = isInterstate ? igstRate : gstRate;
-      const taxAmount = (itemAmount * taxRate) / 100;
+      // Intra-state split from rule, but rule CGST+SGST must sum to statutory gstRate (HSN/category).
+      // Otherwise a 9%+9% rule with gstRate 10% would show wrong components and mismatch totalTax.
+      let cgstRate = coerceRate(taxRule.cgst_percentage || gstRate / 2, gstRate / 2);
+      let sgstRate = coerceRate(taxRule.sgst_percentage || gstRate / 2, gstRate / 2);
+      const splitSum = cgstRate + sgstRate;
+      if (Math.abs(splitSum - gstRate) > 0.015) {
+        cgstRate = Math.round((gstRate / 2) * 100) / 100;
+        sgstRate = Math.round((gstRate - cgstRate) * 100) / 100;
+      }
+
+      // Interstate: IGST must use the same composite % as HSN/tax category — do not let
+      // gst_rules.igst_percentage override (e.g. 18% rule vs 10% catalogue).
+      const igstRate = gstRate;
+
+      const taxAmount = (itemAmount * gstRate) / 100;
       const cgstAmount = isInterstate ? 0 : (itemAmount * cgstRate) / 100;
       const sgstAmount = isInterstate ? 0 : (itemAmount * sgstRate) / 100;
       const igstAmount = isInterstate ? taxAmount : 0;
@@ -285,17 +330,57 @@ export class TaxCalculationService {
   }
 
   /**
-   * Get HSN code by code string (hsn_code or code column)
+   * Get HSN row by code string. If multiple rows share the same code, prefer `category_id`
+   * matching `taxCategoryId` when provided; otherwise newest row by `created_at`, then `id`.
+   * Supports legacy `code` column when `hsn_code` is absent.
    */
-  private async getHSNCodeByCode(hsnCode: string): Promise<any> {
-    const result = await query(
-      `SELECT * FROM hsn_codes 
-       WHERE (hsn_code = $1 OR code = $1) AND is_active = true 
-       LIMIT 1`,
+  private async getHSNCodeByCode(hsnCode: string, taxCategoryId?: string): Promise<any> {
+    const run = async (sql: string, params: unknown[]) => {
+      const result = await query(sql, params);
+      return Array.isArray(result) ? result : (result as any).rows || [];
+    };
+
+    /** Deterministic tie-break when multiple rows share the same code (avoids relying on created_at existing). */
+    const orderClause = 'ORDER BY id DESC';
+
+    if (taxCategoryId) {
+      try {
+        const scoped = await run(
+          `SELECT * FROM hsn_codes WHERE hsn_code = $1 AND is_active = true AND category_id = $2::uuid LIMIT 1`,
+          [hsnCode, taxCategoryId]
+        );
+        if (scoped.length > 0) return scoped[0];
+      } catch {
+        /* category_id column missing */
+      }
+    }
+
+    const byHsn = await run(
+      `SELECT * FROM hsn_codes WHERE hsn_code = $1 AND is_active = true ${orderClause} LIMIT 1`,
       [hsnCode]
     );
-    const rows = Array.isArray(result) ? result : (result as any).rows || [];
-    return rows.length > 0 ? rows[0] : null;
+    if (byHsn.length > 0) return byHsn[0];
+
+    try {
+      if (taxCategoryId) {
+        try {
+          const scoped = await run(
+            `SELECT * FROM hsn_codes WHERE code = $1 AND is_active = true AND category_id = $2::uuid LIMIT 1`,
+            [hsnCode, taxCategoryId]
+          );
+          if (scoped.length > 0) return scoped[0];
+        } catch {
+          /* ignore */
+        }
+      }
+      const byCode = await run(
+        `SELECT * FROM hsn_codes WHERE code = $1 AND is_active = true ${orderClause} LIMIT 1`,
+        [hsnCode]
+      );
+      return byCode.length > 0 ? byCode[0] : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

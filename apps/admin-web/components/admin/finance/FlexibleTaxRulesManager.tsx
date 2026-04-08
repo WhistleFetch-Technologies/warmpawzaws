@@ -337,12 +337,18 @@ export function FlexibleTaxRulesManager() {
                           {rule.conditions.categoryIds && rule.conditions.categoryIds.length > 0 && (
                             <div>Categories: {rule.conditions.categoryIds.length}</div>
                           )}
+                          {rule.conditions.serviceIds && rule.conditions.serviceIds.length > 0 && (
+                            <div>Catalog service IDs: {rule.conditions.serviceIds.length}</div>
+                          )}
                           {rule.conditions.serviceTypes && rule.conditions.serviceTypes.length > 0 && (
-                            <div>Services: {rule.conditions.serviceTypes.length}</div>
+                            <div title="Delivery modes (at_home, tele, at_center, …), not catalog service count">
+                              Service styles: {rule.conditions.serviceTypes.length}
+                            </div>
                           )}
                           {!rule.conditions.transactionType && 
                            !rule.conditions.categoryIds?.length && 
-                           !rule.conditions.serviceTypes?.length && (
+                           !rule.conditions.serviceTypes?.length &&
+                           !rule.conditions.serviceIds?.length && (
                             <div className="text-gray-400">No conditions</div>
                           )}
                         </div>

@@ -26,6 +26,7 @@ import { autoAssignDeliveryPartner } from '../../delivery-partner-automation';
 import { createPharmacyOrderRequestSchema, approveInvoiceRequestSchema } from '../../../zodContracts/orders.contract';
 import { uuidSchema } from '../../../middleware/validation-middleware';
 import { verifyPayment, requiresPayment } from '../../../utils/payments/payment-verification-service';
+import { getFeeGlobalsMap } from '../../../utils/admin-fee-settings-db';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -78,17 +79,7 @@ async function getConfigurableFees(serviceType: string = 'pharmacy'): Promise<{
 }> {
   try {
     // Try to get from finance_settings or admin_settings table
-    const settings = await query(
-      `SELECT * FROM admin_settings 
-       WHERE setting_key IN ('platform_fee_percentage', 'convenience_fee', 'platform_fee_flat', 'max_platform_fee')
-       AND (service_type = $1 OR service_type = 'all' OR service_type IS NULL)`,
-      [serviceType]
-    ).catch(() => ({ rows: [] }));
-
-    const settingsMap: Record<string, any> = {};
-    for (const row of settings.rows) {
-      settingsMap[row.setting_key] = row.setting_value;
-    }
+    const settingsMap = await getFeeGlobalsMap();
 
     // Try finance_rules table as fallback
     if (Object.keys(settingsMap).length === 0) {
@@ -113,7 +104,9 @@ async function getConfigurableFees(serviceType: string = 'pharmacy'): Promise<{
 
     return {
       platformFeePercentage: parseFloat(settingsMap['platform_fee_percentage'] || '2'),
-      convenienceFee: parseFloat(settingsMap['convenience_fee'] || '0'),
+      convenienceFee: parseFloat(
+        settingsMap['convenience_fee'] || settingsMap['convenience_fee_order'] || '0'
+      ),
       platformFeeFlat: parseFloat(settingsMap['platform_fee_flat'] || '0'),
       maxPlatformFee: parseFloat(settingsMap['max_platform_fee'] || '500'),
     };
