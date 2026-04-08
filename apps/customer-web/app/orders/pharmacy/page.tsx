@@ -1,12 +1,12 @@
 'use client';
 
-import React, { Suspense, useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Calendar, Clock, CheckCircle, Truck, Home,
   Key, Eye, EyeOff, Copy, Check, Phone,
-  Navigation, ArrowLeft, CreditCard
+  Navigation, CreditCard
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { OrderTrackingScreen } from '@/components/customer/tracking/OrderTrackingScreen';
 import { usePharmacyPayment } from '@/hooks/usePharmacyPayment';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 interface PharmacyOrder {
   id: string;
@@ -201,6 +202,19 @@ function PharmacyOrdersContent() {
     return `₹${num.toFixed(2)}`;
   };
 
+  const pharmacyHeaderStats = useMemo(() => {
+    const delivered = orders.filter((o) => (o.status || '').toLowerCase() === 'delivered').length;
+    const active = orders.filter((o) => {
+      const s = (o.status || '').toLowerCase();
+      return s && !['delivered', 'cancelled', 'rejected'].includes(s);
+    }).length;
+    return [
+      { value: String(orders.length), label: 'Total' },
+      { value: String(active), label: 'Active' },
+      { value: String(delivered), label: 'Delivered' },
+    ];
+  }, [orders]);
+
   // If tracking view is active, show tracking screen
   if (trackingOrderId) {
     return (
@@ -222,21 +236,15 @@ function PharmacyOrdersContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-b from-blue-600 to-blue-700 text-white pb-6 rounded-b-3xl">
-        <div className="px-4 pt-4 flex items-center gap-4">
-          <button
-            onClick={() => goBackOrHome(router)}
-            className="p-2 hover:bg-white/20 rounded-full transition-colors"
-          >
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold">Pharmacy Orders</h1>
-            <p className="text-blue-100 text-sm">Track your medicine orders</p>
-          </div>
-        </div>
-      </div>
+      <ServiceDashboardHeader
+        serviceName="Pharmacy Orders"
+        serviceSubtitle="Track your medicine orders"
+        serviceIcon={Package}
+        iconColor="text-white"
+        stats={pharmacyHeaderStats}
+        onBack={() => goBackOrHome(router)}
+        showBackButton
+      />
 
       {/* Orders List */}
       <div className="px-4 py-4 space-y-4 pb-20">

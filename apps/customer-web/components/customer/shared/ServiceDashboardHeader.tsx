@@ -38,6 +38,8 @@ export interface ServiceDashboardHeaderProps {
   // ✅ FIX: Standardized to match customer home header color (#FF8C42)
   headerColor?: string; // Default: orange (#FF8C42)
   headerGradient?: string; // Optional gradient
+  /** Merged onto the outer wrapper (e.g. sticky top-0 z-50) */
+  className?: string;
 }
 
 export function ServiceDashboardHeader({
@@ -52,13 +54,14 @@ export function ServiceDashboardHeader({
   onCloseToHome,
   // ✅ FIX: Standardized orange color matching customer home header
   headerColor = 'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]',
-  headerGradient
+  headerGradient,
+  className = '',
 }: ServiceDashboardHeaderProps) {
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
   
   return (
-    <div className="relative z-10 isolate mx-auto w-full max-w-customer">
+    <div className={`relative z-10 isolate mx-auto w-full max-w-customer ${className}`.trim()}>
       {/* Orange Header Background */}
       <div
         className={`${headerGradient || headerColor} cw-header-safe-top cw-header-safe-x text-white pb-4 md:pb-6 sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}

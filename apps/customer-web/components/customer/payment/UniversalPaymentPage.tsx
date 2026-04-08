@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
+  CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
   Clock, Calendar, Plus, Smartphone, Building2,
   Home, Video, Gift, Sparkles, AlertCircle, Loader2
@@ -18,6 +18,7 @@ import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 
 // Razorpay type declaration
 declare global {
@@ -2346,27 +2347,27 @@ export function UniversalPaymentPage({
     ? 'pb-[calc(13rem+env(safe-area-inset-bottom,0px))]'
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
+  const paymentStats = [
+    { value: formatPriceWithSymbol(displayAmount), label: 'Due' },
+    {
+      value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
+      label: 'Duration',
+    },
+    { value: type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
+  ];
+
   return (
     <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col bg-orange-50">
-      <header className="sticky top-0 z-50 shrink-0 rounded-b-2xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029] shadow-sm cw-header-safe-top cw-header-safe-x pb-4">
-        <div className="relative flex min-h-[56px] items-center">
-          <button
-            type="button"
-            onClick={onBack}
-            className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl text-white transition-all duration-150 active:scale-[0.98] active:bg-white/10 touch-manipulation pointer-events-auto"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-6 w-6" strokeWidth={2.25} />
-          </button>
-          <div className="pointer-events-none absolute inset-x-0 flex flex-col items-center justify-center gap-0.5 text-center">
-            <h1 className="text-lg font-bold tracking-tight text-white">Payment</h1>
-            <p className="text-sm font-medium text-white/90">Secure checkout</p>
-          </div>
-          <div className="relative z-10 ml-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-white" aria-hidden>
-            <Shield className="h-6 w-6" strokeWidth={1.75} />
-          </div>
-        </div>
-      </header>
+      <ServiceDashboardHeader
+        className="sticky top-0 z-50 shrink-0"
+        serviceName="Payment"
+        serviceSubtitle="Secure checkout"
+        serviceIcon={Shield}
+        iconColor="text-white"
+        stats={paymentStats}
+        onBack={onBack}
+        showBackButton
+      />
 
       <main className={`flex-1 space-y-4 overflow-y-auto px-4 py-4 ${mainBottomPadding}`}>
         {/* Address Selection (if needed and on top) */}
