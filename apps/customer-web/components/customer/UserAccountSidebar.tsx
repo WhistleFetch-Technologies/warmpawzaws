@@ -16,7 +16,11 @@ import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/sha
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
+import {
+  normalizeCustomerProfileFields,
+  overlayCustomerProfileAfterSave,
+  patchCustomerProfileKeysInLocalStorage,
+} from '@/lib/normalize-customer-profile-api';
 import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
@@ -699,8 +703,16 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
         floor: (profile.floor || '').trim(),
       };
       await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: payload });
+      patchCustomerProfileKeysInLocalStorage({
+        pincode: payload.pincode,
+        address: payload.address,
+        city: payload.city,
+        state: payload.state,
+      });
       alert('✅ Profile updated successfully!');
       await loadProfile();
+      setProfile((prev) => overlayCustomerProfileAfterSave(prev, payload));
+      setOriginalProfile((prev) => overlayCustomerProfileAfterSave(prev, payload));
       setEditMode(false);
     } catch (error: any) {
       console.error('Error saving profile:', error);

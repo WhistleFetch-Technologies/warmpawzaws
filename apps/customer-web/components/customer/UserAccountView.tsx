@@ -13,6 +13,10 @@ import { BookingDetailModal } from './BookingDetailModal';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { validateEmail } from '@/lib/validation';
+import {
+  overlayCustomerProfileAfterSave,
+  patchCustomerProfileKeysInLocalStorage,
+} from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -209,9 +213,15 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
 
     setSaving(true);
     try {
+      const saved = { ...profile };
       await apiClient.post('/customer/profile', {
         phone: phone,
-        profile: profile,
+        profile: saved,
+      });
+
+      patchCustomerProfileKeysInLocalStorage({
+        pincode: saved.pincode,
+        address: saved.address,
       });
 
       // Show success message
@@ -219,6 +229,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
       
       // Reload the profile to ensure we have the latest data
       await loadProfile();
+      setProfile((prev) => overlayCustomerProfileAfterSave(prev, saved));
+      setOriginalProfile((prev) => overlayCustomerProfileAfterSave(prev, saved));
       
       // Exit edit mode
       setEditMode(false);

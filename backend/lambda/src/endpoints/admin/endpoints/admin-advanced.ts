@@ -527,9 +527,26 @@ class GetSupportTicketsHandler extends BaseHandler {
 
 class CreateSupportTicketHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const body = this.parseBody(context.event);
+    const body = this.parseBody(context.event) || {};
+    const { attachments, metadata: bodyMetadata, ...rest } = body as Record<string, unknown>;
+    const metaBase =
+      bodyMetadata != null && typeof bodyMetadata === 'object' && !Array.isArray(bodyMetadata)
+        ? { ...(bodyMetadata as Record<string, unknown>) }
+        : {};
+    const { attachments: metaAttachments, ...metaRest } = metaBase as {
+      attachments?: unknown;
+      [k: string]: unknown;
+    };
+    const attachmentList = Array.isArray(attachments)
+      ? attachments
+      : Array.isArray(metaAttachments)
+        ? metaAttachments
+        : [];
+    const safeRest = { ...rest } as Record<string, unknown>;
+    delete safeRest.attachments;
     const ticket = await insert('support_tickets', {
-      ...body,
+      ...safeRest,
+      metadata: { ...metaRest, attachments: attachmentList },
       status: 'open',
       created_at: new Date().toISOString(),
     });

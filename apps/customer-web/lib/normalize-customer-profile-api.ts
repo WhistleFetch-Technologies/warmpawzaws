@@ -62,3 +62,40 @@ export function normalizeCustomerProfileFields(
     photo: p.photo || p.profile_photo_url || '',
   };
 }
+
+/**
+ * After POST /customer/profile, GET may still return a stale pincode (e.g. default `customer_addresses`
+ * row vs `customers` row, or cached API). Merge the payload we just saved so the UI shows the new values.
+ */
+export function overlayCustomerProfileAfterSave<T extends Record<string, any>>(
+  loaded: T | null,
+  saved: Partial<T> & { pincode: string; address: string }
+): T | null {
+  if (!loaded) return loaded;
+  return { ...loaded, ...saved };
+}
+
+/** Keep localStorage session profile aligned after save (auth/home read these keys). */
+export function patchCustomerProfileKeysInLocalStorage(patch: {
+  pincode: string;
+  address: string;
+  city?: string;
+  state?: string;
+}): void {
+  if (typeof window === 'undefined') return;
+  try {
+    for (const key of ['customerData', 'customerProfile'] as const) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const d = JSON.parse(raw) as Record<string, unknown>;
+      if (!d || typeof d !== 'object') continue;
+      d.pincode = patch.pincode;
+      d.address = patch.address;
+      if (patch.city !== undefined) d.city = patch.city;
+      if (patch.state !== undefined) d.state = patch.state;
+      localStorage.setItem(key, JSON.stringify(d));
+    }
+  } catch {
+    /* ignore */
+  }
+}
