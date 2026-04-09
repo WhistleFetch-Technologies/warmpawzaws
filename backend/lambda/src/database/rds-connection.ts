@@ -353,6 +353,114 @@ export async function select(
 }
 
 /**
+ * Migration 617 adds support_tickets.attachments; many RDS DBs never ran it.
+ * Older Lambdas may still INSERT/UPDATE a top-level `attachments` JSONB column → PG error.
+ * Merge into metadata.attachments and drop the column so rows work with or without 617.
+ */
+function normalizeSupportTicketsRowForInsertOrUpdate(row: Record<string, any>): Record<string, any> {
+  if (!row || typeof row !== 'object' || !Object.prototype.hasOwnProperty.call(row, 'attachments')) {
+    return row;
+  }
+  const out = { ...row };
+  const top = out.attachments;
+  delete out.attachments;
+  const prevMeta =
+    out.metadata != null && typeof out.metadata === 'object' && !Array.isArray(out.metadata)
+      ? { ...(out.metadata as Record<string, unknown>) }
+      : {};
+  const existingAttach = prevMeta.attachments;
+  if (!Array.isArray(existingAttach) || existingAttach.length === 0) {
+    prevMeta.attachments = Array.isArray(top) ? top : [];
+  }
+  out.metadata = prevMeta;
+  return out;
+}
+
+/** Matches support_tickets.category CHECK (053_admin_endpoints_tables). */
+const SUPPORT_TICKET_CATEGORIES = new Set([
+  'general',
+  'technical',
+  'billing',
+  'account',
+  'service',
+  'other',
+]);
+
+/** UI / legacy labels → valid DB category (avoids 500 on CHECK violation). */
+const SUPPORT_TICKET_CATEGORY_ALIASES: Record<string, string> = {
+  booking: 'service',
+  order: 'other',
+  payment: 'billing',
+  refund: 'billing',
+};
+
+const SUPPORT_TICKET_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
+const SUPPORT_TICKET_SOURCES = new Set([
+  'customer',
+  'vendor',
+  'ai_chatbot',
+  'chat_handoff',
+  'admin',
+  'system',
+]);
+
+const SUPPORT_TICKET_STATUSES = new Set([
+  'open',
+  'in_progress',
+  'resolved',
+  'closed',
+  'escalated',
+  'cancelled',
+]);
+
+function normalizeSupportTicketsCheckConstraints(row: Record<string, any>): Record<string, any> {
+  const out = { ...row };
+  if (Object.prototype.hasOwnProperty.call(out, 'category')) {
+    const c = out.category;
+    if (c == null || c === '') {
+      out.category = 'general';
+    } else if (typeof c === 'string') {
+      const s = c.trim().toLowerCase();
+      if (SUPPORT_TICKET_CATEGORIES.has(s)) {
+        out.category = s;
+      } else {
+        out.category = SUPPORT_TICKET_CATEGORY_ALIASES[s] ?? 'general';
+      }
+    } else {
+      out.category = 'general';
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(out, 'priority')) {
+    const p = out.priority;
+    if (p == null || p === '') {
+      out.priority = 'medium';
+    } else {
+      const s = String(p).trim().toLowerCase();
+      out.priority = SUPPORT_TICKET_PRIORITIES.has(s) ? s : 'medium';
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(out, 'source')) {
+    const s = out.source;
+    if (s == null || s === '') {
+      out.source = 'customer';
+    } else {
+      const k = String(s).trim().toLowerCase();
+      out.source = SUPPORT_TICKET_SOURCES.has(k) ? k : 'customer';
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(out, 'status')) {
+    const st = out.status;
+    if (st == null || st === '') {
+      out.status = 'open';
+    } else {
+      const k = String(st).trim().toLowerCase();
+      out.status = SUPPORT_TICKET_STATUSES.has(k) ? k : 'open';
+    }
+  }
+  return out;
+}
+
+/**
  * Execute an INSERT query
  * ✅ FIX: Properly handle JSONB columns by serializing objects to JSON strings
  */
@@ -360,10 +468,26 @@ export async function insert(
   table: string,
   data: any | any[]
 ): Promise<any[]> {
-  const dataArray = Array.isArray(data) ? data : [data];
+  let dataArray = Array.isArray(data) ? data : [data];
   if (dataArray.length === 0) return [];
 
-  const keys = Object.keys(dataArray[0]);
+  // SCOPE: support_tickets only — no other tables pass through this branch.
+  if (table === 'support_tickets') {
+    dataArray = dataArray.map((row) => {
+      let merged = normalizeSupportTicketsRowForInsertOrUpdate({ ...row });
+      merged = normalizeSupportTicketsCheckConstraints(merged);
+      // Never send top-level attachments to PG unless column exists (migration 617); strip defensively.
+      if (merged && typeof merged === 'object') delete (merged as Record<string, unknown>).attachments;
+      return merged;
+    });
+  }
+
+  // support_tickets: never include `attachments` in INSERT column list (local UI often still hits deployed API;
+  // this also guards older bundles or stray ...rest payloads).
+  const keys =
+    table === 'support_tickets'
+      ? Object.keys(dataArray[0]).filter((k) => k !== 'attachments')
+      : Object.keys(dataArray[0]);
   
   // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
   const jsonbColumns = new Set([
@@ -448,6 +572,15 @@ export async function update(
   filters: Record<string, any>,
   data: any
 ): Promise<any[]> {
+  let payload = data;
+  // SCOPE: support_tickets only — other tables use generic update path unchanged.
+  if (table === 'support_tickets' && payload && typeof payload === 'object') {
+    payload = normalizeSupportTicketsCheckConstraints(
+      normalizeSupportTicketsRowForInsertOrUpdate({ ...payload }),
+    );
+    delete (payload as Record<string, unknown>).attachments;
+  }
+
   const setClause: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
@@ -497,7 +630,7 @@ export async function update(
   };
 
   // Build SET clause
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(payload)) {
     if (value !== undefined) {
       // ✅ FIX: Handle JSONB columns first (including arrays stored as JSONB like uploaded_documents)
       if (isJsonbColumn(key) && value !== null && typeof value === 'object') {

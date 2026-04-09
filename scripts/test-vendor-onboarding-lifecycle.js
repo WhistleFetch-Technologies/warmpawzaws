@@ -434,12 +434,11 @@ async function testAdminReview(applicationId, adminId = 'test-admin-id') {
   
   try {
     // Test APPROVE action
-    const approveResponse = await makeRequest(`${API_BASE_URL}/admin/vendor/onboarding/${applicationId}/review`, {
+    const approveResponse = await makeRequest(`${API_BASE_URL}/admin/vendor/application/${applicationId}/approve`, {
       method: 'POST',
       body: {
-        action: 'APPROVE',
-        admin_id: adminId,
-        comments: 'Test approval',
+        reviewerName: 'Test Admin',
+        notes: 'Test approval',
       },
     });
     

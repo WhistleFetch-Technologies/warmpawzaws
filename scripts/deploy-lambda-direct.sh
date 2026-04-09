@@ -8,6 +8,7 @@ echo "🚀 Deploying Lambda with updated endpoints..."
 
 # Configuration
 # Allow override via environment variable (dev default matches AWS account naming)
+# Dev: warmpawz-dev-api-handler  |  Prod: LAMBDA_FUNCTION_NAME=warmpawz-prod-api-handler ./scripts/deploy-lambda-direct.sh
 LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-warmpawz-dev-api-handler}"
 AWS_REGION="ap-south-1"
 LAMBDA_ZIP="api-handler.zip"

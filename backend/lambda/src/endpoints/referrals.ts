@@ -227,7 +227,7 @@ export function registerReferralEndpoints(app: Hono) {
            FROM loyalty_transactions lt 
            WHERE lt.customer_id = $1 
            AND lt.reference_type = 'referral' 
-           AND lt.reference_id = r.id::text) as referrer_earnings
+           AND lt.reference_id = r.id) as referrer_earnings
          FROM referrals r
          LEFT JOIN customers c ON r.referred_id = c.id
          WHERE r.referrer_id = $1
@@ -482,14 +482,13 @@ export function registerReferralEndpoints(app: Hono) {
           ) AS referred_customer_name,
           (SELECT COALESCE(SUM(lt.points), 0)
            FROM loyalty_transactions lt
-           WHERE lt.vendor_id = CAST($1 AS uuid)
-             AND lt.transaction_type = 'earned'
+           WHERE lt.transaction_type = 'earned'
              AND (
-               (lt.reference_type = 'vendor_referral' AND lt.reference_id = vr.id::text)
+               (lt.reference_type = 'vendor_referral' AND lt.reference_id::text = vr.id::text)
                OR (
                  lt.reference_type = 'customer_referral'
                  AND NULLIF(TRIM(vr.referred_phone), '') IS NOT NULL
-                 AND lt.reference_id IN (
+                 AND lt.reference_id::text IN (
                    SELECT cr.id::text
                    FROM customer_referrals cr
                    WHERE cr.referrer_vendor_id = CAST($1 AS uuid)
@@ -547,10 +546,9 @@ export function registerReferralEndpoints(app: Hono) {
           vr.created_at as referral_created_at,
           v.business_name as referred_vendor_name
          FROM loyalty_transactions lt
-         INNER JOIN vendor_referrals vr ON lt.reference_id = vr.id::text
+         INNER JOIN vendor_referrals vr ON lt.reference_id::text = vr.id::text
          LEFT JOIN vendors v ON vr.referred_vendor_id = v.id
-         WHERE lt.vendor_id = CAST($1 AS uuid)
-         AND lt.reference_type = 'vendor_referral'
+         WHERE lt.reference_type = 'vendor_referral'
          AND lt.transaction_type = 'earned'
          AND vr.referrer_vendor_id = CAST($1 AS uuid)
          AND vr.status = 'approved'
@@ -886,7 +884,7 @@ export function registerReferralEndpoints(app: Hono) {
       const earnings = await query(
         `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
          FROM loyalty_transactions lt
-         INNER JOIN referrals r ON lt.reference_id = r.id::text
+         INNER JOIN referrals r ON lt.reference_id = r.id
          WHERE lt.customer_id = $1 
          AND lt.reference_type = 'referral'
          AND lt.transaction_type = 'earned'

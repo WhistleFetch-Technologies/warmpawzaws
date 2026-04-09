@@ -831,24 +831,46 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   app.put("/medical-records/:recordId", async (c) => {
     try {
       const { recordId } = c.req.param();
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+
+      const hasPatch =
+        body.title !== undefined ||
+        body.description !== undefined ||
+        body.contentData !== undefined ||
+        body.fileUrl !== undefined;
+      if (!hasPatch) {
+        return c.json(
+          { success: false, error: 'At least one of title, description, contentData, or fileUrl is required' },
+          400
+        );
+      }
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
       };
 
-      if (body.title) updateData.title = body.title;
-      if (body.description) updateData.description = body.description;
-      if (body.contentData) updateData.content_data = JSON.stringify(body.contentData);
-      if (body.fileUrl) updateData.file_url = body.fileUrl;
+      if (body.title !== undefined) updateData.title = body.title;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.contentData !== undefined) {
+        updateData.content_data =
+          typeof body.contentData === 'string'
+            ? body.contentData
+            : JSON.stringify(body.contentData);
+      }
+      if (body.fileUrl !== undefined) updateData.file_url = body.fileUrl;
 
-      await update('medical_records', { id: recordId }, updateData);
+      const rows = await update('medical_records', { id: recordId }, updateData);
+      if (!rows || rows.length === 0) {
+        return c.json({ success: false, error: 'Medical record not found' }, 404);
+      }
 
+      const row = rows[0] as { id?: string; customer_id?: string };
       return c.json({
         success: true,
         message: 'Medical record updated successfully',
+        recordId: row.id ?? recordId,
+        customerId: row.customer_id,
       });
-
     } catch (error: any) {
       console.error('Error updating medical record:', error);
       return c.json({ error: error.message }, 500);

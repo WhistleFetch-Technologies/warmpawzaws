@@ -173,7 +173,7 @@ esbuild.build({
 
 // Build Loyalty Events Consumer bundle
 esbuild.build({
-  entryPoints: ['src/handlers/loyalty-events-consumer.ts'],
+  entryPoints: ['src/Lambdas/loyalty-events-consumer.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',

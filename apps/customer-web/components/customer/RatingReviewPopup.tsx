@@ -45,6 +45,23 @@ interface ReviewData {
   tags: string[];
 }
 
+const WARMPAWZ_REVIEW_SUBMITTED_BOOKING_IDS_KEY = 'warmpawz_review_submitted_booking_ids';
+
+function persistSubmittedReviewBookingId(bookingId: string) {
+  if (typeof window === 'undefined' || !bookingId) return;
+  const id = String(bookingId);
+  try {
+    const raw = localStorage.getItem(WARMPAWZ_REVIEW_SUBMITTED_BOOKING_IDS_KEY);
+    const arr: string[] = raw ? JSON.parse(raw) : [];
+    if (!arr.includes(id)) {
+      arr.push(id);
+      localStorage.setItem(WARMPAWZ_REVIEW_SUBMITTED_BOOKING_IDS_KEY, JSON.stringify(arr));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 const QUICK_TAGS = {
   at_home: [
     { id: 'punctual', label: 'Punctual', icon: Clock },
@@ -93,6 +110,26 @@ export function RatingReviewPopup({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const scrollY = window.scrollY;
+    const prevOverflow = document.body.style.overflow;
+    const prevPosition = document.body.style.position;
+    const prevTop = document.body.style.top;
+    const prevWidth = document.body.style.width;
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.position = prevPosition;
+      document.body.style.top = prevTop;
+      document.body.style.width = prevWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isOpen]);
+
   const tags = QUICK_TAGS[serviceStyle] || QUICK_TAGS.at_center;
 
   const toggleTag = (tagId: string) => {
@@ -136,6 +173,7 @@ export function RatingReviewPopup({
         serviceStyle,
       });
 
+      persistSubmittedReviewBookingId(bookingId);
       setSubmitted(true);
       
       if (onSubmit) {
@@ -173,8 +211,8 @@ export function RatingReviewPopup({
   // Success state
   if (submitted) {
     return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl max-w-md w-full p-8 text-center animate-in fade-in zoom-in duration-300">
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overscroll-none touch-none">
+        <div className="bg-white rounded-3xl max-w-md w-full p-8 text-center animate-in fade-in zoom-in duration-300 touch-auto">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Check className="w-10 h-10 text-green-500" />
           </div>
@@ -186,10 +224,13 @@ export function RatingReviewPopup({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 overscroll-none">
+      <div
+        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90dvh] flex flex-col min-h-0 animate-in slide-in-from-bottom duration-300 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="sticky top-0 bg-white p-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex-shrink-0 bg-white p-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Rate Your Experience</h2>
           <button 
             onClick={handleSkip}
@@ -199,7 +240,7 @@ export function RatingReviewPopup({
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-6 [-webkit-overflow-scrolling:touch]">
           {/* Service Info */}
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-2xl flex items-center justify-center mx-auto mb-4">

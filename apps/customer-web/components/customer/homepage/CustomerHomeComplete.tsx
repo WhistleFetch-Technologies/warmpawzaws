@@ -1208,6 +1208,16 @@ export function CustomerHomeComplete({
         // Check for pending review
         const reviewRes = await apiClient.get<any>(`/reviews/pending/${custId}`);
         if (reviewRes.hasPending && reviewRes.booking) {
+          const pendingBookingId = reviewRes.booking.bookingId;
+          if (pendingBookingId) {
+            try {
+              const raw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
+              const submittedIds: string[] = raw ? JSON.parse(raw) : [];
+              if (submittedIds.includes(String(pendingBookingId))) return;
+            } catch {
+              /* ignore */
+            }
+          }
           setPendingReview({
             isOpen: true,
             bookingId: reviewRes.booking.bookingId,

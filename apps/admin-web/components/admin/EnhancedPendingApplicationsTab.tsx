@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { Search, Eye, RefreshCw, Check, X, FileText, User, Building2 } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
-import { getAdminId } from '@/lib/cognito-auth';
 import { toast } from 'sonner';
 import { CustomDropdown } from './CustomDropdown';
 import { ApplicationDetailModal } from './ApplicationDetailModal';
@@ -139,28 +138,13 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       
       const vendor = vendors.find(v => v.vendorId === vendorId || v.id === vendorId);
       const appId = vendor?.id || vendorId;
-      
-      // Try onboarding review endpoint first (proper state machine)
-      try {
-        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
-        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
-          action: 'APPROVE',
-          admin_id: adminId,
-          comments: 'Approved from admin portal'
-        });
-        alert('Vendor approved successfully');
-        await loadVendors();
-        return;
-      } catch (onboardingError: any) {
-        // Fallback to compatibility endpoint
-        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
-        await apiClient.post(`/admin/vendor/application/${appId}/approve`, {
-          reviewerName: 'Admin',
-          notes: 'Approved'
-        });
-        alert('Vendor approved successfully');
-        await loadVendors();
-      }
+
+      await apiClient.post(`/admin/vendor/application/${appId}/approve`, {
+        reviewerName: 'Admin',
+        notes: 'Approved'
+      });
+      alert('Vendor approved successfully');
+      await loadVendors();
     } catch (error: any) {
       console.error('Error approving vendor:', error);
       alert(error.message || 'Failed to approve vendor');
@@ -183,35 +167,17 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
 
     try {
       const appId = rejectingApplication.id || rejectingApplication.vendorId;
-      
-      // Try onboarding review endpoint first (proper state machine)
-      try {
-        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
-        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
-          action: 'REJECT',
-          admin_id: adminId,
-          rejection_reason: reason,
-          comments: notes
-        });
-        toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
-        setShowRejectModal(false);
-        setRejectingApplication(null);
-        await loadVendors();
-        return;
-      } catch (onboardingError: any) {
-        // Fallback to compatibility endpoint
-        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
-        await apiClient.post(`/admin/vendor/application/${appId}/reject`, {
-          reviewerName: 'Admin',
-          reason,
-          notes,
-          allowResubmit: true
-        });
-        toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
-        setShowRejectModal(false);
-        setRejectingApplication(null);
-        await loadVendors();
-      }
+
+      await apiClient.post(`/admin/vendor/application/${appId}/reject`, {
+        reviewerName: 'Admin',
+        reason,
+        notes,
+        allowResubmit: true
+      });
+      toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
+      setShowRejectModal(false);
+      setRejectingApplication(null);
+      await loadVendors();
     } catch (error: any) {
       console.error('Error rejecting vendor:', error);
       toast.error(error.message || 'Failed to reject vendor');

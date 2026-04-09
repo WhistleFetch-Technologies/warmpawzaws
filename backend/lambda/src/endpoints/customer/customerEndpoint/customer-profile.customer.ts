@@ -111,6 +111,136 @@ function mergeHouseNoFromPayload(raw: Record<string, any>): {
   return { hasHouseKey: true, merged: mergedNonEmpty };
 }
 
+/** Fields from profile payload that imply we should sync `customer_addresses` (GET /customer/profile prefers default row pincode). */
+type ProfileAddressSyncPayload = {
+  pincode?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+};
+
+type SyncDefaultAddressOpts = {
+  updateHouseNo?: boolean;
+  houseNo?: string | null;
+  updateFloor?: boolean;
+  floor?: string | null;
+};
+
+function extractAddressLine1FromCustomerRow(customerRow: Record<string, any>): string {
+  const a = customerRow?.address;
+  if (typeof a === 'string') return a.trim();
+  if (a && typeof a === 'object') {
+    return String(
+      (a as { street?: string; addressLine1?: string; line1?: string }).street ||
+        (a as { addressLine1?: string }).addressLine1 ||
+        (a as { line1?: string }).line1 ||
+        ''
+    ).trim();
+  }
+  return '';
+}
+
+function phoneDigitsForAddressRow(customerRow: Record<string, any>): string {
+  const digits = normalizePhone(String(customerRow?.phone || ''));
+  if (digits.length >= 10) return digits.slice(-10);
+  const raw = String(customerRow?.phone || '').replace(/\D/g, '');
+  if (raw.length >= 10) return raw.slice(-10);
+  return raw.length > 0 ? raw : '0000000000';
+}
+
+/**
+ * Keep default/first `customer_addresses` row aligned with `customers` after profile save,
+ * so GET /customer/profile?phone= (pincode: defaultAddr?.pincode || customer.pincode) shows fresh data.
+ */
+async function syncDefaultCustomerAddressFromProfile(
+  customerId: string,
+  profileAddressFields: ProfileAddressSyncPayload,
+  customerRow: Record<string, any>,
+  opts?: SyncDefaultAddressOpts
+): Promise<void> {
+  const shouldSync =
+    profileAddressFields.pincode !== undefined ||
+    profileAddressFields.address !== undefined ||
+    profileAddressFields.city !== undefined ||
+    profileAddressFields.state !== undefined;
+  if (!shouldSync) return;
+
+  const pincode = String(customerRow?.pincode || '').trim();
+  if (!/^\d{6}$/.test(pincode)) {
+    console.warn('[PROFILE] skip customer_addresses sync: invalid pincode on customer row');
+    return;
+  }
+
+  const line1 = extractAddressLine1FromCustomerRow(customerRow);
+  const city = String(customerRow?.city || '').trim();
+  const state = String(customerRow?.state || '').trim();
+
+  const pickRes = await query(
+    `SELECT id FROM customer_addresses
+     WHERE customer_id = $1::uuid
+     ORDER BY is_default DESC NULLS LAST, created_at DESC NULLS LAST
+     LIMIT 1`,
+    [customerId]
+  );
+  const targetId = (pickRes as any).rows?.[0]?.id as string | undefined;
+
+  if (targetId) {
+    const setParts: string[] = ['pincode = $1', 'updated_at = NOW()'];
+    const params: unknown[] = [pincode];
+    let p = 2;
+
+    if (profileAddressFields.city !== undefined) {
+      setParts.push(`city = $${p++}`);
+      params.push(city || '—');
+    }
+    if (profileAddressFields.state !== undefined) {
+      setParts.push(`state = $${p++}`);
+      params.push(state || '—');
+    }
+    if (profileAddressFields.address !== undefined) {
+      setParts.push(`address_line1 = $${p++}`);
+      params.push(line1 || '—');
+    }
+    if (opts?.updateHouseNo) {
+      setParts.push(`house_no = $${p++}`);
+      params.push(opts.houseNo ?? null);
+    }
+    if (opts?.updateFloor) {
+      setParts.push(`floor = $${p++}`);
+      params.push(opts.floor ?? null);
+    }
+    params.push(targetId);
+    await query(
+      `UPDATE customer_addresses SET ${setParts.join(', ')} WHERE id = $${p}::uuid`,
+      params
+    );
+    return;
+  }
+
+  await query(
+    `UPDATE customer_addresses SET is_default = false, updated_at = NOW()
+     WHERE customer_id = $1::uuid AND is_default = true`,
+    [customerId]
+  );
+
+  const fullName = String(customerRow?.full_name || 'Customer').trim() || 'Customer';
+  const phone = phoneDigitsForAddressRow(customerRow);
+
+  await insert('customer_addresses', {
+    customer_id: customerId,
+    address_type: 'home',
+    full_name: fullName,
+    phone,
+    address_line1: line1 || '—',
+    city: city || '—',
+    state: state || '—',
+    pincode,
+    is_default: true,
+    house_no: opts?.updateHouseNo ? opts.houseNo ?? null : customerRow?.house_no ?? null,
+    floor: opts?.updateFloor ? opts.floor ?? null : customerRow?.floor ?? null,
+  });
+}
+
 async function resolveCustomerId(identifier: string): Promise<string | null> {
   // Check if it's a UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -372,6 +502,18 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const customer = customers[0];
       const defaultAddr = customer.addresses?.[0] || null;
 
+      // Profile edits persist to `customers`; GET used to prefer `customer_addresses` first,
+      // so a stale default row hid the updated pincode. Prefer customer row, then saved address.
+      const custPin = String(customer.pincode ?? '').trim();
+      const addrPin = String(defaultAddr?.pincode ?? '').trim();
+      const profilePincode = custPin || addrPin || null;
+      const custCity = String(customer.city ?? '').trim();
+      const addrCity = defaultAddr?.city != null ? String(defaultAddr.city).trim() : '';
+      const profileCity = custCity || addrCity || null;
+      const custState = String(customer.state ?? '').trim();
+      const addrState = defaultAddr?.state != null ? String(defaultAddr.state).trim() : '';
+      const profileState = custState || addrState || null;
+
       const fullName = (customer.full_name || '').trim();
       const nameParts = fullName.split(/\s+/).filter(Boolean);
       const firstName = nameParts[0] || '';
@@ -421,9 +563,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           lastName,
           email: customer.email,
           address: addressText || customer.address,
-          pincode: defaultAddr?.pincode || customer.pincode || null,
-          city: defaultAddr?.city || customer.city || null,
-          state: defaultAddr?.state || customer.state || null,
+          pincode: profilePincode,
+          city: profileCity,
+          state: profileState,
           houseNo: customer.house_no ?? null,
           floor: customer.floor ?? null,
           photo: profilePhoto,
@@ -530,7 +672,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (rawProfilePayload.lastName) profilePayload.lastName = rawProfilePayload.lastName;
       if (rawProfilePayload.email) profilePayload.email = rawProfilePayload.email;
       if (rawProfilePayload.address) profilePayload.address = rawProfilePayload.address;
-      if (rawProfilePayload.pincode) profilePayload.pincode = rawProfilePayload.pincode;
+      if (rawProfilePayload.pincode !== undefined && rawProfilePayload.pincode !== null) {
+        profilePayload.pincode = String(rawProfilePayload.pincode).trim();
+      }
       if (rawProfilePayload.city) profilePayload.city = rawProfilePayload.city;
       if (rawProfilePayload.state) profilePayload.state = rawProfilePayload.state;
       if (hasHouseNoField) {
@@ -700,7 +844,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (profileData.address) {
         updateData.address = profileData.address;
       }
-      if (profileData.pincode) {
+      if (profileData.pincode !== undefined && String(profileData.pincode).trim() !== '') {
         updateData.pincode = profileData.pincode;
       }
       if (profileData.city) {
@@ -723,6 +867,22 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const updated = await update('customers', { id: customerId }, updateData);
+
+      try {
+        await syncDefaultCustomerAddressFromProfile(
+          customerId as string,
+          profileData,
+          updated[0],
+          {
+            updateHouseNo: hasHouseNoField,
+            houseNo: hasHouseNoField ? effectiveHousePost || null : undefined,
+            updateFloor: hasFloorField,
+            floor: hasFloorField ? profileData.floor?.trim() || null : undefined,
+          }
+        );
+      } catch (syncErr) {
+        console.error('[PROFILE] customer_addresses sync failed:', syncErr);
+      }
 
       if (Object.keys(completionUpdates).length > 0 && customerId) {
         try {
@@ -865,7 +1025,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (profileData.address) {
         updateData.address = profileData.address;
       }
-      if (profileData.pincode) {
+      if (profileData.pincode !== undefined && String(profileData.pincode).trim() !== '') {
         updateData.pincode = profileData.pincode;
       }
       if (profileData.city) {
@@ -888,6 +1048,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const updated = await update('customers', { id: customerId }, updateData);
+
+      try {
+        await syncDefaultCustomerAddressFromProfile(customerId, profileData, updated[0], {
+          updateHouseNo: hasHouseKey,
+          houseNo: hasHouseKey ? effectiveHousePut || null : undefined,
+          updateFloor: hasFloorInPut,
+          floor: hasFloorInPut ? profileData.floor?.trim() || null : undefined,
+        });
+      } catch (syncErr) {
+        console.error('[PROFILE] customer_addresses sync failed:', syncErr);
+      }
 
       // Update profile completion and onboarding status
       if (Object.keys(completionUpdates).length > 0) {

@@ -362,12 +362,13 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
                       onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42]"
                     >
+                      {/* Values must match support_tickets.category CHECK in DB */}
                       <option value="general">General Inquiry</option>
-                      <option value="booking">Booking Issue</option>
-                      <option value="order">Order Issue</option>
-                      <option value="payment">Payment Issue</option>
+                      <option value="service">Booking / service issue</option>
+                      <option value="other">Order / other issue</option>
+                      <option value="billing">Payment or refund</option>
                       <option value="technical">Technical Support</option>
-                      <option value="refund">Refund Request</option>
+                      <option value="account">Account</option>
                     </select>
                   </div>
 

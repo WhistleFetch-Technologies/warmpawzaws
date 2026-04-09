@@ -20,6 +20,7 @@ import { select, insert, update, query } from '../../../database/rds-connection'
 import { getSnsClient } from '../../../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { generateSupportTicketNumber } from '../../../utils/support-ticket-number';
 import { isValidUUID } from '../../../types/entities';
 
 export function registerSupportCrmEndpoints(app: Hono) {
@@ -40,14 +41,31 @@ export function registerSupportCrmEndpoints(app: Hono) {
         bookingId,
         orderId,
         attachments,
+        metadata: metadataInput,
       } = await c.req.json();
 
       if (!subject || !message) {
         return c.json({ error: 'subject and message are required' }, 400);
       }
 
+      // Attachments live in metadata JSONB so inserts work before/without DB column support_tickets.attachments (prod).
+      const metaBase =
+        metadataInput != null && typeof metadataInput === 'object' && !Array.isArray(metadataInput)
+          ? { ...(metadataInput as Record<string, unknown>) }
+          : {};
+      const { attachments: metaAttachments, ...metaRest } = metaBase as {
+        attachments?: unknown;
+        [k: string]: unknown;
+      };
+      const attachmentList = Array.isArray(attachments)
+        ? attachments
+        : Array.isArray(metaAttachments)
+          ? metaAttachments
+          : [];
+
       // Create support ticket
       const ticket = await insert('support_tickets', {
+        ticket_number: generateSupportTicketNumber(),
         customer_id: customerId || null,
         customer_phone: customerPhone || null,
         subject,
@@ -58,14 +76,14 @@ export function registerSupportCrmEndpoints(app: Hono) {
         booking_id: bookingId || null,
         order_id: orderId || null,
         status: 'open',
-        attachments: attachments || [],
+        metadata: { ...metaRest, attachments: attachmentList },
         created_at: new Date().toISOString(),
       });
 
       // Notify support team (if configured)
       try {
-        const { select } = require('../database/rds-connection');
-        const { publishToSNS } = require('../utils/aws-clients');
+        const { select } = require('../../../database/rds-connection');
+        const { publishToSNS } = require('../../../utils/aws-clients');
         
         // Get support team contact from platform settings
         const settings = await select('platform_settings', {
@@ -958,6 +976,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       // Create detailed support ticket
       const ticket = await insert('support_tickets', {
+        ticket_number: generateSupportTicketNumber(),
         customer_id: booking.customer_id || customerId || null,
         customer_phone: customerPhone || customer[0]?.phone || null,
         vendor_id: booking.vendor_id || vendorId || null,
@@ -966,9 +985,9 @@ export function registerSupportCrmEndpoints(app: Hono) {
         message: reason || 'Customer requested support after booking chat ended',
         source: 'chat_handoff',
         priority: 'medium',
-        category: 'post_booking_support',
+        category: 'service',
         status: 'open',
-        metadata: crmContext,
+        metadata: { ...crmContext, attachments: [] },
         created_at: new Date().toISOString(),
       });
 
@@ -976,7 +995,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       // Notify support team
       try {
-        const { publishToSNS } = require('../utils/aws-clients');
+        const { publishToSNS } = require('../../../utils/aws-clients');
         await publishToSNS('platform-notifications', {
           type: 'chat_handoff',
           ticket_id: ticket[0].id,

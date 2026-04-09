@@ -744,9 +744,13 @@ export function BoardingBookingRouter({
   };
 
   const handleBack = () => {
+    if (step === 'confirmation') {
+      onBack();
+      return;
+    }
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'room', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
-    
+
     if (currentIdx > 0) {
       setStep(steps[currentIdx - 1]);
     } else {
@@ -801,6 +805,7 @@ export function BoardingBookingRouter({
         type="booking"
         category="boarding"
         serviceStyle={isPetSitting ? 'at_home' : 'at_center'}
+        layoutVariant="appShell"
         customerPhone={phone}
         customerId={phone}
         bookingId={paymentBookingId}
@@ -833,6 +838,7 @@ export function BoardingBookingRouter({
         totalAmount={calculateTotalPrice()}
         onViewDetails={() => onViewBooking?.(bookingId)}
         onBackToHome={onBack}
+        onBack={handleBack}
       />
     );
   }
@@ -862,7 +868,7 @@ export function BoardingBookingRouter({
   }));
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="min-h-[calc(100dvh-6rem-env(safe-area-inset-bottom,0px))] max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom,0px))] bg-gray-50 flex flex-col overflow-hidden">
       <ServiceDashboardHeader
         serviceName={flowTitle}
         serviceSubtitle={selectedServiceOption?.name || (isPetSitting ? 'Select sitting type' : 'Select boarding type')}
