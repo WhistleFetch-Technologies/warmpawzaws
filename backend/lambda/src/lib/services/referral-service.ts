@@ -80,6 +80,62 @@ export interface VendorReferralApprovalRewardParams {
   applicationId?: string;
   vendorId?: string;
 }
+
+/**
+ * After admin approves vendor onboarding: link `vendor_referrals` rows that match phone
+ * but still have no `referred_vendor_id` (signup / race edge cases).
+ */
+export async function linkVendorReferralRecordsOnVendorApproval(params: {
+  vendorId: string;
+  identity: { phone?: string | null } | null | undefined;
+}): Promise<void> {
+  const { vendorId, identity } = params;
+  if (!vendorId) return;
+
+  let digits = '';
+  if (identity?.phone) {
+    digits = String(identity.phone).replace(/\D/g, '').slice(-10);
+  }
+  if (digits.length < 10) {
+    try {
+      const rows = await select('vendors', { id: vendorId });
+      const p = rows[0]?.phone;
+      digits = String(p || '').replace(/\D/g, '').slice(-10);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (digits.length < 10) return;
+
+  try {
+    const res = await query(
+      `UPDATE vendor_referrals
+       SET referred_vendor_id = $1,
+           status = CASE WHEN status = 'pending' THEN 'applied' ELSE status END,
+           applied_at = COALESCE(applied_at, NOW()),
+           updated_at = NOW()
+       WHERE referred_vendor_id IS NULL
+         AND (referrer_vendor_id IS DISTINCT FROM $1)
+         AND NULLIF(TRIM(referred_phone), '') IS NOT NULL
+         AND referred_phone NOT LIKE 'REFERRER%'
+         AND RIGHT(REGEXP_REPLACE(COALESCE(referred_phone, ''), '[^0-9]', '', 'g'), 10) = $2`,
+      [vendorId, digits]
+    );
+    const rc = (res as { rowCount?: number }).rowCount ?? 0;
+    if (rc > 0) {
+      console.info('[REFERRAL-LINK-APPROVAL] Linked vendor_referrals on admin approval', {
+        vendorId,
+        rows: rc,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      '[REFERRAL-LINK-APPROVAL] vendor_referrals link failed (non-fatal):',
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
 /**
  * Process referral code during user signup
  * Awards points to both referred user and referrer using loyalty service

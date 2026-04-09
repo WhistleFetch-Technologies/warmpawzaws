@@ -16,8 +16,8 @@
  * - POST /vendor/onboarding/select-vendor-type - Select vendor type
  * - GET /vendor/onboarding/form-schema - Get form schema
  * - POST /vendor/onboarding/submit-application - Submit application
- * - POST /admin/vendor/onboarding/:applicationId/review - Admin review
  * - POST /vendor/onboarding/activate - Activate vendor
+ * - Admin: POST /admin/vendor/application/:applicationId/approve|reject (admin.controller)
  * - POST /vendor/setup/update-completion - Update setup completion
  * - POST /vendor/setup/go-live - Go live
  * 
@@ -34,7 +34,6 @@ import {
   SubmitVendorApplicationRequestSchema,
   SelectVendorRoleRequestSchema,
   SelectVendorTypeRequestSchema,
-  AdminReviewApplicationRequestSchema,
 } from '@warmpawz/api-contracts/vendors';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -982,176 +981,6 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 }
 
 // ============================================================================
-// PHASE 6: ADMIN DECISION FLOW
-// ============================================================================
-
-class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const applicationId = context.event.pathParameters?.applicationId;
-    const body = this.parseBody(context.event);
-    const requestId = context.requestId;
-
-    if (!applicationId) {
-      return this.error('Application ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
-    }
-
-    // Validate request with Zod schema
-    const validationResult = AdminReviewApplicationRequestSchema.safeParse(body);
-    if (!validationResult.success) {
-      return this.error(
-        'Validation failed',
-        400,
-        'VALIDATION_ERROR',
-        { errors: validationResult.error.errors },
-        requestId
-      );
-    }
-
-    const { action, admin_id, comments, rejection_reason } = validationResult.data;
-
-    try {
-      // Get application
-      const apps = await select('vendor_onboarding_applications', {
-        id: applicationId,
-      });
-
-      if (apps.length === 0) {
-        return this.error('Application not found', 404, 'NOT_FOUND', undefined, requestId);
-      }
-
-      const application = apps[0];
-
-      // Accept both UNDER_REVIEW and SUBMITTED (legacy: submit flow used to only set SUBMITTED on application)
-      const isReviewable = application.status === 'UNDER_REVIEW' || application.status === 'SUBMITTED';
-      if (!isReviewable) {
-        return this.error(
-          `Application is not in reviewable status (current: ${application.status}). Expected UNDER_REVIEW or SUBMITTED.`,
-          400,
-          'VALIDATION_ERROR',
-          undefined,
-          requestId
-        );
-      }
-
-      // Get vendor identity
-      const identities = await select('vendor_identity', {
-        id: application.vendor_identity_id,
-      });
-
-      if (identities.length === 0) {
-        return this.error('Vendor identity not found', 404, 'NOT_FOUND', undefined, requestId);
-      }
-
-      const identity = identities[0];
-
-      // Update application based on action
-      let newStatus: string;
-      let newOnboardingStatus: string;
-
-      if (action === 'APPROVE') {
-        newStatus = 'APPROVED';
-        newOnboardingStatus = 'APPROVED';
-        
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments || null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else if (action === 'REQUEST_CLARIFICATION') {
-        if (!comments) {
-          return this.error(
-            'Comments are required for clarification request',
-            400,
-            'VALIDATION_ERROR',
-            undefined,
-            requestId
-          );
-        }
-
-        newStatus = 'CLARIFICATION_REQUIRED';
-        newOnboardingStatus = 'CLARIFICATION_REQUIRED';
-        
-        // Unlock application for editing
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else { // REJECT
-        if (!rejection_reason) {
-          return this.error(
-            'Rejection reason is required',
-            400,
-            'VALIDATION_ERROR',
-            undefined,
-            requestId
-          );
-        }
-
-        newStatus = 'REJECTED';
-        newOnboardingStatus = 'REJECTED';
-        
-        // ✅ FIX: Unlock application when rejected so vendor can resubmit
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            rejection_reason,
-            admin_comments: comments || null,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      }
-
-      // Transition onboarding status
-      await query(
-        `SELECT transition_onboarding_status($1, $2, $3, 'admin', $4, $5::jsonb)`,
-        [
-          identity.id,
-          newOnboardingStatus,
-          admin_id,
-          action.toLowerCase(),
-          JSON.stringify({ comments, rejection_reason }),
-        ]
-      );
-
-      return this.success({
-        message: `Application ${action.toLowerCase()}d successfully`,
-        status: newStatus,
-      }, requestId);
-    } catch (error: any) {
-      console.error('Error reviewing application:', error);
-      return this.error(
-        error.message || 'Failed to review application',
-        500,
-        'INTERNAL_ERROR',
-        undefined,
-        requestId
-      );
-    }
-  }
-}
-
-// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -1162,7 +991,6 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   const selectVendorTypeHandler = new SelectVendorTypeHandlerEnhanced();
   const formSchemaHandler = new GetOnboardingFormSchemaHandlerEnhanced();
   const submitHandler = new SubmitApplicationHandlerEnhanced();
-  const reviewHandler = new AdminReviewApplicationHandlerEnhanced();
 
   // Phase 1: Auth & Entry
   app.get('/vendor/onboarding/status', async (c: Context) => {
@@ -1237,16 +1065,6 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await submitHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
-  });
-
-  // Phase 6: Admin Review
-  app.post('/admin/vendor/onboarding/:applicationId/review', async (c: Context) => {
-    const event = await createApiGatewayEventWithBody(c);
-    event.pathParameters = { applicationId: c.req.param('applicationId') };
-    const context = createLambdaContext();
-    const result: any = await reviewHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });

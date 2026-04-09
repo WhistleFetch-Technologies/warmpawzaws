@@ -101,15 +101,11 @@ class TestApiClient {
     return response.data;
   }
 
-  async adminApproveApplication(applicationId: string, adminId: string = 'test-admin') {
-    const response = await this.client.post(
-      `/admin/vendor/onboarding/${applicationId}/review`,
-      {
-        action: 'APPROVE',
-        admin_id: adminId,
-        comments: 'Test approval',
-      }
-    );
+  async adminApproveApplication(applicationId: string, _adminId: string = 'test-admin') {
+    const response = await this.client.post(`/admin/vendor/application/${applicationId}/approve`, {
+      reviewerName: 'Test Admin',
+      notes: 'Test approval',
+    });
     return response.data;
   }
 

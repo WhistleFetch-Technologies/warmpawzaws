@@ -47,6 +47,11 @@ provider:
     
     # Feature Flags
     UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
+
+    # EventBridge — must match a bus that has a rule: source app.warmpawz, detail-type ActionOccurred → loyalty SQS.
+    # Dev: custom bus warmpawz-dev-events + route-actionoccurred-to-loyalty-queue-dev → loyalty-events-queue.
+    # Prod: default bus + action-occurred-rule → loyalty-events-prod-queue.
+    EVENT_BUS_NAME: ${self:custom.eventBridgeActionOccurredBus.${self:provider.stage}}
     
     # S3 Configuration
     S3_UPLOADS_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/uploadsBucket, 'warmpawz-dev-uploads'}
@@ -98,6 +103,13 @@ provider:
             - logs:CreateLogStream
             - logs:PutLogEvents
           Resource: '*'
+
+        # EventBridge — action-source-middleware + loyalty-action-publisher (ActionOccurred).
+        # Resource list is stage-specific (dev needs custom bus + optional default; prod default only).
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+          Resource: ${self:custom.eventBridgePutEventsResources.${self:provider.stage}}
         
         # S3 Access for file uploads
         - Effect: Allow
@@ -165,6 +177,16 @@ custom:
   apiGatewayId:
     dev: z0b3obweb6
     prod: mss9sa4y01
+  # Loyalty pipeline buses (must match EventBridge rules → SQS → warmpawz-*-loyalty-events-consumer).
+  eventBridgeActionOccurredBus:
+    dev: warmpawz-dev-events
+    prod: default
+  eventBridgePutEventsResources:
+    dev:
+      - arn:aws:events:${self:provider.region}:*:event-bus/default
+      - arn:aws:events:${self:provider.region}:*:event-bus/warmpawz-dev-events
+    prod:
+      - arn:aws:events:${self:provider.region}:*:event-bus/default
 
 functions:
   api:
