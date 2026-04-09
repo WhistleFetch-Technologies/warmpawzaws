@@ -103,6 +103,18 @@ export function displayStateFromKey(key: string): string {
   return DISPLAY_NAME[key] || key.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Inter-state supply → IGST. Intra-state (same normalized state key) → CGST + SGST.
+ * If either place of supply is unknown, defaults to inter-state (IGST) — conservative compliance fallback.
+ */
+export function isGstInterstateSupply(
+  customerStateKey: string | undefined,
+  vendorStateKey: string | undefined
+): boolean {
+  if (!customerStateKey || !vendorStateKey) return true;
+  return customerStateKey !== vendorStateKey;
+}
+
 /** Infer state (and optional city) from a single free-text address line. */
 export function inferStateFromPlainAddressText(text: string): { stateKey: string; city?: string } | null {
   const lower = text.toLowerCase();

@@ -12,7 +12,6 @@ export type PolicyDocKey =
   | 'logistics-partners'
   | 'logistics-delivery-rules'
   | 'finance-gst-configuration'
-  | 'finance-flexible-tax-system'
   | 'finance-settlements'
   | 'finance-payout-management'
   | 'finance-tier-system'
@@ -474,56 +473,20 @@ GST Configuration lets you manage **GST rates** and **HSN codes** used for invoi
 
 ---
 
+## Tax resolution order (checkout)
+
+1. **Products:** HSN-linked rate → linked tax category rate → **18% default**.
+2. **Services:** Admin **GST Configuration** (catalogue category + vendor role) → **18% default**.
+3. **CGST + SGST vs IGST** is determined from customer vs vendor place of supply (not from legacy rules).
+
+The legacy **Flexible Tax** / \`gst_rules\` priority matching is **not** used in live calculation.
+
+---
+
 ## Tips
 
 - Keep HSN codes aligned with your GST registration (e.g. 9983 for services).
 - Ensure CGST+SGST equals total GST for same-state; use IGST for inter-state.`,
-  },
-  'finance-flexible-tax-system': {
-    title: 'Flexible Tax System – Admin Guide',
-    markdown: `# Flexible Tax System – Admin Guide
-
-## What is the Flexible Tax System?
-
-The Flexible Tax System lets you define **tax rules** with conditions (and optional fields for exemptions / multiple tax types in the UI). **Checkout tax math** uses the centralized calculator: it resolves **rate** from HSN → tax category → matching \`gst_rules\` row → default 18%, and picks **CGST+SGST vs IGST** from customer vs vendor state. **Rule selection:** among rules that pass the SQL filters, the row with the **highest \`priority\` number** wins (\`ORDER BY priority DESC LIMIT 1\`). **Exemptions** and **compound taxes** are not applied by that calculator today—treat them as future/invoice-only unless documented otherwise.
-
----
-
-## How to Create a Tax Rule
-
-1. Go to **Finance & Logistics** → **Flexible Tax System**.
-2. Click **Create Tax Rule**.
-3. Fill in: **Name**, **Tax Type**, **Rate**, **Calculation Method**, **Priority**, **Conditions**, **Exemptions**, **Active**.
-4. Click **Save**.
-
----
-
-## Where the Flexible Tax System Is Used
-
-| Where | How |
-|-------|-----|
-| **Checkout / booking** | Matching \`gst_rules\` row (highest \`priority\` among rows that fit conditions); combined rate then HSN/category overrides as implemented. |
-| **Invoicing** | Invoices show tax breakdown (CGST, SGST, IGST) from the applied rule. |
-| **Refunds** | Tax component of refunds uses the same rules. |
-
----
-
-## Option Impact Summary
-
-| Option | Impacts |
-|--------|---------|
-| **Tax Type** | Which tax is applied (GST, CGST, SGST, IGST, cess, custom). |
-| **Rate / Calculation Method** | Percentage or fixed amount. |
-| **Priority** | **Higher number wins** when several enabled rules match (see tip below). |
-| **Conditions / Exemptions** | Conditions filter which \`gst_rules\` rows match; exemption/compound handling in the live calculator is not implemented yet. |
-| **Active** | Inactive rules are skipped. |
-
----
-
-## Tips
-
-- Put **broad default** rules at a **lower** \`priority\` number and **specific** rules at a **higher** \`priority\` so the specific rule wins (e.g. default 100, specific 500).
-- Use conditions to apply different rates by transaction type, category, or amount.`,
   },
   'finance-settlements': {
     title: 'Settlements – Admin Guide',

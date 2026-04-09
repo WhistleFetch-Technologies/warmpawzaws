@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
 import { defaultServiceTypeOptions } from './constants';
 
@@ -967,6 +968,9 @@ export function NutritionistBookingRouter({
                   state: selectedAddress.state,
                 } : undefined}
                 baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
+                priceIncludesTax={
+                  catalogPriceIncludesTax(selectedVendorService) || catalogPriceIncludesTax(selectedServiceOption)
+                }
                 duration={selectedVendorService.duration || selectedServiceOption?.duration || 30}
                 customerPhone={phone}
                 customerId={customerId || undefined}

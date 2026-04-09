@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { InstantTeleQueue } from '@/components/customer/InstantTele/InstantTeleQueue';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { apiClient } from '@/lib/api-client';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 
@@ -403,6 +404,7 @@ function TeleConsultationContent() {
             serviceStyle="tele"
             category="vet"
             baseAmount={svc.price}
+            priceIncludesTax={catalogPriceIncludesTax(svc)}
             duration={svc.duration}
             petId={selectedPet?.id}
             petName={selectedPet?.name}

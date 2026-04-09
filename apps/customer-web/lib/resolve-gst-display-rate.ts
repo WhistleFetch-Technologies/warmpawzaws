@@ -1,7 +1,7 @@
 /**
  * Aligns GST % labels with charged amounts when:
  * - API omits or zeroes `items[0].taxRate`, or
- * - `taxRate` disagrees with totals (e.g. HSN says 10% but `gst_rules.igst_percentage` charged 18% IGST).
+ * - `taxRate` disagrees with totals (e.g. declared % does not match implied % from subtotal + tax).
  */
 const MONEY_TOLERANCE_INR = 0.05;
 

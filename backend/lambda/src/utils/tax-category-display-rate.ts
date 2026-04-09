@@ -21,15 +21,3 @@ export function pickTaxCategoryDisplayRate(row: Record<string, unknown>): number
   if (t !== undefined) return t;
   return 0;
 }
-
-/** When tax_categories rate is 0, use Flexible Tax (gst_rules) rate for that tax_category_id. */
-export function applyGstRulesRateFallback(
-  resolvedRate: number,
-  categoryId: unknown,
-  gstRuleRatesByCategoryId: Map<string, number>
-): number {
-  if (resolvedRate !== 0) return resolvedRate;
-  if (categoryId == null || categoryId === '') return 0;
-  const fromRule = gstRuleRatesByCategoryId.get(String(categoryId));
-  return fromRule !== undefined && fromRule > 0 ? fromRule : 0;
-}

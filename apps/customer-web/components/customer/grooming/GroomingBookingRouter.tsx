@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
@@ -816,6 +817,10 @@ export function GroomingBookingRouter({
             address={selectedAddress}
             showAddressSelection={selectedServiceType === 'at_home'}
             baseAmount={allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) || selectedServiceOption?.price || price || 499}
+            priceIncludesTax={
+              catalogPriceIncludesTax(selectedServiceOption) ||
+              (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices[0]))
+            }
             duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
             quantity={1}
             customerPhone={phone}

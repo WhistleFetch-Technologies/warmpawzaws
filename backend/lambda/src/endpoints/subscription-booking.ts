@@ -317,98 +317,12 @@ class CreateSubscriptionBookingHandler extends BaseHandler {
 }
 
 // ============================================================================
-// GET SUBSCRIPTION USAGE HISTORY HANDLER
-// ============================================================================
-
-class GetSubscriptionUsageHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const subscriptionId = context.event.pathParameters?.subscriptionId;
-    const customerId = context.event.queryStringParameters?.customerId;
-
-    if (!subscriptionId && !customerId) {
-      return this.error('Subscription ID or Customer ID is required', 400);
-    }
-
-    try {
-      let usageLogs: any[] = [];
-
-      if (subscriptionId) {
-        const { rows } = await query(
-          `SELECT 
-            sul.id,
-            sul.booking_id,
-            sul.service_id,
-            sul.vendor_id,
-            sul.used_at,
-            vs.service_name as service_name,
-            v.business_name as vendor_name,
-            b.status as booking_status
-          FROM subscription_usage_logs sul
-          LEFT JOIN vendor_services vs ON vs.id = sul.service_id
-          LEFT JOIN vendors v ON v.id = sul.vendor_id
-          LEFT JOIN bookings b ON b.id = sul.booking_id
-          WHERE sul.subscription_id = $1
-          ORDER BY sul.used_at DESC
-          LIMIT 50`,
-          [subscriptionId]
-        );
-        usageLogs = rows;
-      } else if (customerId) {
-        const { rows } = await query(
-          `SELECT 
-            sul.id,
-            sul.subscription_id,
-            sul.booking_id,
-            sul.service_id,
-            sul.vendor_id,
-            sul.used_at,
-            vs.service_name as service_name,
-            v.business_name as vendor_name,
-            b.status as booking_status,
-            st.name as subscription_name
-          FROM subscription_usage_logs sul
-          JOIN customer_subscriptions cs ON cs.id = sul.subscription_id
-          JOIN subscription_types st ON st.id = cs.subscription_type_id
-          LEFT JOIN vendor_services vs ON vs.id = sul.service_id
-          LEFT JOIN vendors v ON v.id = sul.vendor_id
-          LEFT JOIN bookings b ON b.id = sul.booking_id
-          WHERE sul.customer_id = $1
-          ORDER BY sul.used_at DESC
-          LIMIT 50`,
-          [customerId]
-        );
-        usageLogs = rows;
-      }
-
-      return this.success({
-        success: true,
-        usage: usageLogs.map(log => ({
-          id: log.id,
-          subscriptionId: log.subscription_id,
-          subscriptionName: log.subscription_name,
-          bookingId: log.booking_id,
-          serviceName: log.service_name || 'Service',
-          vendorName: log.vendor_name || 'Vendor',
-          usedAt: log.used_at,
-          bookingStatus: log.booking_status,
-        })),
-        count: usageLogs.length,
-      });
-    } catch (error: any) {
-      console.error('Error fetching subscription usage:', error);
-      return this.error(error.message || 'Failed to fetch usage', 500);
-    }
-  }
-}
-
-// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
 export function registerSubscriptionBookingEndpoints(app: Hono) {
   const checkCoverageHandler = new CheckSubscriptionCoverageHandler();
   const createBookingHandler = new CreateSubscriptionBookingHandler();
-  const usageHandler = new GetSubscriptionUsageHandler();
 
   // Check if booking is covered by subscription
   app.post('/subscriptions/check-coverage', async (c) => {
@@ -444,35 +358,5 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // Get subscription usage history
-  app.get('/subscriptions/:subscriptionId/usage', async (c) => {
-    const event = {
-      httpMethod: 'GET',
-      path: `/subscriptions/${c.req.param('subscriptionId')}/usage`,
-      headers: {},
-      body: '',
-      pathParameters: { subscriptionId: c.req.param('subscriptionId') },
-      queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: randomUUID() },
-    };
-    const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
-    const result = await usageHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
-
-  // Get customer subscription usage
-  app.get('/customer/:customerId/subscription-usage', async (c) => {
-    const event = {
-      httpMethod: 'GET',
-      path: `/customer/${c.req.param('customerId')}/subscription-usage`,
-      headers: {},
-      body: '',
-      pathParameters: {},
-      queryStringParameters: { customerId: c.req.param('customerId') },
-      requestContext: { requestId: randomUUID() },
-    };
-    const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
-    const result = await usageHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
+  // GET /subscriptions/:subscriptionId/usage is registered in subscriptions.ts (avoid duplicate routes).
 }

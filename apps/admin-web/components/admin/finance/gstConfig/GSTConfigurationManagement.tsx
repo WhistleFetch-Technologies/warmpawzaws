@@ -64,11 +64,23 @@ interface TaxCategory {
   defaultGSTRate?: number;
   tax_rate?: number;
   applicableServices?: string[];
-  /** service_catalog rows with tax_category_id = this category */
+  /** service_catalog rows whose master category matches GST config */
   linkedCatalogServicesCount?: number;
+  catalogCategoryId?: string;
+  catalog_category_id?: string;
+  catalogCategoryName?: string;
+  catalog_category_name?: string;
+  role_ids?: string[];
+  roles?: { id: string; name: string; display_name: string }[];
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+interface CatalogMasterCategory {
+  id: string;
+  name?: string;
+  category_id?: string;
 }
 
 function toFiniteTaxRate(v: unknown): number | undefined {
@@ -109,11 +121,56 @@ export function GSTConfigurationManagement() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingHSN, setEditingHSN] = useState<HSNCode | null>(null);
   const [editingCategory, setEditingCategory] = useState<TaxCategory | null>(null);
+  const [catalogMasterCategories, setCatalogMasterCategories] = useState<CatalogMasterCategory[]>([]);
+  const [catalogRolesOptions, setCatalogRolesOptions] = useState<
+    { id: string; name: string; display_name: string }[]
+  >([]);
+  const [loadingCatalogRoles, setLoadingCatalogRoles] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const loadCatalogMasterCategories = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/catalog/categories');
+      setCatalogMasterCategories(Array.isArray(data.categories) ? data.categories : []);
+    } catch (e) {
+      console.error(e);
+      setCatalogMasterCategories([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!showCategoryModal) return;
+    loadCatalogMasterCategories();
+  }, [showCategoryModal]);
+
+  useEffect(() => {
+    const cid =
+      editingCategory?.catalogCategoryId ?? editingCategory?.catalog_category_id ?? '';
+    if (!showCategoryModal || !cid) {
+      setCatalogRolesOptions([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCatalogRoles(true);
+    apiClient
+      .get<any>(`/admin/finance/gst/catalog-category-roles?catalogCategoryId=${encodeURIComponent(cid)}`)
+      .then((d) => {
+        if (!cancelled) setCatalogRolesOptions(Array.isArray(d.roles) ? d.roles : []);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogRolesOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCatalogRoles(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showCategoryModal, editingCategory?.catalogCategoryId, editingCategory?.catalog_category_id]);
 
   const loadData = async () => {
     setLoading(true);
@@ -132,7 +189,7 @@ export function GSTConfigurationManagement() {
               description: r.description ?? '',
               category: r.tax_category_name ?? r.category,
               categoryId: (r.category_id ?? r.categoryId) || undefined,
-              gstRate: r.gst_rate ?? r.gstRate ?? 0,
+              gstRate: Number(r.effective_gst_rate ?? r.gst_rate ?? r.gstRate ?? 0),
               isActive: r.is_active !== false,
               createdAt: r.created_at,
               updatedAt: r.updated_at,
@@ -159,6 +216,10 @@ export function GSTConfigurationManagement() {
                 applicableServices: c.applicableServices ?? c.applicable_services ?? [],
                 linkedCatalogServicesCount:
                   c.linked_catalog_service_count ?? c.linkedCatalogServicesCount ?? 0,
+                catalogCategoryId: c.catalog_category_id ?? c.catalogCategoryId,
+                catalogCategoryName: c.catalog_category_name ?? c.catalogCategoryName,
+                role_ids: c.role_ids ?? (Array.isArray(c.roles) ? c.roles.map((x: { id: string }) => x.id) : []),
+                roles: c.roles ?? [],
                 isActive: c.is_active !== false,
                 createdAt: c.created_at,
                 updatedAt: c.updated_at,
@@ -181,7 +242,6 @@ export function GSTConfigurationManagement() {
       const payload = {
         code: editingHSN.code,
         description: editingHSN.description,
-        gstRate: editingHSN.gstRate,
         isActive: editingHSN.isActive,
         categoryId: editingHSN.categoryId || null,
       };
@@ -223,16 +283,36 @@ export function GSTConfigurationManagement() {
 
   const handleSaveCategory = async () => {
     if (!editingCategory) return;
+    const catalogId =
+      editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id ?? '';
+    const roleIds = editingCategory.role_ids ?? [];
+    if (!catalogId) {
+      toast.error('Select a catalogue category');
+      return;
+    }
+    if (!roleIds.length) {
+      toast.error('Select at least one applicable role');
+      return;
+    }
     setSaving(true);
     try {
+      const raw = editingCategory.defaultGSTRate;
+      const defaultGSTRate =
+        typeof raw === 'number' && Number.isFinite(raw)
+          ? Math.min(100, Math.max(0, raw))
+          : 0;
+      const body = {
+        catalogCategoryId: catalogId,
+        description: editingCategory.description ?? '',
+        defaultGSTRate,
+        roleIds,
+        isActive: editingCategory.isActive !== false,
+      };
       if (editingCategory.id) {
-        await apiClient.put(
-          `/admin/finance/gst/tax-categories/${editingCategory.id}`,
-          editingCategory
-        );
+        await apiClient.put(`/admin/finance/gst/tax-categories/${editingCategory.id}`, body);
         toast.success('Tax category updated successfully');
       } else {
-        await apiClient.post('/admin/finance/gst/tax-categories', editingCategory);
+        await apiClient.post('/admin/finance/gst/tax-categories', body);
         toast.success('Tax category created successfully');
       }
       setShowCategoryModal(false);
@@ -379,7 +459,7 @@ export function GSTConfigurationManagement() {
                   <TableHead>HSN Code</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>GST Rate</TableHead>
+                  <TableHead>GST % (from tax category)</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -446,6 +526,8 @@ export function GSTConfigurationManagement() {
                   description: '',
                   defaultGSTRate: 0,
                   applicableServices: [],
+                  catalogCategoryId: '',
+                  role_ids: [],
                   isActive: true,
                 });
                 setShowCategoryModal(true);
@@ -477,32 +559,35 @@ export function GSTConfigurationManagement() {
                         {`${parseTaxCategoryGstRate(category as Partial<Record<string, unknown>>).toFixed(2)}%`}
                       </span>
                     </div>
+                    {(category.catalogCategoryName || category.catalog_category_name) && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Catalogue category</span>
+                        <span className="font-medium text-right">
+                          {category.catalogCategoryName ?? category.catalog_category_name}
+                        </span>
+                      </div>
+                    )}
+                    {(category.roles?.length ?? 0) > 0 && (
+                      <div className="text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">Applicable roles: </span>
+                        {(category.roles ?? [])
+                          .map((r) => r.display_name || r.name)
+                          .filter(Boolean)
+                          .join(', ')}
+                      </div>
+                    )}
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-sm text-gray-600">
-                        Linked catalog services
-                        <span className="block text-xs font-normal text-gray-500 mt-0.5">
-                          service_catalog.tax_category_id
-                        </span>
+                        Services in catalogue (same master category)
                       </span>
                       <span className="font-semibold shrink-0">
                         {category.linkedCatalogServicesCount ?? 0}
                       </span>
                     </div>
-                    {(category.applicableServices ?? []).length > 0 && (
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>IDs on category row (legacy)</span>
-                        <span>{(category.applicableServices ?? []).length}</span>
-                      </div>
-                    )}
                     {(category.linkedCatalogServicesCount ?? 0) === 0 && (
                       <p className="text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-md p-2.5 mt-1 leading-relaxed">
-                        <strong>0</strong> means no row in <code className="text-[11px]">service_catalog</code> has{' '}
-                        <strong>Tax Category</strong> set to this UUID. Checkout tax still can use HSN or{' '}
-                        <strong>Flexible Tax</strong> rules; they are separate from this link. To raise this count, go to{' '}
-                        <Link href="/catalog" className="underline font-medium text-amber-950 hover:text-amber-800">
-                          Catalog
-                        </Link>{' '}
-                        and assign <strong>Tax Category</strong> on each service.
+                        No <code className="text-[11px]">service_catalog</code> rows use this master category slug yet.
+                        GST at checkout uses <strong>Catalogue category + vendor role</strong> from this config.
                       </p>
                     )}
                   </div>
@@ -512,7 +597,11 @@ export function GSTConfigurationManagement() {
                       size="sm"
                       className="flex-1"
                       onClick={() => {
-                        setEditingCategory(category);
+                        setEditingCategory({
+                          ...category,
+                          catalogCategoryId: category.catalogCategoryId ?? category.catalog_category_id,
+                          role_ids: category.role_ids ?? category.roles?.map((r) => r.id) ?? [],
+                        });
                         setShowCategoryModal(true);
                       }}
                     >
@@ -533,7 +622,10 @@ export function GSTConfigurationManagement() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingHSN.id ? 'Edit HSN Code' : 'Add HSN Code'}</DialogTitle>
-              <DialogDescription>Configure HSN code details and GST rates</DialogDescription>
+              <DialogDescription>
+                HSN/SAC code and linked tax category. GST % is taken from the selected tax category (not stored
+                separately on the HSN row for new configs).
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -563,6 +655,11 @@ export function GSTConfigurationManagement() {
                       ...editingHSN,
                       categoryId: e.target.value || undefined,
                       category: safeTaxCategories.find((c) => c.id === e.target.value)?.name ?? safeTaxCategories.find((c) => c.id === e.target.value)?.category_name ?? '',
+                      gstRate: parseTaxCategoryGstRate(
+                        (safeTaxCategories.find((c) => c.id === e.target.value) ?? {}) as Partial<
+                          Record<string, unknown>
+                        >
+                      ),
                     })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#FF8C42] focus:border-[#FF8C42]"
@@ -575,20 +672,21 @@ export function GSTConfigurationManagement() {
                   ))}
                 </select>
                 <p className="text-xs text-gray-500">
-                  Link to GST Configuration tax category. The same HSN code can exist on multiple rows with
-                  different categories; tax resolution prefers the row whose category matches the service when
-                  resolving by code.
+                  GST rate is loaded from this tax category. Required for saving.
                 </p>
-              </div>
-              <div className="space-y-2">
-                <Label>GST Rate (%)</Label>
-                <Input
-                  type="number"
-                  value={editingHSN.gstRate}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditingHSN({ ...editingHSN, gstRate: parseFloat(e.target.value) })
-                  }
-                />
+                {editingHSN.categoryId ? (
+                  <p className="text-sm text-gray-700">
+                    Effective GST:{' '}
+                    <strong>
+                      {parseTaxCategoryGstRate(
+                        (safeTaxCategories.find((c) => c.id === editingHSN.categoryId) ?? {}) as Partial<
+                          Record<string, unknown>
+                        >
+                      ).toFixed(2)}
+                      %
+                    </strong>
+                  </p>
+                ) : null}
               </div>
               <div className="flex items-center justify-between">
                 <Label>Active</Label>
@@ -606,7 +704,7 @@ export function GSTConfigurationManagement() {
               </Button>
               <Button
                 onClick={handleSaveHSN}
-                disabled={saving}
+                disabled={saving || !editingHSN.categoryId}
                 className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
               >
                 {saving ? 'Saving...' : 'Save'}
@@ -619,23 +717,77 @@ export function GSTConfigurationManagement() {
       {/* Tax Category Modal */}
       {showCategoryModal && editingCategory && (
         <Dialog open={showCategoryModal} onOpenChange={setShowCategoryModal}>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingCategory.id ? 'Edit Tax Category' : 'Add Tax Category'}
               </DialogTitle>
-              <DialogDescription>Configure tax category details</DialogDescription>
+              <DialogDescription>
+                Tie GST to an Admin → Catalogue → Categories entry and the vendor roles allowed for that master
+                category (from specialization mapping).
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Category Name</Label>
-                <Input
-                  value={editingCategory.name}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditingCategory({ ...editingCategory, name: e.target.value })
-                  }
-                  placeholder="e.g., Pet Services"
-                />
+                <Label>Catalogue category</Label>
+                <select
+                  value={editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id ?? ''}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    const v = e.target.value;
+                    setEditingCategory({
+                      ...editingCategory,
+                      catalogCategoryId: v,
+                      catalog_category_id: v,
+                      role_ids: [],
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#FF8C42] focus:border-[#FF8C42]"
+                >
+                  <option value="">— Select category —</option>
+                  {catalogMasterCategories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name || cat.category_id || cat.id}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">Loaded fresh from Catalogue each time you open this modal.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Applicable Roles</Label>
+                {loadingCatalogRoles ? (
+                  <p className="text-sm text-gray-500">Loading roles for this category…</p>
+                ) : !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id) ? (
+                  <p className="text-sm text-gray-500">Select a catalogue category to load roles.</p>
+                ) : catalogRolesOptions.length === 0 ? (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-md p-2">
+                    No roles match this catalogue category (specialization applicable_roles or vendor Service
+                    bucket). Add specs under Catalogue → Categories, set Service on Vendor Roles and
+                    Configuration, or pick another category.
+                  </p>
+                ) : (
+                  <div className="border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                    {catalogRolesOptions.map((r) => {
+                      const selected = (editingCategory.role_ids ?? []).includes(r.id);
+                      return (
+                        <label key={r.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => {
+                              const cur = editingCategory.role_ids ?? [];
+                              const next = selected
+                                ? cur.filter((x) => x !== r.id)
+                                : [...cur, r.id];
+                              setEditingCategory({ ...editingCategory, role_ids: next });
+                            }}
+                            className="rounded border-gray-300"
+                          />
+                          <span>{r.display_name || r.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
@@ -659,12 +811,15 @@ export function GSTConfigurationManagement() {
                   }
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const v = parseFloat(e.target.value);
+                    const num = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
                     setEditingCategory({
                       ...editingCategory,
-                      defaultGSTRate: Number.isFinite(v) ? v : 0,
+                      defaultGSTRate: num,
+                      tax_rate: num,
                     });
                   }}
                 />
+                <p className="text-xs text-gray-500">Single source of truth for GST % for this configuration.</p>
               </div>
               <div className="flex items-center justify-between">
                 <Label>Active</Label>
@@ -682,7 +837,11 @@ export function GSTConfigurationManagement() {
               </Button>
               <Button
                 onClick={handleSaveCategory}
-                disabled={saving}
+                disabled={
+                  saving ||
+                  !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id) ||
+                  !(editingCategory.role_ids ?? []).length
+                }
                 className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
               >
                 {saving ? 'Saving...' : 'Save'}

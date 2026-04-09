@@ -29,7 +29,6 @@ import {
 	GSTConfigurationManagement,
 	CancellationPolicyManagement,
 	DynamicSettlementRulesManager,
-	FlexibleTaxRulesManager,
 	EcommercePoliciesSection,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
@@ -56,7 +55,6 @@ type TabType =
 	| "cancellation-policy"
 	| "ecommerce-policies"
 	| "gst-config"
-	| "flexible-tax"
 	| "settlements"
 	| "payouts"
 	| "tiers"
@@ -67,7 +65,7 @@ type TabType =
 function FinanceManagementContent() {
 	const searchParams = useSearchParams();
 	const tabFromUrl = searchParams.get("tab") as TabType | null;
-	const validTabs: TabType[] = ["dashboard", "fee-config", "payment-policies", "cancellation-policy", "ecommerce-policies", "gst-config", "flexible-tax", "settlements", "payouts", "tiers", "schedule-settings", "payment-settings", "settlement-rules"];
+	const validTabs: TabType[] = ["dashboard", "fee-config", "payment-policies", "cancellation-policy", "ecommerce-policies", "gst-config", "settlements", "payouts", "tiers", "schedule-settings", "payment-settings", "settlement-rules"];
 	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
 	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 	const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
@@ -147,7 +145,6 @@ function FinanceManagementContent() {
 		},
 		{ id: "ecommerce-policies", label: "Ecommerce Policies", icon: Package },
 		{ id: "gst-config", label: "GST Configuration", icon: ReceiptText },
-		{ id: "flexible-tax", label: "Flexible Tax System", icon: ReceiptText },
 		{ id: "settlements", label: "Settlements", icon: Receipt },
 		{ id: "payouts", label: "Payout Management", icon: Wallet },
 		{ id: "tiers", label: "Tier System", icon: Layers },
@@ -347,12 +344,6 @@ function FinanceManagementContent() {
 					{activeTab === "gst-config" && (
 						<div className="bg-white rounded-lg border border-gray-200 p-6">
 							<GSTConfigurationManagement />
-						</div>
-					)}
-
-					{activeTab === "flexible-tax" && (
-						<div className="bg-white rounded-lg border border-gray-200 p-6">
-							<FlexibleTaxRulesManager />
 						</div>
 					)}
 

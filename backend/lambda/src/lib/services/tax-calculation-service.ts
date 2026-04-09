@@ -7,7 +7,8 @@
  */
 
 import { query } from '../../database/rds-connection';
-import { resolveGstStateKey } from '../gst-place-of-supply';
+import { isGstInterstateSupply, resolveGstStateKey } from '../gst-place-of-supply';
+import { resolveGstRateForCatalogAndRole } from './gst-catalog-role-resolution';
 
 /** DB NUMERIC / JSON may return rates as strings; normalize for math and API JSON. */
 function coerceRate(value: unknown, fallback: number): number {
@@ -35,14 +36,19 @@ export interface TaxCalculationParams {
 export interface TaxItem {
   id: string;
   type: 'product' | 'service';
-  hsnCode?: string;       // HSN code string (e.g. '9996') - from GST Configuration
-  hsnCodeId?: string;     // HSN code UUID - when linked via service_catalog.hsn_code_id
-  taxCategoryId?: string; // Tax category UUID - when linked via service_catalog.tax_category_id
+  hsnCode?: string;       // HSN code string (e.g. '9996') — products / goods
+  hsnCodeId?: string;     // HSN row UUID — products
+  taxCategoryId?: string; // Legacy; ignored for services (GST from catalogue category + role)
+  /** service_categories.id — Admin Catalogue category; with vendor role → GST Configuration */
+  catalogCategoryId?: string;
   amount: number;
   quantity?: number;
   category?: string;
   serviceStyle?: 'at_center' | 'at_home' | 'tele' | 'hybrid';
+  /** vendors.role_id (UUID) for GST role mapping */
   roleId?: string;
+  /** When true, `amount` × qty is tax-inclusive; engine derives taxable value as amount/(1+gst%/100). */
+  amountIsTaxInclusive?: boolean;
 }
 
 export interface TaxBreakdown {
@@ -87,7 +93,7 @@ export interface TaxCalculationResult {
 
 export class TaxCalculationService {
   /**
-   * Calculate tax for items based on HSN codes and tax rules
+   * Calculate tax: products via HSN / tax category; services via catalogue category + vendor role; default 18%.
    */
   async calculateTax(params: TaxCalculationParams): Promise<TaxCalculationResult> {
     const { items, customerLocation, vendorLocation, vendorId, serviceType, category } = params;
@@ -96,71 +102,87 @@ export class TaxCalculationService {
     // City-only + same city/state inference avoids false IGST when both sides are e.g. Bangalore/Karnataka.
     const customerStateKey = resolveGstStateKey(customerLocation?.state, customerLocation?.city);
     const vendorStateKey = resolveGstStateKey(vendorLocation?.state, vendorLocation?.city);
-    const isInterstate =
-      customerStateKey && vendorStateKey ? customerStateKey !== vendorStateKey : true;
+    const isInterstate = isGstInterstateSupply(customerStateKey, vendorStateKey);
+    if (process.env.LOG_GST === '1') {
+      console.log('[GST]', {
+        customerStateKey,
+        vendorStateKey,
+        isInterstate,
+      });
+    }
+    if (isInterstate && (!customerStateKey || !vendorStateKey)) {
+      console.warn('[GST] Missing place of supply; defaulting to IGST', {
+        customerStateKey,
+        vendorStateKey,
+      });
+    }
 
     const taxBreakdowns: TaxBreakdown[] = [];
     let subtotal = 0;
 
     // Calculate tax for each item
     for (const item of items) {
-      const itemAmount = item.amount * (item.quantity || 1);
-      subtotal += itemAmount;
+      const quantity = item.quantity || 1;
+      const lineInputTotal = item.amount * quantity;
 
-      // Get applicable tax rule for this item
-      const taxRule = await this.getApplicableTaxRule({
-        item,
-        customerLocation,
-        vendorLocation,
-        vendorId,
-        serviceType: serviceType || item.category,
-        category: category || item.category,
-      });
+      // CGST/SGST split metadata only — statutory % comes from HSN / tax category / catalogue+role / 18% default.
+      const taxRule = this.getDefaultGstComponentRule();
 
-      // Resolution chain: HSN (by ID, must match tax category when both set) → HSN (by code + category) → Tax Category → Tax Rule → 18%
-      let hsnDetails = null;
-      let taxCategoryDetails = null;
-      let hsnCodeToRescope: string | undefined;
-      if (item.hsnCodeId) {
-        const byId = await this.getHSNCodeById(item.hsnCodeId);
-        if (byId) {
-          const rowCat = byId.category_id ?? byId.tax_category_id;
-          const codeStr = byId.hsn_code || byId.code;
-          if (
-            item.taxCategoryId &&
-            rowCat != null &&
-            String(rowCat) !== String(item.taxCategoryId)
-          ) {
-            // catalog FK can point at another category's row for the same SAC (e.g. 998351 boarding 18% vs vet 16%)
-            hsnCodeToRescope = codeStr;
-            hsnDetails = null;
-          } else if (item.taxCategoryId && rowCat == null && codeStr) {
-            // legacy rows without category_id: prefer HSN row scoped to service tax category when duplicates exist
-            const scoped = await this.getHSNCodeByCode(String(codeStr), item.taxCategoryId);
-            hsnDetails = scoped || byId;
-          } else {
-            hsnDetails = byId;
+      let hsnDetails: any = null;
+      let taxCategoryDetails: any = null;
+      let gstRate: number;
+
+      if (item.type === 'service') {
+        if (item.catalogCategoryId) {
+          const resolved = await resolveGstRateForCatalogAndRole(
+            item.catalogCategoryId,
+            item.roleId
+          );
+          gstRate = coerceRate(resolved.rate, 18);
+        } else {
+          gstRate = 18;
+        }
+      } else {
+        let hsnCodeToRescope: string | undefined;
+        if (item.hsnCodeId) {
+          const byId = await this.getHSNCodeById(item.hsnCodeId);
+          if (byId) {
+            const rowCat = byId.category_id ?? byId.tax_category_id;
+            const codeStr = byId.hsn_code || byId.code;
+            if (
+              item.taxCategoryId &&
+              rowCat != null &&
+              String(rowCat) !== String(item.taxCategoryId)
+            ) {
+              hsnCodeToRescope = codeStr;
+              hsnDetails = null;
+            } else if (item.taxCategoryId && rowCat == null && codeStr) {
+              const scoped = await this.getHSNCodeByCode(String(codeStr), item.taxCategoryId);
+              hsnDetails = scoped || byId;
+            } else {
+              hsnDetails = byId;
+            }
           }
         }
-      }
-      if (!hsnDetails && (item.hsnCode || hsnCodeToRescope)) {
-        hsnDetails = await this.getHSNCodeByCode(
-          String(item.hsnCode || hsnCodeToRescope),
-          item.taxCategoryId
-        );
-      }
-      if (!hsnDetails && item.taxCategoryId) {
-        taxCategoryDetails = await this.getTaxCategoryDetails(item.taxCategoryId);
-      }
+        if (!hsnDetails && (item.hsnCode || hsnCodeToRescope)) {
+          hsnDetails = await this.getHSNCodeByCode(
+            String(item.hsnCode || hsnCodeToRescope),
+            item.taxCategoryId
+          );
+        }
+        if (!hsnDetails && item.taxCategoryId) {
+          taxCategoryDetails = await this.getTaxCategoryDetails(item.taxCategoryId);
+        }
 
-      const gstRate = coerceRate(
-        hsnDetails?.gst_rate ??
-          taxCategoryDetails?.tax_rate ??
-          taxCategoryDetails?.default_gst_rate ??
-          taxRule.gst_rate ??
-          18,
-        18
-      );
+        if (hsnDetails) {
+          gstRate = await this.effectiveGstRateFromHsnRow(hsnDetails);
+        } else {
+          gstRate = coerceRate(
+            taxCategoryDetails?.tax_rate ?? taxCategoryDetails?.default_gst_rate,
+            18
+          );
+        }
+      }
 
       // Intra-state split from rule, but rule CGST+SGST must sum to statutory gstRate (HSN/category).
       // Otherwise a 9%+9% rule with gstRate 10% would show wrong components and mismatch totalTax.
@@ -172,21 +194,24 @@ export class TaxCalculationService {
         sgstRate = Math.round((gstRate - cgstRate) * 100) / 100;
       }
 
-      // Interstate: IGST must use the same composite % as HSN/tax category — do not let
-      // gst_rules.igst_percentage override (e.g. 18% rule vs 10% catalogue).
       const igstRate = gstRate;
 
-      const taxAmount = (itemAmount * gstRate) / 100;
-      const cgstAmount = isInterstate ? 0 : (itemAmount * cgstRate) / 100;
-      const sgstAmount = isInterstate ? 0 : (itemAmount * sgstRate) / 100;
+      const taxableAmount = item.amountIsTaxInclusive
+        ? lineInputTotal / (1 + gstRate / 100)
+        : lineInputTotal;
+      subtotal += taxableAmount;
+
+      const taxAmount = (taxableAmount * gstRate) / 100;
+      const cgstAmount = isInterstate ? 0 : (taxableAmount * cgstRate) / 100;
+      const sgstAmount = isInterstate ? 0 : (taxableAmount * sgstRate) / 100;
       const igstAmount = isInterstate ? taxAmount : 0;
 
       taxBreakdowns.push({
         itemId: item.id,
         itemType: item.type,
         hsnCode: item.hsnCode || hsnDetails?.hsn_code || hsnDetails?.code,
-        baseAmount: itemAmount,
-        quantity: item.quantity || 1,
+        baseAmount: taxableAmount,
+        quantity,
         gstRate,
         cgstRate,
         sgstRate,
@@ -195,7 +220,7 @@ export class TaxCalculationService {
         sgstAmount,
         igstAmount,
         totalTax: taxAmount,
-        totalAmount: itemAmount + taxAmount,
+        totalAmount: taxableAmount + taxAmount,
         taxRuleId: taxRule.id,
         taxRuleName: taxRule.rule_name,
       });
@@ -225,88 +250,17 @@ export class TaxCalculationService {
   }
 
   /**
-   * Get applicable tax rule for an item
+   * Default component labels for CGST/SGST/IGST breakdown. Per-line statutory % always comes from
+   * HSN → tax category → (services) catalogue category + role → 18% — not from gst_rules.
    */
-  private async getApplicableTaxRule(params: {
-    item: TaxItem;
-    customerLocation?: { state: string };
-    vendorLocation?: { state: string };
-    vendorId?: string;
-    serviceType?: string;
-    category?: string;
-  }): Promise<any> {
-    const { item, customerLocation, vendorLocation, vendorId, serviceType, category } = params;
-
-    let queryStr = `
-      SELECT * FROM gst_rules
-      WHERE enabled = true
-    `;
-    const queryParams: any[] = [];
-    let paramIndex = 1;
-
-    // Filter by role if provided
-    if (item.roleId) {
-      queryStr += ` AND (role_id IS NULL OR role_id = $${paramIndex})`;
-      queryParams.push(item.roleId);
-      paramIndex++;
-    }
-
-    // Filter by service style
-    if (item.serviceStyle) {
-      queryStr += ` AND (service_style IS NULL OR service_style = $${paramIndex})`;
-      queryParams.push(item.serviceStyle);
-      paramIndex++;
-    }
-
-    // Filter by category (legacy TEXT)
-    if (category || item.category) {
-      queryStr += ` AND (category IS NULL OR category = $${paramIndex})`;
-      queryParams.push(category || item.category);
-      paramIndex++;
-    }
-
-    // Filter by tax_category_id (FK - selection not enter)
-    if (item.taxCategoryId) {
-      queryStr += ` AND (tax_category_id IS NULL OR tax_category_id = $${paramIndex})`;
-      queryParams.push(item.taxCategoryId);
-      paramIndex++;
-    }
-
-    // Filter by customer state
-    if (customerLocation?.state) {
-      queryStr += ` AND (customer_state IS NULL OR customer_state = $${paramIndex})`;
-      queryParams.push(customerLocation.state);
-      paramIndex++;
-    }
-
-    // Filter by vendor state
-    if (vendorLocation?.state) {
-      queryStr += ` AND (vendor_state IS NULL OR vendor_state = $${paramIndex})`;
-      queryParams.push(vendorLocation.state);
-      paramIndex++;
-    }
-
-    // Filter by amount range if applicable
-    if (item.amount) {
-      queryStr += ` AND (min_amount IS NULL OR min_amount <= $${paramIndex})`;
-      queryParams.push(item.amount);
-      paramIndex++;
-      queryStr += ` AND (max_amount IS NULL OR max_amount >= $${paramIndex})`;
-      queryParams.push(item.amount);
-      paramIndex++;
-    }
-
-    // Order by priority and get the most specific rule
-    queryStr += ` ORDER BY priority DESC LIMIT 1`;
-
-    const result = await query(queryStr, queryParams);
-    const rows = Array.isArray(result) ? result : (result as any).rows || [];
-
-    if (rows.length > 0) {
-      return rows[0];
-    }
-
-    // Return default tax rule
+  private getDefaultGstComponentRule(): {
+    id: null;
+    rule_name: string;
+    gst_rate: number;
+    cgst_percentage: number;
+    sgst_percentage: number;
+    igst_percentage: number;
+  } {
     return {
       id: null,
       rule_name: 'Default GST Rule',
@@ -315,6 +269,20 @@ export class TaxCalculationService {
       sgst_percentage: 9,
       igst_percentage: 18,
     };
+  }
+
+  /**
+   * Product HSN: statutory % from linked tax_categories row when category_id is set; else legacy hsn_codes.gst_rate.
+   */
+  private async effectiveGstRateFromHsnRow(hsnRow: Record<string, unknown>): Promise<number> {
+    const linkCat = hsnRow.category_id ?? hsnRow.tax_category_id;
+    if (linkCat != null && String(linkCat).trim() !== '') {
+      const tc = await this.getTaxCategoryDetails(String(linkCat));
+      if (tc) {
+        return coerceRate(tc.tax_rate ?? tc.default_gst_rate ?? tc.gst_rate, 18);
+      }
+    }
+    return coerceRate(hsnRow.gst_rate, 18);
   }
 
   /**

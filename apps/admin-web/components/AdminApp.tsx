@@ -52,14 +52,6 @@ interface Tier {
   is_active: boolean;
 }
 
-interface TaxRule {
-  id: string;
-  name: string;
-  rate: number;
-  category: string;
-  is_active: boolean;
-}
-
 interface Promotion {
   id: string;
   code: string;
@@ -204,7 +196,6 @@ export function AdminApp() {
   const [allVendors, setAllVendors] = useState<Vendor[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [tiers, setTiers] = useState<Tier[]>([]);
-  const [taxRules, setTaxRules] = useState<TaxRule[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
@@ -231,7 +222,6 @@ export function AdminApp() {
   useEffect(() => {
     if (activeTab === 'roles' && roles.length === 0) loadRoles();
     if (activeTab === 'tiers' && tiers.length === 0) loadTiers();
-    if (activeTab === 'taxes' && taxRules.length === 0) loadTaxRules();
     if (activeTab === 'promotions' && promotions.length === 0) loadPromotions();
     if (activeTab === 'banners' && banners.length === 0) loadBanners();
     if (activeTab === 'settings' && !settings) loadSettings();
@@ -319,15 +309,6 @@ export function AdminApp() {
       setTiers(response.tiers || []);
     } catch (err) {
       console.error('Error loading tiers:', err);
-    }
-  };
-
-  const loadTaxRules = async () => {
-    try {
-      const response = await apiClient.get<any>('/admin/tax-rules');
-      setTaxRules(response.rules || []);
-    } catch (err) {
-      console.error('Error loading tax rules:', err);
     }
   };
 

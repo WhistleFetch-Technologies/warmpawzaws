@@ -25,8 +25,6 @@ interface Service {
   specializationIds?: string[];
   metadata?: Record<string, unknown>;
   isPackage?: boolean;
-  taxCategoryId?: string;
-  hsnCodeId?: string;
 }
 
 export type FilterMissing = 'none' | 'roles' | 'specialization' | 'style' | 'price' | 'duration';
@@ -105,8 +103,6 @@ export function ServiceCatalogTab() {
         specializationIds: s.specialization_ids || s.specializationIds || [],
         metadata: s.metadata || {},
         isPackage: !!(s.metadata?.isPackage ?? s.isPackage),
-        taxCategoryId: s.tax_category_id,
-        hsnCodeId: s.hsn_code_id,
       }));
       
       console.log('🔍 [ServiceCatalogTab] Mapped services:', mappedServices.length);

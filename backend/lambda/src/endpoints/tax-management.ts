@@ -9,14 +9,21 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { applyGstRulesRateFallback, pickTaxCategoryDisplayRate } from '../utils/tax-category-display-rate';
-import { loadGstRuleRatesByTaxCategoryId } from '../utils/tax-category-gst-rule-rates';
+import { pickTaxCategoryDisplayRate } from '../utils/tax-category-display-rate';
 import { isValidUUID } from '../types/entities';
 import {
   displayStateFromKey,
   inferStateFromPlainAddressText,
   resolveGstStateKey,
 } from '../lib/gst-place-of-supply';
+import { findCustomerByPhone } from '../utils/customer-phone-lookup';
+import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
+
+/** service_catalog / vendor_services metadata: admin "Show final price (incl. taxes)" */
+function catalogPriceIncludesTaxMeta(meta: unknown): boolean {
+  if (meta == null || typeof meta !== 'object') return false;
+  return !!(meta as Record<string, unknown>).show_final_price_inclusive_tax;
+}
 
 /** Address may be a JSON object, a JSON string, or legacy plain text (e.g. "Bangalore") — never JSON.parse blindly. */
 function addressFieldToLocation(raw: unknown): { state?: string; city?: string; pincode?: string } | null {
@@ -431,15 +438,13 @@ class GetTaxCategoriesHandler extends BaseHandler {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      const gstRuleRatesByCategoryId = await loadGstRuleRatesByTaxCategoryId();
       const sorted = [...rows].sort((a: any, b: any) =>
         String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
           sensitivity: 'base',
         })
       );
       const taxCategories = sorted.map((row: Record<string, any>) => {
-        const base = pickTaxCategoryDisplayRate(row);
-        const tax_rate = applyGstRulesRateFallback(base, row.id, gstRuleRatesByCategoryId);
+        const tax_rate = pickTaxCategoryDisplayRate(row);
         return {
           ...row,
           category_name: row.category_name ?? row.name,
@@ -814,7 +819,15 @@ export function registerTaxManagementEndpoints(app: Hono) {
   app.post('/tax/calculate', async (c) => {
     try {
       const body = await c.req.json();
-      const { items, vendorId, customerId, customerLocation, vendorLocation } = body;
+      const {
+        items,
+        vendorId,
+        customerId,
+        customerPhone: bodyCustomerPhone,
+        customerLocation,
+        vendorLocation,
+        bookingId: requestBookingId,
+      } = body;
 
       if (!items || !Array.isArray(items) || items.length === 0) {
         return c.json({ error: 'items array is required' }, 400);
@@ -825,20 +838,32 @@ export function registerTaxManagementEndpoints(app: Hono) {
       let customerCityRaw = customerLocation?.city;
       let customerPincode = customerLocation?.pincode;
 
-      if (customerId) {
-        const customers = await select('customers', { id: customerId });
-        if (customers.length > 0 && customers[0].address) {
-          const addr = addressFieldToLocation(customers[0].address);
-          if (addr) {
-            if (!customerStateRaw && addr.state) customerStateRaw = addr.state;
-            if (!customerCityRaw && addr.city) customerCityRaw = addr.city;
-            if (!customerPincode && addr.pincode) customerPincode = addr.pincode;
-          } else if (typeof customers[0].address === 'string') {
-            const inf = inferStateFromPlainAddressText(customers[0].address);
-            if (inf) {
-              if (!customerStateRaw) customerStateRaw = displayStateFromKey(inf.stateKey);
-              if (!customerCityRaw && inf.city) customerCityRaw = inf.city;
-            }
+      let customerRow: Record<string, unknown> | null = null;
+      if (customerId && isValidUUID(String(customerId))) {
+        const byId = await select('customers', { id: String(customerId) });
+        if (byId.length > 0) customerRow = byId[0] as Record<string, unknown>;
+      }
+      const trimmedBodyPhone =
+        typeof bodyCustomerPhone === 'string' ? bodyCustomerPhone.trim() : '';
+      const idAsPhone =
+        customerId && !isValidUUID(String(customerId)) ? String(customerId).trim() : '';
+      const phoneForLookup = trimmedBodyPhone || idAsPhone;
+      if (!customerRow && phoneForLookup) {
+        const byPhone = await findCustomerByPhone(phoneForLookup);
+        if (byPhone) customerRow = byPhone as Record<string, unknown>;
+      }
+
+      if (customerRow?.address) {
+        const addr = addressFieldToLocation(customerRow.address);
+        if (addr) {
+          if (!customerStateRaw && addr.state) customerStateRaw = addr.state;
+          if (!customerCityRaw && addr.city) customerCityRaw = addr.city;
+          if (!customerPincode && addr.pincode) customerPincode = addr.pincode;
+        } else if (typeof customerRow.address === 'string') {
+          const inf = inferStateFromPlainAddressText(customerRow.address);
+          if (inf) {
+            if (!customerStateRaw) customerStateRaw = displayStateFromKey(inf.stateKey);
+            if (!customerCityRaw && inf.city) customerCityRaw = inf.city;
           }
         }
       }
@@ -889,7 +914,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
         vendorState = vendorStateRaw;
       }
 
-      // Resolve each item: serviceId/productId → hsnCodeId, taxCategoryId
+      // Services: GST from Admin Catalogue category + vendor role (GST Configuration).
+      // Products: HSN / tax category on product rows (unchanged).
       const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
 
       const taxItems: Array<{
@@ -900,9 +926,11 @@ export function registerTaxManagementEndpoints(app: Hono) {
         hsnCode?: string;
         hsnCodeId?: string;
         taxCategoryId?: string;
+        catalogCategoryId?: string;
         category?: string;
         serviceStyle?: string;
         roleId?: string;
+        amountIsTaxInclusive?: boolean;
       }> = [];
 
       let vendorRoleId: string | undefined;
@@ -915,53 +943,117 @@ export function registerTaxManagementEndpoints(app: Hono) {
         const amount = Number(item.amount) || 0;
         const quantity = Number(item.quantity) || 1;
         const itemType = (item.type === 'product' ? 'product' : 'service') as 'product' | 'service';
-        let hsnCodeId: string | undefined;
-        let taxCategoryId: string | undefined;
-        let hsnCode: string | undefined;
         let category = item.category;
 
         const serviceId = item.serviceId;
         const productId = item.productId;
 
-        // 1) vendor_services row (requires vendor + vendor's offering UUID)
-        if (serviceId && vendorId) {
-          const vendorSvcs = await query(
-            `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
-             FROM vendor_services vs
-             LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-             WHERE vs.id = $1::uuid LIMIT 1`,
-            [serviceId]
-          ).catch(() => ({ rows: [] }));
-          if (vendorSvcs.rows?.length > 0) {
-            const row = vendorSvcs.rows[0];
-            taxCategoryId = row.tax_category_id;
-            hsnCodeId = row.hsn_code_id;
-            if (!category) category = row.category_name || row.category_id || row.category;
+        let amountIsTaxInclusive =
+          item.amountTaxInclusive === true || item.amount_is_tax_inclusive === true;
+
+        if (itemType === 'service') {
+          let scCatRef: string | undefined;
+          if (serviceId && vendorId) {
+            const vendorSvcs = await query(
+              `SELECT sc.category_id, sc.category_name, sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
+               FROM vendor_services vs
+               LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+               WHERE vs.id = $1::uuid LIMIT 1`,
+              [serviceId]
+            ).catch(() => ({ rows: [] }));
+            if (vendorSvcs.rows?.length > 0) {
+              const row = vendorSvcs.rows[0];
+              scCatRef = row.category_id;
+              if (!category) category = row.category_name || row.category_id;
+              if (!amountIsTaxInclusive) {
+                amountIsTaxInclusive =
+                  catalogPriceIncludesTaxMeta(row.sc_metadata) ||
+                  catalogPriceIncludesTaxMeta(row.vs_metadata);
+              }
+            }
           }
-        }
-        // 2) service_catalog by id — works with or without vendorId (fixes checkout when vendorId is missing or id is catalog UUID)
-        if (serviceId && (!taxCategoryId || !hsnCodeId)) {
-          const catalogRows = await query(
-            `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
-            [serviceId]
-          ).catch(() => ({ rows: [] }));
-          if (catalogRows.rows?.length > 0) {
-            const row = catalogRows.rows[0];
-            if (!taxCategoryId) taxCategoryId = row.tax_category_id;
-            if (!hsnCodeId) hsnCodeId = row.hsn_code_id;
-            if (!category) category = row.category_name || row.category_id;
+          if (!scCatRef && serviceId) {
+            const catalogRows = await query(
+              `SELECT category_id, category_name, metadata FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+              [serviceId]
+            ).catch(() => ({ rows: [] }));
+            if (catalogRows.rows?.length > 0) {
+              const row = catalogRows.rows[0];
+              scCatRef = row.category_id;
+              if (!category) category = row.category_name || row.category_id;
+              if (!amountIsTaxInclusive) {
+                amountIsTaxInclusive = catalogPriceIncludesTaxMeta(row.metadata);
+              }
+            }
           }
-        }
-        // 3) legacy services table
-        if (serviceId && !hsnCode && !hsnCodeId && !taxCategoryId) {
-          const services = await select('services', { id: serviceId }).catch(() => []);
-          if (services.length > 0) {
-            hsnCode = services[0].hsn_code;
-            if (!category) category = services[0].category;
+          if (serviceId && !scCatRef) {
+            const services = await select('services', { id: serviceId }).catch(() => []);
+            if (services.length > 0 && !category) category = services[0].category;
           }
+
+          /** Payment step often has bookingId but no serviceId — resolve catalogue category from the booking row. */
+          if (!scCatRef) {
+            const bidRaw =
+              (item as { bookingId?: string }).bookingId || requestBookingId;
+            const bid =
+              bidRaw != null && String(bidRaw).trim() !== '' && isValidUUID(String(bidRaw).trim())
+                ? String(bidRaw).trim()
+                : '';
+            if (bid) {
+              const bkg = await query(
+                `SELECT sc.category_id, sc.category_name, sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
+                 FROM bookings b
+                 JOIN vendor_services vs ON vs.id = b.service_id
+                 LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+                 WHERE b.id = $1::uuid
+                 LIMIT 1`,
+                [bid]
+              ).catch(() => ({ rows: [] }));
+              if (bkg.rows?.length > 0) {
+                const row = bkg.rows[0] as {
+                  category_id?: string;
+                  category_name?: string;
+                  sc_metadata?: unknown;
+                  vs_metadata?: unknown;
+                };
+                if (row.category_id) scCatRef = row.category_id;
+                if (!category) category = row.category_name || row.category_id;
+                if (!amountIsTaxInclusive) {
+                  amountIsTaxInclusive =
+                    catalogPriceIncludesTaxMeta(row.sc_metadata) ||
+                    catalogPriceIncludesTaxMeta(row.vs_metadata);
+                }
+              }
+            }
+          }
+
+          let catalogCategoryUuid = scCatRef
+            ? await resolveCatalogCategoryUuidFromRef(scCatRef)
+            : null;
+          /** e.g. UniversalPaymentPage sends category: "boarding" when serviceId is missing */
+          if (!catalogCategoryUuid && category) {
+            catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(category).trim());
+          }
+
+          taxItems.push({
+            id: item.id || serviceId || `item-${Math.random().toString(36).slice(2)}`,
+            type: 'service',
+            amount,
+            quantity,
+            catalogCategoryId: catalogCategoryUuid ?? undefined,
+            category,
+            serviceStyle: item.serviceStyle,
+            roleId: item.roleId || vendorRoleId,
+            amountIsTaxInclusive,
+          });
+          continue;
         }
 
-        if (productId && vendorId && !hsnCodeId && !taxCategoryId) {
+        let hsnCodeId: string | undefined;
+        let taxCategoryId: string | undefined;
+        let hsnCode: string | undefined;
+
+        if (productId && vendorId) {
           const products = await select('products', { id: productId }).catch(() => []);
           if (products.length > 0 && products[0].hsn_code) {
             hsnCode = products[0].hsn_code;
@@ -970,7 +1062,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
 
         taxItems.push({
           id: item.id || serviceId || productId || `item-${Math.random().toString(36).slice(2)}`,
-          type: itemType,
+          type: 'product',
           amount,
           quantity,
           hsnCode: hsnCode || item.hsnCode,
@@ -979,6 +1071,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
           category,
           serviceStyle: item.serviceStyle,
           roleId: item.roleId || vendorRoleId,
+          amountIsTaxInclusive,
         });
       }
 

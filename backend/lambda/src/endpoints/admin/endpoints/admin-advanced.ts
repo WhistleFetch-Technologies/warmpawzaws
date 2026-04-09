@@ -23,8 +23,7 @@ import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
-import { applyGstRulesRateFallback, pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
-import { loadGstRuleRatesByTaxCategoryId } from '../../../utils/tax-category-gst-rule-rates';
+import { pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
 import { isValidUUID } from '../../../types/entities';
 import {
   listFeeSettingsFromDb,
@@ -32,6 +31,7 @@ import {
   upsertFeeSetting,
   getFeeGlobalsMap,
 } from '../../../utils/admin-fee-settings-db';
+import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -3685,7 +3685,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         // Try with hsn_code only first (001/600 schema). No reference to hc.code so "column hc.code does not exist" is avoided.
         const result = await query(
           `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
-                  tc.category_name as tax_category_name
+                  tc.category_name AS tax_category_name,
+                  COALESCE(tc.tax_rate, hc.gst_rate, 18)::numeric AS effective_gst_rate
            FROM hsn_codes hc
            LEFT JOIN tax_categories tc ON hc.category_id = tc.id
            ORDER BY COALESCE(hc.hsn_code, '') ASC`
@@ -3729,21 +3730,29 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, category, cgst, sgst, igst, isActive } = body;
+      const { code, description, isActive } = body;
       const categoryId = body.categoryId ?? body.category_id;
-      const gstRateRaw = body.gstRate ?? body.gst_rate;
 
-      // Do not use !gstRate — 0 is a valid exempt/zero-rated GST %.
       if (code == null || String(code).trim() === '') {
         return c.json({ success: false, error: 'HSN code is required' }, 400);
       }
-      if (gstRateRaw === undefined || gstRateRaw === null || gstRateRaw === '') {
-        return c.json({ success: false, error: 'GST rate is required' }, 400);
+      if (categoryId == null || String(categoryId).trim() === '') {
+        return c.json(
+          { success: false, error: 'Tax category is required (GST rate is taken from the linked tax category)' },
+          400
+        );
       }
-      const gstRateNum = parseFloat(String(gstRateRaw));
-      if (!Number.isFinite(gstRateNum) || gstRateNum < 0 || gstRateNum > 100) {
-        return c.json({ success: false, error: 'GST rate must be a number between 0 and 100' }, 400);
+
+      const tcRows = await query(
+        `SELECT tax_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+        [String(categoryId).trim()]
+      );
+      const tc = tcRows.rows?.[0];
+      if (!tc) {
+        return c.json({ success: false, error: 'Tax category not found' }, 404);
       }
+      let derivedRate = parseFloat(String(tc.tax_rate ?? ''));
+      if (!Number.isFinite(derivedRate)) derivedRate = 18;
 
       const codeColumn = await getHsnCodeColumn();
       const codeVal = String(code).trim();
@@ -3751,13 +3760,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const insertPayload: Record<string, unknown> = {
         [codeColumn]: codeVal,
         description: description || '',
-        gst_rate: gstRateNum,
+        gst_rate: derivedRate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
+        category_id: String(categoryId).trim(),
       };
-      if (categoryId != null && String(categoryId).trim() !== '') {
-        insertPayload.category_id = String(categoryId).trim();
-      }
 
       let newCode;
       try {
@@ -3827,12 +3834,30 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         }
       }
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
-      if (body.categoryId !== undefined || body.category_id !== undefined) {
+      const categoryTouched = body.categoryId !== undefined || body.category_id !== undefined;
+      if (categoryTouched) {
         const cid = body.categoryId ?? body.category_id;
         updateData.category_id =
           cid != null && String(cid).trim() !== '' ? String(cid).trim() : null;
+      }
+
+      if (categoryTouched) {
+        const effCat = updateData.category_id;
+        if (effCat) {
+          const tcRows = await query(
+            `SELECT tax_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+            [String(effCat).trim()]
+          );
+          const tc = tcRows.rows?.[0];
+          if (tc) {
+            let dr = parseFloat(String(tc.tax_rate ?? ''));
+            if (!Number.isFinite(dr)) dr = 18;
+            updateData.gst_rate = dr;
+          }
+        } else {
+          updateData.gst_rate = 18;
+        }
       }
 
       if (Object.keys(updateData).length === 0) {
@@ -3904,26 +3929,96 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.get('/admin/finance/gst/catalog-category-roles', async (c) => {
+    try {
+      const catalogCategoryId = c.req.query('catalogCategoryId')?.trim();
+      if (!catalogCategoryId) {
+        return c.json({ success: false, error: 'catalogCategoryId is required' }, 400);
+      }
+
+      const specResult = await query(
+        `SELECT DISTINCT r.id, r.name, r.display_name
+         FROM specialization_master sm
+         JOIN service_categories sc ON sm.category_id = sc.category_id
+         CROSS JOIN LATERAL unnest(COALESCE(sm.applicable_roles, ARRAY[]::text[])) AS ar(code)
+         JOIN roles r ON LOWER(TRIM(r.name)) = LOWER(TRIM(ar.code)) AND COALESCE(r.is_active, true) = true
+         WHERE sc.id = $1::uuid AND COALESCE(sm.is_active, true) = true`,
+        [catalogCategoryId]
+      );
+      const fromSpecs = ((specResult as { rows?: { id: string; name: string; display_name: string }[] })?.rows ??
+        []) as { id: string; name: string; display_name: string }[];
+
+      let fromCustomerService: { id: string; name: string; display_name: string }[] = [];
+      try {
+        const slugRes = await query(
+          `SELECT category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+          [catalogCategoryId]
+        );
+        const slugRow = (slugRes as { rows?: { category_id?: string }[] })?.rows?.[0];
+        const slug = slugRow?.category_id != null ? String(slugRow.category_id) : '';
+        const buckets = customerServicesForCatalogCategorySlug(slug);
+        if (buckets.length > 0) {
+          const csRes = await query(
+            `SELECT DISTINCT r.id, r.name, r.display_name
+             FROM roles r
+             WHERE COALESCE(r.is_active, true) = true
+               AND r.customer_service IS NOT NULL
+               AND r.customer_service = ANY($1::text[])`,
+            [buckets]
+          );
+          fromCustomerService = ((csRes as { rows?: typeof fromCustomerService })?.rows ??
+            []) as typeof fromCustomerService;
+        }
+      } catch (csErr: unknown) {
+        console.warn('[catalog-category-roles] customer_service branch skipped:', (csErr as Error)?.message);
+      }
+
+      const byId = new Map<string, { id: string; name: string; display_name: string }>();
+      for (const r of [...fromSpecs, ...fromCustomerService]) {
+        if (r?.id) byId.set(String(r.id), r);
+      }
+      const roles = [...byId.values()].sort((a, b) => {
+        const da = (a.display_name || a.name || '').toLowerCase();
+        const db = (b.display_name || b.name || '').toLowerCase();
+        return da.localeCompare(db, undefined, { sensitivity: 'base' });
+      });
+
+      return c.json({ success: true, roles });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
   app.get('/admin/finance/gst/tax-categories', async (c) => {
     try {
-      // SELECT * (no ORDER BY on category_name) so both schema variants work:
-      // - platform: category_name + tax_rate
-      // - migration 213: name + default_gst_rate
-      const categories = await query('SELECT * FROM tax_categories');
-      const rows = categories.rows ?? [];
-      const gstRuleRatesByCategoryId = await loadGstRuleRatesByTaxCategoryId();
-
-      /** How many service_catalog rows point at each tax category (real checkout linkage). */
-      const catalogCountByTaxCategoryId = new Map<string, number>();
+      let rows: Record<string, unknown>[];
       try {
-        const cntRes = await query(`
-          SELECT tax_category_id::text AS tid, COUNT(*)::int AS c
-          FROM service_catalog
-          WHERE tax_category_id IS NOT NULL
-          GROUP BY tax_category_id
+        const categories = await query(`
+          SELECT tc.*,
+                 sc.name AS catalog_category_name,
+                 sc.category_id AS catalog_master_slug,
+                 COALESCE(
+                   (SELECT json_agg(json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name) ORDER BY r.display_name)
+                    FROM tax_category_roles tcr
+                    JOIN roles r ON r.id = tcr.role_id
+                    WHERE tcr.tax_category_id = tc.id),
+                   '[]'::json
+                 ) AS roles_json
+          FROM tax_categories tc
+          LEFT JOIN service_categories sc ON sc.id = tc.catalog_category_id
         `);
+        rows = (categories as { rows?: Record<string, unknown>[] })?.rows ?? [];
+      } catch {
+        const categories = await query('SELECT * FROM tax_categories');
+        rows = (categories as { rows?: Record<string, unknown>[] })?.rows ?? [];
+      }
+
+      const countByCatRef = new Map<string, number>();
+      try {
+        const cntRes = await query(`SELECT category_id::text AS cid, COUNT(*)::int AS c FROM service_catalog GROUP BY category_id`);
         for (const r of cntRes.rows ?? []) {
-          if (r?.tid) catalogCountByTaxCategoryId.set(String(r.tid), Number(r.c) || 0);
+          if (r?.cid != null) countByCatRef.set(String(r.cid).trim(), Number(r.c) || 0);
         }
       } catch (countErr: unknown) {
         console.warn('[tax-categories] service_catalog count skipped:', (countErr as Error)?.message);
@@ -3936,9 +4031,24 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       );
       const normalized = sorted.map((row: Record<string, any>) => {
         const displayName = String(row.category_name ?? row.name ?? '').trim() || '—';
-        const base = pickTaxCategoryDisplayRate(row);
-        const tax_rate = applyGstRulesRateFallback(base, row.id, gstRuleRatesByCategoryId);
-        const linkedCatalogServices = catalogCountByTaxCategoryId.get(String(row.id)) ?? 0;
+        // Use tax_categories row only (no gst_rules substitution when rate is 0 — admin may intend 0%).
+        const tax_rate = pickTaxCategoryDisplayRate(row);
+        const slug = row.catalog_master_slug ? String(row.catalog_master_slug).trim() : '';
+        const cid = row.catalog_category_id ? String(row.catalog_category_id).trim() : '';
+        let linkedCatalogServices = 0;
+        if (slug) linkedCatalogServices += countByCatRef.get(slug) || 0;
+        if (cid && cid !== slug) linkedCatalogServices += countByCatRef.get(cid) || 0;
+        let rolesParsed: { id: string; name: string; display_name: string }[] = [];
+        try {
+          if (row.roles_json && typeof row.roles_json === 'string') {
+            rolesParsed = JSON.parse(row.roles_json);
+          } else if (Array.isArray(row.roles_json)) {
+            rolesParsed = row.roles_json;
+          }
+        } catch {
+          rolesParsed = [];
+        }
+        const role_ids = rolesParsed.map((r) => r.id).filter(Boolean);
         return {
           id: row.id,
           category_name: displayName,
@@ -3947,6 +4057,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           tax_rate,
           applicable_services: row.applicable_services ?? row.applicableServices ?? [],
           linked_catalog_service_count: linkedCatalogServices,
+          catalog_category_id: row.catalog_category_id ?? null,
+          catalog_category_name: row.catalog_category_name ?? null,
+          catalog_master_slug: row.catalog_master_slug ?? null,
+          roles: rolesParsed,
+          role_ids,
           is_active: row.is_active !== false,
           created_at: row.created_at,
           updated_at: row.updated_at,
@@ -3962,25 +4077,109 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/tax-categories', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, defaultGSTRate, applicableServices, isActive } = body;
+      const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
+      const roleIdsRaw = body.roleIds ?? body.role_ids;
+      const { description, defaultGSTRate, isActive, name } = body;
 
-      if (!name || (typeof name === 'string' && !name.trim())) {
-        return c.json({ success: false, error: 'Category name is required' }, 400);
+      if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
+        return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      const rate = defaultGSTRate !== undefined && defaultGSTRate !== null
-        ? parseFloat(String(defaultGSTRate))
-        : NaN;
-      if (Number.isNaN(rate) || rate < 0) {
-        return c.json({ success: false, error: 'Default GST rate must be a non-negative number (0 is allowed)' }, 400);
+      if (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0) {
+        return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+      }
+      const rate =
+        defaultGSTRate !== undefined && defaultGSTRate !== null
+          ? parseFloat(String(defaultGSTRate))
+          : NaN;
+      if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+        return c.json(
+          { success: false, error: 'Default GST rate must be a number between 0 and 100' },
+          400
+        );
       }
 
-      const newCategory = await insert('tax_categories', {
-        category_name: String(name).trim(),
+      const scRes = await query(
+        `SELECT id, name, category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+        [String(catalogCategoryId).trim()]
+      );
+      const scRow = scRes.rows?.[0];
+      if (!scRow) {
+        return c.json({ success: false, error: 'Catalog category not found' }, 404);
+      }
+      const categoryName =
+        name && String(name).trim()
+          ? String(name).trim()
+          : `${String(scRow.name || scRow.category_id || 'Category')} (GST)`;
+
+      const insertPayload: Record<string, unknown> = {
+        category_name: categoryName,
         description: description != null ? String(description) : '',
         tax_rate: rate,
+        default_gst_rate: rate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
-      });
+        catalog_category_id: String(catalogCategoryId).trim(),
+      };
+
+      let newCategory: any[];
+      const tryInsertTaxCategory = async (): Promise<any[]> => insert('tax_categories', insertPayload);
+      try {
+        newCategory = await tryInsertTaxCategory();
+      } catch (insErr: any) {
+        const msg = String(insErr?.message || '');
+        if (
+          insertPayload.default_gst_rate !== undefined &&
+          (msg.includes('default_gst_rate') || msg.includes('column')) &&
+          msg.includes('does not exist')
+        ) {
+          delete insertPayload.default_gst_rate;
+          try {
+            newCategory = await tryInsertTaxCategory();
+          } catch (e2: any) {
+            const m2 = String(e2?.message || '');
+            if (m2.includes('catalog_category_id') && m2.includes('does not exist')) {
+              delete insertPayload.catalog_category_id;
+              newCategory = await tryInsertTaxCategory();
+            } else {
+              throw e2;
+            }
+          }
+        } else if (msg.includes('catalog_category_id') && msg.includes('does not exist')) {
+          delete insertPayload.catalog_category_id;
+          newCategory = await tryInsertTaxCategory();
+        } else {
+          throw insErr;
+        }
+      }
+
+      const tcId = newCategory[0]?.id;
+      const ccid = String(catalogCategoryId).trim();
+      if (tcId) {
+        for (const rid of roleIdsRaw) {
+          const roleId = String(rid).trim();
+          if (!roleId) continue;
+          try {
+            await query(
+              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+              [tcId, roleId, ccid]
+            );
+          } catch (roleErr: any) {
+            const m = String(roleErr?.message || '');
+            if (m.includes('tax_category_roles') && m.includes('does not exist')) break;
+            if (roleErr?.code === '23505') {
+              return c.json(
+                {
+                  success: false,
+                  error: 'Duplicate role for this catalogue category (role already mapped to another GST config).',
+                },
+                409
+              );
+            }
+            throw roleErr;
+          }
+        }
+      }
 
       return c.json({
         success: true,
@@ -3998,21 +4197,104 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const id = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
 
-      const updateData: any = {};
+      const updateData: Record<string, unknown> = {};
       if (body.name !== undefined) updateData.category_name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.defaultGSTRate !== undefined) updateData.tax_rate = parseFloat(body.defaultGSTRate);
+      if (body.defaultGSTRate !== undefined && body.defaultGSTRate !== null) {
+        const parsed = parseFloat(String(body.defaultGSTRate));
+        if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+          return c.json(
+            { success: false, error: 'Default GST rate must be a number between 0 and 100' },
+            400
+          );
+        }
+        updateData.tax_rate = parsed;
+        updateData.default_gst_rate = parsed;
+      }
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
+      const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
+      if (catalogCategoryId !== undefined) {
+        updateData.catalog_category_id =
+          catalogCategoryId != null && String(catalogCategoryId).trim() !== ''
+            ? String(catalogCategoryId).trim()
+            : null;
+      }
 
-      const updated = await update('tax_categories', { id }, updateData);
+      const applyTaxCategoryUpdate = async (): Promise<void> => {
+        if (Object.keys(updateData).length === 0) return;
+        try {
+          await update('tax_categories', { id }, updateData);
+        } catch (updErr: any) {
+          const msg = String(updErr?.message || '');
+          if (updateData.default_gst_rate !== undefined && msg.includes('default_gst_rate')) {
+            delete updateData.default_gst_rate;
+            await applyTaxCategoryUpdate();
+            return;
+          }
+          if (updateData.catalog_category_id !== undefined && msg.includes('catalog_category_id')) {
+            delete updateData.catalog_category_id;
+            await applyTaxCategoryUpdate();
+            return;
+          }
+          throw updErr;
+        }
+      };
+      await applyTaxCategoryUpdate();
+
+      const roleIdsRaw = body.roleIds ?? body.role_ids;
+      if (Array.isArray(roleIdsRaw)) {
+        if (roleIdsRaw.length === 0) {
+          return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+        }
+        let ccid = String(catalogCategoryId || '').trim();
+        if (!ccid) {
+          const cur = await query(
+            `SELECT catalog_category_id::text AS cid FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
+            [id]
+          );
+          ccid = String(cur.rows?.[0]?.cid || '').trim();
+        }
+        if (!ccid) {
+          return c.json(
+            { success: false, error: 'catalogCategoryId is required to update role mapping' },
+            400
+          );
+        }
+        try {
+          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+          for (const rid of roleIdsRaw) {
+            const roleId = String(rid).trim();
+            if (!roleId) continue;
+            await query(
+              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+              [id, roleId, ccid]
+            );
+          }
+        } catch (e: any) {
+          if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+        }
+      }
+
+      const refreshed = await query(`SELECT * FROM tax_categories WHERE id = $1::uuid LIMIT 1`, [id]);
+      const row = refreshed.rows?.[0];
 
       return c.json({
         success: true,
         message: 'Tax category updated successfully',
-        category: updated[0],
+        category: row,
       });
     } catch (error: any) {
       console.error('Error updating tax category:', error);
+      if (error?.code === '23505') {
+        return c.json(
+          {
+            success: false,
+            error: 'Duplicate role for this catalogue category (role already mapped to another GST config).',
+          },
+          409
+        );
+      }
       return c.json({ success: false, error: error.message }, 500);
     }
   });

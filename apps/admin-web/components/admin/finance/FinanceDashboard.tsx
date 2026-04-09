@@ -25,7 +25,6 @@ import { DynamicSettlementRulesManager } from './settlementRules/DynamicSettleme
 import { SettlementDashboard } from './settlements/SettlementDashboard';
 import { PayoutManagement } from './payoutManagement/PayoutManagement';
 import { TierManagement } from './tierManagement/TierManagement';
-import { TaxRulesManager } from './TaxRulesManager';
 import { TransactionsTab } from './TransactionsTab';
 import { PaymentsTab } from './PaymentsTab';
 import { SettlementsTab } from './SettlementsTab';
@@ -196,7 +195,6 @@ export function FinanceDashboard() {
 
               {/* Taxes Tab */}
               <TabsContent value="taxes" className="space-y-6">
-                <TaxRulesManager />
                 <GSTConfigurationManagement />
               </TabsContent>
 

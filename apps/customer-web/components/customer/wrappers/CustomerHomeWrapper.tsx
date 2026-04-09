@@ -25,6 +25,7 @@ import { VetServicesByStyle } from '../vet/VetServicesByStyle';
 import { TeleConsultationRouter } from '../vet/TeleConsultationRouter';
 import { HomeVisitRouter } from '../vet/HomeVisitRouter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { GroomingServiceRouter } from '../GroomingServiceRouter';
 import { GroomingServicesByStyle } from '../grooming/GroomingServicesByStyle';
 import { TrainingServiceRouter } from '../TrainingServiceRouter';
@@ -1307,6 +1308,7 @@ export function CustomerHomeWrapper({
         petBreed={bookingData.petBreed}
         address={bookingData.address}
         baseAmount={baseAmount}
+        priceIncludesTax={catalogPriceIncludesTax(firstService)}
         duration={duration}
         selectedServices={selectedServices}
         customerPhone={phone}

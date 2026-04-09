@@ -77,6 +77,8 @@ interface UniversalPaymentPageProps {
 
   // Pricing
   baseAmount: number;
+  /** When true, baseAmount is tax-inclusive (service_catalog.metadata.show_final_price_inclusive_tax). */
+  priceIncludesTax?: boolean;
   duration?: number;
   quantity?: number;
   selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
@@ -274,6 +276,7 @@ export function UniversalPaymentPage({
   address,
   showAddressSelection = false,
   baseAmount,
+  priceIncludesTax = false,
   duration,
   quantity = 1,
   selectedServices,
@@ -351,51 +354,60 @@ export function UniversalPaymentPage({
 
   const applyDefaultGstBreakdown = useCallback(
     (ratePct: number) => {
-      const totalTax = (baseAmount * ratePct) / 100;
+      const lineTotal = baseAmount;
+      const taxable = priceIncludesTax ? lineTotal / (1 + ratePct / 100) : lineTotal;
+      const totalTax = (taxable * ratePct) / 100;
       setTaxBreakdown({
-        subtotal: baseAmount,
+        subtotal: taxable,
         cgst: totalTax / 2,
         sgst: totalTax / 2,
         igst: 0,
         totalTax,
-        total: baseAmount + totalTax,
+        total: taxable + totalTax,
         taxRate: ratePct,
         isInterState: false,
       });
     },
-    [baseAmount]
+    [baseAmount, priceIncludesTax]
   );
 
   const calculateTax = useCallback(async () => {
     const catalogServiceId = resolvedServiceId || serviceId;
     const addr = selectedAddress || address;
-    const customerLocation =
-      addr?.state && String(addr.state).trim()
-        ? {
-            state: String(addr.state).trim(),
-            city: addr.city,
-            pincode: addr.pincode,
-          }
-        : undefined;
+    const hasAddrHint =
+      addr &&
+      (String(addr.state || '').trim() ||
+        String(addr.city || '').trim() ||
+        String(addr.pincode || '').trim());
+    const customerLocation = hasAddrHint
+      ? {
+          state: String(addr!.state || '').trim() || undefined,
+          city: addr!.city ? String(addr.city).trim() : undefined,
+          pincode: addr!.pincode ? String(addr.pincode).trim() : undefined,
+        }
+      : undefined;
 
     try {
       const taxRes = await apiClient.post<any>('/tax/calculate', {
         items: [
           {
-            id: catalogServiceId || productId || 'item',
+            id: catalogServiceId || productId || bookingId || 'item',
             type: type === 'booking' ? 'service' : 'product',
             serviceId: type === 'booking' ? catalogServiceId : undefined,
+            bookingId: type === 'booking' ? bookingId : undefined,
             productId: type === 'order' ? productId : undefined,
             amount: baseAmount,
             quantity,
             category: category || 'pet_services',
             serviceStyle,
+            amountTaxInclusive: priceIncludesTax,
           },
         ],
         vendorId,
         customerId,
         customerPhone,
         customerLocation,
+        bookingId: type === 'booking' ? bookingId : undefined,
       });
 
       if (taxCalculateResponseHasPayload(taxRes)) {
@@ -403,24 +415,28 @@ export function UniversalPaymentPage({
         const sgst = taxRes.totalSGST || 0;
         const igst = taxRes.totalIGST || 0;
         const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const exclusiveSub = Number(taxRes.totalAmount);
+        const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : baseAmount;
         const rawRate = Number(taxRes.items?.[0]?.taxRate);
         const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
         const taxRate = resolveGstDisplayRatePercent(
-          baseAmount,
+          taxableForLabel,
           totalTax,
           declaredRate,
           18
         );
         const interState =
           typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
+        const grand = Number(taxRes.grandTotal);
+        const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
 
         setTaxBreakdown({
-          subtotal: baseAmount,
+          subtotal: taxableForLabel,
           cgst,
           sgst,
           igst,
           totalTax,
-          total: baseAmount + totalTax,
+          total: totalPay,
           taxRate,
           isInterState: interState,
           taxDetails: taxRes.breakdown || [],
@@ -442,6 +458,7 @@ export function UniversalPaymentPage({
     address,
     applyDefaultGstBreakdown,
     baseAmount,
+    bookingId,
     category,
     customerId,
     customerPhone,
@@ -453,6 +470,7 @@ export function UniversalPaymentPage({
     serviceStyle,
     type,
     vendorId,
+    priceIncludesTax,
   ]);
 
   useEffect(() => {
@@ -464,6 +482,7 @@ export function UniversalPaymentPage({
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
   }, [
+    bookingId,
     customerPhone,
     baseAmount,
     category,
@@ -2828,10 +2847,15 @@ export function UniversalPaymentPage({
         {/* Price Breakdown */}
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
+          {priceIncludesTax && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
+              List price includes GST. Taxable value and GST below add up to the amount you pay (before coupons/wallet).
+            </p>
+          )}
 
           <div className="space-y-3">
             <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span>
+              <span>{priceIncludesTax ? 'Taxable value (excl. GST)' : 'Subtotal'}</span>
               <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
             </div>
 

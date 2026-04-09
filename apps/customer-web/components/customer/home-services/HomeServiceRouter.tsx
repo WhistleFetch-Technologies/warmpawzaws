@@ -28,6 +28,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from '../shared/PromotionBanner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, trackPageView, useBookingAnalytics, ServiceCategory } from '@/lib/analytics';
@@ -1537,6 +1538,7 @@ export function HomeServiceRouter({
               serviceStyle="at_home"
               serviceName={selectedService?.name || serviceName}
               baseAmount={selectedService?.price || 0}
+              priceIncludesTax={catalogPriceIncludesTax(selectedService)}
               customerPhone={phone}
               onSuccess={handlePaymentSuccess}
               onBack={() => setStep('address')}

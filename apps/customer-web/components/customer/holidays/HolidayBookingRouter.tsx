@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 
 interface HolidayBookingRouterProps {
@@ -560,6 +561,7 @@ export function HolidayBookingRouter({
             petName={selectedPets.map(p => p.name).join(', ')}
             petBreed={selectedPets.map(p => p.breed).join(', ')}
             baseAmount={calculateTotal()}
+            priceIncludesTax={catalogPriceIncludesTax(selectedPackage)}
             duration={selectedPackage?.duration || 3}
             quantity={1}
             customerPhone={phone}
