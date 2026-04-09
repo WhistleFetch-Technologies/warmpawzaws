@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
@@ -16,6 +16,7 @@ import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -76,6 +77,8 @@ interface UniversalPaymentPageProps {
 
   // Pricing
   baseAmount: number;
+  /** When true, baseAmount is tax-inclusive (service_catalog.metadata.show_final_price_inclusive_tax). */
+  priceIncludesTax?: boolean;
   duration?: number;
   quantity?: number;
   selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
@@ -181,6 +184,15 @@ interface RazorpayOffer {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** POST /tax/calculate used to return success:true with empty items + error — treat as failure so UI does not show 9%+9% with ₹0 tax. */
+function taxCalculateResponseHasPayload(res: any): boolean {
+  if (!res || res.success !== true) return false;
+  const err = res.error;
+  if (typeof err === 'string' && err.trim()) return false;
+  if (err != null && typeof err === 'object') return false;
+  return Array.isArray(res.items) && res.items.length > 0;
+}
+
 function petsListForPaymentPicker(data: unknown): { id: string; name: string }[] {
   return petsFromApiResponse(data).map((p) => ({ id: p.id, name: p.name }));
 }
@@ -264,6 +276,7 @@ export function UniversalPaymentPage({
   address,
   showAddressSelection = false,
   baseAmount,
+  priceIncludesTax = false,
   duration,
   quantity = 1,
   selectedServices,
@@ -333,6 +346,133 @@ export function UniversalPaymentPage({
   const [petsListRefreshNonce, setPetsListRefreshNonce] = useState(0);
   const [localPetSelection, setLocalPetSelection] = useState<{ id: string; name: string } | null>(null);
 
+  const customerAddrStateForTax =
+    (typeof selectedAddress?.state === 'string' && selectedAddress.state.trim()
+      ? selectedAddress.state.trim()
+      : undefined) ??
+    (typeof address?.state === 'string' && address.state.trim() ? address.state.trim() : undefined);
+
+  const applyDefaultGstBreakdown = useCallback(
+    (ratePct: number) => {
+      const lineTotal = baseAmount;
+      const taxable = priceIncludesTax ? lineTotal / (1 + ratePct / 100) : lineTotal;
+      const totalTax = (taxable * ratePct) / 100;
+      setTaxBreakdown({
+        subtotal: taxable,
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0,
+        totalTax,
+        total: taxable + totalTax,
+        taxRate: ratePct,
+        isInterState: false,
+      });
+    },
+    [baseAmount, priceIncludesTax]
+  );
+
+  const calculateTax = useCallback(async () => {
+    const catalogServiceId = resolvedServiceId || serviceId;
+    const addr = selectedAddress || address;
+    const hasAddrHint =
+      addr &&
+      (String(addr.state || '').trim() ||
+        String(addr.city || '').trim() ||
+        String(addr.pincode || '').trim());
+    const customerLocation = hasAddrHint
+      ? {
+          state: String(addr!.state || '').trim() || undefined,
+          city: addr!.city ? String(addr.city).trim() : undefined,
+          pincode: addr!.pincode ? String(addr.pincode).trim() : undefined,
+        }
+      : undefined;
+
+    try {
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [
+          {
+            id: catalogServiceId || productId || bookingId || 'item',
+            type: type === 'booking' ? 'service' : 'product',
+            serviceId: type === 'booking' ? catalogServiceId : undefined,
+            bookingId: type === 'booking' ? bookingId : undefined,
+            productId: type === 'order' ? productId : undefined,
+            amount: baseAmount,
+            quantity,
+            category: category || 'pet_services',
+            serviceStyle,
+            amountTaxInclusive: priceIncludesTax,
+          },
+        ],
+        vendorId,
+        customerId,
+        customerPhone,
+        customerLocation,
+        bookingId: type === 'booking' ? bookingId : undefined,
+      });
+
+      if (taxCalculateResponseHasPayload(taxRes)) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const exclusiveSub = Number(taxRes.totalAmount);
+        const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : baseAmount;
+        const rawRate = Number(taxRes.items?.[0]?.taxRate);
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const taxRate = resolveGstDisplayRatePercent(
+          taxableForLabel,
+          totalTax,
+          declaredRate,
+          18
+        );
+        const interState =
+          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
+        const grand = Number(taxRes.grandTotal);
+        const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
+
+        setTaxBreakdown({
+          subtotal: taxableForLabel,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: totalPay,
+          taxRate,
+          isInterState: interState,
+          taxDetails: taxRes.breakdown || [],
+        });
+        return;
+      }
+
+      if (baseAmount > 0) {
+        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
+        applyDefaultGstBreakdown(18);
+      }
+    } catch (error) {
+      console.error('Tax calculation error, using default 18%:', error);
+      if (baseAmount > 0) {
+        applyDefaultGstBreakdown(18);
+      }
+    }
+  }, [
+    address,
+    applyDefaultGstBreakdown,
+    baseAmount,
+    bookingId,
+    category,
+    customerId,
+    customerPhone,
+    productId,
+    quantity,
+    resolvedServiceId,
+    selectedAddress,
+    serviceId,
+    serviceStyle,
+    type,
+    vendorId,
+    priceIncludesTax,
+  ]);
+
   useEffect(() => {
     loadPaymentData();
     loadRazorpayScript();
@@ -341,7 +481,22 @@ export function UniversalPaymentPage({
     loadRazorpayOffers();
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
-  }, [customerPhone, baseAmount, category, serviceStyle]);
+  }, [
+    bookingId,
+    customerPhone,
+    baseAmount,
+    category,
+    serviceStyle,
+    type,
+    vendorId,
+    customerId,
+    resolvedServiceId,
+    serviceId,
+    quantity,
+    productId,
+    customerAddrStateForTax,
+    calculateTax,
+  ]);
 
   // Check if customer has active subscription that covers this booking
   useEffect(() => {
@@ -861,41 +1016,86 @@ export function UniversalPaymentPage({
 
   const loadPlatformFees = async () => {
     try {
-      // Load platform and convenience fees from fee config endpoint
+      const catParam = category != null && String(category).trim() !== '' ? `&category=${encodeURIComponent(String(category).trim())}` : '';
       const feesRes = await apiClient.get<any>(
-        `/config/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
+        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`
       );
 
-      if (feesRes.success) {
-        const platformFee = feesRes.platformFee || 0;
-        const convenienceFee = feesRes.convenienceFee || 0;
-        // Delivery fee is usually calculated separately by logistics
-        const deliveryFee = serviceStyle === 'at_home' || type === 'order' ? (feesRes.deliveryFee || 0) : 0;
-        const packagingFee = type === 'order' ? (feesRes.packagingFee || 0) : 0;
-
-        console.log('[FEES] Loaded fee configuration:', {
-          platformFee,
-          convenienceFee,
-          deliveryFee,
-          packagingFee,
-          breakdown: feesRes.breakdown,
-        });
-
-        setPlatformFees({
-          platformFee,
-          convenienceFee,
-          deliveryFee,
-          packagingFee,
-          total: platformFee + convenienceFee + deliveryFee + packagingFee,
-        });
+      if (!feesRes?.success) {
+        throw new Error((feesRes && feesRes.error) || 'Fee configuration unavailable');
       }
+
+      let platformFee =
+        typeof feesRes.platformFee === 'number' && Number.isFinite(feesRes.platformFee)
+          ? feesRes.platformFee
+          : NaN;
+      let convenienceFee =
+        typeof feesRes.convenienceFee === 'number' && Number.isFinite(feesRes.convenienceFee)
+          ? feesRes.convenienceFee
+          : NaN;
+      let deliveryFee =
+        typeof feesRes.deliveryFee === 'number' && Number.isFinite(feesRes.deliveryFee)
+          ? feesRes.deliveryFee
+          : NaN;
+      let packagingFee =
+        typeof feesRes.packagingFee === 'number' && Number.isFinite(feesRes.packagingFee)
+          ? feesRes.packagingFee
+          : NaN;
+
+      const legacy = feesRes.fees && typeof feesRes.fees === 'object' ? feesRes.fees : null;
+      if (legacy && !Number.isFinite(platformFee)) {
+        const pct = parseFloat(String(legacy.platformFeePercentage));
+        const flat = parseFloat(String(legacy.platformFeeFlat ?? 0));
+        const max = parseFloat(String(legacy.maxPlatformFee ?? 500));
+        if (Number.isFinite(pct) && baseAmount > 0) {
+          let pf = Math.round((baseAmount * pct) / 100) + (Number.isFinite(flat) ? flat : 0);
+          if (Number.isFinite(max) && max > 0 && pf > max) pf = max;
+          platformFee = Math.max(0, pf);
+        } else {
+          platformFee = 0;
+        }
+      }
+      if (!Number.isFinite(platformFee)) platformFee = 0;
+      if (!Number.isFinite(convenienceFee)) convenienceFee = 0;
+      if (legacy && type === 'order' && !Number.isFinite(convenienceFee) && legacy.convenienceFee != null) {
+        const c = parseFloat(String(legacy.convenienceFee));
+        if (Number.isFinite(c)) convenienceFee = Math.max(0, c);
+      }
+      if (!Number.isFinite(deliveryFee)) deliveryFee = 0;
+      if (!Number.isFinite(packagingFee)) packagingFee = 0;
+
+      if (type === 'booking') {
+        convenienceFee = 0;
+      }
+      if (!(serviceStyle === 'at_home' || type === 'order')) {
+        deliveryFee = 0;
+      }
+      if (type !== 'order') {
+        packagingFee = 0;
+      }
+
+      console.log('[FEES] Loaded fee configuration:', {
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        breakdown: feesRes.breakdown,
+      });
+
+      setPlatformFees({
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        total: platformFee + convenienceFee + deliveryFee + packagingFee,
+      });
     } catch (error) {
       console.error('Error loading platform fees:', error);
       // Resilience-only fallback when /config/fees fails; production should use backend as single source of truth
       if (baseAmount > 0) {
         let defaultPlatformFee = Math.round((baseAmount * 2) / 100);
         defaultPlatformFee = Math.min(defaultPlatformFee, 200);
-        const defaultConvenienceFee = type === 'booking' ? 10 : 0;
+        const defaultConvenienceFee = type === 'order' ? 9 : 0;
         setPlatformFees({
           platformFee: defaultPlatformFee,
           convenienceFee: defaultConvenienceFee,
@@ -952,61 +1152,6 @@ export function UniversalPaymentPage({
     }
 
     return Math.min(discount, amount);
-  };
-
-  const calculateTax = async () => {
-    try {
-      // Get customer and vendor locations for tax calculation
-      const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [{
-          id: serviceId || productId || 'item',
-          type: type === 'booking' ? 'service' : 'product',
-          serviceId: type === 'booking' ? serviceId : undefined,
-          productId: type === 'order' ? productId : undefined,
-          amount: baseAmount,
-          quantity,
-          category: category || 'pet_services',
-          serviceStyle: serviceStyle,
-        }],
-        vendorId,
-        customerId,
-        customerPhone,
-      });
-
-      if (taxRes.success) {
-        const cgst = taxRes.totalCGST || 0;
-        const sgst = taxRes.totalSGST || 0;
-        const igst = taxRes.totalIGST || 0;
-        const totalTax = taxRes.totalTax || cgst + sgst + igst;
-
-        setTaxBreakdown({
-          subtotal: baseAmount,
-          cgst,
-          sgst,
-          igst,
-          totalTax,
-          total: baseAmount + totalTax,
-          taxRate: taxRes.items?.[0]?.taxRate || 18,
-          isInterState: igst > 0,
-          taxDetails: taxRes.breakdown || [],
-        });
-      }
-    } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
-      // Fallback to 18% GST
-      const taxRate = 18;
-      const totalTax = (baseAmount * taxRate) / 100;
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: baseAmount + totalTax,
-        taxRate,
-        isInterState: false,
-      });
-    }
   };
 
   const handleApplyCoupon = async () => {
@@ -1713,6 +1858,10 @@ export function UniversalPaymentPage({
         paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // ✅ Optional enum
         bookingId: currentBookingId, // ✅ Required UUID (booking should already exist)
       };
+
+      if (category != null && String(category).trim() !== '') {
+        paymentPayload.category = String(category).trim();
+      }
 
       // ✅ Optional fields (not in schema but backend may handle)
       if (customerId) {
@@ -2698,10 +2847,15 @@ export function UniversalPaymentPage({
         {/* Price Breakdown */}
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
+          {priceIncludesTax && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
+              List price includes GST. Taxable value and GST below add up to the amount you pay (before coupons/wallet).
+            </p>
+          )}
 
           <div className="space-y-3">
             <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span>
+              <span>{priceIncludesTax ? 'Taxable value (excl. GST)' : 'Subtotal'}</span>
               <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
             </div>
 

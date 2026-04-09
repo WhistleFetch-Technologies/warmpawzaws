@@ -1,11 +1,9 @@
 'use client';
 
 import { X, Package } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
-import { useTaxCategories } from '@/hooks/useTaxCategories';
-import { useHSNCodes } from '@/hooks/useHSNCodes';
 import { EnhancedModal } from '../shared/EnhancedModal';
 import { EnhancedButton } from '../shared/EnhancedButton';
 
@@ -65,8 +63,6 @@ interface Service {
   duration?: number;
   applicableRoles?: string[];
   specializationIds?: string[];
-  taxCategoryId?: string;
-  hsnCodeId?: string;
   metadata?: Record<string, unknown>;
   isPackage?: boolean;
 }
@@ -96,9 +92,6 @@ export function AddServiceModal({
   const specLoadIdRef = useRef(0);
   
   // Memoize filters to prevent infinite loops - object reference must be stable
-  const activeFilters = useMemo(() => ({ isActive: true }), []);
-  const { taxCategories } = useTaxCategories(activeFilters);
-  const { hsnCodes } = useHSNCodes(activeFilters);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -111,9 +104,8 @@ export function AddServiceModal({
     status: 'active' as 'active' | 'inactive' | 'draft',
     applicableRoles: [] as string[],
     specializationIds: [] as string[],
-    taxCategoryId: '' as string,
-    hsnCodeId: '' as string,
     isPackage: false,
+    showFinalPriceInclusiveTax: false,
   });
   const formDataRef = useRef(formData);
   formDataRef.current = formData;
@@ -142,9 +134,8 @@ export function AddServiceModal({
           status: (service.status && service.status !== 'pending' ? service.status : 'active') as 'active' | 'inactive' | 'draft',
           applicableRoles: [...new Set(rawRoles.filter(Boolean))],
           specializationIds: Array.isArray(specIds) ? specIds : [],
-          taxCategoryId: (service as any).taxCategoryId ?? (service as any).tax_category_id ?? '',
-          hsnCodeId: (service as any).hsnCodeId ?? (service as any).hsn_code_id ?? '',
           isPackage: isPkg,
+          showFinalPriceInclusiveTax: !!meta.show_final_price_inclusive_tax,
         });
       } else {
         setFormData({
@@ -159,9 +150,8 @@ export function AddServiceModal({
           status: 'active',
           applicableRoles: [],
           specializationIds: [],
-          taxCategoryId: '',
-          hsnCodeId: '',
           isPackage: false,
+          showFinalPriceInclusiveTax: false,
         });
       }
     }
@@ -280,7 +270,11 @@ export function AddServiceModal({
     try {
       setLoading(true);
       
-      const metadata = { ...((service as any)?.metadata || {}), isPackage: formData.isPackage };
+      const metadata = {
+        ...((service as any)?.metadata || {}),
+        isPackage: formData.isPackage,
+        show_final_price_inclusive_tax: formData.showFinalPriceInclusiveTax,
+      };
       if (service?.id) {
         // Update existing service
         await apiClient.put(`/admin/service-catalog/${service.id}`, {
@@ -297,8 +291,6 @@ export function AddServiceModal({
           status: formData.status,
           applicable_roles: formData.applicableRoles,
           specialization_ids: formData.specializationIds,
-          tax_category_id: formData.taxCategoryId || undefined,
-          hsn_code_id: formData.hsnCodeId || undefined,
           metadata,
         });
         alert('Service updated successfully!');
@@ -335,9 +327,8 @@ export function AddServiceModal({
         status: 'active',
         applicableRoles: [],
         specializationIds: [],
-        taxCategoryId: '',
-        hsnCodeId: '',
         isPackage: false,
+        showFinalPriceInclusiveTax: false,
       });
     } catch (error: any) {
       console.error('Error saving service:', error);
@@ -532,66 +523,25 @@ export function AddServiceModal({
             <span className="text-xs text-gray-500">Show as &quot;Package&quot; (not &quot;Service&quot;) in vendor and customer flows.</span>
           </div>
 
-          {/* GST & Tax Configuration Section */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <div className="p-1.5 bg-yellow-100 rounded">
-                <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">GST & Tax Configuration</h4>
-                <div className="grid grid-cols-2 gap-4 mb-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tax Category
-                    </label>
-                    <select
-                      value={formData.taxCategoryId}
-                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('taxCategoryId', e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
-                    >
-                      <option value="">— Select —</option>
-                      {taxCategories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.category_name ?? c.id}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">From GST Configuration</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      HSN Code
-                    </label>
-                    <select
-                      value={formData.hsnCodeId}
-                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('hsnCodeId', e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
-                    >
-                      <option value="">— Select —</option>
-                      {hsnCodes.map((h) => (
-                        <option key={h.id} value={h.id}>
-                          {h.hsn_code} — {h.description || h.gst_rate + '%'}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">Overrides Tax Category rate when set</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="show-final-price"
-                    className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
-                  />
-                  <label htmlFor="show-final-price" className="text-sm text-gray-700">
-                    Show final price to customers (including all taxes)
-                  </label>
-                </div>
-              </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="show-final-price"
+                checked={formData.showFinalPriceInclusiveTax}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  handleChange('showFinalPriceInclusiveTax', e.target.checked)
+                }
+                className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
+              />
+              <label htmlFor="show-final-price" className="text-sm text-gray-700">
+                Show final price to customers (including all taxes)
+              </label>
             </div>
+            <p className="text-xs text-gray-500 mt-2 ml-6">
+              GST % comes from Finance → GST Configuration (catalogue category + vendor role). When this is on, the
+              catalogue price is treated as tax-inclusive at checkout.
+            </p>
           </div>
 
           <div>

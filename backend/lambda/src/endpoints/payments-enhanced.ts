@@ -31,7 +31,7 @@ import { notifyBookingCreated } from '../utils/booking-notifications';
 import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
-import { calculateFees } from './fee-config';
+import { calculateFinalFees, mapCatalogCategoryToBusinessType } from '../utils/feeCalculator';
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -78,6 +78,12 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       vendorId,
       idempotencyKey,
     } = validationResult.data;
+
+    const rawBody = body as Record<string, unknown>;
+    const categoryFromBody =
+      typeof rawBody.category === 'string' && rawBody.category.trim() !== ''
+        ? rawBody.category.trim()
+        : undefined;
     
     // Extract wallet fields from raw body (not in schema yet)
     const useWallet = (body as any).useWallet ?? false;
@@ -284,44 +290,50 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         gstAmount = 0;
       }
 
-      // Calculate platform and convenience fees
+      // Platform / convenience / delivery / packaging — same rules as GET /config/fees (admin_settings)
       let platformFee = 0;
       let convenienceFee = 0;
-      let feesBreakdown = null;
-      
+      let deliveryFee = 0;
+      let packagingFee = 0;
+      let feesBreakdown: Record<string, unknown> | null = null;
+
+      const fromBookingTotal = parseFloat(String(booking.total_amount ?? booking.amount ?? ''));
+      const feeBaseAmount =
+        Number.isFinite(fromBookingTotal) && fromBookingTotal > 0 ? fromBookingTotal : amount;
+
+      const businessServiceType =
+        (categoryFromBody && String(categoryFromBody).trim()) ||
+        mapCatalogCategoryToBusinessType(serviceCategory) ||
+        '';
+
       try {
-        // Fetch fee configuration from platform_settings
-        const feeSettings = await query(
-          `SELECT setting_value FROM platform_settings WHERE setting_key = 'platform:fees:config'`
-        );
-        
-        const feeConfig = feeSettings.rows.length > 0 
-          ? (feeSettings.rows[0].setting_value as any)
-          : undefined;
-        
-        // Calculate fees based on service style and type
-        const fees = calculateFees({
-          amount,
-          serviceStyle: serviceStyle || undefined,
+        const fees = await calculateFinalFees({
+          amount: feeBaseAmount,
           type: 'booking',
-          config: feeConfig,
+          serviceStyle: String(serviceStyle || booking.service_style || booking.service_type || ''),
+          businessServiceType,
         });
-        
+
         platformFee = fees.platformFee;
         convenienceFee = fees.convenienceFee;
-        feesBreakdown = fees.breakdown;
-        
-        console.log(`[PAYMENT] Calculated fees: platform=₹${platformFee}, convenience=₹${convenienceFee}`);
+        deliveryFee = fees.deliveryFee;
+        packagingFee = fees.packagingFee;
+        feesBreakdown = { ...fees, feeBaseAmount, businessServiceType };
+
+        console.log(
+          `[PAYMENT] Calculated fees: platform=₹${platformFee}, convenience=₹${convenienceFee}, delivery=₹${deliveryFee}, packaging=₹${packagingFee}`
+        );
       } catch (feeError) {
         console.warn('[PAYMENT] Error calculating fees, using defaults:', feeError);
-        // Default fees if calculation fails
-        platformFee = Math.round((amount * 2) / 100); // 2% with max cap
+        platformFee = Math.round((feeBaseAmount * 2) / 100);
         platformFee = Math.min(platformFee, 200);
-        convenienceFee = 10; // ₹10 flat
+        convenienceFee = 0;
       }
-      
-      // Total amount including fees (fees are added on top of service amount)
-      const totalAmount = amount + gstAmount + platformFee + convenienceFee;
+
+      const feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
+
+      // Total amount including fees (fees are added on top of tax-inclusive request amount)
+      const totalAmount = amount + gstAmount + feesTotal;
 
       // Handle wallet payment if requested
       let walletDebited = false;
@@ -396,10 +408,10 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
         
         // Add platform and convenience fees
-        if (platformFee > 0 || convenienceFee > 0) {
-          paymentData.platform_fee = platformFee;
-          paymentData.convenience_fee = convenienceFee;
-          paymentData.total_amount = totalAmount; // Total including all fees and taxes
+        if (feesTotal > 0) {
+          if (platformFee > 0) paymentData.platform_fee = platformFee;
+          if (convenienceFee > 0) paymentData.convenience_fee = convenienceFee;
+          paymentData.total_amount = totalAmount;
         }
 
         // Only insert columns that exist on payments table (avoids 42703 when migrations not yet applied)
@@ -478,6 +490,8 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           baseAmount: amount,
           platformFee,
           convenienceFee,
+          deliveryFee,
+          packagingFee,
           gstAmount,
           totalAmount,
           breakdown: feesBreakdown,

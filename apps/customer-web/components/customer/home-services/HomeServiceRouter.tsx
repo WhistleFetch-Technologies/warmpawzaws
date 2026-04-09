@@ -28,6 +28,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from '../shared/PromotionBanner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, trackPageView, useBookingAnalytics, ServiceCategory } from '@/lib/analytics';
@@ -174,6 +175,20 @@ interface ActivePackage {
   expiresAt: string | null;
   servicesIncluded: string[];
   usageType: string;
+}
+
+function feeCategoryForHomeService(t: HomeServiceType): string {
+  const map: Record<HomeServiceType, string> = {
+    walking: 'walking',
+    grooming: 'grooming',
+    training: 'training',
+    veterinary: 'veterinary',
+    sitting: 'boarding',
+    nutrition: 'nutritionist',
+    behaviourist: 'training',
+    diagnostics: 'veterinary',
+  };
+  return map[t] || '';
 }
 
 export function HomeServiceRouter({
@@ -1516,12 +1531,14 @@ export function HomeServiceRouter({
           <div className="fixed inset-0 z-50 bg-white">
             <UniversalPaymentPage
               type="booking"
+              category={feeCategoryForHomeService(serviceType)}
               bookingId={bookingId}
               vendorId={selectedProvider?.vendorId || ''}
               vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}
               serviceStyle="at_home"
               serviceName={selectedService?.name || serviceName}
               baseAmount={selectedService?.price || 0}
+              priceIncludesTax={catalogPriceIncludesTax(selectedService)}
               customerPhone={phone}
               onSuccess={handlePaymentSuccess}
               onBack={() => setStep('address')}

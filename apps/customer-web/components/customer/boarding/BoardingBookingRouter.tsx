@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -792,14 +793,25 @@ export function BoardingBookingRouter({
 
   // Payment step - use UniversalPaymentPage
   if (step === 'payment' && paymentBookingId) {
+    const opt = selectedServiceOption as { id?: string } | undefined;
+    const vsId = opt?.id;
+    const paymentVendorServiceId =
+      vsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(vsId))
+        ? String(vsId)
+        : undefined;
+
     return (
       <UniversalPaymentPage
         type="booking"
+        category="boarding"
+        serviceStyle={isPetSitting ? 'at_home' : 'at_center'}
         layoutVariant="appShell"
         customerPhone={phone}
         customerId={phone}
         bookingId={paymentBookingId}
+        serviceId={paymentVendorServiceId}
         baseAmount={calculateTotalPrice()}
+        priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
         serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding Service')}
         vendorId={vendorId || ''}
         vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}

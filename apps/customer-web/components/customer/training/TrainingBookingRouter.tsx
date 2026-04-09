@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 
@@ -1018,6 +1019,7 @@ export function TrainingBookingRouter({
             address={selectedAddress}
             showAddressSelection={selectedServiceType === 'at_home'}
             baseAmount={selectedServiceOption?.price || price || 499}
+            priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
             duration={selectedServiceOption?.duration || duration || 30}
             quantity={1}
             customerPhone={phone}

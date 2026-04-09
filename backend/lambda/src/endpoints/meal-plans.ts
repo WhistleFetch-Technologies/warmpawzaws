@@ -21,6 +21,7 @@ import { isValidUUID } from '../types/entities';
 import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-client';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
+import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
 
 export function registerMealPlanEndpoints(app: Hono) {
 
@@ -407,18 +408,14 @@ export function registerMealPlanEndpoints(app: Hono) {
         } else if (logisticsType === 'warmpawz') {
           deliveryFee = 50;
         }
-        const feeSettings = await query(
-          `SELECT * FROM admin_settings WHERE setting_key IN ('platform_fee_percentage', 'convenience_fee', 'max_platform_fee') AND (service_type = 'meal' OR service_type = 'nutritionist' OR service_type = 'all' OR service_type IS NULL)`
-        ).catch(() => ({ rows: [] }));
-        const feeMap: Record<string, any> = {};
-        for (const row of feeSettings.rows) {
-          feeMap[row.setting_key] = row.setting_value;
-        }
+        const feeMap = await getFeeGlobalsMap();
         const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
         const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
         platformFee = Math.round(subtotal * (platformFeePercentage / 100));
         if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
-        convenienceFee = parseFloat(feeMap['convenience_fee'] || '0');
+        convenienceFee = parseFloat(
+          feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
+        );
       } catch (_) {
         deliveryFee = logisticsType === 'warmpawz' ? 50 : 0;
         platformFee = Math.round(subtotal * 0.02);
@@ -606,20 +603,13 @@ export function registerMealPlanEndpoints(app: Hono) {
         }
         
         // Get platform and convenience fees from admin_settings or finance_rules
-        const feeSettings = await query(
-          `SELECT * FROM admin_settings 
-           WHERE setting_key IN ('platform_fee_percentage', 'convenience_fee', 'max_platform_fee')
-           AND (service_type = 'meal' OR service_type = 'nutritionist' OR service_type = 'all' OR service_type IS NULL)`
-        ).catch(() => ({ rows: [] }));
-        
-        const feeMap: Record<string, any> = {};
-        for (const row of feeSettings.rows) {
-          feeMap[row.setting_key] = row.setting_value;
-        }
-        
+        const feeMap = await getFeeGlobalsMap();
+
         const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
         const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-        convenienceFee = parseFloat(feeMap['convenience_fee'] || '0');
+        convenienceFee = parseFloat(
+          feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
+        );
         
         platformFee = Math.round(subtotal * (platformFeePercentage / 100));
         if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {

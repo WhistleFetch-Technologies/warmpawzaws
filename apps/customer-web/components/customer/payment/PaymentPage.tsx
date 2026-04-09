@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, CreditCard, Wallet, Tag, ChevronRight, 
   CheckCircle2, Shield, X, Percent, Info, MapPin,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { toast } from 'sonner';
 
 // Razorpay type declaration
@@ -42,6 +43,7 @@ interface PaymentPageProps {
     addressLine1?: string;
     city?: string;
     pincode?: string;
+    state?: string;
   };
   
   // Pricing
@@ -92,6 +94,14 @@ interface TaxBreakdown {
   isInterState: boolean;
 }
 
+function taxCalculateResponseHasPayload(res: any): boolean {
+  if (!res || res.success !== true) return false;
+  const err = res.error;
+  if (typeof err === 'string' && err.trim()) return false;
+  if (err != null && typeof err === 'object') return false;
+  return Array.isArray(res.items) && res.items.length > 0;
+}
+
 export function PaymentPage({
   bookingId,
   serviceId,
@@ -139,11 +149,108 @@ export function PaymentPage({
     isInterState: false,
   });
 
+  const applyDefaultGstBreakdown = useCallback(
+    (ratePct: number) => {
+      const totalTax = (baseAmount * ratePct) / 100;
+      setTaxBreakdown({
+        subtotal: baseAmount,
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0,
+        totalTax,
+        total: baseAmount + totalTax,
+        taxRate: ratePct,
+        isInterState: false,
+      });
+    },
+    [baseAmount]
+  );
+
+  const calculateTax = useCallback(async () => {
+    const addr = address;
+    const customerLocation =
+      addr?.state && String(addr.state).trim()
+        ? {
+            state: String(addr.state).trim(),
+            city: addr.city,
+            pincode: addr.pincode,
+          }
+        : undefined;
+
+    try {
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [
+          {
+            id: serviceId || 'service',
+            type: 'service',
+            serviceId,
+            amount: baseAmount,
+            quantity: 1,
+            category: 'pet_services',
+            serviceStyle,
+          },
+        ],
+        vendorId,
+        customerId,
+        customerPhone,
+        customerLocation,
+      });
+
+      if (taxCalculateResponseHasPayload(taxRes)) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const rawRate = Number(taxRes.items?.[0]?.taxRate);
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const taxRate = resolveGstDisplayRatePercent(
+          baseAmount,
+          totalTax,
+          declaredRate,
+          18
+        );
+        const interState =
+          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
+
+        setTaxBreakdown({
+          subtotal: baseAmount,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: baseAmount + totalTax,
+          taxRate,
+          isInterState: interState,
+        });
+        return;
+      }
+
+      if (baseAmount > 0) {
+        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
+        applyDefaultGstBreakdown(18);
+      }
+    } catch (error) {
+      console.error('Tax calculation error, using default 18%:', error);
+      if (baseAmount > 0) {
+        applyDefaultGstBreakdown(18);
+      }
+    }
+  }, [
+    address,
+    applyDefaultGstBreakdown,
+    baseAmount,
+    customerId,
+    customerPhone,
+    serviceId,
+    serviceStyle,
+    vendorId,
+  ]);
+
   useEffect(() => {
     loadPaymentData();
     loadRazorpayScript();
     calculateTax();
-  }, [customerPhone, baseAmount]);
+  }, [customerPhone, baseAmount, calculateTax]);
 
   const loadRazorpayScript = () => {
     if (typeof window !== 'undefined' && !window.Razorpay) {
@@ -186,58 +293,6 @@ export function PaymentPage({
       console.error('Error loading payment data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const calculateTax = async () => {
-    try {
-      // Get customer and vendor locations for tax calculation
-      const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [{
-          id: serviceId || 'service',
-          type: 'service',
-          serviceId,
-          amount: baseAmount,
-          quantity: 1,
-          category: 'pet_services',
-          serviceStyle: serviceStyle,
-        }],
-        vendorId,
-        customerId,
-      });
-      
-      if (taxRes.success) {
-        const cgst = taxRes.totalCGST || 0;
-        const sgst = taxRes.totalSGST || 0;
-        const igst = taxRes.totalIGST || 0;
-        const totalTax = taxRes.totalTax || cgst + sgst + igst;
-        
-        setTaxBreakdown({
-          subtotal: baseAmount,
-          cgst,
-          sgst,
-          igst,
-          totalTax,
-          total: baseAmount + totalTax,
-          taxRate: taxRes.items?.[0]?.taxRate || 18,
-          isInterState: igst > 0,
-        });
-      }
-    } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
-      // Fallback to 18% GST
-      const taxRate = 18;
-      const totalTax = (baseAmount * taxRate) / 100;
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: baseAmount + totalTax,
-        taxRate,
-        isInterState: false,
-      });
     }
   };
 

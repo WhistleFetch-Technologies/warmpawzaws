@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 
@@ -923,6 +924,7 @@ export function WalkerBookingRouter({
             address={selectedAddress}
             showAddressSelection={true}
             baseAmount={selectedServiceOption?.price || price || 299}
+            priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
             duration={selectedServiceOption?.duration || duration || 30}
             quantity={1}
             customerPhone={phone}

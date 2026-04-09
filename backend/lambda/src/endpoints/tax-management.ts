@@ -9,7 +9,59 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { pickTaxCategoryDisplayRate } from '../utils/tax-category-display-rate';
 import { isValidUUID } from '../types/entities';
+import {
+  displayStateFromKey,
+  inferStateFromPlainAddressText,
+  resolveGstStateKey,
+} from '../lib/gst-place-of-supply';
+import { findCustomerByPhone } from '../utils/customer-phone-lookup';
+import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
+
+/** service_catalog / vendor_services metadata: admin "Show final price (incl. taxes)" */
+function catalogPriceIncludesTaxMeta(meta: unknown): boolean {
+  if (meta == null || typeof meta !== 'object') return false;
+  return !!(meta as Record<string, unknown>).show_final_price_inclusive_tax;
+}
+
+/** Address may be a JSON object, a JSON string, or legacy plain text (e.g. "Bangalore") — never JSON.parse blindly. */
+function addressFieldToLocation(raw: unknown): { state?: string; city?: string; pincode?: string } | null {
+  if (raw == null) return null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    return {
+      state: typeof o.state === 'string' ? o.state : undefined,
+      city: typeof o.city === 'string' ? o.city : undefined,
+      pincode: typeof o.pincode === 'string' ? o.pincode : undefined,
+    };
+  }
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (s.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(s) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return {
+          state: typeof parsed.state === 'string' ? parsed.state : undefined,
+          city: typeof parsed.city === 'string' ? parsed.city : undefined,
+          pincode: typeof parsed.pincode === 'string' ? parsed.pincode : undefined,
+        };
+      }
+    } catch {
+      /* not JSON */
+    }
+  }
+  const inferred = inferStateFromPlainAddressText(s);
+  if (inferred) {
+    return {
+      state: displayStateFromKey(inferred.stateKey),
+      city: inferred.city,
+    };
+  }
+  return null;
+}
 
 // ============================================================================
 // TAX RULES MANAGEMENT
@@ -384,12 +436,23 @@ class GetTaxCategoriesHandler extends BaseHandler {
         params.push(isActive === 'true');
       }
 
-      queryStr += ` ORDER BY category_name ASC`;
-
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const sorted = [...rows].sort((a: any, b: any) =>
+        String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+      const taxCategories = sorted.map((row: Record<string, any>) => {
+        const tax_rate = pickTaxCategoryDisplayRate(row);
+        return {
+          ...row,
+          category_name: row.category_name ?? row.name,
+          tax_rate,
+        };
+      });
 
-      return this.success({ taxCategories: rows });
+      return this.success({ taxCategories });
     } catch (error: any) {
       console.error('Error fetching tax categories:', error);
       return this.error(`Failed to fetch tax categories: ${error.message}`, 500);
@@ -688,25 +751,53 @@ export function registerTaxManagementEndpoints(app: Hono) {
     try {
       const code = c.req.param('code');
       const { query: dbQuery } = await import('../database/rds-connection');
-      const result = await dbQuery(`
-        SELECT id, code, description, gst_rate, is_active
+      let rows: any[] = [];
+      const r1 = await dbQuery(
+        `
+        SELECT id, hsn_code, description, gst_rate, is_active
         FROM hsn_codes
-        WHERE code = $1 AND is_active = true
-      `, [code]);
-      const rows = result.rows || [];
-      
+        WHERE hsn_code = $1 AND is_active = true
+        LIMIT 1
+      `,
+        [code]
+      );
+      rows = r1.rows || [];
       if (rows.length === 0) {
-        // Return default rate for unknown HSN
+        try {
+          const r2 = await dbQuery(
+            `
+            SELECT id, code AS hsn_code, description, gst_rate, is_active
+            FROM hsn_codes
+            WHERE code = $1 AND is_active = true
+            LIMIT 1
+          `,
+            [code]
+          );
+          rows = r2.rows || [];
+        } catch {
+          rows = [];
+        }
+      }
+
+      if (rows.length === 0) {
         return c.json({
           success: true,
           hsn: { code, description: 'Unknown HSN code', gst_rate: 18 },
           message: 'HSN code not found, using default rate',
         });
       }
-      
+
+      const row = rows[0];
+      const gstRate = Number(row.gst_rate);
       return c.json({
         success: true,
-        hsn: rows[0],
+        hsn: {
+          id: row.id,
+          code: row.hsn_code ?? row.code ?? code,
+          description: row.description,
+          gst_rate: Number.isFinite(gstRate) ? gstRate : 18,
+          is_active: row.is_active,
+        },
       });
     } catch (error: any) {
       console.error('Error fetching HSN code:', error);
@@ -728,49 +819,103 @@ export function registerTaxManagementEndpoints(app: Hono) {
   app.post('/tax/calculate', async (c) => {
     try {
       const body = await c.req.json();
-      const { items, vendorId, customerId, customerLocation, vendorLocation } = body;
+      const {
+        items,
+        vendorId,
+        customerId,
+        customerPhone: bodyCustomerPhone,
+        customerLocation,
+        vendorLocation,
+        bookingId: requestBookingId,
+      } = body;
 
       if (!items || !Array.isArray(items) || items.length === 0) {
         return c.json({ error: 'items array is required' }, 400);
       }
 
-      // Get customer and vendor locations if not provided
-      let customerState = customerLocation?.state;
-      let vendorState = vendorLocation?.state;
-      let customerLocationObj: { state: string; city?: string; pincode?: string } | undefined;
-      let vendorLocationObj: { state: string; city?: string } | undefined;
+      // Merge request + DB address; resolve state from city when needed (e.g. Bangalore → Karnataka) for CGST/SGST vs IGST.
+      let customerStateRaw = customerLocation?.state;
+      let customerCityRaw = customerLocation?.city;
+      let customerPincode = customerLocation?.pincode;
 
-      if (!customerState && customerId) {
-        const customers = await select('customers', { id: customerId });
-        if (customers.length > 0 && customers[0].address) {
-          const addr = typeof customers[0].address === 'string'
-            ? JSON.parse(customers[0].address)
-            : customers[0].address;
-          customerState = addr?.state;
-          if (addr?.state) {
-            customerLocationObj = { state: addr.state, city: addr.city, pincode: addr.pincode };
-          }
-        }
-      } else if (customerLocation?.state) {
-        customerLocationObj = customerLocation;
+      let customerRow: Record<string, unknown> | null = null;
+      if (customerId && isValidUUID(String(customerId))) {
+        const byId = await select('customers', { id: String(customerId) });
+        if (byId.length > 0) customerRow = byId[0] as Record<string, unknown>;
+      }
+      const trimmedBodyPhone =
+        typeof bodyCustomerPhone === 'string' ? bodyCustomerPhone.trim() : '';
+      const idAsPhone =
+        customerId && !isValidUUID(String(customerId)) ? String(customerId).trim() : '';
+      const phoneForLookup = trimmedBodyPhone || idAsPhone;
+      if (!customerRow && phoneForLookup) {
+        const byPhone = await findCustomerByPhone(phoneForLookup);
+        if (byPhone) customerRow = byPhone as Record<string, unknown>;
       }
 
-      if (!vendorState && vendorId) {
+      if (customerRow?.address) {
+        const addr = addressFieldToLocation(customerRow.address);
+        if (addr) {
+          if (!customerStateRaw && addr.state) customerStateRaw = addr.state;
+          if (!customerCityRaw && addr.city) customerCityRaw = addr.city;
+          if (!customerPincode && addr.pincode) customerPincode = addr.pincode;
+        } else if (typeof customerRow.address === 'string') {
+          const inf = inferStateFromPlainAddressText(customerRow.address);
+          if (inf) {
+            if (!customerStateRaw) customerStateRaw = displayStateFromKey(inf.stateKey);
+            if (!customerCityRaw && inf.city) customerCityRaw = inf.city;
+          }
+        }
+      }
+
+      let vendorStateRaw = vendorLocation?.state;
+      let vendorCityRaw = vendorLocation?.city;
+
+      if (vendorId) {
         const vendors = await select('vendors', { id: vendorId });
         if (vendors.length > 0 && vendors[0].address) {
-          const addr = typeof vendors[0].address === 'string'
-            ? JSON.parse(vendors[0].address)
-            : vendors[0].address;
-          vendorState = addr?.state;
-          if (addr?.state) {
-            vendorLocationObj = { state: addr.state, city: addr.city };
+          const addr = addressFieldToLocation(vendors[0].address);
+          if (addr) {
+            if (!vendorStateRaw && addr.state) vendorStateRaw = addr.state;
+            if (!vendorCityRaw && addr.city) vendorCityRaw = addr.city;
+          } else if (typeof vendors[0].address === 'string') {
+            const inf = inferStateFromPlainAddressText(vendors[0].address);
+            if (inf) {
+              if (!vendorStateRaw) vendorStateRaw = displayStateFromKey(inf.stateKey);
+              if (!vendorCityRaw && inf.city) vendorCityRaw = inf.city;
+            }
           }
         }
-      } else if (vendorLocation?.state) {
-        vendorLocationObj = vendorLocation;
       }
 
-      // Resolve each item: serviceId/productId → hsnCodeId, taxCategoryId
+      const customerKey = resolveGstStateKey(customerStateRaw, customerCityRaw);
+      const vendorKey = resolveGstStateKey(vendorStateRaw, vendorCityRaw);
+
+      let customerLocationObj: { state: string; city?: string; pincode?: string } | undefined;
+      let vendorLocationObj: { state: string; city?: string } | undefined;
+      let customerState: string | undefined;
+      let vendorState: string | undefined;
+
+      if (customerKey) {
+        customerState = displayStateFromKey(customerKey);
+        customerLocationObj = {
+          state: customerState,
+          city: customerCityRaw,
+          pincode: customerPincode,
+        };
+      } else {
+        customerState = customerStateRaw;
+      }
+
+      if (vendorKey) {
+        vendorState = displayStateFromKey(vendorKey);
+        vendorLocationObj = { state: vendorState, city: vendorCityRaw };
+      } else {
+        vendorState = vendorStateRaw;
+      }
+
+      // Services: GST from Admin Catalogue category + vendor role (GST Configuration).
+      // Products: HSN / tax category on product rows (unchanged).
       const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
 
       const taxItems: Array<{
@@ -781,9 +926,11 @@ export function registerTaxManagementEndpoints(app: Hono) {
         hsnCode?: string;
         hsnCodeId?: string;
         taxCategoryId?: string;
+        catalogCategoryId?: string;
         category?: string;
         serviceStyle?: string;
         roleId?: string;
+        amountIsTaxInclusive?: boolean;
       }> = [];
 
       let vendorRoleId: string | undefined;
@@ -796,51 +943,117 @@ export function registerTaxManagementEndpoints(app: Hono) {
         const amount = Number(item.amount) || 0;
         const quantity = Number(item.quantity) || 1;
         const itemType = (item.type === 'product' ? 'product' : 'service') as 'product' | 'service';
-        let hsnCodeId: string | undefined;
-        let taxCategoryId: string | undefined;
-        let hsnCode: string | undefined;
         let category = item.category;
 
         const serviceId = item.serviceId;
         const productId = item.productId;
 
-        if (serviceId && vendorId) {
-          // 360 mapping: vendor_services → service_catalog → tax_category_id, hsn_code_id
-          const vendorSvcs = await query(
-            `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
-             FROM vendor_services vs
-             LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-             WHERE vs.id = $1::uuid LIMIT 1`,
-            [serviceId]
-          ).catch(() => ({ rows: [] }));
-          if (vendorSvcs.rows?.length > 0) {
-            const row = vendorSvcs.rows[0];
-            taxCategoryId = row.tax_category_id;
-            hsnCodeId = row.hsn_code_id;
-            if (!category) category = row.category_name || row.category_id || row.category;
+        let amountIsTaxInclusive =
+          item.amountTaxInclusive === true || item.amount_is_tax_inclusive === true;
+
+        if (itemType === 'service') {
+          let scCatRef: string | undefined;
+          if (serviceId && vendorId) {
+            const vendorSvcs = await query(
+              `SELECT sc.category_id, sc.category_name, sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
+               FROM vendor_services vs
+               LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+               WHERE vs.id = $1::uuid LIMIT 1`,
+              [serviceId]
+            ).catch(() => ({ rows: [] }));
+            if (vendorSvcs.rows?.length > 0) {
+              const row = vendorSvcs.rows[0];
+              scCatRef = row.category_id;
+              if (!category) category = row.category_name || row.category_id;
+              if (!amountIsTaxInclusive) {
+                amountIsTaxInclusive =
+                  catalogPriceIncludesTaxMeta(row.sc_metadata) ||
+                  catalogPriceIncludesTaxMeta(row.vs_metadata);
+              }
+            }
           }
-          if (!taxCategoryId && !hsnCodeId) {
+          if (!scCatRef && serviceId) {
             const catalogRows = await query(
-              `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+              `SELECT category_id, category_name, metadata FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
               [serviceId]
             ).catch(() => ({ rows: [] }));
             if (catalogRows.rows?.length > 0) {
               const row = catalogRows.rows[0];
-              taxCategoryId = row.tax_category_id;
-              hsnCodeId = row.hsn_code_id;
+              scCatRef = row.category_id;
               if (!category) category = row.category_name || row.category_id;
+              if (!amountIsTaxInclusive) {
+                amountIsTaxInclusive = catalogPriceIncludesTaxMeta(row.metadata);
+              }
             }
           }
-          if (!hsnCode && !hsnCodeId && !taxCategoryId) {
+          if (serviceId && !scCatRef) {
             const services = await select('services', { id: serviceId }).catch(() => []);
-            if (services.length > 0) {
-              hsnCode = services[0].hsn_code;
-              if (!category) category = services[0].category;
+            if (services.length > 0 && !category) category = services[0].category;
+          }
+
+          /** Payment step often has bookingId but no serviceId — resolve catalogue category from the booking row. */
+          if (!scCatRef) {
+            const bidRaw =
+              (item as { bookingId?: string }).bookingId || requestBookingId;
+            const bid =
+              bidRaw != null && String(bidRaw).trim() !== '' && isValidUUID(String(bidRaw).trim())
+                ? String(bidRaw).trim()
+                : '';
+            if (bid) {
+              const bkg = await query(
+                `SELECT sc.category_id, sc.category_name, sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
+                 FROM bookings b
+                 JOIN vendor_services vs ON vs.id = b.service_id
+                 LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+                 WHERE b.id = $1::uuid
+                 LIMIT 1`,
+                [bid]
+              ).catch(() => ({ rows: [] }));
+              if (bkg.rows?.length > 0) {
+                const row = bkg.rows[0] as {
+                  category_id?: string;
+                  category_name?: string;
+                  sc_metadata?: unknown;
+                  vs_metadata?: unknown;
+                };
+                if (row.category_id) scCatRef = row.category_id;
+                if (!category) category = row.category_name || row.category_id;
+                if (!amountIsTaxInclusive) {
+                  amountIsTaxInclusive =
+                    catalogPriceIncludesTaxMeta(row.sc_metadata) ||
+                    catalogPriceIncludesTaxMeta(row.vs_metadata);
+                }
+              }
             }
           }
+
+          let catalogCategoryUuid = scCatRef
+            ? await resolveCatalogCategoryUuidFromRef(scCatRef)
+            : null;
+          /** e.g. UniversalPaymentPage sends category: "boarding" when serviceId is missing */
+          if (!catalogCategoryUuid && category) {
+            catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(category).trim());
+          }
+
+          taxItems.push({
+            id: item.id || serviceId || `item-${Math.random().toString(36).slice(2)}`,
+            type: 'service',
+            amount,
+            quantity,
+            catalogCategoryId: catalogCategoryUuid ?? undefined,
+            category,
+            serviceStyle: item.serviceStyle,
+            roleId: item.roleId || vendorRoleId,
+            amountIsTaxInclusive,
+          });
+          continue;
         }
 
-        if (productId && vendorId && !hsnCodeId && !taxCategoryId) {
+        let hsnCodeId: string | undefined;
+        let taxCategoryId: string | undefined;
+        let hsnCode: string | undefined;
+
+        if (productId && vendorId) {
           const products = await select('products', { id: productId }).catch(() => []);
           if (products.length > 0 && products[0].hsn_code) {
             hsnCode = products[0].hsn_code;
@@ -849,7 +1062,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
 
         taxItems.push({
           id: item.id || serviceId || productId || `item-${Math.random().toString(36).slice(2)}`,
-          type: itemType,
+          type: 'product',
           amount,
           quantity,
           hsnCode: hsnCode || item.hsnCode,
@@ -858,6 +1071,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
           category,
           serviceStyle: item.serviceStyle,
           roleId: item.roleId || vendorRoleId,
+          amountIsTaxInclusive,
         });
       }
 
@@ -873,11 +1087,16 @@ export function registerTaxManagementEndpoints(app: Hono) {
       const itemResults = taxResult.items.map((t) => ({
         id: t.itemId,
         amount: t.baseAmount,
-        taxRate: t.gstRate,
+        taxRate: Number(t.gstRate),
         igst: t.igstAmount,
         cgst: t.cgstAmount,
         sgst: t.sgstAmount,
         totalWithTax: t.totalAmount,
+      }));
+
+      const breakdown = taxResult.hsnSummary.map((b) => ({
+        ...b,
+        gstRate: Number(b.gstRate),
       }));
 
       return c.json({
@@ -892,13 +1111,13 @@ export function registerTaxManagementEndpoints(app: Hono) {
         isInterState: taxResult.isInterstate,
         customerState,
         vendorState,
-        breakdown: taxResult.hsnSummary,
+        breakdown,
       });
     } catch (error: any) {
       console.error('Error calculating tax:', error);
-      // Return a safe fallback
+      // 200 + success:false so api clients that only parse JSON (no throw) can branch; avoids masking as "success" with empty items
       return c.json({
-        success: true,
+        success: false,
         items: [],
         totalAmount: 0,
         totalTax: 0,
@@ -906,7 +1125,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
         totalSGST: 0,
         totalIGST: 0,
         grandTotal: 0,
-        error: error.message,
+        error: error?.message || 'Tax calculation failed',
       });
     }
   });
