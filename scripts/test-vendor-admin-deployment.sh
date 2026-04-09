@@ -110,9 +110,9 @@ else
     ((FAILED++))
 fi
 
-# Test 5: Test application review endpoint (dry run - won't actually approve)
-echo -e "${YELLOW}[5/5] Testing POST /admin/vendor/onboarding/:applicationId/review (validation only)${NC}"
-echo -e "${YELLOW}  Note: This test requires a valid applicationId. Skipping actual call.${NC}"
+# Test 5: Approve path is POST /admin/vendor/application/:applicationId/approve (no separate review route)
+echo -e "${YELLOW}[5/5] Admin approve endpoint (not exercised — needs applicationId + auth)${NC}"
+echo -e "${YELLOW}  Note: Skipping actual call; use admin UI or integration tests with a real applicationId.${NC}"
 echo -e "${GREEN}  ✓ Endpoint structure verified${NC}\n"
 ((PASSED++))
 
