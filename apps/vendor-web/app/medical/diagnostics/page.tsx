@@ -78,6 +78,7 @@ export default function DiagnosticsPage() {
     serviceStyle: 'at_center' as 'at_center' | 'at_home',
     isFreeHomeCollection: true,
     homeCollectionFee: 0,
+    isAvailable: true,
   });
 
   useEffect(() => {
@@ -159,6 +160,7 @@ export default function DiagnosticsPage() {
       serviceStyle: 'at_center',
       isFreeHomeCollection: true,
       homeCollectionFee: 0,
+      isAvailable: true,
     });
   };
 
@@ -185,7 +187,7 @@ export default function DiagnosticsPage() {
           serviceStyle: newTest.serviceStyle,
           isFreeHomeCollection: newTest.isFreeHomeCollection,
           homeCollectionFee: newTest.isFreeHomeCollection ? 0 : newTest.homeCollectionFee,
-          isAvailable: editingTest.is_available,
+          isAvailable: newTest.isAvailable,
         });
         toast.success('Test updated successfully');
       } else {
@@ -196,9 +198,13 @@ export default function DiagnosticsPage() {
           serviceStyle: newTest.serviceStyle,
           isFreeHomeCollection: newTest.isFreeHomeCollection,
           homeCollectionFee: newTest.isFreeHomeCollection ? 0 : newTest.homeCollectionFee,
-          isAvailable: false, // Draft by default - must publish to go live
+          isAvailable: newTest.isAvailable,
         });
-        toast.success('Diagnostic test added (saved as Draft)');
+        toast.success(
+          newTest.isAvailable
+            ? 'Diagnostic test added and visible to customers'
+            : 'Diagnostic test saved as draft (use list actions to publish)'
+        );
       }
       setShowAddModal(false);
       resetForm();
@@ -240,6 +246,7 @@ export default function DiagnosticsPage() {
       serviceStyle: ((test as any).service_style === 'at_home' ? 'at_home' : 'at_center') as 'at_center' | 'at_home',
       isFreeHomeCollection: (test as any).is_free_home_collection !== false,
       homeCollectionFee: (test as any).home_collection_fee || 0,
+      isAvailable: test.is_available !== false,
     });
     setShowAddModal(true);
   };
@@ -636,6 +643,19 @@ export default function DiagnosticsPage() {
                   onChange={(e) => setNewTest(prev => ({ ...prev, preparationInstructions: e.target.value }))}
                   placeholder="e.g., Fasting required for 12 hours"
                 />
+              </div>
+              <div className="flex items-start gap-2">
+                <input
+                  id="diag-is-available"
+                  type="checkbox"
+                  checked={newTest.isAvailable}
+                  onChange={(e) => setNewTest(prev => ({ ...prev, isAvailable: e.target.checked }))}
+                  className="mt-1"
+                />
+                <label htmlFor="diag-is-available" className="text-sm text-gray-700">
+                  <span className="font-medium">Publish for customer booking</span>
+                  <span className="block text-xs text-gray-500">Draft tests stay hidden on the customer lab booking screen.</span>
+                </label>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={closeModal} className="w-full">

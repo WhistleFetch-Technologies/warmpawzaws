@@ -36,22 +36,50 @@ function symptomSearchTerms(text: string): string[] {
 
 function inferBookingCategoryFromText(msg: string): string {
   const m = msg.toLowerCase();
-  if (/\b(groom|bath|trim|haircut)\b/.test(m)) return 'grooming';
-  if (/\b(walk|walker)\b/.test(m)) return 'walker';
-  if (/\b(train|trainer|behavior)\b/.test(m)) return 'training';
-  if (/\b(board|boarding|kennel)\b/.test(m)) return 'boarding';
-  if (/\b(vet|veterinar|doctor|clinic|tele\s*consult|consultation)\b/.test(m)) return 'vet';
+  // \\bgroom\\b does not match "grooming" — include full words
+  if (/\b(grooming|groom|groomer|bath|trim|haircut|nail\s*clip)\b/.test(m)) return 'grooming';
+  if (/\b(walk|walker|walking)\b/.test(m)) return 'walker';
+  if (/\b(train|trainer|training|behavior|behaviourist)\b/.test(m)) return 'training';
+  if (/\b(board|boarding|kennel|daycare)\b/.test(m)) return 'boarding';
+  if (/\b(vet|veterinar|veterinary|doctor|clinic|tele\s*consult|consultation)\b/.test(m)) return 'vet';
   if (/\b(pharmacy|medicine|medication)\b/.test(m)) return 'pharmacy';
+  if (/\b(cafe|café)\b/.test(m)) return 'cafe';
+  if (/\b(resort|holiday)\b/.test(m)) return 'resort';
+  if (/\b(sitter|pet\s*sit|sitting)\b/.test(m)) return 'walker';
   return '';
 }
 
+const BOOKING_SEARCH_CATEGORY_SET = new Set([
+  'vet',
+  'grooming',
+  'training',
+  'boarding',
+  'walker',
+  'pharmacy',
+  'cafe',
+  'resort',
+]);
+
+function normalizeServiceTypeToCategory(serviceType: string): string {
+  const s = String(serviceType || '')
+    .toLowerCase()
+    .trim();
+  if (BOOKING_SEARCH_CATEGORY_SET.has(s)) return s;
+  if (s === 'other' || s === 'general' || s === '' || s === 'unknown') return '';
+  return '';
+}
+
+/** Prefer category from user words / model; do not fall back unknown → vet */
 function normalizeCustomerBookingUrl(serviceType: string, bookingQuery: string): string {
-  const cat = inferBookingCategoryFromText(bookingQuery) || serviceType || 'vet';
+  const inferred = inferBookingCategoryFromText(bookingQuery);
+  const fromModel = normalizeServiceTypeToCategory(serviceType);
+  const cat = inferred || fromModel;
   const q = encodeURIComponent(bookingQuery.trim().slice(0, 120));
-  const safeCat = ['vet', 'grooming', 'training', 'boarding', 'walker', 'pharmacy', 'cafe', 'resort'].includes(cat)
-    ? cat
-    : 'vet';
-  return `/search?category=${safeCat}&q=${q}`;
+  const safeCat = cat && BOOKING_SEARCH_CATEGORY_SET.has(cat) ? cat : '';
+  if (safeCat) {
+    return `/search?category=${safeCat}${q ? `&q=${q}` : ''}`;
+  }
+  return q ? `/search?q=${q}` : `/search`;
 }
 
 function formatChatPreviousTurns(contextObj: Record<string, unknown>): string {
@@ -341,6 +369,8 @@ export function registerAIChatbotEndpoints(app: Hono) {
         context && typeof context === 'object' && !Array.isArray(context)
           ? (context as Record<string, unknown>)
           : {};
+      const widgetMode =
+        typeof ctx.widgetMode === 'string' ? String(ctx.widgetMode).trim().toLowerCase() : '';
       const ctxUserType = ctx.userType === 'vendor' ? 'vendor' : 'customer';
       const ctxUserName = typeof ctx.userName === 'string' ? ctx.userName.trim() : '';
 
@@ -497,9 +527,14 @@ export function registerAIChatbotEndpoints(app: Hono) {
         }
       }
 
+      const chatTabUiHint =
+        !isVendorSession && widgetMode === 'chat'
+          ? `UI CONTEXT: The customer is using the **Chat** tab (general support). For suggestedActions, prefer **Create Ticket** and **Contact Support**. Do not suggest **Find Vet Clinic** or **Browse Services** unless the user clearly asks for a vet or to browse/book services.\n\n`
+          : '';
+
       const customerSystemPrompt = `You are the Warmpawz AI Assistant, a helpful and friendly pet care assistant.
 
-ROLE: Help customers with pet care, shopping, bookings, and support.
+${chatTabUiHint}ROLE: Help customers with pet care, shopping, bookings, and support.
 
 CONTEXT:
 ${customerContext ? `- ${customerContext}\n` : ''}${petContext ? `- ${petContext}\n` : ''}${bookingContext ? `- ${bookingContext}\n` : ''}${storeContext ? `- ${storeContext}\n` : ''}${transcriptHint}
@@ -734,20 +769,24 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
           responseText =
             "Hi! I'm the Warmpawz assistant. Ask me about pet care, bookings, or symptoms — or use the **Symptoms** and **Booking** tabs above for guided help.";
           confidence = 0.9;
-          suggestedActions = ['Find Vet Clinic', 'Browse Services'];
+          suggestedActions = ['Create Ticket', 'Contact Support'];
         } else if (/\b(help|support|agent|human|talk to someone)\b/.test(lowerMessage)) {
           intent = 'support';
           responseText =
             'I can help with common questions here. For account or order issues, contact our support team from Help & Support.';
           confidence = 0.85;
-          suggestedActions = ['Contact Support', 'Browse Services'];
+          suggestedActions = ['Create Ticket', 'Contact Support'];
         } else {
           intent = 'support';
           responseText =
             "I'm not sure I understood that. Try rephrasing, or use **Symptoms** for health concerns and **Booking** to find a service. You can also search providers or contact support.";
           confidence = 0.72;
-          suggestedActions = ['Search Providers', 'Contact Support', 'Browse Services'];
+          suggestedActions = ['Create Ticket', 'Contact Support', 'Search Providers'];
         }
+      }
+
+      if (!isVendorSession && widgetMode === 'chat') {
+        suggestedActions = ['Create Ticket', 'Contact Support'];
       }
 
       // Save conversation to database

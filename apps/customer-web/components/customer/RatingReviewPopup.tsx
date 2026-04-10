@@ -224,9 +224,9 @@ export function RatingReviewPopup({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 overscroll-none">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end items-stretch sm:justify-center sm:items-center bg-black/50 overscroll-none touch-none sm:touch-auto sm:p-4">
       <div
-        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90dvh] flex flex-col min-h-0 animate-in slide-in-from-bottom duration-300 shadow-xl"
+        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-bottom,0px)))] flex flex-col min-h-0 overflow-hidden animate-in slide-in-from-bottom duration-300 shadow-xl touch-auto sm:mx-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -240,7 +240,7 @@ export function RatingReviewPopup({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-6 [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain p-6 pb-8 [-webkit-overflow-scrolling:touch] touch-pan-y">
           {/* Service Info */}
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-2xl flex items-center justify-center mx-auto mb-4">

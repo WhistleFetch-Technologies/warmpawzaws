@@ -76,6 +76,7 @@ const RelocationServicesLanding = dynamic(() => import('./RelocationServicesLand
 const ResortServicesLanding = dynamic(() => import('./ResortServicesLanding').then(mod => ({ default: mod.ResortServicesLanding })), { loading: LoadingSpinner });
 const PetHolidayServicesLanding = dynamic(() => import('./PetHolidayServicesLanding').then(mod => ({ default: mod.PetHolidayServicesLanding })), { loading: LoadingSpinner });
 const DiagnosticsServicesLanding = dynamic(() => import('./DiagnosticsServicesLanding').then(mod => ({ default: mod.DiagnosticsServicesLanding })), { loading: LoadingSpinner });
+const DiagnosticsBookingFlow = dynamic(() => import('./specialized/DiagnosticsBookingFlow').then(mod => ({ default: mod.DiagnosticsBookingFlow })), { loading: LoadingSpinner });
 const DiagnosticsReportViewer = dynamic(() => import('./diagnostics/DiagnosticsReportViewer').then(mod => ({ default: mod.DiagnosticsReportViewer })), { loading: LoadingSpinner });
 const SampleCollectionTracker = dynamic(() => import('./diagnostics/SampleCollectionTracker').then(mod => ({ default: mod.SampleCollectionTracker })), { loading: LoadingSpinner });
 
@@ -224,6 +225,7 @@ type ScreenType =
   | 'universal-home-booking'
   | 'pharmacy'
   | 'lab-diagnostics'
+  | 'diagnostics-booking'
   | 'diagnostics-reports'
   | 'sample-collection-tracking';
 
@@ -250,6 +252,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [currentPharmacyOrderId, setCurrentPharmacyOrderId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [diagnosticsLabBookingHint, setDiagnosticsLabBookingHint] = useState<{ name?: string; testLabels?: string[] } | null>(null);
   const [selectedHomeServiceType, setSelectedHomeServiceType] = useState<string>('walker'); // For universal home booking: walker | grooming | training | veterinary | behaviourist | sitter | diagnostics
   // Prescription order flow state
   const [prescriptionOrderData, setPrescriptionOrderData] = useState<{
@@ -702,7 +705,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'lab-booking') {
       setSelectedVendorId(data?.vendorId);
-      navigateToScreen('create-booking');
+      setDiagnosticsLabBookingHint(
+        data?.packageName || (data?.packageTestLabels && data.packageTestLabels.length)
+          ? { name: data?.packageName, testLabels: data?.packageTestLabels ?? [] }
+          : null
+      );
+      navigateToScreen('diagnostics-booking');
     } else if (screen === 'diagnostics-reports') {
       setSelectedBookingId(data?.bookingId);
       navigateToScreen('diagnostics-reports');
@@ -732,6 +740,32 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       onComplete={() => { toast.success('Sample collection completed'); handleBack(); }}
     />;
     return <NotAvailable label="Sample collection tracking" onBack={handleBack} />;
+  }
+
+  // Diagnostics lab booking (published test catalog + payment) — same flow as wrappers/CustomerHomeWrapper
+  if (currentScreen === 'diagnostics-booking' && selectedVendorId) {
+    return (
+      <DiagnosticsBookingFlow
+        vendorId={selectedVendorId}
+        customerPhone={phone}
+        packageHint={diagnosticsLabBookingHint ?? undefined}
+        onBack={() => {
+          setDiagnosticsLabBookingHint(null);
+          setSelectedVendorId(undefined);
+          handleBack();
+        }}
+        onSuccess={(bookingId) => {
+          setDiagnosticsLabBookingHint(null);
+          setSelectedVendorId(undefined);
+          handleViewBooking(bookingId);
+        }}
+        onCancel={() => {
+          setDiagnosticsLabBookingHint(null);
+          setSelectedVendorId(undefined);
+          handleBack();
+        }}
+      />
+    );
   }
 
   // Shop & Orders

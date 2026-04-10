@@ -26,9 +26,8 @@ interface ProblemGridItem {
   id: string;
   name: string;
   icon: string | React.ReactNode;
-  // Deprecated specific color props in favor of unified styling, 
-  // but kept for backward compatibility if needed, though we will ignore them in render
   bgColor?: string;
+  /** When set (e.g. from specialization_master), tints the icon chip like admin catalog. */
   iconBg?: string;
   textColor?: string;
 }
@@ -70,6 +69,7 @@ export function ProblemGridSection({
       <div className="grid grid-cols-4 gap-3">
         {problems.map((problem) => {
           const isViewAll = problem.id === 'view_all';
+          const hasAdminTint = Boolean(problem.iconBg) && !isViewAll;
           return (
             <button
               key={problem.id}
@@ -92,14 +92,26 @@ export function ProblemGridSection({
                   : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                 }
               `}>
-                <div className={`
+                <div
+                  className={`
                   w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
-                  ${isViewAll ? 'bg-white/50' : 'bg-slate-50 group-hover:bg-orange-50'}
-                `}>
+                  ${
+                    isViewAll
+                      ? 'bg-white/50'
+                      : hasAdminTint
+                        ? `${problem.iconBg} group-hover:opacity-90`
+                        : 'bg-slate-50 group-hover:bg-orange-50'
+                  }
+                `}
+                >
                   {typeof problem.icon === 'string' ? (
                     <span className="text-xl">{problem.icon}</span>
                   ) : (
-                    <div className="text-slate-600 group-hover:text-orange-600">
+                    <div
+                      className={
+                        hasAdminTint ? '' : 'text-slate-600 group-hover:text-orange-600'
+                      }
+                    >
                       {problem.icon}
                     </div>
                   )}

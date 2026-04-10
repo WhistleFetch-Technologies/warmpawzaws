@@ -16,6 +16,9 @@ import { Card } from "@/components/ui/card";
 import { apiClient } from "@/lib/api-client";
 import { PromotionBanner } from "./shared/PromotionBanner";
 import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
+import { FeaturedProviderCard } from "./shared/FeaturedProviderCard";
+import { normalizeAndDedupeDiscoveryProviders } from "@/lib/featured-provider";
+import { HUB_SERVICE_ICON_WRAP } from "@/lib/hub-service-option-styles";
 
 interface PetSitterServiceRouterProps {
   phone: string;
@@ -33,7 +36,7 @@ const SITTING_OPTIONS = [
     desc: "Sitter stays at your home",
     price: "₹899+",
     icon: Moon,
-    iconWrap: "bg-indigo-100 text-indigo-600",
+    iconWrap: HUB_SERVICE_ICON_WRAP.overnightMoon,
   },
   {
     id: "day_visits",
@@ -41,7 +44,7 @@ const SITTING_OPTIONS = [
     desc: "Scheduled daytime check-ins",
     price: "₹549+",
     icon: Sun,
-    iconWrap: "bg-amber-100 text-amber-600",
+    iconWrap: HUB_SERVICE_ICON_WRAP.sunDaytime,
   },
   {
     id: "extended_home",
@@ -49,7 +52,7 @@ const SITTING_OPTIONS = [
     desc: "Multi-day in-home care",
     price: "₹1,499+",
     icon: Calendar,
-    iconWrap: "bg-orange-100 text-[#FF8C42]",
+    iconWrap: HUB_SERVICE_ICON_WRAP.calendarWeekly,
   },
   {
     id: "drop_in",
@@ -57,7 +60,7 @@ const SITTING_OPTIONS = [
     desc: "Quick feeding & breaks",
     price: "₹249+",
     icon: Clock,
-    iconWrap: "bg-rose-100 text-rose-600",
+    iconWrap: HUB_SERVICE_ICON_WRAP.clockFlexible,
   },
 ];
 
@@ -261,19 +264,27 @@ export function PetSitterServiceRouter({
       }
 
       setSitters(list);
+      const dedupedSitters = normalizeAndDedupeDiscoveryProviders(list, "sitting");
       setStats({
-        activeSitters: list.length || 12,
+        activeSitters: dedupedSitters.length || list.length || 12,
         visits: "8K+",
         rating:
-          list.length > 0
+          dedupedSitters.length > 0
             ? Number(
-                list.reduce(
-                  (acc: number, v: any) =>
-                    acc + Number(v.rating || 4.7),
+                dedupedSitters.reduce(
+                  (acc, v) => acc + Number(v.rating || 0),
                   0
-                ) / list.length
+                ) / dedupedSitters.length
               ).toFixed(1)
-            : "4.7",
+            : list.length > 0
+              ? Number(
+                  list.reduce(
+                    (acc: number, v: any) =>
+                      acc + Number(v.rating || 4.7),
+                    0
+                  ) / list.length
+                ).toFixed(1)
+              : "4.7",
       });
     } catch (e) {
       console.error("Error loading pet sitters:", e);
@@ -290,6 +301,11 @@ export function PetSitterServiceRouter({
       serviceType: "sitting",
     });
   };
+
+  const featuredSitters = normalizeAndDedupeDiscoveryProviders(sitters, "sitting");
+  const displaySitters = hubMode
+    ? featuredSitters.slice(0, 5)
+    : featuredSitters;
 
   const scrollToFeatured = () => {
     featuredRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -442,11 +458,13 @@ export function PetSitterServiceRouter({
                     View all <ChevronRight className="h-4 w-4" />
                   </button>
                 ) : (
-                  <span className="text-xs text-slate-400">{sitters.length} nearby</span>
+                  <span className="text-xs text-slate-400">
+                    {featuredSitters.length} nearby
+                  </span>
                 )}
               </div>
               <div className="space-y-3">
-                {sitters.length === 0 ? (
+                {displaySitters.length === 0 ? (
                   <Card className="p-8 text-center">
                     <div className="mb-3 text-4xl">🏠</div>
                     <p className="mb-2 text-gray-600">
@@ -457,54 +475,12 @@ export function PetSitterServiceRouter({
                     </p>
                   </Card>
                 ) : (
-                  (hubMode ? sitters.slice(0, 5) : sitters).map((s: any, index: number) => (
-                    <div
-                      key={s.id || index}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => goBook(s.id || s.vendorId)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          goBook(s.id || s.vendorId);
-                        }
-                      }}
-                      className="flex cursor-pointer items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-[#FF8C42]/40"
-                    >
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl font-bold text-slate-400">
-                        {(s.businessName || s.name || "S").charAt(0)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate font-bold text-slate-900">
-                          {s.businessName ||
-                            s.name ||
-                            `Sitter ${index + 1}`}
-                        </h3>
-                        <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                          <span className="flex items-center gap-1 font-bold text-[#FF8C42]">
-                            <Star className="h-3 w-3 fill-current" />
-                            {s.rating || 4.7}
-                          </span>
-                          <span>•</span>
-                          <span>
-                            {s.distance
-                              ? `${Number(s.distance).toFixed(1)} km`
-                              : "Nearby"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold text-slate-900">
-                          ₹
-                          {s.priceRange?.replace(/[^0-9]/g, "") ||
-                            s.basePrice ||
-                            299}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          from
-                        </div>
-                      </div>
-                    </div>
+                  displaySitters.map((provider) => (
+                    <FeaturedProviderCard
+                      key={provider.id}
+                      provider={provider}
+                      onClick={() => goBook(provider.id)}
+                    />
                   ))
                 )}
               </div>

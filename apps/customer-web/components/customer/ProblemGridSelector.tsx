@@ -79,7 +79,12 @@ const getProblemIcon = (problemId: string, roleId: string): React.ReactNode => {
 };
 
 import { apiClient } from '@/lib/api-client';
+import { defaultAllowedServiceStylesForRole } from '@/lib/default-allowed-service-styles';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { PROBLEM_GRID_CATEGORY_TO_ROLE } from '@/lib/problem-grid-catalog-fallback';
+import { problemGridAliasesForApi } from '@/lib/problem-grid-role-aliases';
+import { DynamicProblemIcon } from '@/lib/problem-grid-dynamic-icon';
+import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
 import {
   GROOMING_NEEDS,
   WALKING_NEEDS,
@@ -90,7 +95,43 @@ import {
   VET_PROBLEMS,
 } from './ProblemGridSection';
 
-const DEFAULT_SERVICE_STYLES = ['at_home', 'at_center', 'tele'];
+function normalizeStyles(raw: unknown, roleIdForFallback?: string): string[] {
+  if (Array.isArray(raw) && raw.length > 0) return raw as string[];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p) && p.length > 0 ? p : defaultAllowedServiceStylesForRole(roleIdForFallback);
+    } catch {
+      return defaultAllowedServiceStylesForRole(roleIdForFallback);
+    }
+  }
+  return defaultAllowedServiceStylesForRole(roleIdForFallback);
+}
+
+function mapFromProblemGridRow(p: any, roleIdForFlow: string): any {
+  const label = p.displayName || p.name;
+  return {
+    id: p.id ?? p.problemId,
+    name: p.name,
+    displayName: label,
+    description:
+      typeof p.description === 'string' && p.description.trim()
+        ? p.description
+        : `Find ${label} specialists`,
+    roleId: roleIdForFlow,
+    allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(
+      normalizeStyles(p.allowedServiceStyles ?? p.allowed_service_styles, roleIdForFlow),
+      {
+        roleId: roleIdForFlow,
+        specializationId: String(p.id ?? p.problemId ?? ''),
+      }
+    ),
+    keywords: [String(p.name || '').toLowerCase(), String(p.id || '').toLowerCase()],
+    iconName: p.iconName ?? p.icon_name,
+    iconColor: p.iconColor ?? p.icon_color,
+    displayOrder: p.displayOrder ?? p.display_order ?? 100,
+  };
+}
 
 /** Same catalog as home when APIs return nothing or legacy single "General Service". */
 function buildLocalAllProblemsFallback(): any[] {
@@ -103,7 +144,10 @@ function buildLocalAllProblemsFallback(): any[] {
         displayName: p.name,
         description: 'Select to find specialists',
         roleId,
-        allowedServiceStyles: [...DEFAULT_SERVICE_STYLES],
+        allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(null, {
+          roleId,
+          specializationId: p.id,
+        }),
         keywords: [p.name.toLowerCase(), p.id.toLowerCase()],
       }));
   return [
@@ -149,12 +193,9 @@ export function ProblemGridSelector({
     try {
       setLoading(true);
       const isAll = String(roleId || '').toLowerCase() === 'all';
-      const data = await apiClient.get<{ problems?: any[] }>(
-        `/public/problems?roleId=${encodeURIComponent(roleId)}`
-      );
-      let list = Array.isArray(data.problems) ? data.problems : [];
+      let list: any[] = [];
 
-      if (isAll && list.length <= 1) {
+      if (isAll) {
         try {
           const pg = await apiClient.get<{ success?: boolean; problems?: any[] }>('/public/problem-grid');
           if (pg?.success && Array.isArray(pg.problems) && pg.problems.length > 0) {
@@ -163,32 +204,56 @@ export function ProblemGridSelector({
               .map((p: any) => {
                 const cat = String(p.categoryId || '').toLowerCase();
                 const roleForRow = PROBLEM_GRID_CATEGORY_TO_ROLE[cat] || 'veterinarian';
-                const label = p.displayName || p.name;
-                return {
-                  id: p.id,
-                  name: p.name,
-                  displayName: label,
-                  description:
-                    typeof p.description === 'string' && p.description.trim()
-                      ? p.description
-                      : `Find ${label} specialists`,
-                  roleId: roleForRow,
-                  allowedServiceStyles:
-                    Array.isArray(p.allowedServiceStyles) && p.allowedServiceStyles.length > 0
-                      ? p.allowedServiceStyles
-                      : [...DEFAULT_SERVICE_STYLES],
-                  keywords: [String(p.name).toLowerCase(), String(p.id).toLowerCase()],
-                };
+                return mapFromProblemGridRow(p, roleForRow);
               });
           }
         } catch {
-          /* use list from /public/problems */
+          /* fall through */
+        }
+        if (list.length === 0) {
+          list = buildLocalAllProblemsFallback();
+        }
+      } else {
+        const aliases = problemGridAliasesForApi(roleId);
+        for (const rid of aliases) {
+          try {
+            const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(
+              `/public/problem-grid/${encodeURIComponent(rid)}`
+            );
+            if (
+              res?.success !== false &&
+              Array.isArray(res.problems) &&
+              res.problems.length > 0
+            ) {
+              list = res.problems
+                .filter((p: any) => p?.id && (p.name || p.displayName))
+                .map((p: any) => mapFromProblemGridRow(p, roleId));
+              break;
+            }
+          } catch {
+            continue;
+          }
+        }
+        if (list.length === 0) {
+          try {
+            const data = await apiClient.get<{ problems?: any[] }>(
+              `/public/problems?roleId=${encodeURIComponent(roleId)}`
+            );
+            list = Array.isArray(data.problems) ? data.problems : [];
+          } catch {
+            list = [];
+          }
         }
       }
 
-      if (isAll && list.length <= 1) {
-        list = buildLocalAllProblemsFallback();
-      }
+      list.sort((a, b) => {
+        const ao = a.displayOrder ?? 100;
+        const bo = b.displayOrder ?? 100;
+        if (ao !== bo) return Number(ao) - Number(bo);
+        const an = (a.displayName || a.name || '').toString();
+        const bn = (b.displayName || b.name || '').toString();
+        return an.localeCompare(bn);
+      });
 
       setProblems(list);
     } catch (error) {
@@ -279,7 +344,16 @@ export function ProblemGridSelector({
               const isSelected = selectedProblemId === problem.id;
               const isProcessing = isSelected && processingSelection;
               const isSuccess = isSelected && selectionSuccess;
-              
+              const specIconName = problem.iconName ?? problem.icon_name;
+              const specIconColor = problem.iconColor ?? problem.icon_color;
+              const hasAdminIcon = Boolean(specIconName);
+              const adminIconBg = problemIconTextColorToBgClass(specIconColor);
+              const iconChipClass = hasAdminIcon
+                ? `${adminIconBg || (isSelected ? 'bg-white' : 'bg-slate-50 group-hover:bg-orange-50')} ${isSelected && adminIconBg ? 'ring-2 ring-orange-200' : ''}`
+                : isSelected
+                  ? 'bg-white'
+                  : 'bg-slate-50 group-hover:bg-orange-50';
+
               return (
               <button
                 key={problem.id}
@@ -324,11 +398,20 @@ export function ProblemGridSelector({
                   
                   <div className="relative z-10">
                     {/* Icon - Using lucide-react for consistency */}
-                    <div className={`
+                    <div
+                      className={`
                       w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-colors
-                      ${isSelected ? 'bg-white' : 'bg-slate-50 group-hover:bg-orange-50'}
-                    `}>
-                      {getProblemIcon(problem.id, roleId)}
+                      ${iconChipClass}
+                    `}
+                    >
+                      {hasAdminIcon ? (
+                        <DynamicProblemIcon
+                          iconName={specIconName}
+                          iconColor={specIconColor}
+                        />
+                      ) : (
+                        getProblemIcon(problem.id, roleId)
+                      )}
                     </div>
                     
                     {/* Text */}

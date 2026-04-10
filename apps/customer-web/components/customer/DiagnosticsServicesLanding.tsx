@@ -79,6 +79,8 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
   const [expandedCenter, setExpandedCenter] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [testCategories, setTestCategories] = useState<{ id: string; name: string; icon: any; color: string; count: number }[]>([]);
+  /** Lab used for Health Package “Book” — required when multiple labs match filters (never guess `filteredCenters[0]`). */
+  const [healthPackageLabId, setHealthPackageLabId] = useState('');
 
   useEffect(() => {
     loadDiagnosticsData();
@@ -349,6 +351,10 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       return scoreB - scoreA;
     });
 
+  const labsForPackageBooking = filteredCenters;
+  const autoSingleLabForPackages = labsForPackageBooking.length === 1 ? labsForPackageBooking[0].id : '';
+  const resolvedPackageLabId = healthPackageLabId || autoSingleLabForPackages;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
@@ -473,6 +479,34 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
             <Package className="w-5 h-5 text-teal-600" />
             <h2 className="text-lg font-semibold">Health Packages</h2>
           </div>
+
+          {labsForPackageBooking.length > 1 && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+              <label className="block text-xs font-medium text-amber-900 mb-1">Book packages at which lab?</label>
+              <select
+                value={healthPackageLabId}
+                onChange={(e) => setHealthPackageLabId(e.target.value)}
+                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              >
+                <option value="">Select a lab…</option>
+                {labsForPackageBooking.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {labsForPackageBooking.length === 1 && (
+            <p className="text-xs text-gray-500 mb-3">
+              Packages book at <span className="font-medium text-gray-700">{labsForPackageBooking[0].businessName}</span>.
+            </p>
+          )}
+          {labsForPackageBooking.length === 0 && popularPackages.length > 0 && (
+            <p className="text-xs text-amber-800 mb-3 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              No labs match your filters. Adjust search or filters to book a package.
+            </p>
+          )}
           
           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
             {popularPackages.map((pkg) => (
@@ -522,16 +556,22 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                   </div>
                   <Button
                     size="sm"
-                    className="bg-teal-600 text-white hover:bg-teal-700"
+                    className="bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                    disabled={!resolvedPackageLabId || !labsForPackageBooking.some((c) => c.id === resolvedPackageLabId)}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      const centerId = filteredCenters[0]?.id;
-                      if (centerId) {
-                        onNavigate?.('lab-booking', { vendorId: centerId, packageId: pkg.id, packageName: pkg.name });
-                      } else {
-                        toast.info('Select a lab from the list below, then book this package.');
+                      const vendorId = resolvedPackageLabId;
+                      if (!vendorId || !labsForPackageBooking.some((c) => c.id === vendorId)) {
+                        toast.error('Choose a lab from the dropdown above (or adjust filters so at least one lab appears).');
+                        return;
                       }
+                      onNavigate?.('lab-booking', {
+                        vendorId,
+                        packageId: pkg.id,
+                        packageName: pkg.name,
+                        packageTestLabels: Array.isArray(pkg.tests) ? pkg.tests : [],
+                      });
                     }}
                   >
                     Book

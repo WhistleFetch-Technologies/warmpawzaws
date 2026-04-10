@@ -364,16 +364,6 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
             </Text>
           </View>
 
-          <TouchableOpacity
-            onPress={() => Alert.alert('Sign In', 'Sign in functionality coming soon')}
-            style={styles.signInLink}
-          >
-            <Text style={styles.signInText}>
-              Already have an account?{' '}
-              <Text style={styles.signInLinkText}>Sign In</Text>
-            </Text>
-          </TouchableOpacity>
-
           {!showReferralInput && (
             <TouchableOpacity
               onPress={() => setShowReferralInput(true)}
@@ -384,7 +374,13 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
           )}
 
           <View style={styles.appInfo}>
-            <Text style={styles.helpText}>Need Help?</Text>
+            <TouchableOpacity
+              onPress={() => Linking.openURL('https://warmpawz.com/help')}
+              accessibilityRole="link"
+              accessibilityLabel="Need help? Open help center"
+            >
+              <Text style={[styles.helpText, styles.orangeLink]}>Need Help?</Text>
+            </TouchableOpacity>
             <Text style={styles.appInfoText}>WARMPAWS Provider v2.1.0</Text>
             <Text style={styles.copyrightText}>© 2025 WARMPAWS Inc. All rights reserved</Text>
           </View>
@@ -553,20 +549,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   legalLink: {
-    color: colors.primary,
-    textDecorationLine: 'underline',
-    fontWeight: typography.fontWeights.semibold,
-  },
-  signInLink: {
-    marginBottom: spacing.md,
-    alignItems: 'center',
-  },
-  signInText: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.text,
-    textAlign: 'center',
-  },
-  signInLinkText: {
     color: colors.primary,
     textDecorationLine: 'underline',
     fontWeight: typography.fontWeights.semibold,

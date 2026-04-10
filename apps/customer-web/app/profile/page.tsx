@@ -13,6 +13,7 @@ import {
 import { validateEmail } from '@/lib/validation';
 import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { clearCustomerSession } from '@/lib/session-utils';
 
 interface CustomerProfile {
   id: string;
@@ -62,7 +63,7 @@ export default function ProfilePage() {
     try {
       const phone = localStorage.getItem('customerPhone');
       if (phone) {
-        const res = await apiClient.get<{ profile?: Record<string, unknown> }>(
+        const res = await apiClient.getOrUndefinedIfNotFound<{ profile?: Record<string, unknown> }>(
           `/customer/profile/unified/${encodeURIComponent(phone)}`
         );
         if (res?.profile) {
@@ -233,11 +234,15 @@ export default function ProfilePage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('customerPhone');
-    localStorage.removeItem('customerId');
-    localStorage.removeItem('authToken');
+    clearCustomerSession();
     router.push('/auth');
   };
+
+  const handleCreateProfileBack = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    clearCustomerSession();
+    router.replace('/auth');
+  }, [router]);
 
   if (!flowReady || loading) {
     return (
@@ -253,7 +258,7 @@ export default function ProfilePage() {
       <CustomerUserProfile
         session={{ phone }}
         onComplete={handleCreateProfileComplete}
-        onBack={() => router.replace('/auth')}
+        onBack={handleCreateProfileBack}
       />
     );
   }

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 
 // Import local problem data from ProblemGridSection (fallback when API has no data)
 import { 
@@ -123,7 +124,11 @@ const mapProblemsWithCategory = (problems: any[], category: string, roleId: stri
       category,
       roleId,
       priority: p.priority ?? 50,
-      allowedServiceStyles: ['at_center', 'at_home', 'tele'],
+      allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(null, {
+        roleId,
+        specializationId: p.id,
+        categoryHint: category,
+      }),
     }));
 };
 
@@ -158,7 +163,11 @@ export function ProblemGridNavigation({
               category: slug.category,
               roleId: slug.roleId,
               priority: p.displayOrder ?? 50,
-              allowedServiceStyles: p.allowedServiceStyles || ['at_center', 'at_home', 'tele'],
+              allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(p.allowedServiceStyles, {
+                roleId: slug.roleId,
+                specializationId: p.id,
+                categoryHint: slug.category,
+              }),
             };
           });
         if (!cancelled) setApiProblems(mapped);

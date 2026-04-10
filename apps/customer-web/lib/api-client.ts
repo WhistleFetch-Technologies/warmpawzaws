@@ -578,6 +578,22 @@ export class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' }, retryConfig);
   }
 
+  /**
+   * GET that treats 404 as “no resource” (e.g. new customer with no unified profile yet).
+   * Does not throw on 404; rethrows all other errors.
+   */
+  async getOrUndefinedIfNotFound<T>(endpoint: string): Promise<T | undefined> {
+    const { ApiError } = await import('./error-handling');
+    try {
+      return await this.get<T>(endpoint);
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.statusCode === 404) {
+        return undefined;
+      }
+      throw e;
+    }
+  }
+
   async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>, customTimeoutMs?: number): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
@@ -647,7 +663,8 @@ export const aiChatbotApi = {
     customerId?: string;
     customerPhone?: string;
     conversationId?: string;
-    context?: any;
+    /** e.g. { widgetMode: 'chat' } so the API aligns quick actions with the Chat tab */
+    context?: Record<string, unknown>;
     petId?: string;
   }) => apiClient.post('/ai-chatbot/chat', data),
   

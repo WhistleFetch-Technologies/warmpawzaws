@@ -24,6 +24,7 @@ import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
 
 interface BoardingBookingRouterProps {
   phone: string;
@@ -152,15 +153,15 @@ export function BoardingBookingRouter({
   // Default boarding service options (no vendor / offline demo only — real bookings need vendor UUID rows)
   const defaultServiceTypeOptions = [
     { id: 'overnight', name: 'Overnight Boarding', icon: Moon, price: 999, duration: 1440, desc: 'Full night accommodation', color: 'indigo' },
-    { id: 'full-day', name: 'Full Day Boarding', icon: Sun, price: 499, duration: 480, desc: 'All-day care & supervision', color: 'orange' },
-    { id: 'half-day', name: 'Half Day Boarding', icon: Clock, price: 349, duration: 240, desc: 'Flexible daytime stay', color: 'orange' },
-    { id: 'weekend', name: 'Weekend Boarding', icon: CalendarRange, price: 2499, duration: 4320, desc: 'Fri–Sun packages', color: 'indigo' },
-    { id: 'weekly', name: 'Weekly Boarding', icon: Calendar, price: 5999, duration: 10080, desc: '7-day stay packages', color: 'indigo' },
+    { id: 'full-day', name: 'Full Day Boarding', icon: Sun, price: 499, duration: 480, desc: 'All-day care & supervision', color: 'amber' },
+    { id: 'half-day', name: 'Half Day Boarding', icon: Clock, price: 349, duration: 240, desc: 'Flexible daytime stay', color: 'rose' },
+    { id: 'weekend', name: 'Weekend Boarding', icon: CalendarRange, price: 2499, duration: 4320, desc: 'Fri–Sun packages', color: 'purple' },
+    { id: 'weekly', name: 'Weekly Boarding', icon: Calendar, price: 5999, duration: 10080, desc: '7-day stay packages', color: 'orange' },
   ];
 
   const defaultPetSittingOptions = [
     { id: 'overnight_sitting', name: 'Overnight sitting', icon: Moon, price: 899, duration: 1440, desc: 'Sitter stays overnight at your home', color: 'indigo' },
-    { id: 'day_sitting', name: 'Day visits', icon: Sun, price: 549, duration: 480, desc: 'Scheduled daytime check-ins', color: 'orange' },
+    { id: 'day_sitting', name: 'Day visits', icon: Sun, price: 549, duration: 480, desc: 'Scheduled daytime check-ins', color: 'amber' },
     { id: 'extended_home', name: 'Extended home stay', icon: Calendar, price: 1499, duration: 2880, desc: 'Multi-day in-home care', color: 'orange' },
     { id: 'drop_in', name: 'Drop-in visits', icon: Clock, price: 249, duration: 45, desc: 'Quick feeding & potty breaks', color: 'rose' },
   ];
@@ -180,11 +181,13 @@ export function BoardingBookingRouter({
   const pickVendorServiceColor = (styleRaw: string | undefined): string => {
     const st = (styleRaw || '').toLowerCase();
     if (st.includes('overnight') || st.includes('night')) return 'indigo';
-    if (st.includes('weekend') || st.includes('weekly') || /\bweek\b/.test(st)) return 'indigo';
-    if (st.includes('day')) return 'orange';
-    if (st.includes('half')) return 'orange';
+    if (st.includes('weekend')) return 'purple';
+    if (st.includes('weekly') || (/\bweek\b/.test(st) && !st.includes('weekend'))) return 'orange';
+    if (st.includes('half')) return 'rose';
+    if (st.includes('drop')) return 'rose';
     if (st.includes('extend')) return 'orange';
-    if (st.includes('drop') || st.includes('visit')) return 'rose';
+    if (st.includes('day')) return 'amber';
+    if (st.includes('visit')) return 'rose';
     return 'orange';
   };
 
@@ -920,13 +923,9 @@ export function BoardingBookingRouter({
                       >
                         <div className="flex items-center gap-4">
                           <div
-                            className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                              service.color === 'indigo'
-                                ? 'bg-indigo-100 text-indigo-600'
-                                : service.color === 'rose'
-                                  ? 'bg-rose-100 text-rose-600'
-                                  : 'bg-orange-100 text-[#FF8C42]'
-                            }`}
+                            className={`w-14 h-14 rounded-xl flex items-center justify-center ${serviceOptionColorChipClass(
+                              service.color
+                            )}`}
                           >
                             <Icon className="w-7 h-7" />
                           </div>
