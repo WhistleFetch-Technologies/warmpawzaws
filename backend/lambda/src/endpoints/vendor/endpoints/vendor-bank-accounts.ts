@@ -480,11 +480,16 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
+      const savedUpi =
+        vendor.upi_id != null && String(vendor.upi_id).trim() !== ''
+          ? String(vendor.upi_id).trim()
+          : null;
+
       return c.json({
         success: true,
         upi: {
-          upi_id: vendor.upi_id || null,
-          is_verified: vendor.upi_verified || false,
+          upi_id: savedUpi,
+          is_verified: Boolean(vendor.upi_verified),
         },
       });
     } catch (error: any) {
@@ -505,7 +510,9 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Vendor ID is required' }, 400);
       }
 
-      const { upi_id } = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+      const rawUpi = body?.upi_id ?? body?.upiId;
+      const upi_id = typeof rawUpi === 'string' ? rawUpi.trim() : rawUpi != null ? String(rawUpi).trim() : '';
 
       if (!upi_id || !upi_id.includes('@')) {
         return c.json({ error: 'Invalid UPI ID format' }, 400);
@@ -517,15 +524,23 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      await update('vendors', { id: vendor.id }, {
+      const rows = await update('vendors', { id: vendor.id }, {
         upi_id,
         upi_verified: false, // Will need verification
         updated_at: new Date().toISOString(),
       });
 
+      if (!rows?.length) {
+        return c.json({ error: 'Failed to persist UPI ID' }, 500);
+      }
+
       return c.json({
         success: true,
         message: 'UPI ID saved. Verification pending.',
+        upi: {
+          upi_id,
+          is_verified: false,
+        },
       });
     } catch (error: any) {
       console.error('Error saving UPI ID:', error);

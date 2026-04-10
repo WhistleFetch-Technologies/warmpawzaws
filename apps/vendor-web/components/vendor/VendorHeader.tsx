@@ -17,7 +17,8 @@ export interface VendorHeaderProps {
 }
 
 /**
- * Universal mobile-safe vendor app header: safe-area inset, sticky chrome,
+ * Universal mobile-safe vendor app header: vendor-screen-safe-top (env + min inset, see globals.css),
+ * sticky chrome,
  * centered truncated title, symmetric left/right slots.
  */
 export function VendorHeader({
@@ -41,7 +42,7 @@ export function VendorHeader({
 
   return (
     <header
-      className={`sticky top-0 z-10 shrink-0 safe-area-top border-b ${
+      className={`sticky top-0 z-10 shrink-0 vendor-screen-safe-top border-b ${
         isBrand
           ? 'border-orange-300/40 bg-[#FF8C42]'
           : 'border-gray-200 bg-white'

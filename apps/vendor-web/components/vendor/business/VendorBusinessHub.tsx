@@ -188,8 +188,8 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
           }
         />
 
-      <div className="px-4 py-4 sm:px-6">
-        <div className="flex gap-3 mb-4">
+      <div className={`px-4 sm:px-6 ${inFormMode ? 'py-2' : 'py-4'}`}>
+        <div className={`flex gap-3 ${inFormMode ? 'mb-2' : 'mb-4'}`}>
           {isVet && (
             <button
               onClick={() => setActiveTab('vet-services')}
@@ -251,7 +251,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
         {activeTab === 'inventory' && (
           <div className="space-y-4">
             {/* Low Stock Alert */}
-            {lowStockItems.length > 0 && (
+            {!showAddModal && lowStockItems.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-600" />
                 <p className="text-sm text-amber-800">
@@ -261,6 +261,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
             )}
 
             {/* Search */}
+            {!showAddModal && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
@@ -271,57 +272,59 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
                 className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-4 text-sm"
               />
             </div>
+            )}
 
             {/* Inventory List */}
-            {inventoryLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
-            ) : filteredInventory.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p>No items found</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredInventory.map(item => (
-                  <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium text-gray-900">{item.name}</h4>
-                          {item.quantity <= item.minStock && (
-                            <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Low Stock</span>
-                          )}
+            {!showAddModal &&
+              (inventoryLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading...</div>
+              ) : filteredInventory.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                  <p>No items found</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredInventory.map(item => (
+                    <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-gray-900">{item.name}</h4>
+                            {item.quantity <= item.minStock && (
+                              <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Low Stock</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500">SKU: {item.sku} • {item.category}</p>
                         </div>
-                        <p className="text-xs text-gray-500">SKU: {item.sku} • {item.category}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-gray-900">{item.quantity} {item.unit}</p>
-                        <p className="text-sm text-gray-500">₹{item.price}/{item.unit}</p>
-                      </div>
-                      <div className="flex gap-1 ml-3">
-                        <button
-                          onClick={() => { setEditingItem(item); setItemForm({ ...item }); setShowAddModal(true); }}
-                          className="p-2 text-gray-400 hover:text-blue-600"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          className="p-2 text-gray-400 hover:text-red-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="text-right">
+                          <p className="font-bold text-gray-900">{item.quantity} {item.unit}</p>
+                          <p className="text-sm text-gray-500">₹{item.price}/{item.unit}</p>
+                        </div>
+                        <div className="flex gap-1 ml-3">
+                          <button
+                            onClick={() => { setEditingItem(item); setItemForm({ ...item }); setShowAddModal(true); }}
+                            className="p-2 text-gray-400 hover:text-blue-600"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            className="p-2 text-gray-400 hover:text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              ))}
 
             {/* Add/Edit Modal */}
             {showAddModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                <div className="w-full max-w-md rounded-xl bg-white p-4">
+              <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 pb-8 sm:pt-4">
+                <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg">
                   <div className="space-y-3">
                     <input
                       type="text"
@@ -377,14 +380,22 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                     />
                   </div>
-                  <div className="mt-4">
-                    <button
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row-reverse sm:justify-end">
+                    <Button
                       type="button"
+                      className="h-11 w-full bg-orange-500 text-white hover:bg-orange-600 sm:w-auto sm:min-w-[120px]"
+                      onClick={handleSaveItem}
+                    >
+                      {editingItem ? 'Save' : 'Add item'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-full border-gray-200 sm:w-auto sm:min-w-[120px]"
                       onClick={closeItemModal}
-                      className="w-full rounded-lg border border-gray-200 py-2 font-medium"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>

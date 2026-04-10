@@ -300,6 +300,21 @@ body {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+/**
+ * Full-screen vendor views whose first row sits below the OS status bar (PWA / mobile WebView).
+ * Aligns with customer-web .cw-header-safe-top: on many Android browsers env(safe-area-inset-top) is 0,
+ * so we enforce a minimum top inset while still adding the real inset on notch devices.
+ */
+.vendor-screen-safe-top {
+  padding-top: max(3.25rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+}
+
+@media (min-width: 768px) {
+  .vendor-screen-safe-top {
+    padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.35rem));
+  }
+}
+
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -327,6 +342,18 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
+}
+
+/* Sonner (sonner@2.x): avoid toasts under status bar / notch — requires viewport-fit=cover in layout */
+[data-sonner-toaster] {
+  --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --offset-right: calc(env(safe-area-inset-right, 0px) + 16px) !important;
+  --offset-left: calc(env(safe-area-inset-left, 0px) + 16px) !important;
+  --mobile-offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --mobile-offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --mobile-offset-right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+  --mobile-offset-left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
 }
 
 /* Bottom fixed elements should account for gesture bar */

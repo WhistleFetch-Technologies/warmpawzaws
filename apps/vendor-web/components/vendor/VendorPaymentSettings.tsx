@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Building2, CreditCard, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,11 +54,47 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
   const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
   const [loadingWallet, setLoadingWallet] = useState(false);
 
+  const loadUpiId = useCallback(async () => {
+    if (!vendorId) return;
+    try {
+      const response = (await apiClient.get(`/vendor/${vendorId}/upi`)) as Record<string, unknown>;
+      const upi =
+        (response?.upi as Record<string, unknown> | undefined) ??
+        ((response?.data as Record<string, unknown> | undefined)?.upi as Record<string, unknown> | undefined);
+      const rawId =
+        upi?.upi_id ??
+        upi?.upiId ??
+        response?.upi_id ??
+        response?.upiId;
+      const idStr =
+        rawId != null && String(rawId).trim() !== '' ? String(rawId).trim() : '';
+
+      if (response?.success === false && !upi && (rawId === undefined || rawId === null)) {
+        return;
+      }
+
+      setUpiId(idStr);
+      setUpiVerified(Boolean(upi?.is_verified ?? response?.is_verified));
+    } catch (error: unknown) {
+      console.error('Error loading UPI ID:', error);
+      const status = (error as { statusCode?: number })?.statusCode;
+      if (status !== 404) {
+        console.warn('Failed to load UPI ID:', error);
+      }
+    }
+  }, [vendorId]);
+
   useEffect(() => {
     loadBankAccount();
     loadWalletData();
     loadUpiId();
-  }, [vendorId]);
+  }, [vendorId, loadUpiId]);
+
+  useEffect(() => {
+    if (paymentMethod === 'upi') {
+      loadUpiId();
+    }
+  }, [paymentMethod, loadUpiId]);
 
   const loadWalletData = async () => {
     try {
@@ -129,25 +165,6 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       setBankStatus({ exists: false, is_verified: false });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadUpiId = async () => {
-    try {
-      const response = await apiClient.get(`/vendor/${vendorId}/upi`) as any;
-      
-      if (response && response.success && response.upi) {
-        if (response.upi.upi_id) {
-          setUpiId(response.upi.upi_id);
-          setUpiVerified(response.upi.is_verified || false);
-        }
-      }
-    } catch (error: any) {
-      console.error('Error loading UPI ID:', error);
-      // If 404, UPI doesn't exist yet - that's fine
-      if (error.status !== 404) {
-        console.warn('Failed to load UPI ID:', error);
-      }
     }
   };
 
@@ -577,9 +594,10 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 <Input
                   id="upi_id"
                   placeholder="yourname@upi"
-                  value={upiId}
+                  value={upiId || ''}
                   onChange={(e) => setUpiId(e.target.value)}
                   className="mt-1"
+                  autoComplete="off"
                 />
                 <p className="text-xs text-gray-500 mt-1">Example: 9876543210@paytm, yourname@okicici</p>
               </div>
@@ -587,17 +605,36 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               <div className="flex gap-3">
                 <Button
                   onClick={async () => {
-                    if (!upiId || !upiId.includes('@')) {
+                    const trimmed = upiId.trim();
+                    if (!trimmed || !trimmed.includes('@')) {
                       toast.error('Please enter a valid UPI ID');
                       return;
                     }
                     try {
                       setVerifying(true);
-                      await apiClient.post(`/vendor/${vendorId}/upi`, { upi_id: upiId });
-                      setUpiVerified(true);
+                      const res = (await apiClient.post(`/vendor/${vendorId}/upi`, {
+                        upi_id: trimmed,
+                      })) as {
+                        success?: boolean;
+                        error?: string;
+                        upi?: { upi_id?: string; upiId?: string; is_verified?: boolean };
+                      };
+                      if (res?.success === false) {
+                        throw new Error(typeof res?.error === 'string' ? res.error : 'Save failed');
+                      }
+                      const saved =
+                        res?.upi?.upi_id ?? res?.upi?.upiId;
+                      if (saved != null && String(saved).trim() !== '') {
+                        setUpiId(String(saved).trim());
+                      } else {
+                        setUpiId(trimmed);
+                      }
+                      setUpiVerified(Boolean(res?.upi?.is_verified));
+                      await loadUpiId();
                       toast.success('UPI ID saved and verification pending');
-                    } catch (error) {
-                      toast.error('Failed to save UPI ID');
+                    } catch (error: unknown) {
+                      const msg = error instanceof Error ? error.message : 'Failed to save UPI ID';
+                      toast.error(msg);
                     } finally {
                       setVerifying(false);
                     }
@@ -640,16 +677,19 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-3">
                 <Button
                   variant="outline"
                   onClick={() => {
                     setPaymentMethod('bank');
                     toast.info('Select bank account to withdraw');
                   }}
+                  className="h-auto min-h-11 w-full min-w-0 shrink whitespace-normal py-3 px-3 text-center leading-snug sm:flex-1"
                 >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  Withdraw to Bank
+                  <Building2 className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1 break-words text-center">
+                    Withdraw to Bank
+                  </span>
                 </Button>
                 <Button
                   variant="outline"
@@ -657,9 +697,12 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                     setPaymentMethod('upi');
                     toast.info('Set up UPI to withdraw');
                   }}
+                  className="h-auto min-h-11 w-full min-w-0 shrink whitespace-normal py-3 px-3 text-center leading-snug sm:flex-1"
                 >
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Withdraw to UPI
+                  <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1 break-words text-center">
+                    Withdraw to UPI
+                  </span>
                 </Button>
               </div>
 
