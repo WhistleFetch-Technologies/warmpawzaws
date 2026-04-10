@@ -302,16 +302,30 @@ body {
 
 /**
  * Full-screen vendor views whose first row sits below the OS status bar (PWA / mobile WebView).
- * Aligns with customer-web .cw-header-safe-top: on many Android browsers env(safe-area-inset-top) is 0,
- * so we enforce a minimum top inset while still adding the real inset on notch devices.
+ * On many Android browsers env(safe-area-inset-top) stays 0 even with viewport-fit=cover, so the
+ * rem minimum must clear the status bar (~48–54px) plus a little margin. Larger minimum avoids
+ * back / actions overlapping the clock and system icons.
  */
 .vendor-screen-safe-top {
-  padding-top: max(3.25rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+  padding-top: max(3.75rem, calc(env(safe-area-inset-top, 0px) + 1rem));
 }
 
 @media (min-width: 768px) {
   .vendor-screen-safe-top {
     padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.35rem));
+  }
+}
+
+/** Horizontal safe area for sticky vendor headers (notch / curved corners). */
+.vendor-header-safe-x {
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
+@media (min-width: 768px) {
+  .vendor-header-safe-x {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
   }
 }
 

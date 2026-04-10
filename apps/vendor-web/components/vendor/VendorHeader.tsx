@@ -48,7 +48,7 @@ export function VendorHeader({
           : 'border-gray-200 bg-white'
       } ${className}`.trim()}
     >
-      <div className="flex items-center justify-between gap-2 p-4 flex-nowrap min-h-[56px]">
+      <div className="vendor-header-safe-x flex items-center justify-between gap-2 p-4 flex-nowrap min-h-[56px]">
         <div className="flex items-center gap-2 shrink-0">
           {showBack ? (
             <button
