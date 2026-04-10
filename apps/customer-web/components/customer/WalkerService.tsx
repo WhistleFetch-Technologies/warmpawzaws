@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, Bike, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -27,6 +27,63 @@ interface ActiveWalk {
   currentLocation?: { latitude: number; longitude: number };
 }
 
+/** Single string blob for client-side walker search (discover shape + vendors/search shape). */
+function collectWalkerSearchHaystack(w: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    if (v == null) return;
+    if (typeof v === 'string' || typeof v === 'number') parts.push(String(v));
+    else if (Array.isArray(v)) v.forEach(push);
+  };
+  push(w.name);
+  push(w.businessName);
+  push(w.business_name);
+  push(w.owner_name);
+  push(w.ownerName);
+  push(w.address);
+  push(w.city);
+  push(w.state);
+  const loc = w.location as { address?: string } | undefined;
+  push(loc?.address);
+  push(w.role);
+  push(w.roleName);
+  push(w.roleDisplayName);
+  push(w.customerService);
+  push(w.bestForProblem);
+  push(w.specialization);
+  const specs = w.specializations;
+  if (Array.isArray(specs)) push(specs.join(' '));
+  const services = w.services as unknown[] | undefined;
+  if (Array.isArray(services)) {
+    for (const s of services) {
+      if (s && typeof s === 'object') {
+        const o = s as Record<string, unknown>;
+        push(o.serviceName);
+        push(o.service_name);
+        push(o.name);
+        push(o.description);
+      }
+    }
+  }
+  try {
+    const blob = JSON.stringify(w);
+    if (blob) parts.push(blob.slice(0, 12000));
+  } catch (_) {
+    /* ignore */
+  }
+  return parts.join(' ').toLowerCase();
+}
+
+function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): boolean {
+  const needle = rawQuery.trim().toLowerCase();
+  if (!needle) return true;
+  const hay = collectWalkerSearchHaystack(w);
+  if (hay.includes(needle)) return true;
+  const tokens = needle.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) return tokens.every((t) => hay.includes(t));
+  return false;
+}
+
 export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps) {
   const walkingNeeds = useProblemGridByRole('walker');
   const [loading, setLoading] = useState(true);
@@ -38,7 +95,6 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   const [previousWalker, setPreviousWalker] = useState<any>(null);
 
   useEffect(() => {
-    loadWalkers();
     loadActiveWalks();
     loadActivePackages();
     loadPreviousWalker();
@@ -89,73 +145,203 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
     }
   };
 
-  useEffect(() => {
-    if (searchQuery) {
-      const timeout = setTimeout(() => loadWalkers(), 300);
-      return () => clearTimeout(timeout);
-    }
-  }, [searchQuery]);
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
 
-  const loadWalkers = async () => {
+  /** Full discover list for current location — search filters this in-memory (vendors/search uses stricter status rules and often returns nothing). */
+  const walkersDiscoverCacheRef = useRef<{ key: string; list: any[] } | null>(null);
+  /** Matches `walkersDiscoverCacheRef.current.key` after last successful discover fetch (for instant in-memory search without re-awaiting geo/profile). */
+  const lastDiscoverLocationKeyRef = useRef<string | null>(null);
+  /** Drop stale async results when a newer search/load started. */
+  const loadWalkersGenRef = useRef(0);
+
+  const getLocationQuerySuffix = useCallback(async (): Promise<string> => {
     try {
-      setLoading(true);
-      // Rule: Home service = only solo with at_home. Use discover-services with serviceStyle=at_home.
-      const locationParams = await (async (): Promise<string> => {
-        try {
-          const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
-          const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
-          if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
-        } catch (_) {}
-        if (typeof phone !== 'undefined' && phone) {
-          try {
-            const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-            const profile = profileRes?.profile || profileRes;
-            if (profile?.latitude != null && profile?.longitude != null)
-              return `&latitude=${encodeURIComponent(String(profile.latitude))}&longitude=${encodeURIComponent(String(profile.longitude))}`;
-          } catch (_) {}
+      const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
+      const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
+      if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
+    } catch (_) {}
+    if (typeof phone !== 'undefined' && phone) {
+      try {
+        const profileRes = (await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`)) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          return `&latitude=${encodeURIComponent(String(profile.latitude))}&longitude=${encodeURIComponent(String(profile.longitude))}`;
         }
-        if (typeof navigator !== 'undefined' && navigator.geolocation) {
-          try {
-            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-              navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-            });
-            return `&latitude=${encodeURIComponent(String(pos.coords.latitude))}&longitude=${encodeURIComponent(String(pos.coords.longitude))}`;
-          } catch (_) {}
-        }
-        return '';
-      })();
+      } catch (_) {}
+    }
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+        });
+        return `&latitude=${encodeURIComponent(String(pos.coords.latitude))}&longitude=${encodeURIComponent(String(pos.coords.longitude))}`;
+      } catch (_) {}
+    }
+    return '';
+  }, [phone]);
+
+  const fetchDiscoverWalkers = useCallback(
+    async (locationParams: string): Promise<any[]> => {
       let walkerList: any[] = [];
       try {
         const endpoint = `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker${locationParams}`;
-        const data = await apiClient.get<{ success?: boolean; vendors?: any[]; providers?: any[]; services?: any[]; staff?: any[] }>(endpoint);
+        const data = await apiClient.get<{
+          success?: boolean;
+          vendors?: any[];
+          providers?: any[];
+          services?: any[];
+          staff?: any[];
+        }>(endpoint);
         walkerList = data.vendors || data.providers || data.services || data.staff || [];
-        // Fallback: try category-only (no roleId) so backend returns all walker/pet_walker roles
         if (walkerList.length === 0) {
           const fallbackUrl = `/customer/discover-services?category=walker&serviceStyle=at_home${locationParams}`;
           const fallback = await apiClient.get<{ vendors?: any[]; providers?: any[] }>(fallbackUrl);
           walkerList = fallback.vendors || fallback.providers || [];
         }
       } catch (_) {
-        // Fallback: vendors/search with serviceStyle=at_home
         try {
-          const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', limit: '50', ...(searchQuery && { query: searchQuery }) });
-          const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(`/customer/vendors/search?${params.toString()}${locationParams}`);
+          const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', limit: '50' });
+          const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(
+            `/customer/vendors/search?${params.toString()}${locationParams}`
+          );
           walkerList = data.vendors || data.services || data.staff || [];
         } catch (__) {
           walkerList = [];
         }
       }
-      setWalkers(walkerList);
+      return walkerList;
+    },
+    []
+  );
+
+  const loadWalkers = useCallback(async () => {
+    const gen = ++loadWalkersGenRef.current;
+    const q = searchQueryRef.current.trim();
+
+    if (q) {
+      const snap = walkersDiscoverCacheRef.current;
+      if (
+        snap?.list?.length &&
+        snap.key === lastDiscoverLocationKeyRef.current
+      ) {
+        const filtered = snap.list.filter((w: any) =>
+          walkerRowMatchesQuery(w as Record<string, unknown>, q)
+        );
+        if (gen !== loadWalkersGenRef.current) return;
+        if (filtered.length === 0 && snap.list.length > 0) {
+          toast.info('No walkers match that search. Try a name, area, or service.');
+        }
+        setWalkers(filtered);
+        return;
+      }
+    }
+
+    try {
+      const locationParams = await getLocationQuerySuffix();
+      if (gen !== loadWalkersGenRef.current) return;
+
+      const locationCacheKey = locationParams || '__no_geo__';
+
+      if (!q) {
+        setLoading(true);
+        const all = await fetchDiscoverWalkers(locationParams);
+        if (gen !== loadWalkersGenRef.current) return;
+        walkersDiscoverCacheRef.current = { key: locationCacheKey, list: all };
+        lastDiscoverLocationKeyRef.current = locationCacheKey;
+        setWalkers(all);
+        return;
+      }
+
+      const cached = walkersDiscoverCacheRef.current;
+      const cacheOk = Boolean(cached?.key === locationCacheKey && Array.isArray(cached?.list));
+      const needNetwork = !cacheOk || (cached?.list?.length ?? 0) === 0;
+
+      if (needNetwork) {
+        setLoading(true);
+        const base = await fetchDiscoverWalkers(locationParams);
+        if (gen !== loadWalkersGenRef.current) return;
+        walkersDiscoverCacheRef.current = { key: locationCacheKey, list: base };
+        lastDiscoverLocationKeyRef.current = locationCacheKey;
+        const filtered = base.filter((w: any) => walkerRowMatchesQuery(w as Record<string, unknown>, q));
+        if (gen !== loadWalkersGenRef.current) return;
+        if (filtered.length === 0 && base.length > 0) {
+          toast.info('No walkers match that search. Try a name, area, or service.');
+        }
+        setWalkers(filtered);
+        return;
+      }
+
+      const base = cached?.list ?? [];
+      const filtered = base.filter((w: any) => walkerRowMatchesQuery(w as Record<string, unknown>, q));
+      if (gen !== loadWalkersGenRef.current) return;
+      if (filtered.length === 0 && base.length > 0) {
+        toast.info('No walkers match that search. Try a name, area, or service.');
+      }
+      setWalkers(filtered);
     } catch (error) {
       console.error('Error loading walkers:', error);
-      setWalkers([]);
+      if (gen === loadWalkersGenRef.current) setWalkers([]);
     } finally {
-      setLoading(false);
+      if (gen === loadWalkersGenRef.current) setLoading(false);
     }
-  };
+  }, [fetchDiscoverWalkers, getLocationQuerySuffix]);
+
+  useEffect(() => {
+    const delayMs = searchQuery.trim() ? 350 : 0;
+    const t = setTimeout(() => {
+      void loadWalkers();
+    }, delayMs);
+    return () => clearTimeout(t);
+  }, [searchQuery, loadWalkers]);
 
   const handleWalkerSelect = (walker: any) => {
     onNavigate?.('walker-booking', { vendorId: walker.id || walker.vendorId, serviceType: 'walking', serviceStyle: 'at_home' });
+  };
+
+  const walkersSectionRef = useRef<HTMLDivElement>(null);
+
+  /** When exactly one walker is listed (or we have a "book again" walker), package cards can open booking directly. */
+  const vendorIdForQuickBook = (() => {
+    if (previousWalker?.id) return String(previousWalker.id);
+    if (walkers.length === 1) {
+      const w = walkers[0];
+      const id = w?.id ?? w?.vendorId;
+      return id != null && id !== '' ? String(id) : undefined;
+    }
+    return undefined;
+  })();
+
+  const openWalkBookingFromPackage = (opts: {
+    serviceId: string;
+    serviceName: string;
+    duration: number;
+    price: number;
+  }) => {
+    const vid = vendorIdForQuickBook;
+    if (!vid) {
+      walkersSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast.info('Select a walker below to book this package.');
+      return;
+    }
+    const walkerRow = walkers.find((w) => String(w.id || w.vendorId) === vid);
+    const walkerPayload = walkerRow
+      ? { id: vid, name: walkerRow.name || walkerRow.businessName || 'Walker', ...walkerRow }
+      : { id: vid, name: previousWalker?.name || 'Walker', ...previousWalker };
+    onNavigate?.('walker-booking', {
+      vendorId: vid,
+      walker: walkerPayload,
+      serviceType: 'walking',
+      serviceStyle: 'at_home',
+      serviceId: opts.serviceId,
+      serviceName: opts.serviceName,
+      price: opts.price,
+      duration: opts.duration,
+    });
+  };
+
+  const handleWeeklyWalkPackage = () => {
+    onNavigate?.('purchase-package');
   };
 
   // Prepare stats for ServiceDashboardHeader
@@ -183,17 +369,34 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
         headerColor="bg-[#FF8C42]"
       />
       
-      {/* Search Bar - Moved below header */}
+      {/* Search: maps to GET /customer/vendors/search?query=… + explicit Search / Enter */}
       <div className="max-w-md mx-auto px-4 pt-4 pb-4 bg-white">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search walkers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-          />
+        <div className="flex gap-2 items-stretch">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+            <input
+              type="search"
+              enterKeyHint="search"
+              placeholder="Search walkers..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void loadWalkers();
+                }
+              }}
+              className="w-full pl-10 pr-3 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              aria-label="Search walkers by name or area"
+            />
+          </div>
+          <Button
+            type="button"
+            className="shrink-0 px-4 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl font-semibold"
+            onClick={() => void loadWalkers()}
+          >
+            Search
+          </Button>
         </div>
       </div>
 
@@ -335,6 +538,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
           <div className="grid grid-cols-3 gap-3">
             {(walkingNeeds.length > 0 ? walkingNeeds : WALKING_NEEDS).map((need) => {
               const isViewAll = need.id === 'view_all';
+              const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
               return (
                 <button
                   key={need.id}
@@ -354,14 +558,26 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                       : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                     }
                   `}>
-                    <div className={`
+                    <div
+                      className={`
                       w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
-                      ${isViewAll ? 'bg-white/50' : 'bg-slate-50 group-hover:bg-orange-50'}
-                    `}>
+                      ${
+                        isViewAll
+                          ? 'bg-white/50'
+                          : hasAdminTint
+                            ? `${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`
+                            : 'bg-slate-50 group-hover:bg-orange-50'
+                      }
+                    `}
+                    >
                       {typeof need.icon === 'string' ? (
                         <span className="text-xl">{need.icon}</span>
                       ) : (
-                        <div className="text-slate-600 group-hover:text-orange-500">
+                        <div
+                          className={
+                            hasAdminTint ? '' : 'text-slate-600 group-hover:text-orange-500'
+                          }
+                        >
                           {need.icon}
                         </div>
                       )}
@@ -379,16 +595,65 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
           </div>
         </div>
 
-        {/* Walk Packages */}
+        {/* Walk Packages — tappable: opens booking when a walker is unambiguous, else scrolls to walker list */}
         <div>
           <h2 className="font-bold text-gray-900 mb-4">Walk Packages</h2>
           <div className="space-y-3">
-            {[
-              { icon: <Dog className="w-7 h-7 text-orange-600" />, title: '30 Min Walk', price: '₹199/walk', features: ['Quick exercise', 'Basic walk'] },
-              { icon: <Dog className="w-7 h-7 text-orange-600" />, title: '60 Min Walk', price: '₹349/walk', features: ['Extended exercise', 'Playtime'] },
-              { icon: '📅', title: 'Weekly Package', price: '₹1,999/week', features: ['5 walks', 'GPS tracking', 'Updates'] }
-            ].map((pkg, idx) => (
-              <Card key={idx} className="p-4 hover:shadow-md transition-shadow">
+            {(
+              [
+                {
+                  kind: 'walk' as const,
+                  icon: <Dog className="w-7 h-7 text-orange-600" />,
+                  title: '30 Min Walk',
+                  price: '₹199/walk',
+                  features: ['Quick exercise', 'Basic walk'],
+                  serviceId: 'walk_30min',
+                  serviceName: '30 Min Walk',
+                  priceValue: 199,
+                  duration: 30,
+                },
+                {
+                  kind: 'walk' as const,
+                  icon: <Dog className="w-7 h-7 text-orange-600" />,
+                  title: '60 Min Walk',
+                  price: '₹349/walk',
+                  features: ['Extended exercise', 'Playtime'],
+                  serviceId: 'walk_60min',
+                  serviceName: '60 Min Walk',
+                  priceValue: 349,
+                  duration: 60,
+                },
+                {
+                  kind: 'weekly' as const,
+                  icon: '📅' as const,
+                  title: 'Weekly Package',
+                  price: '₹1,999/week',
+                  features: ['5 walks', 'GPS tracking', 'Updates'],
+                },
+              ] as const
+            ).map((pkg, idx) => (
+              <Card
+                key={idx}
+                role="button"
+                tabIndex={0}
+                className="p-4 hover:shadow-md transition-shadow cursor-pointer focus-visible:outline focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+                onClick={() => {
+                  if (pkg.kind === 'weekly') handleWeeklyWalkPackage();
+                  else
+                    openWalkBookingFromPackage({
+                      serviceId: pkg.serviceId,
+                      serviceName: pkg.serviceName,
+                      duration: pkg.duration,
+                      price: pkg.priceValue,
+                    });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLDivElement).click();
+                  }
+                }}
+              >
                 <div className="flex items-start gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl [&>svg]:shrink-0">
                     {pkg.icon}
@@ -407,7 +672,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
         </div>
 
         {/* Walkers List */}
-        <div>
+        <div ref={walkersSectionRef}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Available Walkers</h2>
           </div>

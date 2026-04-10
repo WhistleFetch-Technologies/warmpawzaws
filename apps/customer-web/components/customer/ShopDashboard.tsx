@@ -321,7 +321,11 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
               <Store className="w-5 h-5 shrink-0 text-[#FF8C42]" />
               <h2 className="font-bold text-gray-900 text-base sm:text-lg truncate">✨ Featured Vendors</h2>
             </div>
-            <button type="button" className="text-[#FF8C42] text-sm font-medium flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={scrollToFullCatalog}
+              className="text-[#FF8C42] text-sm font-medium flex items-center gap-1 shrink-0 hover:opacity-80 active:opacity-70"
+            >
               View All <span>→</span>
             </button>
           </div>

@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
@@ -1614,10 +1615,16 @@ export function CustomerHomeComplete({
                   problemId: d.specializationId || result.id,
                   problemTitle: d.name || 'Consult',
                   roleId: d.roleId || 'vet_solo',
+                  category: d.categoryId,
                   problem: {
-                    allowedServiceStyles: d.allowedServiceStyles || ['at_home', 'at_center', 'tele'],
+                    allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(d.allowedServiceStyles, {
+                      roleId: d.roleId || 'vet_solo',
+                      specializationId: d.specializationId || result.id,
+                      categoryHint: d.categoryId,
+                    }),
                     name: d.name,
                     roleId: d.roleId,
+                    category: d.categoryId,
                   },
                 });
                 return;

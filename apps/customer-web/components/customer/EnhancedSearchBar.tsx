@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 
 interface SearchResult {
   id: string;
@@ -215,7 +216,11 @@ export function EnhancedSearchBar({
             name: row.name,
             matchedSymptom: row.matchedSymptom,
             roleId: row.roleId,
-            allowedServiceStyles: row.allowedServiceStyles || ['at_home', 'at_center', 'tele'],
+            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(row.allowedServiceStyles, {
+              roleId: row.roleId,
+              specializationId: row.specializationId,
+              categoryHint: row.categoryId,
+            }),
             categoryId: row.categoryId,
           },
           relevanceScore: 100,

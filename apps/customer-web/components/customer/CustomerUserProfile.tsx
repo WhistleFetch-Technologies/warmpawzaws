@@ -192,6 +192,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
       <div className="px-4 pt-4 pb-2 flex items-center">
         {onBack && (
           <button
+            type="button"
             onClick={onBack}
             className="flex items-center gap-1 text-gray-600 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 rounded-full px-3 py-2"
           >

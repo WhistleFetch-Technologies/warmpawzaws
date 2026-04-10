@@ -10,6 +10,12 @@ import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { FeaturedProviderCard } from './shared/FeaturedProviderCard';
+import {
+  normalizeAndDedupeDiscoveryProviders,
+  type FeaturedProvider,
+} from '@/lib/featured-provider';
+import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
 
 function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
   if (!iconName || !(LucideIcons as any)[iconName]) {
@@ -30,7 +36,7 @@ const GROOMING_ROLE_IDS = ['groomer', 'groomer_solo', 'groomer_center', 'pet_gro
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const [loading, setLoading] = useState(true);
-  const [featuredGroomers, setFeaturedGroomers] = useState<any[]>([]);
+  const [featuredGroomers, setFeaturedGroomers] = useState<FeaturedProvider[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [previousGroomer, setPreviousGroomer] = useState<any>(null);
   const [groomingNeeds, setGroomingNeeds] = useState<any[]>([]);
@@ -47,11 +53,15 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(`/public/problem-grid/${roleId}`);
         if (res?.success && Array.isArray(res.problems) && res.problems.length > 0) {
           const withViewAll = [
-            ...res.problems.map((p: any) => ({
-              id: p.id || p.problemId,
-              name: p.displayName || p.name,
-              icon: <DynamicProblemIcon iconName={p.iconName} iconColor={p.iconColor} />,
-            })),
+            ...res.problems.map((p: any) => {
+              const iconColor = p.iconColor ?? p.icon_color;
+              return {
+                id: p.id || p.problemId,
+                name: p.displayName || p.name,
+                icon: <DynamicProblemIcon iconName={p.iconName} iconColor={iconColor} />,
+                iconBg: problemIconTextColorToBgClass(iconColor),
+              };
+            }),
             { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6 text-orange-600" /> },
           ];
           setGroomingNeeds(withViewAll);
@@ -141,32 +151,22 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
       
       console.log('🔵 [GroomingServiceRouter] Final groomerServices length:', groomerServices.length);
-      
-      const vendorMap = new Map();
-      groomerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
-        if (!vendorId) return;
-        if (!vendorMap.has(vendorId)) {
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
-            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
-            distance: service.distance ?? Math.random() * 5 + 0.5,
-            basePrice: service.price || service.base_price || 999
-          });
-        }
-      });
-      
-      const allGroomers = Array.from(vendorMap.values());
+
+      const allGroomers = normalizeAndDedupeDiscoveryProviders(
+        groomerServices,
+        'grooming'
+      );
       console.log('🔵 [GroomingServiceRouter] Found vendors:', allGroomers.length);
       setFeaturedGroomers(allGroomers.slice(0, 5));
       
       setStats({
         activeGroomers: allGroomers.length,
         sessions: allGroomers.length > 0 ? `${Math.max(allGroomers.length * 25, 100)}+` : '0',
-        rating: allGroomers.length > 0 
-          ? Number(allGroomers.reduce((acc: number, g: any) => acc + Number(g.rating || 4.5), 0) / allGroomers.length).toFixed(1) 
+        rating: allGroomers.length > 0
+          ? Number(
+              allGroomers.reduce((acc, g) => acc + Number(g.rating || 0), 0) /
+                allGroomers.length
+            ).toFixed(1)
           : '-'
       });
     } catch (error) {
@@ -350,6 +350,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {(groomingNeeds.length > 0 ? groomingNeeds : GROOMING_NEEDS).map((need) => {
                 const isViewAll = need.id === 'view_all';
+                const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
                 return (
                   <button
                     key={need.id}
@@ -381,6 +382,12 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     `}>
                       {typeof need.icon === 'string' ? (
                         <span className="text-2xl">{need.icon}</span>
+                      ) : hasAdminTint ? (
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`}
+                        >
+                          {need.icon}
+                        </div>
                       ) : (
                         <div className="text-slate-600 group-hover:text-orange-600">
                           {need.icon}
@@ -444,32 +451,21 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
             
             <div className="space-y-3">
-              {(featuredGroomers.length > 0 ? featuredGroomers : [1, 2, 3]).map((groomer: any, index) => (
-                <div 
-                  key={index}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                  onClick={() => onNavigate?.('grooming_center')}
-                >
-                  <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                     {groomer.businessName ? groomer.businessName.charAt(0) : 'P'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 truncate">{groomer.businessName || `Pawfect Grooming ${index}`}</h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1 text-orange-500 font-bold">
-                        <Star className="w-3 h-3 fill-current" />
-                        {groomer.rating || 4.8}
-                      </span>
-                      <span>•</span>
-                      <span>{groomer.distance ? `${Number(groomer.distance).toFixed(1)} km` : '2.5 km'}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                     <div className="font-bold text-slate-900">₹{groomer.basePrice || 799}</div>
-                     <div className="text-[10px] text-slate-400">starts at</div>
-                  </div>
-                </div>
-              ))}
+              {featuredGroomers.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <div className="text-4xl mb-3">✂️</div>
+                  <p className="text-gray-600 mb-2">No groomers available in your area yet</p>
+                  <p className="text-gray-500 text-sm">Check back soon for grooming options!</p>
+                </Card>
+              ) : (
+                featuredGroomers.map((provider) => (
+                  <FeaturedProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    onClick={() => onNavigate?.('grooming_center')}
+                  />
+                ))
+              )}
             </div>
           </div>
         </div>

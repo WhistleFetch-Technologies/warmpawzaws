@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
+import { Video, Building2, Home as HomeIcon, Stethoscope, Star, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,8 @@ import { useProblemGridByRole } from './useProblemGridByRole';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { StandardizedFooter } from './shared/StandardizedFooter';
+import { FeaturedProviderCard } from './shared/FeaturedProviderCard';
+import { featuredProviderFromLegacyVet } from '@/lib/featured-provider';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -249,6 +251,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                       vendorName.toLowerCase().includes('clinic');
         
         if (isVet && !vendorMap.has(vendorId)) {
+          const dist =
+            service.distance ?? service.distanceKm ?? service.distance_km;
           vendorMap.set(vendorId, {
             id: vendorId,
             name: vendorName,
@@ -258,7 +262,17 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
             experience: service.experience || 5,
             fee: service.price || service.base_price || 499,
             location: service.vendorLocation || service.vendor_location || service.location,
-            serviceStyle: service.serviceStyle || service.service_style
+            serviceStyle: service.serviceStyle || service.service_style,
+            photo:
+              service.photo ||
+              service.vendorPhoto ||
+              service.photoUrl ||
+              service.profile_photo_url ||
+              null,
+            distanceKm:
+              dist != null && Number.isFinite(Number(dist))
+                ? Number(dist)
+                : null,
           });
         }
       });
@@ -713,37 +727,24 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           
           <div className="space-y-3">
             {featuredVets.length > 0 ? (
-              featuredVets.slice(0, 3).map((vet, index) => (
-                <Card 
-                  key={index}
-                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => handleNavigate('vet-doctor-details', { doctorId: vet.id })}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">
-                      {vet.name?.charAt(0) || 'V'}
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">{vet.name || 'Dr. Veterinarian'}</h3>
-                      <p className="text-xs text-gray-500 mb-2">{vet.specialty || 'General Veterinarian'}</p>
-                      <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">{vet.rating || 4.8}</span>
-                          <span className="text-gray-400">({vet.reviews || 0})</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-gray-500">
-                          <Clock className="w-3 h-3" />
-                          <span>{vet.experience || 5}+ years</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-[#FF8C42]">₹{vet.fee || 499}</div>
-                      <div className="text-xs text-gray-400">per visit</div>
-                    </div>
-                  </div>
-                </Card>
+              featuredVets.slice(0, 3).map((vet) => (
+                <FeaturedProviderCard
+                  key={vet.id}
+                  provider={featuredProviderFromLegacyVet({
+                    id: vet.id,
+                    name: vet.name,
+                    specialty: vet.specialty,
+                    rating: vet.rating,
+                    reviews: vet.reviews,
+                    experience: vet.experience,
+                    fee: vet.fee,
+                    photo: vet.photo,
+                    distanceKm: vet.distanceKm,
+                  })}
+                  onClick={() =>
+                    handleNavigate('vet-doctor-details', { doctorId: vet.id })
+                  }
+                />
               ))
             ) : (
               // No vets available message

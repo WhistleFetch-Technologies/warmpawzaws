@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDiscovery } from './ServiceDiscovery';
 import { BookingFlow } from './BookingFlow';
 
@@ -135,41 +136,26 @@ export function ProblemGridFlowRouter({
   const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [showInstantOption, setShowInstantOption] = useState(false);
   const [isInstantMode, setIsInstantMode] = useState(false);
-  // ✅ FIX: Initialize allowedServiceStyles - exclude 'tele' for trainers
-  const getInitialStyles = (): ServiceStyle[] => {
-    if (initialProblem) {
-      const roleId = initialProblem.roleId || initialProblem.linkedServiceRoles?.[0] || 'vet';
-      const isTrainer = roleId === 'trainer' || 
-                       roleId === 'pet_trainer' || 
-                       initialProblem.category === 'training' ||
-                       initialProblem.linkedServiceRoles?.includes('trainer') ||
-                       initialProblem.linkedServiceRoles?.includes('pet_trainer');
-      
-      if (isTrainer) {
-        return ['at_home', 'at_center'];
-      }
+  const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>(() => {
+    if (!initialProblem) {
+      return sanitizeCustomerAllowedServiceStyles([], { roleId: 'veterinarian' }) as ServiceStyle[];
     }
-    return ['at_home', 'at_center', 'tele'];
-  };
-  
-  const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>(getInitialStyles());
-  
-  // Computed - use fetched allowedServiceStyles, fallback to problem's styles, then default
-  const availableStyles = allowedServiceStyles.length > 0 
-    ? allowedServiceStyles 
-    : (() => {
-        const roleId = selectedProblem?.roleId || selectedProblem?.linkedServiceRoles?.[0] || 'vet';
-        const isTrainer = roleId === 'trainer' || 
-                         roleId === 'pet_trainer' || 
-                         selectedProblem?.category === 'training' ||
-                         selectedProblem?.linkedServiceRoles?.includes('trainer') ||
-                         selectedProblem?.linkedServiceRoles?.includes('pet_trainer');
-        
-        if (isTrainer) {
-          return selectedProblem?.allowedServiceStyles?.filter((s: ServiceStyle) => s !== 'tele') || ['at_home', 'at_center'];
-        }
-        return selectedProblem?.allowedServiceStyles || ['at_home', 'at_center', 'tele'];
-      })();
+    const rid = initialProblem.roleId || initialProblem.linkedServiceRoles?.[0] || 'veterinarian';
+    return sanitizeCustomerAllowedServiceStyles(initialProblem.allowedServiceStyles, {
+      roleId: rid,
+      specializationId: initialProblem.id,
+      categoryHint: initialProblem.category,
+    }) as ServiceStyle[];
+  });
+
+  const roleForStyles =
+    selectedProblem?.roleId || selectedProblem?.linkedServiceRoles?.[0] || 'veterinarian';
+
+  const availableStyles = sanitizeCustomerAllowedServiceStyles(allowedServiceStyles, {
+    roleId: roleForStyles,
+    specializationId: selectedProblem?.id,
+    categoryHint: selectedProblem?.category,
+  }) as ServiceStyle[];
   const hasTeleOption = availableStyles.includes('tele');
 
   // Fetch problem details including allowedServiceStyles when problem changes
@@ -198,43 +184,34 @@ export function ProblemGridFlowRouter({
         if (matchingProblem?.allowedServiceStyles) {
           styles = matchingProblem.allowedServiceStyles as ServiceStyle[];
         } else if (selectedProblem.allowedServiceStyles) {
-          // Use the styles from initialProblem if API doesn't return them
           styles = selectedProblem.allowedServiceStyles;
         }
-        
-        // ✅ FIX: Remove 'tele' option for trainers
-        // Check if roleId is 'trainer' or if the problem is related to training
-        const isTrainer = roleId === 'trainer' || 
-                         roleId === 'pet_trainer' || 
-                         selectedProblem.category === 'training' ||
-                         selectedProblem.linkedServiceRoles?.includes('trainer') ||
-                         selectedProblem.linkedServiceRoles?.includes('pet_trainer');
-        
-        if (isTrainer) {
-          // Remove 'tele' from allowed styles for trainers
-          styles = styles.filter((style: ServiceStyle) => style !== 'tele');
-        }
-        
-        setAllowedServiceStyles(styles.length > 0 ? styles : ['at_home', 'at_center']);
+
+        const sanitized = sanitizeCustomerAllowedServiceStyles(styles, {
+          roleId,
+          specializationId: selectedProblem.id,
+          categoryHint: selectedProblem.category,
+        }) as ServiceStyle[];
+        setAllowedServiceStyles(sanitized.length > 0 ? sanitized : (['at_home', 'at_center'] as ServiceStyle[]));
+      } else {
+        const rid = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
+        const sanitized = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
+          roleId: rid,
+          specializationId: selectedProblem.id,
+          categoryHint: selectedProblem.category,
+        }) as ServiceStyle[];
+        setAllowedServiceStyles(sanitized.length > 0 ? sanitized : (['at_home', 'at_center'] as ServiceStyle[]));
       }
     } catch (error: any) {
       console.error('Error fetching problem details:', error);
       // Fallback to problem's styles or defaults
-      let styles: ServiceStyle[] = selectedProblem.allowedServiceStyles || ['at_home', 'at_center', 'tele'];
-      
-      // ✅ FIX: Remove 'tele' option for trainers in fallback too
-      const roleId = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'vet';
-      const isTrainer = roleId === 'trainer' || 
-                       roleId === 'pet_trainer' || 
-                       selectedProblem.category === 'training' ||
-                       selectedProblem.linkedServiceRoles?.includes('trainer') ||
-                       selectedProblem.linkedServiceRoles?.includes('pet_trainer');
-      
-      if (isTrainer) {
-        styles = styles.filter((style: ServiceStyle) => style !== 'tele');
-      }
-      
-      setAllowedServiceStyles(styles);
+      const roleIdFb = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
+      const sanitized = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
+        roleId: roleIdFb,
+        specializationId: selectedProblem.id,
+        categoryHint: selectedProblem.category,
+      }) as ServiceStyle[];
+      setAllowedServiceStyles(sanitized.length > 0 ? sanitized : (['at_home', 'at_center'] as ServiceStyle[]));
     } finally {
       setLoadingProblemDetails(false);
     }
