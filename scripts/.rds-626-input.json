@@ -1,0 +1,1 @@
+﻿{"secretArn":"arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE","resourceArn":"arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster","database":"warmpawz","sql":"ALTER TABLE vendors ADD COLUMN IF NOT EXISTS upi_vpa_holder_name TEXT"}

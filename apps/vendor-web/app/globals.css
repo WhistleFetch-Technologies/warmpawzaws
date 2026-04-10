@@ -344,6 +344,18 @@ body {
   padding-left: env(safe-area-inset-left, 0px);
 }
 
+/**
+ * Fixed full-screen modal backdrop (flex host for centered / top-aligned panels).
+ * Use on `fixed inset-0 … flex … overflow-y-auto` wrappers so panels sit below the notch
+ * and above the home indicator. Requires viewport-fit=cover (see layout viewport).
+ */
+.vendor-modal-overlay-host {
+  padding-top: max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+  padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+
 /* Sonner (sonner@2.x): avoid toasts under status bar / notch — requires viewport-fit=cover in layout */
 [data-sonner-toaster] {
   --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
