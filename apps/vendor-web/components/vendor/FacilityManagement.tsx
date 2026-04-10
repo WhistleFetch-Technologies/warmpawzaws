@@ -398,8 +398,8 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         {/* Upload Area */}
         <div className="p-4">
           {canAddMore && (
-            <label className="block w-full cursor-pointer">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-[#FF8C42] hover:bg-orange-50 transition-all text-center">
+            <label className="relative block w-full cursor-pointer overflow-hidden rounded-xl">
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-[#FF8C42] hover:bg-orange-50 transition-all text-center pointer-events-none">
                 <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="font-medium text-gray-900 mb-1">Upload Facility Photos</p>
                 <p className="text-sm text-gray-500 mb-1">
@@ -412,7 +412,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                 accept="image/*"
                 multiple
                 onChange={handleFileSelect}
-                className="hidden"
+                className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
               />
             </label>
           )}

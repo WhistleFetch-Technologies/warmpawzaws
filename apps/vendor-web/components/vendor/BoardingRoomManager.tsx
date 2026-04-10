@@ -556,7 +556,7 @@ export function BoardingRoomManager({
               <label className="block text-sm font-medium mb-2">
                 Photos & Videos {!editingRoom && '*'}
               </label>
-              <div className="border-2 border-dashed rounded-lg p-6 text-center">
+              <div className="relative overflow-hidden border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
                   accept="image/*,video/*"
@@ -564,20 +564,17 @@ export function BoardingRoomManager({
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(file, editingRoom?.id || null);
                   }}
-                  className="hidden"
+                  className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
                   id="media-upload"
                   disabled={uploadingMedia}
                 />
-                <label
-                  htmlFor="media-upload"
-                  className="cursor-pointer flex flex-col items-center"
-                >
+                <div className="pointer-events-none flex flex-col items-center">
                   <Upload className="w-8 h-8 text-gray-400 mb-2" />
                   <p className="text-sm text-gray-600">
                     {uploadingMedia ? 'Uploading...' : 'Click to upload photos or videos'}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">Max 50MB per file</p>
-                </label>
+                </div>
 
                 {/* Show uploaded media count */}
                 {(photos.length > 0 || videos.length > 0) && (

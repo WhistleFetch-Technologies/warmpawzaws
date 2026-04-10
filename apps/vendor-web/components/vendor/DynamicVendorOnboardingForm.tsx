@@ -1345,16 +1345,16 @@ export function DynamicVendorOnboardingForm({
                 </div>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-[#FF8C42] hover:bg-orange-50/50 transition-all group">
-                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              <label className="relative flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-[#FF8C42] hover:bg-orange-50/50 transition-all group overflow-hidden">
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform pointer-events-none">
                     <Upload className="w-6 h-6 text-[#FF8C42]" />
                 </div>
-                <span className="text-sm font-semibold text-gray-700 group-hover:text-[#FF8C42] transition-colors">Tap to upload document</span>
-                <span className="text-xs text-gray-400 mt-1">{field.documentLabel || field.label}</span>
+                <span className="text-sm font-semibold text-gray-700 group-hover:text-[#FF8C42] transition-colors pointer-events-none">Tap to upload document</span>
+                <span className="text-xs text-gray-400 mt-1 pointer-events-none">{field.documentLabel || field.label}</span>
                 <input
                   type="file"
                   accept={field.acceptedFileTypes?.join(',') || 'image/*'}
-                  className="hidden"
+                  className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(field.name, file);

@@ -221,7 +221,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
                   type="file"
                   accept=".csv,.xlsx,.xls"
                   onChange={handleFileSelect}
-                  className="hidden"
+                  className="sr-only"
                 />
               </div>
 

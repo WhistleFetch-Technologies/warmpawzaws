@@ -726,7 +726,7 @@ export function VendorChatModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                className="hidden"
+                className="sr-only"
                 onChange={handleFileUpload}
                 accept="image/*,.pdf,.doc,.docx"
                 disabled={uploading}

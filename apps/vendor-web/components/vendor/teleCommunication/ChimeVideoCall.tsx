@@ -1991,7 +1991,7 @@ export function ChimeVideoCall({
               <input
                 ref={fileInputRef}
                 type="file"
-                className="hidden"
+                className="sr-only"
                 onChange={handleFileUpload}
                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
                 disabled={uploadingFile}
@@ -1999,7 +1999,7 @@ export function ChimeVideoCall({
               <input
                 ref={cameraCaptureInputRef}
                 type="file"
-                className="hidden"
+                className="sr-only"
                 onChange={handleFileUpload}
                 accept="image/*"
                 capture="environment"

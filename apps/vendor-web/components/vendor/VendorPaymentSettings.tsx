@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Building2, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -46,6 +46,8 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const cancelledChequeInputRef = useRef<HTMLInputElement>(null);
+  const bankStatementInputRef = useRef<HTMLInputElement>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
   const [loadingWallet, setLoadingWallet] = useState(false);
@@ -429,8 +431,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                     <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-700 mb-1">Cancelled Cheque</p>
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
-                    <label className="inline-block">
+                    <div className="inline-block">
                       <input
+                        ref={cancelledChequeInputRef}
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
                         onChange={(e) => {
@@ -443,7 +446,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                             handleUploadDocument(file, 'cancelled_cheque');
                           }
                         }}
-                        className="hidden"
+                        className="sr-only"
                         disabled={uploadingDoc}
                       />
                       <Button
@@ -452,10 +455,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                         size="sm"
                         disabled={uploadingDoc}
                         className="cursor-pointer"
-                        onClick={() => {
-                          const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-                          input?.click();
-                        }}
+                        onClick={() => cancelledChequeInputRef.current?.click()}
                       >
                         {uploadingDoc ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -466,14 +466,15 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                           </>
                         )}
                       </Button>
-                    </label>
+                    </div>
                   </div>
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
                     <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-700 mb-1">Bank Statement</p>
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
-                    <label className="inline-block">
+                    <div className="inline-block">
                       <input
+                        ref={bankStatementInputRef}
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
                         onChange={(e) => {
@@ -486,7 +487,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                             handleUploadDocument(file, 'bank_statement');
                           }
                         }}
-                        className="hidden"
+                        className="sr-only"
                         disabled={uploadingDoc}
                       />
                       <Button
@@ -495,11 +496,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                         size="sm"
                         disabled={uploadingDoc}
                         className="cursor-pointer"
-                        onClick={() => {
-                          const inputs = document.querySelectorAll('input[type="file"]');
-                          const statementInput = Array.from(inputs).find((_, i) => i === 1) as HTMLInputElement;
-                          statementInput?.click();
-                        }}
+                        onClick={() => bankStatementInputRef.current?.click()}
                       >
                         {uploadingDoc ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -510,7 +507,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                           </>
                         )}
                       </Button>
-                    </label>
+                    </div>
                   </div>
                 </div>
               </div>

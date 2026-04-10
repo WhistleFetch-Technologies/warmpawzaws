@@ -174,7 +174,7 @@ export function PerforaInvoiceUpload({ orderId, onUploadComplete }: PerforaInvoi
               type="file"
               accept="image/*,application/pdf"
               onChange={handleFileSelect}
-              className="hidden"
+              className="sr-only"
               disabled={uploading}
             />
 
