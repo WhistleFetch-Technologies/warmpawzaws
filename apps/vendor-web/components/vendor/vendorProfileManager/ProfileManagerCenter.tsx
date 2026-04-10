@@ -715,15 +715,15 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
               </div>
 
               {(profile.photos.length + newPhotos.length) < MAX_PHOTOS && (
-                <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <ImageIcon className="w-5 h-5 text-gray-400" />
-                  <span className="text-sm text-gray-600">Add Photos ({profile.photos.length + newPhotos.length}/{MAX_PHOTOS})</span>
+                <label className="relative flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg hover:bg-gray-50 cursor-pointer overflow-hidden">
+                  <ImageIcon className="w-5 h-5 text-gray-400 pointer-events-none" />
+                  <span className="text-sm text-gray-600 pointer-events-none">Add Photos ({profile.photos.length + newPhotos.length}/{MAX_PHOTOS})</span>
                   <input
                     type="file"
                     accept="image/*"
                     multiple
                     onChange={handleFileSelect}
-                    className="hidden"
+                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                   />
                 </label>
               )}

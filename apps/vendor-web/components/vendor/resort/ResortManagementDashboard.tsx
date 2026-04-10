@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Hotel, Bed, Calendar, Users, CheckCircle2, Edit, Trash2, Eye, EyeOff, MapPin, Clock, Shield, Image, Upload, X, Check, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -81,6 +81,7 @@ export function ResortManagementDashboard({ vendorId, vendorData, onBack }: Reso
   // Photos state
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const resortPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
@@ -803,7 +804,11 @@ export function ResortManagementDashboard({ vendorId, vendorData, onBack }: Reso
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Manage Photos</h2>
-              <Button className="bg-orange-500 hover:bg-orange-600">
+              <Button
+                type="button"
+                className="bg-orange-500 hover:bg-orange-600"
+                onClick={() => resortPhotoInputRef.current?.click()}
+              >
                 <Upload className="w-4 h-4 mr-2" />
                 Upload Photos
               </Button>
@@ -816,10 +821,11 @@ export function ResortManagementDashboard({ vendorId, vendorData, onBack }: Reso
                 <p className="text-gray-500 mb-4">Drag and drop photos here, or click to select</p>
                 <p className="text-sm text-gray-400">Recommended: 1200x800px, max 5MB per image</p>
                 <input
+                  ref={resortPhotoInputRef}
                   type="file"
                   accept="image/*"
                   multiple
-                  className="hidden"
+                  className="sr-only"
                   id="photo-upload"
                   onChange={async (e) => {
                     const files = e.target.files;
@@ -863,10 +869,11 @@ export function ResortManagementDashboard({ vendorId, vendorData, onBack }: Reso
                     }
                   }}
                 />
-                <Button 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   className="mt-4"
-                  onClick={() => document.getElementById('photo-upload')?.click()}
+                  onClick={() => resortPhotoInputRef.current?.click()}
                 >
                   Select Photos
                 </Button>
