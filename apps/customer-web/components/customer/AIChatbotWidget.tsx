@@ -87,7 +87,16 @@ export function AIChatbotWidget({
 }: AIChatbotWidgetProps) {
   const router = useRouter();
   const lastBookingUrlRef = useRef<string | null>(null);
+  /** Prevents double close when touch fires pointerdown + click on the backdrop. */
+  const backdropCloseDoneRef = useRef(false);
   const showMobileBackdrop = presentation === 'dock' || presentation === 'modal';
+
+  const closeFromBackdrop = useCallback(() => {
+    if (backdropCloseDoneRef.current) return;
+    backdropCloseDoneRef.current = true;
+    setIsOpen(false);
+    onClose?.();
+  }, [onClose]);
 
   const goTo = useCallback(
     (dest: string) => {
@@ -466,22 +475,20 @@ export function AIChatbotWidget({
     }
   };
 
-  // If closed internally, call parent's onClose to unmount
   if (!isOpen) {
-    onClose?.();
     return null;
   }
 
   const panelShell =
     presentation === 'modal'
       ? [
-          'fixed z-[50] flex min-h-0 flex-col bg-white rounded-lg shadow-2xl border border-gray-200',
+          'fixed z-[56] flex min-h-0 flex-col bg-white rounded-lg shadow-2xl border border-gray-200',
           'left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom,0px))]',
           'max-h-[min(600px,calc(100dvh-2rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
           'sm:left-auto sm:right-6 sm:w-96',
         ].join(' ')
       : [
-          'fixed z-[50] flex min-h-0 flex-col bg-white rounded-lg shadow-2xl border border-gray-200',
+          'fixed z-[56] flex flex-col min-h-[min(22rem,58dvh)] bg-white rounded-lg shadow-2xl border border-gray-200',
           'left-3 right-3 bottom-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))]',
           'max-h-[min(600px,calc(100dvh-7.5rem-env(safe-area-inset-bottom,0px)-env(safe-area-inset-top,0px)))]',
           'sm:left-auto sm:right-6 sm:w-96',
@@ -492,11 +499,14 @@ export function AIChatbotWidget({
       {showMobileBackdrop && (
         <button
           type="button"
-          className="fixed inset-0 z-[49] bg-black/40 sm:hidden"
+          className="fixed inset-0 z-[55] bg-black/40 sm:hidden"
           aria-label="Close chat"
-          onClick={() => {
-            setIsOpen(false);
-            onClose?.();
+          style={{ touchAction: 'manipulation' }}
+          onClick={closeFromBackdrop}
+          onPointerDown={(e) => {
+            if (e.pointerType === 'touch') {
+              closeFromBackdrop();
+            }
           }}
         />
       )}
