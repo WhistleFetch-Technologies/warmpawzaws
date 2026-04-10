@@ -323,8 +323,8 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
 
             {/* Add/Edit Modal */}
             {showAddModal && (
-              <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-3 pb-8 sm:pt-4">
-                <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg">
+              <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 vendor-modal-overlay-host">
+                <div className="w-full max-w-md max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-2.5rem))] overflow-y-auto overscroll-y-contain rounded-xl bg-white p-4 shadow-lg">
                   <div className="space-y-3">
                     <input
                       type="text"
