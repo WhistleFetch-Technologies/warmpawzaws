@@ -79,6 +79,7 @@ import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { useNotificationService } from '../useNotificationService';
 import { toast } from 'sonner';
+import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { MyBookings } from '../booking/MyBookings';
 import { AppointmentsList } from '../AppointmentsList';
@@ -609,6 +610,15 @@ export function CustomerHomeWrapper({
     else if (screen === 'vet-clinic-profile') setCurrentScreen('vet-clinic-profile');
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'vet-services-by-style') setCurrentScreen('vet-services-by-style');
+    else if (screen === 'vet-all-doctors') {
+      // Featured Vets "View All" — browse full provider list (same surface as style-based vet catalog)
+      setVetServiceData({
+        serviceStyle: 'tele',
+        serviceTypeName: 'All veterinarians',
+        category: 'vet',
+      });
+      setCurrentScreen('vet-services-by-style');
+    }
     else if (screen === 'vet-tele-consultation') {
       setCurrentScreen('vet-tele-consultation');
       return;
@@ -1179,11 +1189,28 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
-  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { 
-    if (screen === 'clinic-profile' || screen === 'clinic-details') { 
-      setVetServiceData({ id: data?.clinicId, ...data }); 
-      setCurrentScreen('vet-clinic-profile'); 
-    } 
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => {
+    if (screen === 'clinic-profile' || screen === 'clinic-details') {
+      setVetServiceData({ id: data?.clinicId, ...data });
+      setCurrentScreen('vet-clinic-profile');
+    } else if (screen === 'appointment' || screen === 'vet-booking') {
+      setVetServiceData({
+        ...vetServiceData,
+        id: data?.clinicId || data?.vendorId || vetServiceData?.id,
+        vendorId: data?.vendorId || data?.clinicId,
+        clinicId: data?.clinicId || data?.vendorId,
+        vendorName: data?.vendorName,
+        serviceType: data?.serviceType || 'at_center',
+        serviceStyle: data?.serviceStyle || 'at_center',
+        service: data?.service,
+        serviceId: data?.serviceId,
+        serviceName: data?.serviceName,
+        price: data?.price,
+        duration: data?.duration,
+        clinic: data?.clinic,
+      });
+      setCurrentScreen('vet-booking');
+    }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => {
     if (screen === 'appointment' || screen === 'vet-booking') {
@@ -1192,7 +1219,8 @@ export function CustomerHomeWrapper({
         id: data?.clinicId || vetServiceData?.id,
         vendorId: data?.vendorId || data?.clinicId || vetServiceData?.id,
         clinicId: data?.clinicId || vetServiceData?.id,
-        serviceType: data?.serviceType || 'clinic',
+        vendorName: data?.vendorName || vetServiceData?.vendorName,
+        serviceType: data?.serviceType || 'at_center',
         serviceStyle: data?.serviceStyle || 'at_center',
         service: data?.service,
         serviceId: data?.serviceId,
@@ -2012,6 +2040,10 @@ export function CustomerHomeWrapper({
   // Lab Diagnostics Landing - Entry point for lab tests and diagnostics
   if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'lab-booking') {
+      if (isLegacyMockDiagnosticVendorId(data?.vendorId)) {
+        toast.error('This lab is not available. Refresh the page or pick another lab.');
+        return;
+      }
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: 'diagnostics' });
       setDiagnosticsPackageHint(

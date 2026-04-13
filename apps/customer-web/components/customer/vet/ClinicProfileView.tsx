@@ -27,7 +27,15 @@ interface ClinicInfo {
   rating: number;
   review_count: number;
   timing: string;
-  services: { id: string; name: string; price: number; duration?: number }[];
+  services: {
+    selectionKey: string;
+    id: string;
+    serviceId?: string;
+    vendorServiceId?: string | number;
+    name: string;
+    price: number;
+    duration?: number;
+  }[];
   doctors: { id: string; name: string; specialization: string; rating: number }[];
   photos: string[];
   amenities: string[];
@@ -36,7 +44,14 @@ interface ClinicInfo {
 export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: ClinicProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<ClinicInfo | null>(null);
-  const [selectedService, setSelectedService] = useState<{ id: string; name: string; price: number; duration?: number } | null>(null);
+  const [selectedService, setSelectedService] = useState<{
+    selectionKey: string;
+    id: string;
+    name: string;
+    price: number;
+    duration?: number;
+    serviceId?: string;
+  } | null>(null);
   
   // User profile data for header
   const [userName, setUserName] = useState('User');
@@ -95,15 +110,22 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         services = servicesData;
       }
       
-      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
-      const mappedServices = services.map((s: any) => ({
-        id: s.serviceId || s.service_id, // ✅ UUID from services table
-        serviceId: s.serviceId || s.service_id, // ✅ UUID
-        vendorServiceId: s.id, // Numeric vendor_services.id (for reference)
-        name: s.serviceName || s.name || s.service_name,
-        price: parseFloat(s.price || '0'),
-        duration: s.duration || s.duration_minutes || 30,
-      }));
+      const mappedServices = services.map((s: any, idx: number) => {
+        const catalogId = s.serviceId || s.service_id;
+        const vendorServiceId = s.id;
+        const selectionKey = String(
+          catalogId || (vendorServiceId != null ? `vs-${vendorServiceId}` : `row-${idx}`)
+        );
+        return {
+          selectionKey,
+          id: catalogId || selectionKey,
+          serviceId: catalogId,
+          vendorServiceId,
+          name: s.serviceName || s.name || s.service_name,
+          price: parseFloat(s.price || '0'),
+          duration: s.duration || s.duration_minutes || 30,
+        };
+      });
       
       console.log('✅ Loaded clinic data:', {
         vendorId: vendorData.id || clinicId,
@@ -148,12 +170,14 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
     }
     
     // ✅ CRITICAL: Use service_id (UUID) not numeric id
-    const serviceId = (selectedService as any).serviceId || selectedService.id;
+    const serviceId =
+      (selectedService as any).serviceId || selectedService.id || selectedService.selectionKey;
     
     // Navigate with service data - use 'appointment' to match CustomerHomeWrapper expectation
     onNavigate('appointment', { 
       clinicId: clinic?.id, 
       vendorId: clinic?.id,
+      vendorName: clinic?.name,
       service: selectedService,
       serviceId: serviceId, // ✅ UUID from services table
       serviceName: selectedService.name,
@@ -209,7 +233,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         headerColor="bg-[#FF8C42]"
       />
 
-      <div className="max-w-customer mx-auto px-4 pt-4 pb-32">
+      <div className="max-w-customer mx-auto px-4 pt-4 pb-40">
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">
@@ -280,31 +304,39 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           </div>
         </div>
 
-        {/* Services Section */}
+        {/* Services Section — scrollable list, stable keys, two-column row */}
         <div className="bg-white rounded-xl p-4 mb-4">
           <h2 className="font-bold text-gray-900 mb-3">Services & Prices</h2>
-          <div className="space-y-2">
-            {clinic.services.map((service) => (
-              <button
-                key={service.id}
-                onClick={() => setSelectedService(service)}
-                className={`w-full flex items-center justify-between py-3 px-3 rounded-lg border-2 transition-all ${
-                  selectedService?.id === service.id
-                    ? 'border-orange-600 bg-orange-50'
-                    : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
-                }`}
-              >
-                <span className={`font-medium ${selectedService?.id === service.id ? 'text-orange-900' : 'text-gray-700'}`}>
-                  {service.name}
-                </span>
-                <span className={`font-semibold ${selectedService?.id === service.id ? 'text-orange-600' : 'text-gray-900'}`}>
-                  ₹{service.price}
-                </span>
-                {selectedService?.id === service.id && (
-                  <CheckCircle2 className="w-5 h-5 text-orange-600 ml-2" />
-                )}
-              </button>
-            ))}
+          <div className="max-h-[min(55vh,24rem)] overflow-y-auto space-y-2 pr-1 -mr-1">
+            {clinic.services.map((service) => {
+              const isSel = selectedService?.selectionKey === service.selectionKey;
+              return (
+                <button
+                  key={service.selectionKey}
+                  type="button"
+                  onClick={() => setSelectedService(service)}
+                  className={`w-full text-left rounded-xl border-2 transition-all px-4 py-3 ${
+                    isSel
+                      ? 'border-orange-600 bg-orange-50'
+                      : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span className={`font-medium block ${isSel ? 'text-orange-900' : 'text-gray-700'}`}>
+                        {service.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`font-semibold tabular-nums ${isSel ? 'text-orange-600' : 'text-gray-900'}`}>
+                        ₹{service.price}
+                      </span>
+                      {isSel && <CheckCircle2 className="w-5 h-5 text-orange-600" aria-hidden />}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 

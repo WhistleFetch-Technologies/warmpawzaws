@@ -16,6 +16,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { 
   ArrowLeft, 
   Star, 
@@ -546,8 +547,14 @@ export function HomeServiceProviderProfile({
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <h4 className="font-medium text-gray-800">{service.name}</h4>
-                      {service.description && (
-                        <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                      {service.description?.trim() && (
+                        <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            className="m-0 text-sm leading-5 text-gray-500"
+                          />
+                        </div>
                       )}
                     </div>
                     <div className="text-right ml-4">

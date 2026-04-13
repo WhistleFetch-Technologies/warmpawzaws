@@ -529,6 +529,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * Discovery: vendors with published diagnostic tests (diagnostics centers + vet clinics with lab tests enabled).
    * Includes: diagnostics_center, diagnostic_center, and vet_clinic/veterinary_clinic/vet with diagnostics capability.
    * Only vendors that have at least one published (is_available = true) test are returned.
+   * When lat/lng + maxDistance are sent: vendors within range are returned first; vendors missing latitude/longitude
+   * still appear (distance null) so labs can be discovered before they set coordinates on their profile.
    */
   app.get("/customer/diagnostics/vendors-with-tests", async (c) => {
     try {
@@ -570,13 +572,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       let pi = 1;
       if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
         vendorQuery += `
-          AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
-          AND (6371 * acos(cos(radians($${pi})) * cos(radians(CAST(v.latitude AS FLOAT))) * cos(radians(CAST(v.longitude AS FLOAT)) - radians($${pi + 1})) + sin(radians($${pi})) * sin(radians(CAST(v.latitude AS FLOAT))))) <= $${pi + 2}
+          AND (
+            (
+              v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+              AND (6371 * acos(cos(radians($${pi})) * cos(radians(CAST(v.latitude AS FLOAT))) * cos(radians(CAST(v.longitude AS FLOAT)) - radians($${pi + 1})) + sin(radians($${pi})) * sin(radians(CAST(v.latitude AS FLOAT))))) <= $${pi + 2}
+            )
+            OR (v.latitude IS NULL OR v.longitude IS NULL)
+          )
         `;
         vendorParams.push(lat, lng, maxDistance);
         pi += 3;
       }
-      vendorQuery += ` ORDER BY v.business_name`;
+      vendorQuery += ` ORDER BY CASE WHEN v.latitude IS NULL OR v.longitude IS NULL THEN 1 ELSE 0 END, v.business_name`;
       const vendorsResult = await query(vendorQuery, vendorParams);
       const vendors = vendorsResult.rows || [];
 

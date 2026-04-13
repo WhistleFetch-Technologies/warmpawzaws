@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 
 // ============================================================================
 // TYPES
@@ -456,36 +457,43 @@ export function UniversalProviderProfile({
             />
           )}
           
-          {/* Back Button */}
-          <button
-            onClick={showBookingForm ? () => setShowBookingForm(false) : onBack}
-            className="absolute top-4 left-4 w-10 h-10 bg-white/20 backdrop-blur rounded-full flex items-center justify-center"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
+          {/* Toolbar: safe-area so back/actions clear status bar (iOS / WebView) */}
+          <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
+            <button
+              type="button"
+              onClick={showBookingForm ? () => setShowBookingForm(false) : onBack}
+              className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur transition-colors hover:bg-white/30"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 text-white" />
+            </button>
 
-          {/* Actions */}
-          <div className="absolute top-4 right-4 flex gap-2">
-            <button
-              onClick={() => setIsFavorite(!isFavorite)}
-              className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Heart className={`w-5 h-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
-            </button>
-            <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: provider.name,
-                    text: `Check out ${provider.name} on Warmpawz`,
-                    url: window.location.href,
-                  });
-                }
-              }}
-              className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Share2 className="w-5 h-5 text-gray-400" />
-            </button>
+            <div className="flex shrink-0 gap-2 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => setIsFavorite(!isFavorite)}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white shadow-lg"
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({
+                      title: provider.name,
+                      text: `Check out ${provider.name} on Warmpawz`,
+                      url: window.location.href,
+                    });
+                  }
+                }}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white shadow-lg"
+                aria-label="Share"
+              >
+                <Share2 className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -572,8 +580,15 @@ export function UniversalProviderProfile({
                         <span className="px-1.5 py-0.5 text-xs font-semibold rounded bg-purple-100 text-purple-700">Package</span>
                       )}
                     </span>
-                    {service.description && (
-                      <p className="text-xs text-gray-600 mt-1 whitespace-pre-line line-clamp-4">{service.description}</p>
+                    {service.description?.trim() && (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                        <ServiceDescriptionInline
+                          description={service.description}
+                          title={service.name}
+                          className="m-0 text-xs leading-snug text-gray-600"
+                          linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline"
+                        />
+                      </div>
                     )}
                     <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                       {service.duration > 0 && (
@@ -794,8 +809,14 @@ export function UniversalProviderProfile({
                                 <Badge className="bg-amber-100 text-amber-700 text-xs">Popular</Badge>
                               )}
                             </div>
-                            {service.description && (
-                              <p className="text-sm text-gray-500 mt-1 whitespace-pre-line line-clamp-3">{service.description}</p>
+                            {service.description?.trim() && (
+                              <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-500"
+                                />
+                              </div>
                             )}
                             <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
                               <span className="flex items-center gap-1">

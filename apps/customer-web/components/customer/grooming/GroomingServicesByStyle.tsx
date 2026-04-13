@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
 interface GroomingServicesByStyleProps {
@@ -884,8 +885,12 @@ export function GroomingServicesByStyle({
                                   </span>
                                 )}
                               </div>
-                              {service.description && (
-                                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.description}</p>
+                              {service.description?.trim() && (
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-600 mb-3"
+                                />
                               )}
                               <div className="flex items-center gap-4 text-xs text-gray-500">
                                 <span className="flex items-center gap-1.5 bg-gray-100 px-2.5 py-1 rounded-lg">
@@ -1284,10 +1289,12 @@ export function GroomingServicesByStyle({
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                                 )}
                               </div>
-                              {service.description && (
-                                <p className="text-gray-500 text-sm mt-1 line-clamp-2">
-                                  {service.description}
-                                </p>
+                              {service.description?.trim() && (
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                                />
                               )}
                               <div className="flex items-center gap-3 mt-2">
                                 {/* ✅ NEW: Price with discount display */}

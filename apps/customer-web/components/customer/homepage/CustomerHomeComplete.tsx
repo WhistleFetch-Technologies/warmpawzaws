@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
@@ -1832,7 +1833,14 @@ export function CustomerHomeComplete({
                     </div>
                   </div>
                   <h3 className="text-black font-semibold mb-1">{service.title}</h3>
-                  <p className="text-xs text-gray-600 mb-3">{service.description}</p>
+                  <div onClick={(e) => e.stopPropagation()} className="mb-3">
+                    <ServiceDescriptionInline
+                      description={service.description}
+                      title={service.title}
+                      className="m-0 text-xs leading-snug text-gray-600"
+                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline"
+                    />
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[#FF8C42] font-medium">{service.price}</span>
                     <button

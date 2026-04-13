@@ -17,6 +17,7 @@ import { ArrowLeft, Search, Stethoscope, Scissors, ShoppingBag, GraduationCap,
   Dog, Home as HomeIcon, Heart, Coffee, Users, Shield, Phone, Wheat, MapPin, 
   Sparkles, Palmtree, ChevronRight, PawPrint, Camera, Truck, Sun, X } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 interface AllServicesPageProps {
   onBack: () => void;
@@ -418,9 +419,14 @@ export function AllServicesPage({ onBack, onServiceSelect }: AllServicesPageProp
                           <h3 className="font-semibold text-[13px] mb-1 text-slate-800 leading-tight">
                             {service.label}
                           </h3>
-                          <p className="text-[11px] leading-snug text-slate-500 line-clamp-2">
-                            {service.description}
-                          </p>
+                          <div onClick={(e) => e.stopPropagation()} className="text-[11px] leading-snug">
+                            <ServiceDescriptionInline
+                              description={service.description}
+                              title={service.label}
+                              className="m-0 text-[11px] leading-snug text-slate-500"
+                              linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
+                            />
+                          </div>
                         </div>
 
                         {/* Arrow Indicator */}
