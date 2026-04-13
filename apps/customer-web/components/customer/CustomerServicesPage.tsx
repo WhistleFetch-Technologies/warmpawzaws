@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Star, MapPin, Clock, ArrowLeft, Scissors, GraduationCap, Building2, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 interface Service {
   id: string;
@@ -291,7 +292,13 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
           </div>
         </div>
 
-        <p className="text-sm text-gray-600 mb-4 line-clamp-2 min-h-[2.5rem]">{service.description}</p>
+        <div className="mb-4 min-h-[2.5rem]" onClick={(e) => e.stopPropagation()}>
+          <ServiceDescriptionInline
+            description={service.description}
+            title={service.serviceName}
+            className="m-0 text-sm leading-5 text-gray-600"
+          />
+        </div>
         
         <div className="flex items-center justify-between mb-4">
           <div>

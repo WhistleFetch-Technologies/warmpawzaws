@@ -11,6 +11,7 @@ import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { FeaturedProviderCard } from './shared/FeaturedProviderCard';
 import { featuredProviderFromLegacyVet } from '@/lib/featured-provider';
@@ -685,7 +686,16 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   </div>
                   <div className="flex-1">
                     <h3 className="font-semibold mb-1">{service.name}</h3>
-                    <p className="text-xs text-gray-500 mb-2">{service.description}</p>
+                    {service.description?.trim() ? (
+                      <div onClick={(e) => e.stopPropagation()} className="mb-2">
+                        <ServiceDescriptionInline
+                          description={service.description}
+                          title={service.name}
+                          className="m-0 text-xs leading-snug text-gray-500"
+                          linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline"
+                        />
+                      </div>
+                    ) : null}
                   </div>
                   {service.badge && (
                     <Badge variant="secondary" className="text-xs w-fit">

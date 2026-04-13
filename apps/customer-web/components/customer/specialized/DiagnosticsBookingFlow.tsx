@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { AddAddressModal } from '../shared/AddAddressModal';
@@ -136,6 +137,15 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
   }, [customerPhone]);
 
   const loadTests = async () => {
+    if (isLegacyMockDiagnosticVendorId(vendorId)) {
+      setError(
+        'This lab listing is no longer valid. Go back to Diagnostic Labs, refresh if needed, and choose a lab from the list.'
+      );
+      toast.error('Invalid lab. Open Diagnostic Labs again and pick a real lab.');
+      setTests([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);

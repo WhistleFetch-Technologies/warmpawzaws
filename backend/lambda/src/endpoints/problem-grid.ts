@@ -20,6 +20,8 @@ import { Hono } from 'hono';
 import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../utils/s3-media-presign';
+import { regeneratePresignedUrl } from './constants/helper';
 
 /** Clean service description: strip wrapping quotes, trim whitespace */
 function cleanDescription(desc: string | null | undefined): string | undefined {
@@ -30,6 +32,51 @@ function cleanDescription(desc: string | null | undefined): string | undefined {
   }
   cleaned = cleaned.replace(/\\"/g, '"');
   return cleaned || undefined;
+}
+
+/**
+ * Vendors often store profile_photo_url as a bare S3 key (no https://).
+ * Same pattern as customer-profile + service-discovery getVendorPhotoUrl.
+ */
+async function resolveVendorPhotoForByProblemRow(raw: string | null | undefined): Promise<string | null> {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s || s === 'null' || s === 'undefined') return null;
+  if (s.startsWith('data:')) return s;
+
+  const stripped = stripS3PresignQueryFromUrl(s);
+
+  if (!stripped.includes('://')) {
+    return (await regeneratePresignedUrl(stripped)) || null;
+  }
+
+  const presigned = (await presignS3GetUrlIfApplicable(stripped)) ?? stripped;
+  if (presigned && presigned !== stripped) {
+    return presigned;
+  }
+  return (await regeneratePresignedUrl(stripped)) || presigned || stripped;
+}
+
+/** Optional image on vendor_services.metadata (or catalog) for customer cards */
+function pickServiceImageFromMetadata(metadata: unknown): string | null {
+  if (metadata == null) return null;
+  let m: Record<string, unknown>;
+  if (typeof metadata === 'string') {
+    try {
+      m = JSON.parse(metadata) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  } else if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    m = metadata as Record<string, unknown>;
+  } else {
+    return null;
+  }
+  for (const k of ['imageUrl', 'image_url', 'photoUrl', 'photo', 'thumbnail', 'thumbnail_url', 'cover', 'icon']) {
+    const v = m[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
 }
 
 export function registerProblemGridEndpoints(app: Hono) {
@@ -716,6 +763,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           vs.id as service_id,
           vs.service_name as name,
           COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), vs.service_name) as description,
+          vs.metadata as vendor_service_metadata,
           vs.price,
           vs.duration_minutes as duration,
           vs.service_style,
@@ -851,7 +899,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.price, vs.duration_minutes, vs.service_style,
+        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.metadata, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
                  v.profile_photo_url, v.metadata, v.latitude, v.longitude${logoGroupBy},
                  v.vendor_type, r.name
@@ -908,7 +956,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           // Build fallback query - start from vendors table (same schema as profile API)
           let fallbackQuery = `
             SELECT DISTINCT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status,
-                   vs.price, vs.duration_minutes, vs.created_at,
+                   vs.price, vs.duration_minutes, vs.created_at, vs.metadata as vendor_service_metadata,
                    v.id as vendor_id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
                    v.profile_photo_url, v.city, v.state, v.latitude, v.longitude, v.metadata,
                    v.role_id, r.name as role_name
@@ -974,6 +1022,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 service_name: row.service_name,
                 name: row.service_name,
                 description: row.service_name,
+                vendor_service_metadata: row.vendor_service_metadata,
                 price: row.price || '0',
                 duration_minutes: row.duration_minutes || 30,
                 duration: row.duration_minutes || 30,
@@ -1145,10 +1194,16 @@ export function registerProblemGridEndpoints(app: Hono) {
 
       // Calculate distance if location provided
       let services = servicesResult.rows.map((service: any) => {
+        const nameStr = String(service.name || '').trim();
+        const descRaw = cleanDescription(service.description);
+        const descTrim = (descRaw || '').trim();
+        const description =
+          descTrim && descTrim !== nameStr ? descRaw : undefined;
+        const serviceImageRaw = pickServiceImageFromMetadata(service.vendor_service_metadata);
         const serviceData: any = {
           serviceId: service.service_id,
           name: service.name,
-          description: cleanDescription(service.description),
+          description,
           price: parseFloat(service.price || '0'),
           duration: parseInt(service.duration || '0'),
           serviceStyle: service.service_style,
@@ -1170,6 +1225,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           distanceFormatted: 'N/A',
           priceFormatted: `₹${parseFloat(service.price || '0').toLocaleString('en-IN')}`,
           serviceName: service.name,
+          serviceImageRaw,
         };
 
         // Calculate distance if coordinates available
@@ -1204,6 +1260,23 @@ export function registerProblemGridEndpoints(app: Hono) {
         const bScore = b.vendorRating * 0.7 + (b.distance ? (1 / (b.distance + 1)) * 0.3 : 0);
         return bScore - aScore;
       });
+
+      // Vendor + per-service images: bare S3 keys + HTTPS URLs → fresh https URL for <img src>
+      services = await Promise.all(
+        services.map(async (service: any) => {
+          const raw = service.photo || service.photoUrl;
+          const photo = await resolveVendorPhotoForByProblemRow(raw);
+          const serviceImageUrl = await resolveVendorPhotoForByProblemRow(service.serviceImageRaw);
+          const { serviceImageRaw, ...rest } = service;
+          return {
+            ...rest,
+            photo,
+            photoUrl: photo,
+            profile_photo_url: photo,
+            serviceImageUrl: serviceImageUrl || null,
+          };
+        })
+      );
 
       return c.json({
         success: true,

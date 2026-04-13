@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from '../shared/PromotionBanner';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
@@ -791,8 +792,15 @@ export function HomeServiceRouter({
           </div>
 
           {/* Description */}
-          {provider.description && (
-            <p className="text-sm text-gray-600 mt-2 line-clamp-2">{provider.description}</p>
+          {provider.description?.trim() && (
+            <div onClick={(e) => e.stopPropagation()} className="mt-2">
+              <ServiceDescriptionInline
+                description={provider.description}
+                title={provider.name}
+                className="m-0 text-sm leading-5 text-gray-600"
+                dialogHint="About this provider"
+              />
+            </div>
           )}
 
           {/* Specializations */}
@@ -1249,8 +1257,14 @@ export function HomeServiceRouter({
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-900">{service.name}</h4>
-                          {service.description && (
-                            <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                          {service.description?.trim() && (
+                            <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                              <ServiceDescriptionInline
+                                description={service.description}
+                                title={service.name}
+                                className="m-0 text-sm leading-5 text-gray-500"
+                              />
+                            </div>
                           )}
                           <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
                             <span className="flex items-center gap-1">

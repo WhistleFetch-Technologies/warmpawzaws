@@ -28,6 +28,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 // ============================================================================
 // TYPES
@@ -484,7 +485,11 @@ export function UnifiedBookingEngine({
             {service ? (
               <div className="border rounded-lg p-4 mb-4">
                 <h3 className="font-semibold">{service.name}</h3>
-                <p className="text-gray-600">{service.description}</p>
+                <ServiceDescriptionInline
+                  description={service.description}
+                  title={service.name}
+                  className="m-0 text-sm leading-relaxed text-gray-600"
+                />
                 <p className="text-primary font-bold mt-0">₹{service.price}</p>
               </div>
             ) : (

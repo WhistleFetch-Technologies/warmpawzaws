@@ -107,19 +107,19 @@ export function ServiceDashboardHeader({
             </div>
           </>
         ) : (
-          <div className="relative z-20 mb-3 flex items-start gap-3 md:mb-4">
+          <div className="relative z-20 mb-3 flex items-center gap-3 md:mb-4">
             {showBackButton && onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="relative z-30 mt-0.5 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto md:mt-1"
+                className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto"
                 aria-label="Go back"
               >
                 <ArrowLeft className="h-5 w-5 text-white" />
               </button>
             )}
 
-            <div className="w-14 h-14 flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg">
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-white/20 shadow-lg backdrop-blur-md">
               {isLucideIcon ? (
                 <IconComponent className={`w-7 h-7 ${iconColor}`} />
               ) : (
@@ -127,10 +127,10 @@ export function ServiceDashboardHeader({
               )}
             </div>
 
-            <div className="flex-1 min-w-0 pt-1">
-              <h1 className="text-2xl font-bold text-white mb-1">{serviceName}</h1>
+            <div className="min-w-0 flex-1 py-0.5">
+              <h1 className="mb-1 text-2xl font-bold text-white">{serviceName}</h1>
               {serviceSubtitle && (
-                <p className="text-white/90 text-sm leading-tight">{serviceSubtitle}</p>
+                <p className="text-sm leading-tight text-white/90">{serviceSubtitle}</p>
               )}
             </div>
           </div>

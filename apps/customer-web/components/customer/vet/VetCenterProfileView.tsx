@@ -6,6 +6,7 @@ import { AmenitiesSection } from '../shared/AmenitiesSection';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import { formatOperatingHours } from '@/lib/format-utils';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -155,26 +156,34 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             </div>
           )}
 
-          <button
-            onClick={onBack}
-            className="absolute top-4 left-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
+          <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
+            <button
+              type="button"
+              onClick={onBack}
+              className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 text-gray-700" />
+            </button>
 
-          <div className="absolute top-4 right-4 flex gap-3">
-            <button
-              onClick={() => setIsFavorite(!isFavorite)}
-              className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Heart className={`w-5 h-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-            </button>
-            <button
-              onClick={handleShare}
-              className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Share2 className="w-5 h-5 text-gray-700" />
-            </button>
+            <div className="flex shrink-0 gap-3 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => setIsFavorite(!isFavorite)}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm"
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+              </button>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm"
+                aria-label="Share"
+              >
+                <Share2 className="h-5 w-5 text-gray-700" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -343,8 +352,12 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                             </span>
                           )}
                         </div>
-                        {service.description && (
-                          <p className="text-sm text-gray-600 mb-0">{service.description}</p>
+                        {service.description?.trim() && (
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            className="m-0 text-sm leading-5 text-gray-600 mb-0"
+                          />
                         )}
                         <div className="flex items-center gap-3 text-xs text-gray-500">
                           <span className="flex items-center gap-3">

@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { X, Camera, Upload, MapPin, Plus, ArrowLeft } from 'lucide-react';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 // Removed SpecializedServiceRouter - now integrated into unified flow
 
 interface Service {
@@ -1017,8 +1018,12 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                   )}
                 </div>
               </div>
-              {service.description ? (
-                <p className="text-sm text-gray-600 leading-relaxed line-clamp-6">{service.description}</p>
+              {service.description?.trim() ? (
+                <ServiceDescriptionInline
+                  description={service.description}
+                  title={service.name}
+                  className="m-0 text-sm leading-relaxed text-gray-600"
+                />
               ) : null}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
                 <span className="inline-flex items-center gap-1.5">⏱️ {service.duration} mins</span>

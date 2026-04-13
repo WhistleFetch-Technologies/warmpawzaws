@@ -34,6 +34,7 @@ import {
   Stethoscope
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { toast } from 'sonner';
 
@@ -48,13 +49,73 @@ interface DiagnosticCenter {
   businessName: string;
   rating: number;
   reviewCount: number;
-  distance: number;
+  /** Omitted when the lab has no coordinates (still bookable; shown after in-range labs). */
+  distance?: number;
   address?: string;
   homeCollectionAvailable: boolean;
   testCount: number;
   packages: any[];
   tests: any[];
 }
+
+/**
+ * Sample labs only in non-production builds when explicitly enabled.
+ * Production never shows mock labs, even if NEXT_PUBLIC_SHOW_DIAGNOSTICS_MOCK_LABS is mis-set.
+ */
+const SHOW_DIAGNOSTICS_MOCK_LABS =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NEXT_PUBLIC_SHOW_DIAGNOSTICS_MOCK_LABS === 'true';
+
+const EMPTY_DIAGNOSTICS_STATS = { activeCenters: 0, tests: '0', rating: '—' };
+
+const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
+  {
+    id: 'center-1',
+    businessName: 'PetPath Diagnostics',
+    rating: 4.8,
+    reviewCount: 256,
+    distance: 2.3,
+    address: 'MG Road, Bangalore',
+    homeCollectionAvailable: true,
+    testCount: 45,
+    packages: [],
+    tests: [
+      { id: 't1', name: 'Complete Blood Count', price: 500, category: 'Blood' },
+      { id: 't2', name: 'Liver Function Test', price: 800, category: 'Blood' },
+      { id: 't3', name: 'Kidney Function Test', price: 750, category: 'Blood' },
+    ],
+  },
+  {
+    id: 'center-2',
+    businessName: 'VetLab Plus',
+    rating: 4.6,
+    reviewCount: 189,
+    distance: 3.5,
+    address: 'Koramangala, Bangalore',
+    homeCollectionAvailable: true,
+    testCount: 38,
+    packages: [],
+    tests: [
+      { id: 't4', name: 'X-Ray', price: 1200, category: 'Imaging' },
+      { id: 't5', name: 'Ultrasound', price: 1500, category: 'Imaging' },
+    ],
+  },
+  {
+    id: 'center-3',
+    businessName: 'PawCare Labs',
+    rating: 4.7,
+    reviewCount: 312,
+    distance: 1.8,
+    address: 'Indiranagar, Bangalore',
+    homeCollectionAvailable: false,
+    testCount: 52,
+    packages: [],
+    tests: [
+      { id: 't6', name: 'Thyroid Panel', price: 900, category: 'Hormone' },
+      { id: 't7', name: 'Allergy Test', price: 2500, category: 'Allergy' },
+    ],
+  },
+];
 
 interface TestPackage {
   id: string;
@@ -130,7 +191,10 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           businessName: v.businessName || 'Diagnostic Center',
           rating: v.rating ?? 4.5,
           reviewCount: 0,
-          distance: v.distance ?? parseFloat((Math.random() * distanceFilter).toFixed(1)),
+          distance:
+            v.distance != null && !Number.isNaN(Number(v.distance))
+              ? Math.round(Number(v.distance) * 10) / 10
+              : undefined,
           address: v.address || [v.city, v.state].filter(Boolean).join(', '),
           homeCollectionAvailable: v.homeCollectionAvailable === true,
           testCount: (v.tests || []).length,
@@ -187,61 +251,16 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
             tests: servicesPayload.length.toString(),
             rating: '4.6',
           });
+        } else if (SHOW_DIAGNOSTICS_MOCK_LABS) {
+          setFeaturedCenters(MOCK_DIAGNOSTIC_CENTERS);
+          setStats({
+            activeCenters: MOCK_DIAGNOSTIC_CENTERS.length,
+            tests: MOCK_DIAGNOSTIC_CENTERS.reduce((acc, c) => acc + c.testCount, 0).toString(),
+            rating: '4.6',
+          });
         } else {
-          setFeaturedCenters([
-          {
-            id: 'center-1',
-            businessName: 'PetPath Diagnostics',
-            rating: 4.8,
-            reviewCount: 256,
-            distance: 2.3,
-            address: 'MG Road, Bangalore',
-            homeCollectionAvailable: true,
-            testCount: 45,
-            packages: [],
-            tests: [
-              { id: 't1', name: 'Complete Blood Count', price: 500, category: 'Blood' },
-              { id: 't2', name: 'Liver Function Test', price: 800, category: 'Blood' },
-              { id: 't3', name: 'Kidney Function Test', price: 750, category: 'Blood' },
-            ]
-          },
-          {
-            id: 'center-2',
-            businessName: 'VetLab Plus',
-            rating: 4.6,
-            reviewCount: 189,
-            distance: 3.5,
-            address: 'Koramangala, Bangalore',
-            homeCollectionAvailable: true,
-            testCount: 38,
-            packages: [],
-            tests: [
-              { id: 't4', name: 'X-Ray', price: 1200, category: 'Imaging' },
-              { id: 't5', name: 'Ultrasound', price: 1500, category: 'Imaging' },
-            ]
-          },
-          {
-            id: 'center-3',
-            businessName: 'PawCare Labs',
-            rating: 4.7,
-            reviewCount: 312,
-            distance: 1.8,
-            address: 'Indiranagar, Bangalore',
-            homeCollectionAvailable: false,
-            testCount: 52,
-            packages: [],
-            tests: [
-              { id: 't6', name: 'Thyroid Panel', price: 900, category: 'Hormone' },
-              { id: 't7', name: 'Allergy Test', price: 2500, category: 'Allergy' },
-            ]
-          }
-        ]);
-        
-        setStats({
-          activeCenters: 15,
-          tests: '500+',
-          rating: '4.6'
-        });
+          setFeaturedCenters([]);
+          setStats(EMPTY_DIAGNOSTICS_STATS);
         }
       }
 
@@ -313,21 +332,30 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       }
     } catch (error) {
       console.error('Error loading diagnostics data:', error);
-      setStats({
-        activeCenters: 15,
-        tests: '500+',
-        rating: '4.6'
-      });
+      setFeaturedCenters([]);
+      setStats(
+        SHOW_DIAGNOSTICS_MOCK_LABS
+          ? { activeCenters: MOCK_DIAGNOSTIC_CENTERS.length, tests: '500+', rating: '4.6' }
+          : EMPTY_DIAGNOSTICS_STATS
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const handleSelectCenter = (center: DiagnosticCenter) => {
+    if (isLegacyMockDiagnosticVendorId(center.id)) {
+      toast.error('This listing is not a real lab. Refresh the page or widen your search.');
+      return;
+    }
     onNavigate?.('lab-booking', { vendorId: center.id, centerName: center.businessName });
   };
 
   const handleBookTest = (test: any, centerId: string) => {
+    if (isLegacyMockDiagnosticVendorId(centerId)) {
+      toast.error('This listing is not a real lab. Refresh the page or widen your search.');
+      return;
+    }
     onNavigate?.('lab-booking', { vendorId: centerId, testId: test.id });
   };
 
@@ -339,15 +367,20 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       const matchesFilter = selectedFilter === 'all' ||
                            (selectedFilter === 'home' && center.homeCollectionAvailable) ||
                            (selectedFilter === 'center' && !center.homeCollectionAvailable);
-      const matchesDistance = center.distance <= distanceFilter;
+      const matchesDistance =
+        center.distance == null || center.distance <= distanceFilter;
       return matchesSearch && matchesFilter && matchesDistance;
     })
     .sort((a, b) => {
-      if (sortBy === 'distance') return a.distance - b.distance;
+      if (sortBy === 'distance') {
+        return (a.distance ?? Infinity) - (b.distance ?? Infinity);
+      }
       if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
-      // relevance: rating * 0.6 - distance * 0.1 (higher score first)
-      const scoreA = (a.rating || 0) * 0.6 - (a.distance || 0) * 0.1 + (a.homeCollectionAvailable ? 0.2 : 0);
-      const scoreB = (b.rating || 0) * 0.6 - (b.distance || 0) * 0.1 + (b.homeCollectionAvailable ? 0.2 : 0);
+      // relevance: rating * 0.6 - distance * 0.1 (higher score first); unknown distance treated as far
+      const distA = typeof a.distance === 'number' ? a.distance : 100;
+      const distB = typeof b.distance === 'number' ? b.distance : 100;
+      const scoreA = (a.rating || 0) * 0.6 - distA * 0.1 + (a.homeCollectionAvailable ? 0.2 : 0);
+      const scoreB = (b.rating || 0) * 0.6 - distB * 0.1 + (b.homeCollectionAvailable ? 0.2 : 0);
       return scoreB - scoreA;
     });
 
@@ -365,9 +398,12 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
 
   // Prepare stats for ServiceDashboardHeader
   const dashboardStats = stats ? [
-    { value: `${stats.activeCenters}+`, label: 'Labs' },
+    {
+      value: stats.activeCenters === 0 ? '0' : `${stats.activeCenters}+`,
+      label: 'Labs',
+    },
     { value: stats.tests, label: 'Tests' },
-    { value: `*${stats.rating}`, label: 'Rating' }
+    { value: `*${stats.rating}`, label: 'Rating' },
   ] : [
     { value: '15+', label: 'Labs' },
     { value: '500+', label: 'Tests' },
@@ -557,12 +593,20 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                   <Button
                     size="sm"
                     className="bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
-                    disabled={!resolvedPackageLabId || !labsForPackageBooking.some((c) => c.id === resolvedPackageLabId)}
+                    disabled={
+                      !resolvedPackageLabId ||
+                      isLegacyMockDiagnosticVendorId(resolvedPackageLabId) ||
+                      !labsForPackageBooking.some((c) => c.id === resolvedPackageLabId)
+                    }
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       const vendorId = resolvedPackageLabId;
-                      if (!vendorId || !labsForPackageBooking.some((c) => c.id === vendorId)) {
+                      if (
+                        !vendorId ||
+                        isLegacyMockDiagnosticVendorId(vendorId) ||
+                        !labsForPackageBooking.some((c) => c.id === vendorId)
+                      ) {
                         toast.error('Choose a lab from the dropdown above (or adjust filters so at least one lab appears).');
                         return;
                       }
@@ -662,7 +706,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                           </div>
                           <div className="flex items-center gap-1 text-gray-500">
                             <MapPin className="w-3 h-3" />
-                            <span>{center.distance} km</span>
+                            <span>{center.distance != null ? `${center.distance} km` : '—'}</span>
                           </div>
                           <div className="flex items-center gap-1 text-gray-500">
                             <TestTube className="w-3 h-3" />
