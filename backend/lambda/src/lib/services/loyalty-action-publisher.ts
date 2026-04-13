@@ -27,19 +27,35 @@ export async function publishVendorReferralBookingConfirmedAction(bookingId: str
       actor: { type: 'customer' as const, id: String(customerId) },
       reference: { type: 'booking', id: bookingId },
     };
-    await eb.send(
+    const bus = process.env.EVENT_BUS_NAME || 'default';
+    const out = await eb.send(
       new PutEventsCommand({
         Entries: [
           {
             Source: 'app.warmpawz',
             DetailType: 'ActionOccurred',
             Detail: JSON.stringify(evt),
-            EventBusName: process.env.EVENT_BUS_NAME || 'default',
+            EventBusName: bus,
           },
         ],
       })
     );
-    console.info('[LOYALTY-ACTION] published vendor_refer_friend_who_joins (booking)', { bookingId, customerId });
+    const ent = out.Entries?.[0];
+    if ((out.FailedEntryCount ?? 0) > 0 || ent?.ErrorCode) {
+      console.warn('[LOYALTY-ACTION] PutEvents rejected', {
+        bus,
+        bookingId,
+        errorCode: ent?.ErrorCode,
+        errorMessage: ent?.ErrorMessage,
+      });
+    } else {
+      console.info('[LOYALTY-ACTION] PutEvents ok vendor_refer_friend_who_joins', {
+        bus,
+        bookingId,
+        customerId,
+        awsEventId: ent?.EventId,
+      });
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn('[LOYALTY-ACTION] publish failed (non-blocking):', msg);

@@ -1,0 +1,6 @@
+{
+  "resourceArn": "arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster",
+  "secretArn": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+  "database": "warmpawz",
+  "sql": "UPDATE action_sources SET action_name = 'customer_referral_first_booking', success_predicate = '$.success && $.data.newStatus == ''completed'' && $.data.isNew == true', entity_resolver = '$.data.customerId', entity_type = 'customer', reference_type = 'booking', reference_id_resolver = '$.data.bookingId', enabled = true, priority = 275, dry_run = false, notes = COALESCE(notes, '') || ' [706] customer_referral_first_booking; entity customerId; predicate completed+isNew.', updated_at = NOW() WHERE method = 'PUT' AND route_pattern = '/bookings/:bookingId/status' AND action_name = 'customer_referral'"
+}

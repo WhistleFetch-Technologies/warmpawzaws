@@ -1,0 +1,36 @@
+CREATE TABLE IF NOT EXISTS delivery_tracking (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pharmacy_order_id UUID REFERENCES pharmacy_orders(id),
+    meal_order_id UUID,
+    logistics_partner_id UUID REFERENCES vendors(id),
+    delivery_person_name VARCHAR(200),
+    delivery_person_phone VARCHAR(20),
+    delivery_person_photo TEXT,
+    vehicle_number VARCHAR(20),
+    current_lat NUMERIC(10,7),
+    current_lng NUMERIC(10,7),
+    last_location_update TIMESTAMPTZ,
+    status VARCHAR(50) DEFAULT 'assigned',
+    eta_to_pickup_minutes INTEGER,
+    eta_to_delivery_minutes INTEGER,
+    distance_remaining_km NUMERIC(5,2),
+    assigned_at TIMESTAMPTZ DEFAULT NOW(),
+    reached_pickup_at TIMESTAMPTZ,
+    picked_up_at TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ,
+    delivery_photo TEXT,
+    recipient_name VARCHAR(200),
+    delivery_notes TEXT,
+    delivery_otp VARCHAR(6),
+    otp_verified BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    external_task_id VARCHAR(255),
+    logistics_partner VARCHAR(50) DEFAULT 'warmpawz',
+    tracking_url TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    CONSTRAINT delivery_tracking_order_check CHECK (
+        (pharmacy_order_id IS NOT NULL AND meal_order_id IS NULL) OR
+        (pharmacy_order_id IS NULL AND meal_order_id IS NOT NULL)
+    )
+);

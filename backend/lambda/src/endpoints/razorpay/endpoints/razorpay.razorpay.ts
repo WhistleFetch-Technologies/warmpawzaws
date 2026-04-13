@@ -28,6 +28,7 @@ import { DEFAULT_COMMISSION_RATE } from '../../../lib/constants/commission';
 import { logBookingStatusChange } from '../../../utils/audit-log';
 import { notifyBookingCreated } from '../../../utils/booking-notifications';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
+import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 
 // Razorpay configuration is imported from utils
 
@@ -680,6 +681,7 @@ class VerifyPaymentHandler extends BaseHandler {
             if (orderType === 'diagnostics') {
               console.log('[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success');
               return {
+                success: true,
                 message: 'Payment verified successfully',
                 paymentId: razorpay_payment_id,
                 orderId: razorpay_order_id,
@@ -759,21 +761,27 @@ class VerifyPaymentHandler extends BaseHandler {
 
           // Return success for pharmacy orders (no booking to update)
           return {
+            success: true,
             message: 'Payment verified successfully',
             paymentId: razorpay_payment_id,
             orderId: razorpay_order_id,
             bookingId: null,
             pharmacyOrderId: pharmacyOrderId,
+            customerId: payment.customer_id,
+            totalAmount: Number(payment.amount ?? 0),
           };
         }
 
         // ✅ If booking is created after payment (prepaid flow), return success without booking update
         if (!bookingId) {
           return {
+            success: true,
             message: 'Payment verified successfully',
             paymentId: razorpay_payment_id,
             orderId: razorpay_order_id,
             bookingId: null,
+            customerId: payment.customer_id ?? null,
+            totalAmount: Number(payment.amount ?? 0),
           };
         }
 
@@ -833,16 +841,58 @@ class VerifyPaymentHandler extends BaseHandler {
           console.warn(`[PAYMENT-VERIFY] Failed to generate OTP for booking ${bookingId}:`, otpErr?.message);
         }
 
-        // Queue settlement and publish events (outside transaction for async operations)
+        let loyaltyBookingKind: ReturnType<typeof resolveLoyaltyBookingKind> = 'other';
+        let customerIdOut: string | null = payment.customer_id ?? null;
+        let totalAmountOut = Number(payment.amount ?? 0);
+        let loyaltyBookVetConsultationForPayment = false;
+        try {
+          const { rows: lr } = await client.query(
+            `SELECT b.service_type, b.customer_id, b.total_amount, v.vendor_type,
+              vs.service_name AS vs_name,
+              COALESCE(sc.service_name, sc.display_name, s.name, vs.service_name) AS resolved_service_name,
+              COALESCE(sc.category_name, s.category) AS resolved_category
+             FROM bookings b
+             LEFT JOIN vendors v ON b.vendor_id = v.id
+             LEFT JOIN vendor_services vs ON b.service_id = vs.id
+             LEFT JOIN service_catalog sc ON vs.service_id = sc.id
+             LEFT JOIN services s ON vs.service_id = s.id
+             WHERE b.id = $1::uuid`,
+            [bookingId]
+          );
+          const row = lr[0];
+          if (row) {
+            if (row.customer_id) customerIdOut = row.customer_id;
+            if (row.total_amount != null && row.total_amount !== '') {
+              totalAmountOut = Number(row.total_amount);
+            }
+            const svcName = String(row.resolved_service_name || row.vs_name || '');
+            loyaltyBookingKind = resolveLoyaltyBookingKind({
+              bookingServiceType: row.service_type || '',
+              serviceCategory: row.resolved_category ?? null,
+              serviceName: svcName || null,
+              vendorType: row.vendor_type ?? null,
+            });
+            const st = String(row.service_type || '').toLowerCase();
+            const isTele = ['tele', 'online', 'video_consultation', 'tele_consultation'].includes(st);
+            loyaltyBookVetConsultationForPayment =
+              loyaltyBookingKind === 'vet_consultation' && isTele;
+          }
+        } catch (loyErr: any) {
+          console.warn('[PAYMENT-VERIFY] Loyalty context query failed:', loyErr?.message || loyErr);
+        }
+
+        // Queue settlement and publish events (async side effects). Vendor SELECT must not abort
+        // the verify transaction (prod may lack columns like razorpay_account_id).
         if (bookingId) {
           try {
+            await client.query('SAVEPOINT payment_verify_settlement');
             const { rows: vendors } = await client.query(
               `SELECT razorpay_account_id, bank_verified FROM vendors WHERE id = $1`,
               [payment.vendor_id]
             );
+            await client.query('RELEASE SAVEPOINT payment_verify_settlement');
             const vendor = vendors.length > 0 ? vendors[0] : null;
             if (vendor?.razorpay_account_id && vendor.bank_verified) {
-              // Queue settlement asynchronously (don't await in transaction)
               Promise.resolve().then(async () => {
                 try {
                   const { sendToSQS } = await import('../../../utils/aws/aws-clients');
@@ -858,6 +908,11 @@ class VerifyPaymentHandler extends BaseHandler {
               });
             }
           } catch (error) {
+            try {
+              await client.query('ROLLBACK TO SAVEPOINT payment_verify_settlement');
+            } catch {
+              /* ignore if savepoint missing */
+            }
             console.error('Failed to check vendor for settlement:', error);
           }
           
@@ -882,10 +937,15 @@ class VerifyPaymentHandler extends BaseHandler {
         }
 
         return {
+          success: true,
           message: 'Payment verified successfully',
           paymentId: razorpay_payment_id,
           orderId: razorpay_order_id,
           bookingId: bookingId,
+          customerId: customerIdOut,
+          totalAmount: totalAmountOut,
+          loyaltyBookingKind,
+          loyaltyBookVetConsultationForPayment,
         };
       });
 

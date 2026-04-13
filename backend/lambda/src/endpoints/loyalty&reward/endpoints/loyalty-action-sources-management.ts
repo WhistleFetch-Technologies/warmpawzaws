@@ -56,6 +56,14 @@ function validateCreateOrUpdate(body: any): { ok: boolean; message?: string } {
 	if (!body.method || typeof body.method !== 'string') return { ok: false, message: 'method is required' };
 	if (!VALID_METHODS.has(String(body.method).toUpperCase())) return { ok: false, message: `Unsupported method: ${body.method}` };
 	if (!body.action_name || typeof body.action_name !== 'string') return { ok: false, message: 'action_name is required' };
+	const actionNameNorm = String(body.action_name).trim();
+	if (!/^[a-z][a-z0-9_]*$/.test(actionNameNorm)) {
+		return {
+			ok: false,
+			message:
+				'action_name must be snake_case (lowercase, digits, underscores only) to match loyalty_action_rules.action_name — no hyphens',
+		};
+	}
 	if (!body.entity_resolver || typeof body.entity_resolver !== 'string') return { ok: false, message: 'entity_resolver is required' };
 
 	// Optionals with defaults
@@ -249,9 +257,10 @@ class CreateActionSourceHandler extends BaseHandler {
 			if (!v.ok) return this.error(v.message || 'Validation failed', 400);
 
 			// Uniqueness: prevent exact duplicates on method+route_pattern+action_name
+			const actionName = String(body.action_name).trim();
 			const dup = await query(
 				`SELECT id FROM action_sources WHERE method = $1 AND route_pattern = $2 AND action_name = $3`,
-				[String(body.method).toUpperCase(), body.route_pattern, body.action_name]
+				[String(body.method).toUpperCase(), body.route_pattern, actionName]
 			);
 			if (dup.rows.length > 0) return this.error('Duplicate mapping exists for method+route_pattern+action_name', 409);
 
@@ -262,7 +271,7 @@ class CreateActionSourceHandler extends BaseHandler {
 				status_min: body.status_min ?? 200,
 				status_max: body.status_max ?? 299,
 				success_predicate: body.success_predicate || null,
-				action_name: body.action_name,
+				action_name: actionName,
 				entity_resolver: body.entity_resolver,
 				entity_type: body.entity_type || 'auto',
 				amount_resolver: body.amount_resolver || null,

@@ -22,6 +22,9 @@ export const SubmitVendorApplicationRequestSchema = z.object({
     url: z.string().optional().default(''), // URL is optional during submission
     name: z.string().optional().default(''),
   })).optional().default([]),
+  /** Optional peer (WARM) or vendor referral code — validated and stored on vendor_identity.metadata */
+  referralCode: z.string().optional(),
+  referral_code: z.string().optional(),
 });
 
 export const SelectVendorRoleRequestSchema = z.object({
