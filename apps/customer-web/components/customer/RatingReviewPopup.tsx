@@ -211,7 +211,7 @@ export function RatingReviewPopup({
   // Success state
   if (submitted) {
     return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overscroll-none touch-none">
+      <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 overscroll-none touch-none">
         <div className="bg-white rounded-3xl max-w-md w-full p-8 text-center animate-in fade-in zoom-in duration-300 touch-auto">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Check className="w-10 h-10 text-green-500" />
@@ -224,7 +224,7 @@ export function RatingReviewPopup({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end items-stretch sm:justify-center sm:items-center bg-black/50 overscroll-none touch-none sm:touch-auto sm:p-4">
+    <div className="fixed inset-0 z-[100] flex flex-col justify-end items-stretch sm:justify-center sm:items-center bg-black/50 overscroll-none touch-none sm:touch-auto sm:p-4">
       <div
         className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-bottom,0px)))] flex flex-col min-h-0 overflow-hidden animate-in slide-in-from-bottom duration-300 shadow-xl touch-auto sm:mx-auto"
         onClick={(e) => e.stopPropagation()}

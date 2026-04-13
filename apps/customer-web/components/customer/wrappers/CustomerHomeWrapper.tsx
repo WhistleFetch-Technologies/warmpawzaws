@@ -742,6 +742,26 @@ export function CustomerHomeWrapper({
     setCurrentServiceType(null);
   };
 
+  /** Full bookings list (`CustomerBookingsPage`): return to caller (e.g. profile), else same as handleBack. */
+  const handleBackFromBookings = () => {
+    if (previousScreen != null) {
+      setCurrentScreen(previousScreen);
+      setPreviousScreen(null);
+      return;
+    }
+    handleBack();
+  };
+
+  /** From profile / profile-tab: remember origin when opening full bookings list. */
+  const handleCustomerProfileScreenNavigate = (screen: string) => {
+    if (screen === 'bookings') {
+      setPreviousScreen(currentScreen);
+      setCurrentScreen('bookings');
+      return;
+    }
+    setCurrentScreen(screen as ScreenType);
+  };
+
   /** Profile / account full-screen pages: Back returns to home with account sidebar open (not full shell reset). */
   const backToAccountMenu = () => {
     setCurrentScreen('home');
@@ -1017,7 +1037,7 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
       </CustomerScreenWrapper>
     );
   }
@@ -2577,10 +2597,17 @@ export function CustomerHomeWrapper({
   }
 
   // ✅ NEW: Bookings List
-  if (currentScreen === 'bookings') return <CustomerBookingsPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
-    if (screen === 'booking-details') handleViewBooking(data.bookingId);
-    else if (screen === 'services') setCurrentScreen('services');
-  }} />;
+  if (currentScreen === 'bookings')
+    return (
+      <CustomerBookingsPage
+        phone={phone}
+        onBack={handleBackFromBookings}
+        onNavigate={(screen, data) => {
+          if (screen === 'booking-details') handleViewBooking(data.bookingId);
+          else if (screen === 'services') setCurrentScreen('services');
+        }}
+      />
+    );
   
   // Support & Help Center
   if (currentScreen === 'support_help')
@@ -2661,7 +2688,7 @@ export function CustomerHomeWrapper({
   // profile: map to customer-profile (e.g. from VetBookingRouter tab)
   if (currentScreen === 'profile') return (
     <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
     </CustomerScreenWrapper>
   );
 
