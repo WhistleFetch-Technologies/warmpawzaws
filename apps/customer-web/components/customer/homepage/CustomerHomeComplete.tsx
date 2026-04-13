@@ -1210,9 +1210,12 @@ export function CustomerHomeComplete({
           const pendingBookingId = reviewRes.booking.bookingId;
           if (pendingBookingId) {
             try {
-              const raw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
-              const submittedIds: string[] = raw ? JSON.parse(raw) : [];
-              if (submittedIds.includes(String(pendingBookingId))) return;
+              const id = String(pendingBookingId);
+              const submittedRaw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
+              const skippedRaw = localStorage.getItem('warmpawz_review_skipped_booking_ids');
+              const submittedIds: string[] = submittedRaw ? JSON.parse(submittedRaw) : [];
+              const skippedIds: string[] = skippedRaw ? JSON.parse(skippedRaw) : [];
+              if (submittedIds.includes(id) || skippedIds.includes(id)) return;
             } catch {
               /* ignore */
             }
