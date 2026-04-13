@@ -118,6 +118,10 @@ function getAddressLatLng(addr: any): { lat: number; lng: number } | null {
   return null;
 }
 
+function addressHasMapLocation(addr: any): boolean {
+  return getAddressLatLng(addr) != null;
+}
+
 export function PharmacyOrderFlow({
   customerPhone,
   customerId,
@@ -747,7 +751,9 @@ export function PharmacyOrderFlow({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {addresses.map((addr) => (
+                  {addresses.map((addr) => {
+                    const hasPin = addressHasMapLocation(addr);
+                    return (
                     <button
                       key={addr.id}
                       onClick={() => setSelectedAddress(addr)}
@@ -757,12 +763,20 @@ export function PharmacyOrderFlow({
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <p className="font-medium text-gray-900">{addr.label || 'Home'}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-medium text-gray-900">{addr.label || 'Home'}</p>
+                        {!hasPin && (
+                          <Badge variant="outline" className="shrink-0 text-amber-800 border-amber-300 bg-amber-50 text-xs font-normal">
+                            No map location
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500 mt-1">
                         {addr.addressLine1 || addr.address}, {addr.city} - {addr.pincode}
                       </p>
                     </button>
-                  ))}
+                    );
+                  })}
                   <Button
                     variant="outline"
                     onClick={() => setShowAddAddressModal(true)}
@@ -774,6 +788,18 @@ export function PharmacyOrderFlow({
                 </div>
               )}
             </Card>
+
+            {selectedAddress && !addressHasMapLocation(selectedAddress) && (
+              <Card className="bg-amber-50 border-amber-200 rounded-2xl p-4">
+                <p className="text-amber-900 text-sm flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>
+                    This address has no GPS pin yet. Pharmacy search needs a map location. Use{' '}
+                    <strong className="font-semibold">Add New Address</strong> and pick the place with Google search, or edit the address in your profile so it saves coordinates.
+                  </span>
+                </p>
+              </Card>
+            )}
 
             <Card className="bg-white rounded-2xl p-5 border border-gray-100">
               <h3 className="font-medium text-gray-900 mb-3">Add Note (Optional)</h3>
@@ -795,7 +821,7 @@ export function PharmacyOrderFlow({
               </Button>
               <Button
                 onClick={createOrder}
-                disabled={!selectedAddress || loading}
+                disabled={!selectedAddress || loading || !addressHasMapLocation(selectedAddress)}
                 className="flex-1 bg-[#FF8C42] hover:bg-[#E67A35] py-6"
               >
                 {loading ? (

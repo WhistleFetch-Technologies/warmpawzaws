@@ -1,0 +1,6 @@
+{
+  "resourceArn": "arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster",
+  "secretArn": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+  "database": "warmpawz",
+  "sql": "UPDATE action_sources SET success_predicate = '$.success && $.bookingId', entity_resolver = '$.customerId', entity_type = 'customer', reference_type = 'booking', reference_id_resolver = '$.bookingId', amount_resolver = NULL, metadata_resolvers = '{}'::jsonb, enabled = true, priority = 120, dry_run = false, notes = '707: customer_referral on booking payment verified (flat $.customerId / $.bookingId)', updated_at = NOW() WHERE method = 'POST' AND route_pattern = '/razorpay/verify-payment' AND action_name = 'customer_referral'"
+}

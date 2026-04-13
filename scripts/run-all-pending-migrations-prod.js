@@ -27,7 +27,14 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const SKIP_VERIFICATION = process.argv.includes('--skip-verification');
 
 // List of migrations to run in order (from MIGRATION_FIELDS_SUMMARY.md)
+// Pharmacy core: prod was missing pharmacy_orders (dev had migration 200). 632 creates tables;
+// 305/411/508/509 align columns and constraints with dev before 608 adds more columns.
 const MIGRATIONS = [
+  '632_ensure_pharmacy_orders_tables_prod.sql',
+  '305_add_pharmacy_tracking_fields.sql',
+  '411_add_pharmacy_broadcast_expansion_columns.sql',
+  '508_pharmacy_orders_status_invoice_generated.sql',
+  '509_pharmacy_payments_and_convenience.sql',
   '536_cancellation_refund_policy_business_rules.sql',
   '541_add_missing_booking_columns.sql',
   '542_add_video_call_sessions_join_tokens.sql',

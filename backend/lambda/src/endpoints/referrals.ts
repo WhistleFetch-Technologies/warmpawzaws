@@ -61,59 +61,78 @@ export function registerReferralEndpoints(app: Hono) {
     try {
       const { customerId } = c.req.param();
 
-      // Get total referrals
+      // Peers: `referral_redemptions`. Customer→vendor WARM: same `referrals` row gets `referred_vendor_id`
+      // (no redemption row) — count that as one additional use when linked.
       const totalReferrals = await query(
-        `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND referred_id IS NOT NULL`,
+        `SELECT COALESCE(SUM(peer_cnt + vendor_slot), 0)::int AS count
+         FROM (
+           SELECT
+             r.id,
+             (SELECT COUNT(*)::int FROM referral_redemptions rr WHERE rr.referral_id = r.id) AS peer_cnt,
+             CASE WHEN r.referred_vendor_id IS NOT NULL THEN 1 ELSE 0 END AS vendor_slot
+           FROM referrals r
+           WHERE r.referrer_id = $1
+         ) t`,
         [customerId]
       );
 
-      // Get completed referrals (where referred customer made a booking)
       const completedReferrals = await query(
-        `SELECT COUNT(DISTINCT r.referred_id) as count
-         FROM referrals r
-         INNER JOIN bookings b ON r.referred_id = b.customer_id
-         WHERE r.referrer_id = $1 AND r.referred_id IS NOT NULL`,
+        `SELECT COUNT(DISTINCT rr.referred_id)::bigint AS count
+         FROM referral_redemptions rr
+         INNER JOIN referrals r ON r.id = rr.referral_id
+         INNER JOIN bookings b ON b.customer_id = rr.referred_id
+         WHERE r.referrer_id = $1`,
         [customerId]
       );
 
-      // Get pending referrals
       const pendingReferrals = await query(
-        `SELECT COUNT(*) as count 
-         FROM referrals 
-         WHERE referrer_id = $1 AND referred_id IS NOT NULL 
-         AND NOT EXISTS (
-           SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
+        `SELECT COUNT(*)::int AS count
+         FROM referral_redemptions rr
+         INNER JOIN referrals r ON r.id = rr.referral_id
+         WHERE r.referrer_id = $1
+         AND NOT EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)`,
+        [customerId]
+      );
+
+      const earnings = await query(
+        `SELECT COALESCE(SUM(lt.points), 0)::bigint AS total_earnings
+         FROM loyalty_transactions lt
+         WHERE lt.customer_id = $1
+         AND lt.transaction_type = 'earned'
+         AND (
+           (lt.reference_type = 'referral' AND EXISTS (
+             SELECT 1 FROM referrals r WHERE r.id = lt.reference_id::uuid AND r.referrer_id = $1))
+           OR (lt.reference_type = 'customer_referral' AND EXISTS (
+             SELECT 1 FROM referral_redemptions rr
+             INNER JOIN referrals r ON r.id = rr.referral_id
+             WHERE rr.id = lt.reference_id::uuid AND r.referrer_id = $1))
          )`,
         [customerId]
       );
 
-      // Get total earnings from referrals
-      const earnings = await query(
-        `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
-         FROM loyalty_transactions lt
-         WHERE lt.customer_id = $1 
-         AND lt.reference_type = 'referral'
-         AND lt.type = 'earned'`,
-        [customerId]
-      );
-
-      // Get monthly stats
       const monthlyReferrals = await query(
-        `SELECT COUNT(*) as count 
-         FROM referrals 
-         WHERE referrer_id = $1 
-         AND referred_id IS NOT NULL
-         AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+        `SELECT COUNT(*)::int AS count
+         FROM referral_redemptions rr
+         INNER JOIN referrals r ON r.id = rr.referral_id
+         WHERE r.referrer_id = $1
+         AND rr.created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
         [customerId]
       );
 
       const monthlyEarnings = await query(
-        `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+        `SELECT COALESCE(SUM(lt.points), 0)::bigint AS total_earnings
          FROM loyalty_transactions lt
-         WHERE lt.customer_id = $1 
-         AND lt.reference_type = 'referral'
-         AND lt.type = 'earned'
-         AND lt.created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+         WHERE lt.customer_id = $1
+         AND lt.transaction_type = 'earned'
+         AND lt.created_at >= DATE_TRUNC('month', CURRENT_DATE)
+         AND (
+           (lt.reference_type = 'referral' AND EXISTS (
+             SELECT 1 FROM referrals r WHERE r.id = lt.reference_id::uuid AND r.referrer_id = $1))
+           OR (lt.reference_type = 'customer_referral' AND EXISTS (
+             SELECT 1 FROM referral_redemptions rr
+             INNER JOIN referrals r ON r.id = rr.referral_id
+             WHERE rr.id = lt.reference_id::uuid AND r.referrer_id = $1))
+         )`,
         [customerId]
       );
 
@@ -214,24 +233,61 @@ export function registerReferralEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50', 10);
 
       const history = await query(
-        `SELECT 
-          r.*,
-          c.first_name || ' ' || c.last_name as referee_name,
-          c.phone as referee_phone,
-          CASE 
-            WHEN EXISTS(SELECT 1 FROM bookings WHERE customer_id = r.referred_id) THEN 'completed'
-            WHEN r.referred_id IS NOT NULL THEN 'pending'
-            ELSE 'expired'
-          END as status,
-          (SELECT COALESCE(SUM(lt.points), 0) 
-           FROM loyalty_transactions lt 
-           WHERE lt.customer_id = $1 
-           AND lt.reference_type = 'referral' 
-           AND lt.reference_id = r.id) as referrer_earnings
-         FROM referrals r
-         LEFT JOIN customers c ON r.referred_id = c.id
-         WHERE r.referrer_id = $1
-         ORDER BY r.created_at DESC
+        `SELECT * FROM (
+           SELECT 
+             rr.id AS redemption_id,
+             r.id,
+             r.referrer_id,
+             r.referral_code,
+             rr.referred_id,
+             rr.created_at,
+             c.first_name || ' ' || c.last_name AS referee_name,
+             c.phone AS referee_phone,
+             CASE 
+               WHEN EXISTS(SELECT 1 FROM bookings WHERE customer_id = rr.referred_id) THEN 'completed'
+               ELSE 'pending'
+             END AS status,
+             (SELECT COALESCE(SUM(lt.points), 0) 
+              FROM loyalty_transactions lt 
+              WHERE lt.customer_id = $1 
+              AND (
+                (lt.reference_type = 'referral' AND lt.reference_id = r.id)
+                OR (lt.reference_type = 'customer_referral' AND lt.reference_id = rr.id)
+              )) AS referrer_earnings
+           FROM referral_redemptions rr
+           INNER JOIN referrals r ON r.id = rr.referral_id
+           LEFT JOIN customers c ON rr.referred_id = c.id
+           WHERE r.referrer_id = $1
+           UNION ALL
+           SELECT 
+             NULL::uuid AS redemption_id,
+             r.id,
+             r.referrer_id,
+             r.referral_code,
+             r.referred_id,
+             r.created_at,
+             c.first_name || ' ' || c.last_name AS referee_name,
+             c.phone AS referee_phone,
+             CASE 
+               WHEN EXISTS(SELECT 1 FROM bookings WHERE customer_id = r.referred_id) THEN 'completed'
+               WHEN r.referred_id IS NOT NULL THEN 'pending'
+               ELSE 'expired'
+             END AS status,
+             (SELECT COALESCE(SUM(lt.points), 0) 
+              FROM loyalty_transactions lt 
+              WHERE lt.customer_id = $1 
+              AND lt.reference_type = 'referral' 
+              AND lt.reference_id = r.id) AS referrer_earnings
+           FROM referrals r
+           LEFT JOIN customers c ON r.referred_id = c.id
+           WHERE r.referrer_id = $1
+           AND r.referred_id IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM referral_redemptions rr2
+             WHERE rr2.referral_id = r.id AND rr2.referred_id = r.referred_id
+           )
+         ) t
+         ORDER BY t.created_at DESC NULLS LAST
          LIMIT $2`,
         [customerId, limit]
       );
@@ -818,11 +874,34 @@ export function registerReferralEndpoints(app: Hono) {
         }
       }
 
-      // Look up customer by phone
-      const customerResult = await query(
-        `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
-        [phone, normalizedPhone]
-      );
+      const digitsOnly = (p: string) => p.replace(/\D/g, '');
+      const last10 =
+        digitsOnly(normalizedPhone).length >= 10
+          ? digitsOnly(normalizedPhone).slice(-10)
+          : digitsOnly(phone).length >= 10
+            ? digitsOnly(phone).slice(-10)
+            : '';
+
+      // Prefer one canonical row when the same mobile exists as `9326…` and `+919326…` (duplicate customers).
+      // ORDER BY: completed profile first, then non-placeholder name, then most recently updated.
+      const customerResult =
+        last10.length >= 10
+          ? await query(
+              `SELECT id FROM customers
+               WHERE LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g')) >= 10
+                 AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+               ORDER BY
+                 (profile_completed IS TRUE) DESC NULLS LAST,
+                 (onboarding_status = 'COMPLETED') DESC NULLS LAST,
+                 (LOWER(COALESCE(TRIM(full_name), '')) LIKE 'customer %') ASC,
+                 updated_at DESC NULLS LAST
+               LIMIT 1`,
+              [last10]
+            )
+          : await query(
+              `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
+              [phone, normalizedPhone]
+            );
 
       if (customerResult.rows.length === 0) {
         return c.json({ 
@@ -854,41 +933,59 @@ export function registerReferralEndpoints(app: Hono) {
 
       const referralCode = referrals[0].referral_code;
 
-      // Get total referrals
       const totalReferrals = await query(
-        `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND referred_id IS NOT NULL`,
+        `SELECT COALESCE(SUM(peer_cnt + vendor_slot), 0)::int AS count
+         FROM (
+           SELECT
+             r.id,
+             (SELECT COUNT(*)::int FROM referral_redemptions rr WHERE rr.referral_id = r.id) AS peer_cnt,
+             CASE WHEN r.referred_vendor_id IS NOT NULL THEN 1 ELSE 0 END AS vendor_slot
+           FROM referrals r
+           WHERE r.referrer_id = $1
+         ) t`,
         [customerId]
       );
 
-      // Get completed referrals (where referred customer made a booking)
       const completedReferrals = await query(
-        `SELECT COUNT(DISTINCT r.referred_id) as count
-         FROM referrals r
-         INNER JOIN bookings b ON r.referred_id = b.customer_id
-         WHERE r.referrer_id = $1 AND r.referred_id IS NOT NULL`,
+        `SELECT COUNT(DISTINCT rr.referred_id)::bigint AS count
+         FROM referral_redemptions rr
+         INNER JOIN referrals r ON r.id = rr.referral_id
+         INNER JOIN bookings b ON b.customer_id = rr.referred_id
+         WHERE r.referrer_id = $1`,
         [customerId]
       );
 
-      // Get pending referrals
       const pendingReferrals = await query(
-        `SELECT COUNT(*) as count 
-         FROM referrals 
-         WHERE referrer_id = $1 AND referred_id IS NOT NULL 
-         AND NOT EXISTS (
-           SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
-         )`,
+        `SELECT COUNT(*)::int AS count
+         FROM referral_redemptions rr
+         INNER JOIN referrals r ON r.id = rr.referral_id
+         WHERE r.referrer_id = $1
+         AND NOT EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)`,
         [customerId]
       );
 
-      // Get total earnings from referrals (only for completed referrals)
       const earnings = await query(
-        `SELECT COALESCE(SUM(lt.points), 0) as total_earnings
+        `SELECT COALESCE(SUM(lt.points), 0)::bigint AS total_earnings
          FROM loyalty_transactions lt
-         INNER JOIN referrals r ON lt.reference_id = r.id
-         WHERE lt.customer_id = $1 
-         AND lt.reference_type = 'referral'
+         WHERE lt.customer_id = $1
          AND lt.transaction_type = 'earned'
-         AND EXISTS(SELECT 1 FROM bookings WHERE customer_id = r.referred_id)`,
+         AND (
+           (lt.reference_type = 'customer_referral' AND EXISTS (
+             SELECT 1 FROM referral_redemptions rr
+             INNER JOIN referrals r ON r.id = rr.referral_id
+             WHERE rr.id = lt.reference_id::uuid AND r.referrer_id = $1
+             AND EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
+           ))
+           OR (lt.reference_type = 'referral' AND EXISTS (
+             SELECT 1 FROM referrals r
+             WHERE r.id = lt.reference_id::uuid AND r.referrer_id = $1
+             AND EXISTS (
+               SELECT 1 FROM referral_redemptions rr
+               WHERE rr.referral_id = r.id
+               AND EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
+             )
+           ))
+         )`,
         [customerId]
       );
 

@@ -25,7 +25,10 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query, select, update, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { linkVendorReferralRecordsOnVendorApproval } from '../../../lib/services/referral-service';
+import {
+	linkVendorReferralRecordsOnVendorApproval,
+	linkVendorOnboardingReferralsFromIdentityMetadata,
+} from '../../../lib/services/referral-service';
 
 // ============================================================================
 // ADMIN HANDLERS
@@ -1375,6 +1378,13 @@ export function registerAdminEndpoints(app: Hono) {
       await linkVendorReferralRecordsOnVendorApproval({
         vendorId,
         identity: updatedIdentity || identity,
+      });
+
+      await linkVendorOnboardingReferralsFromIdentityMetadata({
+        vendorId,
+        phone: (updatedIdentity || identity)?.phone,
+        metadata: (updatedIdentity || identity)?.metadata,
+        vendorIdentityId: (updatedIdentity || identity)?.id,
       });
 
       // Create notification

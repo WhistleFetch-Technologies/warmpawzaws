@@ -37,6 +37,7 @@ import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import { getRefundTierForCancellation, computeRefundFromTier, previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
+import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -637,9 +638,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     // Get vendor's role to validate service availability
     let roleId: string | null = null;
+    let vendorTypeForLoyalty: string | null = null;
     try {
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length > 0) {
+        vendorTypeForLoyalty = vendors[0].vendor_type ?? null;
         roleId = vendors[0].role_id || vendors[0].roleId || null;
         
         // If no role_id, try to get from vendor_roles table
@@ -1525,8 +1528,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
+      const loyaltyServiceKind = resolveLoyaltyBookingKind({
+        bookingServiceType: booking.service_type || serviceType,
+        serviceCategory: service?.category ?? null,
+        serviceName: (service?.service_name ?? service?.name) as string | null,
+        vendorType: vendorTypeForLoyalty,
+      });
+
+      const ps = String((booking as any).payment_status || '').toLowerCase();
+      const awardBookVetLoyaltyOnCreate =
+        loyaltyServiceKind === 'vet_consultation' &&
+        (ps === 'paid' || ps === 'completed' || Number(booking.total_amount ?? 0) === 0);
+
       const response = {
         bookingId: booking.id,
+        customerId,
+        totalAmount: Number(booking.total_amount ?? 0),
+        loyaltyServiceKind,
+        awardBookVetLoyaltyOnCreate,
         status: booking.status,
         message: 'Booking created successfully',
         isNew: true,
@@ -1568,8 +1587,22 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             const existingBookingFull = await select('bookings', { id: existingBooking.id });
             if (existingBookingFull.length > 0) {
               const booking = existingBookingFull[0];
+              const loyaltyServiceKindDup = resolveLoyaltyBookingKind({
+                bookingServiceType: booking.service_type || serviceType,
+                serviceCategory: service?.category ?? null,
+                serviceName: (service?.service_name ?? service?.name) as string | null,
+                vendorType: vendorTypeForLoyalty,
+              });
+              const psDup = String((booking as any).payment_status || '').toLowerCase();
+              const awardBookVetLoyaltyOnCreateDup =
+                loyaltyServiceKindDup === 'vet_consultation' &&
+                (psDup === 'paid' || psDup === 'completed' || Number(booking.total_amount ?? 0) === 0);
               return this.success({
                 bookingId: booking.id,
+                customerId,
+                totalAmount: Number(booking.total_amount ?? 0),
+                loyaltyServiceKind: loyaltyServiceKindDup,
+                awardBookVetLoyaltyOnCreate: awardBookVetLoyaltyOnCreateDup,
                 status: booking.status,
                 message: 'Booking already exists (duplicate request detected)',
                 isNew: false,
@@ -2393,13 +2426,17 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       console.error('Failed to publish booking status updated event:', error);
     }
 
-    return this.success({ 
-      bookingId,
-      oldStatus,
-      newStatus: status,
-      message: 'Booking status updated successfully',
-      isNew: true,
-    }, requestId);
+    return this.success(
+      {
+        bookingId,
+        customerId: currentBooking.customer_id,
+        oldStatus,
+        newStatus: status,
+        message: 'Booking status updated successfully',
+        isNew: true,
+      },
+      requestId
+    );
   }
 }
 
