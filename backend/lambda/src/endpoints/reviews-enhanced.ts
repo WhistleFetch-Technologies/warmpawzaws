@@ -357,6 +357,7 @@ class GetPendingReviewHandler extends BaseHandler {
         LEFT JOIN services srv ON srv.id = b.service_id
         WHERE b.status = 'completed'
           AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.booking_id = b.id)
+          AND NOT EXISTS (SELECT 1 FROM review_skips rs WHERE rs.booking_id = b.id)
           AND b.completed_at > NOW() - INTERVAL '7 days'
       `;
       const params: any[] = [];
