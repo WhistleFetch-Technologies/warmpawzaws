@@ -6,16 +6,16 @@ import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsN
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
-  Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock,
+  Heart, Plus, ChevronRight, Star, MapPin, Clock,
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
-  Phone, Video, Building2, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree, Pill,
+  Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
   Navigation, AlertCircle, FlaskConical,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
@@ -133,7 +133,6 @@ export function CustomerHomeComplete({
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [newPetData, setNewPetData] = useState({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
   const [savingPet, setSavingPet] = useState(false);
-  const { itemCount } = useCart();
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
   const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
 
@@ -1599,7 +1598,7 @@ export function CustomerHomeComplete({
         <div className="px-4 mb-3">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
-            customerId={phone}
+            customerId={customerId || undefined}
             onSearch={(searchQuery) => {
               if (searchQuery?.trim()) {
                 router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
@@ -1614,10 +1613,16 @@ export function CustomerHomeComplete({
                   problemId: d.specializationId || result.id,
                   problemTitle: d.name || 'Consult',
                   roleId: d.roleId || 'vet_solo',
+                  category: d.categoryId,
                   problem: {
-                    allowedServiceStyles: d.allowedServiceStyles || ['at_home', 'at_center', 'tele'],
+                    allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(d.allowedServiceStyles, {
+                      roleId: d.roleId || 'vet_solo',
+                      specializationId: d.specializationId || result.id,
+                      categoryHint: d.categoryId,
+                    }),
                     name: d.name,
                     roleId: d.roleId,
+                    category: d.categoryId,
                   },
                 });
                 return;
@@ -2422,58 +2427,6 @@ export function CustomerHomeComplete({
           </div>
         </div>
       </div>
-
-      {/* Fixed Bottom Navigation - Hide when Add Pet modal is open to prevent overlap */}
-      {!hideHeaderFooter && !showAddPetModal && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-customer mx-auto z-40">
-          <div className="flex items-center justify-around">
-            <button
-              type="button"
-              className="flex flex-col items-center gap-1"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }}
-            >
-              <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
-              <span className="text-xs font-medium text-[#FF8C42]">Home</span>
-            </button>
-            <button
-              onClick={() => handleNavigation('cart')}
-              className="flex flex-col items-center gap-1 relative"
-            >
-              <div className="relative">
-                <ShoppingCart className="w-6 h-6 text-gray-400" />
-                {itemCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {itemCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-gray-400">Cart</span>
-            </button>
-            <button
-              onClick={() => handleNavigation('my-bookings')}
-              className="flex flex-col items-center gap-1"
-            >
-              <Calendar className="w-6 h-6 text-gray-400" />
-              <span className="text-xs text-gray-400">Bookings</span>
-            </button>
-            <button
-              onClick={() => onProfileClick && onProfileClick()}
-              className="flex flex-col items-center gap-1"
-            >
-              <User className="w-6 h-6 text-gray-400" />
-              <span className="text-xs text-gray-400">Profile</span>
-            </button>
-          </div>
-          {/* Home Indicator */}
-          <div className="flex justify-center mt-2">
-            <div className="w-32 h-1 bg-black rounded-full"></div>
-          </div>
-        </div>
-      )}
 
       {/* AI Assistant Floating Action Button */}
       {!hideHeaderFooter && (

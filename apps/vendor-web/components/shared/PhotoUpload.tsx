@@ -228,7 +228,7 @@ export function PhotoUpload({
             type="file"
             accept={accept}
             onChange={handleFileInputChange}
-            className="hidden"
+            className="sr-only"
             disabled={uploading || disabled}
           />
 

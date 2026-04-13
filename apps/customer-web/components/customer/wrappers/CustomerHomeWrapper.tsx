@@ -69,6 +69,7 @@ import { SupportHelpCenter } from '../SupportHelpCenter';
 import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
@@ -315,7 +316,13 @@ export function CustomerHomeWrapper({
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
-  const [selectedProblem, setSelectedProblem] = useState<{ id: string; title: string; roleId?: string; allowedServiceStyles?: string[] } | null>(null);
+  const [selectedProblem, setSelectedProblem] = useState<{
+    id: string;
+    title: string;
+    roleId?: string;
+    allowedServiceStyles?: string[];
+    category?: string;
+  } | null>(null);
   const [currentServiceType, setCurrentServiceType] = useState<string | null>(null);
   const [paymentData, setPaymentData] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -334,6 +341,7 @@ export function CustomerHomeWrapper({
   /** Screen to restore when leaving Shop via header back (SPA stack is not browser history). */
   const [shopReturnScreen, setShopReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [diagnosticsPackageHint, setDiagnosticsPackageHint] = useState<{ name?: string; testLabels?: string[] } | null>(null);
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
   /** Screen to return to when leaving My Pets (embedded list), if opened via navigateToPets */
   const [screenBeforePets, setScreenBeforePets] = useState<ScreenType | null>(null);
@@ -668,6 +676,10 @@ export function CustomerHomeWrapper({
       setPreviousScreen(currentScreen);
       setWalkerServiceData({ packageId: data?.packageId });
       setCurrentScreen('schedule-walk');
+    } else if (screen === 'purchase-package') {
+      setPreviousScreen(currentScreen);
+      setWalkerServiceData(data ?? null);
+      setCurrentScreen('purchase-package');
     }
   };
 
@@ -728,6 +740,26 @@ export function CustomerHomeWrapper({
     setSelectedVendorId(undefined);
     setSelectedProblem(null);
     setCurrentServiceType(null);
+  };
+
+  /** Full bookings list (`CustomerBookingsPage`): return to caller (e.g. profile), else same as handleBack. */
+  const handleBackFromBookings = () => {
+    if (previousScreen != null) {
+      setCurrentScreen(previousScreen);
+      setPreviousScreen(null);
+      return;
+    }
+    handleBack();
+  };
+
+  /** From profile / profile-tab: remember origin when opening full bookings list. */
+  const handleCustomerProfileScreenNavigate = (screen: string) => {
+    if (screen === 'bookings') {
+      setPreviousScreen(currentScreen);
+      setCurrentScreen('bookings');
+      return;
+    }
+    setCurrentScreen(screen as ScreenType);
   };
 
   /** Profile / account full-screen pages: Back returns to home with account sidebar open (not full shell reset). */
@@ -915,11 +947,24 @@ export function CustomerHomeWrapper({
             // Handle problem-based navigation
             else if (screen === 'services_by_problem' || screen === 'problem_selected') {
               // ✅ Route through ProblemGridFlowRouter; use allowedServiceStyles from specialization so only allowed styles show
-              setSelectedProblem({ 
-                id: data?.problemId, 
+              setSelectedProblem({
+                id: data?.problemId,
                 title: data?.problemTitle || 'Service',
                 roleId: data?.roleId,
-                allowedServiceStyles: data?.problem?.allowedServiceStyles ?? (data?.allowedServiceStyles ? (Array.isArray(data.allowedServiceStyles) ? data.allowedServiceStyles : [data.allowedServiceStyles]) : undefined),
+                category: data?.category ?? data?.problem?.category,
+                allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(
+                  (data?.problem?.allowedServiceStyles ??
+                    (data?.allowedServiceStyles
+                      ? Array.isArray(data.allowedServiceStyles)
+                        ? data.allowedServiceStyles
+                        : [data.allowedServiceStyles]
+                      : null)) as string[] | null,
+                  {
+                    roleId: data?.roleId,
+                    specializationId: data?.problemId,
+                    categoryHint: data?.category ?? data?.problem?.category,
+                  }
+                ),
               });
               setCurrentScreen('problem_grid_flow');
             } else if (screen === 'problem_grid') {
@@ -992,7 +1037,7 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
       </CustomerScreenWrapper>
     );
   }
@@ -1468,7 +1513,12 @@ export function CustomerHomeWrapper({
             id: problem.id || problem.problemId,
             title: problem.displayName || problem.name || problem.title,
             roleId: 'behaviorist',
-            allowedServiceStyles: (problem as any).allowedServiceStyles,
+            category: 'behavioral',
+            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles((problem as any).allowedServiceStyles, {
+              roleId: 'behaviorist',
+              specializationId: problem.id || problem.problemId,
+              categoryHint: 'behavioral',
+            }),
           });
           setCurrentScreen('problem_grid_flow');
         }}
@@ -1966,6 +2016,11 @@ export function CustomerHomeWrapper({
     if (screen === 'lab-booking') {
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: 'diagnostics' });
+      setDiagnosticsPackageHint(
+        data?.packageName || (data?.packageTestLabels && data.packageTestLabels.length)
+          ? { name: data?.packageName, testLabels: data?.packageTestLabels ?? [] }
+          : null
+      );
       setPreviousScreen('lab-diagnostics');
       setCurrentScreen('diagnostics-booking');
     } else if (screen === 'diagnostics-reports') {
@@ -1987,9 +2042,10 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'diagnostics-booking' && diagnosticsVendorId) return <DiagnosticsBookingFlow 
     vendorId={diagnosticsVendorId} 
     customerPhone={phone} 
-    onBack={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); setSelectedVendorId(undefined); }} 
-    onSuccess={(bookingId) => { handleViewBooking(bookingId); setCurrentScreen('my-bookings'); }} 
-    onCancel={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); setSelectedVendorId(undefined); }} 
+    packageHint={diagnosticsPackageHint ?? undefined}
+    onBack={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); setSelectedVendorId(undefined); setDiagnosticsPackageHint(null); }} 
+    onSuccess={(bookingId) => { setDiagnosticsPackageHint(null); handleViewBooking(bookingId); setCurrentScreen('my-bookings'); }} 
+    onCancel={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); setSelectedVendorId(undefined); setDiagnosticsPackageHint(null); }} 
   />;
 
   // Diagnostics Report Viewer - View and download lab reports (Phase 3: Order medicine, Book physio)
@@ -2541,10 +2597,17 @@ export function CustomerHomeWrapper({
   }
 
   // ✅ NEW: Bookings List
-  if (currentScreen === 'bookings') return <CustomerBookingsPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
-    if (screen === 'booking-details') handleViewBooking(data.bookingId);
-    else if (screen === 'services') setCurrentScreen('services');
-  }} />;
+  if (currentScreen === 'bookings')
+    return (
+      <CustomerBookingsPage
+        phone={phone}
+        onBack={handleBackFromBookings}
+        onNavigate={(screen, data) => {
+          if (screen === 'booking-details') handleViewBooking(data.bookingId);
+          else if (screen === 'services') setCurrentScreen('services');
+        }}
+      />
+    );
   
   // Support & Help Center
   if (currentScreen === 'support_help')
@@ -2625,7 +2688,7 @@ export function CustomerHomeWrapper({
   // profile: map to customer-profile (e.g. from VetBookingRouter tab)
   if (currentScreen === 'profile') return (
     <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
     </CustomerScreenWrapper>
   );
 
@@ -2735,11 +2798,19 @@ export function CustomerHomeWrapper({
             roleInfo.roleId === 'all'
               ? (p.roleId || p.role_id || undefined)
               : roleInfo.roleId;
-          setSelectedProblem({ 
-            id: problem.id || problem.problemId, 
+          setSelectedProblem({
+            id: problem.id || problem.problemId,
             title: problem.displayName || problem.name || problem.title,
             roleId: problemRole,
-            allowedServiceStyles: p.allowedServiceStyles,
+            category: p.category,
+            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(
+              p.allowedServiceStyles?.length ? p.allowedServiceStyles : null,
+              {
+                roleId: problemRole,
+                specializationId: problem.id || problem.problemId,
+                categoryHint: p.category,
+              }
+            ),
           });
           // ✅ Route to ProblemGridFlowRouter for service style selection (only allowed styles shown)
           setCurrentScreen('problem_grid_flow');
@@ -2757,9 +2828,16 @@ export function CustomerHomeWrapper({
           name: selectedProblem.title,
           icon: '🐾',
           description: `Services for ${selectedProblem.title}`,
-          allowedServiceStyles: ((selectedProblem.allowedServiceStyles && selectedProblem.allowedServiceStyles.length > 0) ? selectedProblem.allowedServiceStyles : ['at_home', 'at_center', 'tele']) as ('at_home' | 'at_center' | 'tele')[],
+          allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(
+            selectedProblem.allowedServiceStyles?.length ? selectedProblem.allowedServiceStyles : null,
+            {
+              roleId: selectedProblem.roleId,
+              specializationId: selectedProblem.id,
+              categoryHint: selectedProblem.category,
+            }
+          ) as ('at_home' | 'at_center' | 'tele')[],
           linkedServiceRoles: selectedProblem.roleId ? [selectedProblem.roleId] : ['veterinarian', 'groomer', 'trainer'],
-          category: selectedProblem.roleId || 'general',
+          category: selectedProblem.category || selectedProblem.roleId || 'general',
         }}
         customerId={phone}
         onClose={() => {

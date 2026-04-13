@@ -200,6 +200,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
             <div className="grid grid-cols-4 gap-3">
               {(nutritionistNeeds.length > 0 ? nutritionistNeeds : NUTRITIONIST_NEEDS).map((need) => {
                 const isViewAll = need.id === 'view_all';
+                const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
                 return (
                   <button
                     key={need.id}
@@ -219,14 +220,26 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                         : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                       }
                     `}>
-                      <div className={`
+                      <div
+                        className={`
                         w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
-                        ${isViewAll ? 'bg-white/50' : 'bg-slate-50 group-hover:bg-orange-50'}
-                      `}>
+                        ${
+                          isViewAll
+                            ? 'bg-white/50'
+                            : hasAdminTint
+                              ? `${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`
+                              : 'bg-slate-50 group-hover:bg-orange-50'
+                        }
+                      `}
+                      >
                         {typeof need.icon === 'string' ? (
                           <span className="text-xl">{need.icon}</span>
                         ) : (
-                          <div className="text-slate-600 group-hover:text-orange-600">
+                          <div
+                            className={
+                              hasAdminTint ? '' : 'text-slate-600 group-hover:text-orange-600'
+                            }
+                          >
                             {need.icon}
                           </div>
                         )}

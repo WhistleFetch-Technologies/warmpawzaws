@@ -4,7 +4,7 @@
  * Phase 3: AI Chatbot Integration
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,57 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { AIChatbotApi, SupportCrmApi } from '../../services/api';
+
+const BOOKING_CATEGORY_IDS = [
+  'vet',
+  'grooming',
+  'training',
+  'boarding',
+  'walker',
+  'pharmacy',
+  'cafe',
+  'resort',
+] as const;
+
+function inferCategoryFromBookingMessage(msg: string): string | null {
+  const m = msg.toLowerCase().trim();
+  if (!m) return null;
+  if (/\b(grooming|groom|groomer|bath|trim|haircut)\b/.test(m)) return 'grooming';
+  if (/\b(walk|walker|walking)\b/.test(m)) return 'walker';
+  if (/\b(train|trainer|training|behavior|behaviourist)\b/.test(m)) return 'training';
+  if (/\b(board|boarding|kennel|daycare)\b/.test(m)) return 'boarding';
+  if (/\b(vet|veterinar|veterinary|doctor|clinic)\b/.test(m)) return 'vet';
+  if (/\b(pharmacy|medicine|medication)\b/.test(m)) return 'pharmacy';
+  if (/\b(cafe|café)\b/.test(m)) return 'cafe';
+  if (/\b(resort|holiday)\b/.test(m)) return 'resort';
+  return null;
+}
+
+function alignBookingSearchPath(path: string, userMessage: string): string {
+  if (!path.startsWith('/search')) return path;
+  const cat = inferCategoryFromBookingMessage(userMessage);
+  if (!cat) return path;
+  try {
+    const qIdx = path.indexOf('?');
+    const base = qIdx >= 0 ? path.slice(0, qIdx) : path;
+    const sp = new URLSearchParams(qIdx >= 0 ? path.slice(qIdx + 1) : '');
+    const cur = sp.get('category') || '';
+    if (cur === cat) return path;
+    if (cur === 'vet' && cat !== 'vet') {
+      sp.set('category', cat);
+      if (!sp.get('q')?.trim()) sp.set('q', userMessage.trim());
+      return `${base}?${sp.toString()}`;
+    }
+    if (!cur) {
+      sp.set('category', cat);
+      if (!sp.get('q')?.trim()) sp.set('q', userMessage.trim());
+      return `${base}?${sp.toString()}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return path;
+}
 
 interface AIChatbotScreenProps {
   phone: string;
@@ -59,6 +110,44 @@ export function AIChatbotScreen({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [mode, setMode] = useState<'chat' | 'symptoms' | 'booking'>('chat');
   const scrollViewRef = useRef<ScrollView>(null);
+  const lastBookingUrlRef = useRef<string | null>(null);
+
+  const openBookingFromUrl = useCallback(
+    (url: string | null | undefined) => {
+      if (!onNavigate || !url) return;
+      const u = String(url);
+      if (u.startsWith('/search')) {
+        let category: string | undefined;
+        let searchQuery: string | undefined;
+        try {
+          const qi = u.indexOf('?');
+          if (qi >= 0) {
+            const sp = new URLSearchParams(u.slice(qi + 1));
+            const c = sp.get('category')?.trim();
+            if (c && (BOOKING_CATEGORY_IDS as readonly string[]).includes(c)) {
+              category = c;
+            }
+            const qv = sp.get('q')?.trim();
+            if (qv) searchQuery = qv;
+          }
+        } catch {
+          /* ignore */
+        }
+        if (category) {
+          onNavigate('ServiceDiscovery', { category });
+          return;
+        }
+        if (searchQuery) {
+          onNavigate('ServiceSearch', { query: searchQuery });
+          return;
+        }
+        onNavigate('ServiceSearch', { browseProviders: true });
+        return;
+      }
+      onNavigate('BookingCreation', {});
+    },
+    [onNavigate]
+  );
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -75,8 +164,13 @@ export function AIChatbotScreen({
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const sentText = inputText.trim();
     setInputText('');
     setSending(true);
+
+    if (mode !== 'booking') {
+      lastBookingUrlRef.current = null;
+    }
 
     try {
       let response;
@@ -84,7 +178,7 @@ export function AIChatbotScreen({
       if (mode === 'symptoms') {
         // Symptoms checker
         response = await AIChatbotApi.symptomsChecker({
-          symptoms: inputText.trim(),
+          symptoms: sentText,
           petId,
           customerId,
           customerPhone: phone,
@@ -96,7 +190,7 @@ export function AIChatbotScreen({
           content: response.response || 'I understand your concern. Please consult with a veterinarian for proper diagnosis.',
           timestamp: new Date().toISOString(),
           intent: 'symptoms',
-          suggestedActions: response.vetBookingSuggested ? ['Find Vet Clinic', 'Book Consultation'] : [],
+          suggestedActions: ['Find Vet Clinic', 'Book Consultation', 'Search Providers'],
         };
         
         setMessages(prev => [...prev, botMessage]);
@@ -121,11 +215,28 @@ export function AIChatbotScreen({
       } else if (mode === 'booking') {
         // Booking assist
         response = await AIChatbotApi.bookingAssist({
-          query: inputText.trim(),
+          query: sentText,
           customerId,
           customerPhone: phone,
           petId,
         });
+
+        let bookingPath =
+          typeof response.bookingUrl === 'string' && response.bookingUrl.startsWith('/')
+            ? response.bookingUrl
+            : '/search';
+        bookingPath = alignBookingSearchPath(bookingPath, sentText);
+        lastBookingUrlRef.current = bookingPath;
+
+        const stepLabels = Array.isArray(response.nextSteps)
+          ? response.nextSteps.filter(
+              (s: unknown) =>
+                typeof s === 'string' && s.trim() && !/^browse services$/i.test(String(s).trim())
+            )
+          : [];
+        const suggestedActions = Array.from(
+          new Set([...(stepLabels as string[]), 'Continue to booking', 'Browse Bookings'])
+        );
         
         const botMessage: Message = {
           id: `bot-${Date.now()}`,
@@ -133,25 +244,19 @@ export function AIChatbotScreen({
           content: response.response || "I'd be happy to help you book a service!",
           timestamp: new Date().toISOString(),
           intent: 'booking',
-          suggestedActions: response.nextSteps || [],
+          suggestedActions,
         };
         
         setMessages(prev => [...prev, botMessage]);
-        
-        if (response.bookingUrl && onNavigate) {
-          // Navigate to booking flow
-          setTimeout(() => {
-            onNavigate('BookingCreation', { serviceType: response.serviceType });
-          }, 1000);
-        }
       } else {
         // General chat
         response = await AIChatbotApi.chat({
-          message: inputText.trim(),
+          message: sentText,
           customerId,
           customerPhone: phone,
           conversationId: conversationId || undefined,
           petId,
+          context: { widgetMode: 'chat' },
         });
         
         if (!conversationId && response.conversationId) {
@@ -164,7 +269,7 @@ export function AIChatbotScreen({
           content: response.response || "I'm here to help!",
           timestamp: new Date().toISOString(),
           intent: response.intent,
-          suggestedActions: response.suggestedActions || [],
+          suggestedActions: ['Create Ticket', 'Contact Support'],
           requiresAgent: response.requiresAgent,
         };
         
@@ -232,18 +337,66 @@ export function AIChatbotScreen({
   };
 
   const handleSuggestedAction = (action: string) => {
-    if (action.includes('Vet') || action.includes('Clinic')) {
-      if (onNavigate) {
-        onNavigate('ServiceDiscovery', { category: 'vet' });
-      }
-    } else if (action.includes('Book')) {
-      if (onNavigate) {
-        onNavigate('BookingCreation');
-      }
-    } else if (action.includes('Shop')) {
-      if (onNavigate) {
-        onNavigate('Shop');
-      }
+    const a = action.toLowerCase();
+
+    if ((a.includes('create') && a.includes('ticket')) || a.replace(/\s+/g, '') === 'createticket') {
+      const recent = [...messages].reverse().filter(m => m.type === 'user').slice(0, 3);
+      const transcript = recent.map(m => m.content).join('\n---\n').slice(0, 2000);
+      void (async () => {
+        try {
+          await SupportCrmApi.createTicket({
+            customerId,
+            customerPhone: phone,
+            subject: 'Support request (AI Assistant)',
+            message: transcript || 'Customer requested support from AI Assistant.',
+            source: 'ai_chatbot',
+            priority: 'medium',
+            category: 'general',
+          });
+          Alert.alert('Ticket created', 'Our support team will get back to you soon.');
+        } catch (e: any) {
+          console.error('createTicket', e);
+          Alert.alert('Could not create ticket', 'Open Help & Support to reach us.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Help', onPress: () => onNavigate?.('HelpSupport') },
+          ]);
+        }
+      })();
+      return;
+    }
+
+    if (a.includes('contact') && a.includes('support')) {
+      onNavigate?.('HelpSupport');
+      return;
+    }
+
+    if ((a.includes('browse') && a.includes('booking')) || (a.includes('my') && a.includes('booking'))) {
+      onNavigate?.('BookingList');
+      return;
+    }
+
+    if (a === 'continue to booking') {
+      openBookingFromUrl(lastBookingUrlRef.current);
+      return;
+    }
+
+    if (a.includes('vet') || a.includes('clinic') || (a.includes('consultation') && !a.includes('tele'))) {
+      onNavigate?.('ServiceDiscovery', { category: 'vet' });
+      return;
+    }
+
+    if (a.includes('search') && a.includes('provider')) {
+      onNavigate?.('ServiceDiscovery', {});
+      return;
+    }
+
+    if (a.includes('browse') && a.includes('shop')) {
+      onNavigate?.('Shop');
+      return;
+    }
+
+    if (a.includes('book') || a.includes('slot') || a.includes('select service')) {
+      openBookingFromUrl(lastBookingUrlRef.current || '/search');
     }
   };
 

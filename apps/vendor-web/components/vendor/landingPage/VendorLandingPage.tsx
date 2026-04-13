@@ -1240,8 +1240,8 @@ export function VendorLandingPage({
       // ✅ Diagnostics center: Lab orders dashboard first; Test catalog secondary
       if (showDiagnosticsOrders) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="min-h-screen bg-gray-50 vendor-screen-safe-top">
+            <div className="max-w-6xl mx-auto px-4 pb-6">
               <DiagnosticsOrderDashboard
                 vendorId={vendorId}
                 onBack={() => {
@@ -1274,8 +1274,8 @@ export function VendorLandingPage({
       // ✅ NEW: Diagnostic Results (Test catalog)
       if (showDiagnostics) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="min-h-screen bg-gray-50 vendor-screen-safe-top">
+            <div className="max-w-6xl mx-auto px-4 pb-6">
               <DiagnosticResults
                 vendorId={vendorId}
                 vendorData={vendorData}

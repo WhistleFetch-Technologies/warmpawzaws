@@ -71,3 +71,15 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
 }
+
+/* Sonner (sonner@2.x): global safe-area offsets for all toasts — requires viewport-fit=cover in layout */
+[data-sonner-toaster] {
+  --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --offset-right: calc(env(safe-area-inset-right, 0px) + 16px) !important;
+  --offset-left: calc(env(safe-area-inset-left, 0px) + 16px) !important;
+  --mobile-offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --mobile-offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --mobile-offset-right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+  --mobile-offset-left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
+}

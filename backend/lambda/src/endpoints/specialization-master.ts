@@ -878,6 +878,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           description: row.description,
           iconName: row.icon_name,
           iconColor: row.icon_color,
+          displayOrder: row.display_order,
           allowedServiceStyles: row.allowed_service_styles || ['at_home', 'at_center', 'tele'],
           symptoms: row.symptoms || [],
           categoryId: row.category_id,

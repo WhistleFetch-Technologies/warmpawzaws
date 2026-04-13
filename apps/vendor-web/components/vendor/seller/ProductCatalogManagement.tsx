@@ -688,16 +688,16 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                     </button>
                   </div>
                 ))}
-                <label className="w-24 h-24 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-colors">
-                  <Upload className="w-6 h-6 text-slate-400 mb-1" />
-                  <span className="text-xs text-slate-500">Upload</span>
+                <label className="relative w-24 h-24 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-colors overflow-hidden">
+                  <Upload className="w-6 h-6 text-slate-400 mb-1 pointer-events-none" />
+                  <span className="text-xs text-slate-500 pointer-events-none">Upload</span>
                   <input
                     type="file"
                     accept="image/*"
                     multiple
                     onChange={handleImageUpload}
                     disabled={uploadingImages}
-                    className="hidden"
+                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
                   />
                 </label>
               </div>

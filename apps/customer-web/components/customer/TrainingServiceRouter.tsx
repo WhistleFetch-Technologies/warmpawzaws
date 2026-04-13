@@ -10,6 +10,11 @@ import { TRAINING_GOALS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { FeaturedProviderCard } from './shared/FeaturedProviderCard';
+import {
+  normalizeAndDedupeDiscoveryProviders,
+  type FeaturedProvider,
+} from '@/lib/featured-provider';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -38,7 +43,7 @@ interface PetSkillProgress {
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
   const trainingGoals = useProblemGridByRole('trainer');
   const [loading, setLoading] = useState(true);
-  const [featuredTrainers, setFeaturedTrainers] = useState<any[]>([]);
+  const [featuredTrainers, setFeaturedTrainers] = useState<FeaturedProvider[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [activePackages, setActivePackages] = useState<ActiveTrainingPackage[]>([]);
   const [petSkills, setPetSkills] = useState<PetSkillProgress[]>([]);
@@ -179,31 +184,21 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
       
       console.log('🔵 [TrainingServiceRouter] Final trainerServices length:', trainerServices.length);
-      
-      const vendorMap = new Map();
-      trainerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
-        if (!vendorId) return;
-        if (!vendorMap.has(vendorId)) {
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
-            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
-            distance: service.distance ?? Math.random() * 5 + 0.5,
-            basePrice: service.price || service.base_price || 1500
-          });
-        }
-      });
-      
-      const allTrainers = Array.from(vendorMap.values());
+
+      const allTrainers = normalizeAndDedupeDiscoveryProviders(
+        trainerServices,
+        'training'
+      );
       setFeaturedTrainers(allTrainers.slice(0, 5));
       
       setStats({
         activeTrainers: allTrainers.length,
         sessions: allTrainers.length > 0 ? `${Math.max(allTrainers.length * 40, 100)}+` : '0',
-        rating: allTrainers.length > 0 
-          ? Number(allTrainers.reduce((acc: number, t: any) => acc + Number(t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
+        rating: allTrainers.length > 0
+          ? Number(
+              allTrainers.reduce((acc, t) => acc + Number(t.rating || 0), 0) /
+                allTrainers.length
+            ).toFixed(1)
           : '-'
       });
     } catch (error) {
@@ -517,6 +512,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {(trainingGoals.length > 0 ? trainingGoals : TRAINING_GOALS).map((goal) => {
                 const isViewAll = goal.id === 'view_all';
+                const hasAdminTint = Boolean((goal as { iconBg?: string }).iconBg) && !isViewAll;
                 return (
                   <button
                     key={goal.id}
@@ -546,6 +542,12 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     `}>
                       {typeof goal.icon === 'string' ? (
                         <span className="text-2xl">{goal.icon}</span>
+                      ) : hasAdminTint ? (
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${(goal as { iconBg?: string }).iconBg} group-hover:opacity-90`}
+                        >
+                          {goal.icon}
+                        </div>
                       ) : (
                         <div className="text-slate-600 group-hover:text-orange-600">
                           {goal.icon}
@@ -574,32 +576,21 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
             
             <div className="space-y-3">
-              {(featuredTrainers.length > 0 ? featuredTrainers : [1, 2, 3]).map((trainer: any, index) => (
-                <div 
-                  key={index}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                  onClick={() => onNavigate?.('training_center')}
-                >
-                  <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                     {trainer.businessName ? trainer.businessName.charAt(0) : 'T'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 truncate">{trainer.businessName || `Professional Trainer ${index}`}</h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1 text-orange-500 font-bold">
-                        <Star className="w-3 h-3 fill-current" />
-                        {trainer.rating || 4.8}
-                      </span>
-                      <span>•</span>
-                      <span>{trainer.distance ? `${Number(trainer.distance).toFixed(1)} km` : 'Nearby'}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                     <div className="font-bold text-slate-900">₹{trainer.basePrice || 1500}</div>
-                     <div className="text-[10px] text-slate-400">starting</div>
-                  </div>
-                </div>
-              ))}
+              {featuredTrainers.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <div className="text-4xl mb-3">🎓</div>
+                  <p className="text-gray-600 mb-2">No trainers available in your area yet</p>
+                  <p className="text-gray-500 text-sm">Check back soon for training options!</p>
+                </Card>
+              ) : (
+                featuredTrainers.map((provider) => (
+                  <FeaturedProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    onClick={() => onNavigate?.('training_center')}
+                  />
+                ))
+              )}
             </div>
           </div>
         </div>

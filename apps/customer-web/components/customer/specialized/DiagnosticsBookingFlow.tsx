@@ -13,9 +13,18 @@ declare global {
   }
 }
 
+export interface DiagnosticsPackageHint {
+  /** Package display name (e.g. from Health Packages carousel) */
+  name?: string;
+  /** Short labels or codes shown on package cards (e.g. CBC, LFT) — used to pre-select matching catalog tests */
+  testLabels?: string[];
+}
+
 interface DiagnosticsBookingFlowProps {
   vendorId: string;
   customerPhone: string;
+  /** When set (e.g. user tapped Book on a health package), we try to pre-select matching published tests */
+  packageHint?: DiagnosticsPackageHint | null;
   onSuccess?: (bookingId: string) => void;
   onCancel?: () => void;
   onBack?: () => void;
@@ -36,7 +45,7 @@ interface DiagnosticTest {
   home_collection_fee?: number;
 }
 
-export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onCancel, onBack }: DiagnosticsBookingFlowProps) {
+export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, onSuccess, onCancel, onBack }: DiagnosticsBookingFlowProps) {
   const [tests, setTests] = useState<DiagnosticTest[]>([]);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +71,11 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
   const [step, setStep] = useState<'form' | 'payment'>('form');
   const [pendingBookingPayload, setPendingBookingPayload] = useState<Record<string, unknown> | null>(null);
   const pendingPayloadRef = useRef<Record<string, unknown> | null>(null);
+  const packageHintAppliedRef = useRef(false);
+
+  useEffect(() => {
+    packageHintAppliedRef.current = false;
+  }, [vendorId, packageHint?.name, packageHint?.testLabels?.join('|')]);
 
   useEffect(() => {
     loadTests();
@@ -124,19 +138,70 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
   const loadTests = async () => {
     try {
       setLoading(true);
+      setError(null);
+      setTests([]);
       // publishedOnly=true: only tests with is_available=true (published) for booking
       const response = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests?publishedOnly=true`);
-      
-      if (response.success && response.tests) {
-        setTests(response.tests);
+
+      if (response && typeof response === 'object' && response.success === false) {
+        const msg =
+          (typeof response.error === 'string' && response.error) ||
+          (typeof response.message === 'string' && response.message) ||
+          'Could not load lab tests for this vendor.';
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+
+      const list = Array.isArray(response?.tests) ? response.tests : [];
+      setTests(list);
+
+      if (list.length === 0) {
+        setError(
+          'No published tests are available for this lab. Choose another lab, or ask the lab to publish tests in their catalog.'
+        );
       }
     } catch (err: any) {
       console.error('Error loading tests:', err);
-      setError('Failed to load diagnostic tests');
+      const msg =
+        err?.message?.includes('403')
+          ? 'This lab is not set up for online test booking.'
+          : err?.message || 'Failed to load diagnostic tests. Check your connection and try again.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
+
+  // Pre-select tests when user opened booking from a health package (best-effort match on name/code)
+  useEffect(() => {
+    if (packageHintAppliedRef.current) return;
+    const labels = (packageHint?.testLabels || []).map((l) => l.trim().toLowerCase()).filter(Boolean);
+    if (!labels.length || tests.length === 0) return;
+
+    const matched: string[] = [];
+    for (const t of tests) {
+      const name = (t.test_name || '').toLowerCase();
+      const code = (t.test_code || '').toLowerCase();
+      const hit = labels.some((l) => {
+        if (!l) return false;
+        if (code && (code === l || code.includes(l) || l.includes(code))) return true;
+        if (name.includes(l)) return true;
+        const tokens = name.split(/[\s,/+&()-]+/).filter(Boolean);
+        return tokens.some((w) => w === l || w.startsWith(l) || l.startsWith(w));
+      });
+      if (hit) matched.push(t.id);
+    }
+
+    if (matched.length > 0) {
+      setSelectedTests(matched);
+      packageHintAppliedRef.current = true;
+      if (packageHint?.name) {
+        toast.success(`Selected matching tests for “${packageHint.name}”. Adjust if needed.`);
+      }
+    }
+  }, [tests, packageHint]);
 
   const toggleTest = (testId: string) => {
     setSelectedTests(prev => 
@@ -566,8 +631,17 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           </div>
           <div className="divide-y max-h-96 overflow-y-auto">
             {filteredTests.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                No tests found
+              <div className="p-8 text-center text-gray-500 space-y-2">
+                <p className="font-medium text-gray-700">
+                  {tests.length === 0
+                    ? error || 'No published tests for this lab yet.'
+                    : 'No tests match your search or category.'}
+                </p>
+                {tests.length === 0 && (
+                  <p className="text-sm">
+                    Labs must publish tests in their vendor catalog. Try another lab from the list or book individual tests from a lab card below.
+                  </p>
+                )}
               </div>
             ) : (
               filteredTests.map((test) => (

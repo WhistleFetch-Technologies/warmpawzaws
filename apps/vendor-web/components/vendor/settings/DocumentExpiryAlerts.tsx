@@ -352,8 +352,8 @@ export function DocumentExpiryAlerts({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload New Document (Optional)
                 </label>
-                <label className="block cursor-pointer">
-                  <div className={`border-2 border-dashed rounded-xl p-4 text-center transition ${
+                <label className="relative block cursor-pointer overflow-hidden rounded-xl">
+                  <div className={`border-2 border-dashed rounded-xl p-4 text-center transition pointer-events-none ${
                     newDocumentFile ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-[#FF8C42]'
                   }`}>
                     {newDocumentFile ? (
@@ -372,7 +372,7 @@ export function DocumentExpiryAlerts({
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png"
                     onChange={(e) => setNewDocumentFile(e.target.files?.[0] || null)}
-                    className="hidden"
+                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                   />
                 </label>
               </div>

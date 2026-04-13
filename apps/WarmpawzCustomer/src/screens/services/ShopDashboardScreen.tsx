@@ -4,7 +4,7 @@
  * Identical functionality to web app
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -110,6 +110,13 @@ export function ShopDashboardScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  const dashboardScrollRef = useRef<ScrollView>(null);
+  const topProductsSectionY = useRef(0);
+
+  const scrollToTopProducts = () => {
+    const y = Math.max(0, topProductsSectionY.current - 8);
+    dashboardScrollRef.current?.scrollTo({ y, animated: true });
+  };
 
   useEffect(() => {
     loadProducts();
@@ -300,7 +307,7 @@ export function ShopDashboardScreen({
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.dashboardContent}>
+      <ScrollView ref={dashboardScrollRef} style={styles.dashboardContent}>
         {/* Banner Carousel */}
         <View style={styles.bannerContainer}>
           <View
@@ -359,7 +366,7 @@ export function ShopDashboardScreen({
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>🔥 Hot Deals</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={scrollToTopProducts} accessibilityRole="button">
               <Text style={styles.sectionLink}>View All →</Text>
             </TouchableOpacity>
           </View>
@@ -428,57 +435,63 @@ export function ShopDashboardScreen({
         </View>
 
         {/* Top Products Grid */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Top Products</Text>
-            <TouchableOpacity>
-              <Text style={styles.sectionLink}>View All →</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.productsGrid}>
-            {filteredProducts.map(product => (
-              <TouchableOpacity
-                key={product.id}
-                style={styles.productCard}
-                onPress={() => {
-                  setSelectedProduct(product);
-                  setCurrentView('product_detail');
-                }}
-              >
-                <View style={styles.productImageContainer}>
-                  <Image
-                    source={{ uri: product.image }}
-                    style={styles.productImage}
-                    resizeMode="cover"
-                  />
-                </View>
-                <View style={styles.productInfo}>
-                  <Text style={styles.productCategory}>{product.category}</Text>
-                  <Text style={styles.productName} numberOfLines={2}>
-                    {product.name}
-                  </Text>
-                  <View style={styles.vendorBadge}>
-                    <Text style={styles.vendorBadgeText}>
-                      {product.vendor.name}
-                    </Text>
-                  </View>
-                  <View style={styles.productRating}>
-                    <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
-                    <Text style={styles.deliveryText}>
-                      • {product.vendor.deliveryTime}
-                    </Text>
-                  </View>
-                  <Text style={styles.productPrice}>₹{product.price}</Text>
-                  <TouchableOpacity
-                    style={styles.addToCartButton}
-                    onPress={() => addToCart(product)}
-                  >
-                    <Text style={styles.addToCartButtonText}>Add to Cart</Text>
-                  </TouchableOpacity>
-                </View>
+        <View
+          onLayout={(e) => {
+            topProductsSectionY.current = e.nativeEvent.layout.y;
+          }}
+        >
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Top Products</Text>
+              <TouchableOpacity onPress={scrollToTopProducts} accessibilityRole="button">
+                <Text style={styles.sectionLink}>View All →</Text>
               </TouchableOpacity>
-            ))}
+            </View>
+            <View style={styles.productsGrid}>
+              {filteredProducts.map(product => (
+                <TouchableOpacity
+                  key={product.id}
+                  style={styles.productCard}
+                  onPress={() => {
+                    setSelectedProduct(product);
+                    setCurrentView('product_detail');
+                  }}
+                >
+                  <View style={styles.productImageContainer}>
+                    <Image
+                      source={{ uri: product.image }}
+                      style={styles.productImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productCategory}>{product.category}</Text>
+                    <Text style={styles.productName} numberOfLines={2}>
+                      {product.name}
+                    </Text>
+                    <View style={styles.vendorBadge}>
+                      <Text style={styles.vendorBadgeText}>
+                        {product.vendor.name}
+                      </Text>
+                    </View>
+                    <View style={styles.productRating}>
+                      <Text style={styles.ratingIcon}>⭐</Text>
+                      <Text style={styles.ratingText}>{product.rating}</Text>
+                      <Text style={styles.deliveryText}>
+                        • {product.vendor.deliveryTime}
+                      </Text>
+                    </View>
+                    <Text style={styles.productPrice}>₹{product.price}</Text>
+                    <TouchableOpacity
+                      style={styles.addToCartButton}
+                      onPress={() => addToCart(product)}
+                    >
+                      <Text style={styles.addToCartButtonText}>Add to Cart</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         </View>
 

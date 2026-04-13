@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Fragment } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
@@ -9,6 +10,17 @@ import {
   PlatformLegalPolicyDialog,
   type PlatformPolicyType,
 } from '@/components/legal/PlatformLegalPolicyDialog';
+
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
+
+function dialablePhoneForChat(countryCode: string, phoneDigits: string): string | undefined {
+  const d = phoneDigits.replace(/\D/g, '');
+  if (d.length !== 10) return undefined;
+  return `${countryCode.trim()}${d}`;
+}
 
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
@@ -61,11 +73,26 @@ function AuthPageContent() {
   const [referralApplied, setReferralApplied] = useState(false);
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+  const [helpChatOpen, setHelpChatOpen] = useState(false);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
     setLegalDialogOpen(true);
   };
+
+  const guestHelpChat = helpChatOpen ? (
+    <AIChatbotWidget
+      presentation="modal"
+      customerPhone={dialablePhoneForChat(countryCode, phone)}
+      onClose={() => setHelpChatOpen(false)}
+      onNavigate={(dest) => {
+        if (typeof dest === 'string' && dest.startsWith('/')) {
+          setHelpChatOpen(false);
+          router.push(dest);
+        }
+      }}
+    />
+  ) : null;
 
   const legalDialog = (
     <PlatformLegalPolicyDialog
@@ -519,7 +546,13 @@ function AuthPageContent() {
                 <div className="text-center mt-4 space-y-3">
                   <p className="text-sm text-gray-600">
                     Trouble with verification?{' '}
-                    <a href="#" className="text-[#FF8C42] hover:underline font-medium">Get Help</a>
+                    <button
+                      type="button"
+                      onClick={() => setHelpChatOpen(true)}
+                      className="text-[#FF8C42] hover:underline font-medium"
+                    >
+                      Get Help
+                    </button>
                   </p>
                   <button
                     onClick={() => { setOtpSent(false); setOtp(''); setError(null); }}
@@ -558,6 +591,7 @@ function AuthPageContent() {
           </div>
         </div>
       </div>
+      {guestHelpChat}
       {legalDialog}
       </Fragment>
     );
@@ -735,15 +769,15 @@ function AuthPageContent() {
               </button>
             </p>
 
-            {/* Already have account */}
-            <p className="text-center text-sm text-gray-500 mt-4">
-              Already have an account?{' '}
-              <button className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Sign In</button>
-            </p>
-
             {/* Footer with Version Info */}
             <div className="mt-auto pt-8 text-center space-y-1">
-              <button className="text-gray-500 text-sm hover:text-[#FF8C42] transition-colors">Need Help?</button>
+              <button
+                type="button"
+                onClick={() => setHelpChatOpen(true)}
+                className="text-[#FF8C42] text-sm font-medium hover:text-[#FF6B9D] hover:underline transition-colors"
+              >
+                Need Help?
+              </button>
               <p className="text-gray-400 text-xs">WARMPAWZ Customer v2.1.0</p>
               <p className="text-gray-400 text-xs">© 2025 WARMPAWZ Inc. All rights reserved</p>
             </div>
@@ -754,6 +788,7 @@ function AuthPageContent() {
       {/* Referral Code Modal Overlay - Alternative full-screen modal */}
       {/* This can be enabled if you prefer a modal approach */}
     </div>
+    {guestHelpChat}
     {legalDialog}
     </Fragment>
   );

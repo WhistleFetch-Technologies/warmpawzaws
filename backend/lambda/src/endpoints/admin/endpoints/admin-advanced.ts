@@ -7730,11 +7730,92 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/settings/payment-gateway', async (c) => {
     try {
-      const body = await c.req.json().catch(() => ({}));
-      // Save payment gateway settings
+      const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
+
+      const looksLikeMaskedSecret = (s: string) => {
+        const t = s.trim();
+        return t.length === 0 || /^[*•\s]+$/.test(t);
+      };
+
+      async function mergeIntegrationConfig(integrationName: string): Promise<Record<string, any>> {
+        const existing = await select('platform_integrations', { integration_name: integrationName });
+        const prev =
+          existing.length > 0 && existing[0].integration_config && typeof existing[0].integration_config === 'object'
+            ? { ...(existing[0].integration_config as Record<string, any>) }
+            : {};
+        return prev;
+      }
+
+      async function saveGatewayRow(
+        integrationName: string,
+        isActive: boolean,
+        nextConfig: Record<string, any>,
+        secretKeys: string[]
+      ) {
+        const prev = await mergeIntegrationConfig(integrationName);
+        const merged = { ...prev, ...nextConfig };
+        for (const sk of secretKeys) {
+          const v = nextConfig[sk];
+          if (typeof v === 'string' && looksLikeMaskedSecret(v) && typeof prev[sk] === 'string' && prev[sk].length > 0) {
+            merged[sk] = prev[sk];
+          }
+        }
+        await query(
+          `INSERT INTO platform_integrations (integration_name, integration_config, is_active, updated_at)
+           VALUES ($1, $2::jsonb, $3, NOW())
+           ON CONFLICT (integration_name) DO UPDATE SET
+             integration_config = EXCLUDED.integration_config,
+             is_active = EXCLUDED.is_active,
+             updated_at = NOW()`,
+          [integrationName, JSON.stringify(merged), !!isActive]
+        );
+      }
+
+      const rz = body.razorpay || {};
+      await saveGatewayRow(
+        'razorpay',
+        !!rz.enabled,
+        {
+          keyId: typeof rz.key_id === 'string' ? rz.key_id : '',
+          keySecret: typeof rz.key_secret === 'string' ? rz.key_secret : '',
+          webhookSecret: typeof rz.webhook_secret === 'string' ? rz.webhook_secret : '',
+          razorpayXAccountNumber: typeof rz.razorpay_x_account_number === 'string' ? rz.razorpay_x_account_number.trim() : '',
+          auto_capture: rz.auto_capture !== false,
+          test_mode: !!rz.test_mode,
+        },
+        ['keySecret']
+      );
+
+      const st = body.stripe || {};
+      await saveGatewayRow(
+        'stripe',
+        !!st.enabled,
+        {
+          publishableKey: typeof st.publishable_key === 'string' ? st.publishable_key : '',
+          secretKey: typeof st.secret_key === 'string' ? st.secret_key : '',
+          webhookSecret: typeof st.webhook_secret === 'string' ? st.webhook_secret : '',
+          test_mode: !!st.test_mode,
+        },
+        ['secretKey']
+      );
+
+      const pt = body.paytm || {};
+      await saveGatewayRow(
+        'paytm',
+        !!pt.enabled,
+        {
+          merchantId: typeof pt.merchant_id === 'string' ? pt.merchant_id : '',
+          merchantKey: typeof pt.merchant_key === 'string' ? pt.merchant_key : '',
+          test_mode: !!pt.test_mode,
+        },
+        ['merchantKey']
+      );
+
       return c.json({ success: true, message: 'Payment gateway settings saved' });
     } catch (error: unknown) {
-      return c.json({ success: false, error: 'Failed to save payment gateway settings' }, 500);
+      const err = error as Error;
+      console.error('[payment-gateway] save error:', err);
+      return c.json({ success: false, error: err?.message || 'Failed to save payment gateway settings' }, 500);
     }
   });
 

@@ -358,8 +358,8 @@ export default function IndividualProviderOnboardingPage() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <label className="cursor-pointer">
-                    <div className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors inline-flex items-center gap-2">
+                  <label className="relative inline-flex cursor-pointer overflow-hidden rounded-lg">
+                    <div className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors inline-flex items-center gap-2 pointer-events-none">
                       <Upload className="w-4 h-4" />
                       Choose Photo
                     </div>
@@ -367,7 +367,7 @@ export default function IndividualProviderOnboardingPage() {
                       type="file"
                       accept="image/*"
                       onChange={handlePhotoChange}
-                      className="hidden"
+                      className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                     />
                   </label>
                 </div>

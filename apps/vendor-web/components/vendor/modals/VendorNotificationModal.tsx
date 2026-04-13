@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { X, Check, CheckCheck, Trash2, Bell, Sparkles, MessageSquare, XCircle } from 'lucide-react';
+import { Check, CheckCheck, Trash2, Bell, Sparkles, MessageSquare, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -184,7 +184,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="vendor-modal-sheet max-h-[85vh] overflow-hidden flex flex-col p-0 bg-white border-2 border-[#FF8C42]/20 shadow-2xl sm:mx-4">
         {/* Header */}
-        <DialogHeader className="px-4 pt-4 pb-3 border-b border-gray-200">
+        <DialogHeader className="px-4 pt-4 pb-3 pr-14 border-b border-gray-200">
           <DialogTitle className="sr-only">Notifications</DialogTitle>
           <DialogDescription className="sr-only">
             View and manage your vendor notifications
@@ -211,12 +211,6 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
                   Mark all read
                 </Button>
               )}
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
           </div>
 

@@ -123,6 +123,15 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('cognitoRefreshToken');
   localStorage.removeItem('cognitoTokenExpiry');
   localStorage.removeItem('cognitoUserInfo');
+
+  // Aliases used by auth / legacy flows
+  localStorage.removeItem('customer_phone');
+  localStorage.removeItem('phone');
+  localStorage.removeItem('refreshToken');
+
+  // Tab session flags (avoid stale “logged in” after explicit sign-out)
+  sessionStorage.removeItem('_warmpawz_has_session');
+  sessionStorage.removeItem('_warmpawz_just_logged_in');
 }
 
 /**

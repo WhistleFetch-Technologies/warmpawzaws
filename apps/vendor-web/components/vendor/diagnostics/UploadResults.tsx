@@ -105,9 +105,13 @@ export function UploadResults({ vendorId, editingTest, onBack, onSuccess }: Uplo
       } else {
         response = await apiClient.post<{ success: boolean; error?: string }>(`/vendor/${vendorId}/diagnostics/tests`, {
           ...payload,
-          isAvailable: false, // Draft by default
+          isAvailable: formData.isAvailable,
         });
-        toast.success('Diagnostic test added (saved as Draft)');
+        toast.success(
+          formData.isAvailable
+            ? 'Diagnostic test added and visible to customers'
+            : 'Diagnostic test saved as draft (hidden from customers until published)'
+        );
       }
 
       if (response?.success !== false) {
@@ -296,17 +300,22 @@ export function UploadResults({ vendorId, editingTest, onBack, onSuccess }: Uplo
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           <input
             type="checkbox"
             id="isAvailable"
             checked={formData.isAvailable}
             onChange={(e) => setFormData({ ...formData, isAvailable: e.target.checked })}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            className="w-4 h-4 mt-0.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
           />
-          <label htmlFor="isAvailable" className="text-sm font-medium text-gray-700">
-            Test is available for booking
-          </label>
+          <div>
+            <label htmlFor="isAvailable" className="text-sm font-medium text-gray-700">
+              Publish for customer booking
+            </label>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Uncheck to keep as draft; customers only see published tests when booking labs.
+            </p>
+          </div>
         </div>
 
         <div className="flex gap-4 pt-4">

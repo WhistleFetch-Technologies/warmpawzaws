@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  ArrowRight, ArrowLeft, LogOut, Search, ChevronDown, ChevronUp,
+  ArrowRight, LogOut, Search, ChevronDown, ChevronUp,
   Stethoscope, Building2, Pill, Ambulance, FlaskConical, Apple,
   Scissors, Sparkles,
   GraduationCap, Brain,
@@ -13,6 +13,7 @@ import {
   Shield, HeartHandshake, Sunset, Car, Package
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface VendorRoleSelectionProps {
   onRoleSelect: (role: string) => void;
@@ -492,29 +493,29 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
 
   return (
     <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column">
-      {/* Header with Back/Logout */}
-      <div className="px-4 pt-3 pb-2 flex justify-between items-center">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-1.5 text-black/80 hover:text-black transition-colors px-2 py-1.5 rounded-lg hover:bg-black/10"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-xs font-medium">Back</span>
-        </button>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-1.5 text-black/80 hover:text-black transition-colors px-2 py-1.5 rounded-lg hover:bg-black/10"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="text-xs font-medium">Logout</span>
-        </button>
-      </div>
+      <VendorHeader
+        tone="brand"
+        title="Choose Your Role"
+        subtitle="Select how you want to serve pet parents"
+        onBack={() => router.back()}
+        actions={[
+          <button
+            key="logout"
+            type="button"
+            onClick={handleLogout}
+            className="flex h-11 min-w-[44px] shrink-0 items-center justify-center gap-1 rounded-xl px-2 text-xs font-medium text-white transition-colors hover:bg-white/15 active:bg-white/25 sm:px-3"
+            aria-label="Log out"
+          >
+            <LogOut className="h-5 w-5 shrink-0 text-white" aria-hidden />
+            <span className="hidden min-[380px]:inline">Logout</span>
+          </button>,
+        ]}
+      />
 
-      {/* Orange Top Section */}
-      <div className="flex flex-col items-center pt-4 pb-4 px-6">
-        {/* Paw Logo */}
-        <div className="mb-3 w-16 h-16 flex items-center justify-center">
-          <svg width="64" height="64" viewBox="0 0 120 120" fill="none">
+      {/* Brand mark below header (title lives in VendorHeader for consistent mobile chrome) */}
+      <div className="flex flex-col items-center px-6 pb-2 pt-1">
+        <div className="flex h-16 w-16 items-center justify-center">
+          <svg width="64" height="64" viewBox="0 0 120 120" fill="none" aria-hidden>
             <ellipse cx="60" cy="75" rx="22" ry="26" fill="black"/>
             <path d="M60 70C58 68 54 68 52 70C50 72 50 75 52 77L60 85L68 77C70 75 70 72 68 70C66 68 62 68 60 70Z" fill="#FF8C42"/>
             <ellipse cx="40" cy="45" rx="10" ry="14" transform="rotate(-15 40 45)" fill="black"/>
@@ -523,11 +524,6 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
             <ellipse cx="80" cy="45" rx="10" ry="14" transform="rotate(15 80 45)" fill="black"/>
           </svg>
         </div>
-        
-        <h1 className="text-black text-center text-2xl font-bold">Choose Your Role</h1>
-        <p className="text-black/70 text-center text-xs mt-1">
-          Select how you want to serve pet parents
-        </p>
       </div>
 
       {/* White Bottom Section */}

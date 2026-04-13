@@ -7,6 +7,25 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
+/** Matches Zod uuid() / backend booking create validation for vendor and catalog service ids */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
+/** POST /bookings/create expects HH:MM (24h); avoid locale-specific strings from toLocaleTimeString */
+function formatBookingTime(d: Date = new Date()): string {
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function isBookableAmbulanceRow(amb: { vendorId?: unknown; serviceId?: unknown }): boolean {
+  return isValidUuid(amb.vendorId) && isValidUuid(amb.serviceId);
+}
+
 interface AmbulanceSOSProps {
   phone?: string;
   customerPhone?: string;
@@ -90,46 +109,22 @@ export function AmbulanceSOS(props: AmbulanceSOSProps) {
   const findNearbyAmbulances = async (lat?: number, lng?: number) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        roleId: 'pet_ambulance',
-        ...(lat && lng && { lat: lat.toString(), lng: lng.toString() })
-      });
-
-      const data = await apiClient.get<{ services?: any[]; vendors?: any[] }>(`/customer/services?${params.toString()}`);
-      const ambulanceList = data.services || data.vendors || [];
-      
-      if (ambulanceList.length === 0) {
-        // Fallback mock data
-        setAmbulances([
-          { 
-            vendorName: 'City Pet Ambulance', 
-            vendorId: 'amb1', 
-            distance: '2.5 km', 
-            eta: '10 mins', 
-            phone: '9999999999',
-            driverName: 'Raj Kumar',
-            vehicleNumber: 'KA-01-AB-1234'
-          }
-        ]);
-      } else {
-        setAmbulances(ambulanceList);
+      const params = new URLSearchParams({ roleId: 'pet_ambulance' });
+      if (lat != null && lng != null) {
+        params.set('latitude', String(lat));
+        params.set('longitude', String(lng));
       }
-      
+
+      const data = await apiClient.get<{ services?: any[]; vendors?: any[] }>(
+        `/customer/services?${params.toString()}`
+      );
+      const ambulanceList = data.services || data.vendors || [];
+      setAmbulances(Array.isArray(ambulanceList) ? ambulanceList : []);
       setStep('contact');
     } catch (error) {
       console.error('Error finding ambulances:', error);
-      // Fallback mock
-      setAmbulances([
-        { 
-          vendorName: 'City Pet Ambulance', 
-          vendorId: 'amb1', 
-          distance: '2.5 km', 
-          eta: '10 mins', 
-          phone: '9999999999',
-          driverName: 'Raj Kumar',
-          vehicleNumber: 'KA-01-AB-1234'
-        }
-      ]);
+      setAmbulances([]);
+      toast.error('Could not load nearby ambulances. Please try again.');
       setStep('contact');
     } finally {
       setLoading(false);
@@ -141,41 +136,70 @@ export function AmbulanceSOS(props: AmbulanceSOSProps) {
   };
 
   const handleRequestDispatch = async (ambulance: any) => {
+    if (!isBookableAmbulanceRow(ambulance)) {
+      toast.error('This listing cannot be booked online. Use Call or try again when providers are available.');
+      return;
+    }
+    if (!phone?.trim()) {
+      toast.error('Sign in with your phone number to request an ambulance.');
+      return;
+    }
+
     try {
       setLoading(true);
       setSelectedAmbulance(ambulance);
-      
-      const bookingPayload = {
+
+      const now = new Date();
+      const bookingPayload: Record<string, unknown> = {
         vendorId: ambulance.vendorId,
-        serviceId: 'emergency_dispatch',
-        customerPhone: phone,
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toLocaleTimeString(),
-        notes: `EMERGENCY SOS REQUEST. Location: ${location?.address}`,
-        petDetails: { count: 1 },
-        status: 'emergency',
-        price: 0,
-        location: location
+        serviceId: ambulance.serviceId,
+        customerPhone: phone.trim(),
+        bookingDate: now.toISOString().split('T')[0],
+        bookingTime: formatBookingTime(now),
+        serviceType: 'at_home',
+        amount: typeof ambulance.price === 'number' && !Number.isNaN(ambulance.price) ? ambulance.price : 0,
+        notes: `EMERGENCY SOS REQUEST. Location: ${location?.address ?? 'Unknown'}`,
       };
 
-      const response = await apiClient.post<any>('/bookings', bookingPayload);
-      
-      if (response.success || response.bookingId) {
+      if (props.customerId && isValidUuid(props.customerId)) {
+        bookingPayload.customerId = props.customerId;
+      }
+      if (location?.address) {
+        bookingPayload.address = location.address;
+      }
+      if (typeof location?.lat === 'number') {
+        bookingPayload.latitude = location.lat;
+      }
+      if (typeof location?.lng === 'number') {
+        bookingPayload.longitude = location.lng;
+      }
+      if (props.petId && isValidUuid(props.petId)) {
+        bookingPayload.petId = props.petId;
+      }
+
+      const response = await apiClient.post<{
+        success?: boolean;
+        data?: { bookingId?: string };
+        bookingId?: string;
+      }>('/bookings/create', bookingPayload);
+
+      const bookingId =
+        response?.data?.bookingId ?? (response as { bookingId?: string })?.bookingId;
+      const created = Boolean(response?.success && bookingId) || Boolean(bookingId);
+
+      if (created && bookingId) {
         toast.success('Emergency dispatch requested! Ambulance is on the way.');
-        
-        // Set tracking data
+
         setTrackingData({
-          bookingId: response.bookingId || `booking_${Date.now()}`,
+          bookingId,
           driverName: ambulance.driverName || 'Driver',
           vehicleNumber: ambulance.vehicleNumber || 'AMB-001',
           phone: ambulance.phone,
-          eta: ambulance.eta || '10 mins'
+          eta: ambulance.eta || '10 mins',
         });
-        
+
         setStep('tracking');
-        if (props.onSuccess) {
-          props.onSuccess(response.bookingId || `booking_${Date.now()}`);
-        }
+        props.onSuccess?.(bookingId);
       } else {
         toast.error('Failed to request dispatch');
       }
@@ -317,43 +341,66 @@ export function AmbulanceSOS(props: AmbulanceSOSProps) {
         )}
 
         <div className="space-y-3">
-          {ambulances.map((amb, idx) => (
-            <Card key={idx} className="p-4 border-l-4 border-red-500">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="font-bold text-gray-900">{amb.vendorName || 'Emergency Unit'}</h3>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> {amb.distance || '2km'}
-                    </span>
-                    <span className="flex items-center gap-1 font-bold text-green-600">
-                      <Clock className="w-3 h-3" /> {amb.eta || '10 mins'}
-                    </span>
+          {ambulances.length === 0 && !loading && (
+            <Card className="p-6 border border-amber-200 bg-amber-50/80">
+              <p className="text-sm text-amber-900 font-medium">No pet ambulance providers available</p>
+              <p className="text-sm text-amber-800/90 mt-2">
+                We could not find an ambulance service in your area right now. Use emergency vet numbers you
+                already have, or try again later.
+              </p>
+            </Card>
+          )}
+          {ambulances.map((amb, idx) => {
+            const canBook = isBookableAmbulanceRow(amb);
+            return (
+              <Card key={idx} className="p-4 border-l-4 border-red-500">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 className="font-bold text-gray-900">{amb.vendorName || 'Emergency Unit'}</h3>
+                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> {amb.distance || '—'}
+                      </span>
+                      <span className="flex items-center gap-1 font-bold text-green-600">
+                        <Clock className="w-3 h-3" /> {amb.eta || '—'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-red-50 p-2 rounded-full">
+                    <Siren className="w-6 h-6 text-red-600" />
                   </div>
                 </div>
-                <div className="bg-red-50 p-2 rounded-full">
-                  <Siren className="w-6 h-6 text-red-600" />
+
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <Button
+                    variant="outline"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
+                    onClick={() => handleEmergencyCall(amb.phone || '911')}
+                    disabled={!amb.phone}
+                  >
+                    <Phone className="w-4 h-4 mr-2" /> Call
+                  </Button>
+                  <Button
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={() => handleRequestDispatch(amb)}
+                    disabled={loading || !canBook}
+                    title={
+                      !canBook
+                        ? 'Provider must be loaded from the directory to book (valid vendor and service).'
+                        : undefined
+                    }
+                  >
+                    {loading ? 'Dispatching...' : 'Confirm SOS'}
+                  </Button>
                 </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <Button 
-                  variant="outline" 
-                  className="border-red-200 text-red-600 hover:bg-red-50"
-                  onClick={() => handleEmergencyCall(amb.phone || '911')}
-                >
-                  <Phone className="w-4 h-4 mr-2" /> Call
-                </Button>
-                <Button 
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                  onClick={() => handleRequestDispatch(amb)}
-                  disabled={loading}
-                >
-                  {loading ? 'Dispatching...' : 'Confirm SOS'}
-                </Button>
-              </div>
-            </Card>
-          ))}
+                {!canBook && (
+                  <p className="text-xs text-amber-700 mt-2">
+                    Online booking unavailable for this listing. Use Call if a number is shown.
+                  </p>
+                )}
+              </Card>
+            );
+          })}
         </div>
       </div>
       </div>

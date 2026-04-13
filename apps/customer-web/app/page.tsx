@@ -55,7 +55,9 @@ export default function HomePage() {
       (async () => {
         try {
           const { apiClient } = require('@/lib/api-client');
-          const profileResponse: any = await apiClient.get(`/customer/profile/unified/${storedPhone}`);
+          const profileResponse: any = await apiClient.getOrUndefinedIfNotFound(
+            `/customer/profile/unified/${storedPhone}`
+          );
           if (profileResponse?.profile) {
             const data = profileResponse.profile;
             const onboardingStatus = data.onboarding_status || data.onboardingStatus;
@@ -90,7 +92,12 @@ export default function HomePage() {
             });
           }
         } catch (apiError: any) {
-          if (apiError?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          if (
+            apiError?.code !== 'CORS_ERROR' &&
+            apiError?.statusCode !== 404 &&
+            typeof window !== 'undefined' &&
+            process.env.NODE_ENV === 'development'
+          ) {
             console.error('Error fetching customer profile (background):', apiError);
           }
         }
