@@ -71,7 +71,8 @@ export function VideoConsultationScreen({
       if (participantId) params.push(`participantId=${encodeURIComponent(participantId)}`);
 
       const query = params.length ? `?${params.join('&')}` : '';
-      const url = `${CUSTOMER_WEB_BASE_URL.replace(/\\/$/, '')}/video/${bookingId}${query}`;
+      const base = CUSTOMER_WEB_BASE_URL.replace(/\/$/, '');
+      const url = `${base}/video/${bookingId}${query}`;
       setWebUrl(url);
 
       setCallStatus('active');

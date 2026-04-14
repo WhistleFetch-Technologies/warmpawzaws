@@ -24,7 +24,6 @@ import {
 import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
-  PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
@@ -694,11 +693,13 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
     try {
       const addr = profile.address.trim();
       const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
+      const cityResolved = (profile.city?.trim() || inferredCity || '').trim();
+      const stateResolved = (profile.state?.trim() || inferredState || '').trim();
       const payload: UserProfile = {
         ...profile,
         address: addr,
-        city: inferredCity ?? profile.city,
-        state: inferredState ?? profile.state,
+        city: cityResolved || profile.city,
+        state: stateResolved || profile.state,
         houseNo: profile.houseNo.trim(),
         floor: (profile.floor || '').trim(),
       };
@@ -1458,22 +1459,32 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address</label>
                       {editMode ? (
-                        <textarea
-                          value={profile.address}
-                          onChange={(e) => {
-                            const address = e.target.value;
-                            const { city: c, state: s } = inferCityStateFromCommaAddress(address);
-                            setProfile({
-                              ...profile,
-                              address,
-                              city: c ?? profile.city,
-                              state: s ?? profile.state,
-                            });
-                          }}
-                          placeholder={PROFILE_ADDRESS_FORMAT_PLACEHOLDER}
-                          rows={4}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-y min-h-[100px]"
-                        />
+                        <>
+                          <EnhancedAddressAutocomplete
+                            value={profile.address}
+                            onChange={(address: string, components?: AddressComponents) => {
+                              setProfile((prev) => {
+                                const updated: UserProfile = { ...prev, address };
+                                if (components?.pincode) {
+                                  updated.pincode = components.pincode;
+                                }
+                                if (components?.city) {
+                                  updated.city = components.city;
+                                }
+                                if (components?.state) {
+                                  updated.state = components.state;
+                                }
+                                return updated;
+                              });
+                            }}
+                            placeholder="Search address, landmark, city..."
+                            className="w-full"
+                            required
+                          />
+                          <p className="text-xs text-gray-500 mt-1.5">
+                            Type to search for your address, landmark or area
+                          </p>
+                        </>
                       ) : (
                         <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl whitespace-pre-wrap">
                           {profile.address || '-'}
@@ -1515,6 +1526,41 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
                           {profile.floor?.trim() || '—'}
                         </p>
                       )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">City</label>
+                        {editMode ? (
+                          <input
+                            type="text"
+                            value={profile.city || ''}
+                            onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                            placeholder="City"
+                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                          />
+                        ) : (
+                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                            {profile.city?.trim() || '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">State</label>
+                        {editMode ? (
+                          <input
+                            type="text"
+                            value={profile.state || ''}
+                            onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                            placeholder="State"
+                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                          />
+                        ) : (
+                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                            {profile.state?.trim() || '—'}
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     <div>

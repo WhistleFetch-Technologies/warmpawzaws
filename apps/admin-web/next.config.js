@@ -1,5 +1,8 @@
 const path = require('path');
 
+/** True when the CLI is `next dev` (do not use NODE_ENV — .env.local often sets production and breaks dev). */
+const isNextDev = process.argv[2] === 'dev';
+
 /**
  * Next.js config – Admin Web
  * Retained structure for AWS Serverless: static export → S3 + CloudFront.
@@ -8,10 +11,9 @@ const path = require('path');
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  ...(process.env.NODE_ENV === 'production' && process.env.NEXT_EXPORT !== 'false'
-    ? { output: 'export' }
-    : {}),
-  distDir: 'dist',
+  ...(process.argv[2] === 'build' && process.env.NEXT_EXPORT !== 'false' ? { output: 'export' } : {}),
+  // Dev uses `.next` so OneDrive/reparse points under `dist` do not break `next dev`. Builds use `dist` for S3 deploy.
+  distDir: isNextDev ? '.next' : 'dist',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
   swcMinify: true,
@@ -20,7 +22,7 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: false },
   experimental: {
-    outputFileTracingExcludes: process.env.NODE_ENV === 'production' ? { '*': ['**/*'] } : undefined,
+    outputFileTracingExcludes: process.argv[2] === 'build' ? { '*': ['**/*'] } : undefined,
     optimizePackageImports: [
       'lucide-react',
       '@radix-ui/react-dialog',

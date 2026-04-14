@@ -13,6 +13,8 @@ export type WhatsNewAnnouncement = {
   ctaText?: string;
   ctaLink?: string;
   announcementType?: string;
+  /** When true with `announcementType: 'emergency' | 'premium'`, row is non-actionable (coming soon). */
+  comingSoon?: boolean;
 };
 
 const customerArticlesRow: WhatsNewAnnouncement = {
@@ -38,22 +40,24 @@ const fallbackWhatsNew: WhatsNewAnnouncement[] = [
   {
     id: 'sos',
     title: 'Emergency Ambulance',
-    subtitle: 'Instant location-based dispatch',
-    badgeText: 'SOS',
-    badgeColor: 'red',
+    subtitle: 'Coming soon — instant location-based dispatch when we launch',
+    badgeText: 'SOON',
+    badgeColor: 'amber',
     icon: '📞',
-    ctaText: 'SOS ALERT',
-    ctaLink: 'ambulance',
+    ctaText: 'COMING SOON',
     announcementType: 'emergency',
+    comingSoon: true,
   },
   {
     id: 'premium',
     title: 'WarmPawz Plus',
-    subtitle: 'Unlimited services at best prices',
-    badgeText: 'PREMIUM',
-    badgeColor: 'purple',
+    subtitle: 'Coming soon — unlimited services at best prices when we launch',
+    badgeText: 'SOON',
+    badgeColor: 'amber',
     icon: '⭐',
+    ctaText: 'COMING SOON',
     announcementType: 'premium',
+    comingSoon: true,
   },
   customerArticlesRow,
 ];
@@ -74,6 +78,12 @@ type AppRouter = { push: (href: string) => void };
 
 /** Full-page /whats-new navigation (Next routes + home for SPA-only flows). */
 export function navigateWhatsNewFromFullPage(router: AppRouter, announcement: WhatsNewAnnouncement, source: 'row' | 'sos'): void {
+  if (
+    announcement.comingSoon &&
+    (announcement.announcementType === 'emergency' || announcement.announcementType === 'premium')
+  ) {
+    return;
+  }
   if (source === 'sos' || announcement.announcementType === 'emergency') {
     router.push('/');
     return;

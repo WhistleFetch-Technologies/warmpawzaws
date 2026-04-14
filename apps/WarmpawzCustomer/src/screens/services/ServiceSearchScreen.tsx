@@ -109,11 +109,14 @@ export function ServiceSearchScreen({
         <Text style={styles.priceText}>₹{item.price.toLocaleString()}</Text>
         <TouchableOpacity
           style={styles.bookButton}
-          onPress={() => onNavigate && onNavigate('BookingCreation', {
-            serviceId: item.id,
-            vendorId: item.vendorId,
-            serviceName: item.name,
-          })}
+          onPress={() =>
+            onNavigate &&
+            onNavigate('ServiceBookingFlow', {
+              serviceId: item.id,
+              vendorId: item.vendorId,
+              serviceName: item.name,
+            })
+          }
         >
           <Text style={styles.bookButtonText}>Book</Text>
         </TouchableOpacity>

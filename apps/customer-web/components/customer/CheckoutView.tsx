@@ -230,7 +230,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-10 px-4 py-4 rounded-b-2xl shadow-md">
+        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-10 py-4 rounded-b-2xl shadow-md cw-header-safe-top cw-header-safe-x">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"

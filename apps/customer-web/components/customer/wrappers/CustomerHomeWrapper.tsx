@@ -1242,6 +1242,22 @@ export function CustomerHomeWrapper({
         phone={phone}
         serviceSlug={slug}
         onBack={() => router.push('/')}
+        onNavigate={(screen, data) => {
+          if (screen === 'boarding-booking') {
+            setPreviousScreen('pet-boarding-vendors');
+            setVetServiceData({
+              vendorId: data?.vendorId as string | undefined,
+              serviceType: 'boarding',
+              serviceId: data?.serviceId as string | undefined,
+              serviceName: data?.serviceName as string | undefined,
+              price: data?.price as number | undefined,
+              duration: data?.duration as number | undefined,
+              serviceStyle: data?.serviceStyle as string | undefined,
+              facility: data?.facility,
+            });
+            setCurrentScreen('boarding-booking');
+          }
+        }}
       />
     );
   }

@@ -22,7 +22,7 @@ interface ServiceDetailScreenProps {
   serviceId: string;
   vendorId?: string;
   phone: string;
-  onBook: (serviceId: string, vendorId: string) => void;
+  onBook: (serviceId: string, vendorId: string, serviceName?: string) => void;
   onBack?: () => void;
 }
 
@@ -163,7 +163,9 @@ export function ServiceDetailScreen({
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.bookButton}
-            onPress={() => onBook(serviceId, vendorId || service.vendorId)}
+            onPress={() =>
+              onBook(serviceId, vendorId || service.vendorId, service.name || service.serviceName)
+            }
           >
             <Text style={styles.bookButtonText}>Book Now</Text>
           </TouchableOpacity>

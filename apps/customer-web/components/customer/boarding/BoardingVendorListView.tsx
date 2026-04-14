@@ -1,11 +1,26 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Star, MapPin, Clock, Search, ChevronRight, Building2, Home } from 'lucide-react';
+import {
+  Star,
+  MapPin,
+  Clock,
+  Search,
+  ChevronRight,
+  Building2,
+  Home,
+  Shield,
+  Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import {
   BOARDING_SERVICE_LABELS,
   type BoardingServiceSlug,
@@ -18,6 +33,8 @@ export interface BoardingVendorListViewProps {
   phone: string;
   serviceSlug: string;
   onBack?: () => void;
+  /** When set (e.g. from CustomerHomeWrapper), Book Now uses the same boarding-booking flow as the vendor profile. */
+  onNavigate?: (screen: string, data?: Record<string, unknown>) => void;
 }
 
 interface BoardingVendorCard {
@@ -27,12 +44,30 @@ interface BoardingVendorCard {
   rating: number;
   review_count: number;
   distance?: string | null;
+  distanceKm: number | null;
   timing: string;
   services: string[];
   price_label: string;
   is_open?: boolean;
   photo?: string;
   raw?: Record<string, unknown>;
+}
+
+/** One bookable boarding row — stable row id for booking (matches BoardingVendorProfileView). */
+export interface BoardingPlanRow {
+  rowId: string;
+  serviceId?: string;
+  name: string;
+  price: number;
+  duration?: number;
+  serviceStyle?: string;
+  description?: string;
+}
+
+interface BoardingListVendor extends BoardingVendorCard {
+  planRows: BoardingPlanRow[];
+  needsServiceFetch: boolean;
+  isVerified?: boolean;
 }
 
 /**
@@ -73,14 +108,104 @@ function collectPublishedPlanLabels(row: any): string[] {
   return labels;
 }
 
-export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, onBack }: BoardingVendorListViewProps) {
+function pickBestDescription(p: Record<string, unknown>): string {
+  const candidates: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.trim()) candidates.push(v.trim());
+  };
+  push(p.longDescription);
+  push(p.long_description);
+  push(p.description);
+  push(p.custom_description);
+  push(p.customDescription);
+  push(p.shortDescription);
+  if (candidates.length === 0) return '';
+  return candidates.reduce((a, b) => (b.length > a.length ? b : a), '');
+}
+
+function planRowsFromDiscoveryServices(services: unknown[] | undefined): BoardingPlanRow[] {
+  if (!Array.isArray(services)) return [];
+  const out: BoardingPlanRow[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < services.length; i++) {
+    const s = services[i] as Record<string, unknown> | string | null;
+    if (s == null || typeof s === 'string') continue;
+    const rowId = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? '');
+    const name = String(s.serviceName || s.name || s.service_name || '').trim();
+    if (!rowId || !name) continue;
+    if (seen.has(rowId)) continue;
+    seen.add(rowId);
+    const price = parseFloat(String(s.price ?? s.custom_price ?? s.base_price ?? '0')) || 0;
+    const desc = pickBestDescription(s);
+    out.push({
+      rowId,
+      serviceId: (s.serviceId || s.service_id) as string | undefined,
+      name: name || 'Boarding',
+      price,
+      duration: (s.duration || s.duration_minutes) as number | undefined,
+      serviceStyle: (s.serviceStyle || s.service_style) as string | undefined,
+      description: desc || undefined,
+    });
+  }
+  return out;
+}
+
+function mergePlanRows(a: BoardingPlanRow[], b: BoardingPlanRow[]): BoardingPlanRow[] {
+  const seen = new Set<string>();
+  const out: BoardingPlanRow[] = [];
+  for (const row of [...a, ...b]) {
+    if (!row.rowId || seen.has(row.rowId)) continue;
+    seen.add(row.rowId);
+    out.push(row);
+  }
+  return out;
+}
+
+function mapServicesApiResponseToPlanRows(servicesResponse: any): BoardingPlanRow[] {
+  let services: any[] = [];
+  const servicesData = servicesResponse as any;
+  if (servicesData?.services && Array.isArray(servicesData.services)) {
+    services = servicesData.services;
+  } else if (servicesData?.services?.at_center) {
+    services = servicesData.services.at_center?.services || [];
+  } else if (Array.isArray(servicesData)) {
+    services = servicesData;
+  }
+  const seen = new Set<string>();
+  const mapped: BoardingPlanRow[] = [];
+  for (const s of services) {
+    const rowId = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? '');
+    if (!rowId || seen.has(rowId)) continue;
+    seen.add(rowId);
+    const desc = pickBestDescription(s);
+    mapped.push({
+      rowId,
+      serviceId: s.serviceId || s.service_id,
+      name: s.serviceName || s.name || s.service_name || 'Boarding',
+      price: parseFloat(String(s.price || '0')) || 0,
+      duration: s.duration || s.duration_minutes,
+      serviceStyle: s.serviceStyle || s.service_style,
+      description: desc || undefined,
+    });
+  }
+  return mapped;
+}
+
+export function BoardingVendorListView({
+  phone,
+  serviceSlug: serviceSlugProp,
+  onBack,
+  onNavigate,
+}: BoardingVendorListViewProps) {
   const router = useRouter();
   const serviceSlug = normalizeBoardingServiceSlug(serviceSlugProp);
   const [loading, setLoading] = useState(true);
-  const [vendors, setVendors] = useState<BoardingVendorCard[]>([]);
+  const [vendors, setVendors] = useState<BoardingListVendor[]>([]);
   const [relaxedFilter, setRelaxedFilter] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [fetchingPlansFor, setFetchingPlansFor] = useState<string | null>(null);
 
   useEffect(() => {
     loadVendors();
@@ -143,13 +268,14 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
         }
       }
 
-      const vendorMap = new Map<string, BoardingVendorCard & { raw: Record<string, unknown> }>();
+      const vendorMap = new Map<string, BoardingListVendor>();
 
       rows.forEach((service: any) => {
         const vendorId = String(service.vendorId || service.id || '');
         if (!vendorId) return;
 
         const planLabels = collectPublishedPlanLabels(service);
+        const fromNested = planRowsFromDiscoveryServices(service.services);
 
         const timing =
           (() => {
@@ -168,6 +294,10 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
           (service.price ? `₹${service.price}` : '') ||
           (service.priceMin ? `From ₹${service.priceMin}` : '') ||
           (service.basePrice ? `₹${service.basePrice}` : '₹800+');
+
+        const distKm = service.distance != null && service.distance !== '' ? Number(service.distance) : null;
+        const distanceStr =
+          distKm != null && Number.isFinite(distKm) ? `${distKm.toFixed(1)} km` : null;
 
         if (!vendorMap.has(vendorId)) {
           const venueName =
@@ -193,7 +323,8 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
               'Location on booking',
             rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.6'),
             review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
-            distance: service.distance != null ? `${Number(service.distance).toFixed(1)} km` : null,
+            distance: distanceStr,
+            distanceKm: distKm != null && Number.isFinite(distKm) ? distKm : null,
             timing,
             services: serviceLabelsForCard,
             price_label: basePrice,
@@ -205,12 +336,17 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
                   : true,
             photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage || service.businessPhoto,
             raw: { ...service },
+            planRows: fromNested,
+            needsServiceFetch: fromNested.length === 0,
+            isVerified: !!service.isVerified,
           });
         } else {
           const v = vendorMap.get(vendorId)!;
           for (const lbl of planLabels) {
             if (!v.services.includes(lbl)) v.services.push(lbl);
           }
+          v.planRows = mergePlanRows(v.planRows, fromNested);
+          v.needsServiceFetch = v.planRows.length === 0;
         }
       });
 
@@ -238,13 +374,92 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
     }
   };
 
-  const priceForCard = (v: BoardingVendorCard, slug: BoardingServiceSlug) => {
+  const fetchVendorPlans = useCallback(
+    async (vendorId: string) => {
+      setFetchingPlansFor(vendorId);
+      try {
+        const servicesResponse = await apiClient
+          .get(`/customer/vendor/${vendorId}/services?category=boarding`)
+          .catch(() => apiClient.get(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`));
+        const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+        setVendors((prev) =>
+          prev.map((v) =>
+            v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
+          )
+        );
+      } catch (e) {
+        console.error('[BoardingVendorListView] vendor services fetch failed', e);
+      } finally {
+        setFetchingPlansFor(null);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!selectedVendorId) return;
+    const v = vendors.find((x) => x.id === selectedVendorId);
+    if (!v || !v.needsServiceFetch || v.planRows.length > 0) return;
+    if (fetchingPlansFor === selectedVendorId) return;
+    fetchVendorPlans(selectedVendorId);
+  }, [selectedVendorId, vendors, fetchingPlansFor, fetchVendorPlans]);
+
+  const toggleVendor = (vendorId: string) => {
+    setSelectedVendorId((prev) => (prev === vendorId ? null : vendorId));
+  };
+
+  const priceForCard = (v: BoardingListVendor, slug: BoardingServiceSlug) => {
     for (const s of v.services) {
       if (boardingSlugMatchesText(slug, s)) {
         return v.price_label;
       }
     }
     return v.price_label;
+  };
+
+  const minPriceForVendor = (v: BoardingListVendor) => {
+    if (!v.planRows.length) return null;
+    return Math.min(...v.planRows.map((p) => p.price));
+  };
+
+  const buildFacilityPayload = (v: BoardingListVendor) => {
+    const raw = (v.raw || {}) as Record<string, unknown>;
+    return {
+      id: v.id,
+      name: v.name,
+      description: (typeof raw.description === 'string' && raw.description) || '',
+      address: v.address,
+      city: String(raw.city || ''),
+      pincode: String(raw.pincode || ''),
+      phone: String(raw.phone || ''),
+      rating: v.rating,
+      review_count: v.review_count,
+      timing: v.timing,
+      photos: v.photo ? [v.photo] : [],
+      amenities: Array.isArray(raw.amenities) ? (raw.amenities as string[]) : [],
+    };
+  };
+
+  const handleBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    if (!onNavigate) {
+      router.push(`/pet-boarding/vendor/${encodeURIComponent(v.id)}?service=${encodeURIComponent(serviceSlug)}`);
+      return;
+    }
+    onNavigate('boarding-booking', {
+      vendorId: v.id,
+      serviceType: 'boarding',
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration || 1440,
+      serviceStyle: plan.serviceStyle || 'at_center',
+      facility: buildFacilityPayload(v),
+    });
+  };
+
+  const openVendorProfile = (e: MouseEvent, vendorId: string) => {
+    e.stopPropagation();
+    router.push(`/pet-boarding/vendor/${encodeURIComponent(vendorId)}?service=${encodeURIComponent(serviceSlug)}`);
   };
 
   const filteredVendors = useMemo(() => {
@@ -261,12 +476,11 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
         case 'rating':
           return b.rating - a.rating;
         case 'distance':
-          return parseFloat(String(a.distance || '999')) - parseFloat(String(b.distance || '999'));
-        case 'price':
-          return (
-            parseInt(String(a.price_label).replace(/[^0-9]/g, '') || '0', 10) -
-            parseInt(String(b.price_label).replace(/[^0-9]/g, '') || '0', 10)
-          );
+          return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
+        case 'price': {
+          const minP = (v: BoardingListVendor) => minPriceForVendor(v) ?? parseInt(String(v.price_label).replace(/[^0-9]/g, '') || '0', 10);
+          return minP(a) - minP(b);
+        }
         default:
           return 0;
       }
@@ -293,10 +507,6 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
     else router.push('/');
   };
 
-  const openVendor = (id: string) => {
-    router.push(`/pet-boarding/vendor/${encodeURIComponent(id)}?service=${encodeURIComponent(serviceSlug)}`);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <ServiceDashboardHeader
@@ -313,7 +523,7 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
       <div className="max-w-customer mx-auto px-4 pt-4 pb-28">
         {relaxedFilter && (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
-            No centers matched this service name in listings yet. Showing all pet boarding centers — open a profile to see exact services and prices.
+            No centers matched this service name in listings yet. Showing all pet boarding centers — expand a center or open details for exact services and prices.
           </p>
         )}
 
@@ -359,68 +569,240 @@ export function BoardingVendorListView({ phone, serviceSlug: serviceSlugProp, on
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">{sortedVendors.length} centers found</p>
-            {sortedVendors.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => openVendor(v.id)}
-                className="w-full card card-interactive rounded-2xl p-4 text-left border border-gray-100 hover:border-orange-100 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200"
-              >
-                <div className="flex gap-3">
-                  {v.photo ? (
-                    <img
-                      src={v.photo}
-                      alt={v.name}
-                      className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50">
-                      <Building2 className="w-7 h-7 text-[#FF8C42]" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-bold text-gray-900 truncate">{v.name}</h3>
-                      <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                      <span className="font-semibold text-sm text-gray-800">{v.rating}</span>
-                      <span className="text-gray-400 text-sm">({v.review_count})</span>
-                      {v.distance && (
-                        <>
-                          <span className="text-gray-300">•</span>
-                          <span className="text-sm text-gray-500">{v.distance}</span>
-                        </>
+            {sortedVendors.map((v) => {
+              const expanded = selectedVendorId === v.id;
+              const minP = minPriceForVendor(v);
+              return (
+                <Card key={v.id} className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleVendor(v.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleVendor(v.id);
+                      }
+                    }}
+                    className="p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 text-left w-full"
+                  >
+                    <div className="flex gap-3">
+                      {v.photo ? (
+                        <img
+                          src={v.photo}
+                          alt={v.name}
+                          className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50">
+                          <Building2 className="w-7 h-7 text-[#FF8C42]" />
+                        </div>
                       )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                      <span className="truncate">{v.address}</span>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="text-sm text-gray-500">{v.timing}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h3 className="font-bold text-gray-900 truncate">{v.name}</h3>
+                            {v.isVerified && (
+                              <Shield className="w-4 h-4 text-green-500 shrink-0" aria-hidden />
+                            )}
+                          </div>
+                          <ChevronRight
+                            className={`w-5 h-5 text-gray-300 flex-shrink-0 transition-transform ${
+                              expanded ? 'rotate-90' : ''
+                            }`}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
+                          <span className="font-semibold text-sm text-gray-800">{v.rating}</span>
+                          <span className="text-gray-400 text-sm">({v.review_count})</span>
+                          {v.distance && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-sm text-gray-500">{v.distance}</span>
+                            </>
+                          )}
+                          {minP != null && v.planRows.length > 0 && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-sm font-semibold text-[#FF8C42]">
+                                from {formatPriceWithSymbol(minP)}
+                              </span>
+                            </>
+                          )}
+                          {v.planRows.length === 0 && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-sm font-bold text-[#FF8C42]">{priceForCard(v, serviceSlug)}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
+                          <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                          <span className="truncate">{v.address}</span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5 text-sm text-gray-500">
+                          <Clock className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{v.timing}</span>
+                        </div>
+                        {!expanded && v.planRows.length === 0 && v.services.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {v.services.slice(0, 4).map((s, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600"
+                              >
+                                {s}
+                              </span>
+                            ))}
+                            {v.services.length > 4 && (
+                              <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-500">
+                                +{v.services.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <span className="text-sm font-bold text-[#FF8C42]">{priceForCard(v, serviceSlug)}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {v.services.slice(0, 4).map((s, idx) => (
-                        <span key={idx} className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600">
-                          {s}
-                        </span>
-                      ))}
-                      {v.services.length > 4 && (
-                        <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-500">
-                          +{v.services.length - 4}
-                        </span>
-                      )}
                     </div>
                   </div>
-                </div>
-              </button>
-            ))}
+
+                  {expanded && (
+                    <div className="bg-gray-50 p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          Available Services ({v.planRows.length})
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={(e) => openVendorProfile(e, v.id)}
+                          className="text-xs font-medium text-[#FF8C42] hover:underline"
+                        >
+                          Center details
+                        </button>
+                      </div>
+
+                      {fetchingPlansFor === v.id && v.planRows.length === 0 ? (
+                        <div className="flex items-center justify-center py-8 text-gray-500 gap-2">
+                          <Loader2 className="w-5 h-5 animate-spin text-[#FF8C42]" />
+                          <span className="text-sm">Loading services…</span>
+                        </div>
+                      ) : v.planRows.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">
+                          No services listed for this center.
+                        </p>
+                      ) : (
+                        <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
+                          {v.planRows.map((plan) => {
+                            const descTrim = plan.description?.trim() ?? '';
+                            return (
+                              <div
+                                key={plan.rowId}
+                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <h5 className="font-medium text-gray-900">{plan.name}</h5>
+                                    {descTrim ? (
+                                      <div onClick={(e) => e.stopPropagation()}>
+                                        <ServiceDescriptionInline
+                                          description={descTrim}
+                                          title={plan.name}
+                                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                                          dialogHint="Full description from the center (vendor-provided)"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <p className="text-gray-400 text-sm mt-1 line-clamp-2 italic">
+                                        Boarding plan — tap Book Now to continue.
+                                      </p>
+                                    )}
+                                    <div className="flex items-center gap-3 mt-3 flex-wrap">
+                                      <span className="text-lg font-bold text-[#FF8C42]">
+                                        {formatPriceWithSymbol(plan.price)}
+                                      </span>
+                                      {plan.duration != null && plan.duration > 0 && (
+                                        <Badge variant="outline" className="text-xs shrink-0">
+                                          <Clock className="w-3 h-3 mr-1" />
+                                          {plan.duration >= 60 ? `${Math.round(plan.duration / 60)} hrs` : `${plan.duration} mins`}
+                                        </Badge>
+                                      )}
+                                      <Badge variant="secondary" className="text-xs shrink-0">
+                                        Boarding
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0 ml-2 min-w-[6.5rem]">
+                                    <div className="text-lg font-bold text-gray-900 mb-2 tabular-nums">
+                                      {formatPriceWithSymbol(plan.price)}
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="bg-[#FF8C42] hover:bg-[#E67A35] text-white w-full sm:w-auto"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleBookPlan(v, plan);
+                                      }}
+                                    >
+                                      Book Now
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!expanded && (
+                    <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="text-sm text-gray-600">
+                        {v.planRows.length > 0 ? (
+                          <>
+                            {v.planRows.length} service{v.planRows.length !== 1 ? 's' : ''} available
+                            {minP != null && (
+                              <span className="text-gray-900 font-medium">
+                                {' '}
+                                from {formatPriceWithSymbol(minP)}
+                              </span>
+                            )}
+                          </>
+                        ) : v.needsServiceFetch ? (
+                          <span className="text-gray-500">Tap to load services & prices</span>
+                        ) : (
+                          <span className="text-gray-500">No priced services in listing — open details</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedVendorId(v.id);
+                          }}
+                        >
+                          View Services
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-gray-600"
+                          onClick={(e) => openVendorProfile(e, v.id)}
+                        >
+                          Details
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

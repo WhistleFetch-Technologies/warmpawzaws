@@ -19,6 +19,11 @@ interface AddressBookPageProps {
   onCloseToHome?: () => void;
   onSelect?: (address: Address) => void;
   onNavigate?: (path: string) => void;
+  /**
+   * appShell: fixed submit bar sits above CustomerScreenWrapper BottomNavigation (default).
+   * fullscreen: flush to viewport bottom when no bottom tab bar is present.
+   */
+  layoutVariant?: 'appShell' | 'fullscreen';
 }
 
 interface Address {
@@ -42,8 +47,22 @@ interface Address {
   apartmentName?: string;
 }
 
-export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavigate }: AddressBookPageProps) {
+export function AddressBookPage({
+  phone,
+  onBack,
+  onCloseToHome,
+  onSelect,
+  onNavigate,
+  layoutVariant = 'appShell',
+}: AddressBookPageProps) {
   const exitToHome = onCloseToHome ?? onBack;
+  const appShell = layoutVariant === 'appShell';
+  const ctaBottomClass = appShell
+    ? 'bottom-[calc(4.75rem+max(0px,env(safe-area-inset-bottom,0px)))]'
+    : 'bottom-0';
+  const formScrollPaddingBottom = appShell
+    ? 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]'
+    : 'pb-[calc(6rem+env(safe-area-inset-bottom,0px))]';
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -67,8 +86,6 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
     isDefault: false,
     houseNo: '',
     floor: '',
-    streetName: '',
-    apartmentName: ''
   });
 
   const handleFormBack = () => {
@@ -107,8 +124,6 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
       isDefault: address.isDefault,
       houseNo: address.houseNo || (address as any).flatNo || '',
       floor: address.floor || '',
-      streetName: address.streetName || '',
-      apartmentName: address.apartmentName || ''
     });
     setShowForm(true);
   };
@@ -162,6 +177,8 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
         phone: formData.phone || phone.replace(/[^0-9]/g, ''),
         flatNo: null,
         addressLine2: null,
+        streetName: editingAddress?.streetName ?? '',
+        apartmentName: editingAddress?.apartmentName ?? '',
       };
 
       if (editingAddress) {
@@ -203,8 +220,6 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
         isDefault: false,
         houseNo: '',
         floor: '',
-        streetName: '',
-        apartmentName: ''
       });
       await loadAddresses();
     } catch (error: any) {
@@ -228,8 +243,6 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
       isDefault: addresses.length === 0, // Set as default if first address
       houseNo: '',
       floor: '',
-      streetName: '',
-      apartmentName: ''
     });
     setShowForm(true);
   };
@@ -262,7 +275,9 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
 
   if (showForm) {
     return (
-      <div className="min-h-screen min-h-[100dvh] bg-gray-50 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] max-w-customer mx-auto">
+      <div
+        className={`min-h-screen min-h-[100dvh] bg-gray-50 max-w-customer mx-auto ${formScrollPaddingBottom}`}
+      >
         <ServiceDashboardHeader
           serviceName={editingAddress ? 'Edit Address' : 'Add New Address'}
           serviceSubtitle="Save delivery locations"
@@ -395,30 +410,6 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
               className="rounded-xl"
             />
           </div>
-          <div>
-            <Label htmlFor="streetName" className="text-sm font-medium text-gray-700 mb-2 block">
-              Street name (optional)
-            </Label>
-            <Input
-              id="streetName"
-              type="text"
-              value={formData.streetName}
-              onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
-              placeholder="Street name"
-              className="rounded-xl"
-            />
-          </div>
-          <div>
-            <Label htmlFor="apartmentName" className="block text-xs font-medium text-gray-500 mb-1.5">Apartment / Building / Society name</Label>
-            <Input
-              id="apartmentName"
-              type="text"
-              value={formData.apartmentName}
-              onChange={(e) => setFormData({ ...formData, apartmentName: e.target.value })}
-              placeholder="e.g. Green Valley Apartments"
-              className="text-sm"
-            />
-          </div>
 
           {/* City */}
           <div>
@@ -480,21 +471,25 @@ export function AddressBookPage({ phone, onBack, onCloseToHome, onSelect, onNavi
             </Label>
           </div>
 
-          {/* Submit Button */}
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pt-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-w-md mx-auto shadow-lg">
-            <Button
-              type="submit"
-              disabled={saving}
-              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-12 text-lg font-semibold shadow-lg disabled:opacity-50"
-            >
-              {saving
-                ? 'Saving...'
-                : editingAddress
-                  ? isProfileSyntheticAddress(editingAddress.id)
-                    ? 'Save Address'
-                    : 'Update Address'
-                  : 'Save Address'}
-            </Button>
+          {/* Fixed submit — same width as BottomNavigation; above tab bar when layoutVariant is appShell */}
+          <div
+            className={`pointer-events-none fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white px-4 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-lg ${ctaBottomClass}`}
+          >
+            <div className="pointer-events-auto">
+              <Button
+                type="submit"
+                disabled={saving}
+                className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-12 text-lg font-semibold shadow-lg disabled:opacity-50"
+              >
+                {saving
+                  ? 'Saving...'
+                  : editingAddress
+                    ? isProfileSyntheticAddress(editingAddress.id)
+                      ? 'Save Address'
+                      : 'Update Address'
+                    : 'Save Address'}
+              </Button>
+            </div>
           </div>
         </form>
       </div>

@@ -225,9 +225,12 @@ export default function App() {
     setSession({ ...session, navigationTarget: { screen: 'ServiceDetail', serviceId, vendorId } });
   };
 
-  const handleBookService = (serviceId: string, vendorId: string) => {
-    // Navigate to booking creation
-    setSession({ ...session, navigationTarget: { screen: 'BookingCreation', serviceId, vendorId } });
+  const handleBookService = (serviceId: string, vendorId: string, serviceName?: string) => {
+    handleNavigate('ServiceBookingFlow', {
+      serviceId,
+      vendorId,
+      serviceName: serviceName || 'Service',
+    });
   };
 
   if (isLoading) {
@@ -482,13 +485,30 @@ export default function App() {
                       <BookingCreationScreen
                         {...props}
                         phone={session.phone}
-                        vendorId={session.navigationTarget?.vendorId || ''}
-                        serviceId={session.navigationTarget?.serviceId || ''}
+                        vendorId={
+                          session.navigationTarget?.vendorId ||
+                          props.route?.params?.vendorId ||
+                          ''
+                        }
+                        serviceId={
+                          session.navigationTarget?.serviceId ||
+                          props.route?.params?.serviceId ||
+                          ''
+                        }
+                        serviceName={
+                          session.navigationTarget?.serviceName ||
+                          props.route?.params?.serviceName
+                        }
                         onComplete={(bookingId) => {
                           setSession({ ...session, navigationTarget: null });
                           handleNavigate('BookingList');
                         }}
-                        onBack={() => setSession({ ...session, navigationTarget: null })}
+                        onBack={() => {
+                          setSession({ ...session, navigationTarget: null });
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          }
+                        }}
                       />
                     )}
                   </Stack.Screen>
@@ -1140,13 +1160,16 @@ export default function App() {
                         {...props}
                         serviceId={props.route?.params?.serviceId || ''}
                         vendorId={props.route?.params?.vendorId || ''}
-                        serviceName={props.route?.params?.serviceName || ''}
+                        serviceName={props.route?.params?.serviceName || 'Service'}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ServiceDetail', { 
-                          serviceId: props.route?.params?.serviceId,
-                          vendorId: props.route?.params?.vendorId 
-                        })}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
                         onNavigate={handleNavigate}
                         onSuccess={(bookingId) => handleNavigate('BookingConfirmation', { bookingId })}
                       />

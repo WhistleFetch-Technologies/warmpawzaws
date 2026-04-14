@@ -198,7 +198,7 @@ export function BoardingVendorProfileView({
     { value: `${vendor.review_count || 0}`, label: 'Reviews' },
     {
       value: `${publishedPlans.length || '—'}`,
-      label: 'Plans',
+      label: 'Services',
       icon: <Building2 className="w-4 h-4" />,
     },
   ];
@@ -217,6 +217,48 @@ export function BoardingVendorProfileView({
       />
 
       <div className="max-w-customer mx-auto px-4 pt-4 pb-32">
+        <div className="bg-white rounded-xl p-4 mb-4">
+          <h2 className="font-bold text-gray-900 mb-1">Services & prices</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Tap a plan to select it for booking. Prices and options are set by this center.
+          </p>
+          {publishedPlans.length === 0 ? (
+            <p className="text-sm text-gray-600 py-6 text-center">No published boarding plans yet. Check back later or contact the center.</p>
+          ) : (
+            <div className="max-h-[min(55vh,24rem)] overflow-y-auto space-y-2 pr-1 -mr-1">
+              {publishedPlans.map((plan) => {
+                const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
+                const isSel = selectedOffer?.rowId === plan.rowId;
+                return (
+                  <button
+                    key={plan.rowId}
+                    type="button"
+                    onClick={() => setSelectedOffer(plan)}
+                    className={`w-full flex items-center justify-between gap-3 py-3 px-3 rounded-lg border-2 transition-all text-left ${
+                      isSel
+                        ? 'border-orange-600 bg-orange-50 shadow-[0_0_0_1px_rgba(234,88,12,0.15)]'
+                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0 flex-1">
+                      <Icon className="w-4 h-4 text-orange-500 shrink-0" aria-hidden />
+                      <span
+                        className={`font-medium truncate ${isSel ? 'text-orange-900' : 'text-gray-800'}`}
+                      >
+                        {plan.name}
+                      </span>
+                      <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" aria-label="Available" />
+                    </span>
+                    <span className={`font-semibold tabular-nums shrink-0 ${isSel ? 'text-orange-900' : 'text-[#FF8C42]'}`}>
+                      ₹{plan.price}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-xl bg-orange-100 flex items-center justify-center text-2xl">🏠</div>
@@ -254,48 +296,6 @@ export function BoardingVendorProfileView({
                   {a}
                 </span>
               ))}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-xl p-4 mb-4">
-          <h2 className="font-bold text-gray-900 mb-1">Published plans</h2>
-          <p className="text-xs text-gray-500 mb-3">
-            Tap a plan to select it for booking. Prices and options are set by this center.
-          </p>
-          {publishedPlans.length === 0 ? (
-            <p className="text-sm text-gray-600 py-6 text-center">No published boarding plans yet. Check back later or contact the center.</p>
-          ) : (
-            <div className="space-y-2">
-              {publishedPlans.map((plan) => {
-                const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
-                const isSel = selectedOffer?.rowId === plan.rowId;
-                return (
-                  <button
-                    key={plan.rowId}
-                    type="button"
-                    onClick={() => setSelectedOffer(plan)}
-                    className={`w-full flex items-center justify-between gap-3 py-3 px-3 rounded-lg border-2 transition-all text-left ${
-                      isSel
-                        ? 'border-orange-600 bg-orange-50 shadow-[0_0_0_1px_rgba(234,88,12,0.15)]'
-                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 min-w-0 flex-1">
-                      <Icon className="w-4 h-4 text-orange-500 shrink-0" aria-hidden />
-                      <span
-                        className={`font-medium truncate ${isSel ? 'text-orange-900' : 'text-gray-800'}`}
-                      >
-                        {plan.name}
-                      </span>
-                      <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" aria-label="Available" />
-                    </span>
-                    <span className={`font-semibold tabular-nums shrink-0 ${isSel ? 'text-orange-900' : 'text-[#FF8C42]'}`}>
-                      ₹{plan.price}
-                    </span>
-                  </button>
-                );
-              })}
             </div>
           )}
         </div>

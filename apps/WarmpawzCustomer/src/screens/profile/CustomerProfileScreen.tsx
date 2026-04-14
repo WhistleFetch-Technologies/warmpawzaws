@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
 
 interface CustomerProfileScreenProps {
   phone: string;
@@ -33,6 +34,10 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  city: string;
+  state: string;
+  houseNo: string;
+  floor: string;
   photo?: string;
 }
 
@@ -52,19 +57,34 @@ export function CustomerProfileScreen({
     loadProfile();
   }, [phone]);
 
-  const loadProfile = async () => {
+  const loadProfile = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await CustomerApi.getCustomerByPhone(phone);
       const customerData = response.customer || response;
       
+      let addressLine = '';
+      if (typeof customerData.address === 'string') {
+        addressLine = customerData.address;
+      } else if (customerData.address && typeof customerData.address === 'object') {
+        addressLine =
+          (customerData.address as any).street ||
+          (customerData.address as any).addressLine1 ||
+          (customerData.address as any).line1 ||
+          '';
+      }
+
       const profileData: UserProfile = {
         firstName: customerData.firstName || customerData.name?.split(' ')[0] || '',
         lastName: customerData.lastName || customerData.name?.split(' ').slice(1).join(' ') || '',
         email: customerData.email || '',
         phone: customerData.phone || phone,
-        address: customerData.address || '',
+        address: addressLine,
         pincode: customerData.pincode || '',
+        city: String(customerData.city || '').trim(),
+        state: String(customerData.state || '').trim(),
+        houseNo: String(customerData.houseNo ?? customerData.house_no ?? '').trim(),
+        floor: String(customerData.floor ?? '').trim(),
         photo: customerData.photo || '',
       };
       
@@ -75,7 +95,7 @@ export function CustomerProfileScreen({
       console.error('Error loading profile:', error);
       Alert.alert('Error', 'Failed to load profile');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -99,17 +119,32 @@ export function CustomerProfileScreen({
       return;
     }
 
+    const addr = profile.address.trim();
+    if (addr && !profile.houseNo.trim()) {
+      Alert.alert('Error', 'Please enter House / Flat number when address is set');
+      return;
+    }
+
     setSaving(true);
     try {
-      await CustomerApi.updateProfile(phone, {
+      const body: Record<string, string | undefined> = {
         firstName: profile.firstName,
         lastName: profile.lastName,
         email: profile.email,
-        address: profile.address,
+        address: addr || undefined,
         pincode: profile.pincode,
-        photo: profile.photo,
-      });
-      setOriginalProfile(profile);
+        city: profile.city.trim() || undefined,
+        state: profile.state.trim() || undefined,
+        floor: profile.floor.trim() || undefined,
+      };
+      if (addr) {
+        body.houseNo = profile.houseNo.trim();
+      }
+      if (profile.photo?.startsWith('http')) {
+        body.photo = profile.photo;
+      }
+      await CustomerApi.updateProfile(phone, body);
+      await loadProfile(true);
       setEditMode(false);
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (error) {
@@ -176,7 +211,7 @@ export function CustomerProfileScreen({
         )}
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         {/* Photo Section */}
         <View style={styles.photoSection}>
           <View style={styles.photoContainer}>
@@ -253,14 +288,80 @@ export function CustomerProfileScreen({
 
           <View style={styles.formGroup}>
             <Text style={styles.label}>Address *</Text>
+            {editMode ? (
+              <AddressAutocomplete
+                value={profile.address}
+                onChange={(addr: string, components?: AddressComponents) => {
+                  setProfile((prev) => {
+                    const next = { ...prev, address: addr };
+                    if (components?.pincode) {
+                      next.pincode = components.pincode.replace(/\D/g, '').slice(0, 6);
+                    }
+                    if (components?.city) {
+                      next.city = components.city;
+                    }
+                    if (components?.state) {
+                      next.state = components.state;
+                    }
+                    return next;
+                  });
+                }}
+                placeholder="Search address, landmark, city..."
+              />
+            ) : (
+              <TextInput
+                style={[styles.input, styles.textArea, styles.inputDisabled]}
+                value={profile.address}
+                editable={false}
+                placeholder="Address"
+                multiline
+                numberOfLines={3}
+              />
+            )}
+          </View>
+
+          <View style={styles.formRow}>
+            <View style={[styles.formGroup, styles.formRowItem]}>
+              <Text style={styles.label}>City</Text>
+              <TextInput
+                style={[styles.input, !editMode && styles.inputDisabled]}
+                value={profile.city}
+                onChangeText={(text) => setProfile({ ...profile, city: text })}
+                editable={editMode}
+                placeholder="City"
+              />
+            </View>
+            <View style={[styles.formGroup, styles.formRowItem]}>
+              <Text style={styles.label}>State</Text>
+              <TextInput
+                style={[styles.input, !editMode && styles.inputDisabled]}
+                value={profile.state}
+                onChangeText={(text) => setProfile({ ...profile, state: text })}
+                editable={editMode}
+                placeholder="State"
+              />
+            </View>
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>House No / Flat No *</Text>
             <TextInput
-              style={[styles.input, styles.textArea, !editMode && styles.inputDisabled]}
-              value={profile.address}
-              onChangeText={(text) => setProfile({ ...profile, address: text })}
+              style={[styles.input, !editMode && styles.inputDisabled]}
+              value={profile.houseNo}
+              onChangeText={(text) => setProfile({ ...profile, houseNo: text })}
               editable={editMode}
-              placeholder="Enter address"
-              multiline
-              numberOfLines={3}
+              placeholder="e.g., A-101"
+            />
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Floor</Text>
+            <TextInput
+              style={[styles.input, !editMode && styles.inputDisabled]}
+              value={profile.floor}
+              onChangeText={(text) => setProfile({ ...profile, floor: text })}
+              editable={editMode}
+              placeholder="e.g., 1st Floor"
             />
           </View>
 
@@ -432,6 +533,14 @@ const styles = StyleSheet.create({
   },
   formGroup: {
     marginBottom: spacing.md,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  formRowItem: {
+    flex: 1,
   },
   label: {
     fontSize: typography.body,

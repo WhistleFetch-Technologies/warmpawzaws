@@ -86,7 +86,7 @@ export function VendorProfileScreen({
 
   const handleBookService = (service: Service) => {
     if (onNavigate) {
-      onNavigate('BookingCreation', {
+      onNavigate('ServiceBookingFlow', {
         serviceId: service.id,
         vendorId: vendorId,
         serviceName: service.name,

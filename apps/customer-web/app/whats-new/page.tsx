@@ -90,7 +90,10 @@ export default function WhatsNewHubPage() {
             announcements={items}
             interactionMode="hub"
             onRowPress={(a) => navigateWhatsNewFromFullPage(router, a, 'row')}
-            onSosPress={(a) => navigateWhatsNewFromFullPage(router, a, 'sos')}
+            onSosPress={(a) => {
+              if (a.comingSoon && a.announcementType === 'emergency') return;
+              navigateWhatsNewFromFullPage(router, a, 'sos');
+            }}
           />
         )}
       </main>
