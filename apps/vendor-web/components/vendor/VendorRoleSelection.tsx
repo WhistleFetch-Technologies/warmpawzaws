@@ -492,7 +492,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
   const totalResults = Object.values(filteredGroups).reduce((sum, roles) => sum + roles.length, 0);
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column">
+    <div className="vendor-auth-column flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#FF8C42]">
       <VendorHeader
         tone="brand"
         title="Choose Your Role"
@@ -526,8 +526,8 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         </div>
       </div>
 
-      {/* White Bottom Section */}
-      <div className="flex-1 bg-white rounded-t-[32px] px-4 py-5 overflow-hidden flex flex-col">
+      {/* White Bottom Section — min-h-0 so flex child can shrink and inner list scrolls on desktop */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[32px] bg-white px-4 py-5">
         {/* Search Bar */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -556,16 +556,16 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
+          <div className="flex min-h-0 flex-1 items-center justify-center py-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#FF8C42]"></div>
           </div>
         ) : error && roles.length === 0 ? (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
-            <p className="text-red-700 text-center text-xs">{error}</p>
+          <div className="mb-4 min-h-0 flex-1 rounded-xl border border-red-200 bg-red-50 p-3">
+            <p className="text-center text-xs text-red-700">{error}</p>
           </div>
         ) : (
           /* Scrollable Categories */
-          <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain pb-4 [-webkit-overflow-scrolling:touch]">
             {Object.entries(filteredGroups).map(([categoryKey, categoryRoles]) => {
               if (categoryRoles.length === 0) return null;
               
