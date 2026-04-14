@@ -1,5 +1,10 @@
 /**
- * Customer-facing visibility for service_categories (home dashboard tiles).
+ * Customer-facing list for `/service-catalog/categories` (tile **candidates**).
+ *
+ * Which tiles actually appear on the customer home is determined by
+ * **Marketing → Dashboard UI → Service Launch Status** (geography + status), applied on the
+ * client via `GET /config/service-launch/customer`. Per-category `customer_visibility_*` and
+ * `customer_dashboard_card_active` are no longer used to filter this list.
  */
 
 export type CustomerLocationContext = {
@@ -7,6 +12,7 @@ export type CustomerLocationContext = {
   city: string;
 };
 
+/** @deprecated Kept for callers; location is ignored — launch config drives visibility. */
 export function normalizeLocationToken(s: string | null | undefined): string {
   return String(s || '')
     .trim()
@@ -14,54 +20,13 @@ export function normalizeLocationToken(s: string | null | undefined): string {
     .replace(/\s+/g, ' ');
 }
 
-/** Loose match for Indian state names vs codes (e.g. Karnataka vs KA). */
-function stateMatches(userState: string, configured: string): boolean {
-  const u = normalizeLocationToken(userState);
-  const c = normalizeLocationToken(configured);
-  if (!u || !c) return false;
-  if (u === c) return true;
-  return u.includes(c) || c.includes(u);
-}
-
-function cityMatches(userCity: string, configured: string): boolean {
-  const u = normalizeLocationToken(userCity);
-  const c = normalizeLocationToken(configured);
-  if (!u || !c) return false;
-  if (u === c) return true;
-  return u.includes(c) || c.includes(u);
-}
-
 /**
- * @param row — service_categories row (snake_case from DB)
+ * @param _row — service_categories row (unused for gating; `is_active` is enforced in SQL)
+ * @param _loc — customer location (unused; launch API uses the same location)
  */
 export function serviceCategoryVisibleOnCustomerDashboard(
-  row: Record<string, unknown>,
-  loc: CustomerLocationContext
+  _row: Record<string, unknown>,
+  _loc: CustomerLocationContext
 ): boolean {
-  if (row.customer_dashboard_card_active === false) return false;
-
-  const vt = String(row.customer_visibility_type || 'GLOBAL')
-    .trim()
-    .toUpperCase();
-  if (!vt || vt === 'GLOBAL') return true;
-
-  const userState = loc.state || '';
-  const userCity = loc.city || '';
-
-  if (vt === 'STATE') {
-    const configured = String(row.customer_visibility_state || '').trim();
-    if (!configured) return true;
-    if (!userState) return false;
-    return stateMatches(userState, configured);
-  }
-
-  if (vt === 'CITY') {
-    const configuredState = String(row.customer_visibility_state || '').trim();
-    const configuredCity = String(row.customer_visibility_city || '').trim();
-    if (!configuredState || !configuredCity) return true;
-    if (!userState || !userCity) return false;
-    return stateMatches(userState, configuredState) && cityMatches(userCity, configuredCity);
-  }
-
   return true;
 }

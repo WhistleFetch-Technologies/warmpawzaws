@@ -27,7 +27,7 @@ const SERVICE_TYPES: { key: string; label: string; screen: string }[] = [
   { key: 'vet', label: 'Vet', screen: 'vet' },
   { key: 'grooming', label: 'Groomer', screen: 'grooming' },
   { key: 'walking', label: 'Walker', screen: 'walker' },
-  { key: 'training', label: 'Trainer and Behaviourist', screen: 'training' },
+  { key: 'training', label: 'Training', screen: 'training' },
   { key: 'boarding', label: 'Boarding', screen: 'boarding' },
 ];
 

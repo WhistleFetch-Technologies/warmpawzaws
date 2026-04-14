@@ -202,46 +202,11 @@ export function EditCategoryModal({
             </div>
           </div>
 
-          <div className="space-y-3 border-t pt-4">
-            <p className="text-sm font-medium text-gray-800">Customer home tile</p>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.customerDashboardCardActive}
-                onChange={(e) => handleChange('customerDashboardCardActive', e.target.checked)}
-              />
-              Show on customer home
-            </label>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Visibility</label>
-              <select
-                value={formData.customerVisibilityType}
-                onChange={(e) => handleChange('customerVisibilityType', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="GLOBAL">Global</option>
-                <option value="STATE">State</option>
-                <option value="CITY">City</option>
-              </select>
-            </div>
-            {(formData.customerVisibilityType === 'STATE' || formData.customerVisibilityType === 'CITY') && (
-              <input
-                type="text"
-                value={formData.customerVisibilityState}
-                onChange={(e) => handleChange('customerVisibilityState', e.target.value)}
-                placeholder="State (e.g. Karnataka)"
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-              />
-            )}
-            {formData.customerVisibilityType === 'CITY' && (
-              <input
-                type="text"
-                value={formData.customerVisibilityCity}
-                onChange={(e) => handleChange('customerVisibilityCity', e.target.value)}
-                placeholder="City (e.g. Bengaluru)"
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-              />
-            )}
+          <div className="space-y-2 border-t pt-4">
+            <p className="text-sm font-medium text-gray-800">Customer home tiles</p>
+            <p className="text-xs text-gray-700 rounded-lg border border-blue-100 bg-blue-50 p-3">
+              Visibility by location is set in <strong>Marketing &amp; Promotions → Dashboard UI</strong> (Geographic Scope and Service Launch Status), not here. The customer still sees this category name on the tile when the service is launched for their area.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

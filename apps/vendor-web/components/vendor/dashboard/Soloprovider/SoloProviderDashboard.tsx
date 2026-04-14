@@ -168,6 +168,10 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         ? [...selectedStyles]
         : ['at_home', 'tele'];
 
+  // Copy-only role hints (allowedServiceStyles comes from admin launch config — do not override here)
+  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
+  const isWalker = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+
   // Check if custom_services capability is enabled
   const hasCustomServices = capabilities.custom_services || capabilities.customServices || false;
   const hasPackagesCapability = capabilities.package_management || capabilities.packages || false;
