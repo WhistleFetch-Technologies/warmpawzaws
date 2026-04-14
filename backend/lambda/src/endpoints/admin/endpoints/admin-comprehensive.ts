@@ -18,10 +18,17 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 // Password verification
 import * as crypto from 'crypto';
+import { resolveAdminPermissions } from '../../../utils/admin-rbac-permissions';
 
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+const hashPassword = (password: string): string => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+};
 
 function createApiGatewayEvent(req: any): any {
   // ✅ FIX: In Hono, headers are accessed via req.raw.headers
@@ -313,6 +320,7 @@ class AdminLoginHandler extends BaseHandler {
             name: 'Admin User',
             role: 'admin',
           },
+          permissions: ['admin.full_access'],
         });
       }
 
@@ -410,6 +418,8 @@ class AdminLoginHandler extends BaseHandler {
         }
       }
 
+      const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+
       return this.success({
         success: true,
         token: {
@@ -425,6 +435,7 @@ class AdminLoginHandler extends BaseHandler {
           name: admin.name || admin.email,
           role: admin.role || 'admin',
         },
+        permissions,
       });
     } catch (error: any) {
       return this.error(error.message || 'Login failed', 500);
@@ -474,9 +485,7 @@ class GetCurrentAdminHandler extends BaseHandler {
 
         const admin = adminResult.rows[0];
 
-        // For now, return all permissions (we can add RBAC later)
-        // In production, you would fetch permissions from user_roles and role_permissions tables
-        const permissions = ['*']; // All permissions for now
+        const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
 
         return this.success({
           success: true,
@@ -489,7 +498,7 @@ class GetCurrentAdminHandler extends BaseHandler {
             createdAt: admin.created_at,
             lastLoginAt: admin.last_login_at,
           },
-          permissions: permissions,
+          permissions,
         });
       } catch (tokenError: any) {
         console.error('[ADMIN AUTH] Token verification failed:', tokenError);
@@ -517,10 +526,9 @@ class AdminSignupHandler extends BaseHandler {
         return this.error('Admin already exists', 409);
       }
 
-      // Create admin (password should be hashed in production)
       const newAdmin = await insert('admins', {
         email,
-        password_hash: password, // TODO: Hash password properly
+        password_hash: hashPassword(password),
         name: name || email,
         role: 'admin',
         is_active: true,

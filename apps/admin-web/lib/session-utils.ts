@@ -110,6 +110,7 @@ export function clearAdminSession(): void {
   localStorage.removeItem('adminId');
   localStorage.removeItem('adminEmail');
   localStorage.removeItem('adminUser');
+  localStorage.removeItem('adminPermissions');
 }
 
 /**

@@ -199,7 +199,23 @@ export function registerSupportCrmEndpoints(app: Hono) {
         return c.json({ error: 'Support ticket not found' }, 404);
       }
 
-      const ticket = tickets[0];
+      const ticket: any = { ...tickets[0] };
+      const assigneeId = ticket.assigned_to;
+      if (assigneeId) {
+        try {
+          const ar = await query(
+            `SELECT COALESCE(
+               (SELECT name FROM staff WHERE id = $1::uuid LIMIT 1),
+               (SELECT COALESCE(NULLIF(TRIM(name), ''), email) FROM admins WHERE id = $1::uuid LIMIT 1)
+             ) AS assigned_agent_name`,
+            [assigneeId]
+          );
+          const nm = ar.rows?.[0]?.assigned_agent_name;
+          if (nm) ticket.assigned_agent_name = nm;
+        } catch {
+          /* ignore */
+        }
+      }
 
       // Get ticket responses/conversation
       const responses = await query(
@@ -434,11 +450,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
           c.full_name as customer_name,
           c.phone as customer_phone,
           c.email as customer_email,
-          s.name as assigned_agent_name,
+          COALESCE(s.name, adm.name, adm.email) as assigned_agent_name,
           t.assigned_to as assigned_agent_id
         FROM support_tickets t
         LEFT JOIN customers c ON t.customer_id = c.id
         LEFT JOIN staff s ON t.assigned_to = s.id
+        LEFT JOIN admins adm ON t.assigned_to = adm.id
         WHERE 1=1
       `;
       const params: any[] = [];
@@ -491,26 +508,40 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
   /**
    * GET /crm/agents
-   * Get CRM agents (alias for /support/agents)
+   * Active support agents for ticket assignment — same source as GET /support/settings/agents.
+   * `id` is the assignee UUID (user_id or staff_id) so POST /crm/action assign writes support_tickets.assigned_to correctly.
    */
   app.get("/crm/agents", async (c) => {
     try {
-      const agents = await query(
-        `SELECT s.*, v.business_name as vendor_name
-         FROM staff s
-         LEFT JOIN vendors v ON s.vendor_id = v.id
-         WHERE s.role = 'support' OR s.can_handle_support = true
-         AND s.is_active = true
-         ORDER BY s.name ASC`
-      ).catch(() => ({ rows: [] }));
+      const result = await query(`
+        SELECT 
+          COALESCE(sa.user_id, sa.staff_id) as assignee_id,
+          COALESCE(a.name, s.name) as name,
+          COALESCE(a.email, s.email) as email,
+          sa.specialties,
+          (SELECT COUNT(*)::int FROM support_tickets t
+           WHERE t.assigned_to = COALESCE(sa.user_id, sa.staff_id)
+           AND t.status NOT IN ('closed', 'resolved')) as workload
+        FROM support_agents sa
+        LEFT JOIN admins a ON sa.user_id = a.id OR (sa.user_id IS NULL AND sa.staff_id = a.id)
+        LEFT JOIN staff s ON sa.staff_id = s.id AND sa.user_id IS NULL
+        WHERE sa.is_active = true
+        ORDER BY COALESCE(a.name, s.name)
+      `).catch(() => ({ rows: [] }));
 
-      const safeAgents = (agents.rows || []).map((a: any) => ({
-        id: String(a.id || ''),
-        name: String(a.name || ''),
-        email: a.email || undefined,
-        specialties: a.specialties || ['general'],
-        workload: 0, // Could calculate from assigned tickets
-      }));
+      const safeAgents = (result.rows || [])
+        .filter((row: any) => row.assignee_id)
+        .map((a: any) => ({
+          id: String(a.assignee_id),
+          name: String(a.name || 'Agent'),
+          email: a.email || undefined,
+          specialties: Array.isArray(a.specialties)
+            ? a.specialties
+            : a.specialties
+              ? [a.specialties]
+              : ['general'],
+          workload: Number(a.workload) || 0,
+        }));
 
       return c.json({
         success: true,
@@ -1201,7 +1232,15 @@ export function registerSupportCrmEndpoints(app: Hono) {
         LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true
         WHERE a.id = $1 AND a.is_active = true
           AND (
-            r.name IN ('admin', 'support_agent', 'support', 'super-admin', 'super_admin')
+            r.name IN (
+              'admin',
+              'support_agent',
+              'support',
+              'support_admin',
+              'support_mngr',
+              'super-admin',
+              'super_admin'
+            )
             OR a.role IN ('admin', 'support', 'super-admin', 'super_admin')
             OR ur.id IS NULL
           )
@@ -1570,7 +1609,15 @@ export function registerSupportCrmEndpoints(app: Hono) {
         WHERE a.is_active = true
           AND (
             -- Include admins with support-related RBAC roles
-            (r.name IN ('admin', 'support_agent', 'support', 'super-admin', 'super_admin'))
+            (r.name IN (
+              'admin',
+              'support_agent',
+              'support',
+              'support_admin',
+              'support_mngr',
+              'super-admin',
+              'super_admin'
+            ))
             OR
             -- Include admins with support-related admin role
             (a.role IN ('admin', 'support', 'super-admin', 'super_admin'))

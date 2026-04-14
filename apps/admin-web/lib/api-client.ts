@@ -480,6 +480,7 @@ export class ApiClient {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('adminAuthToken');
       localStorage.removeItem('adminId');
+      localStorage.removeItem('adminPermissions');
     }
   }
 }

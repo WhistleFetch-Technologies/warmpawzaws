@@ -12,6 +12,7 @@ interface AdminUser {
   role: string;
   status: 'active' | 'inactive';
   lastLogin?: string;
+  rbacRoleId?: string | null;
 }
 
 export function UsersTab() {
@@ -28,7 +29,7 @@ export function UsersTab() {
     try {
       setLoading(true);
       const response = await apiClient.get<any>('/admin/rbac/users');
-      if (response.success && response.users) {
+      if (Array.isArray(response?.users)) {
         setUsers(response.users);
       }
     } catch (error) {
@@ -38,10 +39,11 @@ export function UsersTab() {
     }
   };
 
-  const filteredUsers = users.filter(user =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.role.toLowerCase().includes(searchQuery.toLowerCase())
+  const q = searchQuery.toLowerCase();
+  const filteredUsers = users.filter((user) =>
+    (user.name || '').toLowerCase().includes(q) ||
+    (user.email || '').toLowerCase().includes(q) ||
+    (user.role || '').toLowerCase().includes(q)
   );
 
   if (loading) {
@@ -64,13 +66,13 @@ export function UsersTab() {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
           placeholder="Search users..."
-          className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+          className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
         />
       </div>
 
@@ -86,11 +88,11 @@ export function UsersTab() {
                 <h3 className="font-semibold text-gray-900">{user.name}</h3>
                 <p className="text-sm text-gray-600 mb-0">{user.email}</p>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs px-0 py-0 bg-blue-100 text-blue-700 rounded">
+                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
                     {user.role}
                   </span>
                   <span
-                    className={`text-xs px-0 py-0 rounded ${
+                    className={`text-xs px-2 py-0.5 rounded ${
                       user.status === 'active'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-gray-100 text-gray-700'
@@ -107,7 +109,8 @@ export function UsersTab() {
               </div>
               <button
                 onClick={() => setSelectedUser(user)}
-                className="p-0 text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                title="Assign role"
               >
                 <Edit className="w-4 h-4" />
               </button>

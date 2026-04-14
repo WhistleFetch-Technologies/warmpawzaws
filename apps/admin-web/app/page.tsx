@@ -143,6 +143,7 @@ export default function AdminHomePage() {
           // API calls will still fail with 401, but components handle this gracefully
           localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
           localStorage.setItem('adminEmail', email);
+          localStorage.setItem('adminPermissions', JSON.stringify(['admin.full_access']));
           // Set sessionStorage flag to track that user is logged in
           // This flag is cleared on hard refresh, allowing us to detect it
           sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
@@ -172,6 +173,7 @@ export default function AdminHomePage() {
           name: string;
           role: string;
         };
+        permissions?: string[];
       };
       
       if (response.success && response.token) {
@@ -182,6 +184,10 @@ export default function AdminHomePage() {
         localStorage.setItem('adminEmail', response.admin.email);
         localStorage.setItem('adminId', response.admin.id);
         localStorage.setItem('adminName', response.admin.name || response.admin.email);
+        localStorage.setItem(
+          'adminPermissions',
+          JSON.stringify(response.permissions?.length ? response.permissions : ['admin.full_access'])
+        );
         
         // Set sessionStorage flag
         sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
@@ -209,12 +215,27 @@ export default function AdminHomePage() {
   const handleLogout = () => {
     localStorage.removeItem('adminAuthToken');
     localStorage.removeItem('adminEmail');
+    localStorage.removeItem('adminPermissions');
     setIsAuthenticated(false);
   };
 
-  // Handle redirect to Analytics page when authenticated (must be at top level, not conditional)
+  // After login, send users to a route they are allowed to see (vendor-only → /vendors, not /analytics).
   useEffect(() => {
-    if (isAuthenticated && pathname === '/') {
+    if (!isAuthenticated || pathname !== '/') return;
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('adminPermissions') : null;
+      const perms: string[] = raw ? JSON.parse(raw) : [];
+      const full = perms.includes('admin.full_access') || perms.includes('*');
+      let dest = '/analytics';
+      if (full || perms.includes('admin.analytics')) {
+        dest = '/analytics';
+      } else if (perms.includes('admin.dashboard')) {
+        dest = '/';
+      } else if (perms.includes('admin.vendors')) {
+        dest = '/vendors';
+      }
+      router.push(dest);
+    } catch {
       router.push('/analytics');
     }
   }, [isAuthenticated, pathname, router]);
