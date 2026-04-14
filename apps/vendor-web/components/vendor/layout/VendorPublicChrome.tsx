@@ -1,7 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
+import { pathnameMatchesVendorAuthFullBleed } from '@/lib/vendor-layout-routes';
+
 const logoImage = '/logo.png';
 
 export function VendorPublicHeader() {
@@ -38,11 +41,14 @@ export function VendorPublicFooter({ children }: { children?: ReactNode }) {
  * Same chrome pattern as the main app: fixed top brand bar, fixed bottom strip, scrollable body.
  */
 export function VendorPublicAppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const hideChrome = pathnameMatchesVendorAuthFullBleed(pathname);
+
   return (
     <VendorChromeLayout
       className="bg-gradient-to-br from-orange-50 to-amber-50"
-      header={<VendorPublicHeader />}
-      footer={<VendorPublicFooter />}
+      header={hideChrome ? undefined : <VendorPublicHeader />}
+      footer={hideChrome ? undefined : <VendorPublicFooter />}
       mainClassName="flex min-h-0 flex-1 flex-col"
     >
       <div className="flex min-h-full w-full flex-1 flex-col">{children}</div>

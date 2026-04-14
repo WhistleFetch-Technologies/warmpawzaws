@@ -71,7 +71,7 @@ export function VendorChromeLayout({
       {header != null ? (
         <div
           ref={headerRef}
-          className="fixed left-0 right-0 top-0 z-[1000] w-full"
+          className="fixed left-0 right-0 top-0 z-[var(--vendor-z-chrome)] w-full"
         >
           {header}
         </div>
@@ -80,13 +80,14 @@ export function VendorChromeLayout({
       {footer != null ? (
         <div
           ref={footerRef}
-          className="fixed bottom-0 left-0 right-0 z-[1000] w-full"
+          className="fixed bottom-0 left-0 right-0 z-[var(--vendor-z-chrome)] w-full"
         >
           {footer}
         </div>
       ) : null}
 
       <main
+        data-vendor-chrome-main
         className={cn(
           'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain',
           mainClassName,

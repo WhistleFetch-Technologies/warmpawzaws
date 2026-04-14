@@ -27,6 +27,7 @@ import {
   X 
 } from 'lucide-react';
 import { getVendorRoleId, hasVendorRole, isSoloVendor } from '@/lib/vendor-utils';
+import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
 
 interface VendorBookingManagementProps {
   vendorId: string;
@@ -1377,23 +1378,10 @@ export function VendorBookingManagement({
               </div>
             </div>
 
-            {/* Emergency Availability Toggle - Only show for ambulance and vet roles, not for solo business types */}
+            {/* Emergency Availability (SOS) — ambulance & vet roles; gated by VENDOR_FEATURE_FLAGS.emergencyAvailabilitySos */}
             {hasVendorRole(vendorData, ['ambulance', 'veterinarian', 'vet_clinic', 'veterinary_clinic', 'vet', 'pet_clinic', 'animal_hospital']) && (
-              <div className="p-4 bg-white border-t border-gray-100">
-                <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-xl">🚨</span>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Emergency Availability</h3>
-                      <p className="text-xs text-gray-600">24x7 on-call service</p>
-                    </div>
-                  </div>
-                  <button className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium">
-                    Enable
-                  </button>
-                </div>
+              <div className="border-t border-gray-100 bg-white p-4">
+                <EmergencyAvailabilitySosCard />
               </div>
             )}
           </>

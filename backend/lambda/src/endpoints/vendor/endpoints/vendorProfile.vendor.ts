@@ -22,6 +22,7 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
+import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -1304,6 +1305,12 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
       } catch {}
 
+      const effectiveAllowedServiceStyles = computeEffectiveAllowedServiceStyles(
+        selectedServiceStyles,
+        vendorConfiguration,
+        roleConfig?.serviceStyles
+      );
+
       return c.json({
         success: true,
         vendor: {
@@ -1335,9 +1342,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           capabilities, // ✅ Filtered capabilities (two-stage)
           vendorTypes: roleConfig?.vendorTypes || [],
           profileType: vendorConfiguration === 'solo' ? 'professional' : 'center',
-          allowedServiceStyles: vendorConfiguration 
-            ? (roleConfig?.serviceStyles?.[vendorConfiguration] || [])
-            : [],
+          allowedServiceStyles: effectiveAllowedServiceStyles,
           tier: tierName, // expose simple tier name from vendor_tiers
         },
       });

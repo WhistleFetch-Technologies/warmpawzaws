@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { useVendorChromeScrollLock } from '@/hooks/useVendorChromeScrollLock';
 import { Check, CheckCheck, Trash2, Bell, Sparkles, MessageSquare, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,8 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
       fetchNotifications();
     }
   }, [open, vendorId]);
+
+  useVendorChromeScrollLock(open);
 
   const fetchNotifications = async () => {
     try {

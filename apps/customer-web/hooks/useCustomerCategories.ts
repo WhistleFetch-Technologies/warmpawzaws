@@ -92,7 +92,7 @@ export function iconColorToBg(colorClass: string | undefined): string {
   return m[colorClass] || 'bg-gray-100 text-gray-600';
 }
 
-export function useCustomerCategories() {
+export function useCustomerCategories(phone?: string | null) {
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [quickServiceTiles, setQuickServiceTiles] = useState<QuickServiceTile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +102,23 @@ export function useCustomerCategories() {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiClient.get<{ success?: boolean; categories?: ApiCategory[] }>('/service-catalog/categories');
+      const params = new URLSearchParams();
+      if (phone) params.set('phone', phone);
+      if (typeof window !== 'undefined') {
+        try {
+          const la = localStorage.getItem('customer_latitude');
+          const ln = localStorage.getItem('customer_longitude');
+          if (la && ln) {
+            params.set('latitude', la);
+            params.set('longitude', ln);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      const qs = params.toString();
+      const url = qs ? `/service-catalog/categories?${qs}` : '/service-catalog/categories';
+      const res = await apiClient.get<{ success?: boolean; categories?: ApiCategory[] }>(url);
       const list = (res as any)?.categories ?? [];
       setCategories(Array.isArray(list) ? list : []);
 
@@ -137,8 +153,8 @@ export function useCustomerCategories() {
         seenScreens.add(screen);
         const IconComponent = getIcon(cat.icon);
         
-        // Apply label override if exists, otherwise use category name
-        const label = LABEL_OVERRIDES[screen] || cat.name || cat.category_id;
+        // Customer-facing label: always use catalogue category name when present (matches admin card title)
+        const label = cat.name?.trim() ? cat.name.trim() : (LABEL_OVERRIDES[screen] || cat.category_id);
         
         tiles.push({
           icon: IconComponent,
@@ -158,7 +174,7 @@ export function useCustomerCategories() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [phone]);
 
   useEffect(() => {
     fetchCategories();

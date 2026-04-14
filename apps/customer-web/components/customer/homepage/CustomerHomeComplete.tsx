@@ -351,7 +351,7 @@ export function CustomerHomeComplete({
   });
 
   // Dynamic categories from admin catalog (fallback to hardcoded list if API fails or returns empty)
-  const { quickServiceTiles } = useCustomerCategories();
+  const { quickServiceTiles } = useCustomerCategories(phone);
 
   // Define quickServices constant (fallback when API has no categories)
   // Labels aligned with canonical names: Trainer and Behaviourist, Behaviorist, Emergency care, etc.

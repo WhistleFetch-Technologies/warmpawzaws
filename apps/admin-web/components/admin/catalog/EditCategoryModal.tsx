@@ -27,9 +27,14 @@ export function EditCategoryModal({
     name: '',
     description: '',
     icon: '📦',
+    iconColor: 'text-gray-500',
     status: 'active' as 'active' | 'inactive',
     vendorType: '',
-    serviceStyle: ''
+    serviceStyle: '',
+    customerVisibilityType: 'GLOBAL' as 'GLOBAL' | 'STATE' | 'CITY',
+    customerVisibilityState: '',
+    customerVisibilityCity: '',
+    customerDashboardCardActive: true,
   });
 
   useEffect(() => {
@@ -38,9 +43,14 @@ export function EditCategoryModal({
         name: initialData.name || '',
         description: initialData.description || '',
         icon: initialData.icon || '📦',
+        iconColor: initialData.iconColor || initialData.icon_color || 'text-gray-500',
         status: initialData.status || 'active',
         vendorType: initialData.vendorType || '',
-        serviceStyle: initialData.serviceStyle || ''
+        serviceStyle: initialData.serviceStyle || '',
+        customerVisibilityType: (initialData.customerVisibilityType as 'GLOBAL' | 'STATE' | 'CITY') || 'GLOBAL',
+        customerVisibilityState: initialData.customerVisibilityState || '',
+        customerVisibilityCity: initialData.customerVisibilityCity || '',
+        customerDashboardCardActive: initialData.customerDashboardCardActive !== false,
       });
     } else if (isOpen && categoryId) {
       loadCategory();
@@ -51,13 +61,19 @@ export function EditCategoryModal({
     try {
       const data = await apiClient.get<any>(`/admin/catalog/categories/${categoryId}`);
       if (data.category) {
+        const c = data.category;
         setFormData({
-          name: data.category.name || '',
-          description: data.category.description || '',
-          icon: data.category.icon || '📦',
-          status: data.category.status || 'active',
-          vendorType: data.category.vendorType || '',
-          serviceStyle: data.category.serviceStyle || ''
+          name: c.name || '',
+          description: c.description || '',
+          icon: c.icon || '📦',
+          iconColor: c.iconColor || c.icon_color || 'text-gray-500',
+          status: (c.status as 'active' | 'inactive') || (c.is_active === false ? 'inactive' : 'active'),
+          vendorType: c.vendorType || '',
+          serviceStyle: c.serviceStyle || '',
+          customerVisibilityType: (c.customerVisibilityType as 'GLOBAL' | 'STATE' | 'CITY') || 'GLOBAL',
+          customerVisibilityState: c.customerVisibilityState || '',
+          customerVisibilityCity: c.customerVisibilityCity || '',
+          customerDashboardCardActive: c.customerDashboardCardActive !== false,
         });
       }
     } catch (error) {
@@ -77,7 +93,17 @@ export function EditCategoryModal({
 
     try {
       setLoading(true);
-      await apiClient.put(`/admin/catalog/categories/${categoryId}`, formData);
+      await apiClient.put(`/admin/catalog/categories/${categoryId}`, {
+        name: formData.name,
+        description: formData.description,
+        icon: formData.icon,
+        iconColor: formData.iconColor || 'text-gray-500',
+        status: formData.status,
+        customerVisibilityType: formData.customerVisibilityType,
+        customerVisibilityState: formData.customerVisibilityState,
+        customerVisibilityCity: formData.customerVisibilityCity,
+        customerDashboardCardActive: formData.customerDashboardCardActive,
+      });
       alert('Category updated successfully!');
       onSuccess?.();
       onClose();
@@ -174,6 +200,48 @@ export function EditCategoryModal({
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-sm font-medium text-gray-800">Customer home tile</p>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={formData.customerDashboardCardActive}
+                onChange={(e) => handleChange('customerDashboardCardActive', e.target.checked)}
+              />
+              Show on customer home
+            </label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Visibility</label>
+              <select
+                value={formData.customerVisibilityType}
+                onChange={(e) => handleChange('customerVisibilityType', e.target.value)}
+                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="GLOBAL">Global</option>
+                <option value="STATE">State</option>
+                <option value="CITY">City</option>
+              </select>
+            </div>
+            {(formData.customerVisibilityType === 'STATE' || formData.customerVisibilityType === 'CITY') && (
+              <input
+                type="text"
+                value={formData.customerVisibilityState}
+                onChange={(e) => handleChange('customerVisibilityState', e.target.value)}
+                placeholder="State (e.g. Karnataka)"
+                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+              />
+            )}
+            {formData.customerVisibilityType === 'CITY' && (
+              <input
+                type="text"
+                value={formData.customerVisibilityCity}
+                onChange={(e) => handleChange('customerVisibilityCity', e.target.value)}
+                placeholder="City (e.g. Bengaluru)"
+                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
