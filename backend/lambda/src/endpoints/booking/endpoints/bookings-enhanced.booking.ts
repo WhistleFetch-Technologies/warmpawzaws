@@ -1539,6 +1539,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const awardBookVetLoyaltyOnCreate =
         loyaltyServiceKind === 'vet_consultation' &&
         (ps === 'paid' || ps === 'completed' || Number(booking.total_amount ?? 0) === 0);
+      const awardBookNutritionLoyaltyOnCreate =
+        loyaltyServiceKind === 'nutrition_consultation' &&
+        (ps === 'paid' || ps === 'completed' || Number(booking.total_amount ?? 0) === 0);
 
       const response = {
         bookingId: booking.id,
@@ -1546,6 +1549,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         totalAmount: Number(booking.total_amount ?? 0),
         loyaltyServiceKind,
         awardBookVetLoyaltyOnCreate,
+        awardBookNutritionLoyaltyOnCreate,
         status: booking.status,
         message: 'Booking created successfully',
         isNew: true,
@@ -1597,12 +1601,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               const awardBookVetLoyaltyOnCreateDup =
                 loyaltyServiceKindDup === 'vet_consultation' &&
                 (psDup === 'paid' || psDup === 'completed' || Number(booking.total_amount ?? 0) === 0);
+              const awardBookNutritionLoyaltyOnCreateDup =
+                loyaltyServiceKindDup === 'nutrition_consultation' &&
+                (psDup === 'paid' || psDup === 'completed' || Number(booking.total_amount ?? 0) === 0);
               return this.success({
                 bookingId: booking.id,
                 customerId,
                 totalAmount: Number(booking.total_amount ?? 0),
                 loyaltyServiceKind: loyaltyServiceKindDup,
                 awardBookVetLoyaltyOnCreate: awardBookVetLoyaltyOnCreateDup,
+                awardBookNutritionLoyaltyOnCreate: awardBookNutritionLoyaltyOnCreateDup,
                 status: booking.status,
                 message: 'Booking already exists (duplicate request detected)',
                 isNew: false,

@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, pbkdf2Sync } from 'crypto';
 /**
  * ============================================================================
  * ADMIN ADVANCED ENDPOINTS - PHASES 24-29
@@ -32,6 +32,13 @@ import {
   getFeeGlobalsMap,
 } from '../../../utils/admin-fee-settings-db';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
+import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
+
+function hashAdminPasswordPlain(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
 
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -281,17 +288,35 @@ class CreateReschedulingPolicyHandler extends BaseHandler {
 
 class GetRBACStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const roles = await select('roles', {});
-    const users = await select('users', {});
-    const permissions = await select('permissions', {});
-    const assignments = await select('user_roles', {});
+    const roles = (await select('roles', {}).catch(() => [])) as any[];
+    let adminCount = 0;
+    let permissionCount = 0;
+    let activeAssignmentCount = 0;
+    try {
+      const ac = await query('SELECT COUNT(*)::int AS c FROM admins');
+      adminCount = Number(ac.rows?.[0]?.c ?? 0);
+    } catch {
+      adminCount = 0;
+    }
+    try {
+      const pc = await query('SELECT COUNT(DISTINCT permission_name)::int AS c FROM role_permissions');
+      permissionCount = Number(pc.rows?.[0]?.c ?? 0);
+    } catch {
+      permissionCount = 0;
+    }
+    try {
+      const uc = await query('SELECT COUNT(*)::int AS c FROM user_roles WHERE is_active = true');
+      activeAssignmentCount = Number(uc.rows?.[0]?.c ?? 0);
+    } catch {
+      activeAssignmentCount = 0;
+    }
 
     return this.success({
       stats: {
         totalRoles: roles.length,
-        totalUsers: users.length,
-        totalPermissions: permissions.length,
-        activeAssignments: assignments.length,
+        totalUsers: adminCount,
+        totalPermissions: permissionCount,
+        activeAssignments: activeAssignmentCount,
       },
     });
   }
@@ -305,9 +330,71 @@ class GetRolesHandler extends BaseHandler {
 }
 
 class GetRBACUsersHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const users = await select('users', {});
-    return this.success({ users });
+  async handle(_context: HandlerContext): Promise<HandlerResponse> {
+    const mapRows = (rows: any[]) =>
+      (rows || []).map((row: any) => ({
+        id: row.id,
+        name: row.name || row.email,
+        email: row.email,
+        role: row.rbac_role_display_name || row.rbac_role_code || row.role || 'admin',
+        status: row.is_active === false ? 'inactive' : 'active',
+        lastLogin: row.last_login_at,
+        rbacRoleId: row.rbac_role_id,
+        rbacRoleCode: row.rbac_role_code,
+        adminRole: row.role,
+      }));
+
+    try {
+      const result = await query(`
+        SELECT
+          a.id,
+          a.email,
+          a.name,
+          a.role,
+          a.is_active,
+          a.last_login_at,
+          r.id AS rbac_role_id,
+          r.display_name AS rbac_role_display_name,
+          r.name AS rbac_role_code
+        FROM admins a
+        LEFT JOIN user_roles ur ON a.id = ur.user_id AND ur.is_active = true
+        LEFT JOIN roles r ON ur.role_id = r.id
+        ORDER BY a.created_at DESC NULLS LAST
+      `);
+      return this.success({ success: true, users: mapRows(result.rows) });
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      // Some RDS setups have no `users` / `permissions` tables, or a broken `user_roles` view referencing `users`.
+      if (msg.includes('does not exist') && msg.includes('users')) {
+        try {
+          const fallback = await query(`
+            SELECT
+              a.id,
+              a.email,
+              a.name,
+              a.role,
+              a.is_active,
+              a.last_login_at,
+              NULL::uuid AS rbac_role_id,
+              NULL::text AS rbac_role_display_name,
+              NULL::text AS rbac_role_code
+            FROM admins a
+            ORDER BY a.created_at DESC NULLS LAST
+          `);
+          return this.success({
+            success: true,
+            users: mapRows(fallback.rows),
+            degraded: true,
+            message:
+              'RBAC role assignments could not be loaded (database references missing `users` table). Admin list shown without per-user roles.',
+          });
+        } catch (e2: any) {
+          console.error('[GetRBACUsersHandler] fallback failed:', e2);
+        }
+      }
+      console.error('[GetRBACUsersHandler]', error);
+      return this.error(error.message || 'Failed to list admin users', 500);
+    }
   }
 }
 
@@ -988,11 +1075,131 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   });
 
   app.get('/admin/rbac/users', async (c) => {
+    const callerId = c.get('userId') as string | undefined;
+    if (!(await canManageRbacAdmin(callerId))) {
+      return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+    }
     const handler = new GetRBACUsersHandler();
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/admin/rbac/users/create', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      if (!(await canManageRbacAdmin(callerId))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const email = String(body.email || '').trim();
+      const password = String(body.password || '');
+      const name = String(body.name || email).trim();
+      let roleId = String(body.roleId || '').trim();
+      const roleName = String(body.role || '').trim();
+      if (!email || !password) {
+        return c.json({ success: false, error: 'email and password are required' }, 400);
+      }
+      if (!roleId && roleName) {
+        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+          roleName.replace(/\s+/g, '_'),
+        ]);
+        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
+      }
+      if (!roleId || !isValidUUID(roleId)) {
+        return c.json({ success: false, error: 'Valid roleId is required' }, 400);
+      }
+      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+      if (!roleCheck.rows?.length) {
+        return c.json({ success: false, error: 'Role not found' }, 404);
+      }
+      const existing = await query('SELECT id FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
+      if (existing.rows?.length) {
+        return c.json({ success: false, error: 'Admin with this email already exists' }, 409);
+      }
+      const password_hash = hashAdminPasswordPlain(password);
+      const ins = await query(
+        `INSERT INTO admins (email, password_hash, name, role, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, 'staff', true, NOW(), NOW())
+         RETURNING id, email, name, role`,
+        [email, password_hash, name]
+      );
+      const admin = ins.rows[0];
+      await query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, true, NOW(), NOW())`,
+        [admin.id, roleId, callerId]
+      );
+      return c.json({
+        success: true,
+        admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+      });
+    } catch (error: unknown) {
+      console.error('[POST /admin/rbac/users/create]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create admin user', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/rbac/users/:userId/role', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      if (!(await canManageRbacAdmin(callerId))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const userId = c.req.param('userId');
+      if (!userId || !isValidUUID(userId)) {
+        return c.json({ success: false, error: 'Invalid userId' }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      let roleId = String(body.roleId || '').trim();
+      const roleName = String(body.role || '').trim();
+      if (!roleId && roleName) {
+        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+          roleName.replace(/\s+/g, '_'),
+        ]);
+        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
+      }
+      if (!roleId || !isValidUUID(roleId)) {
+        return c.json({ success: false, error: 'Valid roleId or role name is required' }, 400);
+      }
+      const adminRow = await query('SELECT id FROM admins WHERE id = $1::uuid LIMIT 1', [userId]);
+      if (!adminRow.rows?.length) {
+        return c.json({ success: false, error: 'Admin user not found' }, 404);
+      }
+      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+      if (!roleCheck.rows?.length) {
+        return c.json({ success: false, error: 'Role not found' }, 404);
+      }
+
+      const newPassword = String(body.password ?? '').trim();
+      if (newPassword.length > 0 && newPassword.length < 8) {
+        return c.json({ success: false, error: 'Password must be at least 8 characters' }, 400);
+      }
+
+      await query(`UPDATE user_roles SET is_active = false, updated_at = NOW() WHERE user_id = $1::uuid`, [userId]);
+      await query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, true, NOW(), NOW())
+         ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = true, assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
+        [userId, roleId, callerId]
+      );
+
+      if (newPassword.length > 0) {
+        const password_hash = hashAdminPasswordPlain(newPassword);
+        await query(
+          `UPDATE admins SET password_hash = $2, updated_at = NOW() WHERE id = $1::uuid`,
+          [userId, password_hash]
+        );
+      }
+
+      return c.json({ success: true, message: 'Role updated', userId, roleId });
+    } catch (error: unknown) {
+      console.error('[PUT /admin/rbac/users/:userId/role]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to assign role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
   });
 
   app.get('/admin/rbac/permissions', async (c) => {

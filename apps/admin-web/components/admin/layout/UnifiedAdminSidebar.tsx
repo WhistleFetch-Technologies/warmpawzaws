@@ -22,9 +22,10 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
 
 const logoImage = '/logo.png';
 
@@ -33,10 +34,26 @@ interface UnifiedAdminSidebarProps {
   onNavigate: (view: string) => void;
 }
 
+type NavEntry = {
+  icon: typeof LayoutDashboard;
+  label: string;
+  id: string;
+  permission?: string;
+  /** Show if user has any of these permissions */
+  permissionsAny?: string[];
+  onClick: () => void;
+};
+
 export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSidebarProps) {
   // Desktop (md+): sidebar open by default so "entry point" to other menus is visible. Mobile: closed.
   const [open, setOpen] = useState(false);
+  /** After true, safe to read localStorage for permissions (avoids SSR vs client hydration mismatch). */
+  const [hydrated, setHydrated] = useState(false);
   const pathname = usePathname();
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
@@ -48,106 +65,54 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     window.location.href = '/';
   };
 
-  const navigationItems = [
-    { 
-      icon: LayoutDashboard, 
-      label: 'Dashboard', 
-      id: 'dashboard',
-      onClick: () => onNavigate('dashboard')
-    },
-    { 
-      icon: BarChart3, 
-      label: 'Analytics & Insights', 
-      id: 'analytics',
-      onClick: () => onNavigate('analytics')
-    },
-    { 
-      icon: Briefcase, 
-      label: 'Enterprise & Revenue', 
-      id: 'enterprise',
-      onClick: () => onNavigate('enterprise')
-    },
-    { 
-      icon: Users, 
-      label: 'Vendor Administration', 
-      id: 'vendors',
-      onClick: () => {
-        window.location.href = '/vendors';
+  const navigationItems = useMemo(() => {
+    const all: NavEntry[] = [
+      { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard', permission: 'admin.dashboard', onClick: () => onNavigate('dashboard') },
+      { icon: BarChart3, label: 'Analytics & Insights', id: 'analytics', permission: 'admin.analytics', onClick: () => onNavigate('analytics') },
+      { icon: Briefcase, label: 'Enterprise & Revenue', id: 'enterprise', permission: 'admin.governance', onClick: () => onNavigate('enterprise') },
+      {
+        icon: Users,
+        label: 'Vendor Administration',
+        id: 'vendors',
+        permission: 'admin.vendors',
+        onClick: () => {
+          window.location.href = '/vendors';
+        },
+      },
+      { icon: ShoppingCart, label: 'E-Commerce', id: 'ecommerce', permission: 'admin.ecommerce', onClick: () => onNavigate('ecommerce') },
+      { icon: Globe, label: 'Region Manager', id: 'regions', permission: 'admin.platform_settings', onClick: () => onNavigate('regions') },
+      { icon: Megaphone, label: 'Marketing & Promotions', id: 'marketing', permission: 'admin.integrations', onClick: () => onNavigate('marketing') },
+      { icon: Gift, label: 'Loyalty & Rewards', id: 'loyalty', permission: 'admin.integrations', onClick: () => onNavigate('loyalty') },
+      { icon: Headphones, label: 'Support & CRM', id: 'support', permission: 'admin.support', onClick: () => onNavigate('support') },
+      { icon: BookOpen, label: 'Catalog & Services', id: 'catalog', permission: 'admin.catalog', onClick: () => onNavigate('catalog') },
+      { icon: Database, label: 'Database Seeding', id: 'database-seeding', permission: 'admin.platform_settings', onClick: () => onNavigate('database-seeding') },
+      { icon: Calendar, label: 'Event Management', id: 'events', permission: 'admin.events', onClick: () => onNavigate('events') },
+      { icon: FileText, label: 'Content Management', id: 'content', permission: 'admin.governance', onClick: () => onNavigate('content') },
+      { icon: Package, label: 'Pet Info Management', id: 'pet-info', permission: 'admin.catalog', onClick: () => onNavigate('pet-info') },
+      {
+        icon: Wallet,
+        label: 'Finance & Logistics',
+        id: 'finance',
+        permissionsAny: ['admin.settlements', 'admin.logistics'],
+        onClick: () => onNavigate('finance'),
+      },
+      { icon: UserCog, label: 'Role & User Management', id: 'roles', permission: 'admin.roles', onClick: () => onNavigate('roles') },
+    ];
+    if (!hydrated) {
+      return all;
+    }
+    const perms = getStoredAdminPermissions();
+    if (perms.includes('admin.full_access') || perms.includes('*')) {
+      return all;
+    }
+    return all.filter((item) => {
+      if (item.permissionsAny?.length) {
+        return hasAdminPortalPermission(item.permissionsAny);
       }
-    },
-    { 
-      icon: ShoppingCart, 
-      label: 'E-Commerce', 
-      id: 'ecommerce',
-      onClick: () => onNavigate('ecommerce')
-    },
-    { 
-      icon: Globe, 
-      label: 'Region Manager', 
-      id: 'regions',
-      onClick: () => onNavigate('regions')
-    },
-    { 
-      icon: Megaphone, 
-      label: 'Marketing & Promotions', 
-      id: 'marketing',
-      onClick: () => onNavigate('marketing')
-    },
-    { 
-      icon: Gift, 
-      label: 'Loyalty & Rewards', 
-      id: 'loyalty',
-      onClick: () => onNavigate('loyalty')
-    },
-    { 
-      icon: Headphones, 
-      label: 'Support & CRM', 
-      id: 'support',
-      onClick: () => onNavigate('support')
-    },
-    { 
-      icon: BookOpen, 
-      label: 'Catalog & Services', 
-      id: 'catalog',
-      onClick: () => onNavigate('catalog')
-    },
-    { 
-      icon: Database, 
-      label: 'Database Seeding', 
-      id: 'database-seeding',
-      onClick: () => onNavigate('database-seeding')
-    },
-    { 
-      icon: Calendar, 
-      label: 'Event Management', 
-      id: 'events',
-      onClick: () => onNavigate('events')
-    },
-    { 
-      icon: FileText, 
-      label: 'Content Management', 
-      id: 'content',
-      onClick: () => onNavigate('content')
-    },
-    { 
-      icon: Package, 
-      label: 'Pet Info Management', 
-      id: 'pet-info',
-      onClick: () => onNavigate('pet-info')
-    },
-    { 
-      icon: Wallet, 
-      label: 'Finance & Logistics', 
-      id: 'finance',
-      onClick: () => onNavigate('finance')
-    },
-    { 
-      icon: UserCog, 
-      label: 'Role & User Management', 
-      id: 'roles',
-      onClick: () => onNavigate('roles')
-    },
-  ];
+      if (!item.permission) return true;
+      return hasAdminPortalPermission(item.permission);
+    });
+  }, [hydrated, pathname, activeView, onNavigate]);
 
   // Sidebar width
   const sidebarWidth = 256; // 64 * 4 (w-64)
@@ -239,6 +204,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
 
         {/* Bottom Items - Reports & Platform Settings (with active state) */}
         <div className="border-t border-gray-200 p-3 space-y-1">
+          {hydrated && hasAdminPortalPermission('admin.reports') && (
           <button
             className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
               activeView === 'reports'
@@ -253,6 +219,8 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
             <BarChart3 className="w-4 h-4 shrink-0" />
             <span>Reports</span>
           </button>
+          )}
+          {hydrated && hasAdminPortalPermission('admin.platform_settings') && (
           <button
             className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
               activeView === 'platform-settings'
@@ -267,6 +235,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
             <Settings className="w-4 h-4 shrink-0" />
             <span>Platform Settings</span>
           </button>
+          )}
           <button
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
             onClick={handleSignOut}

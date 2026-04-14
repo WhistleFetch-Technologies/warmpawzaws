@@ -44,7 +44,9 @@ export function VendorRolesTab() {
       setLoading(true);
       // Default: only active roles (inactive roles are removed from catalog)
       const includeInactive = filterStatus !== 'active';
-      const response = await apiClient.get<any>(includeInactive ? '/admin/roles?active=false' : '/admin/roles');
+      const response = await apiClient.get<any>(
+        includeInactive ? '/admin/roles?active=false&role_type=vendor' : '/admin/roles?role_type=vendor'
+      );
       
       if (response && response.success && response.roles) {
         let list = (response.roles || []).map((r: any) => ({
