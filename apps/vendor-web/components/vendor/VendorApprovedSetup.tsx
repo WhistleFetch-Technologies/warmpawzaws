@@ -29,18 +29,33 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
         return;
       }
 
-      // ✅ FIX: Send phone (required by backend) instead of vendorId
+      const referralRaw =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('pendingReferralCode') ||
+            localStorage.getItem('referralCode') ||
+            localStorage.getItem('pending_referral_code')
+          : null;
+      const referralCode = referralRaw?.trim() || undefined;
+
+      // ✅ FIX: Send phone (required by backend) instead of vendorId.
+      // Optional referralCode: reserved + linked on activate (see referral-service + migration 709 for WARM pending).
       const payload = {
         phone, // Backend expects phone to look up vendor identity
-        action: 'activate_dashboard_access'
+        action: 'activate_dashboard_access',
+        ...(referralCode ? { referralCode } : {}),
       };
 
-      console.log('📤 Activating dashboard access...', payload);
+      console.log('📤 Activating dashboard access...', { ...payload, referralCode: referralCode ? '(set)' : undefined });
 
       // Try to update vendor status to allow dashboard access
       const data = await apiClient.post('/vendor/onboarding/activate', payload) as any;
 
       if (data && data.success) {
+        if (referralCode && typeof window !== 'undefined') {
+          localStorage.removeItem('pendingReferralCode');
+          localStorage.removeItem('referralCode');
+          localStorage.removeItem('pending_referral_code');
+        }
         console.log('✅ [VendorApprovedSetup] Dashboard access activated:', data);
         toast.success('Welcome to your dashboard! Complete your setup to go live.');
         

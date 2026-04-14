@@ -3,6 +3,7 @@ import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { useCart } from '../../context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { useNotificationService } from './useNotificationService';
 
@@ -582,23 +583,44 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     onViewBooking={handleViewBooking} 
   />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={handleBack} onNavigate={handleVetNavigate} />;
-  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); navigateToScreen('vet-clinic-profile'); } }} />;
-  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={handleBack} onNavigate={(screen, data) => { 
-    if (screen === 'appointment' || screen === 'vet-booking') { 
-      // Pass clinic booking data: vendorId, service, serviceType
-      setVetServiceData({ 
-        vendorId: data?.clinicId || data?.vendorId || vetServiceData?.id,
-        clinicId: data?.clinicId || vetServiceData?.id,
-        serviceType: 'clinic',
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'clinic-details' || screen === 'clinic-profile') {
+      setVetServiceData({ id: data?.clinicId, ...data });
+      navigateToScreen('vet-clinic-profile');
+    } else if (screen === 'appointment' || screen === 'vet-booking') {
+      setVetServiceData({
+        vendorId: data?.vendorId || data?.clinicId,
+        clinicId: data?.clinicId || data?.vendorId,
+        vendorName: data?.vendorName,
+        serviceType: data?.serviceType || 'at_center',
+        serviceStyle: data?.serviceStyle || 'at_center',
         service: data?.service,
         serviceId: data?.serviceId,
         serviceName: data?.serviceName,
         price: data?.price,
-        // If clinic has multiple doctors, we'll need to select one in booking flow
-        // For now, let booking router handle doctor selection
-      }); 
-      navigateToScreen('vet-booking'); 
-    } 
+        duration: data?.duration,
+        clinic: data?.clinic,
+      });
+      navigateToScreen('vet-booking');
+    }
+  }} />;
+  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'appointment' || screen === 'vet-booking') {
+      setVetServiceData({
+        vendorId: data?.clinicId || data?.vendorId || vetServiceData?.id,
+        clinicId: data?.clinicId || vetServiceData?.id,
+        vendorName: data?.vendorName || vetServiceData?.vendorName,
+        serviceType: data?.serviceType || 'at_center',
+        serviceStyle: data?.serviceStyle || 'at_center',
+        service: data?.service,
+        serviceId: data?.serviceId,
+        serviceName: data?.serviceName,
+        price: data?.price,
+        duration: data?.duration,
+        clinic: data?.clinic,
+      });
+      navigateToScreen('vet-booking');
+    }
   }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={handleBack} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} />;
@@ -704,6 +726,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Lab Diagnostics Landing - Entry point for lab tests and diagnostics
   if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'lab-booking') {
+      if (isLegacyMockDiagnosticVendorId(data?.vendorId)) {
+        toast.error('This lab is not available. Refresh the page or pick another lab.');
+        return;
+      }
       setSelectedVendorId(data?.vendorId);
       setDiagnosticsLabBookingHint(
         data?.packageName || (data?.packageTestLabels && data.packageTestLabels.length)

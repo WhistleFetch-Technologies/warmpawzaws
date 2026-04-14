@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { FeaturedProviderCard } from './shared/FeaturedProviderCard';
 import {
   normalizeAndDedupeDiscoveryProviders,
@@ -427,7 +428,14 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     <service.icon className={`w-5 h-5 ${service.color}`} />
                   </div>
                   <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.name}</h3>
-                  <p className="text-xs text-slate-500">{service.description}</p>
+                  <div onClick={(e) => e.stopPropagation()} className="relative z-20">
+                    <ServiceDescriptionInline
+                      description={service.description}
+                      title={service.name}
+                      className="m-0 text-xs leading-snug text-slate-500"
+                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
+                    />
+                  </div>
                   {service.badge && (
                     <span className="absolute top-3 right-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
                       {service.badge}

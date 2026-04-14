@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, ChevronDown, ChevronUp, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { getRoleConfig, RoleId, ServiceStyle } from './roleConfig';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 
 interface UniversalServicesByStyleProps {
@@ -93,7 +94,6 @@ export function UniversalServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
-  const [expandedServiceIds, setExpandedServiceIds] = useState<Set<string>>(new Set()); // Collapsible description
 
   // Check if we're in profile view mode (vendorId provided and single provider)
   const isProfileView = vendorId && providers.length === 1;
@@ -942,9 +942,6 @@ export function UniversalServicesByStyle({
                   <div className="space-y-3">
                     {sortedServices.map((service) => {
                       const isSelected = selectedServices.has(service.id) || selectedServices.has(service.serviceId);
-                      const profileServiceKey = `profile-${service.id}`;
-                      const isDescExpanded = expandedServiceIds.has(profileServiceKey);
-                      const hasDescription = !!service.description?.trim();
                       return (
                         <div
                           key={service.id}
@@ -974,22 +971,13 @@ export function UniversalServicesByStyle({
                                   </span>
                                 )}
                               </div>
-                              {hasDescription && (
+                              {service.description?.trim() && (
                                 <div className="mb-3" onClick={(e) => e.stopPropagation()}>
-                                  <p className={`text-sm text-gray-600 ${!isDescExpanded ? 'line-clamp-2' : ''}`}>{service.description}</p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedServiceIds(prev => {
-                                      const next = new Set(prev);
-                                      if (next.has(profileServiceKey)) next.delete(profileServiceKey);
-                                      else next.add(profileServiceKey);
-                                      return next;
-                                    })}
-                                    className="text-xs text-orange-600 font-medium mt-1 flex items-center gap-0.5 hover:underline"
-                                  >
-                                    {isDescExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                    {isDescExpanded ? 'Show less' : 'Show more'}
-                                  </button>
+                                  <ServiceDescriptionInline
+                                    description={service.description!}
+                                    title={service.name}
+                                    className="m-0 text-sm leading-5 text-gray-600"
+                                  />
                                 </div>
                               )}
                               <div className="flex items-center gap-4 text-xs text-gray-500">
@@ -1299,9 +1287,6 @@ export function UniversalServicesByStyle({
                       Available Services ({provider.services.length})
                     </h4>
                     {provider.services.map((service) => {
-                        const serviceKey = `${provider.providerId}-${service.id}`;
-                        const isDescExpanded = expandedServiceIds.has(serviceKey);
-                        const hasDescription = !!service.description?.trim();
                         return (
                       <div 
                         key={service.id}
@@ -1331,27 +1316,13 @@ export function UniversalServicesByStyle({
                                 </Badge>
                               )}
                             </div>
-                            {hasDescription && (
-                              <div className="mt-2">
-                                <p className={`text-gray-500 text-sm ${!isDescExpanded ? 'line-clamp-2' : ''}`}>
-                                  {service.description}
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedServiceIds(prev => {
-                                      const next = new Set(prev);
-                                      if (next.has(serviceKey)) next.delete(serviceKey);
-                                      else next.add(serviceKey);
-                                      return next;
-                                    });
-                                  }}
-                                  className="text-xs text-orange-600 font-medium mt-1 flex items-center gap-0.5 hover:underline"
-                                >
-                                  {isDescExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                  {isDescExpanded ? 'Show less' : 'Show more'}
-                                </button>
+                            {service.description?.trim() && (
+                              <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                                <ServiceDescriptionInline
+                                  description={service.description!}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-500"
+                                />
                               </div>
                             )}
                           </div>

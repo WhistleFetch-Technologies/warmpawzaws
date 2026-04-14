@@ -114,18 +114,18 @@ export function registerRewardsEndpoints(app: Hono) {
         const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 0;
         
         const pendingResult = await query(
-          `SELECT COUNT(*) as count 
-           FROM referrals 
-           WHERE referrer_id = $1 
-           AND referred_id IS NOT NULL 
+          `SELECT COUNT(*)::int AS count
+           FROM referral_redemptions rr
+           INNER JOIN referrals r ON r.id = rr.referral_id
+           WHERE r.referrer_id = $1
+           AND NOT EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
            AND NOT EXISTS (
-             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM loyalty_transactions 
-             WHERE customer_id = $1 
-             AND reference_type = 'referral' 
-             AND reference_id = referrals.id
+             SELECT 1 FROM loyalty_transactions lt
+             WHERE lt.customer_id = $1
+             AND (
+               (lt.reference_type = 'customer_referral' AND lt.reference_id = rr.id)
+               OR (lt.reference_type = 'referral' AND lt.reference_id = r.id)
+             )
            )`,
           [customerId]
         );
@@ -256,18 +256,18 @@ export function registerRewardsEndpoints(app: Hono) {
         const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 0;
         
         const pendingResult = await query(
-          `SELECT COUNT(*) as count 
-           FROM referrals 
-           WHERE referrer_id = $1 
-           AND referred_id IS NOT NULL 
+          `SELECT COUNT(*)::int AS count
+           FROM referral_redemptions rr
+           INNER JOIN referrals r ON r.id = rr.referral_id
+           WHERE r.referrer_id = $1
+           AND NOT EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
            AND NOT EXISTS (
-             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM loyalty_transactions 
-             WHERE customer_id = $1 
-             AND reference_type = 'referral' 
-             AND reference_id = referrals.id
+             SELECT 1 FROM loyalty_transactions lt
+             WHERE lt.customer_id = $1
+             AND (
+               (lt.reference_type = 'customer_referral' AND lt.reference_id = rr.id)
+               OR (lt.reference_type = 'referral' AND lt.reference_id = r.id)
+             )
            )`,
           [customerId]
         );

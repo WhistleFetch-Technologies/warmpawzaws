@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 
 // ============================================================================
@@ -372,8 +373,14 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-base text-slate-900">{service.name}</h3>
-                    {service.description && (
-                      <p className="text-sm text-slate-500 mt-1 leading-snug">{service.description}</p>
+                    {service.description?.trim() && (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                        <ServiceDescriptionInline
+                          description={service.description}
+                          title={service.name}
+                          className="m-0 text-sm leading-snug text-slate-500"
+                        />
+                      </div>
                     )}
                     <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
                       <span className="flex items-center gap-1">

@@ -6,17 +6,17 @@ import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsN
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
-  Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock,
+  Heart, Plus, ChevronRight, Star, MapPin, Clock,
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
-  Phone, Video, Building2, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree, Pill,
+  Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
   Navigation, AlertCircle, FlaskConical,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
@@ -134,7 +134,6 @@ export function CustomerHomeComplete({
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [newPetData, setNewPetData] = useState({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
   const [savingPet, setSavingPet] = useState(false);
-  const { itemCount } = useCart();
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
   const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
 
@@ -1212,9 +1211,12 @@ export function CustomerHomeComplete({
           const pendingBookingId = reviewRes.booking.bookingId;
           if (pendingBookingId) {
             try {
-              const raw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
-              const submittedIds: string[] = raw ? JSON.parse(raw) : [];
-              if (submittedIds.includes(String(pendingBookingId))) return;
+              const id = String(pendingBookingId);
+              const submittedRaw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
+              const skippedRaw = localStorage.getItem('warmpawz_review_skipped_booking_ids');
+              const submittedIds: string[] = submittedRaw ? JSON.parse(submittedRaw) : [];
+              const skippedIds: string[] = skippedRaw ? JSON.parse(skippedRaw) : [];
+              if (submittedIds.includes(id) || skippedIds.includes(id)) return;
             } catch {
               /* ignore */
             }
@@ -1600,7 +1602,7 @@ export function CustomerHomeComplete({
         <div className="px-4 mb-3">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
-            customerId={phone}
+            customerId={customerId || undefined}
             onSearch={(searchQuery) => {
               if (searchQuery?.trim()) {
                 router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
@@ -1831,7 +1833,14 @@ export function CustomerHomeComplete({
                     </div>
                   </div>
                   <h3 className="text-black font-semibold mb-1">{service.title}</h3>
-                  <p className="text-xs text-gray-600 mb-3">{service.description}</p>
+                  <div onClick={(e) => e.stopPropagation()} className="mb-3">
+                    <ServiceDescriptionInline
+                      description={service.description}
+                      title={service.title}
+                      className="m-0 text-xs leading-snug text-gray-600"
+                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline"
+                    />
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[#FF8C42] font-medium">{service.price}</span>
                     <button
@@ -2429,58 +2438,6 @@ export function CustomerHomeComplete({
           </div>
         </div>
       </div>
-
-      {/* Fixed Bottom Navigation - Hide when Add Pet modal is open to prevent overlap */}
-      {!hideHeaderFooter && !showAddPetModal && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-customer mx-auto z-40">
-          <div className="flex items-center justify-around">
-            <button
-              type="button"
-              className="flex flex-col items-center gap-1"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }}
-            >
-              <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
-              <span className="text-xs font-medium text-[#FF8C42]">Home</span>
-            </button>
-            <button
-              onClick={() => handleNavigation('cart')}
-              className="flex flex-col items-center gap-1 relative"
-            >
-              <div className="relative">
-                <ShoppingCart className="w-6 h-6 text-gray-400" />
-                {itemCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {itemCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-gray-400">Cart</span>
-            </button>
-            <button
-              onClick={() => handleNavigation('my-bookings')}
-              className="flex flex-col items-center gap-1"
-            >
-              <Calendar className="w-6 h-6 text-gray-400" />
-              <span className="text-xs text-gray-400">Bookings</span>
-            </button>
-            <button
-              onClick={() => onProfileClick && onProfileClick()}
-              className="flex flex-col items-center gap-1"
-            >
-              <User className="w-6 h-6 text-gray-400" />
-              <span className="text-xs text-gray-400">Profile</span>
-            </button>
-          </div>
-          {/* Home Indicator */}
-          <div className="flex justify-center mt-2">
-            <div className="w-32 h-1 bg-black rounded-full"></div>
-          </div>
-        </div>
-      )}
 
       {/* AI Assistant Floating Action Button */}
       {!hideHeaderFooter && (

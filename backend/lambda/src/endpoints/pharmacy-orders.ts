@@ -276,12 +276,14 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
 
       return c.json({
         success: true,
+        customerId,
         orderId: order.id,
         order: {
           id: order.id,
           orderNumber: order.order_number,
           status: order.status,
           totalAmount: order.total_amount,
+          customerId,
           estimatedDeliveryFee,
           broadcastRadius: initialRadiusKm,
         },
@@ -2121,13 +2123,21 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
 
       await update('pharmacy_orders', { id: orderId }, updateData);
 
+      const [paidOrder] = await select('pharmacy_orders', { id: orderId });
+      const paidCustomerId = paidOrder?.customer_id;
+      const paidTotal = paidOrder?.total_amount != null ? Number(paidOrder.total_amount) : undefined;
+
       return c.json({
         success: true,
+        customerId: paidCustomerId,
+        totalAmount: paidTotal,
         message: paymentMethod === 'cod' ? 'Order confirmed for COD' : 'Payment successful',
         order: {
           id: orderId,
           status: updateData.status,
           paymentStatus: updateData.payment_status,
+          customerId: paidCustomerId,
+          totalAmount: paidTotal,
         },
       });
     } catch (error: any) {

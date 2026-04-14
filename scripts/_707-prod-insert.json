@@ -1,0 +1,6 @@
+{
+  "resourceArn": "arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster",
+  "secretArn": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+  "database": "warmpawz",
+  "sql": "INSERT INTO action_sources (source_type, route_pattern, method, status_min, status_max, success_predicate, action_name, entity_type, entity_resolver, amount_resolver, reference_type, reference_id_resolver, metadata_resolvers, enabled, priority, dry_run, notes) SELECT 'http', '/razorpay/verify-payment', 'POST', 200, 299, '$.success && $.bookingId', 'customer_referral', 'customer', '$.customerId', NULL, 'booking', '$.bookingId', '{}'::jsonb, true, 120, false, '707: Referrer reward when referred customer pays for a booking (Razorpay verify); flat response body' WHERE NOT EXISTS (SELECT 1 FROM action_sources a WHERE a.method = 'POST' AND a.route_pattern = '/razorpay/verify-payment' AND a.action_name = 'customer_referral')"
+}

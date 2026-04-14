@@ -149,7 +149,7 @@ async function resolveCustomerPhoneDigits(customerId: string, fallback?: string)
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
-/** Persist peer referral row in customer_referrals (in addition to referrals.referred_id). */
+/** Persist peer referral row in customer_referrals (peer links also in referral_redemptions). */
 async function upsertCustomerReferralPeer(params: {
   referrerCustomerId: string;
   referredCustomerId: string;
@@ -246,13 +246,12 @@ export async function processReferralSignup(
       };
     }
 
-    // 3. Check if customer already used a referral code
-    const existing = await query(
-      'SELECT * FROM referrals WHERE referred_id = $1',
+    // 3. At most one peer referral per referee (globally)
+    const existingRedemption = await query(
+      `SELECT 1 FROM referral_redemptions WHERE referred_id = $1 LIMIT 1`,
       [customerId]
     );
-
-    if (existing.rows.length > 0) {
+    if (existingRedemption.rows.length > 0) {
       console.log(`[REFERRAL] Customer ${customerId} already used a referral code`);
       return {
         success: false,
@@ -260,19 +259,10 @@ export async function processReferralSignup(
       };
     }
 
-    // 4. Check if this referral code was already used by someone else
-    if (referral.referred_id) {
-      console.log(`[REFERRAL] Referral code ${referralCode} was already used`);
-      return {
-        success: false,
-        error: 'This referral code has already been used',
-      };
-    }
-
-    // 5. Deprecated: Points are not awarded from endpoints/services. Action-source handles awards.
+    // 4. Deprecated: Points are not awarded from endpoints/services. Action-source handles awards.
     let referredPoints = 0;
 
-    // 6. Award points to referrer (via refer_friend rule) - CRITICAL: Must succeed
+    // 5. Award points to referrer (via refer_friend rule) - CRITICAL: Must succeed
     let referrerPoints = 0;
     let referrerPointsAttempts = 0;
     const maxRetries = 2;
@@ -281,20 +271,23 @@ export async function processReferralSignup(
     
     // No awards attempted; keep record linking only
 
-    // 7. Update referral record (RDS referrals table has no referred_at — use completed_at)
-    const updateResult = await query(
-      `UPDATE referrals
-       SET referred_id = $1,
-           completed_at = COALESCE(completed_at, NOW())
-       WHERE id = $2
-       RETURNING *`,
-      [customerId, referral.id]
-    );
-
-    if (updateResult.rows.length === 0) {
-      console.error(`[REFERRAL] ⚠️ Failed to update referral record ${referral.id} with referred_id ${customerId}`);
-    } else {
-      console.log(`[REFERRAL] ✅ Updated referral record ${referral.id} with referred_id ${customerId}`);
+    // 6. Record peer redemption (one code, many friends; master referrals row is not overwritten)
+    try {
+      await query(
+        `INSERT INTO referral_redemptions (referral_id, referred_id, created_at)
+         VALUES ($1, $2, NOW())`,
+        [referral.id, customerId]
+      );
+      console.log(`[REFERRAL] ✅ referral_redemptions row for referral ${referral.id}, referred ${customerId}`);
+    } catch (insErr: unknown) {
+      const msg = String((insErr as { message?: string })?.message || insErr);
+      if (msg.includes('referral_redemptions_referred_id_uidx') || msg.includes('duplicate key') || msg.includes('unique')) {
+        return {
+          success: false,
+          error: 'Referral code already used',
+        };
+      }
+      throw insErr;
     }
 
     const referredPhone = customerId
@@ -470,16 +463,209 @@ export async function processVendorReferralSignup(
 }
 
 /**
- * Vendor activation with a customer's WARM referral code (`referrals` table, referrer_id = customer).
- * Runs after `processVendorReferralSignup` returns Invalid when the code is not a vendor_referrals code.
- * Rewards: configure loyalty rules + action_sources separately (same pattern as other referral flows).
+ * Validates referral code at vendor application submit:
+ * — **WARM (customer code):** only `referrals` — same row as peer signup (`referrer_id` = customer who
+ *   issued the code). Sets `pending_vendor_identity_id` until `referred_vendor_id` is linked. No duplicate
+ *   storage in `vendor_identity.metadata` for WARM.
+ * — **VENDOR… code:** `vendor_referrals` + metadata mirror for activation link.
+ */
+export async function validateAndStoreReferralCodeForVendorApplication(params: {
+  vendorIdentityId: string;
+  referralCodeRaw: string;
+  /** Last-10-digit phone for vendor_referrals.referred_phone */
+  phone: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const { vendorIdentityId, referralCodeRaw, phone } = params;
+  const normalizedCode = String(referralCodeRaw || '').trim().toUpperCase();
+  if (!normalizedCode) {
+    return { success: false, error: 'Referral code is empty' };
+  }
+  const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (normalizedPhone.length < 10) {
+    return { success: false, error: 'Valid phone is required to store a vendor referral' };
+  }
+
+  try {
+    const refRes = await query(
+      `SELECT id, referrer_id, referred_vendor_id, pending_vendor_identity_id
+       FROM referrals
+       WHERE UPPER(referral_code) = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [normalizedCode]
+    );
+    const referral = refRes.rows?.[0] as
+      | {
+          id: string;
+          referrer_id: string;
+          referred_vendor_id: string | null;
+          pending_vendor_identity_id: string | null;
+        }
+      | undefined;
+
+    if (referral) {
+      // `referrals.referrer_id` is always the customer who created the WARM code (see GET /customer/:id/referral).
+      const cust = await query(`SELECT 1 FROM customers WHERE id = $1 LIMIT 1`, [referral.referrer_id]);
+      if ((cust as any).rowCount > 0 && !referral.referred_vendor_id) {
+        if (
+          referral.pending_vendor_identity_id &&
+          referral.pending_vendor_identity_id !== vendorIdentityId
+        ) {
+          return { success: false, error: 'This referral code is already reserved for another application' };
+        }
+        const upd = await query(
+          `UPDATE referrals
+           SET pending_vendor_identity_id = $1
+           WHERE id = $2
+             AND referred_vendor_id IS NULL
+             AND (pending_vendor_identity_id IS NULL OR pending_vendor_identity_id = $1)
+           RETURNING id`,
+          [vendorIdentityId, referral.id]
+        );
+        if (upd.rows.length === 0) {
+          return { success: false, error: 'This referral code has already been used' };
+        }
+        console.log(
+          `[REFERRAL-VENDOR-SUBMIT] WARM reserved on referrals id=${referral.id} referrer_id=${referral.referrer_id} (code owner) vendor_identity=${vendorIdentityId}`
+        );
+        return { success: true };
+      }
+    }
+
+    const codeRecords = await query(
+      `SELECT * FROM vendor_referrals
+       WHERE referral_code = $1
+         AND referrer_vendor_id IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [normalizedCode]
+    );
+    if (codeRecords.rows.length > 0) {
+      const referrerVendorId = (codeRecords.rows[0] as { referrer_vendor_id: string }).referrer_vendor_id;
+      const existingPhone = await query(
+        `SELECT id, referred_vendor_id FROM vendor_referrals
+         WHERE referral_code = $1 AND referred_phone = $2
+         ORDER BY created_at DESC LIMIT 1`,
+        [normalizedCode, normalizedPhone]
+      );
+      const row = existingPhone.rows?.[0] as { id: string; referred_vendor_id: string | null } | undefined;
+      if (row?.referred_vendor_id) {
+        return { success: false, error: 'This referral code has already been used for this phone' };
+      }
+      let vendorReferralRowId: string;
+      if (row?.id) {
+        vendorReferralRowId = row.id;
+        await query(`UPDATE vendor_referrals SET updated_at = NOW() WHERE id = $1`, [vendorReferralRowId]);
+      } else {
+        const inserted = await insert('vendor_referrals', {
+          referrer_vendor_id: referrerVendorId,
+          referred_phone: normalizedPhone,
+          referral_code: normalizedCode,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        vendorReferralRowId = (inserted[0] as { id: string }).id;
+      }
+      const rows = await select('vendor_identity', { id: vendorIdentityId });
+      const meta = { ...(rows[0]?.metadata || {}) };
+      meta.referral_code = normalizedCode;
+      meta.referral_code_id = vendorReferralRowId;
+      meta.referral_source = 'vendor_referrals';
+      await update('vendor_identity', { id: vendorIdentityId }, { metadata: meta, updated_at: new Date().toISOString() });
+      console.log(`[REFERRAL-VENDOR-SUBMIT] Ensured vendor_referrals row for phone ${normalizedPhone}`);
+      return { success: true };
+    }
+
+    return { success: false, error: 'Invalid referral code' };
+  } catch (error: any) {
+    console.error('[REFERRAL-VENDOR-SUBMIT] ❌', error);
+    return { success: false, error: error.message || 'Failed to validate referral code' };
+  }
+}
+
+/**
+ * Once `vendors.id` exists (admin approval or activation), link vendor↔vendor or customer→vendor referral rows.
+ * Idempotent: `processCustomerReferralForVendorSignup` and `processVendorReferralSignup` guard duplicates.
+ * Resolves code from `metadata`, then `referrals.pending_vendor_identity_id`, then a pending `vendor_referrals` row for this phone.
+ */
+export async function linkVendorOnboardingReferralsFromIdentityMetadata(params: {
+  vendorId: string;
+  phone: string | undefined;
+  metadata: Record<string, unknown> | null | undefined;
+  vendorIdentityId?: string;
+}): Promise<void> {
+  const { vendorId, phone, metadata, vendorIdentityId } = params;
+  if (!phone) {
+    return;
+  }
+
+  let refCode = String(metadata?.referral_code || '').trim();
+  if (!refCode && vendorIdentityId) {
+    try {
+      const r = await query(
+        `SELECT referral_code FROM referrals WHERE pending_vendor_identity_id = $1 LIMIT 1`,
+        [vendorIdentityId]
+      );
+      const code = (r.rows?.[0] as { referral_code?: string } | undefined)?.referral_code;
+      if (code) refCode = String(code).trim();
+    } catch {
+      /* pending_vendor_identity_id column may be missing until migration 709 */
+    }
+  }
+  const digits = phone.replace(/\D/g, '').slice(-10);
+  if (!refCode && digits.length >= 10) {
+    const vr = await query(
+      `SELECT referral_code FROM vendor_referrals
+       WHERE referred_phone = $1 AND referred_vendor_id IS NULL
+       ORDER BY updated_at DESC NULLS LAST, created_at DESC
+       LIMIT 1`,
+      [digits]
+    );
+    const code = (vr.rows?.[0] as { referral_code?: string } | undefined)?.referral_code;
+    if (code) refCode = String(code).trim();
+  }
+  if (!refCode) {
+    return;
+  }
+
+  try {
+    let referralResult = await processVendorReferralSignup({
+      vendorId,
+      referralCode: refCode,
+      phone,
+    });
+    if (!referralResult.success && referralResult.error === 'Invalid referral code') {
+      referralResult = await processCustomerReferralForVendorSignup({
+        vendorId,
+        referralCode: refCode,
+        phone,
+        vendorIdentityId,
+      });
+    }
+    if (referralResult.success) {
+      console.log('[VENDOR-REFERRAL-LINK] Referral linked (vendor or customer referral code)');
+    } else {
+      console.warn(`[VENDOR-REFERRAL-LINK] Referral linking failed: ${referralResult.error}`);
+    }
+  } catch (refError: unknown) {
+    console.error('[VENDOR-REFERRAL-LINK] Error linking referral:', refError);
+  }
+}
+
+/**
+ * Link referred vendor on the **same `referrals` row** as peer WARM codes: `referrer_id` = customer who
+ * issued the code; sets `referred_vendor_id` when the vendor record exists. Does not use `referral_redemptions`
+ * (that table is customer-referee only).
  */
 export async function processCustomerReferralForVendorSignup(params: {
   vendorId: string;
   referralCode: string;
   phone: string;
+  /** When set, must match `referrals.pending_vendor_identity_id` from application submit */
+  vendorIdentityId?: string;
 }): Promise<ProcessReferralSignupResult> {
-  const { vendorId, referralCode, phone } = params;
+  const { vendorId, referralCode, phone, vendorIdentityId } = params;
 
   try {
     const normalizedCode = String(referralCode || '').trim().toUpperCase();
@@ -513,24 +699,30 @@ export async function processCustomerReferralForVendorSignup(params: {
       return { success: false, error: 'Cannot use your own referral code' };
     }
 
-    if (referral.referred_id) {
+    if (referral.referred_vendor_id) {
       return { success: false, error: 'This referral code has already been used' };
     }
 
-    if (referral.referred_vendor_id) {
-      return { success: false, error: 'This referral code has already been used' };
+    const pendingId = (referral as { pending_vendor_identity_id?: string | null }).pending_vendor_identity_id;
+    if (pendingId && vendorIdentityId && pendingId !== vendorIdentityId) {
+      return { success: false, error: 'This referral code is reserved for another application' };
+    }
+    if (pendingId && !vendorIdentityId) {
+      console.warn('[CUSTOMER-REFERRAL-VENDOR] Referral row has pending_vendor_identity_id but link call omitted vendorIdentityId');
     }
 
     const upd = await query(
       `UPDATE referrals
        SET referred_vendor_id = $1,
            status = 'completed',
-           completed_at = COALESCE(completed_at, NOW())
+           completed_at = COALESCE(completed_at, NOW()),
+           pending_vendor_identity_id = NULL
        WHERE id = $2
          AND referred_id IS NULL
          AND referred_vendor_id IS NULL
+         AND ($3::uuid IS NULL OR pending_vendor_identity_id IS NULL OR pending_vendor_identity_id = $3::uuid)
        RETURNING id`,
-      [vendorId, referral.id]
+      [vendorId, referral.id, vendorIdentityId ?? null]
     );
     if (upd.rows.length === 0) {
       return { success: false, error: 'This referral code has already been used' };
@@ -549,6 +741,360 @@ export async function processCustomerReferralForVendorSignup(params: {
     console.error('[CUSTOMER-REFERRAL-VENDOR] ❌', error);
     return { success: false, error: error.message || 'Failed to process customer referral for vendor' };
   }
+}
+
+/** Params for `customer_referral` ActionOccurred from HTTP action_sources (e.g. POST /auth/otp/verify). */
+export interface CustomerReferralOtpVerifyRewardParams {
+  eventId: string;
+  /** Friend who used the code (OTP entity). */
+  customerId: string | undefined;
+  entityType?: 'customer' | 'vendor' | 'auto';
+}
+
+/**
+ * Award the referrer when the friend completes OTP: resolve `referrals.referrer_id` for `referred_id` = friend,
+ * dedupe one earned row per referrer + friend (`reference_id` = friend’s customer id), credit referrer only.
+ */
+export async function processCustomerReferralOtpVerifyReward(
+  params: CustomerReferralOtpVerifyRewardParams
+): Promise<void> {
+  const { eventId, customerId, entityType } = params;
+  const refereeId = customerId;
+
+  if (entityType === 'vendor') {
+    console.info('[CUSTOMER-REFERRAL-OTP] Skip: entity is vendor, expected customer', { eventId });
+    return;
+  }
+  
+  if (!refereeId || String(refereeId).startsWith('temp_')) {
+    console.warn('[CUSTOMER-REFERRAL-OTP] Missing or temp customer id, skipping', { eventId, refereeId });
+    return;
+  }
+
+  const custRows = await select('customers', { id: refereeId });
+  if (!custRows.length) {
+    console.warn('[CUSTOMER-REFERRAL-OTP] Referred customer not found, skipping', { eventId, refereeId });
+    return;
+  }
+
+  const refRes = await query(
+    `SELECT id, referrer_id, referral_code, referred_id
+     FROM referrals
+     WHERE referred_id = $1
+     LIMIT 1`,
+    [refereeId]
+  );
+  if (refRes.rows.length === 0) {
+    console.info('[CUSTOMER-REFERRAL-OTP] No referral row for referred customer; skip award', { eventId, refereeId });
+    return;
+  }
+  const referral = refRes.rows[0] as {
+    id: string;
+    referrer_id: string;
+    referral_code: string;
+    referred_id: string;
+  };
+
+  const referrerId = referral.referrer_id;
+  if (!referrerId || referrerId === referral.referred_id) {
+    console.warn('[CUSTOMER-REFERRAL-OTP] Invalid referrer_id, skipping', { eventId, referralId: referral.id });
+    return;
+  }
+
+  const referrerRows = await select('customers', { id: referrerId });
+  if (!referrerRows.length) {
+    console.warn('[CUSTOMER-REFERRAL-OTP] Referrer customer row missing, skipping', { eventId, referrerId });
+    return;
+  }
+
+  const dup = await query(
+    `SELECT 1 FROM loyalty_transactions
+     WHERE customer_id = $1
+       AND transaction_type = 'earned'
+       AND reference_type = 'customer_referral'
+       AND reference_id = $2
+     LIMIT 1`,
+    [referrerId, refereeId]
+  );
+  if (dup.rows.length > 0) {
+    console.info('[CUSTOMER-REFERRAL-OTP] Referrer already awarded for this friend, skipping', {
+      eventId,
+      referrerId,
+      refereeId,
+    });
+    return;
+  }
+
+  const result = await loyaltyPointsService.awardPoints({
+    customerId: referrerId,
+    actionName: 'customer_referral',
+    referenceType: 'customer_referral',
+    referenceId: refereeId,
+    description: 'Referral reward — friend verified with your code',
+    metadata: {
+      eventId,
+      referralsId: referral.id,
+      referrerId,
+      referredId: refereeId,
+      referralCode: referral.referral_code,
+    },
+  });
+
+  console.info('[CUSTOMER-REFERRAL-OTP] Award result (referrer)', {
+    eventId,
+    referrerId,
+    referredId: refereeId,
+    points: result.points,
+    walletCredited: result.walletCredited,
+  });
+}
+
+export interface CustomerReferralFirstBookingRewardParams {
+  eventId: string;
+  bookingId?: string;
+  /** Event entity (customer who booked); must match booking.customer_id */
+  customerId?: string;
+}
+
+/**
+ * Award the **referrer** when a referred customer’s booking triggers `customer_referral` (e.g. Razorpay verify).
+ * Idempotency: one award per referrer+referee via `loyalty_transactions` duplicate check — not via COUNT(bookings).
+ * Resolves peer link via `referral_redemptions` first, then `referrals.referred_id`.
+ */
+export async function processCustomerReferralFirstBookingReward(
+  params: CustomerReferralFirstBookingRewardParams
+): Promise<void> {
+  const { eventId, bookingId, customerId: entityCustomerId } = params;
+  if (!bookingId) {
+    console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Missing bookingId', { eventId });
+    return;
+  }
+
+  const bookingRes = await query(
+    `SELECT id, customer_id, status FROM bookings WHERE id = $1`,
+    [bookingId]
+  );
+  const booking = bookingRes.rows?.[0] as { id: string; customer_id: string; status?: string } | undefined;
+  if (!booking?.customer_id) {
+    console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Booking not found or no customer_id', { eventId, bookingId });
+    return;
+  }
+
+  const refereeId = booking.customer_id as string;
+  if (entityCustomerId && entityCustomerId !== refereeId) {
+    console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Entity id does not match booking customer', {
+      eventId,
+      entityCustomerId,
+      refereeId,
+    });
+    return;
+  }
+
+  const refRows = await select('customers', { id: refereeId });
+  if (!refRows.length) {
+    console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Customer not found', { eventId, refereeId });
+    return;
+  }
+
+  const fromRedemption = await query(
+    `SELECT rr.id AS redemption_id, r.id AS referral_id, r.referrer_id, r.referral_code
+     FROM referral_redemptions rr
+     INNER JOIN referrals r ON r.id = rr.referral_id
+     WHERE rr.referred_id = $1
+     LIMIT 1`,
+    [refereeId]
+  );
+
+  let referralId: string;
+  let referrerId: string;
+  let referralCode: string;
+  let redemptionId: string | null = null;
+
+  if (fromRedemption.rows.length > 0) {
+    const row = fromRedemption.rows[0] as {
+      redemption_id: string;
+      referral_id: string;
+      referrer_id: string;
+      referral_code: string;
+    };
+    redemptionId = row.redemption_id;
+    referralId = row.referral_id;
+    referrerId = row.referrer_id;
+    referralCode = row.referral_code;
+  } else {
+    const leg = await query(
+      `SELECT id, referrer_id, referral_code, referred_id FROM referrals WHERE referred_id = $1 LIMIT 1`,
+      [refereeId]
+    );
+    if (leg.rows.length === 0) {
+      console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] No peer referral link for customer', { eventId, refereeId });
+      return;
+    }
+    const referral = leg.rows[0] as {
+      id: string;
+      referrer_id: string;
+      referral_code: string;
+      referred_id: string;
+    };
+    referralId = referral.id;
+    referrerId = referral.referrer_id;
+    referralCode = referral.referral_code;
+    if (!referrerId || referrerId === referral.referred_id) {
+      console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Invalid referrer', { eventId, referralId: referral.id });
+      return;
+    }
+  }
+
+  if (!referrerId || referrerId === refereeId) {
+    console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Invalid referrer_id', { eventId, referralId });
+    return;
+  }
+
+  const referrerRows = await select('customers', { id: referrerId });
+  if (!referrerRows.length) {
+    console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Referrer not found', { eventId, referrerId });
+    return;
+  }
+
+  const dup = await query(
+    `SELECT 1 FROM loyalty_transactions
+     WHERE customer_id = $1
+       AND transaction_type = 'earned'
+       AND reference_type = 'customer_referral'
+       AND reference_id = $2
+     LIMIT 1`,
+    [referrerId, refereeId]
+  );
+  if (dup.rows.length > 0) {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Referrer already awarded for this friend', {
+      eventId,
+      referrerId,
+      refereeId,
+    });
+    return;
+  }
+
+  const result = await loyaltyPointsService.awardPoints({
+    customerId: referrerId,
+    actionName: 'customer_referral',
+    referenceType: 'customer_referral',
+    referenceId: refereeId,
+    description: 'Referral reward — friend booked first appointment',
+    metadata: {
+      eventId,
+      referralsId: referralId,
+      redemptionId,
+      referrerId,
+      referredId: refereeId,
+      referralCode,
+      bookingId,
+    },
+  });
+
+  console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Award result (referrer)', {
+    eventId,
+    referrerId,
+    refereeId,
+    bookingId,
+    points: result.points,
+    walletCredited: result.walletCredited,
+  });
+}
+
+export interface CustomerReferralVendorApprovalRewardParams {
+  eventId: string;
+  applicationId?: string;
+  /** Approved vendor (referred party) who used the customer's WARM code */
+  vendorId?: string;
+}
+
+/**
+ * Award the **customer referrer** when a referred vendor is approved by admin (`customer_referral` +
+ * `reference.type === 'vendor_application_approval'`). Requires `referrals.referred_vendor_id` set
+ * (linked at admin approval or activation via `linkVendorOnboardingReferralsFromIdentityMetadata`).
+ * Dedupes on `loyalty_transactions` using `reference_id` = `referrals.id`.
+ */
+export async function processCustomerReferralVendorApprovalReward(
+  params: CustomerReferralVendorApprovalRewardParams
+): Promise<void> {
+  const { eventId, vendorId } = params;
+  if (!vendorId) {
+    console.warn('[CUSTOMER-REFERRAL-VENDOR-APPROVAL] Missing vendorId', { eventId });
+    return;
+  }
+
+  const refRes = await query(
+    `SELECT id, referrer_id, referral_code, referred_vendor_id
+     FROM referrals
+     WHERE referred_vendor_id = $1
+     LIMIT 1`,
+    [vendorId]
+  );
+  const referral = refRes.rows?.[0] as
+    | {
+        id: string;
+        referrer_id: string;
+        referral_code: string;
+        referred_vendor_id: string;
+      }
+    | undefined;
+
+  if (!referral?.referrer_id) {
+    console.info('[CUSTOMER-REFERRAL-VENDOR-APPROVAL] No customer→vendor referral for vendor', {
+      eventId,
+      vendorId,
+    });
+    return;
+  }
+
+  const referrerId = referral.referrer_id;
+  const referrerRows = await select('customers', { id: referrerId });
+  if (!referrerRows.length) {
+    console.warn('[CUSTOMER-REFERRAL-VENDOR-APPROVAL] Referrer customer not found', { eventId, referrerId });
+    return;
+  }
+
+  const dup = await query(
+    `SELECT 1 FROM loyalty_transactions
+     WHERE customer_id = $1
+       AND transaction_type = 'earned'
+       AND reference_type = 'customer_referral'
+       AND reference_id = $2
+     LIMIT 1`,
+    [referrerId, referral.id]
+  );
+  if (dup.rows.length > 0) {
+    console.info('[CUSTOMER-REFERRAL-VENDOR-APPROVAL] Referrer already awarded for this referral row', {
+      eventId,
+      referrerId,
+      referralId: referral.id,
+    });
+    return;
+  }
+
+  const result = await loyaltyPointsService.awardPoints({
+    customerId: referrerId,
+    actionName: 'customer_referral',
+    referenceType: 'customer_referral',
+    referenceId: referral.id,
+    description: 'Referral reward — referred vendor approved',
+    metadata: {
+      eventId,
+      referralsId: referral.id,
+      referredVendorId: vendorId,
+      referralCode: referral.referral_code,
+      channel: 'vendor_application_approval',
+    },
+  });
+
+  console.info('[CUSTOMER-REFERRAL-VENDOR-APPROVAL] Awarded referrer', {
+    eventId,
+    referrerId,
+    referralId: referral.id,
+    vendorId,
+    points: result.points,
+    walletCredited: result.walletCredited,
+  });
 }
 
 /**
