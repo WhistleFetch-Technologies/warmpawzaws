@@ -24,6 +24,84 @@ import { calculateETA, completeTracking, getLocationHistory, getTrackingStatus, 
 import { geocodeAddress } from 'src/lib/utils/geocode';
 import { publishNotification } from 'src/utils/sns-client';
 
+/**
+ * Active customer GPS sessions — single query for GET by customerId and GET by phone.
+ * bookings.service_id references vendor_services.id (migration 613), not services.id.
+ */
+const CUSTOMER_ACTIVE_TRACKING_SESSIONS_SQL = `
+        SELECT 
+          gts.id as session_id,
+          gts.booking_id,
+          gts.vendor_id,
+          gts.staff_id,
+          gts.status,
+          gts.current_latitude,
+          gts.current_longitude,
+          gts.destination_latitude,
+          gts.destination_longitude,
+          gts.estimated_eta_minutes,
+          gts.distance_remaining_km,
+          gts.started_at,
+          gts.arrived_at,
+          gts.last_update_at,
+          b.service_type,
+          b.booking_date,
+          b.booking_time,
+          COALESCE(s.name, v.business_name, v.owner_name) as provider_name,
+          COALESCE(s.phone, v.phone) as provider_phone,
+          s.photo_url as provider_photo,
+          COALESCE(vs.service_name, b.service_type::text, 'Service') as service_name,
+          p.name as pet_name
+        FROM gps_tracking_sessions gts
+        JOIN bookings b ON gts.booking_id = b.id
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        LEFT JOIN staff s ON gts.staff_id = s.id
+        LEFT JOIN vendor_services vs ON b.service_id = vs.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        WHERE gts.customer_id = $1
+          AND gts.status IN ('in_transit', 'arrived')
+        ORDER BY gts.started_at DESC
+      `;
+
+function mapGpsRowToActiveSession(session: any) {
+  const destLat = session.destination_latitude;
+  const destLng = session.destination_longitude;
+  const hasDest =
+    destLat != null &&
+    destLng != null &&
+    String(destLat).trim() !== '' &&
+    String(destLng).trim() !== '';
+  return {
+    sessionId: session.session_id,
+    bookingId: session.booking_id,
+    vendorId: session.vendor_id,
+    staffId: session.staff_id,
+    status: session.status,
+    vendorName: session.provider_name || 'Service Provider',
+    vendorPhone: session.provider_phone,
+    vendorPhoto: session.provider_photo,
+    serviceName: session.service_name || session.service_type || 'Service',
+    petName: session.pet_name,
+    eta: session.estimated_eta_minutes || null,
+    distance: session.distance_remaining_km || null,
+    currentLocation: session.current_latitude
+      ? {
+          latitude: parseFloat(String(session.current_latitude)),
+          longitude: parseFloat(String(session.current_longitude)),
+        }
+      : null,
+    destinationLocation: hasDest
+      ? {
+          latitude: parseFloat(String(destLat)),
+          longitude: parseFloat(String(destLng)),
+        }
+      : null,
+    startedAt: session.started_at,
+    arrivedAt: session.arrived_at,
+    lastUpdateAt: session.last_update_at,
+  };
+}
+
 export function registerGpsTrackingEndpoints(app: Hono) {
 
   // ============================================
@@ -1016,70 +1094,9 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         return c.json({ error: 'customerId is required' }, 400);
       }
 
-      const queryText = `
-        SELECT 
-          gts.id as session_id,
-          gts.booking_id,
-          gts.vendor_id,
-          gts.staff_id,
-          gts.status,
-          gts.current_latitude,
-          gts.current_longitude,
-          gts.destination_latitude,
-          gts.destination_longitude,
-          gts.estimated_eta_minutes,
-          gts.distance_remaining_km,
-          gts.started_at,
-          gts.arrived_at,
-          gts.last_update_at,
-          b.service_type,
-          b.booking_date,
-          b.booking_time,
-          COALESCE(s.name, v.business_name, v.owner_name) as provider_name,
-          COALESCE(s.phone, v.phone) as provider_phone,
-          s.photo_url as provider_photo,
-          svc.name as service_name,
-          p.name as pet_name
-        FROM gps_tracking_sessions gts
-        JOIN bookings b ON gts.booking_id = b.id
-        LEFT JOIN vendors v ON b.vendor_id = v.id
-        LEFT JOIN staff s ON gts.staff_id = s.id
-        LEFT JOIN services svc ON b.service_id = svc.id
-        LEFT JOIN pets p ON b.pet_id = p.id
-        WHERE gts.customer_id = $1
-          AND gts.status IN ('in_transit', 'arrived')
-        ORDER BY gts.started_at DESC
-      `;
-
-      const result = await query(queryText, [customerId]);
+      const result = await query(CUSTOMER_ACTIVE_TRACKING_SESSIONS_SQL, [customerId]);
       const sessions = (result as any).rows || [];
-
-      // Format the response for the popup
-      const activeSessions = sessions.map((session: any) => ({
-        sessionId: session.session_id,
-        bookingId: session.booking_id,
-        vendorId: session.vendor_id,
-        staffId: session.staff_id,
-        status: session.status, // 'in_transit' or 'arrived'
-        vendorName: session.provider_name || 'Service Provider',
-        vendorPhone: session.provider_phone,
-        vendorPhoto: session.provider_photo,
-        serviceName: session.service_name || session.service_type || 'Service',
-        petName: session.pet_name,
-        eta: session.estimated_eta_minutes || null,
-        distance: session.distance_remaining_km || null,
-        currentLocation: session.current_latitude ? {
-          latitude: parseFloat(session.current_latitude),
-          longitude: parseFloat(session.current_longitude),
-        } : null,
-        destinationLocation: {
-          latitude: parseFloat(session.destination_latitude),
-          longitude: parseFloat(session.destination_longitude),
-        },
-        startedAt: session.started_at,
-        arrivedAt: session.arrived_at,
-        lastUpdateAt: session.last_update_at,
-      }));
+      const activeSessions = sessions.map(mapGpsRowToActiveSession);
 
       return c.json({
         success: true,
@@ -1090,7 +1107,15 @@ export function registerGpsTrackingEndpoints(app: Hono) {
 
     } catch (error: any) {
       console.error('Error getting customer active sessions:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json(
+        {
+          success: true,
+          hasActiveTracking: false,
+          sessions: [],
+          count: 0,
+        },
+        200
+      );
     }
   });
 
@@ -1129,70 +1154,9 @@ export function registerGpsTrackingEndpoints(app: Hono) {
 
       const customerId = (customers[0] as any).id;
 
-      const queryText = `
-        SELECT 
-          gts.id as session_id,
-          gts.booking_id,
-          gts.vendor_id,
-          gts.staff_id,
-          gts.status,
-          gts.current_latitude,
-          gts.current_longitude,
-          gts.destination_latitude,
-          gts.destination_longitude,
-          gts.estimated_eta_minutes,
-          gts.distance_remaining_km,
-          gts.started_at,
-          gts.arrived_at,
-          gts.last_update_at,
-          b.service_type,
-          b.booking_date,
-          b.booking_time,
-          COALESCE(s.name, v.business_name, v.owner_name) as provider_name,
-          COALESCE(s.phone, v.phone) as provider_phone,
-          s.photo_url as provider_photo,
-          svc.name as service_name,
-          p.name as pet_name
-        FROM gps_tracking_sessions gts
-        JOIN bookings b ON gts.booking_id = b.id
-        LEFT JOIN vendors v ON b.vendor_id = v.id
-        LEFT JOIN staff s ON gts.staff_id = s.id
-        LEFT JOIN services svc ON b.service_id = svc.id
-        LEFT JOIN pets p ON b.pet_id = p.id
-        WHERE gts.customer_id = $1
-          AND gts.status IN ('in_transit', 'arrived')
-        ORDER BY gts.started_at DESC
-      `;
-
-      const result = await query(queryText, [customerId]);
+      const result = await query(CUSTOMER_ACTIVE_TRACKING_SESSIONS_SQL, [customerId]);
       const sessions = (result as any).rows || [];
-
-      // Format the response for the popup
-      const activeSessions = sessions.map((session: any) => ({
-        sessionId: session.session_id,
-        bookingId: session.booking_id,
-        vendorId: session.vendor_id,
-        staffId: session.staff_id,
-        status: session.status, // 'in_transit' or 'arrived'
-        vendorName: session.provider_name || 'Service Provider',
-        vendorPhone: session.provider_phone,
-        vendorPhoto: session.provider_photo,
-        serviceName: session.service_name || session.service_type || 'Service',
-        petName: session.pet_name,
-        eta: session.estimated_eta_minutes || null,
-        distance: session.distance_remaining_km || null,
-        currentLocation: session.current_latitude ? {
-          latitude: parseFloat(session.current_latitude),
-          longitude: parseFloat(session.current_longitude),
-        } : null,
-        destinationLocation: {
-          latitude: parseFloat(session.destination_latitude),
-          longitude: parseFloat(session.destination_longitude),
-        },
-        startedAt: session.started_at,
-        arrivedAt: session.arrived_at,
-        lastUpdateAt: session.last_update_at,
-      }));
+      const activeSessions = sessions.map(mapGpsRowToActiveSession);
 
       return c.json({
         success: true,
@@ -1230,15 +1194,13 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         }, 503);
       }
 
-      // ✅ FIX: Return graceful fallback for any other errors
+      // Polling endpoint: return 200 + empty sessions so customer home does not break; error is logged above.
       return c.json({
-        success: false,
-        error: 'Unable to fetch tracking sessions',
-        code: 'INTERNAL_ERROR',
+        success: true,
         hasActiveTracking: false,
         sessions: [],
         count: 0,
-      }, 500);
+      });
     }
   });
 

@@ -1615,7 +1615,7 @@ export function DynamicVendorOnboardingForm({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center">
+      <div className="vendor-root-scroll vendor-app-column flex items-center justify-center bg-[#FFF5F1]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading...</p>
@@ -1626,7 +1626,7 @@ export function DynamicVendorOnboardingForm({
 
   if (!form) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+      <div className="vendor-root-scroll vendor-app-column flex items-center justify-center bg-[#FFF5F1] p-4 sm:p-6">
         <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Available</h3>
@@ -1649,7 +1649,7 @@ export function DynamicVendorOnboardingForm({
   //Check if form has empty sections (no published form)
   if (form.sections.length === 0) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+      <div className="vendor-root-scroll vendor-app-column flex items-center justify-center bg-[#FFF5F1] p-4 sm:p-6">
         <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Published</h3>
@@ -1667,7 +1667,7 @@ export function DynamicVendorOnboardingForm({
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex flex-col">
+    <div className="vendor-root-scroll vendor-app-column flex flex-col bg-[#FFF5F1] overscroll-y-contain">
       {/* Header Section */}
       <div className="pt-8 pb-8 px-6 text-center relative">
         {onBack && (
@@ -1707,7 +1707,7 @@ export function DynamicVendorOnboardingForm({
       )}
 
       {/* Main Content Card */}
-      <div className="bg-white rounded-t-[40px] px-6 py-8 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] min-h-[calc(100vh-220px)]">
+      <div className="bg-white rounded-t-[40px] px-6 py-8 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         
         {/* Intro Text */}
         <div className="text-center mb-8 px-4">

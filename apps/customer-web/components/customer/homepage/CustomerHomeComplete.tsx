@@ -736,25 +736,20 @@ export function CustomerHomeComplete({
           }
 
 
-          if (services && (services.visible || []).length > 0) {
-            // ✅ PRIMARY PATH: Use services.visible as the source of truth.
-            // Look up each visible serviceId in BOTH the catalog tiles AND the static
-            // quickServices fallback — so services missing from the catalog (e.g. vet,
-            // walker, nutritionist) are still shown when the backend marks them visible.
-            const comingSoonIds = new Set<string>(
-              (services.comingSoon || []).map((s: any) => (s.serviceId || '').toLowerCase())
-            );
+          const visibleLaunch = (services?.visible || []) as any[];
+          const comingSoonLaunch = (services?.comingSoon || []) as any[];
 
-            // Pool: catalog tiles first (richer icon/label data), then static fallback
+          if (services && (visibleLaunch.length > 0 || comingSoonLaunch.length > 0)) {
+            // PRIMARY PATH: Build tiles from geography launch lists (visible + coming soon).
+            // Match each serviceId to catalog tiles first, then static quickServices fallback.
             const allTilePool = [...sourceQuickServices, ...quickServices];
             const seenScreens = new Set<string>();
             const resultTiles: any[] = [];
-            for (const visibleSvc of (services.visible || [])) {
-              const svcId = (visibleSvc.serviceId || '').toLowerCase();
-              const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
 
-              // Match launch id to tiles using shared catalog vs launch screen rules
-              const matchingTile = allTilePool.find((tile: any) => {
+            const findMatchingTileForLaunchId = (svcIdRaw: string) => {
+              const svcId = (svcIdRaw || '').toLowerCase();
+              const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
+              return allTilePool.find((tile: any) => {
                 const catId = (tile.categoryId || '').toLowerCase();
                 const tileScreen = (tile.screen || '').toLowerCase();
                 const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
@@ -773,17 +768,29 @@ export function CustomerHomeComplete({
                   tileScreen === targetScreen
                 );
               });
+            };
 
-              if (matchingTile && !seenScreens.has(matchingTile.screen)) {
-                seenScreens.add(matchingTile.screen);
-                resultTiles.push({
-                  ...matchingTile,
-                  isComingSoon: comingSoonIds.has(svcId),
-                });
+            const appendFromLaunchList = (list: any[], isComingSoon: boolean) => {
+              for (const entry of list) {
+                const svcId = (entry.serviceId || '').toLowerCase();
+                const matchingTile = findMatchingTileForLaunchId(svcId);
+                if (matchingTile && !seenScreens.has(matchingTile.screen)) {
+                  seenScreens.add(matchingTile.screen);
+                  resultTiles.push({
+                    ...matchingTile,
+                    isComingSoon,
+                  });
+                }
               }
-            }
+            };
 
-            console.log('[ServiceFilter] visible tiles resolved:', resultTiles.map((t: any) => t.screen));
+            appendFromLaunchList(visibleLaunch, false);
+            appendFromLaunchList(comingSoonLaunch, true);
+
+            console.log(
+              '[ServiceFilter] launch tiles resolved:',
+              resultTiles.map((t: any) => ({ screen: t.screen, comingSoon: !!t.isComingSoon }))
+            );
             setFilteredQuickServices(resultTiles);
             setServiceLaunchTilesResolved(true);
           } else {
@@ -1831,13 +1838,37 @@ export function CustomerHomeComplete({
             {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).map((service, index) => {
               const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
               const displayLabel = SERVICE_LABEL_OVERRIDE[key] ?? service.label;
+              const isComingSoonTile = !!(service as { isComingSoon?: boolean }).isComingSoon;
               return (
                 <button
+                  type="button"
                   key={service.screen || index}
-                  onClick={() => handleNavigation(service.screen)}
-                  className="flex flex-col items-center gap-1 group"
+                  aria-label={
+                    isComingSoonTile
+                      ? `${displayLabel}, coming soon in your area`
+                      : `${displayLabel}, open service`
+                  }
+                  onClick={() => {
+                    if (isComingSoonTile) {
+                      toast.info('This service is coming soon in your area.');
+                      return;
+                    }
+                    handleNavigation(service.screen);
+                  }}
+                  className={`flex flex-col items-center gap-1 group ${
+                    isComingSoonTile ? 'cursor-default' : ''
+                  }`}
                 >
-                  <div className={`w-11 h-11 ${service.color} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm`}>
+                  <div
+                    className={`relative w-11 h-11 ${service.color} rounded-xl flex items-center justify-center transition-transform shadow-sm ${
+                      isComingSoonTile ? 'opacity-75 saturate-75' : 'group-hover:scale-105'
+                    }`}
+                  >
+                    {isComingSoonTile && (
+                      <span className="absolute -top-0.5 -right-0.5 z-[1] rounded-md bg-amber-500 px-1 py-0.5 text-[7px] font-bold uppercase leading-none text-white shadow-sm">
+                        Soon
+                      </span>
+                    )}
                     <service.icon className="w-5 h-5" />
                   </div>
                   <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-1">{displayLabel}</span>
