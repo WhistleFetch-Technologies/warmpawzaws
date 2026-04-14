@@ -807,7 +807,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     return <NotAvailable label="Order success" onBack={handleBack} />;
   }
   if (currentScreen === 'order_history') return <OrderHistoryPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
-  if (currentScreen === 'address_book') return <AddressBookPage phone={phone} onBack={handleBack} onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'address_book')
+    return (
+      <AddressBookPage
+        phone={phone}
+        onBack={handleBack}
+        onNavigate={handleAccountNavigate}
+        layoutVariant="fullscreen"
+      />
+    );
   if (currentScreen === 'wallet') return <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); navigateToScreen('order_detail'); }} />;
   if (currentScreen === 'order_detail') {

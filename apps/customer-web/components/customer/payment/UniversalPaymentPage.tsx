@@ -265,6 +265,9 @@ export function UniversalPaymentPage({
   category,
   vendorId,
   vendorName,
+  vendorAddress,
+  staffName,
+  staffPhoto,
   bookingDate,
   bookingTime,
   petId,
@@ -2551,6 +2554,41 @@ export function UniversalPaymentPage({
                 Add Address
               </button>
             )}
+          </Card>
+        )}
+
+        {type === 'booking' && (vendorName || vendorAddress || staffName || staffPhoto) && (
+          <Card className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-lg font-bold text-gray-900">Your provider</h2>
+            <div className="flex gap-3">
+              {staffPhoto ? (
+                <img
+                  src={staffPhoto}
+                  alt=""
+                  className="h-14 w-14 flex-shrink-0 rounded-full object-cover ring-2 ring-orange-100"
+                />
+              ) : (
+                <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+                  {serviceStyle === 'at_center' ? (
+                    <Building2 className="h-7 w-7" />
+                  ) : (
+                    <Home className="h-7 w-7" />
+                  )}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900">{vendorName || 'Provider'}</p>
+                {staffName && staffName.trim() !== (vendorName || '').trim() && (
+                  <p className="text-sm text-gray-600">Professional: {staffName}</p>
+                )}
+                {vendorAddress && (
+                  <p className="mt-1 flex items-start gap-2 text-sm text-gray-600">
+                    <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FF8C42]" />
+                    <span>{vendorAddress}</span>
+                  </p>
+                )}
+              </div>
+            </div>
           </Card>
         )}
 

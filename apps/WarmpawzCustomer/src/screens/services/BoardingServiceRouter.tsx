@@ -23,8 +23,7 @@ type ViewType =
   | 'center_list'
   | 'center_profile'
   | 'select_service'
-  | 'select_pet'
-  | 'select_time'
+  | 'booking_details'
   | 'payment'
   | 'confirmation';
 
@@ -159,16 +158,22 @@ export function BoardingServiceRouter({
       services: [service],
       addOns: addOns || [],
     }));
-    setCurrentView('select_pet');
+    setCurrentView('booking_details');
   };
 
-  const handlePetSelect = (pet: any) => {
-    setBookingFlow(prev => ({ ...prev, pet }));
-    setCurrentView('select_time');
-  };
-
-  const handleDateSelect = (checkInDate: string, checkOutDate: string) => {
+  const applyDates = (checkInDate: string, checkOutDate: string) => {
     setBookingFlow(prev => ({ ...prev, checkInDate, checkOutDate }));
+  };
+
+  const goToPaymentFromDetails = () => {
+    if (!bookingFlow.pet) {
+      Alert.alert('Select pet', 'Please choose a pet for boarding.');
+      return;
+    }
+    if (!bookingFlow.checkInDate || !bookingFlow.checkOutDate) {
+      Alert.alert('Dates', 'Please set check-in and check-out dates.');
+      return;
+    }
     setCurrentView('payment');
   };
 
@@ -381,52 +386,52 @@ export function BoardingServiceRouter({
     </View>
   );
 
-  const renderPetSelection = () => (
-    <View style={styles.container}>
+  const renderBookingDetails = () => (
+    <View style={styles.flexFill}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setCurrentView('select_service')}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Pet</Text>
+        <Text style={styles.headerTitle}>Complete booking</Text>
       </View>
 
-      <ScrollView style={styles.petList}>
-        {pets.map((pet) => (
-          <TouchableOpacity
-            key={pet.id}
-            style={styles.petCard}
-            onPress={() => handlePetSelect(pet)}
-          >
-            <Text style={styles.petName}>{pet.name}</Text>
-            <Text style={styles.petBreed}>{pet.breed}</Text>
-            <Text style={styles.petAge}>{pet.age} years old</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
+      <ScrollView style={styles.petList} keyboardShouldPersistTaps="handled">
+        <Text style={styles.sectionHeader}>Your pet</Text>
+        {pets.length === 0 ? (
+          <Text style={styles.infoText}>No pets on file.</Text>
+        ) : (
+          pets.map((pet) => (
+            <TouchableOpacity
+              key={pet.id}
+              style={[
+                styles.petCard,
+                bookingFlow.pet?.id === pet.id && styles.petCardSelected,
+              ]}
+              onPress={() => setBookingFlow((prev) => ({ ...prev, pet }))}
+            >
+              <Text style={styles.petName}>{pet.name}</Text>
+              <Text style={styles.petBreed}>{pet.breed}</Text>
+              <Text style={styles.petAge}>{pet.age} years old</Text>
+            </TouchableOpacity>
+          ))
+        )}
 
-  const renderDateSelection = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_pet')}>
-          <Text style={styles.backButton}>← Back</Text>
+        <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Stay dates</Text>
+        <Text style={styles.infoText}>
+          {bookingFlow.serviceCategory === 'boarding' ? 'Check-in & check-out' : 'Select dates'} — calendar
+          can replace this demo.
+        </Text>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => applyDates('2025-01-30', '2025-02-02')}
+        >
+          <Text style={styles.secondaryButtonText}>Use demo dates (30 Jan – 2 Feb)</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Dates</Text>
-      </View>
 
-      <Text style={styles.infoText}>
-        Date selection will be implemented with calendar component
-      </Text>
-      <Text style={styles.dateLabel}>
-        {bookingFlow.serviceCategory === 'boarding' ? 'Check-in & Check-out Dates' : 'Select Date'}
-      </Text>
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => handleDateSelect('2025-01-30', '2025-02-02')}
-      >
-        <Text style={styles.primaryButtonText}>Continue</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={[styles.primaryButton, styles.sectionSpacer]} onPress={goToPaymentFromDetails}>
+          <Text style={styles.primaryButtonText}>Continue to payment</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </View>
   );
 
@@ -442,7 +447,7 @@ export function BoardingServiceRouter({
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setCurrentView('select_time')}>
+          <TouchableOpacity onPress={() => setCurrentView('booking_details')}>
             <Text style={styles.backButton}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Payment</Text>
@@ -450,6 +455,10 @@ export function BoardingServiceRouter({
 
         <View style={styles.bookingSummary}>
           <Text style={styles.summaryTitle}>Booking Summary</Text>
+          <Text style={styles.summaryItem}>Facility: {bookingFlow.vendorName || selectedVendor?.name}</Text>
+          {!!selectedVendor?.address && (
+            <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
+          )}
           <Text style={styles.summaryItem}>
             Package: {bookingFlow.services[0]?.name}
           </Text>
@@ -534,8 +543,7 @@ export function BoardingServiceRouter({
       {currentView === 'center_list' && renderVendorList()}
       {currentView === 'center_profile' && renderCenterProfile()}
       {currentView === 'select_service' && renderServiceSelection()}
-      {currentView === 'select_pet' && renderPetSelection()}
-      {currentView === 'select_time' && renderDateSelection()}
+      {currentView === 'booking_details' && renderBookingDetails()}
       {currentView === 'payment' && renderPayment()}
       {currentView === 'confirmation' && renderConfirmation()}
     </SafeAreaView>
@@ -737,6 +745,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: spacing.xs,
   },
+  flexFill: {
+    flex: 1,
+  },
+  sectionHeader: {
+    fontSize: typography.h3,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  sectionSpacer: {
+    marginTop: spacing.lg,
+  },
   petList: {
     flex: 1,
   },
@@ -747,6 +767,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.gray['200'],
+  },
+  petCardSelected: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: '#FFF7ED',
   },
   petName: {
     fontSize: typography.h3,

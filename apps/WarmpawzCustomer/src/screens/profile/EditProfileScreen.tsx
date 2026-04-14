@@ -1,7 +1,6 @@
 /**
  * Edit Profile Screen - Mobile
- * Edit user profile details
- * Identical functionality to web app
+ * Edit user profile details (aligned with web + PUT /customer/profile schema)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
 
 interface EditProfileScreenProps {
   phone: string;
@@ -28,48 +28,126 @@ interface EditProfileScreenProps {
   onSuccess?: () => void;
 }
 
+function mapApiProfileToForm(profileData: Record<string, any>, fallbackPhone: string) {
+  const displayName = profileData.name ?? profileData.full_name ?? '';
+  const parts = String(displayName).trim().split(/\s+/).filter(Boolean);
+  const firstName = String(profileData.firstName || parts[0] || '').trim();
+  const lastName = String(profileData.lastName || parts.slice(1).join(' ') || '').trim();
+
+  let address = '';
+  if (typeof profileData.address === 'string') {
+    address = profileData.address;
+  } else if (profileData.address != null && typeof profileData.address === 'object') {
+    address =
+      profileData.address.street ||
+      profileData.address.addressLine1 ||
+      profileData.address.line1 ||
+      '';
+  }
+
+  return {
+    firstName,
+    lastName,
+    email: String(profileData.email || '').trim(),
+    phone: String(profileData.phone || fallbackPhone),
+    address: String(address).trim(),
+    pincode: String(profileData.pincode || '').replace(/\D/g, '').slice(0, 6),
+    city: String(profileData.city || '').trim(),
+    state: String(profileData.state || '').trim(),
+    houseNo: String(profileData.houseNo ?? profileData.house_no ?? '').trim(),
+    floor: String(profileData.floor ?? '').trim(),
+    dateOfBirth: String(profileData.dateOfBirth || profileData.date_of_birth || '').trim(),
+    gender: String(profileData.gender || '').trim(),
+  };
+}
+
 export function EditProfileScreen({
   phone,
   customerId,
   profile: initialProfile,
   onBack,
-  onNavigate,
   onSuccess,
 }: EditProfileScreenProps) {
-  const [name, setName] = useState(initialProfile?.name || '');
-  const [email, setEmail] = useState(initialProfile?.email || '');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState(phone);
-  const [dateOfBirth, setDateOfBirth] = useState(initialProfile?.dateOfBirth || '');
-  const [gender, setGender] = useState(initialProfile?.gender || '');
+  const [address, setAddress] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [houseNo, setHouseNo] = useState('');
+  const [floor, setFloor] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [gender, setGender] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!initialProfile);
 
   useEffect(() => {
-    if (!initialProfile && customerId) {
+    if (initialProfile) {
+      const m = mapApiProfileToForm(initialProfile, phone);
+      setFirstName(m.firstName);
+      setLastName(m.lastName);
+      setEmail(m.email);
+      setPhoneNumber(m.phone);
+      setAddress(m.address);
+      setPincode(m.pincode);
+      setCity(m.city);
+      setState(m.state);
+      setHouseNo(m.houseNo);
+      setFloor(m.floor);
+      setDateOfBirth(m.dateOfBirth);
+      setGender(m.gender);
+      setLoading(false);
+      return;
+    }
+    if (customerId || phone) {
       loadProfile();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once from route or fetch
   }, []);
 
-  const loadProfile = async () => {
+  const loadProfile = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await CustomerApi.getProfile(customerId || phone);
       const profileData = response.profile || response;
-      setName(profileData.name || '');
-      setEmail(profileData.email || '');
-      setPhoneNumber(profileData.phone || phone);
-      setDateOfBirth(profileData.dateOfBirth || '');
-      setGender(profileData.gender || '');
+      const m = mapApiProfileToForm(profileData, phone);
+      setFirstName(m.firstName);
+      setLastName(m.lastName);
+      setEmail(m.email);
+      setPhoneNumber(m.phone);
+      setAddress(m.address);
+      setPincode(m.pincode);
+      setCity(m.city);
+      setState(m.state);
+      setHouseNo(m.houseNo);
+      setFloor(m.floor);
+      setDateOfBirth(m.dateOfBirth);
+      setGender(m.gender);
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const applyAddressFromAutocomplete = (addr: string, components?: AddressComponents) => {
+    setAddress(addr);
+    if (components?.pincode) {
+      setPincode(components.pincode.replace(/\D/g, '').slice(0, 6));
+    }
+    if (components?.city) {
+      setCity(components.city);
+    }
+    if (components?.state) {
+      setState(components.state);
     }
   };
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Name is required');
+    if (!firstName.trim() || !lastName.trim()) {
+      Alert.alert('Error', 'First and last name are required');
       return;
     }
 
@@ -78,14 +156,37 @@ export function EditProfileScreen({
       return;
     }
 
+    const addr = address.trim();
+    if (addr && !houseNo.trim()) {
+      Alert.alert('Error', 'Please enter House / Flat number when address is set');
+      return;
+    }
+
+    if (addr && pincode.length !== 6) {
+      Alert.alert('Error', 'Please enter a valid 6-digit pincode');
+      return;
+    }
+
     try {
       setSaving(true);
-      await CustomerApi.updateProfile(customerId || phone, {
-        name: name.trim(),
+      const payload: Record<string, string | undefined> = {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         email: email.trim() || undefined,
-        dateOfBirth: dateOfBirth || undefined,
-        gender: gender || undefined,
-      });
+        address: addr || undefined,
+        pincode: pincode ? pincode : undefined,
+        city: city.trim() || undefined,
+        state: state.trim() || undefined,
+        floor: floor.trim() || undefined,
+      };
+
+      if (addr) {
+        payload.houseNo = houseNo.trim();
+      }
+
+      await CustomerApi.updateProfile(customerId || phone, payload);
+
+      await loadProfile(true);
 
       Alert.alert('Success', 'Profile updated successfully', [
         {
@@ -127,18 +228,17 @@ export function EditProfileScreen({
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Profile Photo */}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.photoContainer}>
           <View style={styles.photoPlaceholder}>
             <Text style={styles.photoPlaceholderText}>
-              {name.charAt(0).toUpperCase() || 'U'}
+              {(firstName.charAt(0) || 'U').toUpperCase()}
+              {(lastName.charAt(0) || '').toUpperCase()}
             </Text>
           </View>
           <TouchableOpacity
             style={styles.changePhotoButton}
             onPress={() => {
-              // TODO: Implement photo upload
               Alert.alert('Change Photo', 'Photo upload feature coming soon');
             }}
           >
@@ -146,15 +246,24 @@ export function EditProfileScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Profile Form */}
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Full Name *</Text>
+            <Text style={styles.label}>First Name *</Text>
             <TextInput
               style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Enter your full name"
+              value={firstName}
+              onChangeText={setFirstName}
+              placeholder="First name"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Last Name *</Text>
+            <TextInput
+              style={styles.input}
+              value={lastName}
+              onChangeText={setLastName}
+              placeholder="Last name"
             />
           </View>
 
@@ -178,9 +287,69 @@ export function EditProfileScreen({
               editable={false}
               placeholder="Phone number"
             />
-            <Text style={styles.helperText}>
-              Phone number cannot be changed
-            </Text>
+            <Text style={styles.helperText}>Phone number cannot be changed</Text>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Address</Text>
+            <AddressAutocomplete
+              value={address}
+              onChange={applyAddressFromAutocomplete}
+              placeholder="Search address, landmark, city..."
+            />
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.rowItem]}>
+              <Text style={styles.label}>City</Text>
+              <TextInput
+                style={styles.input}
+                value={city}
+                onChangeText={setCity}
+                placeholder="City"
+              />
+            </View>
+            <View style={[styles.inputGroup, styles.rowItem]}>
+              <Text style={styles.label}>State</Text>
+              <TextInput
+                style={styles.input}
+                value={state}
+                onChangeText={setState}
+                placeholder="State"
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Pincode</Text>
+            <TextInput
+              style={styles.input}
+              value={pincode}
+              onChangeText={(t) => setPincode(t.replace(/\D/g, '').slice(0, 6))}
+              placeholder="6-digit pincode"
+              keyboardType="number-pad"
+              maxLength={6}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>House No / Flat No *</Text>
+            <TextInput
+              style={styles.input}
+              value={houseNo}
+              onChangeText={setHouseNo}
+              placeholder="e.g., A-101"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Floor</Text>
+            <TextInput
+              style={styles.input}
+              value={floor}
+              onChangeText={setFloor}
+              placeholder="e.g., 1st Floor"
+            />
           </View>
 
           <View style={styles.inputGroup}>
@@ -200,14 +369,14 @@ export function EditProfileScreen({
                   key={genderOption}
                   style={[
                     styles.genderButton,
-                    gender === genderOption && styles.genderButtonSelected,
+                    gender.toLowerCase() === genderOption && styles.genderButtonSelected,
                   ]}
                   onPress={() => setGender(genderOption)}
                 >
                   <Text
                     style={[
                       styles.genderButtonText,
-                      gender === genderOption && styles.genderButtonTextSelected,
+                      gender.toLowerCase() === genderOption && styles.genderButtonTextSelected,
                     ]}
                   >
                     {genderOption.charAt(0).toUpperCase() + genderOption.slice(1)}
@@ -218,11 +387,10 @@ export function EditProfileScreen({
           </View>
         </View>
 
-        {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveButton, (!name.trim() || saving) && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!firstName.trim() || !lastName.trim() || saving) && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!name.trim() || saving}
+          disabled={!firstName.trim() || !lastName.trim() || saving}
         >
           {saving ? (
             <ActivityIndicator size="small" color={colors.white} />
@@ -289,7 +457,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   photoPlaceholderText: {
-    fontSize: 40,
+    fontSize: 28,
     fontWeight: 'bold',
     color: colors.white,
   },
@@ -306,6 +474,13 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: spacing.md,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  rowItem: {
+    flex: 1,
   },
   label: {
     fontSize: 14,
@@ -378,4 +553,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

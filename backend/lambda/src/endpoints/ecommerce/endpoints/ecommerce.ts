@@ -63,6 +63,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const vendorId = c.req.query('vendorId');
       const category = c.req.query('category');
       const search = c.req.query('search');
+      const featuredOnly =
+        c.req.query('featured') === 'true' || c.req.query('featured') === '1';
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
@@ -75,6 +77,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const params: any[] = [];
       let paramIndex = 1;
+
+      if (featuredOnly) {
+        productQuery += ` AND COALESCE(p.is_featured, false) = true`;
+      }
 
       if (vendorId) {
         // Handle test IDs - return empty products
@@ -145,6 +151,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const vendorId = c.req.query('vendorId');
       const category = c.req.query('category');
       const search = c.req.query('search');
+      const featuredOnly =
+        c.req.query('featured') === 'true' || c.req.query('featured') === '1';
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
@@ -157,6 +165,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const params: any[] = [];
       let paramIndex = 1;
+
+      if (featuredOnly) {
+        productQuery += ` AND COALESCE(p.is_featured, false) = true`;
+      }
 
       if (vendorId) {
         productQuery += ` AND p.vendor_id = $${paramIndex}`;

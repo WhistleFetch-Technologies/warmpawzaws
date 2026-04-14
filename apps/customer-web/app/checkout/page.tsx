@@ -367,7 +367,7 @@ export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
+      <header className="bg-white shadow-sm sticky top-0 z-50 cw-header-safe-top cw-header-safe-x">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
             <button type="button" onClick={() => goBackOrHome(router)} className="p-2 hover:bg-gray-100 rounded-lg">

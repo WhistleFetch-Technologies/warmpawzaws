@@ -144,7 +144,7 @@ export function AIChatbotScreen({
         onNavigate('ServiceSearch', { browseProviders: true });
         return;
       }
-      onNavigate('BookingCreation', {});
+      onNavigate('MainTabs', { screen: 'Services' });
     },
     [onNavigate]
   );

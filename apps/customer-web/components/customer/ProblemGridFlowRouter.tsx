@@ -11,8 +11,8 @@
  * - Routes to appropriate service discovery with pre-applied filters
  * - Maintains context through the entire booking flow
  *
- * Discovery lists vendors (grouped from /customer/services/by-problem), then
- * services for the chosen vendor, then BookingFlow (vet-clinic style).
+ * Discovery lists vendors (grouped from /customer/services/by-problem); each
+ * vendor expands inline to show services, then BookingFlow (vet-clinic style).
  *
  * Date: 2026-01-20
  * ============================================================================
@@ -30,6 +30,7 @@ import {
   Calendar,
   Filter,
   Clock,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -57,6 +58,21 @@ function serviceTitleInitial(title: string): string {
   if (!t) return '?';
   const ch = t.charAt(0);
   return /[a-zA-Z0-9]/.test(ch) ? ch.toUpperCase() : t.slice(0, 1);
+}
+
+/** Category / service-type label for bottom row (matches vet clinic cards) */
+function pickServiceCategoryLabel(row: ByProblemServiceRow, problemName?: string | null): string {
+  const x = row as Record<string, unknown>;
+  const cat = x.category ?? x.category_name ?? x.categoryName;
+  if (typeof cat === 'string' && cat.trim()) return cat.trim();
+  const rn = x.roleName ?? x.role_name;
+  if (typeof rn === 'string' && rn.trim()) {
+    return rn
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  if (problemName?.trim()) return problemName.trim();
+  return 'Service';
 }
 
 // ============================================================================
@@ -148,7 +164,7 @@ const SERVICE_STYLE_CONFIG: Record<
 // FLOW STEPS
 // ============================================================================
 
-type FlowStep = 'service-style' | 'discovery' | 'vendor-services' | 'booking' | 'confirmation';
+type FlowStep = 'service-style' | 'discovery' | 'booking' | 'confirmation';
 
 function rowToServiceProvider(row: ByProblemServiceRow): ServiceProvider {
   const serviceId = String(row.serviceId || row.service_id || '');
@@ -190,7 +206,8 @@ export function ProblemGridFlowRouter({
   const [selectedProblem, setSelectedProblem] = useState<ProblemGridItem | null>(initialProblem || null);
   const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
-  const [selectedVendorGroup, setSelectedVendorGroup] = useState<VendorGroupFromProblem | null>(null);
+  /** Which vendor row is expanded to show inline services (discovery step only) */
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingProblemDetails, setLoadingProblemDetails] = useState(false);
   /** Flat rows from by-problem (one per vendor_service) */
@@ -293,7 +310,7 @@ export function ProblemGridFlowRouter({
     }
 
     setLoading(true);
-    setSelectedVendorGroup(null);
+    setExpandedVendorId(null);
     try {
       const byProblemParams = new URLSearchParams({
         problemId: selectedProblem.id,
@@ -339,9 +356,8 @@ export function ProblemGridFlowRouter({
     setCurrentStep('discovery');
   };
 
-  const handleVendorSelect = (vendor: VendorGroupFromProblem) => {
-    setSelectedVendorGroup(vendor);
-    setCurrentStep('vendor-services');
+  const toggleVendorExpanded = (vendor: VendorGroupFromProblem) => {
+    setExpandedVendorId((prev) => (prev === vendor.vendorId ? null : vendor.vendorId));
   };
 
   const handleServiceRowSelect = (row: ByProblemServiceRow) => {
@@ -360,17 +376,16 @@ export function ProblemGridFlowRouter({
         setCurrentStep('service-style');
         setSelectedServiceStyle(null);
         setFlatRows([]);
-        setSelectedVendorGroup(null);
+        setExpandedVendorId(null);
         setIsInstantMode(false);
         break;
-      case 'vendor-services':
+      case 'booking': {
+        const reopenVendorId = selectedProvider?.vendorId ?? null;
         setCurrentStep('discovery');
-        setSelectedVendorGroup(null);
-        break;
-      case 'booking':
-        setCurrentStep('vendor-services');
         setSelectedProvider(null);
+        if (reopenVendorId) setExpandedVendorId(reopenVendorId);
         break;
+      }
       case 'service-style':
         setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
         onClose?.();
@@ -488,6 +503,111 @@ export function ProblemGridFlowRouter({
     </div>
   );
 
+  const renderVendorServiceRows = (v: VendorGroupFromProblem) => (
+    <div className="space-y-3">
+      {v.rows.map((row, idx) => {
+        const serviceId = String(row.serviceId || row.service_id || idx);
+        const title = String(row.serviceName || row.name || 'Service');
+        const price = typeof row.price === 'number' ? row.price : parseFloat(String(row.price || 0)) || 0;
+        const duration = Number(row.duration) || 0;
+        const desc = (row.description && String(row.description).trim()) || '';
+        const descTrim = desc.trim();
+        const nameTrim = title.trim();
+        const showDesc = descTrim.length > 0 && descTrim !== nameTrim;
+        const thumb = serviceCardThumbUrl(row);
+        const categoryLabel = pickServiceCategoryLabel(row, selectedProblem?.name);
+        const distFmt = row.distanceFormatted?.trim();
+        const showDistance =
+          selectedServiceStyle !== 'tele' && distFmt && distFmt !== 'N/A';
+
+        return (
+          <div
+            key={`${v.vendorId}-${serviceId}-${idx}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => handleServiceRowSelect(row)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleServiceRowSelect(row);
+              }
+            }}
+            className="cursor-pointer rounded-xl border border-gray-100 bg-white shadow-sm transition hover:border-[#FF8C42] hover:shadow-md"
+          >
+            <div className="flex items-stretch gap-3 p-4">
+              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                {thumb ? (
+                  <img src={thumb} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white">
+                    <span className="text-xl font-bold">{serviceTitleInitial(title)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Match ClinicListView vet cards: title + desc, bottom row (orange price, time, distance, category), right column (gray price + Book Now) */}
+              <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium text-gray-900 leading-snug">{title}</h3>
+                  <div className="mt-1">
+                    {showDesc ? (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <ServiceDescriptionInline
+                          description={descTrim}
+                          title={title}
+                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                          dialogHint="Full service description (from your provider)"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 text-sm mt-1 line-clamp-2 italic">
+                        Professional care — tap Book Now to continue.
+                      </p>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <span className="text-lg font-bold text-[#FF8C42] tabular-nums">
+                      {formatPriceWithSymbol(price)}
+                    </span>
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      <Clock className="w-3 h-3 mr-1" />
+                      {duration > 0 ? `${duration} mins` : 'Duration on request'}
+                    </Badge>
+                    {showDistance && (
+                      <span className="flex items-center gap-1 text-xs text-gray-600 shrink-0">
+                        <MapPin className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                        {distFmt}
+                      </span>
+                    )}
+                    <Badge variant="secondary" className="text-xs shrink-0">
+                      {categoryLabel}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="text-right shrink-0 ml-2 min-w-[6.5rem] flex flex-col items-end">
+                  <div className="text-lg font-bold text-gray-900 mb-2 tabular-nums">
+                    {formatPriceWithSymbol(price)}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white w-full sm:w-auto"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleServiceRowSelect(row);
+                    }}
+                  >
+                    Book Now
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   const renderDiscovery = () => (
     <div className="space-y-4">
       <div className="flex min-w-0 items-center gap-3">
@@ -537,60 +657,122 @@ export function ProblemGridFlowRouter({
 
       {!loading && visibleVendors.length > 0 && (
         <div className="space-y-3">
-          {visibleVendors.map((vendor) => (
-            <Card
-              key={vendor.vendorId}
-              onClick={() => handleVendorSelect(vendor)}
-              className="p-4 cursor-pointer hover:shadow-md transition border-gray-200 hover:border-[#FF8C42]"
-            >
-              <div className="flex gap-4">
-                <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center">
-                  {vendor.photo ? (
-                    <img src={vendor.photo} alt={vendor.vendorName} className="w-full h-full object-cover" />
-                  ) : (
-                    <Building2 className="w-8 h-8 text-gray-400" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-gray-900 truncate">{vendor.vendorName}</h3>
-                      <p className="text-sm text-gray-500 truncate">
-                        {vendor.serviceCount} service{vendor.serviceCount !== 1 ? 's' : ''}
-                        {vendor.specializations.length > 0
-                          ? ` · ${vendor.specializations.slice(0, 2).join(', ')}`
-                          : ''}
-                      </p>
+          {visibleVendors.map((vendor) => {
+            const expanded = expandedVendorId === vendor.vendorId;
+            return (
+              <Card
+                key={vendor.vendorId}
+                className={`overflow-hidden transition border-gray-200 ${expanded ? 'border-[#FF8C42] ring-1 ring-[#FF8C42]/30' : ''}`}
+              >
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggleVendorExpanded(vendor)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleVendorExpanded(vendor);
+                    }
+                  }}
+                  className="p-4 cursor-pointer hover:bg-gray-50 text-left w-full"
+                >
+                  <div className="flex gap-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {vendor.photo ? (
+                        <img src={vendor.photo} alt={vendor.vendorName} className="w-full h-full object-cover" />
+                      ) : (
+                        <Building2 className="w-8 h-8 text-gray-400" />
+                      )}
                     </div>
-                    {vendor.isInstantAvailable && (
-                      <Badge className="bg-green-100 text-green-700 flex-shrink-0">Available Now</Badge>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-gray-900 truncate">{vendor.vendorName}</h3>
+                          <p className="text-sm text-gray-500 truncate">
+                            {vendor.serviceCount} service{vendor.serviceCount !== 1 ? 's' : ''}
+                            {vendor.specializations.length > 0
+                              ? ` · ${vendor.specializations.slice(0, 2).join(', ')}`
+                              : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-start gap-2 flex-shrink-0">
+                          {vendor.isInstantAvailable && (
+                            <Badge className="bg-green-100 text-green-700 flex-shrink-0">Available Now</Badge>
+                          )}
+                          <ChevronRight
+                            className={`w-5 h-5 text-gray-400 transition-transform mt-0.5 ${expanded ? 'rotate-90' : ''}`}
+                            aria-hidden
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-2 text-sm">
+                        <span className="flex items-center gap-1 text-yellow-600">
+                          ⭐ {vendor.rating.toFixed(1)}
+                          <span className="text-gray-400">({vendor.reviewCount})</span>
+                        </span>
+                        {selectedServiceStyle !== 'tele' && (
+                          <span className="flex items-center gap-1 text-gray-500">
+                            <MapPin className="w-3 h-3" />
+                            {vendor.distanceFormatted}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-lg font-bold text-[#FF8C42]">
+                        ₹{vendor.minPrice.toLocaleString('en-IN')}
+                      </p>
+                      <p className="text-xs text-gray-500">onwards</p>
+                    </div>
+                  </div>
+                </div>
+
+                {expanded && selectedServiceStyle && (
+                  <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        Available Services ({vendor.rows.length})
+                      </h4>
+                    </div>
+                    {vendor.rows.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center py-2">No services listed for this provider.</p>
+                    ) : (
+                      <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1">
+                        {renderVendorServiceRows(vendor)}
+                      </div>
                     )}
                   </div>
+                )}
 
-                  <div className="flex items-center gap-3 mt-2 text-sm">
-                    <span className="flex items-center gap-1 text-yellow-600">
-                      ⭐ {vendor.rating.toFixed(1)}
-                      <span className="text-gray-400">({vendor.reviewCount})</span>
-                    </span>
-                    {selectedServiceStyle !== 'tele' && (
-                      <span className="flex items-center gap-1 text-gray-500">
-                        <MapPin className="w-3 h-3" />
-                        {vendor.distanceFormatted}
+                {!expanded && vendor.rows.length > 0 && (
+                  <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-gray-100">
+                    <div className="text-sm text-gray-600">
+                      {vendor.serviceCount} service{vendor.serviceCount !== 1 ? 's' : ''} available
+                      <span className="text-gray-900 font-medium">
+                        {' '}
+                        from ₹{vendor.minPrice.toLocaleString('en-IN')}
                       </span>
-                    )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10 shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedVendorId(vendor.vendorId);
+                      }}
+                    >
+                      View Services
+                    </Button>
                   </div>
-                </div>
-
-                <div className="text-right flex-shrink-0">
-                  <p className="text-lg font-bold text-[#FF8C42]">
-                    ₹{vendor.minPrice.toLocaleString('en-IN')}
-                  </p>
-                  <p className="text-xs text-gray-500">onwards</p>
-                </div>
-              </div>
-            </Card>
-          ))}
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -608,134 +790,6 @@ export function ProblemGridFlowRouter({
       )}
     </div>
   );
-
-  const renderVendorServices = () => {
-    if (!selectedVendorGroup || !selectedServiceStyle) return null;
-    const v = selectedVendorGroup;
-
-    return (
-      <div className="space-y-4">
-        <div className="flex min-w-0 items-stretch gap-3">
-          <div className="flex shrink-0 items-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goBack}
-              className="relative z-10 h-11 min-h-[44px] min-w-[44px] shrink-0 p-0 touch-manipulation"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </div>
-          <div className="flex min-w-0 flex-1 gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-100 bg-gray-100">
-              {v.photo ? (
-                <img src={v.photo} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <Building2 className="h-6 w-6 text-gray-400" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1 self-center">
-              <h2 className="truncate text-lg font-bold text-gray-900">{v.vendorName}</h2>
-              <p className="text-sm text-gray-500">Select a service</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700">
-            {selectedProblem?.name}
-          </Badge>
-          <Badge className={`${SERVICE_STYLE_CONFIG[selectedServiceStyle].bgColor} ${SERVICE_STYLE_CONFIG[selectedServiceStyle].color}`}>
-            {SERVICE_STYLE_CONFIG[selectedServiceStyle].label}
-          </Badge>
-        </div>
-
-        <div className="space-y-3">
-          {v.rows.map((row, idx) => {
-            const serviceId = String(row.serviceId || row.service_id || idx);
-            const title = String(row.serviceName || row.name || 'Service');
-            const price = typeof row.price === 'number' ? row.price : parseFloat(String(row.price || 0)) || 0;
-            const duration = Number(row.duration) || 0;
-            const desc = (row.description && String(row.description).trim()) || '';
-            const descTrim = desc.trim();
-            const nameTrim = title.trim();
-            const showDesc = descTrim.length > 0 && descTrim !== nameTrim;
-            const thumb = serviceCardThumbUrl(row);
-
-            return (
-              <div
-                key={`${v.vendorId}-${serviceId}-${idx}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleServiceRowSelect(row)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleServiceRowSelect(row);
-                  }
-                }}
-                className="cursor-pointer rounded-xl border border-gray-100 bg-white shadow-sm transition hover:border-[#FF8C42] hover:shadow-md"
-              >
-                <div className="flex items-stretch gap-3 p-4">
-                  <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                    {thumb ? (
-                      <img src={thumb} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white">
-                        <span className="text-xl font-bold">{serviceTitleInitial(title)}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-gray-900">{title}</h3>
-                    <div className="mt-1">
-                      {showDesc ? (
-                        <ServiceDescriptionInline
-                          description={descTrim}
-                          title={title}
-                          className="m-0 text-sm leading-5 text-gray-600"
-                          dialogHint="Full service description (from your provider)"
-                        />
-                      ) : (
-                        <p className="text-sm italic leading-5 text-gray-400">
-                          Professional care — tap Book now to continue.
-                        </p>
-                      )}
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="text-xs font-normal">
-                        <Clock className="mr-1 h-3 w-3" />
-                        {duration > 0 ? `${duration} mins` : 'Duration on request'}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 flex-col items-end justify-between gap-2 pl-1">
-                    <div className="text-right">
-                      <p className="text-lg font-bold tabular-nums text-[#FF8C42]">{formatPriceWithSymbol(price)}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="bg-[#FF8C42] text-white hover:bg-[#E67A35]"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleServiceRowSelect(row);
-                      }}
-                    >
-                      Book now
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
 
   const renderBooking = () => {
     if (!selectedProvider || !selectedServiceStyle) return null;
@@ -776,7 +830,6 @@ export function ProblemGridFlowRouter({
       <div className="mx-auto max-w-lg">
         {currentStep === 'service-style' && renderServiceStyleSelection()}
         {currentStep === 'discovery' && renderDiscovery()}
-        {currentStep === 'vendor-services' && renderVendorServices()}
         {currentStep === 'booking' && renderBooking()}
         {currentStep === 'confirmation' && renderConfirmation()}
       </div>

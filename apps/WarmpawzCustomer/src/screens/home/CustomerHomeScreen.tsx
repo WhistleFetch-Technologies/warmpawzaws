@@ -298,27 +298,27 @@ export function CustomerHomeScreen({
         </ScrollView>
       </View>
 
-      {/* Emergency SOS Button */}
+      {/* Emergency ambulance — not live yet */}
       <View style={styles.emergencyContainer}>
-        <TouchableOpacity
-          style={styles.emergencyButton}
-          onPress={() => onNavigate('EmergencyBooking')}
-          activeOpacity={0.8}
-        >
+        <View style={styles.emergencyCardComingSoon}>
           <View style={styles.emergencyContent}>
-            <View style={styles.emergencyIconContainer}>
-              <Icon name="alert" size={32} color={colors.white} />
+            <View style={styles.emergencyIconContainerMuted}>
+              <Icon name="clock-outline" size={32} color={colors.white} />
             </View>
             <View style={styles.emergencyText}>
-              <View style={styles.emergencyBadge}>
-                <Text style={styles.emergencyBadgeText}>SOS</Text>
+              <View style={styles.emergencyBadgeSoon}>
+                <Text style={styles.emergencyBadgeText}>SOON</Text>
               </View>
               <Text style={styles.emergencyTitle}>Emergency Ambulance</Text>
-              <Text style={styles.emergencySubtitle}>Instant location-based dispatch</Text>
+              <Text style={styles.emergencySubtitle}>
+                Coming soon — instant location-based dispatch when we launch
+              </Text>
             </View>
-            <Text style={styles.emergencyButtonText}>SOS ALERT</Text>
+            <View style={styles.emergencyPillSoon}>
+              <Text style={styles.emergencyPillSoonText}>COMING SOON</Text>
+            </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Quick Services Grid */}
@@ -700,22 +700,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
-  emergencyButton: {
-    backgroundColor: colors.error + 20% opacity,
+  emergencyCardComingSoon: {
+    backgroundColor: '#fff7ed',
     borderRadius: borderRadius.xl,
     padding: spacing.md,
-    borderWidth: 2,
-    borderColor: '#ef4444',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    opacity: 0.98,
   },
   emergencyContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  emergencyIconContainer: {
+  emergencyIconContainerMuted: {
     width: 64,
     height: 64,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.error,
+    backgroundColor: '#fb923c',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -723,9 +724,9 @@ const styles = StyleSheet.create({
   emergencyText: {
     flex: 1,
   },
-  emergencyBadge: {
+  emergencyBadgeSoon: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.error,
+    backgroundColor: colors.warning,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.full,
@@ -746,12 +747,14 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     color: colors.textSecondary,
   },
-  emergencyButtonText: {
-    backgroundColor: colors.error,
-    color: colors.white,
+  emergencyPillSoon: {
+    backgroundColor: '#9ca3af',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
+  },
+  emergencyPillSoonText: {
+    color: colors.white,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
   },

@@ -110,6 +110,8 @@ const TeleTracker = dynamic(
   { ssr: false }
 );
 
+/** Quick service tiles shown as non-interactive until launch. */
+const COMING_SOON_HOME_SERVICE_SCREENS = new Set(['mating-dating-hub', 'cafes']);
 
 export function CustomerHomeComplete({
   phone,
@@ -623,22 +625,33 @@ export function CustomerHomeComplete({
         }
       }
 
-      // Handle products/deals
+      // Handle products/deals — only vendor-flagged featured products (matches GET /products?featured=true)
       if (productsResult.status === 'fulfilled') {
         const productsResp = productsResult.value;
-        if (productsResp?.products && productsResp.products.length > 0) {
-          const mappedDeals = productsResp.products.map((p: any) => ({
-            id: p.id,
-            title: p.name || 'Pet Product',
-            price: `₹${p.salePrice || p.price || 999}`,
-            originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
-            discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
-            iconType: 'product',
-            rating: p.rating || 4.5
-          }));
-          setHotDeals(mappedDeals);
+        const raw = productsResp?.products;
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+          const featuredProducts = raw.filter(
+            (p: any) => p.is_featured === true || p.isFeatured === true
+          );
+          if (featuredProducts.length > 0) {
+            const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => ({
+              id: p.id,
+              title: p.name || 'Pet Product',
+              price: `₹${p.salePrice || p.price || 999}`,
+              originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
+              discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
+              iconType: 'product',
+              rating: p.rating || 4.5
+            }));
+            setHotDeals(mappedDeals);
+          } else {
+            setHotDeals([]);
+          }
+        } else {
+          setHotDeals([]);
         }
       } else if (productsResult.status === 'rejected') {
+        setHotDeals([]);
         const error = productsResult.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
           console.warn('Failed to load products:', error.message);
@@ -1460,7 +1473,13 @@ export function CustomerHomeComplete({
   // Use API data or fallback to defaults
   const displayGroomingServices = groomingServices.length > 0 ? groomingServices : defaultGroomingServices;
   const displayVetServices = vetServicesData.length > 0 ? vetServicesData : defaultVetServices;
-  const displayHotDeals = hotDeals.length > 0 ? hotDeals : defaultHotDeals;
+  /** Homepage carousel: real featured products only in production; optional mock strip in development. */
+  const carouselHotDeals =
+    hotDeals.length > 0
+      ? hotDeals
+      : typeof process !== 'undefined' && process.env.NODE_ENV === 'development'
+        ? defaultHotDeals
+        : [];
 
   // ✅ FIX: Remove dummy articles - show only admin-created articles
   const articles = dynamicArticles.map((a: any) => ({
@@ -1838,11 +1857,34 @@ export function CustomerHomeComplete({
             {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).map((service, index) => {
               const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
               const displayLabel = SERVICE_LABEL_OVERRIDE[key] ?? service.label;
+              const serviceComingSoon =
+                COMING_SOON_HOME_SERVICE_SCREENS.has(String(service.screen || '').toLowerCase()) ||
+                COMING_SOON_HOME_SERVICE_SCREENS.has(key);
+              if (serviceComingSoon) {
+                return (
+                  <div
+                    key={service.screen || index}
+                    className="flex flex-col items-center gap-1 pointer-events-none select-none opacity-75"
+                    aria-label={`${displayLabel} — coming soon`}
+                  >
+                    <div className={`relative w-11 h-11 ${service.color} rounded-xl flex items-center justify-center shadow-sm`}>
+                      <service.icon className="w-5 h-5" />
+                      <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
+                        Soon
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 text-center leading-tight line-clamp-1">{displayLabel}</span>
+                  </div>
+                );
+              }
               const isComingSoonTile = !!(service as { isComingSoon?: boolean }).isComingSoon;
               return (
                 <button
                   type="button"
                   key={service.screen || index}
+                  type="button"
+                  onClick={() => handleNavigation(service.screen)}
+                  className="flex flex-col items-center gap-1 group"
                   aria-label={
                     isComingSoonTile
                       ? `${displayLabel}, coming soon in your area`
@@ -2001,7 +2043,7 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Hot Deals */}
+        {carouselHotDeals.length > 0 && (
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -2016,10 +2058,10 @@ export function CustomerHomeComplete({
             </button>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {displayHotDeals.map((deal: any, index) => {
+            {carouselHotDeals.map((deal: any, index) => {
               const DealIcon = deal.Icon || PackageIcon;
               return (
-                <div key={index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                <div key={deal.id ?? index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
                   <div className="h-32 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center relative">
                     <DealIcon className="w-12 h-12 text-pink-500" />
                     {deal.discount && (
@@ -2053,6 +2095,7 @@ export function CustomerHomeComplete({
             })}
           </div>
         </div>
+        )}
 
         {/* Featured Services Mix - Square Boxes */}
         <div className="mb-6">
@@ -2118,16 +2161,19 @@ export function CustomerHomeComplete({
               <span className="text-cyan-600 font-bold text-sm">₹499/day</span>
             </button>
 
-            {/* Insurance */}
-            <button
-              onClick={() => handleNavigation('insurance')}
-              className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100 text-left hover:shadow-lg transition-all"
+            {/* Insurance — coming soon (not launched) */}
+            <div
+              className="relative bg-gradient-to-br from-green-50/90 to-emerald-50/90 rounded-2xl p-4 border border-green-100/80 text-left opacity-[0.88] pointer-events-none select-none grayscale-[0.15]"
+              aria-label="Insurance — coming soon"
             >
-              <Shield className="w-8 h-8 text-green-600 mb-2" />
+              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                Soon
+              </span>
+              <Shield className="w-8 h-8 text-green-600/80 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Insurance</h3>
               <p className="text-xs text-gray-600 mb-2">Full coverage</p>
-              <span className="text-green-600 font-bold text-sm">From ₹999</span>
-            </button>
+              <span className="text-green-700 font-bold text-sm">Coming soon</span>
+            </div>
 
             {/* Walker */}
             <button
@@ -2170,7 +2216,10 @@ export function CustomerHomeComplete({
                 }
                 navigateWhatsNewFromFullPage(router, a, 'row');
               }}
-              onSosPress={(a) => handleNavigation(a.ctaLink?.trim() || 'ambulance')}
+              onSosPress={(a) => {
+                if (a.comingSoon && a.announcementType === 'emergency') return;
+                handleNavigation(a.ctaLink?.trim() || 'ambulance');
+              }}
             />
           </div>
         </div>
@@ -2180,7 +2229,7 @@ export function CustomerHomeComplete({
           <h2 className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-4">Discover more</h2>
           <ForYouSection
             phone={phone}
-            hotDeals={displayHotDeals}
+            hotDeals={hotDeals}
             banners={dynamicBanners}
             onNavigate={handleNavigation}
           />
@@ -2232,37 +2281,41 @@ export function CustomerHomeComplete({
           </div>
         )}
 
-        {/* Adoption Services */}
-        <div className="mb-6">
+        {/* Adoption Services — full section coming soon (not launched) */}
+        <div className="mb-6" aria-label="Adoption and Breeding — coming soon">
           <div className="px-6 mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Heart className="w-5 h-5 text-red-600" />
-              <h2 className="text-black font-semibold">Adoption & Breeding</h2>
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Heart className="w-5 h-5 text-red-600 shrink-0" />
+                <h2 className="text-black font-semibold">Adoption & Breeding</h2>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full shrink-0">
+                Soon
+              </span>
             </div>
-            <p className="text-xs text-gray-600">Find your perfect companion</p>
+            <p className="text-xs text-gray-600">
+              Coming soon — adoption, breeders, and rehoming when we launch. Find your perfect companion then.
+            </p>
           </div>
-          <div className="px-6 space-y-3">
+          <div className="px-6 space-y-3 pointer-events-none select-none">
             {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, certifiedBreeders: adoptionStats.certifiedBreeders, rehomingListings: adoptionStats.rehomingListings }).map((option, index) => (
-              <button
+              <div
                 key={index}
-                type="button"
-                onClick={() => navigateFromFeaturedVendorMeta(option.navMeta)}
-                className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-4 border border-red-100 flex items-center justify-between w-full text-left"
+                className="bg-gradient-to-r from-red-50/90 to-pink-50/90 rounded-2xl p-4 border border-red-100/90 flex items-center justify-between w-full text-left opacity-[0.92] grayscale-[0.08]"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
-                    <option.Icon className="w-6 h-6 text-red-500" />
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 bg-white/90 rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                    <option.Icon className="w-6 h-6 text-red-500/90" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-gray-800">{option.title}</h3>
                     <p className="text-xs text-gray-600">{option.description}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-medium text-red-600 mb-1">{option.count}</p>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                <div className="text-right shrink-0 pl-2">
+                  <span className="text-xs font-semibold text-amber-600">Coming soon</span>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </div>
@@ -2355,30 +2408,30 @@ export function CustomerHomeComplete({
         <div className="px-6 mb-6">
           <h2 className="text-black font-semibold mb-4">More Services</h2>
           <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => handleNavigation('mating-dating-hub')}
-              className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-2xl p-4 border border-rose-100 text-left hover:shadow-md transition-shadow w-full"
+            <div
+              className="relative bg-gradient-to-br from-rose-50/90 to-pink-50/90 rounded-2xl p-4 border border-rose-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.12]"
+              aria-label="Mating and Dating — coming soon"
             >
-              <Users className="w-8 h-8 text-rose-600 mb-2" />
+              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                Soon
+              </span>
+              <Users className="w-8 h-8 text-rose-600/80 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Mating & Dating</h3>
               <p className="text-xs text-gray-600 mb-3">Find perfect match for your pet</p>
-              <span className="text-xs text-rose-600 font-medium inline-flex items-center gap-1">
-                Explore <ChevronRight className="w-3 h-3" />
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNavigation('insurance')}
-              className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4 border border-cyan-100 text-left hover:shadow-md transition-shadow w-full"
+              <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
+            </div>
+            <div
+              className="relative bg-gradient-to-br from-cyan-50/90 to-blue-50/90 rounded-2xl p-4 border border-cyan-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.15]"
+              aria-label="Pet Insurance — coming soon"
             >
-              <Shield className="w-8 h-8 text-cyan-600 mb-2" />
+              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                Soon
+              </span>
+              <Shield className="w-8 h-8 text-cyan-600/80 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Insurance</h3>
               <p className="text-xs text-gray-600 mb-3">Protect your furry friend</p>
-              <span className="text-xs text-cyan-600 font-medium inline-flex items-center gap-1">
-                Get Quote <ChevronRight className="w-3 h-3" />
-              </span>
-            </button>
+              <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
+            </div>
             <button
               type="button"
               onClick={() => handleNavigation('walker')}
@@ -2391,18 +2444,18 @@ export function CustomerHomeComplete({
                 Book Now <ChevronRight className="w-3 h-3" />
               </span>
             </button>
-            <button
-              type="button"
-              onClick={() => handleNavigation('cafes')}
-              className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-2xl p-4 border border-amber-100 text-left hover:shadow-md transition-shadow w-full"
+            <div
+              className="relative bg-gradient-to-br from-amber-50/90 to-yellow-50/90 rounded-2xl p-4 border border-amber-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.1]"
+              aria-label="Pet Cafes — coming soon"
             >
-              <Coffee className="w-8 h-8 text-amber-600 mb-2" />
+              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                Soon
+              </span>
+              <Coffee className="w-8 h-8 text-amber-600/80 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Cafes</h3>
               <p className="text-xs text-gray-600 mb-3">Pet-friendly dining spots</p>
-              <span className="text-xs text-amber-600 font-medium inline-flex items-center gap-1">
-                Find Cafes <ChevronRight className="w-3 h-3" />
-              </span>
-            </button>
+              <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
+            </div>
           </div>
         </div>
 

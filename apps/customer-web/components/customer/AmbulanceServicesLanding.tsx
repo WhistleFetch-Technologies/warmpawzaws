@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeft, Siren, Phone, Calendar, Building2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Siren, Calendar, Building2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -64,17 +64,23 @@ export function AmbulanceServicesLanding({ phone, onBack, onNavigate }: Ambulanc
       {/* Main Content on White Background */}
       <div className="px-6 pb-24">
         {/* Emergency SOS Button */}
-        <Card className="bg-red-50 border-red-200 p-6 text-center mb-6">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <Siren className="w-8 h-8 text-red-600" />
+        <Card className="bg-amber-50 border-amber-200 p-6 text-center mb-6">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Siren className="w-8 h-8 text-amber-700" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Medical Emergency?</h2>
-          <p className="text-gray-700 mb-6">Get immediate help from nearby pet ambulances.</p>
-          <Button 
-            className="w-full bg-red-600 hover:bg-red-700 text-white h-12 text-lg font-bold shadow-lg shadow-red-200"
-            onClick={() => onNavigate?.('ambulance_sos')}
+          <span className="inline-block text-[11px] font-bold uppercase tracking-wide bg-amber-500 text-white px-3 py-1 rounded-full mb-3">
+            Coming soon
+          </span>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Emergency ambulance</h2>
+          <p className="text-gray-700 mb-6">
+            One-tap SOS dispatch is not available yet. We&apos;re building instant, location-based help for your pet.
+          </p>
+          <Button
+            type="button"
+            disabled
+            className="w-full bg-slate-400 text-white h-12 text-lg font-bold cursor-not-allowed opacity-95"
           >
-            EMERGENCY SOS
+            COMING SOON
           </Button>
         </Card>
 
