@@ -14,10 +14,16 @@ export interface VendorHeaderProps {
   className?: string;
   /** Brand (orange) bar — use instead of duplicate gradient/sticky top bars */
   tone?: 'default' | 'brand';
+  /**
+   * When the header is rendered inside a fixed top wrapper (e.g. VendorChromeLayout),
+   * disable sticky positioning — sticky inside fixed is redundant and can confuse mobile WebKit.
+   */
+  layoutWithinFixedParent?: boolean;
 }
 
 /**
- * Universal mobile-safe vendor app header: safe-area inset, sticky chrome,
+ * Universal mobile-safe vendor app header: vendor-screen-safe-top (env + min inset, see globals.css),
+ * sticky chrome,
  * centered truncated title, symmetric left/right slots.
  */
 export function VendorHeader({
@@ -28,6 +34,7 @@ export function VendorHeader({
   actions,
   className = '',
   tone = 'default',
+  layoutWithinFixedParent = false,
 }: VendorHeaderProps) {
   const router = useRouter();
 
@@ -41,13 +48,13 @@ export function VendorHeader({
 
   return (
     <header
-      className={`sticky top-0 z-10 shrink-0 safe-area-top border-b ${
+      className={`${layoutWithinFixedParent ? 'relative' : 'sticky top-0'} z-10 shrink-0 vendor-screen-safe-top border-b ${
         isBrand
           ? 'border-orange-300/40 bg-[#FF8C42]'
           : 'border-gray-200 bg-white'
       } ${className}`.trim()}
     >
-      <div className="flex items-center justify-between gap-2 p-4 flex-nowrap min-h-[56px]">
+      <div className="vendor-header-safe-x flex items-center justify-between gap-2 p-4 flex-nowrap min-h-[56px]">
         <div className="flex items-center gap-2 shrink-0">
           {showBack ? (
             <button

@@ -16,8 +16,8 @@
  * - POST /vendor/onboarding/select-vendor-type - Select vendor type
  * - GET /vendor/onboarding/form-schema - Get form schema
  * - POST /vendor/onboarding/submit-application - Submit application
- * - POST /admin/vendor/onboarding/:applicationId/review - Admin review
  * - POST /vendor/onboarding/activate - Activate vendor
+ * - Admin approve/reject: POST /admin/vendor/application/:applicationId/approve|reject (not this router)
  * - POST /vendor/setup/update-completion - Update setup completion
  * - POST /vendor/setup/go-live - Go live
  * 
@@ -34,7 +34,6 @@ import {
   SubmitVendorApplicationRequestSchema,
   SelectVendorRoleRequestSchema,
   SelectVendorTypeRequestSchema,
-  AdminReviewApplicationRequestSchema,
 } from '@warmpawz/api-contracts/vendors';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -837,6 +836,37 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
       const effectiveVendorType = identity.vendor_type || payloadVendorType || 'business';
       const effectiveRoleId = identity.selected_role_id || payloadRoleId;
 
+      const pl = application_payload as Record<string, unknown>;
+      const vd = validationResult.data as typeof validationResult.data & {
+        referralCode?: string;
+        referral_code?: string;
+      };
+      const referralFromSubmit =
+        vd.referralCode || vd.referral_code || pl?.referralCode || pl?.referral_code;
+      if (referralFromSubmit !== undefined && referralFromSubmit !== null && String(referralFromSubmit).trim() !== '') {
+        const { validateAndStoreReferralCodeForVendorApplication } = await import(
+          '../../../lib/services/referral-service'
+        );
+        const storeRes = await validateAndStoreReferralCodeForVendorApplication({
+          vendorIdentityId: identity.id,
+          phone,
+          referralCodeRaw: String(referralFromSubmit),
+        });
+        if (!storeRes.success) {
+          return this.error(
+            storeRes.error || 'Invalid referral code',
+            400,
+            'VALIDATION_ERROR',
+            undefined,
+            requestId
+          );
+        }
+        const refreshedIdentities = await select('vendor_identity', { id: identity.id });
+        if (refreshedIdentities.length > 0) {
+          identity = refreshedIdentities[0];
+        }
+      }
+
       // Get form schema version
       const roles = await select('roles', { id: effectiveRoleId });
       const formVersion = roles[0]?.config?.onboardingFormSchema?.[effectiveVendorType]?.version || '1.0';
@@ -1078,501 +1108,6 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 }
 
 // ============================================================================
-// PHASE 6: ADMIN DECISION FLOW
-// ============================================================================
-
-class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const applicationId = context.event.pathParameters?.applicationId;
-    const body = this.parseBody(context.event);
-    const requestId = context.requestId;
-
-    if (!applicationId) {
-      return this.error('Application ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
-    }
-
-    // Validate request with Zod schema
-    const validationResult = AdminReviewApplicationRequestSchema.safeParse(body);
-    if (!validationResult.success) {
-      return this.error(
-        'Validation failed',
-        400,
-        'VALIDATION_ERROR',
-        { errors: validationResult.error.errors },
-        requestId
-      );
-    }
-
-    const { action, admin_id, comments, rejection_reason } = validationResult.data;
-
-    try {
-      // Get application
-      const apps = await select('vendor_onboarding_applications', {
-        id: applicationId,
-      });
-
-      if (apps.length === 0) {
-        return this.error('Application not found', 404, 'NOT_FOUND', undefined, requestId);
-      }
-
-      const application = apps[0];
-
-      // Accept both UNDER_REVIEW and SUBMITTED (legacy: submit flow used to only set SUBMITTED on application)
-      const isReviewable = application.status === 'UNDER_REVIEW' || application.status === 'SUBMITTED';
-      if (!isReviewable) {
-        return this.error(
-          `Application is not in reviewable status (current: ${application.status}). Expected UNDER_REVIEW or SUBMITTED.`,
-          400,
-          'VALIDATION_ERROR',
-          undefined,
-          requestId
-        );
-      }
-
-      // Get vendor identity
-      // ✅ CRITICAL FIX: Filter out deleted vendor_identity records
-      const identitiesRaw = await select('vendor_identity', {
-        id: application.vendor_identity_id,
-      });
-
-      // Filter out deleted vendor_identity records
-      const identities = identitiesRaw.filter((vi: any) => {
-        const isDeleted = vi.is_deleted === true || 
-          vi.is_deleted === 't' ||
-          (typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true');
-        return !isDeleted;
-      });
-
-      if (identities.length === 0) {
-        return this.error('Vendor identity not found or has been deleted', 404, 'NOT_FOUND', undefined, requestId);
-      }
-
-      const identity = identities[0];
-      
-      // ✅ CRITICAL FIX: Track if identity.vendor_id points to a deleted vendor
-      // If it does, we MUST create a new vendor with a new ID - never reuse deleted vendor IDs
-      let identityVendorIdPointsToDeleted = false;
-      
-      if (identity.vendor_id) {
-        const vendorCheck = await query(
-          `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
-          [identity.vendor_id]
-        ).catch(() => ({ rows: [] }));
-        
-        if (vendorCheck.rows.length > 0) {
-          const vendor = vendorCheck.rows[0];
-          const isVendorDeleted = vendor.is_deleted === true || 
-            vendor.is_deleted === 't' ||
-            (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
-          
-          if (isVendorDeleted) {
-            console.log(`⚠️ [APPROVE] Identity ${identity.id} points to deleted vendor ${identity.vendor_id} - will create NEW vendor with NEW ID`);
-            // Mark that this points to deleted vendor - we MUST generate new ID
-            identityVendorIdPointsToDeleted = true;
-            // Clear vendor_id so we create a new vendor
-            identity.vendor_id = null;
-          }
-        }
-      }
-
-      // Update application based on action
-      let newStatus: string;
-      let newOnboardingStatus: string;
-
-      if (action === 'APPROVE') {
-        newStatus = 'APPROVED';
-        newOnboardingStatus = 'APPROVED';
-        
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments || null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else if (action === 'REQUEST_CLARIFICATION') {
-        if (!comments) {
-          return this.error(
-            'Comments are required for clarification request',
-            400,
-            'VALIDATION_ERROR',
-            undefined,
-            requestId
-          );
-        }
-
-        newStatus = 'CLARIFICATION_REQUIRED';
-        newOnboardingStatus = 'CLARIFICATION_REQUIRED';
-        
-        // Unlock application for editing
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else { // REJECT
-        if (!rejection_reason) {
-          return this.error(
-            'Rejection reason is required',
-            400,
-            'VALIDATION_ERROR',
-            undefined,
-            requestId
-          );
-        }
-
-        newStatus = 'REJECTED';
-        newOnboardingStatus = 'REJECTED';
-        
-        // ✅ FIX: Unlock application when rejected so vendor can resubmit
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            rejection_reason,
-            admin_comments: comments || null,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      }
-
-      // Transition onboarding status
-      await query(
-        `SELECT transition_onboarding_status($1, $2, $3, 'admin', $4, $5::jsonb)`,
-        [
-          identity.id,
-          newOnboardingStatus,
-          admin_id,
-          action.toLowerCase(),
-          JSON.stringify({ comments, rejection_reason }),
-        ]
-      );
-
-      // ✅ CREATE VENDORS RECORD: When approving, create vendors table record if it doesn't exist
-      // This ensures approved vendors appear in admin listings and can access vendor features
-      if (action === 'APPROVE') {
-        try {
-          // Check if vendor record already exists (by phone or by vendor_id from identity)
-          const existingVendorsByPhone = await query(
-            `SELECT id FROM vendors 
-             WHERE phone = $1 
-             AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
-             LIMIT 1`,
-            [identity.phone]
-          );
-
-          const existingVendorsById = identity.vendor_id
-            ? await query(
-                `SELECT id FROM vendors 
-                 WHERE id = $1 
-                 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
-                 LIMIT 1`,
-                [identity.vendor_id]
-              )
-            : { rows: [] };
-
-          // If vendor record already exists, just link it to vendor_identity if needed
-          if (existingVendorsByPhone.rows.length > 0 || existingVendorsById.rows.length > 0) {
-            const existingVendorId = existingVendorsById.rows[0]?.id || existingVendorsByPhone.rows[0]?.id;
-            console.log(`✅ [APPROVE] Vendor record already exists: ${existingVendorId}`);
-
-            // Link vendor_id to vendor_identity if not already linked
-            if (identity.vendor_id !== existingVendorId) {
-              try {
-                await query(
-                  `UPDATE vendor_identity 
-                   SET vendor_id = $1, updated_at = NOW()
-                   WHERE id = $2`,
-                  [existingVendorId, identity.id]
-                );
-                console.log(`✅ [APPROVE] Linked vendor_id ${existingVendorId} to vendor_identity ${identity.id}`);
-              } catch (linkErr: any) {
-                console.warn(`⚠️ [APPROVE] Failed to link vendor_id (non-critical):`, linkErr.message);
-              }
-            }
-          } else {
-            // No vendor record exists - create it from application data
-            console.log(`📝 [APPROVE] Creating vendors record for approved vendor ${identity.id}`);
-
-            // Extract form data from application payload
-            const formData = (application.application_payload as Record<string, any>) || {};
-            
-            // Get email with fallback chain: application payload → identity → phone-based default
-            const vendorEmail = formData.email || 
-                              formData.businessEmail || 
-                              identity.email || 
-                              `vendor-${identity.phone}@warmpawz.app`;
-
-            // Fetch default tier from vendor_tiers table (fallback to 'Bronze')
-            let defaultTierName = 'Basic';
-            try {
-              const tierResult = await query(
-                `SELECT tier_name 
-                 FROM vendor_tiers 
-                 WHERE is_active = true 
-                   AND (is_default = true OR is_free_tier = true)
-                 ORDER BY is_default DESC NULLS LAST, tier_level ASC
-                 LIMIT 1`
-              );
-              if (tierResult.rows && tierResult.rows.length > 0) {
-                defaultTierName = tierResult.rows[0].tier_name;
-              }
-            } catch (tierError: any) {
-              console.warn(`⚠️ [APPROVE] Could not fetch default tier, using 'Bronze':`, tierError.message);
-            }
-
-            // Determine the vendor ID to use
-            // ✅ CRITICAL FIX: If identity.vendor_id was cleared (points to deleted vendor), ALWAYS generate new UUID
-            // NEVER reuse deleted vendor IDs - always create a completely new vendor record
-            let finalVendorId: string;
-            
-            // If identity.vendor_id pointed to a deleted vendor, we MUST generate a new UUID
-            if (identityVendorIdPointsToDeleted) {
-              finalVendorId = randomUUID();
-              console.log(`✅ [APPROVE] Identity ${identity.id} had deleted vendor_id - generating NEW vendor ID: ${finalVendorId}`);
-            } else if (identity.vendor_id) {
-              // identity.vendor_id exists and doesn't point to deleted vendor
-              // Still check if vendor with this ID exists (shouldn't, but be safe)
-              const vendorCheck = await query(
-                `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
-                [identity.vendor_id]
-              ).catch(() => ({ rows: [] }));
-              
-              if (vendorCheck.rows.length > 0) {
-                const vendor = vendorCheck.rows[0];
-                const isVendorDeleted = vendor.is_deleted === true || 
-                  vendor.is_deleted === 't' ||
-                  (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
-                
-                if (isVendorDeleted) {
-                  // Vendor exists but is deleted - generate new ID
-                  finalVendorId = randomUUID();
-                  console.log(`⚠️ [APPROVE] Vendor ID ${identity.vendor_id} exists but is deleted - generating NEW ID: ${finalVendorId}`);
-                } else {
-                  // Vendor exists and is active - this shouldn't happen (we checked above), but use it
-                  finalVendorId = identity.vendor_id;
-                  console.log(`⚠️ [APPROVE] Vendor ID ${identity.vendor_id} already exists and is active - this should not happen in create flow`);
-                }
-              } else {
-                // Vendor doesn't exist - can use identity.vendor_id
-                finalVendorId = identity.vendor_id;
-                console.log(`✅ [APPROVE] Using identity.vendor_id as vendor ID: ${finalVendorId}`);
-              }
-            } else {
-              // No identity.vendor_id - use identity.id as fallback, but check if it exists
-              let proposedId = identity.id;
-              
-              // Check if a vendor with this ID already exists (even if deleted)
-              const existingVendorCheck = await query(
-                `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
-                [proposedId]
-              ).catch(() => ({ rows: [] }));
-
-              if (existingVendorCheck.rows && existingVendorCheck.rows.length > 0) {
-                // Vendor with this ID already exists (may be deleted or active)
-                // Generate a new unique UUID for the new vendor record
-                finalVendorId = randomUUID();
-                console.log(`⚠️ [APPROVE] Vendor ID ${identity.id} already exists - generating NEW unique ID: ${finalVendorId}`);
-              } else {
-                // ID doesn't exist - can use it
-                finalVendorId = proposedId;
-                console.log(`✅ [APPROVE] Using identity.id as vendor ID: ${finalVendorId}`);
-              }
-            }
-            
-            // ✅ FINAL SAFETY CHECK: Verify the finalVendorId doesn't exist (even if deleted)
-            // This ensures we NEVER reuse a deleted vendor's ID
-            const finalCheck = await query(
-              `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
-              [finalVendorId]
-            ).catch(() => ({ rows: [] }));
-            
-            if (finalCheck.rows.length > 0) {
-              const existingVendor = finalCheck.rows[0];
-              const isDeleted = existingVendor.is_deleted === true || 
-                existingVendor.is_deleted === 't' ||
-                (typeof existingVendor.is_deleted === 'string' && existingVendor.is_deleted.toLowerCase() === 'true');
-              
-              if (isDeleted) {
-                // This should never happen, but if it does, generate a new ID
-                console.error(`❌ [APPROVE] CRITICAL: Final vendor ID ${finalVendorId} points to deleted vendor! Generating new ID.`);
-                finalVendorId = randomUUID();
-                console.log(`✅ [APPROVE] Generated new safe vendor ID: ${finalVendorId}`);
-              } else {
-                console.warn(`⚠️ [APPROVE] Final vendor ID ${finalVendorId} already exists and is active - this should not happen`);
-              }
-            }
-
-            // Extract pincode from various possible field names
-            const pincode = formData.pincode || 
-                          formData.pinCode || 
-                          formData.pin || 
-                          '';
-
-            // Create vendors record with the final (unique) vendor ID
-            // ✅ CRITICAL FIX: Explicitly set is_deleted to false and metadata to empty object to prevent vendors from being marked as deleted
-            // Resolve default commission from vendor_tiers (defaultTierName already computed upstream if present)
-            let defaultCommission = 15;
-            try {
-              const tierRate = await query(
-                `SELECT commission_rate FROM vendor_tiers 
-                 WHERE is_active = true 
-                 AND (tier_name = $1 OR is_default = true) 
-                 ORDER BY (tier_name = $1) DESC, is_default DESC NULLS LAST, tier_level ASC 
-                 LIMIT 1`,
-                [defaultTierName || 'Basic']
-              ).catch(() => ({ rows: [] as any[] }));
-              const cr = parseFloat(tierRate.rows?.[0]?.commission_rate || '15');
-              if (!isNaN(cr)) defaultCommission = cr;
-            } catch {}
-
-            const insertResult = await query(
-              `INSERT INTO vendors (
-                id, phone, email, owner_name, business_name, role_id, status,
-                city, state, address, pincode, tier, commission_percentage,
-                is_active, metadata, created_at, approved_at
-              ) VALUES (
-                $1, $2, $3, $4, $5, $6, 'approved',
-                $7, $8, $9, $10, $11, $12,
-                true, '{}'::jsonb, NOW(), NOW()
-              )
-              RETURNING id`,
-              [
-                finalVendorId,
-                identity.phone,
-                vendorEmail,
-                formData.contactPersonName || formData.fullName || formData.businessName || 'Vendor',
-                formData.businessName || formData.contactPersonName || 'Business',
-                (identity.selected_role_id || identity.role_id),
-                formData.city || 'Unknown',
-                formData.state || 'Unknown',
-                formData.address || 'Unknown',
-                pincode,
-                defaultTierName,
-                defaultCommission
-              ]
-            );
-
-            // Check if insert succeeded
-            if (insertResult.rows && insertResult.rows.length > 0) {
-              const createdVendorId = insertResult.rows[0].id;
-              console.log(`✅ [APPROVE] Created vendors record: ${createdVendorId}`);
-
-              // ✅ CRITICAL FIX: Immediately verify the vendor was created correctly and is not deleted
-              const verifyVendor = await query(
-                `SELECT id, is_deleted, metadata FROM vendors WHERE id = $1 LIMIT 1`,
-                [createdVendorId]
-              ).catch(() => ({ rows: [] }));
-              
-              if (verifyVendor.rows.length > 0) {
-                const vendor = verifyVendor.rows[0];
-                const isDeleted = vendor.is_deleted === true || 
-                  vendor.is_deleted === 't' ||
-                  (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
-                
-                if (isDeleted) {
-                  console.error(`❌ [APPROVE] CRITICAL: Vendor ${createdVendorId} was created but is marked as deleted! Fixing...`);
-                  // Force fix: set is_deleted to false and clean metadata
-                  await query(
-                    `UPDATE vendors 
-                     SET is_deleted = false, 
-                         metadata = '{}'::jsonb,
-                         updated_at = NOW()
-                     WHERE id = $1`,
-                    [createdVendorId]
-                  );
-                  console.log(`✅ [APPROVE] Fixed vendor ${createdVendorId} - set is_deleted to false and cleaned metadata`);
-                } else {
-                  console.log(`✅ [APPROVE] Verified vendor ${createdVendorId} is active (is_deleted: ${vendor.is_deleted})`);
-                }
-              }
-
-              // ✅ CRITICAL FIX: Only update NON-DELETED vendor_identity records
-              // Verify the identity is not deleted before updating
-              const verifyIdentity = await query(
-                `SELECT id, is_deleted FROM vendor_identity WHERE id = $1 LIMIT 1`,
-                [identity.id]
-              ).catch(() => ({ rows: [] }));
-              
-              if (verifyIdentity.rows.length > 0) {
-                const identityCheck = verifyIdentity.rows[0];
-                const isIdentityDeleted = identityCheck.is_deleted === true || 
-                  identityCheck.is_deleted === 't' ||
-                  (typeof identityCheck.is_deleted === 'string' && identityCheck.is_deleted.toLowerCase() === 'true');
-                
-                if (!isIdentityDeleted) {
-                  // ✅ FIX: Always update vendor_identity to link the new vendor_id
-                  // This ensures vendor_identity.vendor_id points to the correct (new) vendors record
-                  if (!identity.vendor_id || identity.vendor_id !== createdVendorId) {
-                    try {
-                      await query(
-                        `UPDATE vendor_identity 
-                         SET vendor_id = $1, updated_at = NOW()
-                         WHERE id = $2 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
-                        [createdVendorId, identity.id]
-                      );
-                      console.log(`✅ [APPROVE] Linked vendor_id ${createdVendorId} to vendor_identity ${identity.id}`);
-                    } catch (linkErr: any) {
-                      console.warn(`⚠️ [APPROVE] Failed to link vendor_id (non-critical):`, linkErr.message);
-                    }
-                  }
-                } else {
-                  console.warn(`⚠️ [APPROVE] Cannot link vendor_id to deleted vendor_identity ${identity.id}`);
-                }
-              } else {
-                console.warn(`⚠️ [APPROVE] Vendor identity ${identity.id} not found for linking`);
-              }
-            } else {
-              console.error(`❌ [APPROVE] Failed to create vendors record - insert returned no rows`);
-            }
-          }
-        } catch (createError: any) {
-          // Log error but don't fail the approval - vendor can still access profile which will auto-create
-          console.error(`⚠️ [APPROVE] Failed to create vendors record (non-critical):`, createError);
-          console.error(`⚠️ [APPROVE] Error details:`, {
-            message: createError.message,
-            stack: createError.stack,
-            identityId: identity.id,
-            phone: identity.phone
-          });
-        }
-      }
-
-      return this.success({
-        message: `Application ${action.toLowerCase()}d successfully`,
-        status: newStatus,
-      }, requestId);
-    } catch (error: any) {
-      console.error('Error reviewing application:', error);
-      return this.error(
-        error.message || 'Failed to review application',
-        500,
-        'INTERNAL_ERROR',
-        undefined,
-        requestId
-      );
-    }
-  }
-}
-
-// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -1583,7 +1118,6 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   const selectVendorTypeHandler = new SelectVendorTypeHandlerEnhanced();
   const formSchemaHandler = new GetOnboardingFormSchemaHandlerEnhanced();
   const submitHandler = new SubmitApplicationHandlerEnhanced();
-  const reviewHandler = new AdminReviewApplicationHandlerEnhanced();
 
   // Phase 1: Auth & Entry
   app.get('/vendor/onboarding/status', async (c: Context) => {
@@ -1662,16 +1196,6 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
-  // Phase 6: Admin Review
-  app.post('/admin/vendor/onboarding/:applicationId/review', async (c: Context) => {
-    const event = await createApiGatewayEventWithBody(c);
-    event.pathParameters = { applicationId: c.req.param('applicationId') };
-    const context = createLambdaContext();
-    const result: any = await reviewHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
-  });
-
   // Phase 7: Activate Vendor
   app.post('/vendor/onboarding/activate', async (c: Context) => {
     try {
@@ -1698,6 +1222,43 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
       const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identity.id });
       const application = applications.length > 0 ? applications[0] : null;
       const payload = application?.application_payload || {};
+
+      const activationReferralRaw =
+        (body as { referralCode?: string; referral_code?: string; pendingReferralCode?: string; pending_referral_code?: string })
+          .referralCode ??
+        (body as { referral_code?: string }).referral_code ??
+        (body as { pendingReferralCode?: string }).pendingReferralCode ??
+        (body as { pending_referral_code?: string }).pending_referral_code;
+      const activationReferralCode =
+        activationReferralRaw != null && String(activationReferralRaw).trim() !== ''
+          ? String(activationReferralRaw).trim().toUpperCase()
+          : '';
+      const baseReferralMeta =
+        identity.metadata && typeof identity.metadata === 'object' && !Array.isArray(identity.metadata)
+          ? ({ ...(identity.metadata as Record<string, unknown>) } as Record<string, unknown>)
+          : ({} as Record<string, unknown>);
+      const referralMetadataForLink: Record<string, unknown> = {
+        ...baseReferralMeta,
+        ...(activationReferralCode ? { referral_code: activationReferralCode } : {}),
+      };
+
+      if (activationReferralCode) {
+        try {
+          const { validateAndStoreReferralCodeForVendorApplication } = await import(
+            '../../../lib/services/referral-service'
+          );
+          const storeRes = await validateAndStoreReferralCodeForVendorApplication({
+            vendorIdentityId: identity.id,
+            referralCodeRaw: activationReferralCode,
+            phone: String(identity.phone || phone || ''),
+          });
+          if (!storeRes.success) {
+            console.warn('[VENDOR-ACTIVATION] referral reserve on activate (non-fatal):', storeRes.error);
+          }
+        } catch (refPreErr) {
+          console.warn('[VENDOR-ACTIVATION] referral reserve on activate failed (non-fatal):', refPreErr);
+        }
+      }
 
       // Check if vendor already exists in vendors table
       // ✅ CRITICAL FIX: Use SQL filtering to exclude deleted vendors - only find active vendors
@@ -1819,6 +1380,20 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         
         await update('vendors', { id: vendor.id }, vendorUpdateData);
         console.log(`✅ [VENDOR-ACTIVATION] Updated vendor ${vendor.id} - cleaned metadata and set is_deleted: false`);
+
+        try {
+          const { linkVendorOnboardingReferralsFromIdentityMetadata } = await import(
+            '../../../lib/services/referral-service'
+          );
+          await linkVendorOnboardingReferralsFromIdentityMetadata({
+            vendorId: vendor.id,
+            phone: identity.phone,
+            metadata: referralMetadataForLink,
+            vendorIdentityId: identity.id,
+          });
+        } catch (refError: unknown) {
+          console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
+        }
         
         return c.json({
           success: true,
@@ -2112,37 +1687,19 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         }
       }
 
-      // Link referral if metadata contains referral info: VENDOR… code (vendor→vendor) or WARM… (customer→vendor).
-      // Rewards: action-source / loyalty consumer (same pattern as other referral flows).
-      if (identity.metadata && identity.metadata.referral_code_id) {
-        try {
-          const {
-            processVendorReferralSignup,
-            processCustomerReferralForVendorSignup,
-          } = await import('../../../lib/services/referral-service');
-          const refCode = String(identity.metadata.referral_code || '').trim();
-          let referralResult = await processVendorReferralSignup({
-            vendorId: vendor.id,
-            referralCode: refCode,
-            phone: identity.phone,
-          });
-          if (!referralResult.success && referralResult.error === 'Invalid referral code') {
-            referralResult = await processCustomerReferralForVendorSignup({
-              vendorId: vendor.id,
-              referralCode: refCode,
-              phone: identity.phone,
-            });
-          }
-
-          if (referralResult.success) {
-            console.log(`[VENDOR-ACTIVATION] ✅ Referral linked (vendor or customer code)`);
-          } else {
-            console.warn(`[VENDOR-ACTIVATION] Referral linking failed: ${referralResult.error}`);
-          }
-        } catch (refError: any) {
-          console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
-          // Don't fail activation if referral linking fails
-        }
+      // Link referral (metadata and/or `referrals` / `vendor_referrals` rows from submit).
+      try {
+        const { linkVendorOnboardingReferralsFromIdentityMetadata } = await import(
+          '../../../lib/services/referral-service'
+        );
+        await linkVendorOnboardingReferralsFromIdentityMetadata({
+          vendorId: vendor.id,
+          phone: identity.phone,
+          metadata: referralMetadataForLink,
+          vendorIdentityId: identity.id,
+        });
+      } catch (refError: any) {
+        console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
       }
 
       return c.json({

@@ -19,7 +19,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
+      <div className="h-full min-h-0">{children}</div>
       <Toaster position="top-right" />
     </QueryClientProvider>
   );

@@ -23,6 +23,7 @@ import { AddressSelector } from '../grooming/AddressSelector';
 import { TimeSlotSelector } from '../grooming/TimeSlotSelector';
 import { ServicePackageSelector } from '../grooming/ServicePackageSelector';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { HomeServiceProviderListView } from './HomeServiceProviderListView';
 import { HomeServiceProviderProfile } from './HomeServiceProviderProfile';
@@ -632,6 +633,7 @@ export function UniversalHomeServiceRouter({
         addressId={bookingFlow.address?.id}
         address={bookingFlow.address}
         baseAmount={totalAmount}
+        priceIncludesTax={catalogPriceIncludesTax(primaryService)}
         duration={primaryService?.duration || 60}
         customerPhone={phone}
         customerId={customerId}

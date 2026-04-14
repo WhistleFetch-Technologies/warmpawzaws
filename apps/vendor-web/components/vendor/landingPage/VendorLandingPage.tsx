@@ -76,6 +76,7 @@ import { VendorSupportDashboard } from '../VendorSupportDashboard'; // ✅ NEW: 
 import { ServicePromotionsManagement } from '../ServicePromotionsManagement'; // ✅ NEW: Service Promotions
 import { TeleCallNotification } from '../notification/teleNotification/TeleCallNotification'; // ✅ P2P Video Call Notification
 import { VendorNewBookingOrderAlert } from '../VendorNewBookingOrderAlert'; // Rule 4: Large new appointment/order alert
+import { isPharmacyVendor } from './constants/helpers';
 import { useVendorNotificationService } from '../hooks/useVendorNotificationService';
 import { PackageManagementContainer } from '../packages/PackageManagementContainer';
 import { ApplicationData, VendorData, VendorLandingPageProps, VendorStatus } from './constants/interface';
@@ -1239,8 +1240,8 @@ export function VendorLandingPage({
       // ✅ Diagnostics center: Lab orders dashboard first; Test catalog secondary
       if (showDiagnosticsOrders) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="min-h-screen bg-gray-50 vendor-screen-safe-top">
+            <div className="max-w-6xl mx-auto px-4 pb-6">
               <DiagnosticsOrderDashboard
                 vendorId={vendorId}
                 onBack={() => {
@@ -1273,8 +1274,8 @@ export function VendorLandingPage({
       // ✅ NEW: Diagnostic Results (Test catalog)
       if (showDiagnostics) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="min-h-screen bg-gray-50 vendor-screen-safe-top">
+            <div className="max-w-6xl mx-auto px-4 pb-6">
               <DiagnosticResults
                 vendorId={vendorId}
                 vendorData={vendorData}
@@ -1584,12 +1585,14 @@ export function VendorLandingPage({
       const roleName = (vendorData as any)?.roleName || (vendorData as any)?.role_name || '';
       const PET_PRODUCTS_STORE_UUID = '5056756d-3b05-457a-9725-3f922800b520';
       const PET_PHARMACY_UUID = ''; // Add if known
-      const isRetailVendor = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' ||
-        vendorRoleId === 'pet_pharmacy' || vendorRoleId === PET_PRODUCTS_STORE_UUID ||
+      const isRetailVendor =
+        vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' ||
+        vendorRoleId === PET_PRODUCTS_STORE_UUID ||
         roleName === 'pet_products_store' || roleName === 'Pet Store / Retailer' ||
         vendorRoleId?.includes('retail') || vendorRoleId?.includes('store') ||
         (vendorData as any)?.vendor_type === 'seller';
-      if (isRetailVendor) {
+      // Pet pharmacy often has customer_service "shop" and retail-like caps; never send to ecommerce Seller Hub.
+      if (isRetailVendor && !isPharmacyVendor(vendorData)) {
         console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', vendorRoleId, 'RoleName:', roleName);
         router.push('/seller');
         return (

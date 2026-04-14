@@ -19,9 +19,11 @@ const logoImage = '/logo.png';
 
 interface VendorAuthProps {
   onAuthSuccess: (session: any) => void;
+  /** When true, auth blocks fill the scroll area inside VendorPublicAppShell (no min-h-screen). */
+  usePublicAppShell?: boolean;
 }
 
-export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
+export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorAuthProps) {
   const [isSignUp, setIsSignUp] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,6 +59,13 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       policyType={legalDialogType}
     />
   );
+
+  const fillShell = usePublicAppShell
+    ? 'min-h-0 w-full flex-1 flex flex-col'
+    : 'min-h-screen';
+  const centerShell = usePublicAppShell
+    ? 'min-h-0 w-full flex-1 flex flex-col items-center justify-center p-4'
+    : 'min-h-screen flex items-center justify-center p-4';
 
   const chatBotWidget = showChatBot ? (
     <ChatWidget
@@ -531,7 +540,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   if (pendingApproval) {
     return (
       <Fragment>
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
+      <div className={`${centerShell} bg-gradient-to-br from-orange-50 to-white`}>
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
           <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <span className="text-4xl">⏳</span>
@@ -569,8 +578,9 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
     return (
       <Fragment>
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column">
-
+      <div
+        className={`${fillShell} bg-[#FF8C42] flex flex-col ${usePublicAppShell ? 'mx-auto max-w-[430px]' : 'vendor-auth-column'}`}
+      >
 
         {/* Orange Header Section */}
         <div className="px-6 pt-8 pb-20 flex flex-col items-center">
@@ -684,7 +694,9 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   if (isSignUp && currentStep === 1 && !showOtpScreen) {
     return (
       <Fragment>
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col vendor-auth-column safe-area-top">
+      <div
+        className={`${fillShell} bg-[#FF8C42] flex flex-col safe-area-top ${usePublicAppShell ? 'mx-auto max-w-[430px]' : 'vendor-auth-column'}`}
+      >
         {/* Orange Header Section */}
         <div className="px-6 pt-8 pb-20 flex flex-col items-center">
           {/* Logo */}
@@ -859,7 +871,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     // Sign In Screen
     return (
       <Fragment>
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
+      <div className={`${centerShell} bg-gradient-to-br from-orange-50 to-white`}>
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-xl p-8">
             {/* Logo */}
@@ -961,7 +973,9 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   // Multi-step Registration Form (Steps 2+)
   return (
     <Fragment>
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white py-8 px-4">
+    <div
+      className={`${usePublicAppShell ? 'min-h-0 w-full flex-1 overflow-y-auto' : 'min-h-screen'} bg-gradient-to-br from-orange-50 to-white py-8 px-4`}
+    >
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           {/* Header */}

@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Shield, Plus, Edit2, Trash2, Loader2, Save, X, Users, Key, Check } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Shield, Plus, Edit2, Trash2, Loader2, Save, X, Users, Key } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { UsersTab } from './UsersTab';
+import { CreateAdminUserModal } from './CreateAdminUserModal';
 
 interface Permission {
   permissionId: string;
@@ -24,17 +26,6 @@ interface Role {
   createdAt: string;
 }
 
-const PERMISSION_CATEGORIES = [
-  'Vendor Management',
-  'User Management',
-  'Booking Management',
-  'Financial Operations',
-  'Content Management',
-  'System Settings',
-  'Analytics & Reports',
-  'Support & CRM',
-];
-
 export function RBACManagement() {
   const [loading, setLoading] = useState(true);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -43,6 +34,9 @@ export function RBACManagement() {
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<'roles' | 'users'>('roles');
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [usersTabNonce, setUsersTabNonce] = useState(0);
 
   const [formData, setFormData] = useState({
     roleName: '',
@@ -57,18 +51,31 @@ export function RBACManagement() {
   }, []);
 
   const loadData = async () => {
-    try {
-      setLoading(true);
-      // Use /admin/roles endpoint which has more complete data
-      // Pass active=false to get ALL roles including inactive ones
-      const [rolesData, capsData] = await Promise.all([
-        apiClient.get<any>('/admin/roles?active=false'),
-        apiClient.get<any>('/admin/capabilities'),
-      ]);
+    setLoading(true);
+    let rolesFailed = false;
+    let capsFailed = false;
 
-      if (rolesData.success) {
-        // Map the roles to the expected format
-        const mappedRoles = (rolesData.roles || []).map((r: any) => ({
+    /** Align with backend `isAdminPortalRoleRow`: vendor-typed rows with admin.* / admin:* caps are admin-portal RBAC. */
+    const isAdminPortalRoleRow = (r: any): boolean => {
+      const rt = String(r?.role_type ?? '').toLowerCase();
+      if (rt === 'admin') return true;
+      const caps = Array.isArray(r?.capabilities) ? r.capabilities : [];
+      const hasAdminPortalCap = caps.some((c: any) => {
+        const s = String(c);
+        return s.startsWith('admin.') || s.startsWith('admin:');
+      });
+      if (hasAdminPortalCap) return true;
+      if (rt === 'vendor') return false;
+      const nm = String(r?.name ?? '').toLowerCase();
+      return ['admin', 'super_admin', 'support_admin', 'admin_master'].includes(nm);
+    };
+
+    try {
+      const rolesData = await apiClient.get<any>('/admin/roles?active=false&role_type=admin');
+      const raw = Array.isArray(rolesData?.roles) ? rolesData.roles : [];
+      const adminOnly = raw.filter(isAdminPortalRoleRow);
+      if (rolesData?.success !== false) {
+        const mappedRoles = adminOnly.map((r: any) => ({
           roleId: r.id || r.roleId,
           roleName: r.display_name || r.roleName || r.name,
           roleCode: r.name || r.roleCode,
@@ -80,25 +87,43 @@ export function RBACManagement() {
           createdAt: r.createdAt || r.created_at || '',
         }));
         setRoles(mappedRoles);
+      } else if (rolesData?.success === false) {
+        rolesFailed = true;
       }
-      
-      if (capsData.success) {
-        // Map capabilities to permissions format
+    } catch (error) {
+      console.error('Error loading admin roles:', error);
+      rolesFailed = true;
+    }
+
+    try {
+      const capsData = await apiClient.get<any>('/admin/admin-capabilities');
+      if (capsData?.capabilities?.length || capsData?.success) {
         const mappedPermissions = (capsData.capabilities || []).map((c: any) => ({
           permissionId: c.id,
           permissionName: c.name,
           permissionCode: c.id,
-          category: c.category || 'General',
+          category: c.category || 'Admin Portal',
           description: c.description || '',
         }));
         setPermissions(mappedPermissions);
       }
     } catch (error) {
-      console.error('Error loading RBAC data:', error);
-      alert('Failed to load RBAC data');
-    } finally {
-      setLoading(false);
+      console.error('Error loading admin capabilities (create/edit role checkboxes may be empty):', error);
+      capsFailed = true;
+      setPermissions([]);
     }
+
+    if (rolesFailed) {
+      alert(
+        'Failed to load admin roles. Confirm you are signed in and the API includes GET /admin/roles with query support.'
+      );
+    } else if (capsFailed) {
+      console.warn(
+        'GET /admin/admin-capabilities failed — deploy the latest API or check auth. Permission checkboxes will be empty until it succeeds.'
+      );
+    }
+
+    setLoading(false);
   };
 
   const handleOpenRoleModal = (role?: Role) => {
@@ -236,7 +261,7 @@ export function RBACManagement() {
       .filter(p => p.category === category)
       .map(p => p.permissionId);
     
-    const allSelected = categoryPermissions.every(p => formData.permissions.includes(p));
+    const allSelected = categoryPermissions.length > 0 && categoryPermissions.every(p => formData.permissions.includes(p));
     
     if (allSelected) {
       setFormData(prev => ({
@@ -251,9 +276,14 @@ export function RBACManagement() {
     }
   };
 
-  const filteredPermissions = selectedCategory === 'all'
-    ? permissions
-    : permissions.filter(p => p.category === selectedCategory);
+  /** Must match `category` strings from GET /admin/admin-capabilities (GetAdminCapabilitiesHandler). */
+  const permissionCategories = useMemo(
+    () => [...new Set(permissions.map((p) => p.category))].sort((a, b) => a.localeCompare(b)),
+    [permissions]
+  );
+
+  const categoriesToRender =
+    selectedCategory === 'all' ? permissionCategories : permissionCategories.filter((c) => c === selectedCategory);
 
   if (loading) {
     return (
@@ -272,18 +302,64 @@ export function RBACManagement() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">RBAC Management</h1>
-            <p className="text-sm text-gray-600">Manage roles and permissions</p>
+            <p className="text-sm text-gray-600">Manage roles, admin users, and portal permissions</p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          {activeTab === 'users' && (
+            <button
+              type="button"
+              onClick={() => setShowCreateUser(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 text-sm font-medium"
+            >
+              <Users className="w-4 h-4" />
+              Create admin user
+            </button>
+          )}
+          {activeTab === 'roles' && (
+            <button
+              onClick={() => handleOpenRoleModal()}
+              className="flex items-center gap-3 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+            >
+              <Plus className="w-4 h-4" />
+              Create Role
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-1 border-b border-gray-200">
         <button
-          onClick={() => handleOpenRoleModal()}
-          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          type="button"
+          onClick={() => setActiveTab('roles')}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+            activeTab === 'roles'
+              ? 'border-orange-600 text-orange-700 bg-orange-50/50'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          Create Role
+          Roles
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+            activeTab === 'users'
+              ? 'border-orange-600 text-orange-700 bg-orange-50/50'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Admin users
         </button>
       </div>
 
+      {activeTab === 'users' && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <UsersTab key={usersTabNonce} />
+        </div>
+      )}
+
+      {activeTab === 'roles' && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {roles.map((role) => (
           <div key={role.roleId} className="bg-white rounded-xl border-2 border-gray-200 p-5">
@@ -358,6 +434,16 @@ export function RBACManagement() {
           </div>
         ))}
       </div>
+      )}
+
+      <CreateAdminUserModal
+        open={showCreateUser}
+        onClose={() => setShowCreateUser(false)}
+        onCreated={() => {
+          setShowCreateUser(false);
+          setUsersTabNonce((n) => n + 1);
+        }}
+      />
 
       {showRoleModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -418,19 +504,22 @@ export function RBACManagement() {
                     className="px-0 py-0 border-2 border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="all">All Categories</option>
-                    {PERMISSION_CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
+                    {permissionCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="border-2 border-gray-200 rounded-lg max-h-96 overflow-y-auto">
-                  {PERMISSION_CATEGORIES.map(category => {
+                  {categoriesToRender.map((category) => {
                     const categoryPerms = permissions.filter(p => p.category === category);
                     if (categoryPerms.length === 0) return null;
 
-                    const allSelected = categoryPerms.every(p => formData.permissions.includes(p.permissionId));
-                    const someSelected = categoryPerms.some(p => formData.permissions.includes(p.permissionId));
+                    const allSelected =
+                      categoryPerms.length > 0 &&
+                      categoryPerms.every(p => formData.permissions.includes(p.permissionId));
 
                     return (
                       <div key={category} className="border-b border-gray-200 last:border-b-0">

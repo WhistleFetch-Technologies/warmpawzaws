@@ -438,7 +438,7 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
                         className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`} 
                         onClick={() => document.getElementById('aadhaar-front-upload')?.click()}
                     >
-                        <input id="aadhaar-front-upload" type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'front')} />
+                        <input id="aadhaar-front-upload" type="file" accept="image/*" className="sr-only" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'front')} />
                         {aadhaarFiles.front ? (
                             <span className="text-green-600 text-xs font-medium">{aadhaarFiles.front.name}</span>
                         ) : (
@@ -452,7 +452,7 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
                         className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`} 
                         onClick={() => document.getElementById('aadhaar-back-upload')?.click()}
                     >
-                        <input id="aadhaar-back-upload" type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'back')} />
+                        <input id="aadhaar-back-upload" type="file" accept="image/*" className="sr-only" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'back')} />
                         {aadhaarFiles.back ? (
                             <span className="text-green-600 text-xs font-medium">{aadhaarFiles.back.name}</span>
                         ) : (
@@ -507,7 +507,7 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
                 <div>
                     <Label className="mb-1.5 block text-gray-700">GST Certificate *</Label>
                     <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42]" onClick={() => document.getElementById('gst-upload')?.click()}>
-                         <input id="gst-upload" type="file" className="hidden" onChange={e => handleFileUpload('gst', e.target.files?.[0] || null)} />
+                         <input id="gst-upload" type="file" className="sr-only" onChange={e => handleFileUpload('gst', e.target.files?.[0] || null)} />
                          {gstCertificate ? <span className="text-green-600 text-xs font-medium">{gstCertificate.name}</span> : <span className="text-gray-500 text-xs">Click to upload PDF/Image</span>}
                     </div>
                 </div>
@@ -567,7 +567,7 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
             <div>
                 <Label className="mb-1.5 block text-gray-700">Cancelled Cheque *</Label>
                  <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42]" onClick={() => document.getElementById('cheque-upload')?.click()}>
-                         <input id="cheque-upload" type="file" className="hidden" onChange={e => handleFileUpload('cheque', e.target.files?.[0] || null)} />
+                         <input id="cheque-upload" type="file" className="sr-only" onChange={e => handleFileUpload('cheque', e.target.files?.[0] || null)} />
                          {bankDetails.cancelledCheque ? <span className="text-green-600 text-xs font-medium">{bankDetails.cancelledCheque.name}</span> : <span className="text-gray-500 text-xs">Click to upload</span>}
                 </div>
             </div>

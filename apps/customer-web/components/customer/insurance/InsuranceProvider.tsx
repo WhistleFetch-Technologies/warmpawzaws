@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 
 interface InsuranceProviderProps {
   phone?: string;
@@ -557,6 +558,7 @@ This is a digital policy document. Please keep this for your records.
             petName={selectedPet.name}
             petBreed={selectedPet.breed}
             baseAmount={selectedPlan.price}
+            priceIncludesTax={catalogPriceIncludesTax(selectedPlan)}
             duration={0}
             quantity={1}
             customerPhone={phone}

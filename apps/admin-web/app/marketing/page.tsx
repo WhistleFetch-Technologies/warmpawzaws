@@ -1149,6 +1149,7 @@ export default function MarketingPromotionsTab() {
 
 						{/* UI CONFIG TAB - Service Launch by Geography */}
 						{activeTab === "ui-config" && (
+							<>
 							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 								{/* Geographic Scope Selection */}
 								<Card className="p-6 col-span-1 h-fit relative overflow-visible">
@@ -1224,7 +1225,7 @@ export default function MarketingPromotionsTab() {
 										<div>
 											<h3 className="font-semibold">Service Launch Status</h3>
 											<p className="text-sm text-gray-500">
-												Control service visibility and booking availability by geography
+												Control service visibility and booking availability by geography. Customer home catalogue tiles use the same rules: pick state and city on the left, then set each service to Launched, Coming Soon, Beta, or Hidden.
 											</p>
 										</div>
 										<Button
@@ -1418,6 +1419,7 @@ export default function MarketingPromotionsTab() {
 									)}
 								</Card>
 							</div>
+							</>
 						)}
 
 						{/* SPOTLIGHT TAB */}

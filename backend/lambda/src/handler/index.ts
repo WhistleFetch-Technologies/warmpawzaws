@@ -66,6 +66,7 @@ import { registerRegionEndpoints } from '../endpoints/regions';
 import { registerChatEndpoints } from '../endpoints/chat';
 import { registerFileUploadEndpoints } from '../endpoints/file-upload';
 import { registerSubscriptionEndpoints } from '../endpoints/subscriptions';
+import { registerSubscriptionBookingEndpoints } from '../endpoints/subscription-booking';
 import { registerInsuranceEndpoints } from '../endpoints/insurance';
 import { registerTrainingProgressEndpoints } from '../endpoints/training-progress';
 import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
@@ -574,6 +575,7 @@ registerRegionEndpoints(app);
 registerChatEndpoints(app);
 registerFileUploadEndpoints(app);
 registerSubscriptionEndpoints(app);
+registerSubscriptionBookingEndpoints(app); // POST /subscriptions/check-coverage, /subscriptions/create-booking
 registerInsuranceEndpoints(app);
 registerTrainingProgressEndpoints(app);
 registerPackageBookingEndpoints(app);
@@ -601,7 +603,7 @@ app.route('/', platformPoliciesApp);
 registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
-registerConfigPoliciesEndpoints(app); // /config/policies, /config/fees, /config/logistics-rules
+registerConfigPoliciesEndpoints(app); // /config/policies, /config/logistics-rules (GET /config/fees → fee-config.ts)
 registerVendorSettingsEndpoints(app);
 registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);

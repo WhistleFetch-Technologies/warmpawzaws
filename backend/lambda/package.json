@@ -5,7 +5,8 @@
   "main": "dist/handler.js",
   "scripts": {
     "build:contracts": "npm install --prefix ../../packages/api-contracts --no-audit --no-fund && npm run build --prefix ../../packages/api-contracts",
-    "build": "npm run build:contracts && npm run clean && npm run build:bundle && npm run package",
+    "build:mappings": "npm install --include=dev --prefix ../../packages/service-launch-mappings --no-audit --no-fund && npm run build --prefix ../../packages/service-launch-mappings",
+    "build": "npm run build:contracts && npm run build:mappings && npm run clean && npm run build:bundle && npm run package",
     "build:ts": "tsc --noEmit",
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
     "build:bundle": "node esbuild.config.js",
@@ -36,6 +37,7 @@
     "@aws-sdk/s3-request-presigner": "^3.450.0",
     "@sentry/serverless": "^7.120.4",
     "@warmpawz/api-contracts": "file:../../packages/api-contracts",
+    "@warmpawz/service-launch-mappings": "file:../../packages/service-launch-mappings",
     "aws-lambda": "^1.0.7",
     "firebase-admin": "^12.0.0",
     "hono": "^4.6.14",

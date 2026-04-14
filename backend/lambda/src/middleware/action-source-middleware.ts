@@ -53,6 +53,19 @@ function pathToRegex(pattern: string): RegExp {
 	return new RegExp(re);
 }
 
+/** Multiple paths in one row: newline-separated patterns (migration 637 buy_medicine). */
+function routePatternsFromStoredPattern(stored: string): string[] {
+	if (!stored || !stored.trim()) return [];
+	return stored
+		.split(/\r?\n/)
+		.map((p) => p.trim())
+		.filter(Boolean);
+}
+
+function routePatternMatchesPath(storedPattern: string, path: string): boolean {
+	return routePatternsFromStoredPattern(storedPattern).some((p) => pathToRegex(p).test(path));
+}
+
 async function getMappings(): Promise<Record<string, ActionSource[]>> {
 	const now = Date.now();
 	if (now - cache.at < CACHE_TTL_MS && Object.keys(cache.byMethod).length > 0) return cache.byMethod;
@@ -99,6 +112,15 @@ function resolveExpr(expr: string | null | undefined, ctx: { res: any; req: any;
 	return undefined;
 }
 
+/** So `$.a && ($.b || $.c)` works: after split on `&&`, inner `||` is not corrupted by stray `(` `)`. */
+function stripOuterParensBalanced(expr: string): string {
+	let s = expr.trim();
+	while (s.startsWith('(') && s.endsWith(')')) {
+		s = s.slice(1, -1).trim();
+	}
+	return s;
+}
+
 function  evalPredicate(predicate: string | null | undefined, resBody: any): boolean {
 	if (!predicate || !predicate.trim()) return true;
 	const trimmed = predicate.trim().toLowerCase();
@@ -114,7 +136,7 @@ function  evalPredicate(predicate: string | null | undefined, resBody: any): boo
 			.split('&&')
 			.map(p => p.trim())
 			.filter(Boolean)
-			.every(p => evalPredicate(p, resBody));
+			.every(p => evalPredicate(stripOuterParensBalanced(p), resBody));
 	}
 	// Support disjunctions: "$.a == 'x' || $.b == 'y'"
 	if (trimmed.includes('||')) {
@@ -122,7 +144,7 @@ function  evalPredicate(predicate: string | null | undefined, resBody: any): boo
 			.split('||')
 			.map(p => p.trim())
 			.filter(Boolean)
-			.some(p => evalPredicate(p, resBody));
+			.some(p => evalPredicate(stripOuterParensBalanced(p), resBody));
 	}
 	// Equality: "$.field == 'value'"
 	const m = predicate.match(/^\s*\$\.(.+?)\s*==\s*["']?(.+?)["']?\s*$/);
@@ -142,23 +164,43 @@ function  evalPredicate(predicate: string | null | undefined, resBody: any): boo
 
 // EventBridge publisher
 async function publishActionOccurred(evt: EventPayload): Promise<void> {
+	const bus = process.env.EVENT_BUS_NAME || 'default';
 	try {
 		const { EventBridgeClient, PutEventsCommand } = await import('@aws-sdk/client-eventbridge');
 		const eb = new EventBridgeClient({});
-		await eb.send(
+		const out = await eb.send(
 			new PutEventsCommand({
 				Entries: [
 					{
 						Source: 'app.warmpawz',
 						DetailType: 'ActionOccurred',
 						Detail: JSON.stringify(evt),
-						EventBusName: process.env.EVENT_BUS_NAME || 'default',
+						EventBusName: bus,
 					},
 				],
 			})
 		);
+		const ent = out.Entries?.[0];
+		const failed = (out.FailedEntryCount ?? 0) > 0;
+		if (failed || ent?.ErrorCode) {
+			console.warn('[ActionOccurred] PutEvents rejected entry', {
+				bus,
+				actionName: evt.actionName,
+				eventId: evt.eventId,
+				errorCode: ent?.ErrorCode,
+				errorMessage: ent?.ErrorMessage,
+				failedEntryCount: out.FailedEntryCount,
+			});
+		} else {
+			console.log('[ActionOccurred] PutEvents ok', {
+				bus,
+				actionName: evt.actionName,
+				eventId: evt.eventId,
+				awsEventId: ent?.EventId,
+			});
+		}
 	} catch (e: any) {
-		console.warn('[ActionOccurred] publish failed (non-blocking):', e?.message || e);
+		console.warn('[ActionOccurred] publish failed (non-blocking):', { bus, message: e?.message || String(e) });
 	}
 }
 
@@ -174,9 +216,9 @@ export function actionSourceMiddleware() {
 			const mappingsByMethod = await getMappings();
 			const candidates = (mappingsByMethod[method] || []).filter(m => {
 				if (status < (m.status_min ?? 200) || status > (m.status_max ?? 299)) return false;
-				return pathToRegex(m.route_pattern).test(path);
+				return routePatternMatchesPath(m.route_pattern, path);
 			});
-			try {-+
+			try {
 				console.log('[ASDIAG] routeMatch', JSON.stringify({
 					method,
 					path,

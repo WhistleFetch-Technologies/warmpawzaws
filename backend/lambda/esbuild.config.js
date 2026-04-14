@@ -154,6 +154,7 @@ esbuild.build({
     '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
   },
   
   // AWS Lambda specific settings
@@ -173,7 +174,7 @@ esbuild.build({
 
 // Build Loyalty Events Consumer bundle
 esbuild.build({
-  entryPoints: ['src/handlers/loyalty-events-consumer.ts'],
+  entryPoints: ['src/Lambdas/loyalty-events-consumer.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',
@@ -205,6 +206,7 @@ esbuild.build({
     '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),

@@ -37,6 +37,8 @@ export const CreatePaymentRequestSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID format').optional(),
   vendorId: z.string().uuid('Invalid vendor ID format').optional(),
   idempotencyKey: z.string().uuid('Invalid idempotency key format').optional(),
+  /** Business line for fee overrides (veterinary, grooming, …) — matches Admin → Finance. */
+  category: z.string().max(64).optional(),
 });
 
 export const ProcessRefundRequestSchema = z.object({

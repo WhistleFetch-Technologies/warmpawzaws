@@ -280,8 +280,8 @@ export function DiagnosticsReportUpload({
         </label>
         
         {!reportFile ? (
-          <label className="block cursor-pointer">
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-[#FF8C42] transition">
+          <label className="relative block cursor-pointer overflow-hidden rounded-xl">
+            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-[#FF8C42] transition pointer-events-none">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Upload className="w-8 h-8 text-gray-400" />
               </div>
@@ -292,7 +292,7 @@ export function DiagnosticsReportUpload({
               type="file"
               accept=".pdf,image/*"
               onChange={handleFileSelect}
-              className="hidden"
+              className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
             />
           </label>
         ) : (

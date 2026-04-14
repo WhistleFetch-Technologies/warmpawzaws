@@ -213,16 +213,19 @@ export function VendorServiceConfigurationScreen({
       // 2. Fetch vendor's own added services for this style
       let vendorServices: any[] = [];
       try {
-        const vendorData = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
-        if (vendorData?.services) {
-          vendorServices = vendorData.services;
+        const styleServicesResponse = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
+        if (serviceStyle === 'at_home') {
+          console.log('At Home Services API:', styleServicesResponse);
+        }
+        if (styleServicesResponse?.services) {
+          vendorServices = styleServicesResponse.services;
           console.log(`🏪 Vendor services loaded: ${vendorServices.length}`);
           // ✅ No need to filter here - backend endpoint /vendor/:vendorId/services/:serviceStyle
           // already validates that serviceStyle is allowed before returning services
         }
         // ✅ FIX: Check for error message from API
-        if (vendorData?.error && vendorData?.success === false) {
-          toast.error(vendorData.error);
+        if (styleServicesResponse?.error && styleServicesResponse?.success === false) {
+          toast.error(styleServicesResponse.error);
           onBack();
           return;
         }
@@ -1223,35 +1226,37 @@ export function VendorServiceConfigurationScreen({
   }
 
   return (
-    <div className="vendor-page-shell bg-gray-50">
-      <div className="vendor-app-column flex min-h-screen flex-col bg-white pb-24">
-        <VendorHeader
-          title={`${getStyleIcon()} ${getStyleName()}`}
-          subtitle={
-            vendorData?.businessName || vendorData?.fullName
-              ? `Service Management · ${vendorData?.businessName || vendorData?.fullName}`
-              : 'Service Management'
-          }
-          onBack={onBack}
-          actions={
-            onBrowseCatalog
-              ? [
-                  <Button
-                    key="browse-catalog"
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 shrink-0 border-blue-200 text-xs text-blue-600 hover:bg-blue-50"
-                    onClick={onBrowseCatalog}
-                  >
-                    <Package className="mr-1 inline h-4 w-4" />
-                    Catalog
-                  </Button>,
-                ]
-              : []
-          }
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="vendor-page-shell flex h-[100dvh] max-h-[100dvh] flex-col bg-gray-50">
+      <div className="vendor-app-column flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <div className="shrink-0">
+          <VendorHeader
+            title={`${getStyleIcon()} ${getStyleName()}`}
+            subtitle={
+              vendorData?.businessName || vendorData?.fullName
+                ? `Service Management · ${vendorData?.businessName || vendorData?.fullName}`
+                : 'Service Management'
+            }
+            onBack={onBack}
+            actions={
+              onBrowseCatalog
+                ? [
+                    <Button
+                      key="browse-catalog"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 border-blue-200 text-xs text-blue-600 hover:bg-blue-50"
+                      onClick={onBrowseCatalog}
+                    >
+                      <Package className="mr-1 inline h-4 w-4" />
+                      Catalog
+                    </Button>,
+                  ]
+                : []
+            }
+          />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-4">
         <div className="space-y-3 border-b border-gray-200 bg-white p-4">
           {/* ✅ Search Bar */}
           <div className="relative mb-3">
@@ -1643,33 +1648,33 @@ export function VendorServiceConfigurationScreen({
           )}
         </div>
         </div>
-      </div>
 
-      {/* Bottom Action Bar */}
-      {enabledCount > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
-          <div className="vendor-app-column-inner p-4 flex flex-wrap gap-2">
-            {hasChanges && (
+        {/* Bottom action bar: outside scroll region so it stays pinned (flex layout, not document scroll) */}
+        {enabledCount > 0 && (
+          <div className="shrink-0 border-t border-gray-200 bg-white shadow-[0_-4px_14px_rgba(0,0,0,0.06)] pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-3">
+            <div className="vendor-app-column-inner flex flex-wrap gap-2 px-4">
+              {hasChanges && (
+                <Button
+                  onClick={saveConfiguration}
+                  disabled={saving}
+                  variant="outline"
+                  className="flex-1 min-w-[8rem]"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+              )}
               <Button
-                onClick={saveConfiguration}
-                disabled={saving}
-                variant="outline"
-                className="flex-1"
+                onClick={publishServices}
+                disabled={isPublishing || saving}
+                className="flex-1 min-w-[8rem] bg-[#FF8C42] hover:bg-[#ff7a28] text-white"
               >
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : 'Save'}
+                {isPublishing ? 'Publishing...' : `Publish ${enabledCount} Service${enabledCount > 1 ? 's' : ''}`}
               </Button>
-            )}
-            <Button
-              onClick={publishServices}
-              disabled={isPublishing || saving}
-              className="flex-1 bg-[#FF8C42] hover:bg-[#ff7a28] text-white"
-            >
-              {isPublishing ? 'Publishing...' : `Publish ${enabledCount} Service${enabledCount > 1 ? 's' : ''}`}
-            </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Enhanced Package Creation Modal */}
       <EnhancedPackageCreationModal

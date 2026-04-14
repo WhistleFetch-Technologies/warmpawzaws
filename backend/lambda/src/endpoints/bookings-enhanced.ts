@@ -2198,13 +2198,17 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       console.error('Failed to publish booking status updated event:', error);
     }
 
-    return this.success({ 
-      bookingId,
-      oldStatus,
-      newStatus: status,
-      message: 'Booking status updated successfully',
-      isNew: true,
-    }, requestId);
+    return this.success(
+      {
+        bookingId,
+        customerId: currentBooking.customer_id,
+        oldStatus,
+        newStatus: status,
+        message: 'Booking status updated successfully',
+        isNew: true,
+      },
+      requestId
+    );
   }
 }
 

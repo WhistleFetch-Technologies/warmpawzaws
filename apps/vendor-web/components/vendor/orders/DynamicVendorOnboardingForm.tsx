@@ -1394,16 +1394,16 @@ export function DynamicVendorOnboardingForm({
                 </div>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-[#FF8C42] hover:bg-orange-50/50 transition-all group">
-                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              <label className="relative flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-[#FF8C42] hover:bg-orange-50/50 transition-all group overflow-hidden">
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform pointer-events-none">
                     <Upload className="w-6 h-6 text-[#FF8C42]" />
                 </div>
-                <span className="text-sm font-semibold text-gray-700 group-hover:text-[#FF8C42] transition-colors">Tap to upload document</span>
-                <span className="text-xs text-gray-400 mt-1">{field.documentLabel || field.label}</span>
+                <span className="text-sm font-semibold text-gray-700 group-hover:text-[#FF8C42] transition-colors pointer-events-none">Tap to upload document</span>
+                <span className="text-xs text-gray-400 mt-1 pointer-events-none">{field.documentLabel || field.label}</span>
                 <input
                   type="file"
                   accept={field.acceptedFileTypes?.join(',') || 'image/*'}
-                  className="hidden"
+                  className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(field.name, file);
@@ -1615,7 +1615,7 @@ export function DynamicVendorOnboardingForm({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center">
+      <div className="vendor-root-scroll vendor-app-column flex items-center justify-center bg-[#FFF5F1]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading...</p>
@@ -1626,7 +1626,7 @@ export function DynamicVendorOnboardingForm({
 
   if (!form) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+      <div className="vendor-root-scroll vendor-app-column flex items-center justify-center bg-[#FFF5F1] p-4 sm:p-6">
         <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Available</h3>
@@ -1649,7 +1649,7 @@ export function DynamicVendorOnboardingForm({
   //Check if form has empty sections (no published form)
   if (form.sections.length === 0) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+      <div className="vendor-root-scroll vendor-app-column flex items-center justify-center bg-[#FFF5F1] p-4 sm:p-6">
         <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Published</h3>
@@ -1667,7 +1667,7 @@ export function DynamicVendorOnboardingForm({
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex flex-col">
+    <div className="vendor-root-scroll vendor-app-column flex flex-col bg-[#FFF5F1] overscroll-y-contain">
       {/* Header Section */}
       <div className="pt-8 pb-8 px-6 text-center relative">
         {onBack && (
@@ -1707,7 +1707,7 @@ export function DynamicVendorOnboardingForm({
       )}
 
       {/* Main Content Card */}
-      <div className="bg-white rounded-t-[40px] px-6 py-8 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] min-h-[calc(100vh-220px)]">
+      <div className="bg-white rounded-t-[40px] px-6 py-8 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         
         {/* Intro Text */}
         <div className="text-center mb-8 px-4">

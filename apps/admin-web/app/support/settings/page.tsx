@@ -438,8 +438,9 @@ export default function SupportSettingsPage() {
                     <div>
                       <p className="text-sm font-medium text-orange-900">No users with support roles available</p>
                       <p className="text-xs text-orange-700 mt-1">
-                        To add support agents, first assign support-related RBAC roles (admin, support_agent, support) 
-                        to users in <strong>Role & User Management</strong>. Then return here to add them as agents.
+                        To add support agents, first assign support-related RBAC roles (e.g. admin, Support Admin /
+                        support_admin, support_agent, support) to users in <strong>Role & User Management</strong>.
+                        Then return here to add them as agents.
                       </p>
                     </div>
                   </div>
@@ -776,7 +777,7 @@ export default function SupportSettingsPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500 mt-1.5">
-                  Only users with support-related RBAC roles (admin, support_agent, support) are shown. 
+                  Only users with support-related RBAC roles (admin, support_admin, support_agent, support, etc.) are shown. 
                   Assign roles in <strong>Role & User Management</strong> first.
                 </p>
                 {staffList.length === 0 && (

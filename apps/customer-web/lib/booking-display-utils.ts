@@ -2,7 +2,16 @@
  * Utility helpers for booking and service display
  * - Safe price formatting (prevents NaN)
  * - Service style labels (tele, video, at_center, at_home)
+ * - Catalogue metadata: tax-inclusive list price (admin GST & Tax Configuration)
  */
+
+/** True when admin enabled "Show final price to customers (including all taxes)" on service_catalog.metadata */
+export function catalogPriceIncludesTax(serviceLike: unknown): boolean {
+  if (serviceLike == null || typeof serviceLike !== 'object') return false;
+  const meta = (serviceLike as { metadata?: unknown }).metadata;
+  if (meta == null || typeof meta !== 'object') return false;
+  return !!(meta as { show_final_price_inclusive_tax?: boolean }).show_final_price_inclusive_tax;
+}
 
 /** Safely format price - never returns NaN */
 export function formatPrice(price: number | string | null | undefined): string {

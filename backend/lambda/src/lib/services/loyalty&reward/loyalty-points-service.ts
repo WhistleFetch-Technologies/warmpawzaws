@@ -891,11 +891,12 @@ export class LoyaltyPointsService {
     }
 
     if (rule.points_type === 'per_amount' && params.amount && rule.base_amount) {
-      // Points per base_amount (e.g., 10 points per ₹1000)
-      const multiplier = Math.floor(params.amount / rule.base_amount);
-      let points = multiplier * rule.points_value;
+      // Proportional to spend: 30 pts per ₹1000 → ₹60 earns floor(0.06 * 30) = 1 (full-slab-only would be 0).
+      const amt = Number(params.amount);
+      const base = Number(rule.base_amount);
+      if (!Number.isFinite(amt) || !Number.isFinite(base) || base <= 0) return 0;
+      let points = Math.floor((amt / base) * rule.points_value);
 
-      // Apply max points per transaction
       if (rule.max_points_per_transaction && points > rule.max_points_per_transaction) {
         points = rule.max_points_per_transaction;
       }

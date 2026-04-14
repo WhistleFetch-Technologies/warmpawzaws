@@ -1,0 +1,6 @@
+{
+  "resourceArn": "arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster",
+  "secretArn": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+  "database": "warmpawz",
+  "sql": "UPDATE action_sources SET enabled = false, notes = COALESCE(notes, '') || ' [707] Disabled: customer_referral moved to POST /razorpay/verify-payment.', updated_at = NOW() WHERE method = 'PUT' AND route_pattern = '/bookings/:bookingId/status' AND action_name = 'customer_referral'"
+}

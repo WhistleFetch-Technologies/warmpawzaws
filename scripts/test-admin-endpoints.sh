@@ -145,8 +145,7 @@ test_endpoint "GET" "/admin/vendor-settings/refund-tiers" "Refund Tiers" "succes
 echo ""
 echo "📊 TAX ENDPOINTS"
 echo "----------------------------------------"
-test_endpoint "GET" "/admin/tax/flexible/configuration" "Tax Configuration" "success"
-test_endpoint "GET" "/admin/tax/flexible/rules" "Tax Rules" "success"
+test_endpoint "GET" "/admin/finance/gst/tax-categories" "GST tax categories (finance)" "success"
 
 echo ""
 echo "🎭 VENDOR ROLES ENDPOINTS"

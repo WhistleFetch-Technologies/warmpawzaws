@@ -21,6 +21,7 @@ import { query, select, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
+import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
 
 // ============================================================================
 // VENDOR DASHBOARD HANDLERS
@@ -200,6 +201,12 @@ class VendorDashboardHandler extends BaseHandler {
       ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
       : 0;
 
+    const effectiveAllowedServiceStyles = computeEffectiveAllowedServiceStyles(
+      selectedServiceStyles,
+      vendorConfiguration,
+      roleConfig?.serviceStyles
+    );
+
     return this.success({
       vendor: {
         id: vendor.id,
@@ -223,9 +230,7 @@ class VendorDashboardHandler extends BaseHandler {
         capabilities, // ✅ Filtered capabilities (two-stage)
         vendorTypes: roleConfig?.vendorTypes || [],
         profileType: vendorConfiguration === 'solo' ? 'professional' : 'center',
-        allowedServiceStyles: vendorConfiguration 
-          ? (roleConfig?.serviceStyles?.[vendorConfiguration] || [])
-          : [],
+        allowedServiceStyles: effectiveAllowedServiceStyles,
       },
       stats: {
         appointments: todayBookings.length,

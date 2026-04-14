@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -58,6 +58,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
   const [editingTable, setEditingTable] = useState<TableConfig | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [uploadingMenu, setUploadingMenu] = useState(false);
+  const bulkMenuFileRef = useRef<HTMLInputElement>(null);
 
   // Form state for menu item
   const [itemForm, setItemForm] = useState({
@@ -350,24 +351,27 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                   <Download className="w-4 h-4 mr-1" />
                   Template
                 </Button>
-                <label className="flex-1">
+                <div className="flex-1">
+                  <input
+                    ref={bulkMenuFileRef}
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={handleBulkUploadMenu}
+                    className="sr-only"
+                    disabled={uploadingMenu}
+                  />
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     className="w-full text-xs"
                     disabled={uploadingMenu}
+                    onClick={() => bulkMenuFileRef.current?.click()}
                   >
                     <Upload className="w-4 h-4 mr-1" />
                     {uploadingMenu ? 'Uploading...' : 'Upload'}
                   </Button>
-                  <input
-                    type="file"
-                    accept=".csv,.xlsx"
-                    onChange={handleBulkUploadMenu}
-                    className="hidden"
-                    disabled={uploadingMenu}
-                  />
-                </label>
+                </div>
                 <Button
                   onClick={() => {
                     setEditingItem(null);

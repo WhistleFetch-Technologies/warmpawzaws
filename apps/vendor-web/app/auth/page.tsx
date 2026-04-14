@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef } from 'react';
 import { VendorAuth } from '@/components/vendor/VendorAuth';
+import { VendorPublicAppShell } from '@/components/vendor/layout/VendorPublicChrome';
 import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
 
 export default function AuthPage() {
@@ -107,19 +108,20 @@ export default function AuthPage() {
   // Show loading while checking session
   if (isCheckingSession) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Checking session...</p>
+      <VendorPublicAppShell>
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+          <div className="text-center">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500" />
+            <p className="mt-4 text-gray-600">Checking session...</p>
+          </div>
         </div>
-      </div>
+      </VendorPublicAppShell>
     );
   }
 
-  // Render the authentication UI (OTP flow)
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center p-4">
-      <VendorAuth onAuthSuccess={handleAuthSuccess} />
-    </div>
+    <VendorPublicAppShell>
+      <VendorAuth usePublicAppShell onAuthSuccess={handleAuthSuccess} />
+    </VendorPublicAppShell>
   );
 }

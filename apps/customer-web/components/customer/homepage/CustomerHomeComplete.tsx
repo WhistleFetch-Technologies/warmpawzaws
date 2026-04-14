@@ -38,6 +38,11 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { customerPathToScreen, resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import {
+  mapCatalogSlugToLaunchServiceId,
+  mapLaunchServiceIdToCustomerHomeScreen,
+  mapCatalogCategoryIdToCustomerHomeScreen,
+} from '@warmpawz/service-launch-mappings';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -138,6 +143,8 @@ export function CustomerHomeComplete({
   const [savingPet, setSavingPet] = useState(false);
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
   const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
+  /** After a successful geography launch-config fetch, the grid uses `filteredQuickServices` even when empty (all hidden). Before that, show the full catalog. */
+  const [serviceLaunchTilesResolved, setServiceLaunchTilesResolved] = useState(false);
 
   // Dynamic service data from API (replacing hardcoded mock data)
   const [groomingServices, setGroomingServices] = useState<any[]>([]);
@@ -353,17 +360,13 @@ export function CustomerHomeComplete({
   });
 
   // Dynamic categories from admin catalog (fallback to hardcoded list if API fails or returns empty)
-  const { quickServiceTiles } = useCustomerCategories();
+  const { quickServiceTiles } = useCustomerCategories(phone);
 
   // Define quickServices constant (fallback when API has no categories)
-  // Labels aligned with canonical names: Trainer and Behaviourist, Behaviorist, Emergency care, etc.
+  // Training / trainer labels come from API `service_categories.name` when present (not hardcoded here).
 
   // Canonical display names: avoid duplicate-sounding labels (Lab Test vs Diagnostics, etc.)
   const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
-    training: 'Trainer and Behaviourist',
-    trainer: 'Trainer and Behaviourist',
-    behavioral: 'Behaviorist',
-    behaviorist: 'Behaviorist',
     // ✅ FIX: Merge emergency and ambulance to "Emergency Care"
     emergency: 'Emergency Care',
     ambulance: 'Emergency Care',
@@ -396,17 +399,30 @@ export function CustomerHomeComplete({
   const baseQuickServices = quickServiceTiles.length > 0 ? quickServiceTiles : quickServices;
   const hasPharmacy = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'pharmacy');
   const hasLabDiagnostics = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'lab-diagnostics' || (s.screen as string) === 'lab-diagnostics');
-  const hasNutritionist = baseQuickServices.some(
-    (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'nutritionist'
-  );
-  const hasBehaviorist = baseQuickServices.some(
-    (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'behaviorist' || ((s.categoryId || s.screen || '') as string).toLowerCase() === 'behavioral'
-  );
+  const nutritionCatalogIds = new Set(['nutritionist', 'nutrition', 'wellness']);
+  const hasNutritionist = baseQuickServices.some((s: any) => {
+    const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
+    if (nutritionCatalogIds.has(raw)) return true;
+    return mapCatalogSlugToLaunchServiceId(s.categoryId || s.screen) === 'nutritionist';
+  });
+  const hasTrainingAggregate = baseQuickServices.some((s: any) => {
+    if (((s.screen || '') as string).toLowerCase() === 'training') return true;
+    return mapCatalogSlugToLaunchServiceId(s.categoryId || '') === 'training';
+  });
+  const hasBehaviorist = baseQuickServices.some((s: any) => {
+    const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
+    return raw === 'behaviorist' || raw === 'behavioral';
+  });
   let sourceQuickServices = baseQuickServices;
   if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
   if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Diagnostics / Lab Tests', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
   if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
-  if (!hasBehaviorist) sourceQuickServices = [...sourceQuickServices, { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' }];
+  if (!hasBehaviorist && !hasTrainingAggregate) {
+    sourceQuickServices = [
+      ...sourceQuickServices,
+      { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' },
+    ];
+  }
 
   // Deduplicate services by screen and apply label overrides
   const seenScreens = new Set<string>();
@@ -414,12 +430,18 @@ export function CustomerHomeComplete({
     .map((service: any) => {
       const screen = service.screen || service.categoryId || '';
       const categoryId = (service.categoryId || service.screen || '').toLowerCase();
+      const launchId = mapCatalogSlugToLaunchServiceId(service.categoryId || service.screen || '').toLowerCase();
 
-      // Apply label override
-      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(key =>
-        categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
+      // Prefer tile's own label (from catalog); only apply overrides for merged non-training buckets.
+      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(
+        (key) => categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
       );
-      const label = overrideKey ? SERVICE_LABEL_OVERRIDE[overrideKey] : service.label;
+      const label =
+        launchId === 'training'
+          ? service.label
+          : overrideKey
+            ? SERVICE_LABEL_OVERRIDE[overrideKey]
+            : service.label;
 
       return { ...service, label, screen };
     })
@@ -646,13 +668,13 @@ export function CustomerHomeComplete({
 
   // Load service launch config - controls service visibility based on GEOGRAPHY
   // Services can be: hidden, coming_soon, beta, or launched per state/city
-  // IMPORTANT: Always start with all services visible (use dynamic categories when available)
-  // Service launch config should only RESTRICT services based on geography
+  // Until the customer endpoint succeeds, the grid shows the full catalog; after success,
+  // `filteredQuickServices` is authoritative (may be empty when nothing is launched).
   // Get customer's location from default address (most accurate) or profile fallback
   useEffect(() => {
     const loadServiceLaunchConfig = async () => {
       try {
-        setFilteredQuickServices(sourceQuickServices);
+        setServiceLaunchTilesResolved(false);
 
         let customerCity = '';
         let customerState = '';
@@ -727,41 +749,63 @@ export function CustomerHomeComplete({
           }
 
 
-          if (services && (services.visible || []).length > 0) {
-            // ✅ PRIMARY PATH: Use services.visible as the source of truth.
-            // Look up each visible serviceId in BOTH the catalog tiles AND the static
-            // quickServices fallback — so services missing from the catalog (e.g. vet,
-            // walker, nutritionist) are still shown when the backend marks them visible.
-            const comingSoonIds = new Set<string>(
-              (services.comingSoon || []).map((s: any) => (s.serviceId || '').toLowerCase())
-            );
+          const visibleLaunch = (services?.visible || []) as any[];
+          const comingSoonLaunch = (services?.comingSoon || []) as any[];
 
-            // Pool: catalog tiles first (richer icon/label data), then static fallback
+          if (services && (visibleLaunch.length > 0 || comingSoonLaunch.length > 0)) {
+            // PRIMARY PATH: Build tiles from geography launch lists (visible + coming soon).
+            // Match each serviceId to catalog tiles first, then static quickServices fallback.
             const allTilePool = [...sourceQuickServices, ...quickServices];
             const seenScreens = new Set<string>();
             const resultTiles: any[] = [];
-            for (const visibleSvc of (services.visible || [])) {
-              const svcId = (visibleSvc.serviceId || '').toLowerCase();
 
-              // Match tile by comparing svcId against both categoryId and screen
-              const matchingTile = allTilePool.find((tile: any) => {
+            const findMatchingTileForLaunchId = (svcIdRaw: string) => {
+              const svcId = (svcIdRaw || '').toLowerCase();
+              const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
+              return allTilePool.find((tile: any) => {
                 const catId = (tile.categoryId || '').toLowerCase();
                 const tileScreen = (tile.screen || '').toLowerCase();
-                return catId === svcId || tileScreen === svcId;
+                const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
+                  tile.categoryId || ''
+                ).toLowerCase();
+                const screenAsCatalog = mapCatalogCategoryIdToCustomerHomeScreen(
+                  tile.screen || ''
+                ).toLowerCase();
+                const launchFromCat = mapLaunchServiceIdToCustomerHomeScreen(catId).toLowerCase();
+                return (
+                  catId === svcId ||
+                  tileScreen === svcId ||
+                  catalogScreen === targetScreen ||
+                  screenAsCatalog === targetScreen ||
+                  launchFromCat === targetScreen ||
+                  tileScreen === targetScreen
+                );
               });
+            };
 
-              if (matchingTile && !seenScreens.has(matchingTile.screen)) {
-                seenScreens.add(matchingTile.screen);
-                resultTiles.push({
-                  ...matchingTile,
-                  isComingSoon: comingSoonIds.has(svcId),
-                });
+            const appendFromLaunchList = (list: any[], isComingSoon: boolean) => {
+              for (const entry of list) {
+                const svcId = (entry.serviceId || '').toLowerCase();
+                const matchingTile = findMatchingTileForLaunchId(svcId);
+                if (matchingTile && !seenScreens.has(matchingTile.screen)) {
+                  seenScreens.add(matchingTile.screen);
+                  resultTiles.push({
+                    ...matchingTile,
+                    isComingSoon,
+                  });
+                }
               }
-            }
+            };
 
-            console.log('[ServiceFilter] visible tiles resolved:', resultTiles.map((t: any) => t.screen));
-            setFilteredQuickServices(resultTiles.length > 0 ? resultTiles : sourceQuickServices);
+            appendFromLaunchList(visibleLaunch, false);
+            appendFromLaunchList(comingSoonLaunch, true);
 
+            console.log(
+              '[ServiceFilter] launch tiles resolved:',
+              resultTiles.map((t: any) => ({ screen: t.screen, comingSoon: !!t.isComingSoon }))
+            );
+            setFilteredQuickServices(resultTiles);
+            setServiceLaunchTilesResolved(true);
           } else {
             // FALLBACK PATH: No visible list — use hidden list as block list (backward compat)
             const blockedCategoryIds = new Set<string>();
@@ -821,7 +865,11 @@ export function CustomerHomeComplete({
                 ...service,
                 isComingSoon: comingSoonCategoryIds.has((service.categoryId || '').toLowerCase()) || comingSoonServiceIds.has(service.screen),
               }));
-              setFilteredQuickServices(withComingSoon.length > 0 ? withComingSoon : sourceQuickServices);
+              setFilteredQuickServices(withComingSoon);
+              setServiceLaunchTilesResolved(true);
+            } else {
+              setFilteredQuickServices(sourceQuickServices);
+              setServiceLaunchTilesResolved(true);
             }
           }
         }
@@ -831,10 +879,13 @@ export function CustomerHomeComplete({
         if (!configResponse || !(configResponse as any).success) {
           console.log('New service launch config not available, falling back to legacy config');
           // Legacy config loading removed - new geography-based config is primary
+          setFilteredQuickServices(sourceQuickServices);
+          setServiceLaunchTilesResolved(true);
         }
       } catch (error) {
         console.error('Error loading service launch config:', error);
-        // Keep all services visible on error (already set at start)
+        setFilteredQuickServices(sourceQuickServices);
+        setServiceLaunchTilesResolved(true);
       }
     };
 
@@ -843,6 +894,7 @@ export function CustomerHomeComplete({
     } else {
       // No phone means not logged in, show all services (use dynamic list when available)
       setFilteredQuickServices(sourceQuickServices);
+      setServiceLaunchTilesResolved(true);
     }
   }, [phone, refreshKey, quickServiceTiles.length]);
 
@@ -1797,10 +1849,12 @@ export function CustomerHomeComplete({
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-black text-sm font-semibold">All Services</h2>
-            <span className="text-[10px] text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : sourceQuickServices).length} services</span>
+            <span className="text-[10px] text-gray-500">
+              {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).length} services
+            </span>
           </div>
           <div className="grid grid-cols-5 gap-2">
-            {(filteredQuickServices.length > 0 ? filteredQuickServices : sourceQuickServices).map((service, index) => {
+            {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).map((service, index) => {
               const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
               const displayLabel = SERVICE_LABEL_OVERRIDE[key] ?? service.label;
               const serviceComingSoon =
@@ -1823,14 +1877,40 @@ export function CustomerHomeComplete({
                   </div>
                 );
               }
+              const isComingSoonTile = !!(service as { isComingSoon?: boolean }).isComingSoon;
               return (
                 <button
+                  type="button"
                   key={service.screen || index}
                   type="button"
                   onClick={() => handleNavigation(service.screen)}
                   className="flex flex-col items-center gap-1 group"
+                  aria-label={
+                    isComingSoonTile
+                      ? `${displayLabel}, coming soon in your area`
+                      : `${displayLabel}, open service`
+                  }
+                  onClick={() => {
+                    if (isComingSoonTile) {
+                      toast.info('This service is coming soon in your area.');
+                      return;
+                    }
+                    handleNavigation(service.screen);
+                  }}
+                  className={`flex flex-col items-center gap-1 group ${
+                    isComingSoonTile ? 'cursor-default' : ''
+                  }`}
                 >
-                  <div className={`w-11 h-11 ${service.color} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm`}>
+                  <div
+                    className={`relative w-11 h-11 ${service.color} rounded-xl flex items-center justify-center transition-transform shadow-sm ${
+                      isComingSoonTile ? 'opacity-75 saturate-75' : 'group-hover:scale-105'
+                    }`}
+                  >
+                    {isComingSoonTile && (
+                      <span className="absolute -top-0.5 -right-0.5 z-[1] rounded-md bg-amber-500 px-1 py-0.5 text-[7px] font-bold uppercase leading-none text-white shadow-sm">
+                        Soon
+                      </span>
+                    )}
                     <service.icon className="w-5 h-5" />
                   </div>
                   <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-1">{displayLabel}</span>

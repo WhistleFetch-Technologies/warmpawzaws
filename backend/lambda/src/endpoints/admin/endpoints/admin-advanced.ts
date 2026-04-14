@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, pbkdf2Sync } from 'crypto';
 /**
  * ============================================================================
  * ADMIN ADVANCED ENDPOINTS - PHASES 24-29
@@ -23,7 +23,22 @@ import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
 import { isValidUUID } from '../../../types/entities';
+import {
+  listFeeSettingsFromDb,
+  scalarFromJsonbSetting,
+  upsertFeeSetting,
+  getFeeGlobalsMap,
+} from '../../../utils/admin-fee-settings-db';
+import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
+import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
+
+function hashAdminPasswordPlain(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
 
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -60,36 +75,6 @@ async function validateApplicableRolesAgainstActiveRoles(applicableRoles: string
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-/**
- * Upsert a setting in admin_settings table
- */
-async function upsertAdminSetting(key: string, value: string, serviceType: string = 'all'): Promise<void> {
-  try {
-    // Try update first
-    const existing = await query(
-      `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = $2 OR (service_type IS NULL AND $2 = 'all')) LIMIT 1`,
-      [key, serviceType]
-    ).catch(() => ({ rows: [] }));
-
-    if (existing.rows.length > 0) {
-      await query(
-        `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = $3 OR (service_type IS NULL AND $3 = 'all'))`,
-        [value, key, serviceType]
-      );
-    } else {
-      await query(
-        `INSERT INTO admin_settings (setting_key, setting_value, service_type, created_at, updated_at)
-         VALUES ($1, $2, $3, NOW(), NOW())`,
-        [key, value, serviceType === 'all' ? null : serviceType]
-      ).catch(() => {
-        // Ignore duplicate key errors
-      });
-    }
-  } catch (error) {
-    console.warn(`Failed to upsert admin setting ${key}:`, error);
-  }
-}
 
 // ============================================================================
 // PHASE 24: CATALOG SELECTORS
@@ -303,17 +288,35 @@ class CreateReschedulingPolicyHandler extends BaseHandler {
 
 class GetRBACStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const roles = await select('roles', {});
-    const users = await select('users', {});
-    const permissions = await select('permissions', {});
-    const assignments = await select('user_roles', {});
+    const roles = (await select('roles', {}).catch(() => [])) as any[];
+    let adminCount = 0;
+    let permissionCount = 0;
+    let activeAssignmentCount = 0;
+    try {
+      const ac = await query('SELECT COUNT(*)::int AS c FROM admins');
+      adminCount = Number(ac.rows?.[0]?.c ?? 0);
+    } catch {
+      adminCount = 0;
+    }
+    try {
+      const pc = await query('SELECT COUNT(DISTINCT permission_name)::int AS c FROM role_permissions');
+      permissionCount = Number(pc.rows?.[0]?.c ?? 0);
+    } catch {
+      permissionCount = 0;
+    }
+    try {
+      const uc = await query('SELECT COUNT(*)::int AS c FROM user_roles WHERE is_active = true');
+      activeAssignmentCount = Number(uc.rows?.[0]?.c ?? 0);
+    } catch {
+      activeAssignmentCount = 0;
+    }
 
     return this.success({
       stats: {
         totalRoles: roles.length,
-        totalUsers: users.length,
-        totalPermissions: permissions.length,
-        activeAssignments: assignments.length,
+        totalUsers: adminCount,
+        totalPermissions: permissionCount,
+        activeAssignments: activeAssignmentCount,
       },
     });
   }
@@ -327,9 +330,71 @@ class GetRolesHandler extends BaseHandler {
 }
 
 class GetRBACUsersHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const users = await select('users', {});
-    return this.success({ users });
+  async handle(_context: HandlerContext): Promise<HandlerResponse> {
+    const mapRows = (rows: any[]) =>
+      (rows || []).map((row: any) => ({
+        id: row.id,
+        name: row.name || row.email,
+        email: row.email,
+        role: row.rbac_role_display_name || row.rbac_role_code || row.role || 'admin',
+        status: row.is_active === false ? 'inactive' : 'active',
+        lastLogin: row.last_login_at,
+        rbacRoleId: row.rbac_role_id,
+        rbacRoleCode: row.rbac_role_code,
+        adminRole: row.role,
+      }));
+
+    try {
+      const result = await query(`
+        SELECT
+          a.id,
+          a.email,
+          a.name,
+          a.role,
+          a.is_active,
+          a.last_login_at,
+          r.id AS rbac_role_id,
+          r.display_name AS rbac_role_display_name,
+          r.name AS rbac_role_code
+        FROM admins a
+        LEFT JOIN user_roles ur ON a.id = ur.user_id AND ur.is_active = true
+        LEFT JOIN roles r ON ur.role_id = r.id
+        ORDER BY a.created_at DESC NULLS LAST
+      `);
+      return this.success({ success: true, users: mapRows(result.rows) });
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      // Some RDS setups have no `users` / `permissions` tables, or a broken `user_roles` view referencing `users`.
+      if (msg.includes('does not exist') && msg.includes('users')) {
+        try {
+          const fallback = await query(`
+            SELECT
+              a.id,
+              a.email,
+              a.name,
+              a.role,
+              a.is_active,
+              a.last_login_at,
+              NULL::uuid AS rbac_role_id,
+              NULL::text AS rbac_role_display_name,
+              NULL::text AS rbac_role_code
+            FROM admins a
+            ORDER BY a.created_at DESC NULLS LAST
+          `);
+          return this.success({
+            success: true,
+            users: mapRows(fallback.rows),
+            degraded: true,
+            message:
+              'RBAC role assignments could not be loaded (database references missing `users` table). Admin list shown without per-user roles.',
+          });
+        } catch (e2: any) {
+          console.error('[GetRBACUsersHandler] fallback failed:', e2);
+        }
+      }
+      console.error('[GetRBACUsersHandler]', error);
+      return this.error(error.message || 'Failed to list admin users', 500);
+    }
   }
 }
 
@@ -1010,11 +1075,131 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   });
 
   app.get('/admin/rbac/users', async (c) => {
+    const callerId = c.get('userId') as string | undefined;
+    if (!(await canManageRbacAdmin(callerId))) {
+      return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+    }
     const handler = new GetRBACUsersHandler();
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/admin/rbac/users/create', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      if (!(await canManageRbacAdmin(callerId))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const email = String(body.email || '').trim();
+      const password = String(body.password || '');
+      const name = String(body.name || email).trim();
+      let roleId = String(body.roleId || '').trim();
+      const roleName = String(body.role || '').trim();
+      if (!email || !password) {
+        return c.json({ success: false, error: 'email and password are required' }, 400);
+      }
+      if (!roleId && roleName) {
+        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+          roleName.replace(/\s+/g, '_'),
+        ]);
+        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
+      }
+      if (!roleId || !isValidUUID(roleId)) {
+        return c.json({ success: false, error: 'Valid roleId is required' }, 400);
+      }
+      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+      if (!roleCheck.rows?.length) {
+        return c.json({ success: false, error: 'Role not found' }, 404);
+      }
+      const existing = await query('SELECT id FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
+      if (existing.rows?.length) {
+        return c.json({ success: false, error: 'Admin with this email already exists' }, 409);
+      }
+      const password_hash = hashAdminPasswordPlain(password);
+      const ins = await query(
+        `INSERT INTO admins (email, password_hash, name, role, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, 'staff', true, NOW(), NOW())
+         RETURNING id, email, name, role`,
+        [email, password_hash, name]
+      );
+      const admin = ins.rows[0];
+      await query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, true, NOW(), NOW())`,
+        [admin.id, roleId, callerId]
+      );
+      return c.json({
+        success: true,
+        admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+      });
+    } catch (error: unknown) {
+      console.error('[POST /admin/rbac/users/create]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create admin user', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/rbac/users/:userId/role', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      if (!(await canManageRbacAdmin(callerId))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const userId = c.req.param('userId');
+      if (!userId || !isValidUUID(userId)) {
+        return c.json({ success: false, error: 'Invalid userId' }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      let roleId = String(body.roleId || '').trim();
+      const roleName = String(body.role || '').trim();
+      if (!roleId && roleName) {
+        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+          roleName.replace(/\s+/g, '_'),
+        ]);
+        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
+      }
+      if (!roleId || !isValidUUID(roleId)) {
+        return c.json({ success: false, error: 'Valid roleId or role name is required' }, 400);
+      }
+      const adminRow = await query('SELECT id FROM admins WHERE id = $1::uuid LIMIT 1', [userId]);
+      if (!adminRow.rows?.length) {
+        return c.json({ success: false, error: 'Admin user not found' }, 404);
+      }
+      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+      if (!roleCheck.rows?.length) {
+        return c.json({ success: false, error: 'Role not found' }, 404);
+      }
+
+      const newPassword = String(body.password ?? '').trim();
+      if (newPassword.length > 0 && newPassword.length < 8) {
+        return c.json({ success: false, error: 'Password must be at least 8 characters' }, 400);
+      }
+
+      await query(`UPDATE user_roles SET is_active = false, updated_at = NOW() WHERE user_id = $1::uuid`, [userId]);
+      await query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, true, NOW(), NOW())
+         ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = true, assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
+        [userId, roleId, callerId]
+      );
+
+      if (newPassword.length > 0) {
+        const password_hash = hashAdminPasswordPlain(newPassword);
+        await query(
+          `UPDATE admins SET password_hash = $2, updated_at = NOW() WHERE id = $1::uuid`,
+          [userId, password_hash]
+        );
+      }
+
+      return c.json({ success: true, message: 'Role updated', userId, roleId });
+    } catch (error: unknown) {
+      console.error('[PUT /admin/rbac/users/:userId/role]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to assign role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
   });
 
   app.get('/admin/rbac/permissions', async (c) => {
@@ -1903,7 +2088,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
-              COALESCE(updated_at::text, '') as updated_at
+              COALESCE(updated_at::text, '') as updated_at,
+              COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state::text as customer_visibility_state,
+              customer_visibility_city::text as customer_visibility_city,
+              COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
@@ -1942,6 +2131,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             icon: String(cat.icon || ''),
             icon_color: String(cat.icon_color || 'text-gray-500'),
             updated_at: String(cat.updated_at || ''),
+            customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+            customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+            customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+            customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
           };
         }
 
@@ -1991,7 +2184,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
-              COALESCE(updated_at::text, '') as updated_at
+              COALESCE(updated_at::text, '') as updated_at,
+              COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state::text as customer_visibility_state,
+              customer_visibility_city::text as customer_visibility_city,
+              COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
@@ -2009,6 +2206,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             is_active: cat.is_active !== false,
             created_at: String(cat.created_at || ''),
             updated_at: String(cat.updated_at || ''),
+            customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+            customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+            customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+            customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
           }));
 
           return c.json({
@@ -2079,6 +2280,23 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // For service_categories, use category_id
       const finalCategoryId = categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
 
+      const visTypeRaw =
+        (body as any).customerVisibilityType ??
+        (body as any).customer_visibility_type ??
+        'GLOBAL';
+      const visType = String(visTypeRaw || 'GLOBAL')
+        .trim()
+        .toUpperCase();
+      const safeVis =
+        visType === 'STATE' || visType === 'CITY' || visType === 'GLOBAL' ? visType : 'GLOBAL';
+      const visState =
+        (body as any).customerVisibilityState ?? (body as any).customer_visibility_state ?? null;
+      const visCity =
+        (body as any).customerVisibilityCity ?? (body as any).customer_visibility_city ?? null;
+      const dashActive =
+        (body as any).customerDashboardCardActive !== false &&
+        (body as any).customer_dashboard_card_active !== false;
+
       const newCategory = await insert('service_categories', {
         category_id: finalCategoryId,
         name,
@@ -2089,6 +2307,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         vendor_roles: vendorRoles || [],
         display_order: nextOrder,
         is_active: status !== 'inactive',
+        customer_visibility_type: safeVis,
+        customer_visibility_state: visState ? String(visState).trim() : null,
+        customer_visibility_city: visCity ? String(visCity).trim() : null,
+        customer_dashboard_card_active: dashActive !== false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -2101,6 +2323,62 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating category:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create category', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.get('/admin/catalog/categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const rows = await query(
+        `SELECT 
+          id::text as id,
+          COALESCE(category_id::text, '') as category_id,
+          name::text as name,
+          COALESCE(description::text, '') as description,
+          COALESCE(icon::text, '') as icon,
+          COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+          COALESCE(display_order::integer, 0) as display_order,
+          COALESCE(is_active::boolean, true) as is_active,
+          COALESCE(created_at::text, '') as created_at,
+          COALESCE(updated_at::text, '') as updated_at,
+          COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+          customer_visibility_state::text as customer_visibility_state,
+          customer_visibility_city::text as customer_visibility_city,
+          COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
+        FROM service_categories
+        WHERE id::text = $1 OR category_id::text = $1
+        LIMIT 1`,
+        [id]
+      );
+      const cat = rows.rows?.[0];
+      if (!cat) {
+        return c.json({ success: false, error: 'Category not found' }, 404);
+      }
+      return c.json({
+        success: true,
+        category: {
+          id: String(cat.id || ''),
+          category_id: String(cat.category_id || ''),
+          name: String(cat.name || ''),
+          description: String(cat.description || ''),
+          icon: String(cat.icon || ''),
+          icon_color: String(cat.icon_color || 'text-gray-500'),
+          iconColor: String(cat.icon_color || 'text-gray-500'),
+          display_order: parseInt(cat.display_order, 10) || 0,
+          is_active: cat.is_active !== false,
+          status: cat.is_active === false ? 'inactive' : 'active',
+          created_at: String(cat.created_at || ''),
+          updated_at: String(cat.updated_at || ''),
+          customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+          customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+          customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+          customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('Error fetching category:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to fetch category', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
@@ -2121,6 +2399,25 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.vendorRoles !== undefined) updateData.vendor_roles = body.vendorRoles;
       if (body.status !== undefined) updateData.is_active = body.status !== 'inactive';
       if (body.display_order !== undefined) updateData.display_order = parseInt(body.display_order, 10);
+      if (body.customerVisibilityType !== undefined || body.customer_visibility_type !== undefined) {
+        const raw = String(body.customerVisibilityType ?? body.customer_visibility_type ?? 'GLOBAL')
+          .trim()
+          .toUpperCase();
+        updateData.customer_visibility_type =
+          raw === 'STATE' || raw === 'CITY' || raw === 'GLOBAL' ? raw : 'GLOBAL';
+      }
+      if (body.customerVisibilityState !== undefined || body.customer_visibility_state !== undefined) {
+        const v = body.customerVisibilityState ?? body.customer_visibility_state;
+        updateData.customer_visibility_state = v != null && String(v).trim() !== '' ? String(v).trim() : null;
+      }
+      if (body.customerVisibilityCity !== undefined || body.customer_visibility_city !== undefined) {
+        const v = body.customerVisibilityCity ?? body.customer_visibility_city;
+        updateData.customer_visibility_city = v != null && String(v).trim() !== '' ? String(v).trim() : null;
+      }
+      if (body.customerDashboardCardActive !== undefined || body.customer_dashboard_card_active !== undefined) {
+        const v = body.customerDashboardCardActive ?? body.customer_dashboard_card_active;
+        updateData.customer_dashboard_card_active = v !== false;
+      }
 
       const updated = await update('service_categories', { id }, updateData);
 
@@ -3717,26 +4014,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   }
 
-  /** Returns true if another row has this code (optionally excluding one id). Uses detected column. */
-  async function hsnCodeExistsElsewhere(codeColumn: 'hsn_code' | 'code', code: string, excludeId: string | null): Promise<boolean> {
-    const normalized = String(code ?? '').trim();
-    if (!normalized) return false;
-    const q = await query(
-      `SELECT id FROM hsn_codes WHERE ${codeColumn} = $1 AND ($2::uuid IS NULL OR id != $2) LIMIT 1`,
-      [normalized, excludeId ?? null]
-    );
-    const rows = (q as any)?.rows ?? (Array.isArray(q) ? q : []);
-    return rows.length > 0;
-  }
-
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       let rows: any[];
       try {
         // Try with hsn_code only first (001/600 schema). No reference to hc.code so "column hc.code does not exist" is avoided.
         const result = await query(
-          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at,
-                  tc.category_name as tax_category_name
+          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
+                  tc.category_name AS tax_category_name,
+                  COALESCE(tc.tax_rate, hc.gst_rate, 18)::numeric AS effective_gst_rate
            FROM hsn_codes hc
            LEFT JOIN tax_categories tc ON hc.category_id = tc.id
            ORDER BY COALESCE(hc.hsn_code, '') ASC`
@@ -3747,19 +4033,22 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         if (msg.includes('hsn_code') && msg.includes('does not exist')) {
           // Table has "code" only (213 schema), no hsn_code column
           const result = await query(
-            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
-             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
+                    tc.category_name as tax_category_name
+             FROM hsn_codes hc
+             LEFT JOIN tax_categories tc ON hc.category_id = tc.id
+             ORDER BY COALESCE(hc.code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
         } else if (msg.includes('category_id') && msg.includes('does not exist')) {
           const result = await query(
-            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::uuid as category_id, NULL::text as tax_category_name
              FROM hsn_codes hc ORDER BY COALESCE(hc.hsn_code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
         } else if (msg.includes('code') && msg.includes('does not exist')) {
           const result = await query(
-            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::uuid as category_id, NULL::text as tax_category_name
              FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
@@ -3777,30 +4066,41 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, gstRate, category, categoryId, cgst, sgst, igst, isActive } = body;
+      const { code, description, isActive } = body;
+      const categoryId = body.categoryId ?? body.category_id;
 
-      if (!code || !gstRate) {
-        return c.json({ success: false, error: 'HSN code and GST rate are required' }, 400);
+      if (code == null || String(code).trim() === '') {
+        return c.json({ success: false, error: 'HSN code is required' }, 400);
       }
+      if (categoryId == null || String(categoryId).trim() === '') {
+        return c.json(
+          { success: false, error: 'Tax category is required (GST rate is taken from the linked tax category)' },
+          400
+        );
+      }
+
+      const tcRows = await query(
+        `SELECT tax_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+        [String(categoryId).trim()]
+      );
+      const tc = tcRows.rows?.[0];
+      if (!tc) {
+        return c.json({ success: false, error: 'Tax category not found' }, 404);
+      }
+      let derivedRate = parseFloat(String(tc.tax_rate ?? ''));
+      if (!Number.isFinite(derivedRate)) derivedRate = 18;
 
       const codeColumn = await getHsnCodeColumn();
       const codeVal = String(code).trim();
-      if (await hsnCodeExistsElsewhere(codeColumn, codeVal, null)) {
-        console.log('[HSN] Create rejected: duplicate code', { code: codeVal, column: codeColumn });
-        return c.json(
-          { success: false, error: 'An HSN code with this code already exists. Use a different code or edit the existing one.' },
-          409
-        );
-      }
 
       const insertPayload: Record<string, unknown> = {
         [codeColumn]: codeVal,
         description: description || '',
-        gst_rate: parseFloat(gstRate),
+        gst_rate: derivedRate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
+        category_id: String(categoryId).trim(),
       };
-      if (categoryId) insertPayload.category_id = categoryId;
 
       let newCode;
       try {
@@ -3865,23 +4165,36 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         const rows = (existing as any)?.rows ?? (Array.isArray(existing) ? existing : []);
         const currentRow = rows[0];
         const currentCode = currentRow ? String(currentRow.code_val ?? '').trim() : '';
-        if (newCode === currentCode) {
-          // No change to code – don't set it so we don't trigger unique check
-        } else {
-          if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
-            console.log('[HSN] Update rejected: duplicate code', { id, code: newCode, column: codeColumn });
-            return c.json(
-              { success: false, error: 'Another HSN code with this code already exists. Use a different code or edit the existing one.' },
-              409
-            );
-          }
+        if (newCode !== currentCode) {
           updateData[codeColumn] = newCode;
         }
       }
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
-      if (body.categoryId !== undefined) updateData.category_id = body.categoryId || null;
+      const categoryTouched = body.categoryId !== undefined || body.category_id !== undefined;
+      if (categoryTouched) {
+        const cid = body.categoryId ?? body.category_id;
+        updateData.category_id =
+          cid != null && String(cid).trim() !== '' ? String(cid).trim() : null;
+      }
+
+      if (categoryTouched) {
+        const effCat = updateData.category_id;
+        if (effCat) {
+          const tcRows = await query(
+            `SELECT tax_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+            [String(effCat).trim()]
+          );
+          const tc = tcRows.rows?.[0];
+          if (tc) {
+            let dr = parseFloat(String(tc.tax_rate ?? ''));
+            if (!Number.isFinite(dr)) dr = 18;
+            updateData.gst_rate = dr;
+          }
+        } else {
+          updateData.gst_rate = 18;
+        }
+      }
 
       if (Object.keys(updateData).length === 0) {
         const existing = await query(`SELECT * FROM hsn_codes WHERE id = $1::uuid LIMIT 1`, [id]);
@@ -3952,10 +4265,145 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.get('/admin/finance/gst/catalog-category-roles', async (c) => {
+    try {
+      const catalogCategoryId = c.req.query('catalogCategoryId')?.trim();
+      if (!catalogCategoryId) {
+        return c.json({ success: false, error: 'catalogCategoryId is required' }, 400);
+      }
+
+      const specResult = await query(
+        `SELECT DISTINCT r.id, r.name, r.display_name
+         FROM specialization_master sm
+         JOIN service_categories sc ON sm.category_id = sc.category_id
+         CROSS JOIN LATERAL unnest(COALESCE(sm.applicable_roles, ARRAY[]::text[])) AS ar(code)
+         JOIN roles r ON LOWER(TRIM(r.name)) = LOWER(TRIM(ar.code)) AND COALESCE(r.is_active, true) = true
+         WHERE sc.id = $1::uuid AND COALESCE(sm.is_active, true) = true`,
+        [catalogCategoryId]
+      );
+      const fromSpecs = ((specResult as { rows?: { id: string; name: string; display_name: string }[] })?.rows ??
+        []) as { id: string; name: string; display_name: string }[];
+
+      let fromCustomerService: { id: string; name: string; display_name: string }[] = [];
+      try {
+        const slugRes = await query(
+          `SELECT category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+          [catalogCategoryId]
+        );
+        const slugRow = (slugRes as { rows?: { category_id?: string }[] })?.rows?.[0];
+        const slug = slugRow?.category_id != null ? String(slugRow.category_id) : '';
+        const buckets = customerServicesForCatalogCategorySlug(slug);
+        if (buckets.length > 0) {
+          const csRes = await query(
+            `SELECT DISTINCT r.id, r.name, r.display_name
+             FROM roles r
+             WHERE COALESCE(r.is_active, true) = true
+               AND r.customer_service IS NOT NULL
+               AND r.customer_service = ANY($1::text[])`,
+            [buckets]
+          );
+          fromCustomerService = ((csRes as { rows?: typeof fromCustomerService })?.rows ??
+            []) as typeof fromCustomerService;
+        }
+      } catch (csErr: unknown) {
+        console.warn('[catalog-category-roles] customer_service branch skipped:', (csErr as Error)?.message);
+      }
+
+      const byId = new Map<string, { id: string; name: string; display_name: string }>();
+      for (const r of [...fromSpecs, ...fromCustomerService]) {
+        if (r?.id) byId.set(String(r.id), r);
+      }
+      const roles = [...byId.values()].sort((a, b) => {
+        const da = (a.display_name || a.name || '').toLowerCase();
+        const db = (b.display_name || b.name || '').toLowerCase();
+        return da.localeCompare(db, undefined, { sensitivity: 'base' });
+      });
+
+      return c.json({ success: true, roles });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
   app.get('/admin/finance/gst/tax-categories', async (c) => {
     try {
-      const categories = await query('SELECT * FROM tax_categories ORDER BY category_name ASC');
-      return c.json({ success: true, categories: categories.rows });
+      let rows: Record<string, unknown>[];
+      try {
+        const categories = await query(`
+          SELECT tc.*,
+                 sc.name AS catalog_category_name,
+                 sc.category_id AS catalog_master_slug,
+                 COALESCE(
+                   (SELECT json_agg(json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name) ORDER BY r.display_name)
+                    FROM tax_category_roles tcr
+                    JOIN roles r ON r.id = tcr.role_id
+                    WHERE tcr.tax_category_id = tc.id),
+                   '[]'::json
+                 ) AS roles_json
+          FROM tax_categories tc
+          LEFT JOIN service_categories sc ON sc.id = tc.catalog_category_id
+        `);
+        rows = (categories as { rows?: Record<string, unknown>[] })?.rows ?? [];
+      } catch {
+        const categories = await query('SELECT * FROM tax_categories');
+        rows = (categories as { rows?: Record<string, unknown>[] })?.rows ?? [];
+      }
+
+      const countByCatRef = new Map<string, number>();
+      try {
+        const cntRes = await query(`SELECT category_id::text AS cid, COUNT(*)::int AS c FROM service_catalog GROUP BY category_id`);
+        for (const r of cntRes.rows ?? []) {
+          if (r?.cid != null) countByCatRef.set(String(r.cid).trim(), Number(r.c) || 0);
+        }
+      } catch (countErr: unknown) {
+        console.warn('[tax-categories] service_catalog count skipped:', (countErr as Error)?.message);
+      }
+
+      const sorted = [...rows].sort((a: any, b: any) =>
+        String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+      const normalized = sorted.map((row: Record<string, any>) => {
+        const displayName = String(row.category_name ?? row.name ?? '').trim() || '—';
+        // Use tax_categories row only (no gst_rules substitution when rate is 0 — admin may intend 0%).
+        const tax_rate = pickTaxCategoryDisplayRate(row);
+        const slug = row.catalog_master_slug ? String(row.catalog_master_slug).trim() : '';
+        const cid = row.catalog_category_id ? String(row.catalog_category_id).trim() : '';
+        let linkedCatalogServices = 0;
+        if (slug) linkedCatalogServices += countByCatRef.get(slug) || 0;
+        if (cid && cid !== slug) linkedCatalogServices += countByCatRef.get(cid) || 0;
+        let rolesParsed: { id: string; name: string; display_name: string }[] = [];
+        try {
+          if (row.roles_json && typeof row.roles_json === 'string') {
+            rolesParsed = JSON.parse(row.roles_json);
+          } else if (Array.isArray(row.roles_json)) {
+            rolesParsed = row.roles_json;
+          }
+        } catch {
+          rolesParsed = [];
+        }
+        const role_ids = rolesParsed.map((r) => r.id).filter(Boolean);
+        return {
+          id: row.id,
+          category_name: displayName,
+          name: displayName,
+          description: row.description ?? '',
+          tax_rate,
+          applicable_services: row.applicable_services ?? row.applicableServices ?? [],
+          linked_catalog_service_count: linkedCatalogServices,
+          catalog_category_id: row.catalog_category_id ?? null,
+          catalog_category_name: row.catalog_category_name ?? null,
+          catalog_master_slug: row.catalog_master_slug ?? null,
+          roles: rolesParsed,
+          role_ids,
+          is_active: row.is_active !== false,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      });
+      return c.json({ success: true, categories: normalized });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -3965,25 +4413,109 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/tax-categories', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, defaultGSTRate, applicableServices, isActive } = body;
+      const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
+      const roleIdsRaw = body.roleIds ?? body.role_ids;
+      const { description, defaultGSTRate, isActive, name } = body;
 
-      if (!name || (typeof name === 'string' && !name.trim())) {
-        return c.json({ success: false, error: 'Category name is required' }, 400);
+      if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
+        return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      const rate = defaultGSTRate !== undefined && defaultGSTRate !== null
-        ? parseFloat(String(defaultGSTRate))
-        : NaN;
-      if (Number.isNaN(rate) || rate < 0) {
-        return c.json({ success: false, error: 'Default GST rate must be a non-negative number (0 is allowed)' }, 400);
+      if (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0) {
+        return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+      }
+      const rate =
+        defaultGSTRate !== undefined && defaultGSTRate !== null
+          ? parseFloat(String(defaultGSTRate))
+          : NaN;
+      if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+        return c.json(
+          { success: false, error: 'Default GST rate must be a number between 0 and 100' },
+          400
+        );
       }
 
-      const newCategory = await insert('tax_categories', {
-        category_name: String(name).trim(),
+      const scRes = await query(
+        `SELECT id, name, category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+        [String(catalogCategoryId).trim()]
+      );
+      const scRow = scRes.rows?.[0];
+      if (!scRow) {
+        return c.json({ success: false, error: 'Catalog category not found' }, 404);
+      }
+      const categoryName =
+        name && String(name).trim()
+          ? String(name).trim()
+          : `${String(scRow.name || scRow.category_id || 'Category')} (GST)`;
+
+      const insertPayload: Record<string, unknown> = {
+        category_name: categoryName,
         description: description != null ? String(description) : '',
         tax_rate: rate,
+        default_gst_rate: rate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
-      });
+        catalog_category_id: String(catalogCategoryId).trim(),
+      };
+
+      let newCategory: any[];
+      const tryInsertTaxCategory = async (): Promise<any[]> => insert('tax_categories', insertPayload);
+      try {
+        newCategory = await tryInsertTaxCategory();
+      } catch (insErr: any) {
+        const msg = String(insErr?.message || '');
+        if (
+          insertPayload.default_gst_rate !== undefined &&
+          (msg.includes('default_gst_rate') || msg.includes('column')) &&
+          msg.includes('does not exist')
+        ) {
+          delete insertPayload.default_gst_rate;
+          try {
+            newCategory = await tryInsertTaxCategory();
+          } catch (e2: any) {
+            const m2 = String(e2?.message || '');
+            if (m2.includes('catalog_category_id') && m2.includes('does not exist')) {
+              delete insertPayload.catalog_category_id;
+              newCategory = await tryInsertTaxCategory();
+            } else {
+              throw e2;
+            }
+          }
+        } else if (msg.includes('catalog_category_id') && msg.includes('does not exist')) {
+          delete insertPayload.catalog_category_id;
+          newCategory = await tryInsertTaxCategory();
+        } else {
+          throw insErr;
+        }
+      }
+
+      const tcId = newCategory[0]?.id;
+      const ccid = String(catalogCategoryId).trim();
+      if (tcId) {
+        for (const rid of roleIdsRaw) {
+          const roleId = String(rid).trim();
+          if (!roleId) continue;
+          try {
+            await query(
+              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+              [tcId, roleId, ccid]
+            );
+          } catch (roleErr: any) {
+            const m = String(roleErr?.message || '');
+            if (m.includes('tax_category_roles') && m.includes('does not exist')) break;
+            if (roleErr?.code === '23505') {
+              return c.json(
+                {
+                  success: false,
+                  error: 'Duplicate role for this catalogue category (role already mapped to another GST config).',
+                },
+                409
+              );
+            }
+            throw roleErr;
+          }
+        }
+      }
 
       return c.json({
         success: true,
@@ -4001,21 +4533,115 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const id = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
 
-      const updateData: any = {};
+      const updateData: Record<string, unknown> = {};
       if (body.name !== undefined) updateData.category_name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.defaultGSTRate !== undefined) updateData.tax_rate = parseFloat(body.defaultGSTRate);
+      if (body.defaultGSTRate !== undefined && body.defaultGSTRate !== null) {
+        const parsed = parseFloat(String(body.defaultGSTRate));
+        if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+          return c.json(
+            { success: false, error: 'Default GST rate must be a number between 0 and 100' },
+            400
+          );
+        }
+        updateData.tax_rate = parsed;
+        updateData.default_gst_rate = parsed;
+      }
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
+      const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
+      if (catalogCategoryId !== undefined) {
+        updateData.catalog_category_id =
+          catalogCategoryId != null && String(catalogCategoryId).trim() !== ''
+            ? String(catalogCategoryId).trim()
+            : null;
+      }
 
-      const updated = await update('tax_categories', { id }, updateData);
+      const applyTaxCategoryUpdate = async (): Promise<void> => {
+        if (Object.keys(updateData).length === 0) return;
+        try {
+          await update('tax_categories', { id }, updateData);
+        } catch (updErr: any) {
+          const msg = String(updErr?.message || '');
+          if (updateData.default_gst_rate !== undefined && msg.includes('default_gst_rate')) {
+            delete updateData.default_gst_rate;
+            await applyTaxCategoryUpdate();
+            return;
+          }
+          if (updateData.catalog_category_id !== undefined && msg.includes('catalog_category_id')) {
+            delete updateData.catalog_category_id;
+            await applyTaxCategoryUpdate();
+            return;
+          }
+          throw updErr;
+        }
+      };
+      await applyTaxCategoryUpdate();
+
+      const roleIdsRaw = body.roleIds ?? body.role_ids;
+      if (Array.isArray(roleIdsRaw)) {
+        if (roleIdsRaw.length === 0) {
+          return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+        }
+        let ccid = String(catalogCategoryId || '').trim();
+        if (!ccid) {
+          const cur = await query(
+            `SELECT catalog_category_id::text AS cid FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
+            [id]
+          );
+          ccid = String(cur.rows?.[0]?.cid || '').trim();
+        }
+        if (!ccid) {
+          return c.json(
+            { success: false, error: 'catalogCategoryId is required to update role mapping' },
+            400
+          );
+        }
+        try {
+          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+          for (const rid of roleIdsRaw) {
+            const roleId = String(rid).trim();
+            if (!roleId) continue;
+            await query(
+              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+              [id, roleId, ccid]
+            );
+          }
+        } catch (e: any) {
+          if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+        }
+      }
+
+      const refreshed = await query(`SELECT * FROM tax_categories WHERE id = $1::uuid LIMIT 1`, [id]);
+      const row = refreshed.rows?.[0];
 
       return c.json({
         success: true,
         message: 'Tax category updated successfully',
-        category: updated[0],
+        category: row,
       });
     } catch (error: any) {
       console.error('Error updating tax category:', error);
+      if (error?.code === '23505') {
+        return c.json(
+          {
+            success: false,
+            error: 'Duplicate role for this catalogue category (role already mapped to another GST config).',
+          },
+          409
+        );
+      }
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.delete('/admin/finance/gst/tax-categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await update('tax_categories', { id }, { is_active: false });
+      return c.json({ success: true, message: 'Tax category deactivated successfully' });
+    } catch (error: any) {
+      console.error('Error deleting tax category:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -4052,20 +4678,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // GET /admin/finance/fee-configuration - Get all fee configuration settings
   app.get('/admin/finance/fee-configuration', async (c) => {
     try {
-      // Fetch all fee-related settings from admin_settings table
-      const settings = await query(`
-        SELECT setting_key, setting_value, service_type, description, updated_at
-        FROM admin_settings 
-        WHERE setting_key IN (
-          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold', 'max_delivery_distance',
-          'packaging_fee_enabled', 'packaging_fee_amount'
-        )
-        OR setting_key LIKE 'fee_override_%'
-      `).catch(() => ({ rows: [] }));
+      const settingsRows = await listFeeSettingsFromDb();
+      console.log('[fee-configuration GET] rows from DB (setting_category=fees):', settingsRows.length);
 
-      // Build config object from settings
+      // Build config object from settings (defaults only when a key is missing from DB)
       const config: Record<string, any> = {
         platformFeePercentage: 2,
         platformFeeFlat: 0,
@@ -4100,10 +4716,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const overrides: Record<string, any> = {};
 
-      for (const row of settings.rows) {
+      for (const row of settingsRows) {
         const key = row.setting_key;
-        const value = row.setting_value;
-        const serviceType = row.service_type;
+        const valueStr = scalarFromJsonbSetting(row.setting_value);
 
         if (key.startsWith('fee_override_')) {
           // Service type override
@@ -4116,23 +4731,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           }
 
           if (field === 'platform_fee') {
-            overrides[st].platformFeePercentage = parseFloat(value);
+            overrides[st].platformFeePercentage = parseFloat(valueStr);
           } else if (field === 'convenience_fee') {
-            overrides[st].convenienceFee = parseFloat(value);
+            overrides[st].convenienceFee = parseFloat(valueStr);
           } else if (field === 'enabled') {
-            overrides[st].enabled = value === 'true' || value === '1';
+            overrides[st].enabled = valueStr === 'true' || valueStr === '1';
           }
         } else if (keyMap[key]) {
           const configKey = keyMap[key];
           if (configKey === 'packagingFeeEnabled') {
-            config[configKey] = value === 'true' || value === '1';
+            config[configKey] = valueStr === 'true' || valueStr === '1';
           } else {
-            config[configKey] = parseFloat(value);
+            const n = parseFloat(valueStr);
+            config[configKey] = Number.isFinite(n) ? n : config[configKey];
           }
         }
       }
 
       config.serviceTypeOverrides = Object.values(overrides);
+
+      console.log('[fee-configuration GET] platformFeePercentage:', config.platformFeePercentage);
 
       return c.json({ success: true, config });
     } catch (error: unknown) {
@@ -4152,7 +4770,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Config is required' }, 400);
       }
 
-      // Map config properties to setting_key
+      // Map config properties to setting_key (stored under setting_category = 'fees', setting_value JSONB)
       const keyMap: Record<string, string> = {
         'platformFeePercentage': 'platform_fee_percentage',
         'platformFeeFlat': 'platform_fee_flat',
@@ -4168,38 +4786,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         'packagingFeeAmount': 'packaging_fee_amount',
       };
 
-      // Upsert each setting
       for (const [configKey, settingKey] of Object.entries(keyMap)) {
-        if (config[configKey] !== undefined) {
-          const value = String(config[configKey]);
-
-          // Try to update first, then insert if not exists
-          const existing = await query(
-            `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = 'all' OR service_type IS NULL) LIMIT 1`,
-            [settingKey]
-          ).catch(() => ({ rows: [] }));
-
-          if (existing.rows.length > 0) {
-            await query(
-              `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = 'all' OR service_type IS NULL)`,
-              [value, settingKey]
-            );
-          } else {
-            await query(
-              `INSERT INTO admin_settings (setting_key, setting_value, service_type, description, created_at, updated_at)
-               VALUES ($1, $2, 'all', $3, NOW(), NOW())
-               ON CONFLICT (setting_key, COALESCE(service_type, 'all')) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
-              [settingKey, value, `Fee configuration: ${configKey}`]
-            ).catch(async () => {
-              // Fallback insert without ON CONFLICT (if constraint doesn't exist)
-              await query(
-                `INSERT INTO admin_settings (setting_key, setting_value, service_type, description)
-                 VALUES ($1, $2, 'all', $3)`,
-                [settingKey, value, `Fee configuration: ${configKey}`]
-              ).catch(() => { });
-            });
-          }
-        }
+        if (config[configKey] === undefined) continue;
+        const raw = config[configKey];
+        const valueToStore =
+          configKey === 'packagingFeeEnabled' ? !!raw : typeof raw === 'number' ? raw : parseFloat(String(raw));
+        await upsertFeeSetting(settingKey, valueToStore, `Fee configuration: ${configKey}`);
+        console.log('[fee-configuration PUT] upserted', settingKey, '=', valueToStore);
       }
 
       // Handle service type overrides
@@ -4209,17 +4802,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
           if (!serviceType) continue;
 
-          // Store enabled status
-          await upsertAdminSetting(`fee_override_${serviceType}_enabled`, String(enabled || false), serviceType);
+          await upsertFeeSetting(
+            `fee_override_${serviceType}_enabled`,
+            !!(enabled || false),
+            `Fee override enabled: ${serviceType}`
+          );
 
-          // Store platform fee override
           if (platformFeePercentage !== undefined) {
-            await upsertAdminSetting(`fee_override_${serviceType}_platform_fee`, String(platformFeePercentage), serviceType);
+            await upsertFeeSetting(
+              `fee_override_${serviceType}_platform_fee`,
+              Number(platformFeePercentage),
+              `Fee override platform %: ${serviceType}`
+            );
           }
 
-          // Store convenience fee override
           if (convenienceFee !== undefined) {
-            await upsertAdminSetting(`fee_override_${serviceType}_convenience_fee`, String(convenienceFee), serviceType);
+            await upsertFeeSetting(
+              `fee_override_${serviceType}_convenience_fee`,
+              Number(convenienceFee),
+              `Fee override convenience: ${serviceType}`
+            );
           }
         }
       }
@@ -4239,27 +4841,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const amount = parseFloat(c.req.query('amount') || '0');
       const type = c.req.query('type') || 'booking';
 
-      // Fetch fee configuration
-      const settings = await query(`
-        SELECT setting_key, setting_value, service_type
-        FROM admin_settings 
-        WHERE setting_key IN (
-          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold',
-          'packaging_fee_enabled', 'packaging_fee_amount'
-        )
-        AND (service_type = 'all' OR service_type IS NULL OR service_type = $1)
-        ORDER BY CASE WHEN service_type = $1 THEN 0 ELSE 1 END
-      `, [serviceStyle]).catch(() => ({ rows: [] }));
-
-      // Build settings map (service-specific overrides take precedence)
-      const settingsMap: Record<string, string> = {};
-      for (const row of settings.rows) {
-        if (!settingsMap[row.setting_key] || row.service_type === serviceStyle) {
-          settingsMap[row.setting_key] = row.setting_value;
-        }
-      }
+      const settingsMap = await getFeeGlobalsMap();
 
       // Calculate platform fee
       const platformFeePercentage = parseFloat(settingsMap['platform_fee_percentage'] || '2');
@@ -7467,11 +8049,92 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/settings/payment-gateway', async (c) => {
     try {
-      const body = await c.req.json().catch(() => ({}));
-      // Save payment gateway settings
+      const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
+
+      const looksLikeMaskedSecret = (s: string) => {
+        const t = s.trim();
+        return t.length === 0 || /^[*•\s]+$/.test(t);
+      };
+
+      async function mergeIntegrationConfig(integrationName: string): Promise<Record<string, any>> {
+        const existing = await select('platform_integrations', { integration_name: integrationName });
+        const prev =
+          existing.length > 0 && existing[0].integration_config && typeof existing[0].integration_config === 'object'
+            ? { ...(existing[0].integration_config as Record<string, any>) }
+            : {};
+        return prev;
+      }
+
+      async function saveGatewayRow(
+        integrationName: string,
+        isActive: boolean,
+        nextConfig: Record<string, any>,
+        secretKeys: string[]
+      ) {
+        const prev = await mergeIntegrationConfig(integrationName);
+        const merged = { ...prev, ...nextConfig };
+        for (const sk of secretKeys) {
+          const v = nextConfig[sk];
+          if (typeof v === 'string' && looksLikeMaskedSecret(v) && typeof prev[sk] === 'string' && prev[sk].length > 0) {
+            merged[sk] = prev[sk];
+          }
+        }
+        await query(
+          `INSERT INTO platform_integrations (integration_name, integration_config, is_active, updated_at)
+           VALUES ($1, $2::jsonb, $3, NOW())
+           ON CONFLICT (integration_name) DO UPDATE SET
+             integration_config = EXCLUDED.integration_config,
+             is_active = EXCLUDED.is_active,
+             updated_at = NOW()`,
+          [integrationName, JSON.stringify(merged), !!isActive]
+        );
+      }
+
+      const rz = body.razorpay || {};
+      await saveGatewayRow(
+        'razorpay',
+        !!rz.enabled,
+        {
+          keyId: typeof rz.key_id === 'string' ? rz.key_id : '',
+          keySecret: typeof rz.key_secret === 'string' ? rz.key_secret : '',
+          webhookSecret: typeof rz.webhook_secret === 'string' ? rz.webhook_secret : '',
+          razorpayXAccountNumber: typeof rz.razorpay_x_account_number === 'string' ? rz.razorpay_x_account_number.trim() : '',
+          auto_capture: rz.auto_capture !== false,
+          test_mode: !!rz.test_mode,
+        },
+        ['keySecret']
+      );
+
+      const st = body.stripe || {};
+      await saveGatewayRow(
+        'stripe',
+        !!st.enabled,
+        {
+          publishableKey: typeof st.publishable_key === 'string' ? st.publishable_key : '',
+          secretKey: typeof st.secret_key === 'string' ? st.secret_key : '',
+          webhookSecret: typeof st.webhook_secret === 'string' ? st.webhook_secret : '',
+          test_mode: !!st.test_mode,
+        },
+        ['secretKey']
+      );
+
+      const pt = body.paytm || {};
+      await saveGatewayRow(
+        'paytm',
+        !!pt.enabled,
+        {
+          merchantId: typeof pt.merchant_id === 'string' ? pt.merchant_id : '',
+          merchantKey: typeof pt.merchant_key === 'string' ? pt.merchant_key : '',
+          test_mode: !!pt.test_mode,
+        },
+        ['merchantKey']
+      );
+
       return c.json({ success: true, message: 'Payment gateway settings saved' });
     } catch (error: unknown) {
-      return c.json({ success: false, error: 'Failed to save payment gateway settings' }, 500);
+      const err = error as Error;
+      console.error('[payment-gateway] save error:', err);
+      return c.json({ success: false, error: err?.message || 'Failed to save payment gateway settings' }, 500);
     }
   });
 

@@ -16,8 +16,8 @@
  * - POST /vendor/onboarding/select-vendor-type - Select vendor type
  * - GET /vendor/onboarding/form-schema - Get form schema
  * - POST /vendor/onboarding/submit-application - Submit application
- * - POST /admin/vendor/onboarding/:applicationId/review - Admin review
  * - POST /vendor/onboarding/activate - Activate vendor
+ * - Admin: POST /admin/vendor/application/:applicationId/approve|reject (admin.controller)
  * - POST /vendor/setup/update-completion - Update setup completion
  * - POST /vendor/setup/go-live - Go live
  * 
@@ -34,7 +34,6 @@ import {
   SubmitVendorApplicationRequestSchema,
   SelectVendorRoleRequestSchema,
   SelectVendorTypeRequestSchema,
-  AdminReviewApplicationRequestSchema,
 } from '@warmpawz/api-contracts/vendors';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -741,6 +740,37 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
       const effectiveVendorType = identity.vendor_type || payloadVendorType || 'business';
       const effectiveRoleId = identity.selected_role_id || payloadRoleId;
 
+      const pl = application_payload as Record<string, unknown>;
+      const vd = validationResult.data as typeof validationResult.data & {
+        referralCode?: string;
+        referral_code?: string;
+      };
+      const referralFromSubmit =
+        vd.referralCode || vd.referral_code || pl?.referralCode || pl?.referral_code;
+      if (referralFromSubmit !== undefined && referralFromSubmit !== null && String(referralFromSubmit).trim() !== '') {
+        const { validateAndStoreReferralCodeForVendorApplication } = await import(
+          '../lib/services/referral-service'
+        );
+        const storeRes = await validateAndStoreReferralCodeForVendorApplication({
+          vendorIdentityId: identity.id,
+          phone,
+          referralCodeRaw: String(referralFromSubmit),
+        });
+        if (!storeRes.success) {
+          return this.error(
+            storeRes.error || 'Invalid referral code',
+            400,
+            'VALIDATION_ERROR',
+            undefined,
+            requestId
+          );
+        }
+        const refreshedIdentities = await select('vendor_identity', { id: identity.id });
+        if (refreshedIdentities.length > 0) {
+          identity = refreshedIdentities[0];
+        }
+      }
+
       // Get form schema version
       const roles = await select('roles', { id: effectiveRoleId });
       const formVersion = roles[0]?.config?.onboardingFormSchema?.[effectiveVendorType]?.version || '1.0';
@@ -982,176 +1012,6 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 }
 
 // ============================================================================
-// PHASE 6: ADMIN DECISION FLOW
-// ============================================================================
-
-class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const applicationId = context.event.pathParameters?.applicationId;
-    const body = this.parseBody(context.event);
-    const requestId = context.requestId;
-
-    if (!applicationId) {
-      return this.error('Application ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
-    }
-
-    // Validate request with Zod schema
-    const validationResult = AdminReviewApplicationRequestSchema.safeParse(body);
-    if (!validationResult.success) {
-      return this.error(
-        'Validation failed',
-        400,
-        'VALIDATION_ERROR',
-        { errors: validationResult.error.errors },
-        requestId
-      );
-    }
-
-    const { action, admin_id, comments, rejection_reason } = validationResult.data;
-
-    try {
-      // Get application
-      const apps = await select('vendor_onboarding_applications', {
-        id: applicationId,
-      });
-
-      if (apps.length === 0) {
-        return this.error('Application not found', 404, 'NOT_FOUND', undefined, requestId);
-      }
-
-      const application = apps[0];
-
-      // Accept both UNDER_REVIEW and SUBMITTED (legacy: submit flow used to only set SUBMITTED on application)
-      const isReviewable = application.status === 'UNDER_REVIEW' || application.status === 'SUBMITTED';
-      if (!isReviewable) {
-        return this.error(
-          `Application is not in reviewable status (current: ${application.status}). Expected UNDER_REVIEW or SUBMITTED.`,
-          400,
-          'VALIDATION_ERROR',
-          undefined,
-          requestId
-        );
-      }
-
-      // Get vendor identity
-      const identities = await select('vendor_identity', {
-        id: application.vendor_identity_id,
-      });
-
-      if (identities.length === 0) {
-        return this.error('Vendor identity not found', 404, 'NOT_FOUND', undefined, requestId);
-      }
-
-      const identity = identities[0];
-
-      // Update application based on action
-      let newStatus: string;
-      let newOnboardingStatus: string;
-
-      if (action === 'APPROVE') {
-        newStatus = 'APPROVED';
-        newOnboardingStatus = 'APPROVED';
-        
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments || null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else if (action === 'REQUEST_CLARIFICATION') {
-        if (!comments) {
-          return this.error(
-            'Comments are required for clarification request',
-            400,
-            'VALIDATION_ERROR',
-            undefined,
-            requestId
-          );
-        }
-
-        newStatus = 'CLARIFICATION_REQUIRED';
-        newOnboardingStatus = 'CLARIFICATION_REQUIRED';
-        
-        // Unlock application for editing
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else { // REJECT
-        if (!rejection_reason) {
-          return this.error(
-            'Rejection reason is required',
-            400,
-            'VALIDATION_ERROR',
-            undefined,
-            requestId
-          );
-        }
-
-        newStatus = 'REJECTED';
-        newOnboardingStatus = 'REJECTED';
-        
-        // ✅ FIX: Unlock application when rejected so vendor can resubmit
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            rejection_reason,
-            admin_comments: comments || null,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      }
-
-      // Transition onboarding status
-      await query(
-        `SELECT transition_onboarding_status($1, $2, $3, 'admin', $4, $5::jsonb)`,
-        [
-          identity.id,
-          newOnboardingStatus,
-          admin_id,
-          action.toLowerCase(),
-          JSON.stringify({ comments, rejection_reason }),
-        ]
-      );
-
-      return this.success({
-        message: `Application ${action.toLowerCase()}d successfully`,
-        status: newStatus,
-      }, requestId);
-    } catch (error: any) {
-      console.error('Error reviewing application:', error);
-      return this.error(
-        error.message || 'Failed to review application',
-        500,
-        'INTERNAL_ERROR',
-        undefined,
-        requestId
-      );
-    }
-  }
-}
-
-// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -1162,7 +1022,6 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   const selectVendorTypeHandler = new SelectVendorTypeHandlerEnhanced();
   const formSchemaHandler = new GetOnboardingFormSchemaHandlerEnhanced();
   const submitHandler = new SubmitApplicationHandlerEnhanced();
-  const reviewHandler = new AdminReviewApplicationHandlerEnhanced();
 
   // Phase 1: Auth & Entry
   app.get('/vendor/onboarding/status', async (c: Context) => {
@@ -1241,16 +1100,6 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
-  // Phase 6: Admin Review
-  app.post('/admin/vendor/onboarding/:applicationId/review', async (c: Context) => {
-    const event = await createApiGatewayEventWithBody(c);
-    event.pathParameters = { applicationId: c.req.param('applicationId') };
-    const context = createLambdaContext();
-    const result: any = await reviewHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
-  });
-
   // Phase 7: Activate Vendor
   app.post('/vendor/onboarding/activate', async (c: Context) => {
     try {
@@ -1273,16 +1122,67 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         return c.json({ success: false, error: 'Vendor must be approved before activation' }, 400);
       }
 
+      const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identity.id });
+      const applicationPre = applications.length > 0 ? applications[0] : null;
+      const payloadPre = applicationPre?.application_payload || {};
+
+      const activationReferralRaw =
+        (body as { referralCode?: string; referral_code?: string; pendingReferralCode?: string; pending_referral_code?: string })
+          .referralCode ??
+        (body as { referral_code?: string }).referral_code ??
+        (body as { pendingReferralCode?: string }).pendingReferralCode ??
+        (body as { pending_referral_code?: string }).pending_referral_code;
+      const activationReferralCode =
+        activationReferralRaw != null && String(activationReferralRaw).trim() !== ''
+          ? String(activationReferralRaw).trim().toUpperCase()
+          : '';
+      const baseReferralMeta =
+        identity.metadata && typeof identity.metadata === 'object' && !Array.isArray(identity.metadata)
+          ? ({ ...(identity.metadata as Record<string, unknown>) } as Record<string, unknown>)
+          : ({} as Record<string, unknown>);
+      const referralMetadataForLink: Record<string, unknown> = {
+        ...baseReferralMeta,
+        ...(activationReferralCode ? { referral_code: activationReferralCode } : {}),
+      };
+
+      if (activationReferralCode) {
+        try {
+          const { validateAndStoreReferralCodeForVendorApplication } = await import('../lib/services/referral-service');
+          const storeRes = await validateAndStoreReferralCodeForVendorApplication({
+            vendorIdentityId: identity.id,
+            referralCodeRaw: activationReferralCode,
+            phone: String(identity.phone || phone || ''),
+          });
+          if (!storeRes.success) {
+            console.warn('[VENDOR-ACTIVATION] referral reserve on activate (non-fatal):', storeRes.error);
+          }
+        } catch (refPreErr) {
+          console.warn('[VENDOR-ACTIVATION] referral reserve on activate failed (non-fatal):', refPreErr);
+        }
+      }
+
       // Check if vendor already exists in vendors table
       const existingVendors = await select('vendors', { phone });
       if (existingVendors.length > 0) {
         const vendor = existingVendors[0];
+
+        let serviceRadius: number | null = null;
+        const radiusFields = ['service_radius', 'serviceRadius', 'serviceRadiusKm', 'radius', 'radiusKm', 'service_radius_km', 'serviceArea', 'service_area'];
+        for (const field of radiusFields) {
+          if (payloadPre[field] !== undefined && payloadPre[field] !== null && payloadPre[field] !== '') {
+            const radiusValue = typeof payloadPre[field] === 'string' ? parseFloat(payloadPre[field]) : Number(payloadPre[field]);
+            if (!isNaN(radiusValue) && radiusValue > 0) {
+              serviceRadius = radiusValue;
+              break;
+            }
+          }
+        }
         
         // ✅ FIX: Extract profile photo from application and update vendor if missing
         let profilePhotoUrl: string | null = vendor.profile_photo_url;
         
-        if (!profilePhotoUrl && application) {
-          const uploadedDocuments = application.uploaded_documents || [];
+        if (!profilePhotoUrl && applicationPre) {
+          const uploadedDocuments = applicationPre.uploaded_documents || [];
           console.log(`📸 [VENDOR-ACTIVATION] Existing vendor found, checking for profile photo (current: ${profilePhotoUrl})`);
           console.log(`📸 [VENDOR-ACTIVATION] Uploaded documents count: ${uploadedDocuments.length}`);
           
@@ -1315,8 +1215,8 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
           }
           
           // Fallback: Check application_payload
-          if (!profilePhotoUrl && payload.profilePhoto) {
-            const photoUrl = payload.profilePhoto;
+          if (!profilePhotoUrl && payloadPre.profilePhoto) {
+            const photoUrl = payloadPre.profilePhoto;
             if (photoUrl.includes('amazonaws.com')) {
               try {
                 const urlObj = new URL(photoUrl);
@@ -1360,6 +1260,20 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         }
         
         await update('vendors', { id: vendor.id }, vendorUpdateData);
+
+        try {
+          const { linkVendorOnboardingReferralsFromIdentityMetadata } = await import(
+            '../lib/services/referral-service'
+          );
+          await linkVendorOnboardingReferralsFromIdentityMetadata({
+            vendorId: vendor.id,
+            phone: identity.phone,
+            metadata: referralMetadataForLink,
+            vendorIdentityId: identity.id,
+          });
+        } catch (refError: unknown) {
+          console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
+        }
         
         return c.json({
           success: true,
@@ -1518,35 +1432,19 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
-      // Link referral: VENDOR… (vendor→vendor) or WARM… (customer→vendor).
-      if (identity.metadata && identity.metadata.referral_code_id) {
-        try {
-          const {
-            processVendorReferralSignup,
-            processCustomerReferralForVendorSignup,
-          } = await import('../lib/services/referral-service');
-          const refCode = String(identity.metadata.referral_code || '').trim();
-          let referralResult = await processVendorReferralSignup({
-            vendorId: vendor.id,
-            referralCode: refCode,
-            phone: identity.phone,
-          });
-          if (!referralResult.success && referralResult.error === 'Invalid referral code') {
-            referralResult = await processCustomerReferralForVendorSignup({
-              vendorId: vendor.id,
-              referralCode: refCode,
-              phone: identity.phone,
-            });
-          }
-
-          if (referralResult.success) {
-            console.log(`[VENDOR-ACTIVATION] ✅ Referral linked (vendor or customer code)`);
-          } else {
-            console.warn(`[VENDOR-ACTIVATION] Referral linking failed: ${referralResult.error}`);
-          }
-        } catch (refError: any) {
-          console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
-        }
+      // Link referral: VENDOR… (vendor→vendor) or WARM… (customer→vendor); resolves from metadata or referral tables.
+      try {
+        const { linkVendorOnboardingReferralsFromIdentityMetadata } = await import(
+          '../lib/services/referral-service'
+        );
+        await linkVendorOnboardingReferralsFromIdentityMetadata({
+          vendorId: vendor.id,
+          phone: identity.phone,
+          metadata: referralMetadataForLink,
+          vendorIdentityId: identity.id,
+        });
+      } catch (refError: any) {
+        console.error('[VENDOR-ACTIVATION] Error linking referral:', refError);
       }
 
       return c.json({

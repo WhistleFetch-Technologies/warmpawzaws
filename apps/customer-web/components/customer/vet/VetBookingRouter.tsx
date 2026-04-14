@@ -10,7 +10,7 @@ import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -1468,6 +1468,7 @@ export function VetBookingRouter({
             return (
               <UniversalPaymentPage
                 type="booking"
+                category="veterinary"
                 vendorId={(vendorId || doctorId || clinicId || '') as string}
                 vendorName={displayVendorName}
                 serviceId={finalServiceId}
@@ -1489,6 +1490,11 @@ export function VetBookingRouter({
                   state: selectedAddress.state,
                 } : undefined}
                 baseAmount={totalBaseAmount}
+                priceIncludesTax={
+                  catalogPriceIncludesTax(selectedVendorService) ||
+                  catalogPriceIncludesTax(selectedServiceOption) ||
+                  (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices![0]))
+                }
                 duration={totalDuration}
                 selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
                 customerPhone={phone}

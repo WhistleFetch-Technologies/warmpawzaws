@@ -9,7 +9,5 @@ export * from './ecommercePolicies/EcommercePoliciesSection';
 export * from './scheduleSettings/SettlementScheduleSettings';
 export * from './paymentGateway/AdminPaymentSettings';
 export * from './settlementRules/DynamicSettlementRulesManager';
-export * from './FlexibleTaxRulesManager';
-export * from './FlexibleTaxConfigurationManager';
 export * from './TaxCalculatorPreview';
 

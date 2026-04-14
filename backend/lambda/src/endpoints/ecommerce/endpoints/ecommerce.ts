@@ -336,6 +336,32 @@ export function registerEcommerceEndpoints(app: Hono) {
       const orderId = randomUUID();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+      let priorOrderCount = 0;
+      let containsPetFood = false;
+      if (customerId) {
+        try {
+          const cnt = await query(
+            `SELECT COUNT(*)::int AS c FROM orders WHERE customer_id = $1::uuid AND COALESCE(order_status, '') NOT IN ('cancelled', 'failed')`,
+            [customerId]
+          );
+          priorOrderCount = cnt.rows[0]?.c ?? 0;
+        } catch {
+          priorOrderCount = 0;
+        }
+      }
+      for (const item of orderItems) {
+        const n = String(item.product_name || '').toLowerCase();
+        if (
+          n.includes('food') ||
+          n.includes('treat') ||
+          n.includes('kibble') ||
+          n.includes('nutrition')
+        ) {
+          containsPetFood = true;
+          break;
+        }
+      }
+
       // Calculate amounts
       const shippingAmount = subtotal > 499 ? 0 : 49;
       const taxAmount = subtotal * 0.18;
@@ -377,6 +403,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       return c.json({
         success: true,
+        customerId,
+        totalAmount,
+        isFirstPlatformProductOrder: priorOrderCount === 0,
+        containsPetFood,
         order: {
           id: orderId,
           order_number: orderNumber,
@@ -663,6 +693,33 @@ export function registerEcommerceEndpoints(app: Hono) {
       const shippingAmount = shippingAddress ? 50 : 0; // Should be calculated
       const totalAmount = subtotal + taxAmount + shippingAmount;
 
+      let priorOrderCount = 0;
+      let containsPetFood = false;
+      try {
+        const cnt = await query(
+          `SELECT COUNT(*)::int AS c FROM orders WHERE customer_id = $1::uuid AND COALESCE(order_status, '') NOT IN ('cancelled', 'failed')`,
+          [customerId]
+        );
+        priorOrderCount = cnt.rows[0]?.c ?? 0;
+      } catch {
+        priorOrderCount = 0;
+      }
+      for (const item of orderItems) {
+        const p = await select('products', { id: item.product_id });
+        const cat = String((p[0] as { category?: string })?.category || '').toLowerCase();
+        const name = String((p[0] as { name?: string })?.name || item.name || '').toLowerCase();
+        if (
+          cat.includes('food') ||
+          cat.includes('treat') ||
+          name.includes('food') ||
+          name.includes('treat') ||
+          name.includes('kibble')
+        ) {
+          containsPetFood = true;
+          break;
+        }
+      }
+
       // Generate order number
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
@@ -701,8 +758,14 @@ export function registerEcommerceEndpoints(app: Hono) {
       // Clear cart
       await query('DELETE FROM cart_items WHERE customer_id = $1', [customerId]);
 
+      const ord = order[0] as { id?: string; total_amount?: number };
       return c.json({
         success: true,
+        customerId,
+        orderId: ord.id,
+        totalAmount: ord.total_amount != null ? Number(ord.total_amount) : totalAmount,
+        isFirstPlatformProductOrder: priorOrderCount === 0,
+        containsPetFood,
         order: order[0],
         message: 'Order created successfully',
       });

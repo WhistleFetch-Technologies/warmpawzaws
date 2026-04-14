@@ -99,11 +99,13 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
   if (keyId && keySecret) {
+    const xFromEnv = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
     console.log('[RAZORPAY-CONFIG] Loaded from environment variables');
     return {
       keyId,
       keySecret,
       webhookSecret: webhookSecret || '',
+      razorpayXAccountNumber: xFromEnv || undefined,
     };
   }
 
@@ -228,6 +230,185 @@ export async function razorpayRequest(
   }
 }
 
+/** RazorpayX current account (customer identifier) — same as bank fund_account validations. */
+async function getRazorpayXSourceAccountNumber(): Promise<string | null> {
+  try {
+    const config = await getRazorpayConfig();
+    const x = (config as any).razorpayXAccountNumber;
+    if (x != null && String(x).trim() !== '') return String(x).trim();
+  } catch {
+    /* use env only */
+  }
+  const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+  return env || null;
+}
+
+/**
+ * Payments API POST /v1/payments/validate/vpa is not enabled for many merchants (UPI collect / manual flag).
+ * Razorpay returns 400 with description "The requested URL was not found on the server."
+ */
+function isPaymentsValidateVpaUnavailableError(message: string): boolean {
+  const m = String(message || '').toLowerCase();
+  return (
+    m.includes('not found on the server') ||
+    m.includes('the requested url was not found') ||
+    m.includes('url was not found')
+  );
+}
+
+/**
+ * VPA validation via RazorpayX: POST /v1/fund_accounts/validations (pennydrop + account_type vpa).
+ * @see https://razorpay.com/docs/api/x/account-validation/vpa/
+ */
+async function validateRazorpayVpaViaFundAccountValidation(vpaAddress: string): Promise<{
+  valid: boolean;
+  customerName?: string;
+  error?: string;
+}> {
+  const sourceAccount = await getRazorpayXSourceAccountNumber();
+  if (!sourceAccount?.trim()) {
+    return {
+      valid: false,
+      error:
+        'Standard UPI validate API is not enabled on your Razorpay account, and RazorpayX current account is missing. Add razorpayXAccountNumber to your Razorpay secret (Dashboard → Banking → Customer Identifier) or set RAZORPAY_X_ACCOUNT_NUMBER, or ask Razorpay support to enable VPA validation.',
+    };
+  }
+
+  const ref = `vpa-${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+  const body = {
+    source_account_number: sourceAccount,
+    validation_type: 'pennydrop',
+    reference_id: ref,
+    fund_account: {
+      account_type: 'vpa',
+      vpa: {
+        address: vpaAddress,
+      },
+      contact: {
+        name: 'Vendor payout UPI',
+        email: `vendor-upi-${ref}@validation.warmpawz.com`,
+        contact: '9999999999',
+        type: 'vendor',
+        reference_id: ref,
+      },
+    },
+  };
+
+  try {
+    const res = await razorpayRequest('/fund_accounts/validations', 'POST', body, 20000);
+    const status = res?.status;
+    const regName =
+      typeof res?.validation_results?.registered_name === 'string'
+        ? res.validation_results.registered_name.trim()
+        : undefined;
+    if (status === 'completed') {
+      return {
+        valid: true,
+        customerName: regName || undefined,
+      };
+    }
+    if (status === 'failed') {
+      return {
+        valid: false,
+        error: res?.status_details?.description || res?.status_details?.reason || 'VPA validation failed',
+      };
+    }
+    return {
+      valid: false,
+      error:
+        status === 'created'
+          ? 'VPA validation is processing; try again in a few seconds or check RazorpayX dashboard.'
+          : 'VPA validation did not complete',
+    };
+  } catch (e: any) {
+    const msg = String(e?.message || 'RazorpayX VPA validation failed')
+      .replace(/^Razorpay API error:\s*/i, '')
+      .trim();
+    return { valid: false, error: msg };
+  }
+}
+
+/** Razorpay validate-VPA API can return success in slightly different shapes across API versions. */
+function razorpayVpaResponseIsValid(res: any): boolean {
+  if (!res || typeof res !== 'object') return false;
+  if (res.success === false || res.success === 'false' || res.success === 0) return false;
+  if (res.success === true || res.success === 1 || res.success === 'true') return true;
+  const name = res.customer_name;
+  if (typeof name === 'string' && name.trim().length > 0 && res.error == null && res.success !== false) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Verify a UPI VPA via Razorpay Payments API (POST /v1/payments/validate/vpa).
+ * Uses getRazorpayConfig() / getRazorpayAuthHeader() — identical credential chain to payments, refunds, and payouts.
+ */
+export async function validateRazorpayVpa(vpa: string): Promise<{
+  valid: boolean;
+  customerName?: string;
+  error?: string;
+}> {
+  const normalized = String(vpa || '')
+    .trim()
+    .toLowerCase();
+  if (!normalized.includes('@')) {
+    return { valid: false, error: 'Invalid UPI ID format' };
+  }
+  const [handle, psp] = normalized.split('@');
+  if (!handle || !psp || psp.length < 2) {
+    return { valid: false, error: 'Invalid UPI ID format' };
+  }
+
+  try {
+    const cfg = await getRazorpayConfig();
+    const keyPrefix = cfg.keyId ? `${String(cfg.keyId).slice(0, 10)}…` : '(missing)';
+    console.log('[RAZORPAY-VPA] Validating VPA with same Razorpay config as payments (keyId prefix):', keyPrefix);
+  } catch (e: any) {
+    const msg = e?.message || 'Razorpay is not configured';
+    console.error('[RAZORPAY-VPA] Config load failed:', msg);
+    return { valid: false, error: msg };
+  }
+
+  try {
+    let res: any;
+    try {
+      res = await razorpayRequest('/payments/validate/vpa', 'POST', { vpa: normalized }, 15000);
+    } catch (first: any) {
+      const rawFirst = String(first?.message || '');
+      if (isPaymentsValidateVpaUnavailableError(rawFirst)) {
+        console.warn(
+          '[RAZORPAY-VPA] /payments/validate/vpa unavailable for this merchant; using RazorpayX fund_accounts/validations',
+        );
+        return validateRazorpayVpaViaFundAccountValidation(normalized);
+      }
+      const msg = rawFirst
+        .replace(/^Razorpay API error:\s*/i, '')
+        .replace(/^Razorpay API request failed:\s*/i, '')
+        .trim();
+      return { valid: false, error: msg || rawFirst };
+    }
+
+    if (razorpayVpaResponseIsValid(res)) {
+      const customerName =
+        typeof res.customer_name === 'string' && res.customer_name.trim()
+          ? res.customer_name.trim()
+          : undefined;
+      return { valid: true, customerName };
+    }
+    const desc =
+      res?.error?.description ||
+      res?.error?.reason ||
+      res?.error?.message ||
+      (typeof res?.message === 'string' ? res.message : undefined);
+    return { valid: false, error: desc || 'This UPI ID could not be verified' };
+  } catch (e: any) {
+    const raw = e?.message || 'UPI verification failed';
+    const msg = raw.replace(/^Razorpay API error:\s*/i, '').replace(/^Razorpay API request failed:\s*/i, '').trim() || raw;
+    return { valid: false, error: msg };
+  }
+}
+
 /**
  * Convenience accessor for Razorpay client actions
  */
@@ -312,6 +493,8 @@ export function getRazorpayClient() {
     payments,
     payouts,
     validateBankAccount,
+    /** Same Razorpay key/secret as payments — POST /v1/payments/validate/vpa */
+    validateVpa: validateRazorpayVpa,
   };
 }
 

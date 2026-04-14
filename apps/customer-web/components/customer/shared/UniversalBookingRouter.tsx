@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { safeNumber } from '@/lib/validation';
 
 interface UniversalBookingRouterProps {
@@ -973,6 +973,11 @@ export function UniversalBookingRouter({
                 : (allSelectedServices && allSelectedServices.length > 0 
                   ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
                   : (selectedVendorService.price || selectedServiceOption?.price || 0))}
+              priceIncludesTax={
+                catalogPriceIncludesTax(selectedVendorService) ||
+                catalogPriceIncludesTax(selectedServiceOption) ||
+                (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices![0]))
+              }
               duration={selectedVendorService.duration || selectedServiceOption?.duration || 15}
               selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
               customerPhone={phone}

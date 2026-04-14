@@ -180,10 +180,12 @@ export function CustomerNotificationModal({
               )}
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
+              className="w-8 h-8 flex items-center justify-center rounded-full text-gray-700 opacity-100 transition-[color,transform,background-color] hover:bg-gray-100 hover:text-gray-900 hover:scale-105"
+              aria-label="Close notifications"
             >
-              <X className="w-5 h-5 text-gray-500" />
+              <X className="w-5 h-5" strokeWidth={2} />
             </button>
           </div>
 

@@ -1,0 +1,6 @@
+{
+  "resourceArn": "arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster",
+  "secretArn": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+  "database": "warmpawz",
+  "sql": "UPDATE action_sources SET enabled = false, notes = COALESCE(notes, '') || ' [706] Disabled: use PUT customer_referral_first_booking on completed.', updated_at = NOW() WHERE method = 'POST' AND action_name = 'customer_referral_first_booking' AND (route_pattern LIKE '%/bookings/create%' OR route_pattern LIKE '%/customer/bookings/create%')"
+}

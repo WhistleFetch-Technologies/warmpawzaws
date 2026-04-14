@@ -132,6 +132,16 @@ export function isRoleName(vendor: any, ...names: string[]): boolean {
     return !!roleName && wanted.includes(roleName);
 }
 
+/**
+ * Pet pharmacy (prescription / dispensary flows), not the generic ecommerce Seller Hub.
+ * Uses capability `pharmacy` when nested `role.name` is missing (e.g. partial session objects).
+ */
+export function isPharmacyVendor(vendor: any): boolean {
+    if (!vendor) return false;
+    if (isRoleName(vendor, 'pharmacy', 'pet_pharmacy')) return true;
+    return hasAnyCapability(vendor, ['pharmacy']);
+}
+
 /** Determine if vendor is a marketplace/e-commerce seller. */
 export function isSeller(vendor: any): boolean {
     const info = getNormalizedRoleInfo(vendor);
@@ -158,6 +168,8 @@ export function isServiceProvider(vendor: any): boolean {
  * Avoids accidental redirects for non-ecommerce roles (e.g., vet_clinic).
  */
 export function isSellerStrict(vendor: any): boolean {
+    if (isPharmacyVendor(vendor)) return false;
+
     const info = getNormalizedRoleInfo(vendor);
 
     // Role or explicit customer_service of 'shop' are strong signals
