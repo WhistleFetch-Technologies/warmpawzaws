@@ -31,6 +31,7 @@ import { ProfessionalProfile, ProfessionalProfileManagerProps } from './constant
 import { parseSpecializations } from './constants/helpers';
 import { hasVendorRole } from '@/lib/vendor-utils';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { VendorRoleConfigurationSummary } from './VendorRoleConfigurationSummary';
 
 // ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
 // This ensures specializations are always up-to-date and role-specific based on admin configuration
@@ -75,6 +76,9 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     role_name: vendorRoleName,
   });
   const [hasChanges, setHasChanges] = useState(false);
+  const [rolePayload, setRolePayload] = useState<Record<string, unknown> | null>(
+    initialProfile ? (initialProfile as Record<string, unknown>) : null
+  );
 
   const isPetInsuranceProfile = hasVendorRole(
     {
@@ -142,6 +146,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
         }
 
         setRoleId(loadedRoleId);
+        setRolePayload(response.vendor as Record<string, unknown>);
 
         setProfile({
           id: vendorId,
@@ -400,6 +405,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               </div>
             </div>
           </div>
+
+          <VendorRoleConfigurationSummary vendor={rolePayload} />
 
           {/* Profile Photo Section - Using shared PhotoUpload component */}
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">

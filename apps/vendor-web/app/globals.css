@@ -68,6 +68,19 @@
   --radius-2xl: 24px;
   --radius-3xl: 32px;
   --radius-full: 9999px;
+
+  /**
+   * Stacking: fixed app chrome (header/footer) stays below overlays.
+   * Dialogs use z-[60]/z-[70] in components/ui/dialog.tsx; custom modals typically z-50+.
+   * Full-screen video (Chime) uses z-[9998] and remains on top.
+   */
+  --vendor-z-chrome: 40;
+}
+
+/** While overlays lock scroll, prevent the in-app scroll host (VendorChromeLayout main) from moving. */
+html[data-vendor-scroll-lock="true"] [data-vendor-chrome-main] {
+  overflow: hidden !important;
+  overscroll-behavior: none;
 }
 
 /* Base Styles */

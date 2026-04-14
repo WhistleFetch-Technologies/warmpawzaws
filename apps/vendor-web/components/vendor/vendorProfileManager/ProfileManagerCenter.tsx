@@ -15,6 +15,7 @@ import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/sha
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { CenterProfile, DAYS, ProfileManagerProps } from './constants/interface';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { VendorRoleConfigurationSummary } from './VendorRoleConfigurationSummary';
 
 // ✅ RENAMED: CenterProfileManager -> ProfileManager (generic naming)
 // Export both names for backward compatibility
@@ -77,6 +78,9 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
   const [availableForInstantTele, setAvailableForInstantTele] = useState<boolean>(false);
+  const [rolePayload, setRolePayload] = useState<Record<string, unknown> | null>(
+    vendorData ? (vendorData as Record<string, unknown>) : null
+  );
 
   // Using apiClient instead of API_BASE - use local roleId state
   const availableAmenities = getAmenitiesForVendorType(roleId);
@@ -101,6 +105,18 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   const loadCenterProfile = async () => {
     try {
       setLoading(true);
+
+      try {
+        const fullProfile = (await apiClient.get(`/vendor/${vendorId}/profile`)) as {
+          success?: boolean;
+          vendor?: Record<string, unknown>;
+        };
+        if (fullProfile?.success && fullProfile.vendor) {
+          setRolePayload(fullProfile.vendor);
+        }
+      } catch (e) {
+        console.warn('[CENTER-PROFILE] Could not load role summary from profile API:', e);
+      }
       
       // ✅ FIX: If roleId is not available, fetch it from vendor profile
       // IMPORTANT: Use roleName (the actual role name like 'veterinary_clinic') not roleId (which is a UUID)
@@ -516,6 +532,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         {/* Basic Info Tab */}
         {activeTab === 'basic' && (
           <div className="space-y-6">
+            <VendorRoleConfigurationSummary vendor={rolePayload} />
             <div className="bg-white rounded-xl border p-6">
               <h2 className="font-bold text-gray-900 mb-4">Basic Information</h2>
               

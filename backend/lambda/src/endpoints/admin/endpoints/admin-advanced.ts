@@ -1881,7 +1881,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
-              COALESCE(updated_at::text, '') as updated_at
+              COALESCE(updated_at::text, '') as updated_at,
+              COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state::text as customer_visibility_state,
+              customer_visibility_city::text as customer_visibility_city,
+              COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
@@ -1920,6 +1924,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             icon: String(cat.icon || ''),
             icon_color: String(cat.icon_color || 'text-gray-500'),
             updated_at: String(cat.updated_at || ''),
+            customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+            customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+            customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+            customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
           };
         }
 
@@ -1969,7 +1977,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
-              COALESCE(updated_at::text, '') as updated_at
+              COALESCE(updated_at::text, '') as updated_at,
+              COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state::text as customer_visibility_state,
+              customer_visibility_city::text as customer_visibility_city,
+              COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
@@ -1987,6 +1999,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             is_active: cat.is_active !== false,
             created_at: String(cat.created_at || ''),
             updated_at: String(cat.updated_at || ''),
+            customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+            customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+            customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+            customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
           }));
 
           return c.json({
@@ -2057,6 +2073,23 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // For service_categories, use category_id
       const finalCategoryId = categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
 
+      const visTypeRaw =
+        (body as any).customerVisibilityType ??
+        (body as any).customer_visibility_type ??
+        'GLOBAL';
+      const visType = String(visTypeRaw || 'GLOBAL')
+        .trim()
+        .toUpperCase();
+      const safeVis =
+        visType === 'STATE' || visType === 'CITY' || visType === 'GLOBAL' ? visType : 'GLOBAL';
+      const visState =
+        (body as any).customerVisibilityState ?? (body as any).customer_visibility_state ?? null;
+      const visCity =
+        (body as any).customerVisibilityCity ?? (body as any).customer_visibility_city ?? null;
+      const dashActive =
+        (body as any).customerDashboardCardActive !== false &&
+        (body as any).customer_dashboard_card_active !== false;
+
       const newCategory = await insert('service_categories', {
         category_id: finalCategoryId,
         name,
@@ -2067,6 +2100,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         vendor_roles: vendorRoles || [],
         display_order: nextOrder,
         is_active: status !== 'inactive',
+        customer_visibility_type: safeVis,
+        customer_visibility_state: visState ? String(visState).trim() : null,
+        customer_visibility_city: visCity ? String(visCity).trim() : null,
+        customer_dashboard_card_active: dashActive !== false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -2079,6 +2116,62 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating category:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create category', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.get('/admin/catalog/categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const rows = await query(
+        `SELECT 
+          id::text as id,
+          COALESCE(category_id::text, '') as category_id,
+          name::text as name,
+          COALESCE(description::text, '') as description,
+          COALESCE(icon::text, '') as icon,
+          COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+          COALESCE(display_order::integer, 0) as display_order,
+          COALESCE(is_active::boolean, true) as is_active,
+          COALESCE(created_at::text, '') as created_at,
+          COALESCE(updated_at::text, '') as updated_at,
+          COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+          customer_visibility_state::text as customer_visibility_state,
+          customer_visibility_city::text as customer_visibility_city,
+          COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
+        FROM service_categories
+        WHERE id::text = $1 OR category_id::text = $1
+        LIMIT 1`,
+        [id]
+      );
+      const cat = rows.rows?.[0];
+      if (!cat) {
+        return c.json({ success: false, error: 'Category not found' }, 404);
+      }
+      return c.json({
+        success: true,
+        category: {
+          id: String(cat.id || ''),
+          category_id: String(cat.category_id || ''),
+          name: String(cat.name || ''),
+          description: String(cat.description || ''),
+          icon: String(cat.icon || ''),
+          icon_color: String(cat.icon_color || 'text-gray-500'),
+          iconColor: String(cat.icon_color || 'text-gray-500'),
+          display_order: parseInt(cat.display_order, 10) || 0,
+          is_active: cat.is_active !== false,
+          status: cat.is_active === false ? 'inactive' : 'active',
+          created_at: String(cat.created_at || ''),
+          updated_at: String(cat.updated_at || ''),
+          customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+          customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+          customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+          customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('Error fetching category:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to fetch category', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
@@ -2099,6 +2192,25 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.vendorRoles !== undefined) updateData.vendor_roles = body.vendorRoles;
       if (body.status !== undefined) updateData.is_active = body.status !== 'inactive';
       if (body.display_order !== undefined) updateData.display_order = parseInt(body.display_order, 10);
+      if (body.customerVisibilityType !== undefined || body.customer_visibility_type !== undefined) {
+        const raw = String(body.customerVisibilityType ?? body.customer_visibility_type ?? 'GLOBAL')
+          .trim()
+          .toUpperCase();
+        updateData.customer_visibility_type =
+          raw === 'STATE' || raw === 'CITY' || raw === 'GLOBAL' ? raw : 'GLOBAL';
+      }
+      if (body.customerVisibilityState !== undefined || body.customer_visibility_state !== undefined) {
+        const v = body.customerVisibilityState ?? body.customer_visibility_state;
+        updateData.customer_visibility_state = v != null && String(v).trim() !== '' ? String(v).trim() : null;
+      }
+      if (body.customerVisibilityCity !== undefined || body.customer_visibility_city !== undefined) {
+        const v = body.customerVisibilityCity ?? body.customer_visibility_city;
+        updateData.customer_visibility_city = v != null && String(v).trim() !== '' ? String(v).trim() : null;
+      }
+      if (body.customerDashboardCardActive !== undefined || body.customer_dashboard_card_active !== undefined) {
+        const v = body.customerDashboardCardActive ?? body.customer_dashboard_card_active;
+        updateData.customer_dashboard_card_active = v !== false;
+      }
 
       const updated = await update('service_categories', { id }, updateData);
 

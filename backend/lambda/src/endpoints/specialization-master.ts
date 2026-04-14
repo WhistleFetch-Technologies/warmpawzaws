@@ -1215,13 +1215,17 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           sc.icon_color,
           sc.is_active,
           sc.display_order,
+          COALESCE(sc.customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+          sc.customer_visibility_state::text as customer_visibility_state,
+          sc.customer_visibility_city::text as customer_visibility_city,
+          COALESCE(sc.customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active,
           COUNT(DISTINCT sm.id) as specialization_count,
           COUNT(DISTINCT ss.id) as symptom_count
         FROM service_categories sc
         LEFT JOIN specialization_master sm ON sm.category_id = sc.category_id AND sm.is_active = true
         LEFT JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id AND ss.is_active = true
         WHERE sc.is_active = true
-        GROUP BY sc.id, sc.category_id, sc.name, sc.description, sc.icon, sc.icon_color, sc.is_active, sc.display_order
+        GROUP BY sc.id
         ORDER BY sc.display_order NULLS LAST, sc.name
       `);
       
@@ -1235,6 +1239,10 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           icon: row.icon,
           iconColor: row.icon_color,
           isActive: row.is_active,
+          customerVisibilityType: String(row.customer_visibility_type || 'GLOBAL'),
+          customerVisibilityState: row.customer_visibility_state != null ? String(row.customer_visibility_state) : '',
+          customerVisibilityCity: row.customer_visibility_city != null ? String(row.customer_visibility_city) : '',
+          customerDashboardCardActive: row.customer_dashboard_card_active !== false,
           specializationCount: parseInt(row.specialization_count) || 0,
           symptomCount: parseInt(row.symptom_count) || 0,
         })),

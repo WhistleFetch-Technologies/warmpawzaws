@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { X, MessageSquare, Clock, User, Package } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useVendorChromeScrollLock } from '@/hooks/useVendorChromeScrollLock';
 
 export interface VendorConversation {
   bookingId: string;
@@ -58,6 +59,8 @@ export function VendorChatConversationsModal({
     }
   }, [open, vendorId]);
 
+  useVendorChromeScrollLock(open);
+
   const formatTime = (d: string) => {
     if (!d) return '';
     const date = new Date(d);
@@ -85,7 +88,7 @@ export function VendorChatConversationsModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2">

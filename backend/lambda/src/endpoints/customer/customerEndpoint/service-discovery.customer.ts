@@ -61,21 +61,57 @@ function safeParseOperatingHours(raw: any): Record<string, any> | null {
 }
 
 /**
- * ✅ FIX: Check if current environment is production.
- * Dev/UAT Lambda (`warmpawz-api-dev-api`) uses NODE_ENV=dev & UAT_MODE=true.
- * Prod Lambda (`warmpawz-prod-api-handler`) uses NODE_ENV=production.
- * Used to conditionally skip availability filtering in dev/UAT, where vendors
- * may not have `vendor_availability_v2` records configured for testing.
+ * SQL predicate: vendor row is eligible for customer-facing discovery.
+ * Case-insensitive status; solo providers may remain `pending` until fully approved.
  */
-function isProductionEnvironment(): boolean {
-  const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME || '';
-  const nodeEnv = process.env.NODE_ENV || '';
-  const stage = process.env.STAGE || '';
-  return (
-    (functionName.includes('prod') && !functionName.includes('dev') && !functionName.includes('uat')) ||
-    nodeEnv === 'production' ||
-    stage === 'prod'
-  );
+function sqlVendorDiscoverableStatus(vAlias = 'v'): string {
+  return `(
+    LOWER(TRIM(COALESCE(${vAlias}.status::text, ''))) IN ('approved', 'active', 'activated')
+    OR (
+      LOWER(TRIM(COALESCE(${vAlias}.status::text, ''))) = 'pending'
+      AND LOWER(TRIM(COALESCE(${vAlias}.vendor_type::text, ''))) = 'solo'
+    )
+  )`;
+}
+
+/**
+ * SQL predicate: vendor_services row is discoverable (enabled + publish state).
+ * Includes `draft` when enabled — new vendors often save as draft before explicit publish;
+ * aligns with getDiscoverableRoleNames() which already counts draft for role discovery.
+ */
+function sqlVendorServiceDiscoverable(vsAlias = 'vs', allowNullEnabled = false): string {
+  const enabled = allowNullEnabled
+    ? `(${vsAlias}.is_enabled = true OR ${vsAlias}.is_enabled IS NULL)`
+    : `${vsAlias}.is_enabled = true`;
+  const pub = `(
+    ${vsAlias}.publish_status IS NULL
+    OR LOWER(TRIM(COALESCE(${vsAlias}.publish_status::text, ''))) IN ('published', 'auto_published', 'draft')
+  )`;
+  return `(${enabled}) AND ${pub}`;
+}
+
+/**
+ * Vendor has usable vendor_availability_v2 for the requested styles, OR has no VA2 rows yet
+ * (services-first onboarding — show provider once services are live; slots API still enforces booking).
+ * `styleParam` must match the query param index for acceptableStyles (e.g. '$1').
+ */
+function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v', styleParam: string): string {
+  return `(
+    EXISTS (
+      SELECT 1
+      FROM vendor_availability_v2 va
+      WHERE
+        (va.vendor_id = ${vAlias}.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone))
+        AND COALESCE(va.is_available, true) = true
+        AND (va.service_type IS NULL OR va.service_type = ANY(${styleParam}::text[]))
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM vendor_availability_v2 va0
+      WHERE va0.vendor_id = ${vAlias}.id
+         OR va0.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone)
+    )
+  )`;
 }
 
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
@@ -288,13 +324,12 @@ async function getDiscoverableRoleNames(): Promise<string[]> {
     SELECT DISTINCT r.name AS role_name
     FROM vendors v
     INNER JOIN roles r ON v.role_id = r.id
-    WHERE (v.status = 'approved' OR v.status = 'active')
+    WHERE ${sqlVendorDiscoverableStatus('v')}
       AND v.is_active = true
       AND EXISTS (
         SELECT 1 FROM vendor_services vs
         WHERE vs.vendor_id = v.id
-          AND vs.is_enabled = true
-          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          AND ${sqlVendorServiceDiscoverable('vs', false)}
       )
     ORDER BY r.name
   `);
@@ -1357,9 +1392,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           sitterRoleBypass && !isAtCenter
             ? `(vs.service_style = ANY($2::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
             : `vs.service_style = ANY($2::text[])`;
-        const enabledSql = sitterRoleBypass
-          ? `(vs.is_enabled = true OR vs.is_enabled IS NULL)`
-          : `vs.is_enabled = true`;
+        const vsDiscoverSql = sqlVendorServiceDiscoverable('vs', sitterRoleBypass);
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
                  COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
@@ -1377,9 +1410,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              AND ${styleMatchSql}
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
-             AND ${enabledSql}
-             AND (vs.publish_status IN ('published','auto_published')
-                  OR vs.publish_status IS NULL)
+             AND ${vsDiscoverSql}
           ORDER BY vs.price ASC
         `;
         const params =
@@ -1434,13 +1465,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           );
         } catch { /* non-fatal */ }
 
-        // Exclude vendors without availability for requested styles (pet sitting: allow without VA2)
+        // No computed slot (no vendor_availability_v2 or fully booked): still list provider — booking flow uses slots API.
         if (!nextAvailable) {
-          if (sittingDiscoveryRelaxed) {
-            nextAvailable = { date: '', time: '', display: 'Contact for availability' };
-          } else {
-            return null;
-          }
+          nextAvailable = {
+            date: '',
+            time: '',
+            display: sittingDiscoveryRelaxed ? 'Contact for availability' : 'Tap to view availability',
+          };
         }
 
         // Photos + rating + price
@@ -1501,18 +1532,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       };
 
-      // 4) Vendor SQL (services + availability required — optional for pet sitting)
+      // 4) Vendor SQL: require VA2 match OR no VA2 rows yet (new vendors with services but calendar not saved)
       const availabilityRequiredSql = sittingDiscoveryRelaxed
         ? ''
         : `
-          AND EXISTS (
-            SELECT 1
-            FROM vendor_availability_v2 va
-            WHERE
-              (va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-              AND COALESCE(va.is_available, true) = true
-              AND (va.service_type IS NULL OR va.service_type = ANY($1::text[]))
-          )`;
+          AND ${sqlVendorAvailabilityOrNotConfigured('v', '$1')}`;
 
       /**
        * Service catalog seeds pet-sitting rows with category `boarding` (not `sitting`).
@@ -1549,13 +1573,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               )`
           : '';
 
-      const vendorVsEnabledSql = sittingDiscoveryRelaxed
-        ? '(vs.is_enabled = true OR vs.is_enabled IS NULL)'
-        : 'vs.is_enabled = true';
+      const vendorVsDiscoverSql = sqlVendorServiceDiscoverable('vs', sittingDiscoveryRelaxed);
       const vendorVsStyleSql = sittingDiscoveryRelaxed
         ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
         : 'vs.service_style = ANY($1::text[])';
-      const vendorVsPublishSql = `(vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`;
 
       let vendorSql = `
         SELECT DISTINCT ON (v.id)
@@ -1570,15 +1591,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
-          AND (v.status IN ('approved','active')
-               OR (v.status = 'pending' AND v.vendor_type = 'solo'))
+          AND ${sqlVendorDiscoverableStatus('v')}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
             WHERE vs.vendor_id = v.id
-              AND ${vendorVsEnabledSql}
+              AND ${vendorVsDiscoverSql}
               AND ${vendorVsStyleSql}
-              AND ${vendorVsPublishSql}
               ${vendorServiceCategorySql}
           )
           ${availabilityRequiredSql}
@@ -4869,9 +4888,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
-             AND vs.is_enabled = true
-             AND (vs.publish_status IN ('published','auto_published')
-                  OR vs.publish_status IS NULL)
+             AND ${sqlVendorServiceDiscoverable('vs', false)}
           ORDER BY vs.price ASC
         `;
         const params =
@@ -4900,7 +4917,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
        * Returns null when the vendor should be excluded:
        *   • role config forbids the requested style
        *   • zero matching services
-       *   • no availability set (production only)
        */
       const enrichVendor = async (vendor: any) => {
         // Eligibility is based on services, not role config
@@ -4931,9 +4947,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           );
         } catch { /* non-fatal */ }
 
-        // Exclude vendors without availability for the requested style(s)
         if (!nextAvailable) {
-          return null;
+          nextAvailable = { date: '', time: '', display: 'Tap to view availability' };
         }
 
         const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
@@ -5014,13 +5029,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
-          AND (v.status IN ('approved','active')
-               OR (v.status = 'pending' AND v.vendor_type = 'solo'))
+          AND ${sqlVendorDiscoverableStatus('v')}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
             WHERE vs.vendor_id = v.id
-          AND vs.is_enabled = true
+              AND ${sqlVendorServiceDiscoverable('vs', false)}
               AND vs.service_style = ANY($1::text[])
               ${(catTextExact.length + catUUIDs.length > 0) ? `
               AND (
@@ -5030,21 +5044,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${boardingRoleUncategorizedOrByStyle}
               )` : ``}
           )
- AND EXISTS (
-  SELECT 1
-  FROM vendor_availability_v2 va
-  WHERE
-    (
-      va.vendor_id = v.id
-      OR va.vendor_id IN (
-        SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone
-      )
-    )
-    AND COALESCE(va.is_available, true) = true
-    AND (
-      va.service_type IS NULL OR va.service_type = ANY($1::text[])
-    )
-)
+          AND ${sqlVendorAvailabilityOrNotConfigured('v', '$1')}
       `;
 
       const vendorParams: any[] =

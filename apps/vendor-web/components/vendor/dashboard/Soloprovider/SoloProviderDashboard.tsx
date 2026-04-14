@@ -157,18 +157,16 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || vendorData?.selected_role_id;
   const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
 
-  // Service styles allowed for solo provider (no at_center)
-  // ✅ FIX: Solo groomers only have at_home, no tele
-  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
-  const isWalker = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
-  let allowedServiceStyles = isSoloGroomer 
-    ? ['at_home'] // Solo groomers only do home visits
-    : (vendorData?.allowedServiceStyles || vendorData?.serviceStyles?.selected || vendorData?.serviceStyles?.solo || ['at_home', 'tele']);
-  
-  // ✅ CRITICAL: Walkers only provide at_home services, remove tele
-  if (isWalker) {
-    allowedServiceStyles = allowedServiceStyles.filter((style: string) => style !== 'tele');
-  }
+  // Service styles from role config (profile/dashboard API intersects selected with solo/business bucket)
+  const selectedStyles = Array.isArray(vendorData?.serviceStyles)
+    ? vendorData.serviceStyles
+    : (vendorData?.serviceStyles?.selected ?? vendorData?.serviceStyles?.solo ?? []);
+  let allowedServiceStyles: string[] =
+    vendorData?.allowedServiceStyles?.length > 0
+      ? [...vendorData.allowedServiceStyles]
+      : selectedStyles.length > 0
+        ? [...selectedStyles]
+        : ['at_home', 'tele'];
 
   // Check if custom_services capability is enabled
   const hasCustomServices = capabilities.custom_services || capabilities.customServices || false;

@@ -26,6 +26,60 @@ import {
   normalizeServiceStyle,
   isAllowedServiceStyle,
 } from '../utils/service-catalog-sync';
+import { resolveCustomerDefaultAddressLocation } from '../utils/customer-default-address-location';
+import { serviceCategoryVisibleOnCustomerDashboard } from '../utils/customer-category-visibility';
+
+/** Extra columns for customer category visibility (migration 711). */
+const SERVICE_CATEGORY_VISIBILITY_SQL = `
+              , COALESCE(customer_visibility_type, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state,
+              customer_visibility_city,
+              COALESCE(customer_dashboard_card_active, true) as customer_dashboard_card_active`;
+
+async function resolveLocationForCustomerCategories(c: {
+  req: { query: (key: string) => string | undefined };
+}): Promise<{ state: string; city: string; latitude: number | null; longitude: number | null }> {
+  const phone = String(c.req.query('phone') || c.req.query('customerPhone') || '').trim();
+  let state = String(c.req.query('state') || '').trim();
+  let city = String(c.req.query('city') || '').trim();
+  const qLat = c.req.query('latitude');
+  const qLng = c.req.query('longitude');
+
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+  if (qLat && qLng) {
+    const la = parseFloat(String(qLat));
+    const lo = parseFloat(String(qLng));
+    if (!Number.isNaN(la) && !Number.isNaN(lo)) {
+      latitude = la;
+      longitude = lo;
+    }
+  }
+
+  if (phone && (!state || !city || latitude == null || longitude == null)) {
+    const addr = await resolveCustomerDefaultAddressLocation(phone);
+    if (addr) {
+      if (!state && addr.state) state = addr.state;
+      if (!city && addr.city) city = addr.city;
+      if (latitude == null && addr.latitude != null) latitude = addr.latitude;
+      if (longitude == null && addr.longitude != null) longitude = addr.longitude;
+    }
+  }
+
+  return { state, city, latitude, longitude };
+}
+
+function filterServiceCategoriesForCustomerLocation(
+  rows: any[],
+  loc: { state: string; city: string }
+): any[] {
+  return (rows || []).filter((r) =>
+    serviceCategoryVisibleOnCustomerDashboard(r as Record<string, unknown>, {
+      state: loc.state,
+      city: loc.city,
+    })
+  );
+}
 
 /** Map service_catalog category_id to specialization_master category_id for spec resolution */
 const CATEGORY_TO_SPEC_CATEGORY: Record<string, string> = {
@@ -557,20 +611,32 @@ export function registerServiceCatalogEndpoints(app: Hono) {
               COALESCE(icon_color::text, 'text-gray-500') as icon_color,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(created_at::text, '') as created_at
+              ${SERVICE_CATEGORY_VISIBILITY_SQL}
             FROM service_categories
             WHERE (is_active = true OR is_active IS NULL)
             LIMIT 1000
           `).catch(() => ({ rows: [] }));
+          const loc = await resolveLocationForCustomerCategories(c);
           const sorted = (categories.rows || []).sort((a: any, b: any) => {
             const orderA = parseInt(a.display_order) || 0;
             const orderB = parseInt(b.display_order) || 0;
             if (orderA !== orderB) return orderA - orderB;
             return (a.name || '').localeCompare(b.name || '');
           });
+          const filtered = filterServiceCategoriesForCustomerLocation(sorted, {
+            state: loc.state,
+            city: loc.city,
+          });
           return c.json({
             success: true,
-            categories: sorted,
-            total: sorted.length,
+            categories: filtered,
+            total: filtered.length,
+            location: {
+              state: loc.state || null,
+              city: loc.city || null,
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+            },
           }, 200);
         } catch (catError: any) {
           return c.json({
@@ -713,6 +779,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
               COALESCE(icon_color::text, 'text-gray-500') as icon_color,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(created_at::text, '') as created_at
+              ${SERVICE_CATEGORY_VISIBILITY_SQL}
             FROM service_categories
             WHERE (is_active = true OR is_active IS NULL)
             LIMIT 1000
@@ -759,10 +826,22 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         return (a.name || '').localeCompare(b.name || '');
       });
 
+      const loc = await resolveLocationForCustomerCategories(c);
+      const filteredCategories = filterServiceCategoriesForCustomerLocation(sortedCategories, {
+        state: loc.state,
+        city: loc.city,
+      });
+
       return c.json({
         success: true,
-        categories: sortedCategories,
-        total: sortedCategories.length,
+        categories: filteredCategories,
+        total: filteredCategories.length,
+        location: {
+          state: loc.state || null,
+          city: loc.city || null,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+        },
       });
     } catch (error: any) {
       console.error('[Service Categories] Outer catch block - error:', error?.message, 'type:', typeof error, 'stack:', error?.stack?.substring(0, 200));
