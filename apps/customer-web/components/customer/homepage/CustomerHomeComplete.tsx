@@ -141,6 +141,8 @@ export function CustomerHomeComplete({
   const [savingPet, setSavingPet] = useState(false);
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
   const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
+  /** After a successful geography launch-config fetch, the grid uses `filteredQuickServices` even when empty (all hidden). Before that, show the full catalog. */
+  const [serviceLaunchTilesResolved, setServiceLaunchTilesResolved] = useState(false);
 
   // Dynamic service data from API (replacing hardcoded mock data)
   const [groomingServices, setGroomingServices] = useState<any[]>([]);
@@ -653,13 +655,13 @@ export function CustomerHomeComplete({
 
   // Load service launch config - controls service visibility based on GEOGRAPHY
   // Services can be: hidden, coming_soon, beta, or launched per state/city
-  // IMPORTANT: Always start with all services visible (use dynamic categories when available)
-  // Service launch config should only RESTRICT services based on geography
+  // Until the customer endpoint succeeds, the grid shows the full catalog; after success,
+  // `filteredQuickServices` is authoritative (may be empty when nothing is launched).
   // Get customer's location from default address (most accurate) or profile fallback
   useEffect(() => {
     const loadServiceLaunchConfig = async () => {
       try {
-        setFilteredQuickServices(sourceQuickServices);
+        setServiceLaunchTilesResolved(false);
 
         let customerCity = '';
         let customerState = '';
@@ -782,8 +784,8 @@ export function CustomerHomeComplete({
             }
 
             console.log('[ServiceFilter] visible tiles resolved:', resultTiles.map((t: any) => t.screen));
-            setFilteredQuickServices(resultTiles.length > 0 ? resultTiles : sourceQuickServices);
-
+            setFilteredQuickServices(resultTiles);
+            setServiceLaunchTilesResolved(true);
           } else {
             // FALLBACK PATH: No visible list — use hidden list as block list (backward compat)
             const blockedCategoryIds = new Set<string>();
@@ -843,7 +845,11 @@ export function CustomerHomeComplete({
                 ...service,
                 isComingSoon: comingSoonCategoryIds.has((service.categoryId || '').toLowerCase()) || comingSoonServiceIds.has(service.screen),
               }));
-              setFilteredQuickServices(withComingSoon.length > 0 ? withComingSoon : sourceQuickServices);
+              setFilteredQuickServices(withComingSoon);
+              setServiceLaunchTilesResolved(true);
+            } else {
+              setFilteredQuickServices(sourceQuickServices);
+              setServiceLaunchTilesResolved(true);
             }
           }
         }
@@ -853,10 +859,13 @@ export function CustomerHomeComplete({
         if (!configResponse || !(configResponse as any).success) {
           console.log('New service launch config not available, falling back to legacy config');
           // Legacy config loading removed - new geography-based config is primary
+          setFilteredQuickServices(sourceQuickServices);
+          setServiceLaunchTilesResolved(true);
         }
       } catch (error) {
         console.error('Error loading service launch config:', error);
-        // Keep all services visible on error (already set at start)
+        setFilteredQuickServices(sourceQuickServices);
+        setServiceLaunchTilesResolved(true);
       }
     };
 
@@ -865,6 +874,7 @@ export function CustomerHomeComplete({
     } else {
       // No phone means not logged in, show all services (use dynamic list when available)
       setFilteredQuickServices(sourceQuickServices);
+      setServiceLaunchTilesResolved(true);
     }
   }, [phone, refreshKey, quickServiceTiles.length]);
 
@@ -1813,10 +1823,12 @@ export function CustomerHomeComplete({
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-black text-sm font-semibold">All Services</h2>
-            <span className="text-[10px] text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : sourceQuickServices).length} services</span>
+            <span className="text-[10px] text-gray-500">
+              {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).length} services
+            </span>
           </div>
           <div className="grid grid-cols-5 gap-2">
-            {(filteredQuickServices.length > 0 ? filteredQuickServices : sourceQuickServices).map((service, index) => {
+            {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).map((service, index) => {
               const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
               const displayLabel = SERVICE_LABEL_OVERRIDE[key] ?? service.label;
               return (
