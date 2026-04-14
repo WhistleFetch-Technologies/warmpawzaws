@@ -38,6 +38,11 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { customerPathToScreen, resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import {
+  mapCatalogSlugToLaunchServiceId,
+  mapLaunchServiceIdToCustomerHomeScreen,
+  mapCatalogCategoryIdToCustomerHomeScreen,
+} from '@warmpawz/service-launch-mappings';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -354,14 +359,10 @@ export function CustomerHomeComplete({
   const { quickServiceTiles } = useCustomerCategories(phone);
 
   // Define quickServices constant (fallback when API has no categories)
-  // Labels aligned with canonical names: Trainer and Behaviourist, Behaviorist, Emergency care, etc.
+  // Training / trainer labels come from API `service_categories.name` when present (not hardcoded here).
 
   // Canonical display names: avoid duplicate-sounding labels (Lab Test vs Diagnostics, etc.)
   const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
-    training: 'Trainer and Behaviourist',
-    trainer: 'Trainer and Behaviourist',
-    behavioral: 'Behaviorist',
-    behaviorist: 'Behaviorist',
     // ✅ FIX: Merge emergency and ambulance to "Emergency Care"
     emergency: 'Emergency Care',
     ambulance: 'Emergency Care',
@@ -394,17 +395,30 @@ export function CustomerHomeComplete({
   const baseQuickServices = quickServiceTiles.length > 0 ? quickServiceTiles : quickServices;
   const hasPharmacy = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'pharmacy');
   const hasLabDiagnostics = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'lab-diagnostics' || (s.screen as string) === 'lab-diagnostics');
-  const hasNutritionist = baseQuickServices.some(
-    (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'nutritionist'
-  );
-  const hasBehaviorist = baseQuickServices.some(
-    (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'behaviorist' || ((s.categoryId || s.screen || '') as string).toLowerCase() === 'behavioral'
-  );
+  const nutritionCatalogIds = new Set(['nutritionist', 'nutrition', 'wellness']);
+  const hasNutritionist = baseQuickServices.some((s: any) => {
+    const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
+    if (nutritionCatalogIds.has(raw)) return true;
+    return mapCatalogSlugToLaunchServiceId(s.categoryId || s.screen) === 'nutritionist';
+  });
+  const hasTrainingAggregate = baseQuickServices.some((s: any) => {
+    if (((s.screen || '') as string).toLowerCase() === 'training') return true;
+    return mapCatalogSlugToLaunchServiceId(s.categoryId || '') === 'training';
+  });
+  const hasBehaviorist = baseQuickServices.some((s: any) => {
+    const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
+    return raw === 'behaviorist' || raw === 'behavioral';
+  });
   let sourceQuickServices = baseQuickServices;
   if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
   if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Diagnostics / Lab Tests', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
   if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
-  if (!hasBehaviorist) sourceQuickServices = [...sourceQuickServices, { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' }];
+  if (!hasBehaviorist && !hasTrainingAggregate) {
+    sourceQuickServices = [
+      ...sourceQuickServices,
+      { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' },
+    ];
+  }
 
   // Deduplicate services by screen and apply label overrides
   const seenScreens = new Set<string>();
@@ -412,12 +426,18 @@ export function CustomerHomeComplete({
     .map((service: any) => {
       const screen = service.screen || service.categoryId || '';
       const categoryId = (service.categoryId || service.screen || '').toLowerCase();
+      const launchId = mapCatalogSlugToLaunchServiceId(service.categoryId || service.screen || '').toLowerCase();
 
-      // Apply label override
-      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(key =>
-        categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
+      // Prefer tile's own label (from catalog); only apply overrides for merged non-training buckets.
+      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(
+        (key) => categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
       );
-      const label = overrideKey ? SERVICE_LABEL_OVERRIDE[overrideKey] : service.label;
+      const label =
+        launchId === 'training'
+          ? service.label
+          : overrideKey
+            ? SERVICE_LABEL_OVERRIDE[overrideKey]
+            : service.label;
 
       return { ...service, label, screen };
     })
@@ -729,12 +749,27 @@ export function CustomerHomeComplete({
             const resultTiles: any[] = [];
             for (const visibleSvc of (services.visible || [])) {
               const svcId = (visibleSvc.serviceId || '').toLowerCase();
+              const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
 
-              // Match tile by comparing svcId against both categoryId and screen
+              // Match launch id to tiles using shared catalog vs launch screen rules
               const matchingTile = allTilePool.find((tile: any) => {
                 const catId = (tile.categoryId || '').toLowerCase();
                 const tileScreen = (tile.screen || '').toLowerCase();
-                return catId === svcId || tileScreen === svcId;
+                const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
+                  tile.categoryId || ''
+                ).toLowerCase();
+                const screenAsCatalog = mapCatalogCategoryIdToCustomerHomeScreen(
+                  tile.screen || ''
+                ).toLowerCase();
+                const launchFromCat = mapLaunchServiceIdToCustomerHomeScreen(catId).toLowerCase();
+                return (
+                  catId === svcId ||
+                  tileScreen === svcId ||
+                  catalogScreen === targetScreen ||
+                  screenAsCatalog === targetScreen ||
+                  launchFromCat === targetScreen ||
+                  tileScreen === targetScreen
+                );
               });
 
               if (matchingTile && !seenScreens.has(matchingTile.screen)) {

@@ -1,7 +1,6 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/components/ui/utils';
 import { VENDOR_FEATURE_FLAGS } from '@/lib/vendor-feature-flags';
 
@@ -13,23 +12,13 @@ export interface EmergencyAvailabilitySosCardProps {
 
 /**
  * Emergency Availability (SOS) — bookings sidebar card.
- * When {@link VENDOR_FEATURE_FLAGS.emergencyAvailabilitySos} is false, shows a non-interactive “Coming Soon” state.
+ * When {@link VENDOR_FEATURE_FLAGS.emergencyAvailabilitySos} is false, shows a disabled control with a single “Coming Soon” label.
  */
 export function EmergencyAvailabilitySosCard({ className }: EmergencyAvailabilitySosCardProps) {
   const isEmergencyEnabled = VENDOR_FEATURE_FLAGS.emergencyAvailabilitySos;
 
   return (
-    <div className={cn('relative', className)}>
-      {!isEmergencyEnabled ? (
-        <Badge
-          variant="secondary"
-          className="absolute right-3 top-3 z-10 border border-amber-300/80 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 shadow-sm"
-          aria-label="Coming soon"
-        >
-          Coming Soon
-        </Badge>
-      ) : null}
-
+    <div className={cn(className)}>
       <div
         className={cn(
           'flex items-center justify-between gap-3 rounded-xl border p-4',
@@ -49,10 +38,10 @@ export function EmergencyAvailabilitySosCard({ className }: EmergencyAvailabilit
               🚨
             </span>
           </div>
-          <div className="min-w-0 pr-16 sm:pr-20">
+          <div className="min-w-0">
             <h3 className="font-semibold text-gray-900">Emergency Availability (SOS)</h3>
             <p className="text-xs text-gray-600">
-              {isEmergencyEnabled ? '24x7 on-call service' : 'Not available yet — check back after launch.'}
+              {isEmergencyEnabled ? '24x7 on-call service' : 'not available yet'}
             </p>
           </div>
         </div>

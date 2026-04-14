@@ -258,57 +258,12 @@ function CategoryModal({
             </div>
           </div>
 
-          <div className="border-t pt-4 space-y-3">
-            <p className="text-sm font-medium text-gray-800">Customer home (Marketing)</p>
-            <p className="text-xs text-gray-500">
-              Each category appears as a dashboard tile for customers. Name shown on the tile matches the category name above.
+          <div className="border-t pt-4 space-y-2">
+            <p className="text-sm font-medium text-gray-800">Customer home tiles</p>
+            <p className="text-xs text-gray-700 rounded-lg border border-blue-100 bg-blue-50 p-3">
+              Whether a category appears on the customer home (and in which regions) is controlled in{' '}
+              <strong>Marketing &amp; Promotions → Dashboard UI</strong>: choose <strong>Geographic Scope</strong>, then set each service under <strong>Service Launch Status</strong> (Launched, Coming Soon, Beta, or Hidden). The tile label still comes from the category name above.
             </p>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={form.customerDashboardCardActive}
-                onChange={(e) => setForm((f) => ({ ...f, customerDashboardCardActive: e.target.checked }))}
-              />
-              Show on customer home (launch toggle)
-            </label>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Visibility</label>
-              <select
-                value={form.customerVisibilityType}
-                onChange={(e) => setForm((f) => ({ ...f, customerVisibilityType: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="GLOBAL">Global (all locations)</option>
-                <option value="STATE">State only</option>
-                <option value="CITY">City only</option>
-              </select>
-            </div>
-            {(form.customerVisibilityType === 'STATE' || form.customerVisibilityType === 'CITY') && (
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">State (match customer address)</label>
-                  <input
-                    type="text"
-                    value={form.customerVisibilityState}
-                    onChange={(e) => setForm((f) => ({ ...f, customerVisibilityState: e.target.value }))}
-                    placeholder="e.g. Karnataka"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
-                </div>
-                {form.customerVisibilityType === 'CITY' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                    <input
-                      type="text"
-                      value={form.customerVisibilityCity}
-                      onChange={(e) => setForm((f) => ({ ...f, customerVisibilityCity: e.target.value }))}
-                      placeholder="e.g. Bengaluru"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           
           {/* Preview */}

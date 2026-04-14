@@ -1,34 +1,8 @@
-import { Bone, Building2, Coffee, Dog, FlaskConical, GraduationCapIcon, Heart, HomeIcon, MapPin, PackageIcon, Palmtree, Phone, Pill, Scissors, Shield, ShoppingBag, Sparkles, Stethoscope, Users, Wheat } from "lucide-react";
+import { Bone, Building2, Coffee, Dog, DoorOpen, FlaskConical, GraduationCapIcon, Heart, HomeIcon, MapPin, PackageIcon, Palmtree, Phone, Pill, Scissors, Shield, ShoppingBag, Sparkles, Stethoscope, Users, Wheat } from "lucide-react";
+import { serviceScreenMap as sharedServiceScreenMap } from '@warmpawz/service-launch-mappings';
 
-export const serviceScreenMap: Record<string, string[]> = {
-    'vet': ['vet'],
-    'veterinary': ['vet'],
-    'grooming': ['grooming'],
-    'training': ['training'],
-    'walker': ['walker'],
-    'walking': ['walker'],
-    'boarding': ['boarding'],
-    'pet-sitter': ['pet-sitter'],
-    'sitting': ['pet-sitter'],
-    'adoption': ['adoption'],
-    'mating': ['mating-dating-hub'],
-    'cafes': ['cafes'],
-    'photography': ['photography'],
-    'insurance': ['insurance'],
-    'breeder': ['breeder'],
-    'ambulance': ['ambulance'],
-    'emergency': ['ambulance'],
-    'nutritionist': ['nutritionist'],
-    'wellness': ['nutritionist'],
-    'relocation': ['relocation'],
-    'resort': ['resort'],
-    'holiday': ['holiday'],
-    'sunset': ['sunset'],
-    'shop': ['shop'],
-    'pharmacy': ['shop'],
-    'diagnostic': ['vet'],
-    'diagnostics': ['vet'],
-};
+/** Single source: `@warmpawz/service-launch-mappings` (re-export for existing imports). */
+export const serviceScreenMap = sharedServiceScreenMap;
 
 
 export const defaultBanners = [
@@ -70,7 +44,7 @@ export const quickServices = [
     { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'vet' },
     { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
     { icon: ShoppingBag, label: 'Pet Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
-    { icon: GraduationCapIcon, label: 'Trainer and Behaviourist', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
+    { icon: GraduationCapIcon, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
 
     // HEALTHCARE SERVICES
     { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' },
@@ -79,6 +53,7 @@ export const quickServices = [
     // CARE SERVICES
     { icon: Dog, label: 'Dog Walker', color: 'bg-green-100 text-green-600', screen: 'walker', categoryId: 'walker' },
     { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding', categoryId: 'boarding' },
+    { icon: DoorOpen, label: 'Pet Sitter', color: 'bg-slate-100 text-slate-700', screen: 'pet-sitter', categoryId: 'pet-sitter' },
     { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption', categoryId: 'adoption' },
     { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
     { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes', categoryId: 'cafes' },

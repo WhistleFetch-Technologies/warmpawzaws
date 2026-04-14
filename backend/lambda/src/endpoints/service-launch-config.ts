@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono';
+import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import { query } from '../database/rds-connection';
 
 // Indian states list for geographic control
@@ -251,34 +252,6 @@ function mergeServiceLaunchEntries(...parts: Record<string, any>[]): Record<stri
   return acc;
 }
 
-// Map category_id to dashboard button ID for grouping
-function mapToDashboardServiceId(categoryId: string | null | undefined): string {
-  if (!categoryId) return 'unknown';
-  const key = String(categoryId).trim().toLowerCase().replace(/_/g, '-');
-  const mappings: Record<string, string> = {
-    veterinary: 'vet',
-    grooming: 'grooming',
-    training: 'training',
-    walking: 'walker',
-    boarding: 'boarding',
-    // Pet Holiday may appear under catalog / role slugs — keep one launch tile id
-    'pet-holiday': 'holiday',
-    pet_holiday: 'holiday',
-    pet_holiday_planner: 'holiday',
-    diagnostic: 'diagnostics',
-    diagnostics: 'diagnostics',
-    pharmacy: 'pharmacy',
-    emergency: 'ambulance',
-    wellness: 'wellness',
-    specialty: 'specialty',
-    // Pet sitting (catalog slug may be sitting, pet-sitter, pet_sitter, etc.)
-    sitting: 'pet-sitter',
-    'pet-sitter': 'pet-sitter',
-    sitter: 'pet-sitter',
-  };
-  return mappings[key] || String(categoryId).trim();
-}
-
 /**
  * Merge platform_settings keys: legacy UUID / alternate slugs first, canonical dashboard id last.
  * mergeServiceLaunchEntries overlays later parts — if UUID was merged after `holiday`, stale
@@ -292,11 +265,11 @@ function collectLaunchConfigForCategory(
 ): Record<string, any> {
   const parts: Record<string, any>[] = [];
   for (const [uuidKey, resolvedSlug] of uuidToSlug) {
-    if (mapToDashboardServiceId(resolvedSlug) === dashboardId && existingConfig[uuidKey]) {
+    if (mapCatalogSlugToLaunchServiceId(resolvedSlug) === dashboardId && existingConfig[uuidKey]) {
       parts.push(existingConfig[uuidKey]);
     }
   }
-  // Same tile may have been saved under older catalog slugs before mapToDashboardServiceId canonicalized them.
+  // Same tile may have been saved under older catalog slugs before canonical launch ids.
   if (dashboardId === 'pet-sitter') {
     for (const legacy of ['sitting', 'sitter', 'pet_sitter']) {
       if (legacy !== slug && legacy !== dashboardId && existingConfig[legacy]) {
@@ -306,6 +279,20 @@ function collectLaunchConfigForCategory(
   }
   if (dashboardId === 'holiday') {
     for (const legacy of ['pet-holiday', 'pet_holiday', 'pet_holiday_planner']) {
+      if (legacy !== slug && legacy !== dashboardId && existingConfig[legacy]) {
+        parts.push(existingConfig[legacy]);
+      }
+    }
+  }
+  if (dashboardId === 'training') {
+    for (const legacy of ['behavioral', 'behaviorist', 'pet_behaviorist', 'pet_trainer', 'trainer']) {
+      if (legacy !== slug && legacy !== dashboardId && existingConfig[legacy]) {
+        parts.push(existingConfig[legacy]);
+      }
+    }
+  }
+  if (dashboardId === 'nutritionist') {
+    for (const legacy of ['nutrition', 'wellness']) {
       if (legacy !== slug && legacy !== dashboardId && existingConfig[legacy]) {
         parts.push(existingConfig[legacy]);
       }
@@ -362,7 +349,7 @@ async function canonicalizeServiceLaunchConfig(raw: Record<string, any>): Promis
       const resolved = uuidToSlug.get(key);
       if (resolved) slug = resolved;
     }
-    const canonicalId = mapToDashboardServiceId(slug);
+    const canonicalId = mapCatalogSlugToLaunchServiceId(slug);
     if (!buckets.has(canonicalId)) buckets.set(canonicalId, []);
     buckets.get(canonicalId)!.push(key);
   }
@@ -435,12 +422,15 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
 
       // 1. Unique catalog categories with names/slugs resolved via service_categories
       //    (fixes rows where service_catalog.category_id was set to service_categories.id UUID)
+      //    Prefer service_categories.name over service_catalog.category_name: legacy backfills
+      //    used the literal "General" when category_name was empty (see migration 511), which
+      //    would otherwise hide the real category label (e.g. Vet, Training) on this dashboard.
       const categoriesResult = await query(
         `SELECT 
            sc.category_id AS catalog_category_id,
            COALESCE(
+             NULLIF(TRIM(MAX(cat.name)), ''),
              NULLIF(TRIM(MAX(sc.category_name)), ''),
-             MAX(cat.name),
              MAX(sc.category_id)
            ) AS category_name,
            COALESCE(MAX(cat.category_id::text), MAX(sc.category_id::text)) AS category_slug,
@@ -493,7 +483,10 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         const slug = String(cat.category_slug || cat.catalog_category_id || '').trim();
         if (!slug) continue;
 
-        const dashboardId = mapToDashboardServiceId(slug);
+        const dashboardId = mapCatalogSlugToLaunchServiceId(slug);
+
+        // Legacy placeholder row — not a real launch surface (see service_catalog migration 511).
+        if (dashboardId === 'general') continue;
 
         if (processedCategories.has(dashboardId)) continue;
         processedCategories.add(dashboardId);

@@ -148,9 +148,6 @@ export default function MarketingPromotionsTab() {
 
 	// UI Config State - Service Launch by Geography
 	const [uiConfig, setUiConfig] = useState<any[]>([]);
-	/** Catalogue categories = customer home tiles (DB-driven; same name as category). */
-	const [catalogDashboardCategories, setCatalogDashboardCategories] = useState<any[]>([]);
-	const [catalogDashboardLoading, setCatalogDashboardLoading] = useState(false);
 	const [selectedRole, setSelectedRole] = useState("veterinarian"); // Legacy - kept for backward compatibility
 	const [availableRoles, setAvailableRoles] = useState<any[]>([]);
 	const [configLoading, setConfigLoading] = useState(false);
@@ -181,53 +178,10 @@ export default function MarketingPromotionsTab() {
 		}
 	}, [activeTab]);
 
-	const loadCatalogDashboardCards = async () => {
-		setCatalogDashboardLoading(true);
-		try {
-			const data = await apiClient.get<any>("/admin/catalog/categories?type=service");
-			const list = data?.categories;
-			setCatalogDashboardCategories(Array.isArray(list) ? list : []);
-		} catch (e) {
-			console.error("[Marketing] Failed to load catalogue categories:", e);
-			toast.error("Failed to load catalogue dashboard cards");
-			setCatalogDashboardCategories([]);
-		} finally {
-			setCatalogDashboardLoading(false);
-		}
-	};
-
-	const saveCatalogDashboardRow = async (row: any) => {
-		try {
-			await apiClient.put(`/admin/catalog/categories/${row.id}`, {
-				name: row.name,
-				description: row.description || "",
-				icon: row.icon,
-				iconColor: row.icon_color || row.iconColor || "text-gray-500",
-				status: row.is_active === false ? "inactive" : "active",
-				customerVisibilityType: row.customerVisibilityType || "GLOBAL",
-				customerVisibilityState: row.customerVisibilityState || "",
-				customerVisibilityCity: row.customerVisibilityCity || "",
-				customerDashboardCardActive: row.customerDashboardCardActive !== false,
-			});
-			toast.success(`Saved tile: ${row.name}`);
-			loadCatalogDashboardCards();
-		} catch (e) {
-			console.error(e);
-			toast.error("Failed to save catalogue tile");
-		}
-	};
-
-	const patchCatalogDashboardRow = (id: string, patch: Record<string, unknown>) => {
-		setCatalogDashboardCategories((prev) =>
-			prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
-		);
-	};
-
 	// Reload config when geography changes or tab is opened
 	useEffect(() => {
 		if (activeTab === "ui-config") {
 			loadServiceLaunchConfig();
-			loadCatalogDashboardCards();
 		}
 	}, [selectedState, selectedCity, activeTab]);
 
@@ -1271,7 +1225,7 @@ export default function MarketingPromotionsTab() {
 										<div>
 											<h3 className="font-semibold">Service Launch Status</h3>
 											<p className="text-sm text-gray-500">
-												Control service visibility and booking availability by geography
+												Control service visibility and booking availability by geography. Customer home catalogue tiles use the same rules: pick state and city on the left, then set each service to Launched, Coming Soon, Beta, or Hidden.
 											</p>
 										</div>
 										<Button
@@ -1465,117 +1419,6 @@ export default function MarketingPromotionsTab() {
 									)}
 								</Card>
 							</div>
-
-							<Card className="p-6 mt-6">
-								<div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-									<div>
-										<h3 className="font-semibold">Customer home — catalogue tiles</h3>
-										<p className="text-sm text-gray-500">
-											One tile per category from Admin → Catalogue → Categories. The customer sees the same name as the category. Visibility is stored in the database (not hardcoded).
-										</p>
-									</div>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										onClick={() => loadCatalogDashboardCards()}
-										disabled={catalogDashboardLoading}
-									>
-										<RotateCcw className="w-4 h-4 mr-2" />
-										Refresh
-									</Button>
-								</div>
-								{catalogDashboardLoading ? (
-									<div className="text-center py-8 text-gray-500">Loading categories…</div>
-								) : !Array.isArray(catalogDashboardCategories) || catalogDashboardCategories.length === 0 ? (
-									<div className="text-center py-8 text-gray-500">No categories found.</div>
-								) : (
-									<div className="overflow-x-auto">
-										<Table>
-											<TableHeader>
-												<TableRow>
-													<TableHead>Tile (category)</TableHead>
-													<TableHead>Category ID</TableHead>
-													<TableHead>Visibility</TableHead>
-													<TableHead>State</TableHead>
-													<TableHead>City</TableHead>
-													<TableHead>On home</TableHead>
-													<TableHead className="text-right">Actions</TableHead>
-												</TableRow>
-											</TableHeader>
-											<TableBody>
-												{catalogDashboardCategories.map((row: any) => (
-													<TableRow key={row.id}>
-														<TableCell className="font-medium">{row.name}</TableCell>
-														<TableCell className="text-xs text-gray-600">{row.category_id}</TableCell>
-														<TableCell>
-															<Select
-																value={row.customerVisibilityType || "GLOBAL"}
-																onValueChange={(v) =>
-																	patchCatalogDashboardRow(row.id, { customerVisibilityType: v })
-																}
-															>
-																<SelectTrigger className="h-8 w-[140px] text-xs">
-																	<SelectValue />
-																</SelectTrigger>
-																<SelectContent>
-																	<SelectItem value="GLOBAL">Global</SelectItem>
-																	<SelectItem value="STATE">State</SelectItem>
-																	<SelectItem value="CITY">City</SelectItem>
-																</SelectContent>
-															</Select>
-														</TableCell>
-														<TableCell>
-															<Input
-																className="h-8 text-xs min-w-[120px]"
-																value={row.customerVisibilityState ?? ""}
-																onChange={(e) =>
-																	patchCatalogDashboardRow(row.id, {
-																		customerVisibilityState: e.target.value,
-																	})
-																}
-																placeholder="State"
-															/>
-														</TableCell>
-														<TableCell>
-															<Input
-																className="h-8 text-xs min-w-[120px]"
-																value={row.customerVisibilityCity ?? ""}
-																onChange={(e) =>
-																	patchCatalogDashboardRow(row.id, {
-																		customerVisibilityCity: e.target.value,
-																	})
-																}
-																placeholder="City"
-															/>
-														</TableCell>
-														<TableCell>
-															<Switch
-																checked={row.customerDashboardCardActive !== false}
-																onCheckedChange={(checked) =>
-																	patchCatalogDashboardRow(row.id, {
-																		customerDashboardCardActive: checked,
-																	})
-																}
-															/>
-														</TableCell>
-														<TableCell className="text-right">
-															<Button
-																type="button"
-																size="sm"
-																className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
-																onClick={() => saveCatalogDashboardRow(row)}
-															>
-																Save
-															</Button>
-														</TableCell>
-													</TableRow>
-												))}
-											</TableBody>
-										</Table>
-									</div>
-								)}
-							</Card>
 							</>
 						)}
 
