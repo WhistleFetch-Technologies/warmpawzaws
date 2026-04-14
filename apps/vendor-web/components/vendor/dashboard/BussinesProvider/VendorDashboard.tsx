@@ -66,6 +66,7 @@ import {
 } from '../helpers';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
+import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 
 // Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
 const SoloProviderDashboard = lazy(() =>
@@ -753,11 +754,74 @@ export function VendorDashboard({
     );
   }
 
-  return (
-    <div className="vendor-page-shell bg-gray-50">
-      <div className="vendor-app-column bg-white min-h-screen pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
-        {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200 safe-area-top">
+  const vendorDashboardChromeFooter = (
+    <div className="w-full border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] safe-area-bottom">
+      <div className="vendor-app-column mx-auto w-full">
+        <div className="flex items-center justify-around py-2">
+          <button
+            type="button"
+            onClick={() => setActiveBottomTab('home')}
+            className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+          >
+            <Home className="h-5 w-5" />
+            <span className="text-[10px]">Home</span>
+          </button>
+
+          {isPharmacy ? (
+            <button
+              type="button"
+              onClick={() => router.push('/pharmacy/orders')}
+              className="flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 text-gray-400 active:text-[#FF8C42]"
+            >
+              <ClipboardList className="h-5 w-5" />
+              <span className="text-[10px]">Orders</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onNavigateToBookingManagement?.();
+                setActiveBottomTab('bookings');
+              }}
+              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+            >
+              <Calendar className="h-5 w-5" />
+              <span className="text-[10px]">{labels.bookings}</span>
+            </button>
+          )}
+
+          {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+            <button
+              type="button"
+              onClick={() => setActiveBottomTab('reporting')}
+              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+            >
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-[10px]">Reporting</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => router.push('/settings')}
+            className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+          >
+            <Settings className="h-5 w-5" />
+            <span className="text-[10px]">Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const vendorDashboardChromeHeader = (
+    <div className="safe-area-top w-full border-b border-gray-200 bg-white shadow-sm">
+      <div className="vendor-app-column mx-auto w-full">
+        <div className="p-4 bg-white">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
@@ -844,6 +908,18 @@ export function VendorDashboard({
             </div>
           )}
         </div>
+        </div>
+        </div>
+  );
+
+  return (
+    <>
+    <VendorChromeLayout
+      className="bg-gray-50"
+      header={vendorDashboardChromeHeader}
+      footer={vendorDashboardChromeFooter}
+    >
+      <div className="vendor-app-column mx-auto w-full min-h-full bg-white">
 
         {/* ✅ PHARMACY: Incoming Order Alerts for Pharmacy Vendors */}
         {isPharmacy && vendorId && (
@@ -1724,64 +1800,7 @@ export function VendorDashboard({
         )}
 
       </div>
-
-      {/* Bottom nav: fixed to viewport, outside scroll column — matches app max-width */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)]">
-        <div className="vendor-app-column mx-auto w-full">
-          <div className="flex items-center justify-around py-2">
-            <button
-              onClick={() => setActiveBottomTab('home')}
-              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <Home className="h-5 w-5" />
-              <span className="text-[10px]">Home</span>
-            </button>
-
-            {isPharmacy ? (
-              <button
-                onClick={() => router.push('/pharmacy/orders')}
-                className="flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 text-gray-400 active:text-[#FF8C42]"
-              >
-                <ClipboardList className="h-5 w-5" />
-                <span className="text-[10px]">Orders</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  onNavigateToBookingManagement?.();
-                  setActiveBottomTab('bookings');
-                }}
-                className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                  }`}
-              >
-                <Calendar className="h-5 w-5" />
-                <span className="text-[10px]">{labels.bookings}</span>
-              </button>
-            )}
-
-            {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
-              <button
-                onClick={() => setActiveBottomTab('reporting')}
-                className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                  }`}
-              >
-                <BarChart3 className="h-5 w-5" />
-                <span className="text-[10px]">Reporting</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => router.push('/settings')}
-              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <Settings className="h-5 w-5" />
-              <span className="text-[10px]">Settings</span>
-            </button>
-          </div>
-        </div>
-      </div>
+    </VendorChromeLayout>
 
       {/* Modals */}
       <VendorNotificationModal
@@ -2000,6 +2019,6 @@ export function VendorDashboard({
         </Suspense>
       )}
 
-    </div>
+    </>
   );
 }

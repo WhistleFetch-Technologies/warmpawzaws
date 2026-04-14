@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
-import { VendorPageShell, VendorMainColumn } from '@/components/vendor/layout/VendorResponsiveShell';
+import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
+import { VendorMainColumn } from '@/components/vendor/layout/VendorResponsiveShell';
 import { cn } from '@/components/ui/utils';
 
 export interface VendorRouteShellProps {
@@ -18,7 +19,7 @@ export interface VendorRouteShellProps {
 }
 
 /**
- * Standard vendor route layout: page shell + main column + VendorHeader + scrollable body region.
+ * Standard vendor route layout: full-viewport chrome + fixed VendorHeader + scrollable body.
  */
 export function VendorRouteShell({
   title,
@@ -32,18 +33,28 @@ export function VendorRouteShell({
   columnClassName,
 }: VendorRouteShellProps) {
   return (
-    <VendorPageShell className={cn('bg-gray-50 min-h-screen', shellClassName)}>
-      <VendorMainColumn className={cn('flex min-h-screen flex-col bg-white', columnClassName)}>
-        <VendorHeader
-          title={title}
-          subtitle={subtitle}
-          onBack={onBack}
-          showBack={showBack}
-          actions={actions}
-          tone={headerTone}
-        />
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+    <VendorChromeLayout
+      className={cn('bg-gray-50', shellClassName)}
+      header={
+        <div className="w-full bg-white shadow-sm">
+          <VendorMainColumn className={cn('bg-white', columnClassName)}>
+            <VendorHeader
+              title={title}
+              subtitle={subtitle}
+              onBack={onBack}
+              showBack={showBack}
+              actions={actions}
+              tone={headerTone}
+              layoutWithinFixedParent
+            />
+          </VendorMainColumn>
+        </div>
+      }
+      mainClassName="bg-gray-50"
+    >
+      <VendorMainColumn className={cn('min-h-full bg-white pb-4', columnClassName)}>
+        {children}
       </VendorMainColumn>
-    </VendorPageShell>
+    </VendorChromeLayout>
   );
 }

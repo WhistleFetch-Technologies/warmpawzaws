@@ -39,8 +39,8 @@ export default function RootLayout({
   const injectProdRuntime = isProd && !!prodApiUrl && !isUatBuild;
 
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="en" className="h-full">
+      <body className={`${inter.className} h-full overflow-hidden antialiased`}>
         {/* Inject NEXT_PUBLIC_API_BASE_URL for builds that embed API URL (normalized for dev). */}
         {prodApiUrl && (
           <script
