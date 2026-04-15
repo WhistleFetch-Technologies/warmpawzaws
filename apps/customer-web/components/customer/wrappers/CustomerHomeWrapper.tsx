@@ -1191,7 +1191,10 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => {
-    if (screen === 'clinic-profile' || screen === 'clinic-details') {
+    if (screen === 'vet-services-by-style') {
+      setVetServiceData(data);
+      setCurrentScreen('vet-services-by-style');
+    } else if (screen === 'clinic-profile' || screen === 'clinic-details') {
       setVetServiceData({ id: data?.clinicId, ...data });
       setCurrentScreen('vet-clinic-profile');
     } else if (screen === 'appointment' || screen === 'vet-booking') {
@@ -1293,7 +1296,22 @@ export function CustomerHomeWrapper({
     );
   }
 
-  if (currentScreen === 'vet-services-by-style') return <VetServicesByStyle phone={phone} serviceStyle={vetServiceData?.serviceStyle || 'tele'} serviceTypeName={vetServiceData?.serviceTypeName} category={vetServiceData?.category || 'vet'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-services-by-style')
+    return (
+      <VetServicesByStyle
+        phone={phone}
+        vendorId={vetServiceData?.vendorId}
+        serviceStyle={vetServiceData?.serviceStyle || 'tele'}
+        serviceTypeName={vetServiceData?.serviceTypeName}
+        category={vetServiceData?.category || 'vet'}
+        onBack={() =>
+          vetServiceData?.returnScreen === 'vet-clinic-list'
+            ? setCurrentScreen('vet-clinic-list')
+            : setCurrentScreen('vet')
+        }
+        onNavigate={handleVetNavigate}
+      />
+    );
   // ✅ FIX: Tele Consultation Router
   if (currentScreen === 'vet-tele-consultation') {
     return renderScreenWithLayout('vet-tele-consultation',

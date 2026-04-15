@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 15+: opt Razorpay checkout out of default edge-to-edge so the toolbar clears the status bar. -->
+    <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

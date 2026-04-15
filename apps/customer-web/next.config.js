@@ -11,12 +11,6 @@ try {
   }
 } catch (_) {}
 
-/** Workspace package: always resolve to TS source (avoids missing `dist/` on fresh clone). */
-const serviceLaunchMappingsEntry = path.resolve(
-  __dirname,
-  '../../packages/service-launch-mappings/src/index.ts'
-);
-
 /**
  * Next.js config – Customer Web
  * Retained structure for AWS Serverless: static export → S3 + CloudFront.
@@ -53,12 +47,6 @@ const nextConfig = {
   },
   images: { unoptimized: true },
   experimental: {
-    // Turbopack (`next dev --turbo`): same resolution as webpack below
-    turbo: {
-      resolveAlias: {
-        '@warmpawz/service-launch-mappings': serviceLaunchMappingsEntry,
-      },
-    },
     outputFileTracingExcludes: {
       '*': ['**/*'],
     },
@@ -111,8 +99,7 @@ const nextConfig = {
     if (!config.resolve.alias) {
       config.resolve.alias = {};
     }
-    config.resolve.alias['@warmpawz/service-launch-mappings'] = serviceLaunchMappingsEntry;
-
+    
     // Custom splitChunks with fixed names breaks Next dev chunk URLs; keep defaults in dev.
     if (!isServer && !dev) {
       config.optimization = {

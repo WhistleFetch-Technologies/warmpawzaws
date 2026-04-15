@@ -2492,11 +2492,13 @@ export function UniversalPaymentPage({
       : firstServiceFromArray?.duration);
 
   const appShell = layoutVariant === 'appShell';
+  /** Keep in sync with globals.css --customer-footer-offset + .cw-fixed-above-customer-tabbar */
   const ctaBottomClass = appShell
-    ? 'bottom-[calc(4.75rem+max(0px,env(safe-area-inset-bottom,0px)))]'
+    ? 'cw-fixed-above-customer-tabbar'
     : 'bottom-[max(1rem,env(safe-area-inset-bottom,1rem))]';
+  /** Matches --customer-sticky-cta-scroll-padding (footer + fixed pay strip) */
   const mainBottomPadding = appShell
-    ? 'pb-[calc(13rem+env(safe-area-inset-bottom,0px))]'
+    ? 'cw-scroll-pad-tabbar-sticky-cta'
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
   const paymentStats = [

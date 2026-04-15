@@ -54,6 +54,7 @@ const VetBookingRouter = dynamic(() => import('./vet/VetBookingRouter').then(mod
 const VetDoctorDetails = dynamic(() => import('./vet/VetDoctorDetails').then(mod => ({ default: mod.VetDoctorDetails })), { loading: LoadingSpinner });
 const ClinicListView = dynamic(() => import('./vet/ClinicListView').then(mod => ({ default: mod.ClinicListView })), { loading: LoadingSpinner });
 const ClinicProfileView = dynamic(() => import('./vet/ClinicProfileView').then(mod => ({ default: mod.ClinicProfileView })), { loading: LoadingSpinner });
+const VetServicesByStyle = dynamic(() => import('./vet/VetServicesByStyle').then(mod => ({ default: mod.VetServicesByStyle })), { loading: LoadingSpinner });
 
 // Other Core Services
 const GroomingServiceRouter = dynamic(() => import('./GroomingServiceRouter').then(mod => ({ default: mod.GroomingServiceRouter })), { loading: LoadingSpinner });
@@ -159,6 +160,7 @@ type ScreenType =
   | 'vet-clinic-list'
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
+  | 'vet-services-by-style'
   | 'grooming'
   | 'training'
   | 'training_center'
@@ -404,6 +406,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'vet-clinic-list') navigateToScreen('vet-clinic-list');
     else if (screen === 'vet-clinic-profile') navigateToScreen('vet-clinic-profile');
     else if (screen === 'vet-clinic-booking') navigateToScreen('vet-clinic-booking');
+    else if (screen === 'vet-services-by-style') navigateToScreen('vet-services-by-style');
     else if (screen === 'home') { navigateToScreen('home'); setVetServiceData(null); }
   };
   
@@ -584,7 +587,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={handleBack} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
-    if (screen === 'clinic-details' || screen === 'clinic-profile') {
+    if (screen === 'vet-services-by-style') {
+      setVetServiceData(data);
+      navigateToScreen('vet-services-by-style');
+    } else if (screen === 'clinic-details' || screen === 'clinic-profile') {
       setVetServiceData({ id: data?.clinicId, ...data });
       navigateToScreen('vet-clinic-profile');
     } else if (screen === 'appointment' || screen === 'vet-booking') {
@@ -623,6 +629,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={handleBack} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-services-by-style')
+    return (
+      <VetServicesByStyle
+        phone={phone}
+        vendorId={vetServiceData?.vendorId}
+        serviceStyle={vetServiceData?.serviceStyle || 'at_center'}
+        serviceTypeName={vetServiceData?.serviceTypeName}
+        category={vetServiceData?.category || 'vet'}
+        onBack={handleBack}
+        onNavigate={handleVetNavigate}
+      />
+    );
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { if (screen === 'training_center' || screen === 'training_home') navigateToScreen(screen as ScreenType); else navigateToScreen('home'); }} />;
   if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { if (screen === 'boarding-booking') { setSelectedVendorId(data?.vendorId); setSelectedService(data?.serviceType || 'boarding'); navigateToScreen('create-booking'); } else if (screen === 'boarding_facility') navigateToScreen('boarding_facility'); else navigateToScreen('home'); }} />;

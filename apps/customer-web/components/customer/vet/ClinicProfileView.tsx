@@ -373,14 +373,16 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       </div>
 
       {/* Book Appointment Button - Fixed above footer */}
-      <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-40 max-w-customer mx-auto">
+      <div className="fixed left-0 right-0 cw-fixed-above-customer-tabbar bg-white border-t px-5 py-3 sm:px-6 z-40">
+        <div className="mx-auto w-full max-w-xs sm:max-w-sm">
         <Button 
           onClick={handleBookAppointment}
           disabled={!selectedService}
-          className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 min-h-12 px-3 py-2.5 text-sm font-semibold shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed sm:h-12 sm:px-4 sm:text-base sm:py-0"
         >
           {selectedService ? `Book ${selectedService.name}` : 'Select a Service'}
         </Button>
+        </div>
       </div>
 
       {/* Standardized Footer */}
