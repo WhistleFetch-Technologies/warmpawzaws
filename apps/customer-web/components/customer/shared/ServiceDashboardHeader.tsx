@@ -40,6 +40,11 @@ export interface ServiceDashboardHeaderProps {
   headerGradient?: string; // Optional gradient
   /** Merged onto the outer wrapper (e.g. sticky top-0 z-50) */
   className?: string;
+  /**
+   * When true, header spans the full width of the parent (no max-w-customer).
+   * Use for in-app provider/clinic profiles so wide viewports do not show a narrow “desktop web” column.
+   */
+  fullWidth?: boolean;
 }
 
 export function ServiceDashboardHeader({
@@ -56,12 +61,15 @@ export function ServiceDashboardHeader({
   headerColor = 'bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]',
   headerGradient,
   className = '',
+  fullWidth = false,
 }: ServiceDashboardHeaderProps) {
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
   
   return (
-    <div className={`relative z-10 isolate mx-auto w-full max-w-customer ${className}`.trim()}>
+    <div
+      className={`relative z-10 isolate w-full ${fullWidth ? 'max-w-none' : 'mx-auto max-w-customer'} ${className}`.trim()}
+    >
       {/* Orange Header Background */}
       <div
         className={`${headerGradient || headerColor} cw-header-safe-top cw-header-safe-x text-white pb-4 md:pb-6 sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
@@ -99,9 +107,9 @@ export function ServiceDashboardHeader({
                 )}
               </div>
               <div className="flex-1 min-w-0 pt-1">
-                <h1 className="text-2xl font-bold text-white mb-1">{serviceName}</h1>
+                <h1 className="text-xl font-bold text-white mb-1 sm:text-2xl">{serviceName}</h1>
                 {serviceSubtitle && (
-                  <p className="text-white/90 text-sm leading-tight">{serviceSubtitle}</p>
+                  <p className="text-white/90 text-xs leading-tight sm:text-sm">{serviceSubtitle}</p>
                 )}
               </div>
             </div>
@@ -128,9 +136,9 @@ export function ServiceDashboardHeader({
             </div>
 
             <div className="min-w-0 flex-1 py-0.5">
-              <h1 className="mb-1 text-2xl font-bold text-white">{serviceName}</h1>
+              <h1 className="mb-1 text-xl font-bold text-white sm:text-2xl">{serviceName}</h1>
               {serviceSubtitle && (
-                <p className="text-sm leading-tight text-white/90">{serviceSubtitle}</p>
+                <p className="text-xs leading-tight text-white/90 sm:text-sm">{serviceSubtitle}</p>
               )}
             </div>
           </div>
@@ -138,17 +146,17 @@ export function ServiceDashboardHeader({
 
         {/* Stats Cards - Frosted Effect */}
         {stats.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mt-4">
+          <div className="mt-4 grid grid-cols-3 gap-1.5 sm:gap-2">
             {stats.map((stat, index) => (
               <div
                 key={index}
-                className="bg-white/20 backdrop-blur-md rounded-2xl p-3 border border-white/30 text-center"
+                className="rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3"
               >
-                <div className="text-xl font-bold text-white mb-1 flex items-center justify-center gap-1">
+                <div className="mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl">
                   {stat.icon && <span className="text-white">{stat.icon}</span>}
-                  <span>{stat.value}</span>
+                  <span className="truncate tabular-nums">{stat.value}</span>
                 </div>
-                <div className="text-white/90 text-xs font-medium">{stat.label}</div>
+                <div className="text-[10px] font-medium text-white/90 sm:text-xs">{stat.label}</div>
               </div>
             ))}
           </div>

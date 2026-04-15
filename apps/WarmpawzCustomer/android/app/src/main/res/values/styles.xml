@@ -6,4 +6,7 @@
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
 
+    <!-- Razorpay CheckoutActivity: base theme; API 35+ adds windowOptOutEdgeToEdgeEnforcement in values-v35. -->
+    <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar" />
+
 </resources>

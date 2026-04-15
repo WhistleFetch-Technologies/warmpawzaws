@@ -252,19 +252,21 @@ export function PetSelector({
 
       {/* Fixed Bottom Bar */}
       {selectedPet && (
-        <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-customer mx-auto z-40">
+        <div className="fixed left-0 right-0 cw-fixed-above-customer-tabbar bg-white border-t border-gray-200 px-5 py-3 sm:px-6 z-40">
           <div className="flex items-center gap-4 mb-3">
             <div className="flex-1">
               <p className="text-sm text-gray-600">Selected Pet</p>
               <p className="font-semibold text-gray-900">{selectedPet.name}</p>
             </div>
           </div>
+          <div className="mx-auto w-full max-w-xs sm:max-w-sm">
           <Button
-            className="w-full bg-[#FF8C42] text-white hover:bg-[#FF7029]"
+            className="w-full whitespace-normal text-center rounded-full bg-[#FF8C42] text-white shadow-md hover:bg-[#FF7029] min-h-12 px-3 py-2.5 text-sm sm:h-12 sm:px-4 sm:text-base sm:py-0"
             onClick={handleContinue}
           >
             Continue with {selectedPet.name}
           </Button>
+          </div>
         </div>
       )}
 

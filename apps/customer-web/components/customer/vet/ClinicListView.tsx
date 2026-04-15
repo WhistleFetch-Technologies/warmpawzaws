@@ -436,6 +436,18 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
     onNavigate('clinic-profile', { clinicId });
   };
 
+  /** Rich vendor/clinic profile (VetServicesByStyle profile mode) — not the lightweight ClinicProfileView. */
+  const openVendorFullProfile = (e: MouseEvent, clinic: ClinicProvider) => {
+    e.stopPropagation();
+    onNavigate('vet-services-by-style', {
+      vendorId: clinic.id,
+      serviceStyle: 'at_center',
+      serviceTypeName: clinic.name,
+      category: 'vet',
+      returnScreen: 'vet-clinic-list',
+    });
+  };
+
   const filteredClinics = useMemo(
     () =>
       clinics.filter(
@@ -576,11 +588,15 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                               <Shield className="w-4 h-4 text-green-500 shrink-0" aria-hidden />
                             )}
                           </div>
-                          <ChevronRight
-                            className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${
-                              expanded ? 'rotate-90' : ''
-                            }`}
-                          />
+                          <button
+                            type="button"
+                            onClick={(e) => openVendorFullProfile(e, clinic)}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            aria-label="Open vendor profile"
+                            className="flex-shrink-0 p-1 -m-1 rounded-md text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
+                          >
+                            <ChevronRight className="w-5 h-5 pointer-events-none" aria-hidden />
+                          </button>
                         </div>
                         {(clinic.roleDisplayName || clinic.role || clinic.roleName) && (
                           <div className="mt-0.5">

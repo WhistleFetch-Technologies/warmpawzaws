@@ -947,6 +947,7 @@ export function NutritionistBookingRouter({
             return (
               <UniversalPaymentPage
                 type="booking"
+                layoutVariant="appShell"
                 vendorId={vendorId || ''}
                 vendorName={displayVendorName}
                 serviceId={finalServiceId}

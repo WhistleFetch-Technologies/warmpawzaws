@@ -875,7 +875,7 @@ export function UniversalBookingRouter({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 relative overflow-hidden">
+    <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-gray-50">
       {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
       {!showPaymentPage && (
         <ServiceDashboardHeader
@@ -993,8 +993,9 @@ export function UniversalBookingRouter({
         );
       })()}
 
-      {/* Main Content */}
-      <div className={`bg-white max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10`}>
+      {/* Main Content: flex-1 + min-h-0 so tall steps scroll; CTA stays in document flow */}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="relative z-10 mx-auto max-w-md bg-white px-4 pb-24 pt-6 sm:px-6">
 
         {/* Service Selection - Skip if service context exists */}
         {step === 'service' && !hasServiceContext && (
@@ -1076,13 +1077,15 @@ export function UniversalBookingRouter({
                 );
               })}
             </div>
+            <div className="mx-auto mt-4 w-full max-w-xs sm:max-w-sm">
             <Button 
               onClick={handleNext} 
-              className="w-full bg-orange-500 hover:bg-orange-600 mt-4 text-sm sm:text-base py-2.5 sm:py-3"
+              className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 text-sm sm:text-base min-h-12 px-4 py-2.5 shadow-md sm:h-12 sm:py-0"
               disabled={!selectedServiceType}
             >
               Continue
             </Button>
+            </div>
           </div>
         )}
 
@@ -1090,143 +1093,162 @@ export function UniversalBookingRouter({
 
         {/* Combined Details Selection: Schedule, Pet, and Address */}
         {step === 'details' && (
-          <div className="space-y-6 pb-24">
-            {/* Date & Time Selection */}
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3">Select Date & Time</h2>
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Date</h3>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-                {dates.map((d) => (
-                  <button
-                    key={d.date}
-                    onClick={() => setSelectedDate(d.date)}
-                      className={`flex-shrink-0 w-14 sm:w-16 p-2 sm:p-3 rounded-xl text-center transition-all ${
-                      selectedDate === d.date 
-                        ? 'bg-orange-500 text-white' 
-                        : 'bg-white border border-gray-200 hover:border-orange-300'
-                    }`}
-                  >
-                    <p className="text-xs opacity-75">{d.day}</p>
-                      <p className="text-lg sm:text-xl font-bold">{d.dayNum}</p>
-                    <p className="text-xs opacity-75">{d.month}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {selectedDate && (
+          <div className="space-y-4 cw-scroll-pad-tabbar">
+            <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
               <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Time</h3>
-                {loadingSlots ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-2"></div>
-                      <p className="text-sm text-gray-500">Loading available slots...</p>
-                    </div>
-                  </div>
-                ) : timeSlots.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">No slots available for this date</p>
-                      <p className="text-xs mt-2">Please select another date</p>
-                  </div>
-                ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {timeSlots.map((slot) => {
-                      // Format time to 12-hour format for display
-                      const [h, m] = slot.time.split(':').map(Number);
-                      const ampm = h >= 12 ? 'PM' : 'AM';
-                      const hour12 = h % 12 || 12;
-                      const displayTime = `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
-                      return (
+                <h2 className="mb-3 text-lg font-bold text-gray-900 sm:text-xl">Select Date & Time</h2>
+                <div className="mb-4">
+                  <h3 className="mb-2 text-sm font-medium text-gray-700">Date</h3>
+                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 scrollbar-hide">
+                    {dates.map((d) => (
                       <button
-                        key={slot.time}
-                        onClick={() => slot.available && setSelectedTime(slot.time)}
-                        disabled={!slot.available}
-                          className={`p-2.5 sm:p-3 rounded-xl text-center transition-all text-sm ${
-                          selectedTime === slot.time 
-                            ? 'bg-orange-500 text-white' 
-                            : slot.available
-                              ? 'bg-white border border-gray-200 hover:border-orange-300'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        key={d.date}
+                        onClick={() => setSelectedDate(d.date)}
+                        className={`w-14 flex-shrink-0 rounded-xl p-2 text-center transition-all sm:w-16 sm:p-3 ${
+                          selectedDate === d.date
+                            ? 'bg-orange-500 text-white'
+                            : 'border border-gray-200 bg-gray-50 hover:border-orange-300'
                         }`}
                       >
-                        {displayTime}
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-lg font-bold sm:text-xl">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
                       </button>
-                      );
-                    })}
+                    ))}
+                  </div>
+                </div>
+
+                {selectedDate && (
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-gray-700">Time</h3>
+                    {loadingSlots ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="text-center">
+                          <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-orange-500"></div>
+                          <p className="text-sm text-gray-500">Loading available slots...</p>
+                        </div>
+                      </div>
+                    ) : timeSlots.length === 0 ? (
+                      <div className="py-8 text-center text-gray-500">
+                        <p className="text-sm">No slots available for this date</p>
+                        <p className="mt-2 text-xs">Please select another date</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {timeSlots.map((slot) => {
+                          const [h, m] = slot.time.split(':').map(Number);
+                          const ampm = h >= 12 ? 'PM' : 'AM';
+                          const hour12 = h % 12 || 12;
+                          const displayTime = `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
+                          return (
+                            <button
+                              key={slot.time}
+                              onClick={() => slot.available && setSelectedTime(slot.time)}
+                              disabled={!slot.available}
+                              className={`rounded-xl p-2.5 text-center text-sm transition-all sm:p-3 ${
+                                selectedTime === slot.time
+                                  ? 'bg-orange-500 text-white'
+                                  : slot.available
+                                    ? 'border border-gray-200 bg-gray-50 hover:border-orange-300'
+                                    : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                              }`}
+                            >
+                              {displayTime}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-        {/* Pet Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                  className="flex items-center gap-1 px-2 sm:px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-xs sm:text-sm font-medium hover:bg-orange-200 transition"
-              >
-                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">Add Pet</span>
-                  <span className="sm:hidden">Add</span>
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => {
-                      setSelectedPet(pet);
-                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
-                    }}
-                      className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all flex items-center gap-3 sm:gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-orange-500 bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-orange-100 flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' : 
-                       pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
-                    </div>
-                      <div className="flex-1 text-left min-w-0">
-                        <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{pet.name}</h3>
-                        <p className="text-xs sm:text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                        <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500 flex-shrink-0" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                  <div className="text-center py-8 sm:py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                    <div className="text-4xl sm:text-5xl mb-3">🐾</div>
-                    <p className="text-gray-600 font-medium mb-2 text-sm sm:text-base">No pets added yet</p>
-                    <p className="text-xs sm:text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
+              <div className="border-t border-gray-100 pt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Select Your Pet</h2>
                   <button
                     onClick={() => setShowAddPetModal(true)}
-                      className="px-4 sm:px-6 py-2 sm:py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition text-sm sm:text-base"
+                    className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-1.5 text-xs font-medium text-orange-600 transition hover:bg-orange-200 sm:px-3 sm:text-sm"
                   >
-                    + Add Your First Pet
+                    <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Add Pet</span>
+                    <span className="sm:hidden">Add</span>
                   </button>
                 </div>
-              )}
+
+                <div className="space-y-3">
+                  {pets.length > 0 ? (
+                    pets.map((pet) => (
+                      <button
+                        key={pet.id}
+                        onClick={() => {
+                          setSelectedPet(pet);
+                          try {
+                            sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 transition-all sm:gap-4 sm:p-4 ${
+                          selectedPet?.id === pet.id
+                            ? 'border-orange-500 bg-orange-50'
+                            : 'border-gray-200 bg-gray-50 hover:border-orange-200'
+                        }`}
+                      >
+                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-xl sm:h-14 sm:w-14 sm:text-2xl">
+                          {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog')
+                            ? '🐕'
+                            : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat')
+                              ? '🐈'
+                              : '🐾'}
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <h3 className="text-sm font-semibold text-gray-900 sm:text-base">{pet.name}</h3>
+                          <p className="text-xs capitalize text-gray-500 sm:text-sm">{pet.breed}</p>
+                        </div>
+                        {selectedPet?.id === pet.id && (
+                          <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-orange-500 sm:h-6 sm:w-6" />
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 py-8 text-center sm:py-12">
+                      <div className="mb-3 text-4xl sm:text-5xl">🐾</div>
+                      <p className="mb-2 text-sm font-medium text-gray-600 sm:text-base">No pets added yet</p>
+                      <p className="mb-4 text-xs text-gray-500 sm:text-sm">Add your pet to continue with the booking</p>
+                      <button
+                        onClick={() => setShowAddPetModal(true)}
+                        className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600 sm:px-6 sm:py-3 sm:text-base"
+                      >
+                        + Add Your First Pet
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+              <Button
+                onClick={() => {
+                  handleNext();
+                }}
+                className="min-h-12 w-full rounded-full bg-orange-500 px-4 py-2.5 text-center text-sm shadow-md hover:bg-orange-600 sm:h-12 sm:text-base sm:py-0"
+                disabled={!selectedDate || !selectedTime || !selectedPet}
+              >
+                {!selectedDate || !selectedTime
+                  ? 'Select Date & Time'
+                  : !selectedPet
+                    ? 'Select a Pet'
+                    : 'Continue'}
+              </Button>
             </div>
           </div>
-
-            {/* Address is already part of vendor profile - removed per user request */}
-
-              </div>
-            )}
+        )}
             
         {/* Phase 1: Summary step with package advice */}
         {step === 'summary' && (
-          <div className="space-y-4 pb-24">
+          <div className="space-y-4 cw-scroll-pad-tabbar">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             <div className="bg-white rounded-xl p-4 space-y-3 shadow-sm border border-gray-200">
               {(allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : selectedServices && selectedServices.length > 0 ? selectedServices : [selectedServiceOption]).map((s: any, idx: number) => {
@@ -1302,38 +1324,17 @@ export function UniversalBookingRouter({
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-2">
-              <Button onClick={handleNext} className="w-full bg-orange-500 hover:bg-orange-600 py-3">
+            <div className="mx-auto flex w-full max-w-xs flex-col gap-2 sm:max-w-sm">
+              <Button onClick={handleNext} className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 min-h-12 px-4 py-2.5 text-sm shadow-md sm:h-12 sm:py-0">
                 Continue to Payment
               </Button>
             </div>
           </div>
         )}
 
-        {/* Fixed Continue Button - Above Footer */}
-        {step === 'details' && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30">
-            <div className="max-w-customer mx-auto">
-            <Button 
-              onClick={() => {
-                handleNext();
-              }} 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-base py-3"
-                disabled={!selectedDate || !selectedTime || !selectedPet}
-              >
-                {!selectedDate || !selectedTime 
-                  ? 'Select Date & Time' 
-                  : !selectedPet 
-                    ? 'Select a Pet' 
-                    : 'Continue'}
-            </Button>
-            </div>
-          </div>
-        )}
-
         {/* Payment Summary - Using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 pb-32">
+          <div className="space-y-4 cw-scroll-pad-tabbar">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             
             <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
@@ -1457,28 +1458,24 @@ export function UniversalBookingRouter({
                 </span>
               </div>
             </div>
-          </div>
-        )}
 
-        {/* Fixed Continue Button for Payment Summary - Above Footer */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30 shadow-lg">
-            <div className="max-w-customer mx-auto">
-              <Button 
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+              <Button
                 onClick={() => {
-                  // Ensure we have selectedVendorService before showing payment
                   if (!selectedVendorService && selectedServiceOption) {
-                    // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
-                    const actualVendorService = vendorServices.find(s => {
+                    const actualVendorService = vendorServices.find((s) => {
                       const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                      return (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id;
+                      return (
+                        (s.serviceId || s.service_id) === optionServiceId ||
+                        (s.serviceId || s.service_id) === selectedServiceOption.id
+                      );
                     });
-                    
+
                     const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
                     setSelectedVendorService({
-                      id: actualVendorService?.id, // Numeric vendor_services.id (for reference)
-                      serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ UUID from services table
-                      service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ Explicit UUID field
+                      id: actualVendorService?.id,
+                      serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+                      service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
                       name: selectedServiceOption.name,
                       price: selectedServiceOption.price,
                       duration: selectedServiceOption.duration,
@@ -1486,8 +1483,8 @@ export function UniversalBookingRouter({
                     });
                   }
                   setShowPaymentPage(true);
-                }} 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-base py-3"
+                }}
+                className="min-h-12 w-full rounded-full bg-orange-500 px-4 py-2.5 text-center text-sm shadow-md hover:bg-orange-600 sm:h-12 sm:text-base sm:py-0"
                 disabled={processing}
               >
                 Continue to Payment
@@ -1495,7 +1492,7 @@ export function UniversalBookingRouter({
             </div>
           </div>
         )}
-        
+
         {/* ✅ FIX: Payment page is now rendered as full-screen overlay above, not here */}
 
         {/* Confirmation */}
@@ -1707,6 +1704,7 @@ export function UniversalBookingRouter({
             }}
           />
         )}
+      </div>
       </div>
     </div>
   );

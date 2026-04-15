@@ -13,10 +13,27 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+
+function formatSummaryDateTime(dateStr: string | null, timeStr: string | null): string {
+  if (!dateStr || !timeStr) {
+    return 'Not set';
+  }
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    return `${dateStr} at ${timeStr}`;
+  }
+  const dayPart = d.toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+  });
+  return `${dayPart} at ${timeStr}`;
+}
 
 type ViewType = 
   | 'landing'
@@ -67,6 +84,7 @@ export function VetServiceRouter({
   const [vendors, setVendors] = useState<any[]>([]);
   const [selectedVendor, setSelectedVendor] = useState<any | null>(null);
   const [services, setServices] = useState<any[]>([]);
+  const [bookingNotes, setBookingNotes] = useState('');
 
   const [bookingFlow, setBookingFlow] = useState<BookingFlow>({
     serviceType: null,
@@ -382,46 +400,108 @@ export function VetServiceRouter({
     </View>
   );
 
-  const renderPayment = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('booking_details')}>
-          <Text style={styles.backButton}>← Back</Text>
+  const renderPayment = () => {
+    const svc = bookingFlow.selectedService;
+    const durationMins =
+      typeof svc?.duration === 'number'
+        ? svc.duration
+        : typeof svc?.durationMinutes === 'number'
+          ? svc.durationMinutes
+          : 15;
+    const serviceTitle = svc?.name || 'Selected service';
+    const price = svc?.price ?? 0;
+    const pet = bookingFlow.pet;
+    const petLine = pet
+      ? `${pet.name}${pet.breed ? ` (${pet.breed})` : pet.type ? ` (${pet.type})` : ''}`
+      : '—';
+
+    return (
+      <View style={[styles.container, styles.paymentRoot, styles.paymentScreenFill]}>
+        <View style={styles.summaryHeader}>
+          <TouchableOpacity
+            onPress={() => setCurrentView('booking_details')}
+            style={styles.headerBackTap}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Text style={styles.summaryBackGlyph} pointerEvents="none">
+              ‹
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.summaryHeaderTitle} numberOfLines={1}>
+            Booking Summary
+          </Text>
+        </View>
+
+        <ScrollView
+          style={styles.paymentScroll}
+          contentContainerStyle={styles.paymentScrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryCardTop}>
+              <View style={styles.summaryServiceIconWrap}>
+                <Text style={styles.summaryServiceEmoji}>
+                  {bookingFlow.serviceType === 'home' ? '🏠' : '🏥'}
+                </Text>
+              </View>
+              <View style={styles.summaryServiceTextCol}>
+                <Text style={styles.summaryServiceTitle} numberOfLines={3}>
+                  {serviceTitle}
+                </Text>
+                <Text style={styles.summaryServiceMeta}>{durationMins} mins</Text>
+              </View>
+              <Text style={styles.summaryPrice}>₹{price}</Text>
+            </View>
+
+            <View style={styles.summaryDivider} />
+
+            <Text style={styles.summaryRowLabel}>Date & Time</Text>
+            <View style={styles.summaryRowInline}>
+              <Text style={styles.summaryRowIcon}>📅</Text>
+              <Text style={styles.summaryRowValue}>
+                {formatSummaryDateTime(bookingFlow.date, bookingFlow.time)}
+              </Text>
+            </View>
+
+            <View style={styles.summaryDivider} />
+
+            <Text style={styles.summaryRowLabel}>Pet</Text>
+            <View style={styles.summaryRowInline}>
+              <Text style={styles.summaryRowIcon}>👤</Text>
+              <Text style={styles.summaryRowValue}>{petLine}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.notesSectionLabel}>Additional Notes (Optional)</Text>
+          <TextInput
+            style={styles.notesInput}
+            placeholder="Any symptoms or concerns..."
+            placeholderTextColor={colors.textMuted}
+            value={bookingNotes}
+            onChangeText={setBookingNotes}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+          />
+        </ScrollView>
+
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={() =>
+            handlePayment({
+              method: 'wallet',
+              customerNotes: bookingNotes.trim() || undefined,
+            })
+          }
+        >
+          <Text style={styles.primaryButtonText}>Continue to Payment</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Payment</Text>
       </View>
-
-      <View style={styles.bookingSummary}>
-        <Text style={styles.summaryTitle}>Booking Summary</Text>
-        <Text style={styles.summaryItem}>Provider: {bookingFlow.vendorName || selectedVendor?.name}</Text>
-        {!!selectedVendor?.address && (
-          <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
-        )}
-        <Text style={styles.summaryItem}>
-          Service: {bookingFlow.selectedService?.name}
-        </Text>
-        <Text style={styles.summaryItem}>
-          Pet: {bookingFlow.pet?.name}
-        </Text>
-        <Text style={styles.summaryItem}>
-          Date: {bookingFlow.date}
-        </Text>
-        <Text style={styles.summaryItem}>
-          Time: {bookingFlow.time}
-        </Text>
-        <Text style={styles.summaryTotal}>
-          Total: ₹{bookingFlow.selectedService?.price || 0}
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => handlePayment({ method: 'wallet' })}
-      >
-        <Text style={styles.primaryButtonText}>Pay with Wallet</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   const renderConfirmation = () => (
     <View style={styles.container}>
@@ -483,12 +563,149 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
+  /** Generous top padding after ScreenShell safe area — status bar / notch still overlaps on some devices without extra room. */
+  paymentRoot: {
+    paddingTop: spacing.xxl + spacing.xxl + spacing.lg,
+  },
+  paymentScreenFill: {
+    flex: 1,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    marginBottom: spacing.md,
+    width: '100%',
+  },
+  headerBackTap: {
+    minWidth: 44,
+    minHeight: 44,
+    marginRight: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  /** Single left-pointing angle (U+2039) — reliable on all fonts; icon fonts can render blank without native linking. */
+  summaryBackGlyph: {
+    fontSize: 28,
+    lineHeight: 32,
+    color: colors.text,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  /** Title on booking summary only — avoid flex:1 fighting the back control width. */
+  summaryHeaderTitle: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: '700',
+    color: colors.text,
+  },
+  paymentScroll: {
+    flex: 1,
+  },
+  paymentScrollContent: {
+    paddingBottom: spacing.lg,
+  },
+  summaryCard: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  summaryCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  summaryServiceIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#FFF4EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  summaryServiceEmoji: {
+    fontSize: 22,
+  },
+  summaryServiceTextCol: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  summaryServiceTitle: {
+    fontSize: typography.h3,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  summaryServiceMeta: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
+  },
+  summaryPrice: {
+    fontSize: typography.h3,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
+  },
+  summaryRowLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  summaryRowInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  summaryRowIcon: {
+    fontSize: 16,
+    marginRight: spacing.sm,
+  },
+  summaryRowValue: {
+    flex: 1,
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  notesSectionLabel: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    minHeight: 100,
+    fontSize: typography.body,
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
   backButton: {
     fontSize: typography.body,
     color: colors.primary,
     marginRight: spacing.md,
   },
   headerTitle: {
+    flex: 1,
     fontSize: typography.h2,
     fontWeight: 'bold',
     color: colors.text,
@@ -629,29 +846,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.lg,
     textAlign: 'center',
-  },
-  bookingSummary: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: borderRadius.md,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  summaryTitle: {
-    fontSize: typography.h3,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  summaryItem: {
-    fontSize: typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  summaryTotal: {
-    fontSize: typography.h3,
-    fontWeight: 'bold',
-    color: colors.primary,
-    marginTop: spacing.md,
   },
   confirmationContainer: {
     flex: 1,

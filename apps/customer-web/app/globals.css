@@ -66,6 +66,16 @@
   --radius-2xl: 24px;
   --radius-3xl: 32px;
   --radius-full: 9999px;
+
+  /**
+   * StandardizedFooter: tab row (py-3 + icon + label) + safe-area. Sticky CTAs use this as `bottom`
+   * so they sit fully above the tab bar (must stay in sync with StandardizedFooter padding).
+   */
+  --customer-footer-offset: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  /** Scroll content when a fixed CTA strip sits above the tab bar */
+  --customer-sticky-cta-scroll-padding: calc(var(--customer-footer-offset) + 5.75rem);
+  /** Scroll content cleared only past the tab bar (no extra fixed CTA) */
+  --customer-tabbar-content-pad: calc(var(--customer-footer-offset) + 1.25rem);
 }
 
 /* Base Styles */
@@ -304,6 +314,18 @@ body {
 }
 
 /* Sonner (sonner@2.x): global safe-area offsets for all toasts — requires viewport-fit=cover in layout */
+@layer utilities {
+  .cw-fixed-above-customer-tabbar {
+    bottom: var(--customer-footer-offset);
+  }
+  .cw-scroll-pad-tabbar {
+    padding-bottom: var(--customer-tabbar-content-pad);
+  }
+  .cw-scroll-pad-tabbar-sticky-cta {
+    padding-bottom: var(--customer-sticky-cta-scroll-padding);
+  }
+}
+
 [data-sonner-toaster] {
   --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
   --offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;

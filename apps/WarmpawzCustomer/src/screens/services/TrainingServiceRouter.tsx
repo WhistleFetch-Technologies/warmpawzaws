@@ -592,16 +592,25 @@ export function TrainingServiceRouter({
                       bookingFlow.addOns.reduce((sum, a) => sum + (a.price || 0), 0);
 
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setCurrentView('booking_details')}>
-            <Text style={styles.backButton}>← Back</Text>
+      <View style={[styles.container, styles.paymentRoot]}>
+        <View style={styles.summaryHeader}>
+          <TouchableOpacity
+            onPress={() => setCurrentView('booking_details')}
+            style={styles.headerBackTap}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Text style={styles.summaryBackGlyph} pointerEvents="none">
+              ‹
+            </Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Payment</Text>
+          <Text style={styles.summaryHeaderTitle} numberOfLines={1}>
+            Booking Summary
+          </Text>
         </View>
 
         <View style={styles.bookingSummary}>
-          <Text style={styles.summaryTitle}>Booking Summary</Text>
           <Text style={styles.summaryItem}>Trainer: {bookingFlow.vendorName || selectedVendor?.name}</Text>
           {!!selectedVendor?.address && (
             <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
@@ -699,12 +708,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
+  paymentRoot: {
+    paddingTop: spacing.xxl + spacing.xxl + spacing.lg,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+  headerBackTap: {
+    minWidth: 44,
+    minHeight: 44,
+    marginRight: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  summaryBackGlyph: {
+    fontSize: 28,
+    lineHeight: 32,
+    color: colors.text,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  summaryHeaderTitle: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: '700',
+    color: colors.text,
+  },
   backButton: {
     fontSize: typography.body,
     color: colors.primary,
     marginRight: spacing.md,
   },
   headerTitle: {
+    flex: 1,
     fontSize: typography.h2,
     fontWeight: 'bold',
     color: colors.text,
@@ -1010,12 +1054,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     marginBottom: spacing.lg,
-  },
-  summaryTitle: {
-    fontSize: typography.h3,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.md,
   },
   summaryItem: {
     fontSize: typography.body,

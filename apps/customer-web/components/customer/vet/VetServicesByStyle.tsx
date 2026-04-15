@@ -336,8 +336,10 @@ export function VetServicesByStyle({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
-        <div className="text-center">
+      <div
+        className={`flex min-h-[100dvh] min-h-screen w-full items-center justify-center bg-white ${vendorId ? 'max-w-customer mx-auto' : 'max-w-md mx-auto'}`}
+      >
+        <div className="text-center px-4">
           <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
           <p className="text-gray-600">Loading {vendorId ? 'provider profile' : 'available services'}...</p>
         </div>
@@ -364,8 +366,7 @@ export function VetServicesByStyle({
     ];
 
     return (
-      <div className="min-h-screen bg-gray-50">
-        {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
         <ServiceDashboardHeader
           serviceName={providerName}
           serviceSubtitle={specialization}
@@ -376,16 +377,16 @@ export function VetServicesByStyle({
           showBackButton={true}
           headerColor="bg-[#FF8C42]"
         />
-        <div>
+        <div className="w-full flex-1">
 
-        {/* Large Hero Photo Gallery - Vet Provider Style */}
+        {/* Hero: capped column + portrait-friendly aspect (reads as native app, not wide web banner) */}
         {hasPhotos ? (
-          <div className="relative w-full bg-gray-200">
-            <div className="relative h-[280px] sm:h-[320px] overflow-hidden">
+          <div className="relative z-[1] -mt-3 w-full bg-gray-200 sm:-mt-4">
+            <div className="relative aspect-[5/4] w-full max-h-[420px] overflow-hidden sm:aspect-auto sm:h-[280px] sm:max-h-none">
               <img 
                 src={photos[selectedPhotoIndex]} 
                 alt={providerName} 
-                className="w-full h-full object-cover" 
+                className="h-full w-full object-cover" 
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
               
@@ -436,7 +437,7 @@ export function VetServicesByStyle({
             )}
           </div>
         ) : (
-          <div className="relative w-full h-[280px] bg-gradient-to-br from-[#FF8C42] to-[#FF7029] flex items-center justify-center">
+          <div className="relative z-[1] -mt-3 flex aspect-[5/4] w-full max-h-[420px] items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029] sm:-mt-4 sm:aspect-auto sm:h-[280px] sm:max-h-none">
             <div className="text-center text-white">
               {serviceStyle === 'tele' ? (
                 <Video className="w-20 h-20 mx-auto mb-3 opacity-50" />
@@ -571,7 +572,7 @@ export function VetServicesByStyle({
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b-2 border-gray-200 bg-white rounded-t-2xl overflow-hidden sticky top-[56px] z-40 shadow-sm">
+          <div className="sticky top-0 z-40 flex overflow-hidden rounded-t-2xl border-b-2 border-gray-200 bg-white shadow-sm">
             {['overview', 'services', 'reviews'].map((tab) => (
               <button
                 key={tab}
@@ -849,10 +850,11 @@ export function VetServicesByStyle({
           </div>
         </div>
 
-        {/* Fixed Bottom Service Selection Summary & Book Button */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg max-w-md mx-auto">
+        {/* Fixed bottom bar — same width as app column (mobile shell) */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
+          <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
           {selectedServices.size > 0 && (
-            <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
+            <div className="border-b border-orange-100 bg-orange-50 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">
@@ -862,7 +864,7 @@ export function VetServicesByStyle({
                 </div>
                 <button
                   onClick={() => setSelectedServices(new Set())}
-                  className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+                  className="text-sm font-medium text-orange-600 hover:text-orange-700"
                 >
                   Clear
                 </button>
@@ -873,13 +875,14 @@ export function VetServicesByStyle({
             <Button 
               onClick={handleBookServices}
               disabled={profileProvider.services.length === 0}
-              className="w-full bg-[#FF8C42] hover:bg-[#E67A35] h-12 text-lg text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] disabled:cursor-not-allowed disabled:bg-gray-300 sm:text-lg"
             >
               {selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
                 : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
+          </div>
           </div>
         </div>
         </div>
@@ -910,8 +913,7 @@ export function VetServicesByStyle({
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+    <div className="mx-auto min-h-[100dvh] min-h-screen w-full max-w-customer overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
       <ServiceDashboardHeader
         serviceName={getServiceTitle()}
         serviceSubtitle={getServiceSubtitle()}
@@ -922,9 +924,9 @@ export function VetServicesByStyle({
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
       />
-      
+
       {/* Info section */}
-      <div className="max-w-md mx-auto px-6 pt-4 pb-2 bg-white">
+      <div className="w-full px-4 sm:px-6 pt-4 pb-2 bg-white">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -949,7 +951,7 @@ export function VetServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="max-w-md mx-auto px-4 pb-24">
+      <div className="w-full px-4 sm:px-6 pb-24">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
