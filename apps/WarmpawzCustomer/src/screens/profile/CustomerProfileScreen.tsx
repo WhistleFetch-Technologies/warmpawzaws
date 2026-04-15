@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
@@ -165,17 +165,17 @@ export function CustomerProfileScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!profile) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack}>
             <Text style={styles.backButton}>← Back</Text>
@@ -185,12 +185,12 @@ export function CustomerProfileScreen({
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Failed to load profile</Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={editMode ? handleCancel : onBack}>
           <Text style={styles.backButton}>
@@ -424,7 +424,7 @@ export function CustomerProfileScreen({
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

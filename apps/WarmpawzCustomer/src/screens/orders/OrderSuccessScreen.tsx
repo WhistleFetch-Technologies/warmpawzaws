@@ -10,9 +10,9 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 
 interface OrderSuccessScreenProps {
@@ -31,7 +31,7 @@ export function OrderSuccessScreen({
   onNavigate,
 }: OrderSuccessScreenProps) {
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Success Icon */}
         <View style={styles.successIconContainer}>
@@ -92,7 +92,7 @@ export function OrderSuccessScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

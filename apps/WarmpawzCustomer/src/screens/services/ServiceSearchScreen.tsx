@@ -12,9 +12,9 @@ import {
   StyleSheet,
   TextInput,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi, EnhancedSearchApi } from '../../services/api';
 
@@ -125,7 +125,7 @@ export function ServiceSearchScreen({
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -223,7 +223,7 @@ export function ServiceSearchScreen({
           contentContainerStyle={styles.listContent}
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

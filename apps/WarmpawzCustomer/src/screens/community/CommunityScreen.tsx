@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, CommunityApi } from '../../services/api';
 
@@ -55,7 +55,7 @@ export function CommunityScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Community</Text>
       </View>
@@ -138,7 +138,7 @@ export function CommunityScreen({
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

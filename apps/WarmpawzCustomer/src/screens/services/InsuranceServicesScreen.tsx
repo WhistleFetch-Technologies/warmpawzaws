@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ApiService } from '../../services/api';
 
@@ -527,21 +527,21 @@ export function InsuranceServicesScreen({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'providers' && renderProviders()}
       {currentView === 'provider_detail' && renderProviderDetail()}
       {currentView === 'plans' && renderPlans()}
       {currentView === 'policy_purchase' && renderPolicyPurchase()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

@@ -16,7 +16,7 @@ import {
   TextInput,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { API_BASE_URL } from '../../config/aws';
 import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
@@ -222,7 +222,7 @@ export function CustomerUserProfileScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <ScreenShell style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -391,7 +391,7 @@ export function CustomerUserProfileScreen({
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

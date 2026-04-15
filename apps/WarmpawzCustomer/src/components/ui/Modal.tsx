@@ -9,9 +9,9 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ViewStyle,
 } from 'react-native';
+import { ScreenShell } from '../layout/ScreenShell';
 import { colors, borderRadius } from '../../theme/colors';
 
 interface ModalProps {
@@ -38,7 +38,7 @@ export function Modal({
       transparent={transparent}
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         {transparent && (
           <TouchableOpacity
             style={styles.backdrop}
@@ -47,7 +47,7 @@ export function Modal({
           />
         )}
         <View style={[styles.content, contentStyle]}>{children}</View>
-      </SafeAreaView>
+      </ScreenShell>
     </RNModal>
   );
 }

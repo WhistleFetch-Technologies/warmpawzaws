@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import * as Location from 'expo-location';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, BookingValidationApi } from '../../services/api';
@@ -207,7 +207,7 @@ export function EmergencyBookingScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -339,7 +339,7 @@ export function EmergencyBookingScreen({
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
