@@ -132,32 +132,10 @@ export default function AdminHomePage() {
     setLoginLoading(true);
 
     try {
-      // Check UAT mode dynamically (from runtime config)
-      const currentUatMode = isUatMode();
-      
-      // UAT Mode: Use hardcoded credentials
-      if (currentUatMode) {
-        if (email === UAT_CREDENTIALS.email && password === UAT_CREDENTIALS.password) {
-          console.log('🔧 [UAT Mode] Admin login successful (hardcoded)');
-          // Store UAT token (note: this is not a real Cognito token, but allows UI to render)
-          // API calls will still fail with 401, but components handle this gracefully
-          localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
-          localStorage.setItem('adminEmail', email);
-          localStorage.setItem('adminPermissions', JSON.stringify(['admin.full_access']));
-          // Set sessionStorage flag to track that user is logged in
-          // This flag is cleared on hard refresh, allowing us to detect it
-          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
-          setIsAuthenticated(true);
-          return;
-        } else {
-          setError('Invalid credentials. Please check your email and password.');
-          return;
-        }
-      }
-
-      // Production: Call real API endpoint
+      // UAT and production both use POST /admin/auth/login so Lambda validates against RDS
+      // (UAT_MODE on the API only changes JWT issuer after DB password check).
       const { apiClient } = require('@/lib/api-client');
-      
+
       const response = await apiClient.post('/admin/auth/login', { email, password }) as {
         success: boolean;
         token: {
@@ -192,7 +170,7 @@ export default function AdminHomePage() {
         // Set sessionStorage flag
         sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
         
-        console.log('✅ [Production] Admin login successful');
+        console.log(isUatMode() ? '✅ [UAT] Admin login successful (API + RDS)' : '✅ Admin login successful');
         setIsAuthenticated(true);
       } else {
         setError('Login failed. Invalid response from server.');

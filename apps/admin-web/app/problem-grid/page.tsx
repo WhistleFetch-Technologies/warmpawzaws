@@ -27,6 +27,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { AdminRouteGuard } from '@/components/admin/layout/AdminRouteGuard';
 
 // Types
 interface ProblemGridItem {
@@ -256,15 +257,13 @@ export default function ProblemGridManagement() {
     return role?.displayName || role?.name || roleId;
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42]" />
-      </div>
-    );
-  }
-
   return (
+    <AdminRouteGuard>
+      {loading ? (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42]" />
+        </div>
+      ) : (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
@@ -707,6 +706,8 @@ export default function ProblemGridManagement() {
         </div>
       )}
     </div>
+      )}
+    </AdminRouteGuard>
   );
 }
 

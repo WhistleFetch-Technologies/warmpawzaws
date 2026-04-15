@@ -2,6 +2,7 @@
 
 import React from "react";
 import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminRouteGuard } from "@/components/admin/layout/AdminRouteGuard";
 import { Breadcrumbs } from "@/components/admin/shared/Breadcrumbs";
 import { GlobalSearch } from "@/components/admin/shared/GlobalSearch";
 import { useRouter, usePathname } from "next/navigation";
@@ -52,7 +53,7 @@ export function AdminLayout({
 				</header>
 				{/* Main content area with proper scrolling */}
 				<main className="flex-1 overflow-auto">
-					{children}
+					<AdminRouteGuard>{children}</AdminRouteGuard>
 				</main>
 			</div>
 		</div>

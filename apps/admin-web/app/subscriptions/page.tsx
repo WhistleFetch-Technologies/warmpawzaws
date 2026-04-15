@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { AdminRouteGuard } from '@/components/admin/layout/AdminRouteGuard';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -308,15 +309,13 @@ export default function SubscriptionPlanManagementPage() {
 
   const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
-      </div>
-    );
-  }
-
   return (
+    <AdminRouteGuard>
+      {loading ? (
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
+        </div>
+      ) : (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
@@ -645,5 +644,7 @@ export default function SubscriptionPlanManagementPage() {
         )}
       </div>
     </div>
+      )}
+    </AdminRouteGuard>
   );
 }

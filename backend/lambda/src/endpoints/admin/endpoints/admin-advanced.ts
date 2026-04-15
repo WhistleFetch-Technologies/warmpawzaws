@@ -16,7 +16,7 @@ import { randomUUID, randomBytes, pbkdf2Sync } from 'crypto';
  * ============================================================================
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
 import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
@@ -33,6 +33,21 @@ import {
 } from '../../../utils/admin-fee-settings-db';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
+import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
+
+/** Email from Bearer JWT for RBAC checks when Cognito `sub` ≠ `admins.id` (unsafe decode; token already verified by middleware). */
+function rbacCallerEmailHint(c: Context): string | undefined {
+  const raw = c.req.header('authorization') || c.req.header('Authorization');
+  if (!raw?.toLowerCase().startsWith('bearer ')) return undefined;
+  const token = raw.slice(7).trim();
+  if (!token || token.startsWith('uat-token-')) return undefined;
+  const p = decodeTokenUnsafe(token);
+  if (!p) return undefined;
+  if (typeof p.email === 'string' && p.email.includes('@')) return p.email.trim();
+  const un = (p as { 'cognito:username'?: string })['cognito:username'];
+  if (typeof un === 'string' && un.includes('@')) return un.trim();
+  return undefined;
+}
 
 function hashAdminPasswordPlain(password: string): string {
   const salt = randomBytes(16).toString('hex');
@@ -1076,7 +1091,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/rbac/users', async (c) => {
     const callerId = c.get('userId') as string | undefined;
-    if (!(await canManageRbacAdmin(callerId))) {
+    if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
       return c.json({ success: false, error: 'RBAC management permission required' }, 403);
     }
     const handler = new GetRBACUsersHandler();
@@ -1089,7 +1104,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/rbac/users/create', async (c) => {
     try {
       const callerId = c.get('userId') as string | undefined;
-      if (!(await canManageRbacAdmin(callerId))) {
+      if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);
       }
       const body = await c.req.json().catch(() => ({}));
@@ -1128,7 +1143,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const admin = ins.rows[0];
       await query(
         `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
-         VALUES ($1::uuid, $2::uuid, $3::uuid, true, NOW(), NOW())`,
+         VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())`,
         [admin.id, roleId, callerId]
       );
       return c.json({
@@ -1145,7 +1160,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.put('/admin/rbac/users/:userId/role', async (c) => {
     try {
       const callerId = c.get('userId') as string | undefined;
-      if (!(await canManageRbacAdmin(callerId))) {
+      if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);
       }
       const userId = c.req.param('userId');
@@ -1181,7 +1196,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       await query(`UPDATE user_roles SET is_active = false, updated_at = NOW() WHERE user_id = $1::uuid`, [userId]);
       await query(
         `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
-         VALUES ($1::uuid, $2::uuid, $3::uuid, true, NOW(), NOW())
+         VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())
          ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = true, assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
         [userId, roleId, callerId]
       );

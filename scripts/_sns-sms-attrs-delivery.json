@@ -1,0 +1,4 @@
+{
+  "DeliveryStatusIAMRole": "arn:aws:iam::057442119249:role/warmpawz-prod-sns-sms-delivery-logs",
+  "DeliveryStatusSuccessSamplingRate": "100"
+}
