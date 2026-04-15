@@ -3763,7 +3763,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const result = await query('SELECT * FROM cancellation_policies ORDER BY created_at DESC');
       const policies = (result as any).rows ?? (Array.isArray(result) ? result : []);
-      return c.json({ success: true, policies });
+      return c.json({
+        success: true,
+        policies,
+        deprecated: true,
+        migrationNote:
+          'Prefer Finance → Cancellation & Refund Policy (vendor_refund_tiers). This legacy cancellation_policies table is retained for read/migration only.',
+      });
     } catch (error: unknown) {
       const msg = String(getErrorMessage(error));
       if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {

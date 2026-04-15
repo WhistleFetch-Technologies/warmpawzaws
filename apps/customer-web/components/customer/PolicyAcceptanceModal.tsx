@@ -44,6 +44,10 @@ interface PolicyDetails {
   noShow: {
     penaltyPercentage: number;
     gracePeriodMinutes: number;
+    /** When API returns vendor_refund_tiers no-show extension */
+    enabled?: boolean;
+    refundPercentage?: number;
+    penaltyAmount?: number;
   };
   refund: {
     processingDays: string;
@@ -90,9 +94,17 @@ export function PolicyAcceptanceModal({
       
       if (response.success && response.policy) {
         const policyData = response.policy;
-        // Transform API response to our format
         const refundPercentages = policyData.refundPercentages || [];
-        
+        const extras = response.policyExtras as
+          | {
+              rescheduleAllowed?: boolean;
+              noShowPolicy?: { enabled?: boolean; refundPercentage?: number; penaltyAmount?: number };
+            }
+          | undefined;
+
+        const ns = extras?.noShowPolicy;
+        const rescheduleAllowed = extras?.rescheduleAllowed === true;
+
         setPolicy({
           cancellation: {
             fullRefundHours: refundPercentages.find((r: any) => r.percentage === 100)?.withinHours || 48,
@@ -101,13 +113,16 @@ export function PolicyAcceptanceModal({
             noRefundHours: refundPercentages.find((r: any) => r.percentage === 0)?.withinHours || 2,
           },
           reschedule: {
-            allowed: true,
+            allowed: rescheduleAllowed,
             cutoffHours: 12,
             maxReschedules: 2,
           },
           noShow: {
-            penaltyPercentage: 100,
+            penaltyPercentage: ns?.enabled ? Math.max(0, 100 - (Number(ns.refundPercentage) || 0)) : 100,
             gracePeriodMinutes: 15,
+            enabled: ns?.enabled === true,
+            refundPercentage: Number(ns?.refundPercentage ?? 0),
+            penaltyAmount: Number(ns?.penaltyAmount ?? 0),
           },
           refund: {
             processingDays: '5-7 business days',
@@ -124,13 +139,16 @@ export function PolicyAcceptanceModal({
             noRefundHours: 2,
           },
           reschedule: {
-            allowed: true,
+            allowed: false,
             cutoffHours: 12,
             maxReschedules: 2,
           },
           noShow: {
             penaltyPercentage: 100,
             gracePeriodMinutes: 15,
+            enabled: false,
+            refundPercentage: 0,
+            penaltyAmount: 0,
           },
           refund: {
             processingDays: '5-7 business days',
@@ -149,13 +167,16 @@ export function PolicyAcceptanceModal({
           noRefundHours: 2,
         },
         reschedule: {
-          allowed: true,
+          allowed: false,
           cutoffHours: 12,
           maxReschedules: 2,
         },
         noShow: {
           penaltyPercentage: 100,
           gracePeriodMinutes: 15,
+          enabled: false,
+          refundPercentage: 0,
+          penaltyAmount: 0,
         },
         refund: {
           processingDays: '5-7 business days',
@@ -233,7 +254,10 @@ export function PolicyAcceptanceModal({
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-[#FF8C42]" />
-            <h2 className="text-lg font-bold text-gray-900">Booking Policies</h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Booking Policies</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Service bookings: refund, cancellation, reschedule, and no-show from one platform policy (not product or e-commerce orders).</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -356,9 +380,27 @@ export function PolicyAcceptanceModal({
                     <AlertCircle className="w-4 h-4 text-orange-500" />
                     <span>{policy.noShow.gracePeriodMinutes} minutes grace period after scheduled time</span>
                   </div>
+                  {policy.noShow.enabled ? (
+                    <>
+                      <div className="flex items-center gap-2 text-gray-700">
+                        <Info className="w-4 h-4 text-gray-400" />
+                        <span>Platform no-show refund: {policy.noShow.refundPercentage ?? 0}% of booking (where configured)</span>
+                      </div>
+                      {(policy.noShow.penaltyAmount ?? 0) > 0 && (
+                        <div className="flex items-center gap-2 text-red-600">
+                          <Info className="w-4 h-4" />
+                          <span>Additional penalty up to ₹{policy.noShow.penaltyAmount} may apply per policy</span>
+                        </div>
+                      )}
+                    </>
+                  ) : null}
                   <div className="flex items-center gap-2 text-red-600">
                     <Info className="w-4 h-4" />
-                    <span>No-show results in {policy.noShow.penaltyPercentage}% forfeiture of booking amount</span>
+                    <span>
+                      {policy.noShow.enabled
+                        ? `Effective forfeiture up to ${policy.noShow.penaltyPercentage}% of booking amount when marked no-show`
+                        : `No-show may result in up to ${policy.noShow.penaltyPercentage}% forfeiture of booking amount`}
+                    </span>
                   </div>
                   </div>
                 )}

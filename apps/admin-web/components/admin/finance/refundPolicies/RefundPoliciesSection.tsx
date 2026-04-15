@@ -7,6 +7,26 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
+/** E-commerce / product-seller roles are configured under Ecommerce Policies, not booking cancellation. */
+const ECOMMERCE_VENDOR_TYPE_IDS = new Set(
+  [
+    'pet-products-seller',
+    'pet_products_seller',
+    'pet-products-store',
+    'pet_products_store',
+    'ecommerce',
+    'marketplace',
+    'product_seller',
+  ].map((s) => s.toLowerCase())
+);
+
+function isEcommerceVendorTypeId(id: string): boolean {
+  const t = id.toLowerCase();
+  if (ECOMMERCE_VENDOR_TYPE_IDS.has(t)) return true;
+  if (t.includes('product') && (t.includes('seller') || t.includes('store'))) return true;
+  return false;
+}
+
 /** Fallback vendor types when API roles are not available. Tele/Video is in Service Location, not here. */
 const FALLBACK_VENDOR_TYPES = [
   { id: 'veterinarian', name: 'Veterinarian', icon: '⚕️' },
@@ -15,7 +35,6 @@ const FALLBACK_VENDOR_TYPES = [
   { id: 'trainer', name: 'Trainer', icon: '🎓' },
   { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
   { id: 'resorts', name: 'Resorts', icon: '🏖️' },
-  { id: 'pet-products-seller', name: 'Food, Medicine & Pet Products Sellers', icon: '🛒' },
   { id: 'breeder', name: 'Breeder', icon: '🐾' },
   { id: 'adoption', name: 'Adoption', icon: '❤️' },
   { id: 'pet-cafe', name: 'Pet Cafe', icon: '☕' },
@@ -33,6 +52,13 @@ const SERVICE_LOCATION_OPTIONS = [
 ];
 
 type ServiceLocationValue = 'at_home' | 'at_center' | 'tele' | 'all';
+
+/** Stored in vendor_refund_tiers.policy_extensions (single source for cancellation + refund UX). */
+export interface PolicyExtensions {
+  rescheduleAllowed?: boolean;
+  noShowPolicy?: { enabled?: boolean; refundPercentage?: number; penaltyAmount?: number };
+  providerPolicy?: { penaltyPercentage?: number; compensationPercentage?: number };
+}
 
 /** Who cancels the booking: used to apply different refund rules by canceller. No "any" – policy must be for pet_parent or provider. */
 export type CancelledByValue = 'pet_parent' | 'provider';
@@ -129,6 +155,7 @@ interface RefundTier {
   cancellationFee: number;
   isActive: boolean;
   createdAt?: string;
+  policyExtensions?: PolicyExtensions;
 }
 
 /** Map DB service_location to frontend: home->at_home, clinic->at_center, tele->tele, both|all->all */
@@ -165,6 +192,19 @@ function normalizeTier(row: any): RefundTier {
     : cancellationWindow != null
       ? hoursFromCustomerWindow(cancellationWindow)
       : (Number(row.hours_before_service ?? row.hoursBeforeService ?? 24) || 24);
+  let policyExtensions: PolicyExtensions | undefined;
+  const rawExt = row.policy_extensions ?? row.policyExtensions;
+  if (rawExt != null) {
+    if (typeof rawExt === 'string') {
+      try {
+        policyExtensions = JSON.parse(rawExt) as PolicyExtensions;
+      } catch {
+        policyExtensions = undefined;
+      }
+    } else if (typeof rawExt === 'object') {
+      policyExtensions = rawExt as PolicyExtensions;
+    }
+  }
   return {
     id: row.id ?? '',
     name: row.name ?? row.policy_name ?? '',
@@ -188,6 +228,7 @@ function normalizeTier(row: any): RefundTier {
     cancellationFee: Number(row.cancellation_fee ?? row.cancellationFee ?? 0) || 0,
     isActive: row.is_active ?? row.isActive !== false,
     createdAt: row.created_at ?? row.createdAt,
+    policyExtensions,
   };
 }
 
@@ -222,7 +263,8 @@ export function RefundPoliciesSection() {
           icon: roleToIcon[(r.code ?? r.name ?? '').toString().toLowerCase()] ?? '📌',
         }))
         .filter((o: { id: string }) => o.id)
-        .filter((o: { id: string }) => o.id !== 'tele' && o.id !== 'video_consultation'); // Tele is in Service Location, not vendor types
+        .filter((o: { id: string }) => o.id !== 'tele' && o.id !== 'video_consultation') // Tele is in Service Location, not vendor types
+        .filter((o: { id: string }) => !isEcommerceVendorTypeId(o.id));
       return options;
     };
     try {
@@ -234,12 +276,14 @@ export function RefundPoliciesSection() {
       }
       if (Array.isArray(roles) && roles.length > 0) {
         const options = mapRolesToOptions(roles);
-        setVendorTypeOptions(options.length > 0 ? options : FALLBACK_VENDOR_TYPES);
+        setVendorTypeOptions(
+          (options.length > 0 ? options : FALLBACK_VENDOR_TYPES).filter((o) => !isEcommerceVendorTypeId(o.id))
+        );
       } else {
-        setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+        setVendorTypeOptions(FALLBACK_VENDOR_TYPES.filter((o) => !isEcommerceVendorTypeId(o.id)));
       }
     } catch {
-      setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+      setVendorTypeOptions(FALLBACK_VENDOR_TYPES.filter((o) => !isEcommerceVendorTypeId(o.id)));
     }
   };
 
@@ -284,6 +328,11 @@ export function RefundPoliciesSection() {
       refundPercentage: 100,
       cancellationFee: 0,
       isActive: true,
+      policyExtensions: {
+        rescheduleAllowed: false,
+        noShowPolicy: { enabled: false, refundPercentage: 0, penaltyAmount: 0 },
+        providerPolicy: { penaltyPercentage: 0, compensationPercentage: 100 },
+      },
     };
     setEditingTier(newTier);
     setIsCreatingNew(true);
@@ -325,8 +374,27 @@ export function RefundPoliciesSection() {
     }
 
     const useCustom = editingTier.cancelledBy === 'pet_parent' && editingTier.useCustomRule && editingTier.hoursOperator != null && Number.isFinite(editingTier.hoursThreshold);
+    const pe = editingTier.policyExtensions || {};
+    const policyExtensions: PolicyExtensions =
+      editingTier.cancelledBy === 'pet_parent'
+        ? {
+            rescheduleAllowed: pe.rescheduleAllowed === true,
+            noShowPolicy: {
+              enabled: pe.noShowPolicy?.enabled === true,
+              refundPercentage: Math.min(100, Math.max(0, Number(pe.noShowPolicy?.refundPercentage ?? 0))),
+              penaltyAmount: Math.max(0, Number(pe.noShowPolicy?.penaltyAmount ?? 0)),
+            },
+          }
+        : {
+            providerPolicy: {
+              penaltyPercentage: Math.min(100, Math.max(0, Number(pe.providerPolicy?.penaltyPercentage ?? 0))),
+              compensationPercentage: Math.min(100, Math.max(0, Number(pe.providerPolicy?.compensationPercentage ?? 100))),
+            },
+          };
+
     const payload = {
       ...editingTier,
+      policyExtensions,
       maxPartialRefundPercentage: null, // Removed: use Refund % for partial (e.g. 50%) instead
       hoursBeforeService: editingTier.cancelledBy === 'pet_parent' && !useCustom && editingTier.cancellationWindow
         ? hoursFromCustomerWindow(editingTier.cancellationWindow)
@@ -377,18 +445,31 @@ export function RefundPoliciesSection() {
 
   return (
     <div className="p-6 space-y-6">
+      <div className="rounded-xl border border-orange-200 bg-orange-50/80 px-4 py-3 text-sm text-gray-800">
+        <p className="font-semibold text-gray-900 mb-1">One engine for service bookings (everything below lives in vendor_refund_tiers)</p>
+        <ul className="list-disc list-inside space-y-0.5 text-gray-700">
+          <li><strong>Refund policy</strong> — refund % and cancellation fee for this tier</li>
+          <li><strong>Cancellation policy</strong> — who cancels (customer vs provider), time window or custom hours rule</li>
+          <li><strong>Rescheduling</strong> — per customer tier: allow reschedule when this tier applies</li>
+          <li><strong>No-show</strong> — per customer tier: optional refund % and penalty amount</li>
+        </ul>
+        <p className="mt-2 text-xs text-gray-600">
+          E-commerce product orders are <strong>not</strong> configured here — use Finance → Ecommerce Policies.
+        </p>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div>
-            <h2 className="text-black text-xl font-semibold">Refund Policies</h2>
-            <p className="text-gray-500 text-sm mt-1">Configure refund rules and policies</p>
+            <h2 className="text-black text-xl font-semibold">Cancellation & Refund Policies</h2>
+            <p className="text-gray-500 text-sm mt-1">Edit tiers below; customer payment and cancel flows read the same data (plus legacy fallbacks only if tiers are missing).</p>
           </div>
           <PolicyHelpButton docKey="finance-refund-policies" />
         </div>
         <Button onClick={handleCreateTier} className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
           <Plus className="w-4 h-4 mr-2" />
-          Create Refund Tier
+          Create Cancellation & Refund Policy
         </Button>
       </div>
 
@@ -529,7 +610,7 @@ export function RefundPoliciesSection() {
           >
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
               <h3 id="refund-tier-modal-title" className="text-xl font-bold text-gray-900">
-                {isCreatingNew ? 'Create Refund Tier' : 'Edit Refund Tier'}
+                {isCreatingNew ? 'Create Cancellation & Refund Policy' : 'Edit Cancellation & Refund Policy'}
               </h3>
               <button
                 onClick={() => {
@@ -725,6 +806,97 @@ export function RefundPoliciesSection() {
                       </div>
                     </div>
                   )}
+
+                  <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
+                    <Label className="text-sm font-semibold">Reschedule (this tier)</Label>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={editingTier.policyExtensions?.rescheduleAllowed === true}
+                        onCheckedChange={(checked: boolean) =>
+                          setEditingTier({
+                            ...editingTier,
+                            policyExtensions: {
+                              ...editingTier.policyExtensions,
+                              rescheduleAllowed: checked === true,
+                            },
+                          })
+                        }
+                      />
+                      <span className="text-sm text-gray-700">Allow reschedule when this tier applies</span>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <Label className="text-sm font-semibold">No-show (customer cancellations)</Label>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={editingTier.policyExtensions?.noShowPolicy?.enabled === true}
+                        onCheckedChange={(checked: boolean) =>
+                          setEditingTier({
+                            ...editingTier,
+                            policyExtensions: {
+                              ...editingTier.policyExtensions,
+                              noShowPolicy: {
+                                enabled: checked === true,
+                                refundPercentage: editingTier.policyExtensions?.noShowPolicy?.refundPercentage ?? 0,
+                                penaltyAmount: editingTier.policyExtensions?.noShowPolicy?.penaltyAmount ?? 0,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span className="text-sm text-gray-700">Enable no-show policy for this tier</span>
+                    </div>
+                    {editingTier.policyExtensions?.noShowPolicy?.enabled && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>No-show refund %</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={editingTier.policyExtensions?.noShowPolicy?.refundPercentage ?? 0}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              const v = parseFloat(e.target.value);
+                              setEditingTier({
+                                ...editingTier,
+                                policyExtensions: {
+                                  ...editingTier.policyExtensions,
+                                  noShowPolicy: {
+                                    enabled: true,
+                                    refundPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0,
+                                    penaltyAmount: editingTier.policyExtensions?.noShowPolicy?.penaltyAmount ?? 0,
+                                  },
+                                },
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Penalty amount (₹)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={editingTier.policyExtensions?.noShowPolicy?.penaltyAmount ?? 0}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              const v = parseFloat(e.target.value);
+                              setEditingTier({
+                                ...editingTier,
+                                policyExtensions: {
+                                  ...editingTier.policyExtensions,
+                                  noShowPolicy: {
+                                    enabled: true,
+                                    refundPercentage: editingTier.policyExtensions?.noShowPolicy?.refundPercentage ?? 0,
+                                    penaltyAmount: Number.isFinite(v) ? Math.max(0, v) : 0,
+                                  },
+                                },
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -748,6 +920,59 @@ export function RefundPoliciesSection() {
                     ))}
                   </select>
                   <p className="text-xs text-gray-500">Reason when service provider/platform cancels. Typically full refund or reschedule.</p>
+                </div>
+              )}
+
+              {editingTier.cancelledBy === 'provider' && (
+                <div className="grid grid-cols-2 gap-4 border rounded-lg p-4 bg-slate-50">
+                  <div className="space-y-2">
+                    <Label>Penalty to provider (%)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={editingTier.policyExtensions?.providerPolicy?.penaltyPercentage ?? 0}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const v = parseFloat(e.target.value);
+                        setEditingTier({
+                          ...editingTier,
+                          policyExtensions: {
+                            ...editingTier.policyExtensions,
+                            providerPolicy: {
+                              penaltyPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0,
+                              compensationPercentage:
+                                editingTier.policyExtensions?.providerPolicy?.compensationPercentage ?? 100,
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Customer compensation (%)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={editingTier.policyExtensions?.providerPolicy?.compensationPercentage ?? 100}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const v = parseFloat(e.target.value);
+                        setEditingTier({
+                          ...editingTier,
+                          policyExtensions: {
+                            ...editingTier.policyExtensions,
+                            providerPolicy: {
+                              penaltyPercentage: editingTier.policyExtensions?.providerPolicy?.penaltyPercentage ?? 0,
+                              compensationPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100,
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 col-span-2">
+                    Refund % and cancellation fee above still apply to the customer payout for this provider-cancel scenario.
+                  </p>
                 </div>
               )}
 

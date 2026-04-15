@@ -1,6 +1,11 @@
 /**
- * Cancellation policy service: applies vendor_refund_tiers by who cancels (pet_parent vs provider).
- * Used when a customer or vendor/platform cancels a booking to compute refund % and fees.
+ * Single source of truth for **service bookings** (not e-commerce orders):
+ * - Refund policy (refund %, fees) → `vendor_refund_tiers`
+ * - Cancellation policy (who cancels, time windows / rules) → same rows (`cancelled_by`, `hours_*`, `cancellation_window`, …)
+ * - Rescheduling eligibility (per tier) → `policy_extensions.rescheduleAllowed`
+ * - No-show rules (per tier) → `policy_extensions.noShowPolicy`
+ *
+ * E-commerce returns/cancellation stay in the ecommerce policy path only.
  */
 
 import { query } from '../../database/rds-connection';

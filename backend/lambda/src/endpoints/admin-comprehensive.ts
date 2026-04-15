@@ -4185,6 +4185,23 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       (out as any).hours_operator = ['gte', 'lte', 'gt', 'lt'].includes(v) ? v : null;
     }
     if (hoursThr !== undefined && hoursThr !== null) (out as any).hours_threshold = Number.isFinite(Number(hoursThr)) ? Number(hoursThr) : null;
+    const mergeExt: Record<string, unknown> = {};
+    const rawExt = body.policyExtensions ?? body.policy_extensions;
+    if (rawExt && typeof rawExt === 'object' && !Array.isArray(rawExt)) {
+      Object.assign(mergeExt, rawExt as Record<string, unknown>);
+    }
+    if (body.rescheduleAllowed === true || body.rescheduleAllowed === false) {
+      mergeExt.rescheduleAllowed = body.rescheduleAllowed;
+    }
+    if (body.noShowPolicy && typeof body.noShowPolicy === 'object') {
+      mergeExt.noShowPolicy = body.noShowPolicy;
+    }
+    if (body.providerPolicy && typeof body.providerPolicy === 'object') {
+      mergeExt.providerPolicy = body.providerPolicy;
+    }
+    if (Object.keys(mergeExt).length > 0) {
+      (out as any).policy_extensions = mergeExt;
+    }
     return out;
   };
 

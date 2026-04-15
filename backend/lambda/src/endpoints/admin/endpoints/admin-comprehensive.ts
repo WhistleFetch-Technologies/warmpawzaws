@@ -4497,6 +4497,24 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       (out as any).hours_operator = ['gte', 'lte', 'gt', 'lt'].includes(v) ? v : null;
     }
     if (hoursThr !== undefined && hoursThr !== null) (out as any).hours_threshold = Number.isFinite(Number(hoursThr)) ? Number(hoursThr) : null;
+    // Unified cancellation+refund extensions (JSON). Merges body.policyExtensions with flat fields for backward compatibility.
+    const mergeExt: Record<string, unknown> = {};
+    const rawExt = body.policyExtensions ?? body.policy_extensions;
+    if (rawExt && typeof rawExt === 'object' && !Array.isArray(rawExt)) {
+      Object.assign(mergeExt, rawExt as Record<string, unknown>);
+    }
+    if (body.rescheduleAllowed === true || body.rescheduleAllowed === false) {
+      mergeExt.rescheduleAllowed = body.rescheduleAllowed;
+    }
+    if (body.noShowPolicy && typeof body.noShowPolicy === 'object') {
+      mergeExt.noShowPolicy = body.noShowPolicy;
+    }
+    if (body.providerPolicy && typeof body.providerPolicy === 'object') {
+      mergeExt.providerPolicy = body.providerPolicy;
+    }
+    if (Object.keys(mergeExt).length > 0) {
+      (out as any).policy_extensions = mergeExt;
+    }
     return out;
   };
 
@@ -4535,6 +4553,56 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Refund tier deleted' });
     } catch (error: any) {
       console.error('Error deleting refund tier:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /** Unified finance label: same rows as vendor_refund_tiers (cancellation + refund). */
+  app.get('/admin/finance/policies', async (c) => {
+    const handler = new GetVendorRefundTiersHandler();
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    const parsed = JSON.parse(result.body);
+    const tiers = parsed.refundTiers ?? parsed.tiers ?? [];
+    return c.json({ ...parsed, policies: tiers }, result.statusCode);
+  });
+
+  app.post('/admin/finance/policies', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const row = mapRefundTierBodyToDb(body);
+      (row as any).created_at = new Date().toISOString();
+      (row as any).updated_at = new Date().toISOString();
+      const tier = await insert('vendor_refund_tiers', row);
+      return c.json({ success: true, policy: tier[0], tier: tier[0] });
+    } catch (error: any) {
+      console.error('Error creating booking policy:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.put('/admin/finance/policies/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+      const row = mapRefundTierBodyToDb(body);
+      (row as any).updated_at = new Date().toISOString();
+      const updated = await update('vendor_refund_tiers', { id }, row);
+      return c.json({ success: true, policy: updated[0], tier: updated[0] });
+    } catch (error: any) {
+      console.error('Error updating booking policy:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.delete('/admin/finance/policies/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await deleteRows('vendor_refund_tiers', { id });
+      return c.json({ success: true, message: 'Policy deleted' });
+    } catch (error: any) {
+      console.error('Error deleting booking policy:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
