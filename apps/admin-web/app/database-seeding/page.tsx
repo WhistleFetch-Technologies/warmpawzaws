@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AdminRouteGuard } from '@/components/admin/layout/AdminRouteGuard';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Database, RefreshCw, Trash2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -104,6 +105,7 @@ export default function DatabaseSeedingPage() {
   };
 
   return (
+    <AdminRouteGuard>
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
@@ -231,5 +233,6 @@ export default function DatabaseSeedingPage() {
         )}
       </div>
     </div>
+    </AdminRouteGuard>
   );
 }

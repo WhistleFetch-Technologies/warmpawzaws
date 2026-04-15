@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "warmpawz-lambda-handlers": "file:../../backend/lambda"
   }
 }

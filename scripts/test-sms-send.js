@@ -38,11 +38,12 @@ async function run() {
   const ENTITY_ID = process.env.SMS_ENTITY_ID || '1201176605406673276';
   const TEMPLATE_ID = process.env.SMS_TEMPLATE_ID || '1207177028377787269';
 
+  // India DLT: EntityId/TemplateId must use AWS.MM.SMS.* (matches Lambda sms-service.ts)
   const attrs = {
     'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
     'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: 'WARMPZ' },
-    'AWS.SNS.SMS.EntityId': { DataType: 'String', StringValue: ENTITY_ID },
-    'AWS.SNS.SMS.TemplateId': { DataType: 'String', StringValue: TEMPLATE_ID },
+    'AWS.MM.SMS.EntityId': { DataType: 'String', StringValue: ENTITY_ID },
+    'AWS.MM.SMS.TemplateId': { DataType: 'String', StringValue: TEMPLATE_ID },
   };
 
   try {

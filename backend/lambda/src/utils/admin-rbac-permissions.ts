@@ -95,14 +95,59 @@ export async function resolveAdminPermissions(
   return [];
 }
 
-/** True if this admin may open RBAC UI / create users / assign roles (admin.roles or full). */
-export async function canManageRbacAdmin(adminId: string | undefined): Promise<boolean> {
-  if (!adminId || !isValidUuid(adminId)) return false;
+/** Synthetic principal from auth-middleware when Bearer is uat-token-* (non-prod only). */
+const UAT_SYNTHETIC_ADMIN_USER_ID = 'uat-admin-user';
+
+/**
+ * True when this Lambda deployment should be treated as production for UAT synthetic bypass.
+ * Do not use NODE_ENV alone — many dev/stage Lambdas set NODE_ENV=production while STAGE is not prod.
+ */
+function isAwsProdLambdaForRbacBypass(): boolean {
+  const stage = (process.env.STAGE || '').toLowerCase();
+  if (stage === 'prod' || stage === 'production') return true;
+  const fn = (process.env.AWS_LAMBDA_FUNCTION_NAME || '').toLowerCase();
+  if (fn.includes('prod') && !fn.includes('dev') && !fn.includes('uat') && !fn.includes('staging')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True if this admin may open RBAC UI / create users / assign roles (admin.roles or full).
+ * @param jwtEmailHint Optional email from JWT when `adminId` (e.g. Cognito `sub`) does not match `admins.id`.
+ */
+export async function canManageRbacAdmin(
+  adminId: string | undefined,
+  jwtEmailHint?: string | null
+): Promise<boolean> {
+  if (!adminId) return false;
+  // Dev/UAT: middleware sets userId to uat-admin-user for uat-token-*; that string is not a UUID, so the
+  // UUID branch below would always deny. Allow RBAC on non-prod Lambdas (see isAwsProdLambdaForRbacBypass).
+  if (adminId === UAT_SYNTHETIC_ADMIN_USER_ID && !isAwsProdLambdaForRbacBypass()) {
+    return true;
+  }
+  if (!isValidUuid(adminId) && adminId !== UAT_SYNTHETIC_ADMIN_USER_ID) return false;
+
   try {
-    const r = await query('SELECT role, email FROM admins WHERE id = $1::uuid LIMIT 1', [adminId]);
-    const role = r.rows[0]?.role as string | undefined;
-    const email = r.rows[0]?.email as string | undefined;
-    const perms = await resolveAdminPermissions(adminId, role, email);
+    let row: { id: string; role?: string; email?: string } | null = null;
+
+    if (isValidUuid(adminId)) {
+      const r = await query('SELECT id, role, email FROM admins WHERE id = $1::uuid LIMIT 1', [adminId]);
+      if (r.rows?.length) row = r.rows[0] as { id: string; role?: string; email?: string };
+    }
+
+    const hint = jwtEmailHint && String(jwtEmailHint).trim();
+    if (!row && hint) {
+      const r2 = await query(
+        'SELECT id, role, email FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+        [hint]
+      );
+      if (r2.rows?.length) row = r2.rows[0] as { id: string; role?: string; email?: string };
+    }
+
+    if (!row) return false;
+
+    const perms = await resolveAdminPermissions(String(row.id), row.role, row.email);
     return hasAdminPermission(perms, 'admin.roles');
   } catch {
     return false;

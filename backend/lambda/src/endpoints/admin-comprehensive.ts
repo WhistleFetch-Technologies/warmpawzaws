@@ -282,39 +282,8 @@ class AdminLoginHandler extends BaseHandler {
         return this.error('Email and password are required', 400);
       }
 
-      // Check UAT mode - ONLY check UAT_MODE env variable for security
+      // UAT_MODE only affects which JWT issuer/expiry is used after credentials are verified — same DB checks as prod.
       const isUATMode = process.env.UAT_MODE === 'true';
-
-      // In UAT mode, allow any admin login with 60s token expiry
-      if (isUATMode) {
-        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
-        
-        // Generate proper JWT tokens for UAT mode
-        const { generateUATJWTToken } = await import('../utils/jwt-generator');
-        const tokens = await generateUATJWTToken({
-          userId: 'uat-admin',
-          phone: email, // Use email as identifier
-          role: 'admin',
-          expiresIn: 60, // 60 seconds for UAT mode testing
-        });
-        
-        return this.success({
-          success: true,
-          token: {
-            access_token: tokens.accessToken,
-            id_token: tokens.idToken,
-            refresh_token: tokens.refreshToken,
-            expires_in: tokens.expiresIn,
-            token_type: 'Bearer',
-          },
-          admin: {
-            id: 'uat-admin',
-            email: email,
-            name: 'Admin User',
-            role: 'admin',
-          },
-        });
-      }
 
       // Check admin credentials (case-insensitive email matching)
       // Use direct query for case-insensitive email lookup

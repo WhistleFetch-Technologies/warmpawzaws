@@ -18,7 +18,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 // Password verification
 import * as crypto from 'crypto';
-import { resolveAdminPermissions } from '../../../utils/admin-rbac-permissions';
+import { resolveAdminPermissions, DEFAULT_MASTER_ADMIN_EMAIL } from '../../../utils/admin-rbac-permissions';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -29,6 +29,26 @@ const hashPassword = (password: string): string => {
   const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
   return `${salt}:${hash}`;
 };
+
+/** Same idea as API Gateway uat-authorizer: never treat UAT bearer as valid on prod. */
+function isLambdaProductionStage(): boolean {
+  return (
+    process.env.NODE_ENV === 'production' ||
+    process.env.STAGE === 'prod' ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod'))
+  );
+}
+
+/** UAT mode from env (Lambda) or client header (admin-web sends X-UAT-Mode in dev). */
+function isUatModeRequestHeader(headers: Record<string, string | undefined> | undefined): boolean {
+  if (process.env.UAT_MODE === 'true') return true;
+  if (!headers) return false;
+  const raw =
+    headers['x-uat-mode'] ??
+    headers['X-UAT-Mode'] ??
+    headers['X-Uat-Mode'];
+  return String(raw || '').toLowerCase() === 'true';
+}
 
 function createApiGatewayEvent(req: any): any {
   // ✅ FIX: In Hono, headers are accessed via req.raw.headers
@@ -289,40 +309,8 @@ class AdminLoginHandler extends BaseHandler {
         return this.error('Email and password are required', 400);
       }
 
-      // Check UAT mode - ONLY check UAT_MODE env variable for security
+      // UAT_MODE only affects which JWT issuer/expiry is used after credentials are verified — same DB checks as prod.
       const isUATMode = process.env.UAT_MODE === 'true';
-
-      // In UAT mode, allow any admin login with 60s token expiry
-      if (isUATMode) {
-        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
-        
-        // Generate proper JWT tokens for UAT mode
-        const { generateUATJWTToken } = await import('../../../utils/jwt-generator');
-        const tokens = await generateUATJWTToken({
-          userId: 'uat-admin',
-          phone: email, // Use email as identifier
-          role: 'admin',
-          expiresIn: 60, // 60 seconds for UAT mode testing
-        });
-        
-        return this.success({
-          success: true,
-          token: {
-            access_token: tokens.accessToken,
-            id_token: tokens.idToken,
-            refresh_token: tokens.refreshToken,
-            expires_in: tokens.expiresIn,
-            token_type: 'Bearer',
-          },
-          admin: {
-            id: 'uat-admin',
-            email: email,
-            name: 'Admin User',
-            role: 'admin',
-          },
-          permissions: ['admin.full_access'],
-        });
-      }
 
       // Check admin credentials (case-insensitive email matching)
       // Use direct query for case-insensitive email lookup
@@ -447,13 +435,52 @@ class GetCurrentAdminHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       // Extract admin ID from JWT token
-      const authHeader = context.event.headers?.authorization || context.event.headers?.Authorization;
+      const hdr = context.event.headers || {};
+      const authHeader = hdr.authorization || hdr.Authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return this.error('Authentication required', 401);
       }
 
-      const token = authHeader.replace('Bearer ', '');
-      
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      // Dev-only: accept synthetic uat-token-* when UAT is explicitly on (env or X-UAT-Mode), not on prod stage.
+      if (
+        !isLambdaProductionStage() &&
+        isUatModeRequestHeader(hdr as Record<string, string | undefined>) &&
+        token.startsWith('uat-token-')
+      ) {
+        console.log('[ADMIN AUTH] /admin/auth/me UAT bearer bypass (non-prod + UAT + uat-token)');
+        let adminResult = await query(
+          'SELECT id, email, name, role, is_active, created_at, last_login_at FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+          [DEFAULT_MASTER_ADMIN_EMAIL]
+        );
+        if (adminResult.rows.length === 0) {
+          adminResult = await query(
+            `SELECT id, email, name, role, is_active, created_at, last_login_at FROM admins
+             ORDER BY created_at ASC NULLS LAST LIMIT 1`,
+            []
+          );
+        }
+        if (adminResult.rows.length === 0) {
+          return this.error('Admin not found', 404);
+        }
+        const admin = adminResult.rows[0];
+        const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+        return this.success({
+          success: true,
+          admin: {
+            id: admin.id,
+            email: admin.email,
+            name: admin.name || admin.email,
+            role: admin.role || 'admin',
+            isActive: admin.is_active !== false,
+            createdAt: admin.created_at,
+            lastLoginAt: admin.last_login_at,
+          },
+          permissions,
+        });
+      }
+
       // Verify JWT token and extract admin ID
       try {
         const { extractAndVerifyAuthToken } = await import('../../../utils/jwt-verification');

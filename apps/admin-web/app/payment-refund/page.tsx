@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { AdminRouteGuard } from '@/components/admin/layout/AdminRouteGuard';
 
 /**
  * Legacy "Payment & Refund" route → Finance → Cancellation & Refund Policy (unified booking policies).
@@ -18,7 +19,13 @@ export default function PaymentRefundPage() {
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto" />
         <p className="mt-4 text-gray-600">Redirecting to Finance → Cancellation & Refund Policy…</p>
+    <AdminRouteGuard>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto" />
+          <p className="mt-4 text-gray-600">Redirecting to Payment & Refund settings...</p>
+        </div>
       </div>
-    </div>
+    </AdminRouteGuard>
   );
 }
