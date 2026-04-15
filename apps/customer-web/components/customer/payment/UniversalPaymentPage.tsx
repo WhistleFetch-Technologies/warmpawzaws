@@ -2964,12 +2964,17 @@ export function UniversalPaymentPage({
 
             {/* Platform Fees */}
             {platformFees.platformFee > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Platform Fee
-                  <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
-                </span>
-                <span>₹{platformFees.platformFee.toFixed(2)}</span>
+              <div className="space-y-1">
+                <div className="flex justify-between text-gray-600">
+                  <span className="flex items-center gap-1">
+                    Platform Fee
+                    <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
+                  </span>
+                  <span>₹{platformFees.platformFee.toFixed(2)}</span>
+                </div>
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+                  Platform fee is not refundable.
+                </p>
               </div>
             )}
 

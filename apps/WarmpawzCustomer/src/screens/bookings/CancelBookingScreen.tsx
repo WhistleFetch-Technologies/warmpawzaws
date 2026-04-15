@@ -36,6 +36,7 @@ interface RefundPreview {
   refundAmount: number;
   deductionAmount: number;
   refundPolicy: string;
+  platformFeeApplies?: boolean;
 }
 
 export function CancelBookingScreen({
@@ -60,52 +61,67 @@ export function CancelBookingScreen({
   const loadBookingAndRefund = async () => {
     try {
       setLoading(true);
-      // Load booking details
       const bookingResponse = await CustomerApi.getBookingDetails(bookingId);
       const bookingDetails = bookingResponse.booking || bookingResponse;
       setBooking(bookingDetails);
 
-      // Calculate refund preview
-      const price = bookingData?.price || bookingData?.amount || bookingDetails?.price || 0;
-      const bookingDate = bookingData?.date || bookingDetails?.date || bookingDetails?.appointmentDate;
-      
-      if (bookingDate) {
-        const bookingDateTime = new Date(bookingDate);
-        const now = new Date();
-        const hoursUntilBooking = (bookingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+      const paidTotal =
+        Number(bookingDetails?.total_amount ?? bookingDetails?.totalAmount ?? bookingData?.price ?? bookingData?.amount ?? 0) || 0;
 
-        let refundAmount = 0;
-        let deductionAmount = 0;
-        let refundPolicy = '';
-
-        if (hoursUntilBooking > 24) {
-          // Full refund if cancelled 24+ hours before
-          refundAmount = price;
-          refundPolicy = 'Full refund as cancellation is 24+ hours before booking';
-        } else if (hoursUntilBooking > 12) {
-          // 50% refund if cancelled 12-24 hours before
-          refundAmount = price * 0.5;
-          deductionAmount = price * 0.5;
-          refundPolicy = '50% refund as cancellation is 12-24 hours before booking';
-        } else {
-          // No refund if cancelled less than 12 hours before
-          refundAmount = 0;
-          deductionAmount = price;
-          refundPolicy = 'No refund as cancellation is less than 12 hours before booking';
-        }
+      try {
+        const calc = (await CustomerApi.calculateBookingRefund(bookingId)) as any;
+        const refundBlock = calc?.refund ?? calc?.data?.refund;
+        const refundAmount = Number(refundBlock?.refundAmount ?? refundBlock?.totalRefund ?? 0) || 0;
+        const refundPct = Number(refundBlock?.refundPercentage ?? 0) || 0;
+        const platformFeeApplies =
+          refundBlock?.platformFeeApplies === true ||
+          (typeof refundBlock?.platformFeeNonRefundable === 'number' && refundBlock.platformFeeNonRefundable > 0);
+        const src = (refundBlock?.refundSource || refundBlock?.source || '') as string;
+        const refundPolicy =
+          refundAmount > 0
+            ? `Estimated ${refundPct}% refund per policy${src ? ` (${String(src).replace(/_/g, ' ')})` : ''}.`
+            : 'No refund under current policy for this booking.';
 
         setRefundPreview({
           refundAmount,
-          deductionAmount,
+          deductionAmount: Math.max(0, paidTotal - refundAmount),
           refundPolicy,
+          platformFeeApplies,
         });
-      } else {
-        // Default: no refund
-        setRefundPreview({
-          refundAmount: 0,
-          deductionAmount: price,
-          refundPolicy: 'Refund policy not available',
-        });
+      } catch {
+        const price =
+          paidTotal ||
+          Number(bookingData?.price || bookingData?.amount || bookingDetails?.price || 0) ||
+          0;
+        const bookingDate = bookingData?.date || bookingDetails?.date || bookingDetails?.appointmentDate;
+        if (bookingDate && price > 0) {
+          const bookingDateTime = new Date(bookingDate);
+          const now = new Date();
+          const hoursUntilBooking = (bookingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+          let refundAmount = 0;
+          let deductionAmount = 0;
+          let refundPolicy = '';
+          if (hoursUntilBooking > 24) {
+            refundAmount = price;
+            refundPolicy = 'Full refund as cancellation is 24+ hours before booking';
+          } else if (hoursUntilBooking > 12) {
+            refundAmount = price * 0.5;
+            deductionAmount = price * 0.5;
+            refundPolicy = '50% refund as cancellation is 12-24 hours before booking';
+          } else {
+            refundAmount = 0;
+            deductionAmount = price;
+            refundPolicy = 'No refund as cancellation is less than 12 hours before booking';
+          }
+          setRefundPreview({ refundAmount, deductionAmount, refundPolicy, platformFeeApplies: false });
+        } else {
+          setRefundPreview({
+            refundAmount: 0,
+            deductionAmount: price,
+            refundPolicy: 'Refund policy not available',
+            platformFeeApplies: false,
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading booking:', error);
@@ -258,6 +274,9 @@ export function CancelBookingScreen({
               <Text style={styles.deductionText}>
                 Cancellation charges: ₹{refundPreview.deductionAmount}
               </Text>
+            )}
+            {refundPreview.platformFeeApplies && (
+              <Text style={styles.platformFeeNote}>Platform fee is not refundable.</Text>
             )}
           </View>
         )}
@@ -427,6 +446,17 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  platformFeeNote: {
+    fontSize: typography.caption,
+    color: '#92400E',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: borderRadius.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.sm,
   },
   reasonCard: {
     backgroundColor: '#F9FAFB',

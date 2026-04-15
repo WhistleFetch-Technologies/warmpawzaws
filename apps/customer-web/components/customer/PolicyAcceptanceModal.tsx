@@ -258,7 +258,6 @@ export function PolicyAcceptanceModal({
             <Shield className="w-5 h-5 text-[#FF8C42]" />
             <div>
               <h2 className="text-lg font-bold text-gray-900">Booking Policies</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Service bookings: refund, cancellation, reschedule, and no-show from one platform policy (not product or e-commerce orders).</p>
             </div>
           </div>
           <button

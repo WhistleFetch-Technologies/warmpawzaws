@@ -36,6 +36,7 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -2489,6 +2490,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         discount_amount: booking.discount_amount,
       });
 
+      const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
       return this.success({
         refund: {
           eligible: preview.refundPercentage > 0 || preview.refundAmount > 0,
@@ -2498,6 +2500,8 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           source: preview.source,
           policyApplied: preview.policyApplied,
           refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
+          platformFeeNonRefundable,
+          platformFeeApplies: platformFeeNonRefundable > 0,
           message: preview.refundAmount > 0
             ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
             : 'No refund available for this booking',
@@ -2626,27 +2630,13 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           if (refundAmount > 0) {
             if (refundMethod === 'wallet' && currentBooking.customer_id) {
               try {
-                await query(
-                  `INSERT INTO wallet_transactions (
-                      customer_id,
-                      type,
-                      amount,
-                      description,
-                      reference_type,
-                      reference_id,
-                      status
-                    ) VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                  [
-                    currentBooking.customer_id,
-                    refundAmount,
-                    `Refund for cancelled booking (${refundPercentage}%)`,
-                    bookingId,
-                  ]
-                );
-                await query(
-                  `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
-                  [refundAmount, currentBooking.customer_id]
-                );
+                await creditCustomerWalletForBookingRefund({
+                  customerId: currentBooking.customer_id,
+                  bookingId,
+                  refundAmount,
+                  refundPercentage,
+                  label: 'booking',
+                });
                 refundInfo = {
                   amount: refundAmount,
                   percentage: refundPercentage,
@@ -3343,6 +3333,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       const refundAmount = Math.round(preview.refundAmount * 100) / 100;
       const hoursUntilBooking = preview.hoursUntilBooking ?? 0;
       const refundableBase = Math.round(preview.refundableCustomerPaidBase * 100) / 100;
+      const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
 
       return c.json({
         success: true,
@@ -3356,6 +3347,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
           hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
           policyApplied: preview.policyApplied,
           refundableCustomerPaidBase: refundableBase,
+          platformFeeNonRefundable,
+          platformFeeApplies: platformFeeNonRefundable > 0,
           refundSource: preview.source,
         },
         booking: {

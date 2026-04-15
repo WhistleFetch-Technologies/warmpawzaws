@@ -112,7 +112,13 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
   const [cancellationReason, setCancellationReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [processing, setProcessing] = useState(false);
-  const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number; source?: string; policyApplied?: boolean } | null>(null);
+  const [estimatedRefund, setEstimatedRefund] = useState<{
+    percentage: number;
+    amount: number;
+    source?: string;
+    policyApplied?: boolean;
+    platformFeeApplies?: boolean;
+  } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
 
@@ -349,6 +355,9 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
           amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
           source: refund.source,
           policyApplied: refund.policyApplied,
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
         });
       } else {
         setEstimatedRefund({ percentage: 0, amount: 0, source: 'default', policyApplied: false });
@@ -913,6 +922,11 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
                   <p className="text-xs text-blue-600 mt-1">
                     Source: {(estimatedRefund.source || '').replace(/_/g, ' ')}
                     {!estimatedRefund.policyApplied && ' (no policy configured)'}
+                  </p>
+                )}
+                {estimatedRefund.platformFeeApplies && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
                   </p>
                 )}
                 <p className="text-lg font-bold text-blue-800 mt-1">

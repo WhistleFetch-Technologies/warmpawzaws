@@ -49,6 +49,9 @@ export function CancelBookingModal({
           cancellationFee: refund.cancellationFee || 0,
           message: refund.message || 'No refund available for this booking',
           policy: refund.policy || {},
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
         });
       } else {
         setRefundInfo({
@@ -151,6 +154,12 @@ export function CancelBookingModal({
                       -₹{refundInfo.cancellationFee.toFixed(2)}
                     </span>
                   </div>
+                )}
+
+                {refundInfo.platformFeeApplies && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
+                  </p>
                 )}
 
                 <div className="flex items-start gap-2 mt-3 text-xs text-gray-600">

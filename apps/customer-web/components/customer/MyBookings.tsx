@@ -104,7 +104,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const [cancellationReason, setCancellationReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [processing, setProcessing] = useState(false);
-  const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number } | null>(null);
+  const [estimatedRefund, setEstimatedRefund] = useState<{
+    percentage: number;
+    amount: number;
+    platformFeeApplies?: boolean;
+  } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
   
@@ -311,6 +315,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         setEstimatedRefund({
           percentage: refund.refundPercentage,
           amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
         });
       } else {
         setEstimatedRefund({ percentage: 0, amount: 0 });
@@ -835,6 +842,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                   Based on our refund policy, you will receive{' '}
                   <span className="font-semibold">{estimatedRefund.percentage}%</span> refund.
                 </p>
+                {estimatedRefund.platformFeeApplies && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
+                  </p>
+                )}
                 <p className="text-lg font-bold text-blue-800 mt-1">
                   Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
                 </p>
