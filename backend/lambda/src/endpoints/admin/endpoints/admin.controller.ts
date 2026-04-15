@@ -56,8 +56,11 @@ class VendorStatsHandler extends BaseHandler {
 
       const vendors = vendorsResult.rows || [];
 
-      // ✅ FIX: Normalize is_active to handle boolean, string ('t'/'f'), and number (1/0) types
+      // Align with ListVendorsHandler and active-vendor SQL: COALESCE(is_active, true) — NULL means operational.
       const normalizeIsActive = (value: any): boolean => {
+        if (value === null || value === undefined) {
+          return true;
+        }
         if (value === true || value === 1 || value === '1' || value === 't' || value === 'true') {
           return true;
         }
@@ -93,6 +96,63 @@ class VendorStatsHandler extends BaseHandler {
         pendingApplicationsCount = fallbackPending.length;
       }
 
+      // Same re-approval queue as GET /admin/vendors/pending-applications-fixed (not in vendor_onboarding_applications)
+      try {
+        const reapprovalResult = await query(`
+          SELECT COUNT(*)::text as total,
+            SUM(
+              CASE WHEN DATE(v.updated_at) = CURRENT_DATE THEN 1 ELSE 0 END
+            )::text as today_count
+          FROM vendors v
+          WHERE v.status = 'pending'
+            AND (
+              (v.metadata->>'wasApprovedBefore')::boolean = true
+              OR v.metadata->>'wasApprovedBefore' = 'true'
+            )
+            AND (v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')
+        `);
+        if (reapprovalResult.rows?.[0]) {
+          const r = reapprovalResult.rows[0];
+          pendingApplicationsCount += parseInt(r.total || '0', 10);
+          pendingTodayCount += parseInt(r.today_count || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not add re-approval pending counts for vendor stats:', e);
+      }
+
+      let complianceIssuesCount = 0;
+      let complianceHighPriority = 0;
+      try {
+        const ci = await query(`
+          SELECT COUNT(*)::text AS cnt,
+            COUNT(*) FILTER (WHERE LOWER(COALESCE(severity::text, '')) IN ('high', 'critical'))::text AS high_cnt
+          FROM compliance_issues
+          WHERE resolved_at IS NULL
+        `);
+        if (ci.rows?.[0]) {
+          complianceIssuesCount = parseInt(ci.rows[0].cnt || '0', 10);
+          complianceHighPriority = parseInt(ci.rows[0].high_cnt || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not fetch compliance issue counts:', e);
+      }
+
+      let supportTicketsTotal = 0;
+      let supportTicketsOpen = 0;
+      try {
+        const st = await query(`
+          SELECT COUNT(*)::text AS total_tickets,
+            COUNT(*) FILTER (WHERE status IN ('open', 'in_progress'))::text AS open_tickets
+          FROM support_tickets
+        `);
+        if (st.rows?.[0]) {
+          supportTicketsTotal = parseInt(st.rows[0].total_tickets || '0', 10);
+          supportTicketsOpen = parseInt(st.rows[0].open_tickets || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not fetch support ticket counts:', e);
+      }
+
       const deactivatedVendors = vendors.filter(v => !normalizeIsActive(v.is_active));
       const rejectedVendors = vendors.filter(v => v.status === 'rejected');
 
@@ -105,6 +165,10 @@ class VendorStatsHandler extends BaseHandler {
         }
       });
 
+      const pendingFromVendorsOnly = vendors.filter(
+        v => v.status === 'pending' || v.status === 'pending_approval'
+      ).length;
+
       return this.success({
         activeVendors: {
           count: activeVendors.length,
@@ -115,6 +179,19 @@ class VendorStatsHandler extends BaseHandler {
         pendingApplications: {
           count: pendingApplicationsCount,
           todayCount: pendingTodayCount,
+        },
+        complianceIssues: {
+          count: complianceIssuesCount,
+          highPriority: complianceHighPriority,
+        },
+        supportTickets: {
+          total: supportTicketsTotal,
+          open: supportTicketsOpen,
+        },
+        distribution: {
+          active: activeVendors.length,
+          deactivated: deactivatedVendors.length,
+          pending: pendingFromVendorsOnly,
         },
         deactivatedVendors: {
           count: deactivatedVendors.length,
@@ -633,6 +710,12 @@ export function registerAdminEndpoints(app: Hono) {
       return c.json({ error: authResult.error }, 401);
     }
 
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await statsHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
   // ============================================================================
   // LOYALTY / ACTIONS - Utility endpoint to fetch distinct action names
   // ============================================================================
@@ -665,12 +748,6 @@ export function registerAdminEndpoints(app: Hono) {
       console.error('[Admin] Failed to fetch loyalty action names:', err);
       return c.json({ success: false, error: 'Failed to fetch actions' }, 500);
     }
-  });
-
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await statsHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/admin/vendors/:vendorId/approve', async (c) => {

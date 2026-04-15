@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Search, Bell, MessageSquare, User, Plus, RefreshCw, TrendingUp, 
+  Search, Bell, MessageSquare, User, Plus, RefreshCw, TrendingUp,
   AlertTriangle, Shield, BarChart3, Calendar, IndianRupee, FileText, 
   Send, Download, Check, X, Eye, Phone, Grid3x3, Package, Megaphone, 
   HeadphonesIcon, ClipboardList, Newspaper, PawPrint, Wallet, Users, Settings, MessageCircle, CheckCircle, Globe, ShoppingCart, UserX
@@ -165,10 +165,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
                   <div className="p-3 bg-gradient-to-br from-green-400 to-green-500 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
                     <Users className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-xs font-semibold text-green-700 bg-green-100 px-2.5 py-1 rounded-full flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3" />
-                    +12%
-                  </span>
+                  {typeof stats.activeVendors?.percentage === 'number' && stats.activeVendors.percentage > 0 ? (
+                    <span className="text-xs font-semibold text-green-700 bg-green-100 px-2.5 py-1 rounded-full">
+                      {stats.activeVendors.percentage}% share
+                    </span>
+                  ) : null}
                 </div>
                 <div>
                   <p className="text-gray-600 text-sm font-medium mb-1">Active Vendors</p>

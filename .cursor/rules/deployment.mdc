@@ -19,12 +19,32 @@ alwaysApply: true
 ## Examples
 
 ```bash
-# Deploy backend only
+# Deploy backend only (dev — default function warmpawz-dev-api-handler)
 ./scripts/deploy-lambda-direct.sh
 
-# Deploy admin web only
+# Deploy admin web only (dev)
 ./scripts/deploy-admin-web.sh
 
-# Deploy both backend and admin web
+# Deploy both backend and admin web (dev)
 ./scripts/deploy-lambda-direct.sh && ./scripts/deploy-admin-web.sh
 ```
+
+## Production (ship backend + admin)
+
+Use the same scripts; prod is selected by **environment variable** (Lambda) and **`--prod`** (admin). Admin injects **prod HTTP API**: `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com` (see `scripts/deploy-admin-web.sh`).
+
+```bash
+# 1) Backend → prod Lambda (ap-south-1)
+LAMBDA_FUNCTION_NAME=warmpawz-prod-api-handler ./scripts/deploy-lambda-direct.sh
+
+# 2) Admin web → prod S3 + CloudFront, runtime config → prod API Gateway
+./scripts/deploy-admin-web.sh --prod
+
+# Non-interactive (e.g. CI): skip the "type yes" prompt
+./scripts/deploy-admin-web.sh --prod --yes
+
+# Both in one line
+LAMBDA_FUNCTION_NAME=warmpawz-prod-api-handler ./scripts/deploy-lambda-direct.sh && ./scripts/deploy-admin-web.sh --prod
+```
+
+Alternate admin URL after deploy: `https://admin.warmpawz.com` (same CloudFront origin as `https://dbr09zyoq9akb.cloudfront.net`; see `prodscripts/PRODUCTION_CONFIG.md`).
