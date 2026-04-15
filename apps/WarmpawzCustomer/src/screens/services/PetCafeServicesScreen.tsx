@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
@@ -550,20 +550,20 @@ export function PetCafeServicesScreen({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'cafe_list' && renderCafeList()}
       {currentView === 'cafe_detail' && renderCafeDetail()}
       {currentView === 'reservation' && renderReservation()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

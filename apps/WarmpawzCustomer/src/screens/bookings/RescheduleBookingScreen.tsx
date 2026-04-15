@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ReschedulingApi } from '../../services/api';
 
@@ -141,7 +141,7 @@ export function RescheduleBookingScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack}>
             <Text style={styles.backButton}>← Back</Text>
@@ -151,13 +151,13 @@ export function RescheduleBookingScreen({
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (policy && !policy.canReschedule) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack}>
             <Text style={styles.backButton}>← Back</Text>
@@ -171,12 +171,12 @@ export function RescheduleBookingScreen({
             {policy.reason || 'Rescheduling is not available for this booking'}
           </Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack}>
           <Text style={styles.backButton}>← Back</Text>
@@ -296,7 +296,7 @@ export function RescheduleBookingScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

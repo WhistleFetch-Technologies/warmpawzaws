@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   TextInput,
   FlatList,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -176,9 +176,9 @@ export function ServiceDiscoveryScreen({
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {!selectedCategory ? renderCategoryGrid() : renderVendorList()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

@@ -10,11 +10,11 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   TextInput,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { BookingOTPApi } from '../../services/api';
 
@@ -157,7 +157,7 @@ export function BookingOTPScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -233,7 +233,7 @@ export function BookingOTPScreen({
           )}
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

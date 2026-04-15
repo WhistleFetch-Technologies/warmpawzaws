@@ -5,6 +5,15 @@ import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
+/**
+ * React Native host activity. In-app safe areas use the JS `ScreenShell` component and `SafeAreaProvider`.
+ *
+ * **Razorpay standard checkout:** `RazorpayCheckout.open()` starts the Razorpay SDK Android activity,
+ * which renders its own toolbar (e.g. branded “Warmpawz” bar). That UI is not a React child, so JS
+ * `ScreenShell` does not apply. Overlap with the status bar must be addressed by upgrading
+ * `react-native-razorpay` / `com.razorpay:checkout`, Razorpay release notes, or checkout options
+ * (e.g. hosted / web checkout) — not by RN `SafeAreaView` alone.
+ */
 class MainActivity : ReactActivity() {
 
   /**

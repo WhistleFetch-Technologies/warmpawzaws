@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Modal,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -203,17 +203,17 @@ export function OrderDetailScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!order) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack}>
             <Text style={styles.backButton}>← Back</Text>
@@ -225,12 +225,12 @@ export function OrderDetailScreen({
           <Text style={styles.emptyStateIcon}>📦</Text>
           <Text style={styles.emptyStateText}>Order not found</Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack}>
           <Text style={styles.backButton}>← Back</Text>
@@ -584,7 +584,7 @@ export function OrderDetailScreen({
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

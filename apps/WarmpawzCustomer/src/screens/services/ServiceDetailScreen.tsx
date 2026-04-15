@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -60,17 +60,17 @@ export function ServiceDetailScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!service) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Service not found</Text>
           {onBack && (
@@ -79,12 +79,12 @@ export function ServiceDetailScreen({
             </TouchableOpacity>
           )}
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {onBack && (
           <TouchableOpacity style={styles.headerBack} onPress={onBack}>
@@ -171,7 +171,7 @@ export function ServiceDetailScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

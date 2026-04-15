@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
   Image,
   RefreshControl,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -151,7 +151,7 @@ export function CustomerPetsPageScreen({
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         {onBack && (
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -198,7 +198,7 @@ export function CustomerPetsPageScreen({
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

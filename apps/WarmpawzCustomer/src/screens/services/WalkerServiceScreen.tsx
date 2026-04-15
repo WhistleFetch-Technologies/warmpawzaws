@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -475,18 +475,18 @@ export function WalkerServiceScreen({
 
   if (loading && step === 'select') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {step === 'select' && renderSelectStep()}
       {step === 'walkers' && renderWalkersStep()}
       {step === 'confirm' && renderConfirmStep()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

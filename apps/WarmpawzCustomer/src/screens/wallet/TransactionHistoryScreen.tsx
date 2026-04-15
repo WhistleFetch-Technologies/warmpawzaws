@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { WalletApi } from '../../services/api';
 
@@ -132,16 +132,16 @@ export function TransactionHistoryScreen({
 
   if (loading && transactions.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -195,7 +195,7 @@ export function TransactionHistoryScreen({
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

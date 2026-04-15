@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -674,21 +674,21 @@ export function PharmacyStoreScreen({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'store' && renderStore()}
       {currentView === 'product_detail' && renderProductDetail()}
       {currentView === 'cart' && renderCart()}
       {currentView === 'checkout' && renderCheckout()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

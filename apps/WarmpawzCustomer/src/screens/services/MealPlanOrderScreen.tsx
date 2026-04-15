@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
@@ -348,19 +348,19 @@ export function MealPlanOrderScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading meal plans...</Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   const selectedPlanData = mealPlans.find(p => p.id === selectedPlan);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -574,7 +574,7 @@ export function MealPlanOrderScreen({
           )}
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

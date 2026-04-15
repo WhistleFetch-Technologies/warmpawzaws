@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -761,20 +761,20 @@ export function ShopDashboardScreen({
 
   if (loading && currentView === 'dashboard') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'dashboard' && renderDashboard()}
       {currentView === 'product_detail' && renderProductDetail()}
       {currentView === 'cart' && renderCart()}
       {currentView === 'checkout' && renderCheckout()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

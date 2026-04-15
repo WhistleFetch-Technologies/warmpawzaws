@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { MedicalHistoryApi } from '../../services/api';
 
@@ -92,29 +92,29 @@ export function PrescriptionViewScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!prescription) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Prescription not found</Text>
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -198,7 +198,7 @@ export function PrescriptionViewScreen({
           </TouchableOpacity>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

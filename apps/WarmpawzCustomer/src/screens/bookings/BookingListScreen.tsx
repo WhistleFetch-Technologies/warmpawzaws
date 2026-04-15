@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
@@ -133,7 +133,7 @@ export function BookingListScreen({
   const footerPad = 52 + Math.max(insets.bottom, spacing.sm);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         {onBack && (
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -238,7 +238,7 @@ export function BookingListScreen({
           </TouchableOpacity>
         </View>
       ) : null}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

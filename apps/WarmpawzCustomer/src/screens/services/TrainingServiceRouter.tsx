@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -669,14 +669,14 @@ export function TrainingServiceRouter({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {(currentView === 'training_center' || currentView === 'training_home') && renderVendorList()}
       {currentView === 'center_profile' && renderCenterProfile()}
@@ -684,7 +684,7 @@ export function TrainingServiceRouter({
       {currentView === 'booking_details' && renderBookingDetails()}
       {currentView === 'payment' && renderPayment()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

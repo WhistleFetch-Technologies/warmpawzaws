@@ -10,10 +10,10 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { colors, spacing, borderRadius } from '../../theme/colors';
@@ -199,7 +199,7 @@ export function GPSTrackingScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -297,7 +297,7 @@ export function GPSTrackingScreen({
           </TouchableOpacity>
         )}
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
