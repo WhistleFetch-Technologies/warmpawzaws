@@ -1,5 +1,5 @@
 /**
- * Single source of truth for **service bookings** (not e-commerce orders):
+ * Service **booking** cancellation refund preview (not e-commerce orders).
  * - Refund policy (refund %, fees) → `vendor_refund_tiers`
  * - Cancellation policy (who cancels, time windows / rules) → same rows (`cancelled_by`, `hours_*`, `cancellation_window`, …)
  * - Rescheduling eligibility (per tier) → `policy_extensions.rescheduleAllowed`
@@ -10,7 +10,7 @@
 
 import { query } from '../../database/rds-connection';
 import { sqlRefundTierVendorTypesMatch } from '../refund-tier-vendor-types-match';
-import { getRefundableCustomerPaidBaseAmount, clampRefundToCustomerPaidBase } from './refundable-base';
+import { getRefundableCustomerPaidBreakdown, clampRefundToCustomerPaidBase } from './refundable-base';
 
 export type CancelledBy = 'pet_parent' | 'provider';
 
@@ -218,12 +218,16 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
   source: RefundSource;
   policyApplied: boolean;
   meta?: { tierId?: string; tierName?: string };
-  /** Amount tier % / fees were applied to (net paid, excluding coupon subsidy when known). */
+  /** Amount tier % / fees were applied to (net paid minus non-refundable platform fees; coupon net when no payments). */
   refundableCustomerPaidBase: number;
+  /** Sum of platform_fee on completed payments; not part of refundable base. */
+  platformFeeNonRefundable: number;
   /** Hours from now until scheduled start (for display / calculate-refund). */
   hoursUntilBooking?: number;
 }> {
-  const refundableBase = await getRefundableCustomerPaidBaseAmount(booking.id, booking);
+  const paidBreakdown = await getRefundableCustomerPaidBreakdown(booking.id, booking);
+  const refundableBase = paidBreakdown.refundableBase;
+  const platformFeeNonRefundable = paidBreakdown.platformFeeNonRefundable;
   const total = refundableBase;
   // Compute hours until booking
   let hoursUntilBooking = 0;
@@ -254,6 +258,7 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       policyApplied: true,
       meta: { tierId: tier.tierId, tierName: tier.tierName },
       refundableCustomerPaidBase: refundableBase,
+      platformFeeNonRefundable,
       hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
     };
   }
@@ -295,6 +300,7 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       source: 'booking_cancellation_rules',
       policyApplied: true,
       refundableCustomerPaidBase: refundableBase,
+      platformFeeNonRefundable,
       hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
     };
   }
@@ -309,6 +315,7 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
     source: 'default',
     policyApplied: false,
     refundableCustomerPaidBase: refundableBase,
+    platformFeeNonRefundable,
     hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
   };
 }

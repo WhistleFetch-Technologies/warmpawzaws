@@ -36,7 +36,8 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
   const fetchRefundPreview = async () => {
     try {
       const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.id }) as any;
-      setRefundPreview(result.refund || result);
+      const payload = result?.data ?? result;
+      setRefundPreview(payload?.refund ?? payload);
     } catch (error) {
       console.error('Error fetching refund preview:', error);
       setRefundPreview(null);
@@ -280,6 +281,13 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                 {refundPreview.deductionAmount > 0 && (
                   <p className="text-xs text-gray-600 mt-1">
                     Cancellation charges: ₹{refundPreview.deductionAmount}
+                  </p>
+                )}
+                {(refundPreview.platformFeeApplies === true ||
+                  (typeof refundPreview.platformFeeNonRefundable === 'number' &&
+                    refundPreview.platformFeeNonRefundable > 0)) && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
                   </p>
                 )}
               </div>

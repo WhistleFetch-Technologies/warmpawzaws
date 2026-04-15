@@ -236,6 +236,9 @@ export const CustomerApi = {
     return response.bookings || response;
   },
   getBookingDetails: (bookingId: string) => ApiService.get(`/bookings/${bookingId}`),
+  /** Server-side refund preview (tiers, net paid, non-refundable platform fee). */
+  calculateBookingRefund: (bookingId: string) =>
+    ApiService.post(`/bookings/${bookingId}/calculate-refund`, {}),
   cancelBooking: (bookingId: string, reason?: string) => 
     ApiService.post(`/bookings/${bookingId}/cancel`, { reason }),
   rescheduleBooking: (bookingId: string, newDate: string, newTime: string, reason?: string) =>

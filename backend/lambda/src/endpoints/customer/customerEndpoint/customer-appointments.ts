@@ -18,6 +18,7 @@ import type { Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query } from '../../../database/rds-connection';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -426,16 +427,24 @@ class CancelAppointmentHandler extends BaseHandler {
             ).catch(() => ({ rows: [] }));
             const paymentId = (payments as any).rows?.[0]?.id;
             if (refundMethod === 'wallet') {
-              await query(
-                `INSERT INTO wallet_transactions (customer_id, type, amount, description, reference_type, reference_id, status)
-                 VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                [bookingRow.customer_id, refundAmount, `Refund for cancelled appointment (${refundPercentage}%)`, bookingId]
-              ).catch(() => null);
-              await query(
-                `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
-                [refundAmount, bookingRow.customer_id]
-              ).catch(() => null);
-              refundInfo = { amount: refundAmount, percentage: refundPercentage, method: 'wallet', status: 'completed', message: `₹${refundAmount.toFixed(2)} credited to wallet` };
+              try {
+                await creditCustomerWalletForBookingRefund({
+                  customerId: bookingRow.customer_id,
+                  bookingId,
+                  refundAmount,
+                  refundPercentage,
+                  label: 'appointment',
+                });
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'completed',
+                  message: `₹${refundAmount.toFixed(2)} credited to wallet`,
+                };
+              } catch (e) {
+                console.error('[appointments] wallet credit failed:', e);
+              }
             } else if (paymentId) {
               await query(
                 `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
