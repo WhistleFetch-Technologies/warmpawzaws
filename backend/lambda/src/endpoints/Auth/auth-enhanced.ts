@@ -35,12 +35,16 @@ import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../u
 import { generateUATJWTToken } from '../../utils/jwt-generator';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
 import { processReferralSignup, processVendorReferralForCustomerSignup } from 'src/lib/services/referral-service';
+import {
+  buildLoginOtpSmsBody,
+  JIO_DLT_ENTITY_ID,
+  JIO_LOGIN_OTP_SENDER_ID,
+  JIO_LOGIN_OTP_TEMPLATE_ID,
+} from '../../constants/jio-login-otp-sms';
 
 // ============================================================================
 // OTP HELPERS
 // ============================================================================
-
-const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
 
 /**
  * Normalize phone to canonical form for OTP storage/lookup.
@@ -165,10 +169,13 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
     message,
     type: 'otp',
     templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
-    senderId: 'WARMPZ',
+    entityId: JIO_DLT_ENTITY_ID,
+    senderId: JIO_LOGIN_OTP_SENDER_ID,
   });
   if (!result.success) {
     console.error('[SMS] SNS send failed');
+  } else if (result.messageId) {
+    console.log(`[AUTH] SNS MessageId=${result.messageId} (OTP SMS)`);
   }
   return result.success === true;
 }
@@ -223,6 +230,15 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         await Promise.race([createOtpPromise, otpTimeoutPromise]);
         const otpStoreDuration = Date.now() - otpStoreStartTime;
         console.log(`[AUTH] OTP stored in ${otpStoreDuration}ms`);
+        // DEBUG: plaintext OTP in CloudWatch — remove or set LOG_OTP_PLAINTEXT=false after SMS/Jio delivery is fixed
+        if (process.env.LOG_OTP_PLAINTEXT !== 'false') {
+          console.log('[AUTH][send-otp][OTP-PLAINTEXT-DEBUG]', {
+            requestId: context.requestId,
+            normalizedPhone,
+            otp: otpCode,
+            smsWillRun: !isUATMode,
+          });
+        }
       } catch (dbError: any) {
         const otpStoreDuration = Date.now() - otpStoreStartTime;
         console.error(`[AUTH] Database error creating OTP after ${otpStoreDuration}ms:`, dbError?.message || dbError);
@@ -235,18 +251,37 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Only skip SMS when UAT_MODE is explicitly 'true'. Use Jio-approved Login OTP template.
       if (!isUATMode) {
-        const message = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
+        const message = buildLoginOtpSmsBody(otpCode);
         console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
+        const SMS_RACE_MS = Math.min(
+          30000,
+          Math.max(5000, parseInt(process.env.SMS_SEND_TIMEOUT_MS || '15000', 10) || 15000)
+        );
         const smsResult = await Promise.race([
           sendSmsViaSns(normalizedPhone, message),
-          new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('SMS send timeout 2.5s')), 2500)),
+          new Promise<boolean>((_, reject) =>
+            setTimeout(() => reject(new Error(`SMS send timeout ${SMS_RACE_MS}ms`)), SMS_RACE_MS)
+          ),
         ]).catch((err: any) => {
           console.warn('[AUTH] SMS send failed:', err?.message || err);
           if (err?.Code) console.warn('[AUTH] SNS Code:', err.Code);
           return false;
         });
         if (smsResult) {
-          console.log('[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)');
+          console.log('[AUTH] SMS accepted by SNS (delivery depends on carrier / DLT)');
+          console.log('[AUTH][send-otp][SMS-DEBUG]', {
+            requestId: context.requestId,
+            normalizedPhone,
+            snsPublishSucceeded: true,
+            smsBodyPreview: `${message.slice(0, 45)}...`,
+          });
+        } else {
+          console.warn('[AUTH] SMS was not accepted by SNS; user may not receive OTP');
+          console.warn('[AUTH][send-otp][SMS-DEBUG]', {
+            requestId: context.requestId,
+            normalizedPhone,
+            snsPublishSucceeded: false,
+          });
         }
       } else {
         console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);

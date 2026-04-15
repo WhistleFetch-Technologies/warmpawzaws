@@ -18,6 +18,12 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
+import {
+  buildLoginOtpSmsBody,
+  JIO_DLT_ENTITY_ID,
+  JIO_LOGIN_OTP_SENDER_ID,
+  JIO_LOGIN_OTP_TEMPLATE_ID,
+} from '../constants/jio-login-otp-sms';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -1564,12 +1570,14 @@ export function registerStaffEndpoints(app: Hono) {
 
       // Send OTP via SNS (Jio DLT Login OTP template)
       if (!UAT_MODE) {
-        const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+        const message = buildLoginOtpSmsBody(otp);
         sendSMS({
           to: staff.phone,
           message,
           type: 'otp',
-          templateId: '1207177028377787269',
+          templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+          entityId: JIO_DLT_ENTITY_ID,
+          senderId: JIO_LOGIN_OTP_SENDER_ID,
         }).catch((e) => console.error('[STAFF] SNS send failed, OTP logged only:', e));
       }
 
@@ -2350,12 +2358,14 @@ export function registerStaffEndpoints(app: Hono) {
 
         // Send OTP via SNS (Jio DLT Login OTP template)
         if (!UAT_MODE) {
-          const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+          const message = buildLoginOtpSmsBody(otp);
           sendSMS({
             to: providerData.phone,
             message,
             type: 'otp',
-            templateId: '1207177028377787269',
+            templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+            entityId: JIO_DLT_ENTITY_ID,
+            senderId: JIO_LOGIN_OTP_SENDER_ID,
           }).catch((e) => console.error('[INDIVIDUAL_PROVIDER] Failed to send OTP:', e));
         }
 
@@ -2832,14 +2842,15 @@ export function registerStaffEndpoints(app: Hono) {
       });
 
       // Send OTP via SNS (same Jio DLT template as customer login)
-      const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
       if (!UAT_MODE) {
-        const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+        const message = buildLoginOtpSmsBody(otp);
         sendSMS({
           to: normalizedPhone,
           message,
           type: 'otp',
           templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+          entityId: JIO_DLT_ENTITY_ID,
+          senderId: JIO_LOGIN_OTP_SENDER_ID,
         }).then((r) => {
           if (!r.success) console.error('[STAFF LOGIN] SMS send failed');
         }).catch((e) => console.error('[STAFF LOGIN] SMS send error:', e));
