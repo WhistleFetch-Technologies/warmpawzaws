@@ -9,6 +9,8 @@
  */
 
 import { query } from '../../database/rds-connection';
+import { sqlRefundTierVendorTypesMatch } from '../refund-tier-vendor-types-match';
+import { getRefundableCustomerPaidBaseAmount } from './refundable-base';
 
 export type CancelledBy = 'pet_parent' | 'provider';
 
@@ -30,6 +32,8 @@ export interface BookingForPolicy {
   booking_date: string;
   booking_time: string;
   total_amount: number | string;
+  /** When set (or loaded from DB), used with total_amount if no completed payments sum exists. */
+  discount_amount?: number | string | null;
 }
 
 /**
@@ -56,11 +60,12 @@ export async function getRefundTierForCancellation(
 ): Promise<RefundTierResult | null> {
   const serviceLocation = serviceTypeToLocation(booking.service_type);
 
-  // Resolve vendor role name for vendor_types matching
+  // Resolve vendor role (canonical name + id) for vendor_types[] matching (admin stores name and/or UUID slug).
   let vendorRoleName: string | null = null;
+  let vendorRoleId: string | null = null;
   if (booking.vendor_id) {
     const vendorRoleResult = await query(
-      `SELECT r.name AS role_name
+      `SELECT r.id::text AS role_id, r.name AS role_name
        FROM vendors v
        JOIN roles r ON r.id = v.role_id
        WHERE v.id = $1 AND r.is_active = true
@@ -68,7 +73,8 @@ export async function getRefundTierForCancellation(
       [booking.vendor_id]
     ).catch(() => ({ rows: [] }));
     const rows = Array.isArray(vendorRoleResult) ? vendorRoleResult : (vendorRoleResult as any).rows || [];
-    vendorRoleName = rows[0]?.role_name ?? null;
+    vendorRoleName = rows[0]?.role_name != null ? String(rows[0].role_name).trim() || null : null;
+    vendorRoleId = rows[0]?.role_id != null ? String(rows[0].role_id).trim() || null : null;
   }
 
   const cancelledByParam = cancelledBy === 'pet_parent' ? 'pet_parent' : 'provider';
@@ -76,6 +82,7 @@ export async function getRefundTierForCancellation(
   if (cancelledBy === 'provider') {
     // Vendor cancels: full refund or reschedule; match by vendor_cancellation_reason if provided
     const vendorReason = options?.vendorCancellationReason ? String(options.vendorCancellationReason).toLowerCase() : null;
+    const vendorMatchProv = sqlRefundTierVendorTypesMatch(3, 4);
     const tiersResult = await query(
       `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
        FROM vendor_refund_tiers
@@ -87,13 +94,10 @@ export async function getRefundTierForCancellation(
            OR service_location = $2
            OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
          )
-         AND (
-           COALESCE(array_length(vendor_types, 1), 0) = 0
-           OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
-         )
+         AND ${vendorMatchProv}
        ORDER BY vendor_cancellation_reason DESC NULLS LAST
        LIMIT 1`,
-      [vendorReason, serviceLocation, vendorRoleName || null]
+      [vendorReason, serviceLocation, vendorRoleName || null, vendorRoleId || null]
     ).catch(() => ({ rows: [] }));
     const rows = Array.isArray(tiersResult) ? tiersResult : (tiersResult as any).rows || [];
     const tier = rows[0];
@@ -130,6 +134,7 @@ export async function getRefundTierForCancellation(
   }
 
   const h = Math.max(0, computedHours);
+  const vendorMatchPet = sqlRefundTierVendorTypesMatch(3, 4);
   const tiersResult = await query(
     `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
      FROM vendor_refund_tiers
@@ -150,13 +155,10 @@ export async function getRefundTierForCancellation(
          OR service_location = $2
          OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
        )
-       AND (
-         COALESCE(array_length(vendor_types, 1), 0) = 0
-         OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
-       )
+       AND ${vendorMatchPet}
      ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST
      LIMIT 1`,
-    [h, serviceLocation, vendorRoleName || null]
+    [h, serviceLocation, vendorRoleName || null, vendorRoleId || null]
   ).catch(() => ({ rows: [] }));
 
   const rows = Array.isArray(tiersResult) ? tiersResult : (tiersResult as any).rows || [];
@@ -216,8 +218,11 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
   source: RefundSource;
   policyApplied: boolean;
   meta?: { tierId?: string; tierName?: string };
+  /** Amount tier % / fees were applied to (net paid, excluding coupon subsidy when known). */
+  refundableCustomerPaidBase: number;
 }> {
-  const total = parseFloat(String(booking.total_amount || 0));
+  const refundableBase = await getRefundableCustomerPaidBaseAmount(booking.id, booking);
+  const total = refundableBase;
   // Compute hours until booking
   let hoursUntilBooking = 0;
   if (booking.booking_datetime) {
@@ -245,6 +250,7 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       source: 'vendor_refund_tiers',
       policyApplied: true,
       meta: { tierId: tier.tierId, tierName: tier.tierName },
+      refundableCustomerPaidBase: refundableBase,
     };
   }
 
@@ -283,6 +289,7 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       cancellationFee: Math.round(fee * 100) / 100,
       source: 'booking_cancellation_rules',
       policyApplied: true,
+      refundableCustomerPaidBase: refundableBase,
     };
   }
 
@@ -294,5 +301,6 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
     cancellationFee: 0,
     source: 'default',
     policyApplied: false,
+    refundableCustomerPaidBase: refundableBase,
   };
 }

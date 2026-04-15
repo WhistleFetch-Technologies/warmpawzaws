@@ -56,7 +56,16 @@ type ServiceLocationValue = 'at_home' | 'at_center' | 'tele' | 'all';
 /** Stored in vendor_refund_tiers.policy_extensions (single source for cancellation + refund UX). */
 export interface PolicyExtensions {
   rescheduleAllowed?: boolean;
-  noShowPolicy?: { enabled?: boolean; refundPercentage?: number; penaltyAmount?: number };
+  /** Hours before booking when reschedule is still allowed (customer display + ops). */
+  rescheduleCutoffHours?: number;
+  /** Max reschedule count per booking (customer display + ops). */
+  maxReschedulesPerBooking?: number;
+  noShowPolicy?: {
+    enabled?: boolean;
+    refundPercentage?: number;
+    penaltyAmount?: number;
+    gracePeriodMinutes?: number;
+  };
   providerPolicy?: { penaltyPercentage?: number; compensationPercentage?: number };
 }
 
@@ -158,13 +167,26 @@ interface RefundTier {
   policyExtensions?: PolicyExtensions;
 }
 
-/** Map DB service_location to frontend: home->at_home, clinic->at_center, tele->tele, both|all->all */
+/**
+ * Map stored/API service_location to UI select values.
+ * Accepts DB tokens (home, clinic, …) and UI tokens (at_home, …) so normalizeTier stays correct when
+ * re-run on an already-normalized tier (e.g. Edit passes camelCase serviceLocation from state).
+ */
 const serviceLocationFromDb = (v: string): ServiceLocationValue => {
-  if (v === 'home') return 'at_home';
-  if (v === 'clinic') return 'at_center';
-  if (v === 'tele') return 'tele';
-  return 'all'; // both (legacy) or all
+  const s = String(v).trim().toLowerCase();
+  if (s === 'home' || s === 'at_home') return 'at_home';
+  if (s === 'clinic' || s === 'at_center') return 'at_center';
+  if (s === 'tele') return 'tele';
+  if (s === 'all' || s === 'both' || s === '') return 'all';
+  return 'all';
 };
+
+/** Normalize tier.vendor_types[] tokens for checkbox ids (underscore codes); preserve UUIDs. */
+function normalizeVendorTypeToken(t: string): string {
+  const s = String(t).trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return s.toLowerCase();
+  return s.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+}
 
 const CUSTOMER_WINDOW_VALUES: CustomerCancellationWindow[] = [
   '24_plus', '12_24', 'under_12_no_show', '12_plus', '6_plus', '6_12', 'under_6_no_show',
@@ -208,7 +230,7 @@ function normalizeTier(row: any): RefundTier {
   return {
     id: row.id ?? '',
     name: row.name ?? row.policy_name ?? '',
-    vendorTypes: arr(row.vendor_types ?? row.vendorTypes),
+    vendorTypes: arr(row.vendor_types ?? row.vendorTypes).map((t: unknown) => normalizeVendorTypeToken(String(t))),
     serviceLocation: serviceLocationFromDb(String(rawLoc)),
     cancelledBy,
     cancellationWindow,
@@ -254,22 +276,40 @@ export function RefundPoliciesSection() {
       veterinarian: '⚕️', grooming: '✂️', trainer: '🎓', walker: '🐕', nutritionist: '🥗',
       resorts: '🏖️', adoption: '❤️', breeder: '🐾', pet_cafe: '☕', tele: '📹',
     };
+    /** Stored in vendor_types[] and matched to vendors.role_id → roles.name (or id). Underscores align with DB role codes. */
+    const vendorTypeIdFromRole = (r: any): string => {
+      const code = (r.name ?? r.roleCode ?? r.code ?? '').toString().trim();
+      if (code) return code.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+      return String(r.id ?? r.roleId ?? '')
+        .trim()
+        .toLowerCase();
+    };
     const mapRolesToOptions = (roles: any[]): { id: string; name: string; icon: string }[] => {
       const options = roles
         .filter((r: any) => r.is_active !== false)
-        .map((r: any) => ({
-          id: (r.code ?? r.id ?? r.name ?? '').toString().toLowerCase().replace(/\s+/g, '-'),
-          name: r.display_name ?? r.name ?? r.code ?? '',
-          icon: roleToIcon[(r.code ?? r.name ?? '').toString().toLowerCase()] ?? '📌',
-        }))
+        .map((r: any) => {
+          const id = vendorTypeIdFromRole(r);
+          const primary = (r.display_name ?? r.roleName ?? r.name ?? id).toString();
+          const cat = r.category ? String(r.category).trim() : '';
+          const name = cat ? `${primary} (${cat})` : primary;
+          return {
+            id,
+            name,
+            icon: roleToIcon[(r.name ?? r.code ?? '').toString().toLowerCase()] ?? '📌',
+          };
+        })
         .filter((o: { id: string }) => o.id)
         .filter((o: { id: string }) => o.id !== 'tele' && o.id !== 'video_consultation') // Tele is in Service Location, not vendor types
         .filter((o: { id: string }) => !isEcommerceVendorTypeId(o.id));
       return options;
     };
     try {
-      let data = await apiClient.get<any>('/config/roles').catch(() => null);
+      let data = await apiClient.get<any>('/config/roles?role_type=vendor').catch(() => null);
       let roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      if (!Array.isArray(roles) || roles.length === 0) {
+        data = await apiClient.get<any>('/config/roles').catch(() => null);
+        roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      }
       if (!Array.isArray(roles) || roles.length === 0) {
         data = await apiClient.get<any>('/admin/roles').catch(() => null);
         roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
@@ -379,10 +419,25 @@ export function RefundPoliciesSection() {
       editingTier.cancelledBy === 'pet_parent'
         ? {
             rescheduleAllowed: pe.rescheduleAllowed === true,
+            ...(pe.rescheduleAllowed === true && Number.isFinite(Number(pe.rescheduleCutoffHours)) && Number(pe.rescheduleCutoffHours) > 0
+              ? { rescheduleCutoffHours: Math.min(168, Math.max(1, Math.floor(Number(pe.rescheduleCutoffHours)))) }
+              : {}),
+            ...(pe.rescheduleAllowed === true &&
+            Number.isFinite(Number(pe.maxReschedulesPerBooking)) &&
+            Number(pe.maxReschedulesPerBooking) >= 0
+              ? { maxReschedulesPerBooking: Math.min(20, Math.max(0, Math.floor(Number(pe.maxReschedulesPerBooking)))) }
+              : {}),
             noShowPolicy: {
               enabled: pe.noShowPolicy?.enabled === true,
               refundPercentage: Math.min(100, Math.max(0, Number(pe.noShowPolicy?.refundPercentage ?? 0))),
               penaltyAmount: Math.max(0, Number(pe.noShowPolicy?.penaltyAmount ?? 0)),
+              ...(pe.noShowPolicy?.enabled === true &&
+              Number.isFinite(Number(pe.noShowPolicy?.gracePeriodMinutes)) &&
+              Number(pe.noShowPolicy?.gracePeriodMinutes) >= 0
+                ? {
+                    gracePeriodMinutes: Math.min(1440, Math.max(0, Math.floor(Number(pe.noShowPolicy?.gracePeriodMinutes)))),
+                  }
+                : {}),
             },
           }
         : {
@@ -392,8 +447,13 @@ export function RefundPoliciesSection() {
             },
           };
 
+    const vendorTypesNormalized = [
+      ...new Set(editingTier.vendorTypes.map((t) => normalizeVendorTypeToken(t))),
+    ].filter(Boolean);
+
     const payload = {
       ...editingTier,
+      vendorTypes: vendorTypesNormalized,
       policyExtensions,
       maxPartialRefundPercentage: null, // Removed: use Refund % for partial (e.g. 50%) instead
       hoursBeforeService: editingTier.cancelledBy === 'pet_parent' && !useCustom && editingTier.cancellationWindow
@@ -570,7 +630,12 @@ export function RefundPoliciesSection() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setEditingTier(normalizeTier(tier));
+                      // Tier is already normalizeTier-shaped; shallow copy avoids re-mapping UI values to DB and back (which broke serviceLocation).
+                      setEditingTier({
+                        ...tier,
+                        vendorTypes: [...tier.vendorTypes],
+                        policyExtensions: tier.policyExtensions ? { ...tier.policyExtensions } : undefined,
+                      });
                       setIsCreatingNew(false);
                       setShowModal(true);
                     }}
@@ -818,12 +883,64 @@ export function RefundPoliciesSection() {
                             policyExtensions: {
                               ...editingTier.policyExtensions,
                               rescheduleAllowed: checked === true,
+                              ...(checked !== true
+                                ? { rescheduleCutoffHours: undefined, maxReschedulesPerBooking: undefined }
+                                : {}),
                             },
                           })
                         }
                       />
                       <span className="text-sm text-gray-700">Allow reschedule when this tier applies</span>
                     </div>
+                    {editingTier.policyExtensions?.rescheduleAllowed === true && (
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Latest reschedule (hours before booking)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={168}
+                            placeholder="e.g. 12"
+                            value={editingTier.policyExtensions?.rescheduleCutoffHours ?? ''}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              const v = parseFloat(e.target.value);
+                              setEditingTier({
+                                ...editingTier,
+                                policyExtensions: {
+                                  ...editingTier.policyExtensions,
+                                  rescheduleCutoffHours: Number.isFinite(v) ? v : undefined,
+                                },
+                              });
+                            }}
+                          />
+                          <p className="text-xs text-gray-500">Shown to customers; leave empty to omit from booking policy text.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Max reschedules per booking</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={20}
+                            placeholder="e.g. 2"
+                            value={
+                              editingTier.policyExtensions?.maxReschedulesPerBooking === undefined
+                                ? ''
+                                : String(editingTier.policyExtensions.maxReschedulesPerBooking)
+                            }
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              const v = parseFloat(e.target.value);
+                              setEditingTier({
+                                ...editingTier,
+                                policyExtensions: {
+                                  ...editingTier.policyExtensions,
+                                  maxReschedulesPerBooking: Number.isFinite(v) ? Math.floor(v) : undefined,
+                                },
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="border rounded-lg p-4 space-y-3">
@@ -840,6 +957,7 @@ export function RefundPoliciesSection() {
                                 enabled: checked === true,
                                 refundPercentage: editingTier.policyExtensions?.noShowPolicy?.refundPercentage ?? 0,
                                 penaltyAmount: editingTier.policyExtensions?.noShowPolicy?.penaltyAmount ?? 0,
+                                gracePeriodMinutes: editingTier.policyExtensions?.noShowPolicy?.gracePeriodMinutes,
                               },
                             },
                           })
@@ -849,6 +967,35 @@ export function RefundPoliciesSection() {
                     </div>
                     {editingTier.policyExtensions?.noShowPolicy?.enabled && (
                       <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2 col-span-2">
+                          <Label>Grace period after scheduled time (minutes)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={1440}
+                            placeholder="Optional — shown to customers when set"
+                            value={
+                              editingTier.policyExtensions?.noShowPolicy?.gracePeriodMinutes === undefined
+                                ? ''
+                                : String(editingTier.policyExtensions.noShowPolicy.gracePeriodMinutes)
+                            }
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              const v = parseFloat(e.target.value);
+                              setEditingTier({
+                                ...editingTier,
+                                policyExtensions: {
+                                  ...editingTier.policyExtensions,
+                                  noShowPolicy: {
+                                    enabled: true,
+                                    refundPercentage: editingTier.policyExtensions?.noShowPolicy?.refundPercentage ?? 0,
+                                    penaltyAmount: editingTier.policyExtensions?.noShowPolicy?.penaltyAmount ?? 0,
+                                    gracePeriodMinutes: Number.isFinite(v) ? Math.floor(v) : undefined,
+                                  },
+                                },
+                              });
+                            }}
+                          />
+                        </div>
                         <div className="space-y-2">
                           <Label>No-show refund %</Label>
                           <Input
@@ -866,6 +1013,7 @@ export function RefundPoliciesSection() {
                                     enabled: true,
                                     refundPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0,
                                     penaltyAmount: editingTier.policyExtensions?.noShowPolicy?.penaltyAmount ?? 0,
+                                    gracePeriodMinutes: editingTier.policyExtensions?.noShowPolicy?.gracePeriodMinutes,
                                   },
                                 },
                               });
@@ -888,6 +1036,7 @@ export function RefundPoliciesSection() {
                                     enabled: true,
                                     refundPercentage: editingTier.policyExtensions?.noShowPolicy?.refundPercentage ?? 0,
                                     penaltyAmount: Number.isFinite(v) ? Math.max(0, v) : 0,
+                                    gracePeriodMinutes: editingTier.policyExtensions?.noShowPolicy?.gracePeriodMinutes,
                                   },
                                 },
                               });

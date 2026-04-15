@@ -36,6 +36,7 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { getRefundTierForCancellation, computeRefundFromTier } from '../lib/services/cancellation-policy-service';
+import { getRefundableCustomerPaidBaseAmount } from '../lib/services/refundable-base';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -1059,6 +1060,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
+        }
+
+        const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
+        const couponCodeRaw = body.couponCode ?? body.coupon_code;
+        const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
+        if (Number.isFinite(couponDisc) && couponDisc > 0) {
+          bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
+        }
+        if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
+          bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
@@ -2230,6 +2241,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       const booking = bookings[0];
+      const refundableBase = await getRefundableCustomerPaidBaseAmount(bookingId, booking);
 
       // Calculate hours until booking
       let hoursUntilBooking = 0;
@@ -2319,11 +2331,11 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         } else {
           refundPercentage = 0;
           // Apply default 10% cancellation fee when no admin config exists
-          cancellationFee = parseFloat(booking.total_amount || '0') * 0.1;
+          cancellationFee = refundableBase * 0.1;
         }
       }
 
-      const totalAmount = parseFloat(booking.total_amount || '0');
+      const totalAmount = refundableBase;
       
       // Calculate penalty amount if penalty percentage is configured
       const penaltyAmount = penaltyPercentage > 0 ? (totalAmount * penaltyPercentage) / 100 : 0;
@@ -2351,6 +2363,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
             cancellationCutoffHours: cutoffHours,
             configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null,
           },
+          refundableCustomerPaidBase: Math.round(refundableBase * 100) / 100,
         },
       }, requestId);
     } catch (error: unknown) {
@@ -2458,7 +2471,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          const totalAmount = parseFloat(String(currentBooking.total_amount));
+          const refundableBase = await getRefundableCustomerPaidBaseAmount(bookingId, currentBooking);
           const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
           const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
 
@@ -2471,14 +2484,14 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
               service_type: currentBooking.service_type,
               booking_date: currentBooking.booking_date,
               booking_time: currentBooking.booking_time,
-              total_amount: totalAmount,
+              total_amount: refundableBase,
             },
             'pet_parent',
             { hoursUntilBooking }
           );
           const computed = tier
-            ? computeRefundFromTier(totalAmount, tier, 100, 0)
-            : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
+            ? computeRefundFromTier(refundableBase, tier, 100, 0)
+            : { refundAmount: refundableBase, refundPercentage: 100, cancellationFee: 0 };
 
           // Fallback: if no vendor_refund_tiers, use booking_cancellation_rules (legacy refund rules)
           let refundAmount = computed.refundAmount;
@@ -2498,7 +2511,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
               else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
               else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
               else refundPercentage = 0;
-              refundAmount = (totalAmount * refundPercentage) / 100;
+              refundAmount = (refundableBase * refundPercentage) / 100;
             }
           }
           

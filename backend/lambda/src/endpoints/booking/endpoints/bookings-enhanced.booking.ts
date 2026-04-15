@@ -35,7 +35,7 @@ import { validateServiceAvailability } from '../../../utils/service-availability
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { getRefundTierForCancellation, computeRefundFromTier, previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -1246,6 +1246,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
+        }
+
+        const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
+        const couponCodeRaw = body.couponCode ?? body.coupon_code;
+        const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
+        if (Number.isFinite(couponDisc) && couponDisc > 0) {
+          bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
+        }
+        if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
+          bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
@@ -2476,6 +2486,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         booking_date: booking.booking_date,
         booking_time: booking.booking_time,
         total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount,
       });
 
       return this.success({
@@ -2486,6 +2497,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           cancellationFee: Math.round(preview.cancellationFee * 100) / 100,
           source: preview.source,
           policyApplied: preview.policyApplied,
+          refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
           message: preview.refundAmount > 0
             ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
             : 'No refund available for this booking',
@@ -2595,7 +2607,6 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          const totalAmount = parseFloat(String(currentBooking.total_amount || 0));
           const preview = await previewCustomerCancellationRefund({
             id: bookingId,
             vendor_id: currentBooking.vendor_id,
@@ -2605,7 +2616,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
             scheduled_at: currentBooking.scheduled_at || null,
             booking_date: currentBooking.booking_date,
             booking_time: currentBooking.booking_time,
-            total_amount: totalAmount,
+            total_amount: currentBooking.total_amount,
+            discount_amount: currentBooking.discount_amount,
           });
           const refundAmount = preview.refundAmount;
           const refundPercentage = preview.refundPercentage;

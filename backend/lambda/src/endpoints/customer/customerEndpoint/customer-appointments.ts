@@ -18,6 +18,7 @@ import type { Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query } from '../../../database/rds-connection';
 import { getRefundTierForCancellation, computeRefundFromTier } from '../../../lib/services/cancellation-policy-service';
+import { getRefundableCustomerPaidBaseAmount } from '../../../lib/services/refundable-base';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -405,7 +406,7 @@ class CancelAppointmentHandler extends BaseHandler {
       let refundInfo: { amount: number; percentage: number; method: string; status: string; message: string } | null = null;
       if (bookingRow.payment_status === 'paid' && bookingRow.total_amount > 0) {
         try {
-          const totalAmount = parseFloat(String(bookingRow.total_amount));
+          const refundableBase = await getRefundableCustomerPaidBaseAmount(bookingId, bookingRow);
           const bookingDateTime = bookingRow.booking_date && bookingRow.booking_time
             ? new Date(`${bookingRow.booking_date}T${bookingRow.booking_time}`)
             : null;
@@ -420,15 +421,15 @@ class CancelAppointmentHandler extends BaseHandler {
               service_type: bookingRow.service_type,
               booking_date: bookingRow.booking_date,
               booking_time: bookingRow.booking_time,
-              total_amount: totalAmount,
+              total_amount: refundableBase,
             },
             'pet_parent',
             { hoursUntilBooking }
           );
           const computed = tier
-            ? computeRefundFromTier(totalAmount, tier, 100, 0)
-            : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
-          const refundAmount = tier ? computed.refundAmount : Math.max(0, (totalAmount * computed.refundPercentage) / 100 - computed.cancellationFee);
+            ? computeRefundFromTier(refundableBase, tier, 100, 0)
+            : { refundAmount: refundableBase, refundPercentage: 100, cancellationFee: 0 };
+          const refundAmount = tier ? computed.refundAmount : Math.max(0, (refundableBase * computed.refundPercentage) / 100 - computed.cancellationFee);
           if (refundAmount > 0) {
             const payments = await query(
               `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,

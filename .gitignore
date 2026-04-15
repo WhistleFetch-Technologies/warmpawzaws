@@ -137,6 +137,9 @@ archive/
 # Admin config export (may contain secrets; do not commit)
 scripts/admin-config/export/
 
+# Prod migration run audit (timestamps / cluster names)
+scripts/migration-542-prod-runs.log
+
 # =============================================================================
 # SCREENSHOTS & IMAGES IN ROOT
 # =============================================================================
