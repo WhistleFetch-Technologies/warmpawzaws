@@ -224,7 +224,30 @@ function normalizeTier(row: any): RefundTier {
         policyExtensions = undefined;
       }
     } else if (typeof rawExt === 'object') {
-      policyExtensions = rawExt as PolicyExtensions;
+      policyExtensions = { ...(rawExt as PolicyExtensions) };
+      const n = (v: unknown) => {
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string' && v.trim() !== '') {
+          const x = Number(v);
+          if (Number.isFinite(x)) return x;
+        }
+        return undefined;
+      };
+      if (policyExtensions.rescheduleCutoffHours != null) {
+        const rc = n(policyExtensions.rescheduleCutoffHours);
+        if (rc !== undefined) policyExtensions.rescheduleCutoffHours = rc;
+        else delete (policyExtensions as any).rescheduleCutoffHours;
+      }
+      if (policyExtensions.maxReschedulesPerBooking != null) {
+        const mr = n(policyExtensions.maxReschedulesPerBooking);
+        if (mr !== undefined) policyExtensions.maxReschedulesPerBooking = Math.floor(mr);
+        else delete (policyExtensions as any).maxReschedulesPerBooking;
+      }
+      if (policyExtensions.noShowPolicy) {
+        const g = n(policyExtensions.noShowPolicy.gracePeriodMinutes);
+        if (g !== undefined) policyExtensions.noShowPolicy.gracePeriodMinutes = Math.floor(g);
+        else delete (policyExtensions.noShowPolicy as any).gracePeriodMinutes;
+      }
     }
   }
   return {

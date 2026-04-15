@@ -511,6 +511,7 @@ export async function insert(
     'cancellation_windows',      // cancellation_policies
     'vendor_cancellation_penalty',
     'no_show_policy',
+    'policy_extensions', // vendor_refund_tiers — reschedule / no-show JSON
     'setting_value',             // admin_settings
     'attachments',               // support_tickets (URLs / metadata array)
     'documents',                 // insurance_claims, insurance_policies JSONB arrays
@@ -608,6 +609,7 @@ export async function update(
     'cancellation_windows',
     'vendor_cancellation_penalty',
     'no_show_policy',
+    'policy_extensions', // vendor_refund_tiers — reschedule / no-show JSON
     'setting_value',   // admin_settings
     'attachments',     // support_tickets
     'documents',       // insurance_claims, insurance_policies JSONB arrays

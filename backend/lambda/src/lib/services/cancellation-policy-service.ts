@@ -10,7 +10,7 @@
 
 import { query } from '../../database/rds-connection';
 import { sqlRefundTierVendorTypesMatch } from '../refund-tier-vendor-types-match';
-import { getRefundableCustomerPaidBaseAmount } from './refundable-base';
+import { getRefundableCustomerPaidBaseAmount, clampRefundToCustomerPaidBase } from './refundable-base';
 
 export type CancelledBy = 'pet_parent' | 'provider';
 
@@ -220,6 +220,8 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
   meta?: { tierId?: string; tierName?: string };
   /** Amount tier % / fees were applied to (net paid, excluding coupon subsidy when known). */
   refundableCustomerPaidBase: number;
+  /** Hours from now until scheduled start (for display / calculate-refund). */
+  hoursUntilBooking?: number;
 }> {
   const refundableBase = await getRefundableCustomerPaidBaseAmount(booking.id, booking);
   const total = refundableBase;
@@ -243,14 +245,16 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
   const tier = await getRefundTierForCancellation(booking, 'pet_parent', { hoursUntilBooking });
   if (tier) {
     const computed = computeRefundFromTier(total, tier, 100, 0);
+    const refundAmount = clampRefundToCustomerPaidBase(computed.refundAmount, refundableBase);
     return {
-      refundAmount: computed.refundAmount,
+      refundAmount,
       refundPercentage: computed.refundPercentage,
       cancellationFee: computed.cancellationFee,
       source: 'vendor_refund_tiers',
       policyApplied: true,
       meta: { tierId: tier.tierId, tierName: tier.tierName },
       refundableCustomerPaidBase: refundableBase,
+      hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
     };
   }
 
@@ -283,24 +287,28 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
     else pct = 0;
 
     const fee = pct === 0 ? total * 0.1 : 0;
+    const rawRefund = Math.max(0, (total * pct) / 100 - fee);
     return {
-      refundAmount: Math.max(0, (total * pct) / 100 - fee),
+      refundAmount: clampRefundToCustomerPaidBase(rawRefund, refundableBase),
       refundPercentage: pct,
       cancellationFee: Math.round(fee * 100) / 100,
       source: 'booking_cancellation_rules',
       policyApplied: true,
       refundableCustomerPaidBase: refundableBase,
+      hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
     };
   }
 
   // 3) Default: no configured policy
   const pct = hoursUntilBooking < 24 ? 50 : 100;
+  const rawDefault = Math.round(((total * pct) / 100) * 100) / 100;
   return {
-    refundAmount: Math.round(((total * pct) / 100) * 100) / 100,
+    refundAmount: clampRefundToCustomerPaidBase(rawDefault, refundableBase),
     refundPercentage: pct,
     cancellationFee: 0,
     source: 'default',
     policyApplied: false,
     refundableCustomerPaidBase: refundableBase,
+    hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
   };
 }

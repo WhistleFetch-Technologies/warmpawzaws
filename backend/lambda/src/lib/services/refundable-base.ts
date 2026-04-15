@@ -56,3 +56,15 @@ export async function getRefundableCustomerPaidBaseAmount(
 
   return roundMoney(gross);
 }
+
+/**
+ * Refund line must never exceed what the customer actually paid (coupon-adjusted base).
+ * If paid base is unknown (0), returns the proposed refund unchanged.
+ */
+export function clampRefundToCustomerPaidBase(proposedRefund: number, paidBase: number): number {
+  const r = roundMoney(proposedRefund);
+  if (!Number.isFinite(r) || r <= 0) return 0;
+  const b = roundMoney(paidBase);
+  if (!Number.isFinite(b) || b <= 0) return r;
+  return roundMoney(Math.min(r, b));
+}

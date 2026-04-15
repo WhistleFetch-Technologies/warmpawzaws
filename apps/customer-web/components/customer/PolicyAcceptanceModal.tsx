@@ -110,6 +110,15 @@ export function PolicyAcceptanceModal({
         response = await apiClient.get<any>('/admin/settings/refund-policy');
       }
       
+      const asFiniteNumber = (v: unknown): number | undefined => {
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string' && v.trim() !== '') {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return undefined;
+      };
+
       if (response.success && response.policy) {
         const policyData = response.policy;
         const extras = response.policyExtras as
@@ -133,23 +142,20 @@ export function PolicyAcceptanceModal({
           cancellationBands: cancellationBandsFromApi(policyData),
           reschedule: {
             allowed: rescheduleAllowed,
-            cutoffHours:
-              typeof extras?.rescheduleCutoffHours === 'number' && Number.isFinite(extras.rescheduleCutoffHours)
-                ? extras.rescheduleCutoffHours
-                : undefined,
-            maxReschedules:
-              typeof extras?.maxReschedulesPerBooking === 'number' && Number.isFinite(extras.maxReschedulesPerBooking)
-                ? extras.maxReschedulesPerBooking
-                : undefined,
+            cutoffHours: asFiniteNumber(extras?.rescheduleCutoffHours),
+            maxReschedules: (() => {
+              const m = asFiniteNumber(extras?.maxReschedulesPerBooking);
+              return m !== undefined ? Math.floor(m) : undefined;
+            })(),
           },
           noShow: {
             enabled: ns?.enabled === true,
             refundPercentage: Number(ns?.refundPercentage ?? 0),
             penaltyAmount: Number(ns?.penaltyAmount ?? 0),
-            gracePeriodMinutes:
-              typeof ns?.gracePeriodMinutes === 'number' && Number.isFinite(ns.gracePeriodMinutes)
-                ? ns.gracePeriodMinutes
-                : undefined,
+            gracePeriodMinutes: (() => {
+              const g = asFiniteNumber(ns?.gracePeriodMinutes);
+              return g !== undefined ? Math.floor(g) : undefined;
+            })(),
           },
           refund: {
             processingDays: REFUND_PROCESSING_COPY.processingDays,

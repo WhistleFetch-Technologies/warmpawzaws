@@ -17,8 +17,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query } from '../../../database/rds-connection';
-import { getRefundTierForCancellation, computeRefundFromTier } from '../../../lib/services/cancellation-policy-service';
-import { getRefundableCustomerPaidBaseAmount } from '../../../lib/services/refundable-base';
+import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -406,30 +405,20 @@ class CancelAppointmentHandler extends BaseHandler {
       let refundInfo: { amount: number; percentage: number; method: string; status: string; message: string } | null = null;
       if (bookingRow.payment_status === 'paid' && bookingRow.total_amount > 0) {
         try {
-          const refundableBase = await getRefundableCustomerPaidBaseAmount(bookingId, bookingRow);
-          const bookingDateTime = bookingRow.booking_date && bookingRow.booking_time
-            ? new Date(`${bookingRow.booking_date}T${bookingRow.booking_time}`)
-            : null;
-          const hoursUntilBooking = bookingDateTime && !isNaN(bookingDateTime.getTime())
-            ? (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
-            : undefined;
-          const tier = await getRefundTierForCancellation(
-            {
-              id: bookingId,
-              vendor_id: bookingRow.vendor_id,
-              service_id: bookingRow.service_id,
-              service_type: bookingRow.service_type,
-              booking_date: bookingRow.booking_date,
-              booking_time: bookingRow.booking_time,
-              total_amount: refundableBase,
-            },
-            'pet_parent',
-            { hoursUntilBooking }
-          );
-          const computed = tier
-            ? computeRefundFromTier(refundableBase, tier, 100, 0)
-            : { refundAmount: refundableBase, refundPercentage: 100, cancellationFee: 0 };
-          const refundAmount = tier ? computed.refundAmount : Math.max(0, (refundableBase * computed.refundPercentage) / 100 - computed.cancellationFee);
+          const preview = await previewCustomerCancellationRefund({
+            id: bookingId,
+            vendor_id: bookingRow.vendor_id,
+            service_id: bookingRow.service_id,
+            service_type: bookingRow.service_type,
+            booking_datetime: (bookingRow as any).booking_datetime ?? null,
+            scheduled_at: (bookingRow as any).scheduled_at ?? null,
+            booking_date: String(bookingRow.booking_date),
+            booking_time: String(bookingRow.booking_time),
+            total_amount: bookingRow.total_amount,
+            discount_amount: (bookingRow as any).discount_amount ?? null,
+          });
+          const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+          const refundPercentage = preview.refundPercentage;
           if (refundAmount > 0) {
             const payments = await query(
               `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
@@ -440,20 +429,20 @@ class CancelAppointmentHandler extends BaseHandler {
               await query(
                 `INSERT INTO wallet_transactions (customer_id, type, amount, description, reference_type, reference_id, status)
                  VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                [bookingRow.customer_id, refundAmount, `Refund for cancelled appointment (${computed.refundPercentage}%)`, bookingId]
+                [bookingRow.customer_id, refundAmount, `Refund for cancelled appointment (${refundPercentage}%)`, bookingId]
               ).catch(() => null);
               await query(
                 `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
                 [refundAmount, bookingRow.customer_id]
               ).catch(() => null);
-              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: 'wallet', status: 'completed', message: `₹${refundAmount.toFixed(2)} credited to wallet` };
+              refundInfo = { amount: refundAmount, percentage: refundPercentage, method: 'wallet', status: 'completed', message: `₹${refundAmount.toFixed(2)} credited to wallet` };
             } else if (paymentId) {
               await query(
                 `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
                  VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
-                [paymentId, bookingId, bookingRow.customer_id, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${computed.refundPercentage}% refund)`]
+                [paymentId, bookingId, bookingRow.customer_id, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${refundPercentage}% refund)`]
               ).catch(() => null);
-              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
+              refundInfo = { amount: refundAmount, percentage: refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
             }
           }
         } catch (refundErr: any) {

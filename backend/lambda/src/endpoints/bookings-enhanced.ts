@@ -35,8 +35,7 @@ import { validateServiceAvailability } from '../utils/service-availability-valid
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
-import { getRefundTierForCancellation, computeRefundFromTier } from '../lib/services/cancellation-policy-service';
-import { getRefundableCustomerPaidBaseAmount } from '../lib/services/refundable-base';
+import { previewCustomerCancellationRefund } from '../lib/services/cancellation-policy-service';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -2241,20 +2240,33 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       const booking = bookings[0];
-      const refundableBase = await getRefundableCustomerPaidBaseAmount(bookingId, booking);
 
-      // Calculate hours until booking
-      let hoursUntilBooking = 0;
-      if (booking.booking_datetime) {
-        const bookingDateTime = new Date(booking.booking_datetime);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
-      } else if (booking.booking_date && booking.booking_time) {
-        const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
-      }
+      const preview = await previewCustomerCancellationRefund({
+        id: bookingId,
+        vendor_id: booking.vendor_id,
+        service_id: booking.service_id,
+        service_type: booking.service_type,
+        booking_datetime: booking.booking_datetime || null,
+        scheduled_at: booking.scheduled_at || null,
+        booking_date: booking.booking_date,
+        booking_time: booking.booking_time,
+        total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount ?? null,
+      });
 
-      // Get refund rules from database
-      let rule = null;
+      const hoursUntilBooking = preview.hoursUntilBooking ?? 0;
+      const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+      const refundPercentage = preview.refundPercentage;
+      const cancellationFee = Math.round(preview.cancellationFee * 100) / 100;
+
+      // Optional: load legacy rule row for policy metadata in the response (amounts come from preview)
+      let rule: any = null;
+      let cancellationWindows: Array<{
+        hoursBefore: number;
+        refundPercentage: number;
+        cancellationFee: number;
+        penaltyPercentage: number;
+      }> = [];
       try {
         const rulesResult = await query(
           `SELECT * FROM booking_cancellation_rules
@@ -2265,97 +2277,37 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           [booking.vendor_id || null, booking.service_id || null]
         );
         rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
+        if (rule?.cancellation_windows) {
+          try {
+            cancellationWindows =
+              typeof rule.cancellation_windows === 'string'
+                ? JSON.parse(rule.cancellation_windows)
+                : rule.cancellation_windows;
+          } catch (e) {
+            console.warn('[RefundPreview] Error parsing cancellation_windows:', e);
+          }
+        }
       } catch (error: any) {
-        // ✅ FIX: booking_cancellation_rules table may not exist - gracefully skip
-        console.warn('[BOOKING] booking_cancellation_rules table not found or query failed, using default refund rules:', error.message);
+        console.warn('[BOOKING] booking_cancellation_rules lookup failed for preview metadata:', error.message);
       }
       const fullRefundHours = rule?.full_refund_before_hours || 48;
       const partialRefundHours = rule?.partial_refund_before_hours || 24;
       const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
       const cutoffHours = rule?.cancellation_cutoff_hours || 12;
-      
-      // Parse cancellation windows from admin-configured policy (stored as JSONB)
-      let cancellationWindows: Array<{
-        hoursBefore: number;
-        refundPercentage: number;
-        cancellationFee: number;
-        penaltyPercentage: number;
-      }> = [];
-      
-      if (rule?.cancellation_windows) {
-        try {
-          cancellationWindows = typeof rule.cancellation_windows === 'string' 
-            ? JSON.parse(rule.cancellation_windows) 
-            : rule.cancellation_windows;
-        } catch (e) {
-          console.warn('[RefundPreview] Error parsing cancellation_windows:', e);
-        }
-      }
-
-      // Calculate refund percentage and fees using admin-configured windows
-      let refundPercentage = 0;
-      let cancellationFee = 0;
-      let penaltyPercentage = 0;
-      
-      // First, try to find matching window from admin-configured cancellation windows
-      if (cancellationWindows.length > 0) {
-        // Sort windows by hoursBefore descending to find the most applicable window
-        const sortedWindows = [...cancellationWindows].sort((a, b) => b.hoursBefore - a.hoursBefore);
-        
-        for (const window of sortedWindows) {
-          if (hoursUntilBooking >= window.hoursBefore) {
-            refundPercentage = window.refundPercentage;
-            cancellationFee = window.cancellationFee || 0;
-            penaltyPercentage = window.penaltyPercentage || 0;
-            break;
-          }
-        }
-        
-        // If no window matched (booking is too close), use the lowest window or no refund
-        if (refundPercentage === 0 && hoursUntilBooking > 0) {
-          const lowestWindow = sortedWindows[sortedWindows.length - 1];
-          if (lowestWindow && hoursUntilBooking < lowestWindow.hoursBefore) {
-            refundPercentage = 0;
-            cancellationFee = lowestWindow.cancellationFee || 0;
-            penaltyPercentage = lowestWindow.penaltyPercentage || 0;
-          }
-        }
-      } else {
-        // Fallback to legacy rule-based calculation if no cancellation windows configured
-        if (hoursUntilBooking >= fullRefundHours) {
-          refundPercentage = 100;
-        } else if (hoursUntilBooking >= partialRefundHours) {
-          refundPercentage = partialRefundPercentage;
-        } else if (hoursUntilBooking >= cutoffHours) {
-          refundPercentage = partialRefundPercentage;
-        } else {
-          refundPercentage = 0;
-          // Apply default 10% cancellation fee when no admin config exists
-          cancellationFee = refundableBase * 0.1;
-        }
-      }
-
-      const totalAmount = refundableBase;
-      
-      // Calculate penalty amount if penalty percentage is configured
-      const penaltyAmount = penaltyPercentage > 0 ? (totalAmount * penaltyPercentage) / 100 : 0;
-      
-      // Calculate final refund: base refund minus cancellation fee and penalty
-      const baseRefund = (totalAmount * refundPercentage) / 100;
-      const refundAmount = Math.max(0, baseRefund - cancellationFee - penaltyAmount);
 
       return this.success({
         refund: {
           eligible: refundPercentage > 0 || refundAmount > 0,
-          refundAmount: Math.round(refundAmount * 100) / 100,
+          refundAmount,
           refundPercentage: Math.round(refundPercentage),
           hoursUntil: Math.round(hoursUntilBooking),
-          cancellationFee: Math.round(cancellationFee * 100) / 100,
-          penaltyPercentage: Math.round(penaltyPercentage),
-          penaltyAmount: Math.round(penaltyAmount * 100) / 100,
-          message: refundAmount > 0
-            ? `₹${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method${cancellationFee > 0 ? ` (₹${cancellationFee} cancellation fee applied)` : ''}`
-            : 'No refund available for this booking',
+          cancellationFee,
+          penaltyPercentage: 0,
+          penaltyAmount: 0,
+          message:
+            refundAmount > 0
+              ? `₹${refundAmount} will be refunded to your original payment method${cancellationFee > 0 ? ` (₹${cancellationFee} cancellation fee applied)` : ''}`
+              : 'No refund available for this booking',
           policy: {
             fullRefundBeforeHours: fullRefundHours,
             partialRefundBeforeHours: partialRefundHours,
@@ -2363,7 +2315,9 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
             cancellationCutoffHours: cutoffHours,
             configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null,
           },
-          refundableCustomerPaidBase: Math.round(refundableBase * 100) / 100,
+          refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
+          refundSource: preview.source,
+          policyApplied: preview.policyApplied,
         },
       }, requestId);
     } catch (error: unknown) {
@@ -2393,7 +2347,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const reason = body.reason || body.cancellationReason || 'Customer cancellation';
     const actorId = context.userId || body.customerId || body.actorId;
     const actorType = context.userRole || body.actorType || 'customer';
-    const refundMethod = body.refundMethod || 'wallet'; // 'wallet' or 'original'
+    const refundMethod =
+      String(body.refundMethod || 'wallet').toLowerCase() === 'original' ? 'original' : 'wallet';
 
     // Get current booking
     const existingBookings = await select('bookings', { id: bookingId });
@@ -2466,116 +2421,83 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Process refund if payment was made — use REFUND POLICY only (vendor_refund_tiers).
-      // Payment policy is for how much to pay at booking (100%/partial); never use it for cancellation refunds.
+      // Process refund if payment was made — same logic as preview/calculate-refund (tiers → legacy rules → default; net paid + coupons).
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          const refundableBase = await getRefundableCustomerPaidBaseAmount(bookingId, currentBooking);
-          const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-          const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+          const preview = await previewCustomerCancellationRefund({
+            id: bookingId,
+            vendor_id: currentBooking.vendor_id,
+            service_id: currentBooking.service_id,
+            service_type: currentBooking.service_type,
+            booking_datetime: currentBooking.booking_datetime || null,
+            scheduled_at: currentBooking.scheduled_at || null,
+            booking_date: currentBooking.booking_date,
+            booking_time: currentBooking.booking_time,
+            total_amount: currentBooking.total_amount,
+            discount_amount: currentBooking.discount_amount ?? null,
+          });
+          const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+          const refundPercentage = preview.refundPercentage;
 
-          // Refund policy: vendor_refund_tiers (who cancels = pet_parent for customer-initiated cancel)
-          const tier = await getRefundTierForCancellation(
-            {
-              id: bookingId,
-              vendor_id: currentBooking.vendor_id,
-              service_id: currentBooking.service_id,
-              service_type: currentBooking.service_type,
-              booking_date: currentBooking.booking_date,
-              booking_time: currentBooking.booking_time,
-              total_amount: refundableBase,
-            },
-            'pet_parent',
-            { hoursUntilBooking }
-          );
-          const computed = tier
-            ? computeRefundFromTier(refundableBase, tier, 100, 0)
-            : { refundAmount: refundableBase, refundPercentage: 100, cancellationFee: 0 };
-
-          // Fallback: if no vendor_refund_tiers, use booking_cancellation_rules (legacy refund rules)
-          let refundAmount = computed.refundAmount;
-          let refundPercentage = computed.refundPercentage;
-          if (!tier) {
-            const rulesResult = await query(
-              `SELECT * FROM booking_cancellation_rules
-               WHERE (vendor_id = $1 OR vendor_id IS NULL)
-                 AND (service_id = $2 OR service_id IS NULL)
-               ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-               LIMIT 1`,
-              [currentBooking.vendor_id || null, currentBooking.service_id || null]
-            ).catch(() => ({ rows: [] }));
-            const rule = (rulesResult as any).rows?.[0];
-            if (rule) {
-              if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) refundPercentage = 100;
-              else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
-              else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
-              else refundPercentage = 0;
-              refundAmount = (refundableBase * refundPercentage) / 100;
-            }
-          }
-          
           if (refundAmount > 0) {
-            // Get payment for refund
-            const payments = await query(
-              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
-              [bookingId]
-            );
-
-            if (payments.rows.length > 0) {
-              const paymentId = payments.rows[0].id;
-              
-              if (refundMethod === 'wallet') {
-                // Credit to wallet
-                try {
-                  await query(
-                    `INSERT INTO wallet_transactions (
-                      customer_id, 
-                      type, 
-                      amount, 
-                      description, 
+            // Wallet credit does not require a payments row (dev often has paid bookings without linked payment rows).
+            if (refundMethod === 'wallet' && currentBooking.customer_id) {
+              try {
+                await query(
+                  `INSERT INTO wallet_transactions (
+                      customer_id,
+                      type,
+                      amount,
+                      description,
                       reference_type,
                       reference_id,
                       status
                     ) VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                    [
-                      currentBooking.customer_id,
-                      refundAmount,
-                      `Refund for cancelled booking (${refundPercentage}%)`,
-                      bookingId
-                    ]
-                  ).catch(() => null);
-                  
-                  // Update wallet balance
-                  await query(
-                    `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
-                    [refundAmount, currentBooking.customer_id]
-                  ).catch(() => null);
-                  
-                  refundInfo = {
-                    amount: refundAmount,
-                    percentage: refundPercentage,
-                    method: 'wallet',
-                    status: 'completed',
-                    message: `₹${refundAmount.toFixed(2)} credited to your wallet`
-                  };
-                } catch (walletError) {
-                  console.error('Error crediting wallet:', walletError);
-                }
-              } else {
-                // Create refund request for original payment method
+                  [
+                    currentBooking.customer_id,
+                    refundAmount,
+                    `Refund for cancelled booking (${refundPercentage}%)`,
+                    bookingId,
+                  ]
+                );
+                await query(
+                  `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
+                  [refundAmount, currentBooking.customer_id]
+                );
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'completed',
+                  message: `₹${refundAmount.toFixed(2)} credited to your wallet`,
+                };
+              } catch (walletError) {
+                console.error('[CancelBooking] Wallet credit failed:', walletError);
+              }
+            } else if (refundMethod === 'original') {
+              const payments = await query(
+                `SELECT id FROM payments
+                 WHERE booking_id = $1::uuid
+                   AND payment_status IN ('completed', 'partially_refunded')
+                 ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
+                 LIMIT 1`,
+                [bookingId]
+              );
+              if (payments.rows.length > 0) {
+                const paymentId = payments.rows[0].id;
                 const refundRequests = await query(
                   `INSERT INTO refunds (
                     payment_id,
-                    booking_id, 
-                    customer_id, 
+                    booking_id,
+                    customer_id,
                     vendor_id,
                     refund_amount,
-                    refund_reason, 
+                    refund_reason,
                     refund_status,
                     refund_method,
                     requested_at
-                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW()) 
+                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())
                   RETURNING *`,
                   [
                     paymentId,
@@ -2583,18 +2505,23 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                     currentBooking.customer_id,
                     currentBooking.vendor_id || null,
                     refundAmount,
-                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`
+                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
                   ]
                 ).catch(() => ({ rows: [] }));
-                
+
                 refundInfo = {
                   refundId: refundRequests.rows[0]?.id,
                   amount: refundAmount,
                   percentage: refundPercentage,
                   method: 'original',
                   status: 'pending',
-                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`
+                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`,
                 };
+              } else {
+                console.warn(
+                  '[CancelBooking] Original-method refund skipped: no completed payment for booking',
+                  bookingId
+                );
               }
             }
           } else {
@@ -3080,10 +3007,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   app.post('/bookings/:bookingId/calculate-refund', async (c) => {
     try {
       const bookingId = c.req.param('bookingId');
-      const body = await c.req.json().catch(() => ({}));
-      const cancellationReason = body.cancellationReason || 'customer_request';
 
-      // Get booking
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
@@ -3091,95 +3015,49 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
 
       const booking = bookings[0];
 
-      // Check if booking can be cancelled
       if (booking.status === 'cancelled' || booking.status === 'completed') {
-        return c.json({ 
+        return c.json({
           error: `Booking is already ${booking.status}`,
           refundAmount: 0,
           refundPercentage: 0,
         }, 400);
       }
 
-      // Get cancellation policy
-      let policy = null;
-      try {
-        const policyQuery = `
-          SELECT * FROM booking_policies
-          WHERE vendor_id = $1
-            AND service_type = $2
-            AND policy_type = 'cancellation'
-            AND is_active = true
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
-        const policyResult = await query(policyQuery, [booking.vendor_id, booking.service_type || 'general']);
-        policy = (policyResult as any).rows[0];
-      } catch (error: any) {
-        // ✅ FIX: booking_policies table may not exist - gracefully skip
-        console.warn('[BOOKING] booking_policies table not found or query failed, using default refund policy:', error.message);
-      }
+      const preview = await previewCustomerCancellationRefund({
+        id: bookingId,
+        vendor_id: booking.vendor_id,
+        service_id: booking.service_id,
+        service_type: booking.service_type,
+        booking_datetime: booking.booking_datetime || null,
+        scheduled_at: booking.scheduled_at || null,
+        booking_date: booking.booking_date,
+        booking_time: booking.booking_time,
+        total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount ?? null,
+      });
 
-      // Calculate time until booking
-      const bookingDate = new Date(booking.booking_date || booking.scheduled_at || booking.created_at);
-      const now = new Date();
-      const hoursUntilBooking = (bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-      // Determine refund percentage based on policy
-      let refundPercentage = 100; // Default: full refund
-      let cancellationFee = 0;
-
-      if (policy) {
-        const policyRules = typeof policy.rules === 'string' 
-          ? JSON.parse(policy.rules) 
-          : policy.rules || {};
-
-        // Check time-based refund rules
-        if (policyRules.timeBased) {
-          for (const rule of policyRules.timeBased) {
-            const hoursThreshold = parseFloat(rule.hoursBefore || '0');
-            if (hoursUntilBooking >= hoursThreshold) {
-              refundPercentage = parseFloat(rule.refundPercentage || '100');
-              cancellationFee = parseFloat(rule.cancellationFee || '0');
-              break;
-            }
-          }
-        }
-
-        // Check reason-based rules
-        if (policyRules.reasonBased && policyRules.reasonBased[cancellationReason]) {
-          const reasonRule = policyRules.reasonBased[cancellationReason];
-          refundPercentage = parseFloat(reasonRule.refundPercentage || refundPercentage.toString());
-          cancellationFee = parseFloat(reasonRule.cancellationFee || cancellationFee.toString());
-        }
-      } else {
-        // Default policy: 100% refund if > 24h, 50% if < 24h
-        if (hoursUntilBooking < 24) {
-          refundPercentage = 50;
-        }
-      }
-
-      // Calculate refund amount
-      const totalAmount = parseFloat(booking.total_amount || booking.amount || '0');
-      const refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100 - cancellationFee);
-      const platformFeeRefund = booking.platform_fee ? parseFloat(booking.platform_fee) * (refundPercentage / 100) : 0;
-      const convenienceFeeRefund = booking.convenience_fee ? parseFloat(booking.convenience_fee) * (refundPercentage / 100) : 0;
+      const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+      const hoursUntilBooking = preview.hoursUntilBooking ?? 0;
+      const refundableBase = Math.round(preview.refundableCustomerPaidBase * 100) / 100;
 
       return c.json({
         success: true,
         refund: {
-          refundAmount: Math.round(refundAmount * 100) / 100,
-          refundPercentage,
-          cancellationFee,
-          platformFeeRefund: Math.round(platformFeeRefund * 100) / 100,
-          convenienceFeeRefund: Math.round(convenienceFeeRefund * 100) / 100,
-          totalRefund: Math.round((refundAmount + platformFeeRefund + convenienceFeeRefund) * 100) / 100,
+          refundAmount,
+          refundPercentage: preview.refundPercentage,
+          cancellationFee: preview.cancellationFee,
+          platformFeeRefund: 0,
+          convenienceFeeRefund: 0,
+          totalRefund: refundAmount,
           hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
-          policyApplied: !!policy,
+          policyApplied: preview.policyApplied,
+          refundableCustomerPaidBase: refundableBase,
+          refundSource: preview.source,
         },
         booking: {
           id: booking.id,
           status: booking.status,
-          totalAmount,
+          totalAmount: refundableBase,
           bookingDate: booking.booking_date || booking.scheduled_at,
         },
       });
