@@ -36,8 +36,8 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import Link from 'next/link';
 import { PaymentRulesSection } from '../paymentPolicies/PaymentRulesSection';
-import { RefundPoliciesSection } from '../refundPolicies/RefundPoliciesSection';
 import { SettlementScheduleSettings } from '../scheduleSettings/SettlementScheduleSettings';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
@@ -235,7 +235,7 @@ export function AdminPaymentSettings() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="gateway">Gateway</TabsTrigger>
           <TabsTrigger value="payment-rules">Payment Rules</TabsTrigger>
-          <TabsTrigger value="refund-policies">Refund Policies</TabsTrigger>
+          <TabsTrigger value="refund-policies">Booking policies</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
         </TabsList>
 
@@ -447,7 +447,21 @@ export function AdminPaymentSettings() {
         </TabsContent>
 
         <TabsContent value="refund-policies">
-          <RefundPoliciesSection />
+          <Card>
+            <CardHeader>
+              <CardTitle>Cancellation & refund (bookings)</CardTitle>
+              <CardDescription>
+                Booking cancellation, refunds, reschedule, and no-show are configured under Finance & Logistics →
+                Cancellation & Refund Policy (single engine: vendor_refund_tiers). E-commerce product rules stay in the
+                Ecommerce Policies tab.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
+                <Link href="/finance?tab=cancellation-policy">Open Finance → Cancellation & Refund Policy</Link>
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="schedule">

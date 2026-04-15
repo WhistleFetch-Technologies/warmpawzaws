@@ -27,7 +27,7 @@ import {
 	PaymentRulesSection,
 	SettlementScheduleSettings,
 	GSTConfigurationManagement,
-	CancellationPolicyManagement,
+	RefundPoliciesSection,
 	DynamicSettlementRulesManager,
 	EcommercePoliciesSection,
 } from "@/components/admin/finance";
@@ -140,7 +140,7 @@ function FinanceManagementContent() {
 		{ id: "payment-policies", label: "Payment Policies", icon: CreditCard },
 		{
 			id: "cancellation-policy",
-			label: "Cancellation Policy",
+			label: "Cancellation & Refund Policy",
 			icon: FileCheck,
 		},
 		{ id: "ecommerce-policies", label: "Ecommerce Policies", icon: Package },
@@ -330,8 +330,13 @@ function FinanceManagementContent() {
 					)}
 
 					{activeTab === "cancellation-policy" && (
-						<div className="bg-white rounded-lg border border-gray-200 p-6">
-							<CancellationPolicyManagement />
+						<div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+							<p className="text-sm text-gray-600 border-l-4 border-[#FF8C42] pl-3">
+								<strong>Single source for services:</strong> refund policy, cancellation rules, rescheduling, and no-show are all defined as tiers in{' '}
+								<code className="text-xs bg-gray-100 px-1 rounded">vendor_refund_tiers</code> (with <code className="text-xs bg-gray-100 px-1 rounded">policy_extensions</code> where needed).
+								E-commerce catalog orders use only <strong>Ecommerce Policies</strong> — not this tab.
+							</p>
+							<RefundPoliciesSection />
 						</div>
 					)}
 

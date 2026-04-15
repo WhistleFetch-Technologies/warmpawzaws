@@ -18,7 +18,6 @@ import {
 // Import all finance components
 import { AdminPaymentSettings } from './paymentGateway/AdminPaymentSettings';
 import { RefundPoliciesSection } from './refundPolicies/RefundPoliciesSection';
-import { CancellationPolicyManagement } from './cancellationPolicy/CancellationPolicyManagement';
 import { GSTConfigurationManagement } from './gstConfig/GSTConfigurationManagement';
 import { SettlementScheduleSettings } from './scheduleSettings/SettlementScheduleSettings';
 import { DynamicSettlementRulesManager } from './settlementRules/DynamicSettlementRulesManager';
@@ -90,7 +89,7 @@ export function FinanceDashboard() {
                 </TabsTrigger>
                 <TabsTrigger value="refunds" className="flex items-center gap-2">
                   <RefreshCw className="w-4 h-4" />
-                  <span className="hidden sm:inline">Refunds</span>
+                  <span className="hidden sm:inline">Cancellation & Refund</span>
                 </TabsTrigger>
                 <TabsTrigger value="settings" className="flex items-center gap-2">
                   <Settings className="w-4 h-4" />
@@ -200,8 +199,10 @@ export function FinanceDashboard() {
 
               {/* Refunds Tab */}
               <TabsContent value="refunds" className="space-y-6">
+                <p className="text-sm text-gray-600">
+                  Unified booking policies (same as Finance → Cancellation & Refund Policy). Product-only rules live under Ecommerce Policies.
+                </p>
                 <RefundPoliciesSection />
-                <CancellationPolicyManagement />
               </TabsContent>
 
               {/* Settings Tab */}

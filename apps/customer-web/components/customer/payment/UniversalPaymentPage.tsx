@@ -1669,6 +1669,12 @@ export function UniversalPaymentPage({
           bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // ✅ Required enum
           amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
+          ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
+            ? {
+                discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),
+                ...(appliedCoupon?.code ? { couponCode: appliedCoupon.code } : {}),
+              }
+            : {}),
           petId: effectivePetId || undefined, // ✅ Optional UUID
           petName: effectivePetName || undefined, // ✅ Pet name for booking
           customerPhone: customerPhone, // ✅ Customer phone

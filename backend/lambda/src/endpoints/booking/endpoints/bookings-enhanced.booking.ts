@@ -35,7 +35,7 @@ import { validateServiceAvailability } from '../../../utils/service-availability
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { getRefundTierForCancellation, computeRefundFromTier, previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -1246,6 +1246,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
+        }
+
+        const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
+        const couponCodeRaw = body.couponCode ?? body.coupon_code;
+        const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
+        if (Number.isFinite(couponDisc) && couponDisc > 0) {
+          bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
+        }
+        if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
+          bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
@@ -2476,6 +2486,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         booking_date: booking.booking_date,
         booking_time: booking.booking_time,
         total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount,
       });
 
       return this.success({
@@ -2486,6 +2497,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           cancellationFee: Math.round(preview.cancellationFee * 100) / 100,
           source: preview.source,
           policyApplied: preview.policyApplied,
+          refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
           message: preview.refundAmount > 0
             ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
             : 'No refund available for this booking',
@@ -2518,7 +2530,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const reason = body.reason || body.cancellationReason || 'Customer cancellation';
     const actorId = context.userId || body.customerId || body.actorId;
     const actorType = context.userRole || body.actorType || 'customer';
-    const refundMethod = body.refundMethod || 'wallet'; // 'wallet' or 'original'
+    const refundMethod =
+      String(body.refundMethod || 'wallet').toLowerCase() === 'original' ? 'original' : 'wallet';
 
     // Get current booking
     const existingBookings = await select('bookings', { id: bookingId });
@@ -2595,7 +2608,6 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          const totalAmount = parseFloat(String(currentBooking.total_amount || 0));
           const preview = await previewCustomerCancellationRefund({
             id: bookingId,
             vendor_id: currentBooking.vendor_id,
@@ -2605,72 +2617,69 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
             scheduled_at: currentBooking.scheduled_at || null,
             booking_date: currentBooking.booking_date,
             booking_time: currentBooking.booking_time,
-            total_amount: totalAmount,
+            total_amount: currentBooking.total_amount,
+            discount_amount: currentBooking.discount_amount,
           });
-          const refundAmount = preview.refundAmount;
+          const refundAmount = Math.round(preview.refundAmount * 100) / 100;
           const refundPercentage = preview.refundPercentage;
           
           if (refundAmount > 0) {
-            // Get payment for refund
-            const payments = await query(
-              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
-              [bookingId]
-            );
-
-            if (payments.rows.length > 0) {
-              const paymentId = payments.rows[0].id;
-              
-              if (refundMethod === 'wallet') {
-                // Credit to wallet
-                try {
-                  await query(
-                    `INSERT INTO wallet_transactions (
-                      customer_id, 
-                      type, 
-                      amount, 
-                      description, 
+            if (refundMethod === 'wallet' && currentBooking.customer_id) {
+              try {
+                await query(
+                  `INSERT INTO wallet_transactions (
+                      customer_id,
+                      type,
+                      amount,
+                      description,
                       reference_type,
                       reference_id,
                       status
                     ) VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                    [
-                      currentBooking.customer_id,
-                      refundAmount,
-                      `Refund for cancelled booking (${refundPercentage}%)`,
-                      bookingId
-                    ]
-                  ).catch(() => null);
-                  
-                  // Update wallet balance
-                  await query(
-                    `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
-                    [refundAmount, currentBooking.customer_id]
-                  ).catch(() => null);
-                  
-                  refundInfo = {
-                    amount: refundAmount,
-                    percentage: refundPercentage,
-                    method: 'wallet',
-                    status: 'completed',
-                    message: `₹${refundAmount.toFixed(2)} credited to your wallet`
-                  };
-                } catch (walletError) {
-                  console.error('Error crediting wallet:', walletError);
-                }
-              } else {
-                // Create refund request for original payment method
+                  [
+                    currentBooking.customer_id,
+                    refundAmount,
+                    `Refund for cancelled booking (${refundPercentage}%)`,
+                    bookingId,
+                  ]
+                );
+                await query(
+                  `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
+                  [refundAmount, currentBooking.customer_id]
+                );
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'completed',
+                  message: `₹${refundAmount.toFixed(2)} credited to your wallet`,
+                };
+              } catch (walletError) {
+                console.error('[CancelBooking] Wallet credit failed:', walletError);
+              }
+            } else if (refundMethod === 'original') {
+              const payments = await query(
+                `SELECT id FROM payments
+                 WHERE booking_id = $1::uuid
+                   AND payment_status IN ('completed', 'partially_refunded')
+                 ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
+                 LIMIT 1`,
+                [bookingId]
+              );
+              if (payments.rows.length > 0) {
+                const paymentId = payments.rows[0].id;
                 const refundRequests = await query(
                   `INSERT INTO refunds (
                     payment_id,
-                    booking_id, 
-                    customer_id, 
+                    booking_id,
+                    customer_id,
                     vendor_id,
                     refund_amount,
-                    refund_reason, 
+                    refund_reason,
                     refund_status,
                     refund_method,
                     requested_at
-                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW()) 
+                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())
                   RETURNING *`,
                   [
                     paymentId,
@@ -2678,18 +2687,23 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                     currentBooking.customer_id,
                     currentBooking.vendor_id || null,
                     refundAmount,
-                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`
+                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
                   ]
                 ).catch(() => ({ rows: [] }));
-                
+
                 refundInfo = {
                   refundId: refundRequests.rows[0]?.id,
                   amount: refundAmount,
                   percentage: refundPercentage,
                   method: 'original',
                   status: 'pending',
-                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`
+                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`,
                 };
+              } else {
+                console.warn(
+                  '[CancelBooking] Original-method refund skipped: no completed payment for booking',
+                  bookingId
+                );
               }
             }
           } else {
@@ -3297,10 +3311,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   app.post('/bookings/:bookingId/calculate-refund', async (c) => {
     try {
       const bookingId = c.req.param('bookingId');
-      const body = await c.req.json().catch(() => ({}));
-      const cancellationReason = body.cancellationReason || 'customer_request';
 
-      // Get booking
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
@@ -3308,95 +3319,49 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
 
       const booking = bookings[0];
 
-      // Check if booking can be cancelled
       if (booking.status === 'cancelled' || booking.status === 'completed') {
-        return c.json({ 
+        return c.json({
           error: `Booking is already ${booking.status}`,
           refundAmount: 0,
           refundPercentage: 0,
         }, 400);
       }
 
-      // Get cancellation policy
-      let policy = null;
-      try {
-        const policyQuery = `
-          SELECT * FROM booking_policies
-          WHERE vendor_id = $1
-            AND service_type = $2
-            AND policy_type = 'cancellation'
-            AND is_active = true
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
-        const policyResult = await query(policyQuery, [booking.vendor_id, booking.service_type || 'general']);
-        policy = (policyResult as any).rows[0];
-      } catch (error: any) {
-        // ✅ FIX: booking_policies table may not exist - gracefully skip
-        console.warn('[BOOKING] booking_policies table not found or query failed, using default refund policy:', error.message);
-      }
+      const preview = await previewCustomerCancellationRefund({
+        id: bookingId,
+        vendor_id: booking.vendor_id,
+        service_id: booking.service_id,
+        service_type: booking.service_type,
+        booking_datetime: booking.booking_datetime || null,
+        scheduled_at: booking.scheduled_at || null,
+        booking_date: booking.booking_date,
+        booking_time: booking.booking_time,
+        total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount ?? null,
+      });
 
-      // Calculate time until booking
-      const bookingDate = new Date(booking.booking_date || booking.scheduled_at || booking.created_at);
-      const now = new Date();
-      const hoursUntilBooking = (bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-      // Determine refund percentage based on policy
-      let refundPercentage = 100; // Default: full refund
-      let cancellationFee = 0;
-
-      if (policy) {
-        const policyRules = typeof policy.rules === 'string' 
-          ? JSON.parse(policy.rules) 
-          : policy.rules || {};
-
-        // Check time-based refund rules
-        if (policyRules.timeBased) {
-          for (const rule of policyRules.timeBased) {
-            const hoursThreshold = parseFloat(rule.hoursBefore || '0');
-            if (hoursUntilBooking >= hoursThreshold) {
-              refundPercentage = parseFloat(rule.refundPercentage || '100');
-              cancellationFee = parseFloat(rule.cancellationFee || '0');
-              break;
-            }
-          }
-        }
-
-        // Check reason-based rules
-        if (policyRules.reasonBased && policyRules.reasonBased[cancellationReason]) {
-          const reasonRule = policyRules.reasonBased[cancellationReason];
-          refundPercentage = parseFloat(reasonRule.refundPercentage || refundPercentage.toString());
-          cancellationFee = parseFloat(reasonRule.cancellationFee || cancellationFee.toString());
-        }
-      } else {
-        // Default policy: 100% refund if > 24h, 50% if < 24h
-        if (hoursUntilBooking < 24) {
-          refundPercentage = 50;
-        }
-      }
-
-      // Calculate refund amount
-      const totalAmount = parseFloat(booking.total_amount || booking.amount || '0');
-      const refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100 - cancellationFee);
-      const platformFeeRefund = booking.platform_fee ? parseFloat(booking.platform_fee) * (refundPercentage / 100) : 0;
-      const convenienceFeeRefund = booking.convenience_fee ? parseFloat(booking.convenience_fee) * (refundPercentage / 100) : 0;
+      const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+      const hoursUntilBooking = preview.hoursUntilBooking ?? 0;
+      const refundableBase = Math.round(preview.refundableCustomerPaidBase * 100) / 100;
 
       return c.json({
         success: true,
         refund: {
-          refundAmount: Math.round(refundAmount * 100) / 100,
-          refundPercentage,
-          cancellationFee,
-          platformFeeRefund: Math.round(platformFeeRefund * 100) / 100,
-          convenienceFeeRefund: Math.round(convenienceFeeRefund * 100) / 100,
-          totalRefund: Math.round((refundAmount + platformFeeRefund + convenienceFeeRefund) * 100) / 100,
+          refundAmount,
+          refundPercentage: preview.refundPercentage,
+          cancellationFee: preview.cancellationFee,
+          platformFeeRefund: 0,
+          convenienceFeeRefund: 0,
+          totalRefund: refundAmount,
           hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
-          policyApplied: !!policy,
+          policyApplied: preview.policyApplied,
+          refundableCustomerPaidBase: refundableBase,
+          refundSource: preview.source,
         },
         booking: {
           id: booking.id,
           status: booking.status,
-          totalAmount,
+          totalAmount: refundableBase,
           bookingDate: booking.booking_date || booking.scheduled_at,
         },
       });
