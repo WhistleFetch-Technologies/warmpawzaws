@@ -189,7 +189,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
       {/* Top Bar with Back Button */}
-      <div className="px-4 pt-4 pb-2 flex items-center">
+      <div className="cw-header-safe-top cw-header-safe-x pb-2 flex items-center">
         {onBack && (
           <button
             type="button"
