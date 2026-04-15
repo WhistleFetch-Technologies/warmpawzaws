@@ -236,12 +236,8 @@ export function CustomerUserProfileScreen({
           />
         </View>
 
-        {/* Orange Circle Icon */}
         <View style={styles.iconSection}>
-          <View style={styles.orangeCircle}>
-            <Text style={styles.iconText}>👤</Text>
-          </View>
-          <Text style={styles.title}>Create Your{'\n'}Profile 👤</Text>
+          <Text style={styles.title}>Create Your Profile 👤</Text>
         </View>
 
         {/* Content */}
@@ -419,20 +415,8 @@ const styles = StyleSheet.create({
   },
   iconSection: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
     paddingHorizontal: spacing.md,
-  },
-  orangeCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  iconText: {
-    fontSize: 48,
   },
   title: {
     fontSize: typography.fontSizes['3xl'],
