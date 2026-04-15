@@ -189,12 +189,12 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
       {/* Top Bar with Back Button */}
-      <div className="cw-header-safe-top cw-header-safe-x pb-2 flex items-center">
+      <div className="cw-header-safe-top cw-header-safe-x flex min-h-[56px] items-center gap-3 py-2 pb-3">
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-1 text-gray-600 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 rounded-full px-3 py-2"
+            className="flex min-h-[44px] items-center gap-1 rounded-full bg-gray-100 px-3 py-2 text-gray-600 transition-colors touch-manipulation hover:bg-gray-200 hover:text-gray-900 active:bg-gray-200"
           >
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm font-medium">Back</span>
@@ -209,15 +209,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
           <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
         </div>
 
-        {/* Orange Circle Icon */}
-        <div className="flex flex-col items-center mb-8 px-6">
-          <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="18" r="8" fill="white"/>
-              <path d="M10 38C10 30 16 24 24 24C32 24 38 30 38 38V42H10V38Z" fill="white"/>
-            </svg>
-          </div>
-          <h1 className="text-black text-center">Create Your<br />Profile 👤</h1>
+        <div className="flex flex-col items-center mb-6 px-6">
+          <h1 className="text-black text-center">Create Your Profile 👤</h1>
         </div>
 
         {/* Content */}
