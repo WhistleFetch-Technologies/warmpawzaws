@@ -361,7 +361,7 @@ export function BookingLifecycleManager() {
                           <div>
                             <p className="text-sm font-medium text-orange-900">Completion OTP Generated</p>
                             <p className="text-xs text-orange-700 mt-1">
-                              Share this 6-digit OTP with the customer. They will provide it to you upon service completion for revenue realization.
+                              Share this booking OTP with the customer. They will provide it to you upon service completion for revenue realization.
                             </p>
                             <div className="flex items-center gap-3 mt-3">
                               <div className="bg-white border-2 border-orange-300 rounded-lg px-4 py-2">
@@ -498,21 +498,21 @@ export function BookingLifecycleManager() {
           <DialogHeader>
             <DialogTitle>Verify Completion OTP</DialogTitle>
             <DialogDescription>
-              Ask the customer for the 6-digit completion OTP that was shared with them when the booking was confirmed.
+              Ask the customer for the 4-digit completion OTP that was shared with them when the booking was confirmed.
               This verifies service completion and triggers revenue realization.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="otp">Enter 6-Digit OTP from Customer</Label>
+              <Label htmlFor="otp">Enter 4-Digit OTP from Customer</Label>
               <Input
                 id="otp"
                 type="text"
-                maxLength={6}
-                placeholder="000000"
+                maxLength={4}
+                placeholder="0000"
                 value={otpInput}
-                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 className="text-2xl text-center tracking-widest font-mono"
                 autoFocus
               />

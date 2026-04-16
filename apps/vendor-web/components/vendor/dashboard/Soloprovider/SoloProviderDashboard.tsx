@@ -1114,7 +1114,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Ask the customer for the 6-digit OTP sent to their phone to {otpAction === 'start' ? 'start' : 'complete'} the service.
+              Ask the customer for the 4-digit booking OTP sent to their phone to {otpAction === 'start' ? 'start' : 'complete'} the service.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1123,10 +1123,10 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <input
                 type="text"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter 6-digit OTP"
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="Enter 4-digit OTP"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                maxLength={6}
+                maxLength={4}
                 autoFocus
               />
               {otpError && (

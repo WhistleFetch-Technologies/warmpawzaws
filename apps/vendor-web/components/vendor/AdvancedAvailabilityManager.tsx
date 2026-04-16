@@ -31,7 +31,13 @@ import { getVendorRoleName, isSoloVendor } from '@/lib/vendor-utils';
 interface AdvancedAvailabilityManagerProps {
   vendorId: string;
   vendorData?: any;
-  onBack: () => void;
+  /** Standalone pages (schedule, dashboard overlay); optional when embeddedInProfile */
+  onBack?: () => void;
+  /**
+   * Solo Professional Profile: no full-page shell, no sticky VendorHeader, no back —
+   * toolbar (title + Save) only so availability blends into the profile scroll.
+   */
+  embeddedInProfile?: boolean;
 }
 
 /** Lead time (minutes) per service style: at_home = travel to customer, at_center = prep, tele = setup */
@@ -162,7 +168,8 @@ function getOverlapDay(
 export function AdvancedAvailabilityManager({ 
   vendorId, 
   vendorData, 
-  onBack 
+  onBack,
+  embeddedInProfile = false,
 }: AdvancedAvailabilityManagerProps) {
   // State
   const [loading, setLoading] = useState(true);
@@ -892,6 +899,14 @@ export function AdvancedAvailabilityManager({
   };
 
   if (loading) {
+    if (embeddedInProfile) {
+      return (
+        <div className="flex flex-col items-center justify-center py-14 text-gray-600">
+          <Loader2 className="w-9 h-9 animate-spin text-[#FF8C42] mb-2" />
+          <p className="text-sm">Loading availability...</p>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -904,32 +919,54 @@ export function AdvancedAvailabilityManager({
 
   const currentDaySlots = schedule[selectedDay]?.slots || [];
 
+  const saveAllButton = (
+    <Button
+      key="save-all"
+      type="button"
+      onClick={handleSave}
+      disabled={saving}
+      className="shrink-0 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+    >
+      {saving ? (
+        <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+      ) : (
+        <Save className="mr-2 h-4 w-4 shrink-0" />
+      )}
+      Save All
+    </Button>
+  );
+
   return (
-    <div className="vendor-page-shell min-h-screen bg-gray-50">
-      <div className="vendor-app-column flex min-h-screen min-h-0 flex-col bg-white pb-20">
-        <VendorHeader
-          title="Advanced Availability"
-          subtitle="Manage your schedule, breaks, and holidays"
-          onBack={onBack}
-          actions={[
-            <Button
-              key="save-all"
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="shrink-0 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
-            >
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4 shrink-0" />
-              )}
-              Save All
-            </Button>,
-          ]}
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl space-y-6 px-4 py-6">
+    <div className={embeddedInProfile ? 'w-full' : 'vendor-page-shell min-h-screen bg-gray-50'}>
+      <div
+        className={
+          embeddedInProfile
+            ? 'w-full flex flex-col'
+            : 'vendor-app-column flex min-h-screen min-h-0 flex-col bg-white pb-20'
+        }
+      >
+        {embeddedInProfile ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-4 mb-1">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-gray-900">Schedule & availability</h3>
+              <p className="text-sm text-gray-500">Weekly slots, breaks, and holidays</p>
+            </div>
+            {saveAllButton}
+          </div>
+        ) : (
+          <VendorHeader
+            title="Advanced Availability"
+            subtitle="Manage your schedule, breaks, and holidays"
+            onBack={onBack}
+            actions={[saveAllButton]}
+          />
+        )}
+        <div className={embeddedInProfile ? '' : 'min-h-0 flex-1 overflow-y-auto'}>
+          <div
+            className={
+              embeddedInProfile ? 'space-y-6' : 'mx-auto max-w-4xl space-y-6 px-4 py-6'
+            }
+          >
         {/* Online Toggle - Solo providers only */}
         {isSoloProvider && (
           <div className="bg-white rounded-xl border p-4">

@@ -8,12 +8,12 @@
  * Checks multiple field names and filters placeholder values
  */
 export function extractPincodeFromPayload(payload: any = {}): string {
-  const pincodeFields = ['pin', 'pincode', 'pinCode', 'postalCode', 'postal_code', 'zip', 'zipCode'];
+  const pincodeFields = ['pin', 'pincode', 'pinCode', 'pin_code', 'postalCode', 'postal_code', 'zip', 'zipCode'];
   const placeholderValues = ['000000', '0000000', '00000000', '123456', '000000', '', '0000000', '00000000'];
   
   for (const field of pincodeFields) {
-    if (payload[field] && typeof payload[field] === 'string') {
-      const trimmed = payload[field].trim();
+    if (payload[field] != null && payload[field] !== '') {
+      const trimmed = String(payload[field]).trim();
       // Skip placeholder values and validate it's a 6-digit number
       if (trimmed && !placeholderValues.includes(trimmed) && /^\d{6}$/.test(trimmed)) {
         console.log(`📍 [ExtractPincode] ✅ Found valid pincode in field '${field}': '${trimmed}'`);

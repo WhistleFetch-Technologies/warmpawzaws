@@ -776,7 +776,7 @@ export function HomeServiceTrackingManager({
             
             <Input
               type="text"
-              placeholder="Enter 6-digit OTP"
+              placeholder="Enter 4 or 6-digit OTP"
               value={otpInput}
               onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className="text-center text-2xl tracking-widest mb-4"
@@ -794,17 +794,18 @@ export function HomeServiceTrackingManager({
               </Button>
               <Button
                 onClick={() => {
-                  if (otpInput.length === 6) {
+                  const len = otpInput.length;
+                  if (len === 4 || len === 6) {
                     if (otpType === 'start') {
                       confirmStartSession(otpInput);
                     } else {
                       confirmEndSession(otpInput);
                     }
                   } else {
-                    toast.error('Please enter a valid 6-digit OTP');
+                    toast.error('Please enter a valid 4 or 6-digit OTP');
                   }
                 }}
-                disabled={otpInput.length !== 4 || processing}
+                disabled={(otpInput.length !== 4 && otpInput.length !== 6) || processing}
                 className="flex-1 bg-green-600 hover:bg-green-700"
               >
                 {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify'}

@@ -149,6 +149,116 @@ export async function getVendorIdentityId(vendorIdOrResolved: string): Promise<s
   }
 }
 
+const PLACEHOLDER_PINS = new Set(['000000', '0000000', '00000000', '123456']);
+
+function vendorHasValidPincode(v: { pincode?: string | null } | null | undefined): boolean {
+  const p = v?.pincode != null ? String(v.pincode).trim() : '';
+  return p.length === 6 && /^\d{6}$/.test(p) && !PLACEHOLDER_PINS.has(p);
+}
+
+/**
+ * When vendors.pincode was never synced from onboarding (legacy activation / edge cases),
+ * merge pincode (and address line / city / state if missing) from the latest application_payload.
+ */
+export async function enrichVendorLocationFromOnboardingApplication(vendor: any): Promise<any> {
+  if (!vendor) return vendor;
+  if (vendorHasValidPincode(vendor)) return vendor;
+
+  try {
+    const phone = vendor.phone || '';
+    const vid = vendor.id;
+
+    let rows: { application_payload?: unknown }[] = [];
+    if (phone) {
+      const r = await query(
+        `SELECT va.application_payload
+         FROM vendor_onboarding_applications va
+         INNER JOIN vendor_identity vi ON vi.id = va.vendor_identity_id
+         WHERE vi.phone = $1
+         ORDER BY va.submitted_at DESC NULLS LAST, va.updated_at DESC NULLS LAST, va.created_at DESC
+         LIMIT 1`,
+        [phone]
+      ).catch(() => ({ rows: [] as any[] }));
+      rows = r.rows || [];
+    }
+    const last10 = normalizePhoneForLookup(phone)?.replace(/^91/, '').slice(-10) || '';
+    if (rows.length === 0 && last10.length === 10) {
+      const rNorm = await query(
+        `SELECT va.application_payload
+         FROM vendor_onboarding_applications va
+         INNER JOIN vendor_identity vi ON vi.id = va.vendor_identity_id
+         WHERE RIGHT(REGEXP_REPLACE(COALESCE(vi.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+         ORDER BY va.submitted_at DESC NULLS LAST, va.updated_at DESC NULLS LAST, va.created_at DESC
+         LIMIT 1`,
+        [last10]
+      ).catch(() => ({ rows: [] as any[] }));
+      rows = rNorm.rows || [];
+    }
+    if (rows.length === 0 && vid) {
+      const r2 = await query(
+        `SELECT va.application_payload
+         FROM vendor_onboarding_applications va
+         INNER JOIN vendor_identity vi ON vi.id = va.vendor_identity_id
+         WHERE vi.vendor_id::text = $1
+         ORDER BY va.submitted_at DESC NULLS LAST, va.updated_at DESC NULLS LAST, va.created_at DESC
+         LIMIT 1`,
+        [String(vid)]
+      ).catch(() => ({ rows: [] as any[] }));
+      rows = r2.rows || [];
+    }
+
+    let payload: any = rows[0]?.application_payload;
+    if (payload && typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = null;
+      }
+    }
+    if (!payload || typeof payload !== 'object') return vendor;
+
+    const { extractPincodeFromPayload } = await import('../../../utils/extract-profile-photo');
+    const extractedPin = extractPincodeFromPayload(payload);
+    const next = { ...vendor };
+    if (extractedPin) {
+      next.pincode = extractedPin;
+    }
+    const addr = typeof payload.address === 'string' ? payload.address.trim() : '';
+    if (addr && (!next.address || String(next.address).trim() === '' || next.address === 'Not specified')) {
+      next.address = addr;
+    }
+    const city = typeof payload.city === 'string' ? payload.city.trim() : '';
+    if (city && (!next.city || String(next.city).trim() === '' || next.city === 'Not specified')) {
+      next.city = city;
+    }
+    const state = typeof payload.state === 'string' ? payload.state.trim() : '';
+    if (state && (!next.state || String(next.state).trim() === '' || next.state === 'Not specified')) {
+      next.state = state;
+    }
+
+    // Heal stale rows: persist pincode from onboarding once so subsequent reads use DB
+    if (extractedPin && vendor.id && !vendorHasValidPincode(vendor)) {
+      try {
+        await update(
+          'vendors',
+          { id: vendor.id },
+          {
+            pincode: extractedPin,
+            updated_at: new Date().toISOString(),
+          }
+        );
+      } catch (persistErr) {
+        console.warn('[PROFILE] Could not persist backfilled pincode:', persistErr);
+      }
+    }
+
+    return next;
+  } catch (e) {
+    console.warn('[PROFILE] enrichVendorLocationFromOnboardingApplication:', e);
+    return vendor;
+  }
+}
+
 /** Resolve vendor by ID - checks vendors, then vendor_identity with auto-create. Returns vendor row or null. Exported for use by vendor-schedule. */
 export async function resolveVendorById(vendorId: string): Promise<any | null> {
   const trimmedId = (vendorId || '').trim();
@@ -931,7 +1041,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
 
       // ✅ Use shared resolver: checks vendors, vendor_identity, auto-creates if approved
-      const vendor = await resolveVendorById(vendorId);
+      let vendor = await resolveVendorById(vendorId);
       if (!vendor) {
         const identities = await select('vendor_identity', { id: vendorId });
         if (identities.length > 0 && identities[0].onboarding_status !== 'APPROVED' && identities[0].onboarding_status !== 'ACTIVATED') {
@@ -939,6 +1049,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
         }
         return c.json({ error: 'Vendor not found' }, 404);
       }
+
+      // ✅ Solo profile: show pincode from onboarding when vendors.pincode was never persisted
+      vendor = await enrichVendorLocationFromOnboardingApplication(vendor);
       
       // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
       let role = null;

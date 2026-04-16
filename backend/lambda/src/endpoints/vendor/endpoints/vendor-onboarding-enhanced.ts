@@ -1377,6 +1377,26 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         } else if (!serviceRadius) {
           console.log(`📍 [VENDOR-ACTIVATION] ⚠️ No valid service_radius found in payload for existing vendor`);
         }
+
+        // ✅ FIX: Sync location from onboarding application — previously only new vendors got pincode/address/city/state
+        const { extractPincodeFromPayload } = await import('../../../utils/extract-profile-photo');
+        const pincodeFromApplication = extractPincodeFromPayload(payload);
+        if (pincodeFromApplication) {
+          vendorUpdateData.pincode = pincodeFromApplication;
+          console.log(`📍 [VENDOR-ACTIVATION] ✅ Updating existing vendor pincode from application: '${pincodeFromApplication}'`);
+        }
+        const addrFromApp = typeof payload.address === 'string' ? payload.address.trim() : '';
+        if (addrFromApp) {
+          vendorUpdateData.address = addrFromApp;
+        }
+        const cityFromApp = typeof payload.city === 'string' ? payload.city.trim() : '';
+        if (cityFromApp) {
+          vendorUpdateData.city = cityFromApp;
+        }
+        const stateFromApp = typeof payload.state === 'string' ? payload.state.trim() : '';
+        if (stateFromApp) {
+          vendorUpdateData.state = stateFromApp;
+        }
         
         await update('vendors', { id: vendor.id }, vendorUpdateData);
         console.log(`✅ [VENDOR-ACTIVATION] Updated vendor ${vendor.id} - cleaned metadata and set is_deleted: false`);
