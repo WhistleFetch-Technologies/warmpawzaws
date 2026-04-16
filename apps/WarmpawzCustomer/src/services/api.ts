@@ -837,6 +837,30 @@ export const DatingChatApi = {
   getUnreadCount: (matchId: string) => ApiService.get(`/dating/chat/${matchId}/unread-count`),
 };
 
+/** Booking-scoped customer ↔ vendor chat (Lambda `chat.ts`) */
+export const BookingChatApi = {
+  getConversation: (bookingId: string) =>
+    ApiService.get(`/chat/booking/${bookingId}/conversation`),
+  sendMessage: (
+    bookingId: string,
+    payload: {
+      senderPhone: string;
+      senderName?: string;
+      senderType: 'customer';
+      message: string;
+      messageType?: string;
+    }
+  ) => ApiService.post(`/chat/booking/${bookingId}/message`, payload),
+  markConversationRead: (bookingId: string) =>
+    ApiService.post(`/chat/conversations/${bookingId}/read`, {}),
+  getConversations: (opts: { customerId?: string; phone?: string }) => {
+    const q = new URLSearchParams();
+    if (opts.customerId) q.append('customerId', opts.customerId);
+    if (opts.phone) q.append('phone', opts.phone.replace(/\D/g, ''));
+    return ApiService.get(`/chat/conversations?${q.toString()}`);
+  },
+};
+
 // ✅ NEW: Tier Commission API (Batch 15 SQL-migrated endpoints)
 export const TierCommissionApi = {
   calculateCommission: (bookingId: string) => 

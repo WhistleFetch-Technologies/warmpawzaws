@@ -188,6 +188,20 @@ export function BookingConfirmationScreen({
             <Text style={styles.viewBookingButtonText}>View Booking Details</Text>
           </TouchableOpacity>
 
+          {booking.vendorName && onNavigate && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={() =>
+                onNavigate('Chat', {
+                  bookingId,
+                  recipientName: booking.vendorName,
+                })
+              }
+            >
+              <Text style={styles.chatButtonText}>Message provider</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={styles.homeButton}
             onPress={() => onNavigate && onNavigate('Home')}
@@ -385,6 +399,19 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  chatButton: {
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  chatButtonText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   homeButton: {
     backgroundColor: colors.white,

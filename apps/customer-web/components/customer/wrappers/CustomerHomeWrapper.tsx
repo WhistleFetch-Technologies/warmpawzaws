@@ -83,6 +83,7 @@ import { toast } from 'sonner';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { MyBookings } from '../booking/MyBookings';
+import { CustomerBookingMessagesInbox } from '../messaging/CustomerBookingMessagesInbox';
 import { AppointmentsList } from '../AppointmentsList';
 import { AppointmentDetailsView } from '../AppointmentDetailsView';
 import { RescheduleAppointmentView } from '../RescheduleAppointmentView';
@@ -268,7 +269,8 @@ type ScreenType =
   | 'pharmacy_order_flow'
   | 'pharmacy_order_status'
   | 'behaviorist'
-  | 'instant-connecting';
+  | 'instant-connecting'
+  | 'booking-messages';
 
 export function CustomerHomeWrapper({
   phone,
@@ -578,6 +580,7 @@ export function CustomerHomeWrapper({
     else if (service === 'holiday') setCurrentScreen('holiday');
     else if (service === 'mating-dating-hub') setCurrentScreen('mating-dating-hub');
     else if (service === 'wallet') setCurrentScreen('wallet');
+    else if (service === 'booking-messages') setCurrentScreen('booking-messages');
     else if (service === 'purchase-package') {
       setPreviousScreen(currentScreen);
       setCurrentScreen('package-booking');
@@ -982,7 +985,7 @@ export function CustomerHomeWrapper({
               setCurrentScreen('problem_grid');
             } else if (screen === 'shop' && data?.category) {
               goToShopFromParent({ category: data.category });
-            } else if (screen === 'support_help') {
+            }             else if (screen === 'support_help') {
               if (typeof window !== 'undefined' && data?.initialTab) {
                 try {
                   sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, data.initialTab);
@@ -991,6 +994,10 @@ export function CustomerHomeWrapper({
                 }
               }
               setCurrentScreen('support_help');
+            } else if (screen === 'booking-messages') {
+              setPreviousScreen(currentScreen);
+              setCurrentScreen('booking-messages');
+              return;
             } else if (screen === 'article-detail' && data?.article) {
               const a = data.article as { id?: string; slug?: string };
               const ref = (a.slug || a.id || '').toString();
@@ -2302,6 +2309,28 @@ export function CustomerHomeWrapper({
       <WalletPage onBack={backToAccountMenu} onCloseToHome={handleBack} onNavigate={handleAccountNavigate} />
     </CustomerScreenWrapper>
   );
+  if (currentScreen === 'booking-messages') {
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        <CustomerBookingMessagesInbox
+          phone={phone}
+          onBack={() => {
+            if (previousScreen) {
+              setCurrentScreen(previousScreen);
+              setPreviousScreen(null);
+              return;
+            }
+            setCurrentScreen('home');
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
+  }
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
   if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); goToShopFromParent(); }} onHelp={() => setCurrentScreen('support_help')} />;
   if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;

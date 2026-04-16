@@ -204,6 +204,20 @@ export function BookingReceiptScreen({
 
         {/* Actions */}
         <View style={styles.actions}>
+          {booking.vendorName && onNavigate && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() =>
+                onNavigate('Chat', {
+                  bookingId,
+                  recipientName: booking.vendorName,
+                })
+              }
+            >
+              <Text style={styles.actionButtonIcon}>💬</Text>
+              <Text style={styles.actionButtonText}>Message provider</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.actionButton}
             onPress={handleDownload}

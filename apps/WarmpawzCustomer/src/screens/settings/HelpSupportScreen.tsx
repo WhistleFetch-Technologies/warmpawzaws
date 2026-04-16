@@ -63,6 +63,7 @@ export function HelpSupportScreen({
       const digits = phone.replace(/\D/g, '') || 'guest';
       onNavigate('Chat', {
         type: 'support',
+        bookingId: '',
         matchId: `customer-support-${digits}`,
         recipientName: 'Warmpawz Support',
       });
