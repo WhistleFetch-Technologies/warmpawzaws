@@ -1,12 +1,13 @@
 import { VendorSession, VendorStatus } from "./interface";
+import { isVendorPortalActiveStatus } from "@/lib/vendor-session-from-api";
 
 /** Compute initial state from session + localStorage so existing vendors never flash "choose role" or loading. */
 export function getInitialVendorState(session: VendorSession): { status: VendorStatus; vendorData: any; isLoading: boolean } {
     if (typeof window === 'undefined') return { status: 'new', vendorData: null, isLoading: true };
     const sv = session?.vendor;
     const sessionActive = sv && (
-        sv.onboarding_status === 'ACTIVATED' || sv.onboarding_status === 'APPROVED' ||
-        sv.onboardingStatus === 'ACTIVATED' || sv.onboardingStatus === 'APPROVED' ||
+        isVendorPortalActiveStatus(sv.onboarding_status) ||
+        isVendorPortalActiveStatus(sv.onboardingStatus) ||
         sv.isActive === true
     );
 
@@ -14,8 +15,9 @@ export function getInitialVendorState(session: VendorSession): { status: VendorS
     const isVendorDataComplete = (v: any): boolean => {
         if (!v) return false;
         // For active vendors, we need complete profile data
-        const isActive = v?.isActive === true || v?.onboarding_status === 'ACTIVATED' || v?.onboarding_status === 'APPROVED' ||
-            v?.onboardingStatus === 'ACTIVATED' || v?.onboardingStatus === 'APPROVED';
+        const isActive = v?.isActive === true ||
+            isVendorPortalActiveStatus(v?.onboarding_status) ||
+            isVendorPortalActiveStatus(v?.onboardingStatus);
         if (isActive) {
             // Active vendors must have roleId and capabilities to be considered complete
             const hasRoleId = !!(v.roleId || v.role_id);
@@ -36,7 +38,7 @@ export function getInitialVendorState(session: VendorSession): { status: VendorS
     }
     const storedStatus = localStorage.getItem('vendorApplicationStatus');
     const storedVendorRaw = localStorage.getItem('vendorData');
-    if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
+    if (isVendorPortalActiveStatus(storedStatus)) {
         try {
             const v = storedVendorRaw ? JSON.parse(storedVendorRaw) : sv;
             if (v) {
@@ -53,7 +55,9 @@ export function getInitialVendorState(session: VendorSession): { status: VendorS
     if (storedVendorRaw) {
         try {
             const v = JSON.parse(storedVendorRaw);
-            const active = v?.isActive === true || v?.onboarding_status === 'ACTIVATED' || v?.onboarding_status === 'APPROVED' || v?.onboardingStatus === 'ACTIVATED' || v?.onboardingStatus === 'APPROVED';
+            const active = v?.isActive === true ||
+                isVendorPortalActiveStatus(v?.onboarding_status) ||
+                isVendorPortalActiveStatus(v?.onboardingStatus);
             if (active) {
                 // ✅ FIX: Only use stored vendor if it has complete data, otherwise wait for profile fetch
                 if (isVendorDataComplete(v)) {

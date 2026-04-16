@@ -132,11 +132,13 @@ async function deploy() {
   console.log('🔧 Injecting runtime-config.js...');
   const runtimeConfigPath = path.join(distPath, 'runtime-config.js');
   const runtimeConfigContent = `// Runtime Configuration for Warmpawz admin-web
-// Injected at deployment time with actual API Gateway endpoint
+// Injected at deployment time (dev admin S3). Must include vendorWebUrl or "Open portal" falls back to NEXT_PUBLIC localhost.
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_ENDPOINT}",
-    uatMode: true
+    uatMode: true,
+    environment: "development",
+    vendorWebUrl: "https://dev.vendor.warmpawz.com"
   };
   console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();`;

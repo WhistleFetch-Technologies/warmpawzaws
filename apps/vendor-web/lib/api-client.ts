@@ -3,6 +3,8 @@
  * Uses API Gateway (Lambda backend)
  */
 
+import { VENDOR_POST_LOGIN_401_GRACE_MS } from './vendor-session-from-api';
+
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
@@ -35,47 +37,45 @@ function normalizeDevApiBaseUrl(url: string | undefined): string {
 
 /**
  * Determine if we're in production environment
- * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
+ * Hostname is checked early so deployed prod URLs call prod API even if a build-time env flag is wrong.
  */
 function isProductionEnvironment(): boolean {
   const cfg = getRuntimeConfig();
-  
-  // 1. Check runtime config environment field
-  if (cfg.environment) {
-    return cfg.environment === 'production';
-  }
-  
-  // 2. Check NEXT_PUBLIC_ENVIRONMENT env var
-  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
-    return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  }
-  
-  // 3. Check NODE_ENV
-  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
-    return process.env.NODE_ENV === 'production';
-  }
-  
-  // 4. Check hostname (production CloudFront / prod hosts — not dev.* or dev CloudFront)
+
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    if (hostname === 'd1s6ykkj381k58.cloudfront.net' || hostname.startsWith('dev.')) {
-      return false;
-    }
-    // Production CloudFront domains (non-dev)
-    if (hostname.includes('cloudfront.net') ||
-        hostname.includes('warmpawz.com') ||
-        hostname.includes('admin.warmpawz.com') ||
-        hostname.includes('vendor.warmpawz.com') ||
-        hostname.includes('customer.warmpawz.com')) {
-      return true;
-    }
-    // Development indicators
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
       return false;
     }
+    if (hostname === 'd1s6ykkj381k58.cloudfront.net' || hostname.startsWith('dev.')) {
+      return false;
+    }
+    const isProdHostname =
+      hostname === 'vendor.warmpawz.com' ||
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'warmpawz.com' ||
+      hostname === 'www.warmpawz.com';
+    if (isProdHostname) {
+      return true;
+    }
+    if (hostname.includes('cloudfront.net')) {
+      return true;
+    }
   }
-  
-  // Default to production for safety
+
+  if (cfg.environment) {
+    return cfg.environment === 'production';
+  }
+
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
+    return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+  }
+
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
+    return process.env.NODE_ENV === 'production';
+  }
+
   return true;
 }
 
@@ -219,17 +219,19 @@ export class ApiClient {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       
-      // Handle 401: clear full vendor session so /auth shows login (prevents redirect loop)
-      // Skip clear/redirect when vendor just logged in (OTP) so dashboard can load; first 401 may be from role/profile fetch race
+      // Handle 401: clear full vendor session so /auth shows login (prevents redirect loop).
+      // After OTP / admin portal bootstrap, several parallel calls may 401 once (token shape, race).
+      // Never strip the "just logged in" flag on first 401 — that made the *second* 401 wipe the session
+      // and send users to the phone login screen while the portal tab was still loading.
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
+          const loginAt = Number(sessionStorage.getItem('_warmpawz_vendor_login_at') || 0);
+          const inGrace = loginAt > 0 && Date.now() - loginAt < VENDOR_POST_LOGIN_401_GRACE_MS;
           const justLoggedIn = sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
-          if (justLoggedIn) {
-            sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
+          if (justLoggedIn || inGrace) {
             if (UAT_MODE) {
-              console.warn('[API Client] 401 after login – skipping clear/redirect so dashboard can load');
+              console.warn('[API Client] 401 during post-login grace – skipping session clear');
             }
-            // Fall through to throw error; caller (e.g. useVendorCapabilities) will use fallback
           } else {
             const { clearVendorSession } = require('./session-utils');
             clearVendorSession();

@@ -19,6 +19,7 @@ import { isValidUUID } from '../../../types/entities';
 // Password verification
 import * as crypto from 'crypto';
 import { resolveAdminPermissions, DEFAULT_MASTER_ADMIN_EMAIL } from '../../../utils/admin-rbac-permissions';
+import { createVendorPortalCode } from '../../../lib/services/admin/vendor-portal-session-service';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -3649,6 +3650,32 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   app.post('/admin/auth/reset-test-user', async (c) => {
     // Reset test admin user for UAT
     return c.json({ success: true, message: 'Test user reset (UAT mode)' });
+  });
+
+  // Admin opens vendor-web as this vendor (one-time code; exchange at POST /auth/vendor-portal-session)
+  app.post('/admin/vendors/:vendorId/vendor-portal-code', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      const adminId = c.get('userId') as string | undefined;
+      const result = await createVendorPortalCode({ adminId, vendorId });
+      if (!result.ok) {
+        return c.json(
+          { success: false, error: result.error, code: result.errorCode },
+          result.status
+        );
+      }
+      return c.json({
+        success: true,
+        code: result.code,
+        expiresAt: result.expiresAt,
+      });
+    } catch (error: any) {
+      console.error('[vendor-portal-code] Error:', error);
+      return c.json(
+        { success: false, error: error?.message || 'Failed to create portal code' },
+        500
+      );
+    }
   });
 
   // Vendors - Get active vendors with enriched data and filtering
