@@ -1473,13 +1473,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // Map request action to OtpAction enum (request uses different action names)
-      // If action is not provided or doesn't match, default to COMPLETE
+      // Map request action to OtpAction enum (legacy GPS names + dashboard aliases: start | complete | end)
       let mappedAction: OtpAction = OtpAction.COMPLETE;
-      if (action === 'end_session') {
+      if (action === 'end_session' || action === 'end') {
         mappedAction = OtpAction.END;
-      } else if (action) {
-        // For other actions, default to COMPLETE
+      } else if (action === 'start_travel' || action === 'start') {
+        mappedAction = OtpAction.START;
+      } else {
         mappedAction = OtpAction.COMPLETE;
       }
 
@@ -1685,14 +1685,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const booking = bookings[0];
 
       // Map request action (from otpVerifyRequestSchema) to OtpAction enum
-      // Request actions: 'start_travel' | 'mark_arrived' | 'check_in' | 'end_session' | undefined
-      // OtpAction enum: 'start' | 'complete' | 'end'
+      // Request actions include legacy GPS names plus dashboard aliases: start | complete | end
       let mappedAction: OtpAction = OtpAction.COMPLETE;
-      if (action === 'end_session') {
+      if (action === 'end_session' || action === 'end') {
         mappedAction = OtpAction.END;
-      } else if (action === 'start_travel') {
+      } else if (action === 'start_travel' || action === 'start') {
         mappedAction = OtpAction.START;
-      } else if (action === 'mark_arrived' || action === 'check_in' || !action) {
+      } else {
         mappedAction = OtpAction.COMPLETE;
       }
 

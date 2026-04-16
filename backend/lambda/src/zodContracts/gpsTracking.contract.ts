@@ -1,13 +1,18 @@
 import { datetimeSchema, safeStringSchema, uuidSchema } from "src/middleware/validation-middleware";
 import z from "zod";
 
+/** Standard bookings use 4-digit `otp_code`; some flows (e.g. instant tele) use 6-digit. */
+export const bookingServiceOtpSchema = z
+  .string()
+  .regex(/^\d{4}$|^\d{6}$/, "OTP must be 4 or 6 digits");
+
 export const startSessionRequestSchema = z.object({
-    otp: z.string().length(6, "OTP must be 6 digits"),
+    otp: bookingServiceOtpSchema,
     vendorId: uuidSchema,
 }).strict();
 
 export const completeBookingRequestSchema = z.object({
-    otp: z.string().length(4, "OTP must be 4 digits").optional(),
+    otp: bookingServiceOtpSchema.optional(),
     vendorId: uuidSchema,
 }).strict();
 
@@ -56,8 +61,18 @@ export const endSessionRequestSchema = z.object({
 
 
 export const otpVerifyRequestSchema = z.object({
-    otp: z.string().length(6, "OTP must be 6 digits"),
-    action: z.enum(['start_travel', 'mark_arrived', 'check_in', 'end_session']).optional(),
+    otp: bookingServiceOtpSchema,
+    action: z
+      .enum([
+        'start',
+        'complete',
+        'end',
+        'start_travel',
+        'mark_arrived',
+        'check_in',
+        'end_session',
+      ])
+      .optional(),
 }).strict();
 
 export const acceptBookingRequestSchema = z.object({

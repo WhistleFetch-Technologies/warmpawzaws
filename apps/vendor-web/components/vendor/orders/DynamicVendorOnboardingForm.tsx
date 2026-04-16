@@ -14,6 +14,7 @@ import { Upload, MapPin, AlertCircle, CheckCircle2, ArrowLeft, X, User, Check } 
 import { toast } from 'sonner';
 // KYC verification components
 import { AadhaarOTPVerification, PANVerification, GSTVerification, DeclarationField } from '../kyc';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 interface FormField {
   id: string;
@@ -1251,6 +1252,45 @@ export function DynamicVendorOnboardingForm({
 
     switch (field.type) {
       case 'textarea':
+        if (field.name === 'address') {
+          return (
+            <EnhancedAddressAutocomplete
+              value={value}
+              onChange={(address: string, components?: AddressComponents) => {
+                const pinDigits = components?.pincode
+                  ? String(components.pincode).replace(/\D/g, '').slice(0, 6)
+                  : '';
+                const pinOk = pinDigits.length === 6 && /^\d{6}$/.test(pinDigits);
+                setFormData(prev => ({
+                  ...prev,
+                  address,
+                  ...(components?.city != null && { city: components.city || '' }),
+                  ...(components?.state != null && { state: components.state || '' }),
+                  ...(pinOk && {
+                    pincode: pinDigits,
+                    pin: pinDigits,
+                    pinCode: pinDigits,
+                  }),
+                }));
+                setErrors(prev => {
+                  const next = { ...prev };
+                  delete next.address;
+                  if (components?.city != null) delete next.city;
+                  if (components?.state != null) delete next.state;
+                  if (pinOk) {
+                    delete next.pincode;
+                    delete next.pin;
+                    delete next.pinCode;
+                  }
+                  return next;
+                });
+              }}
+              placeholder={field.placeholder || 'Search address, landmark, city...'}
+              className={error ? 'border-red-500' : ''}
+              required={!!field.validation?.required}
+            />
+          );
+        }
         return (
           <Textarea
             value={value}

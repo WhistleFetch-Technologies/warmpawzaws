@@ -570,7 +570,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             address: profileVendorData.address || identity.address || application?.application_payload?.address || 'India',
             city: profileVendorData.city || identity.city || application?.application_payload?.city,
             state: profileVendorData.state || identity.state || application?.application_payload?.state,
-            pincode: profileVendorData.pincode || identity.pincode || application?.application_payload?.pincode || application?.application_payload?.pinCode,
+            pincode:
+              profileVendorData.pincode ||
+              identity.pincode ||
+              application?.application_payload?.pincode ||
+              application?.application_payload?.pinCode ||
+              application?.application_payload?.pin,
             status: profileVendorData.status || 'approved',
             is_active: profileVendorData.is_active !== undefined ? profileVendorData.is_active : true,
             is_deleted: profileVendorData.is_deleted !== undefined ? profileVendorData.is_deleted : false,

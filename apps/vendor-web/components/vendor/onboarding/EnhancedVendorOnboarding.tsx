@@ -181,8 +181,10 @@ export function EnhancedVendorOnboarding({
         }
         // ✅ FIX: Normalize pincode field name - accept both 'pin' and 'pincode', but use 'pin' consistently
         if (key === 'pincode' || key === 'pinCode' || key === 'postalCode' || key === 'postal_code') {
-          sanitizedFormData['pin'] = value; // Normalize to 'pin' for backend
-          console.log(`📍 [EnhancedOnboarding] Normalized pincode field: ${key} -> pin, value: '${value}'`);
+          const pinStr = value != null && value !== '' ? String(value) : '';
+          sanitizedFormData['pin'] = pinStr;
+          sanitizedFormData['pincode'] = pinStr;
+          console.log(`📍 [EnhancedOnboarding] Normalized pincode field: ${key} -> pin/pincode, value: '${pinStr}'`);
           continue;
         }
         // ✅ FIX: Don't skip pin/pincode even if empty - let backend handle it
