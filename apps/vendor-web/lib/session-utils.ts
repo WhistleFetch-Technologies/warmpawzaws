@@ -129,6 +129,7 @@ export function clearVendorSession(): void {
   // Clear session flags so next load shows login prompt instead of redirecting
   sessionStorage.removeItem('_warmpawz_vendor_has_session');
   sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
+  sessionStorage.removeItem('_warmpawz_vendor_login_at');
   sessionStorage.removeItem('_warmpawz_vendor_session_cleared');
   sessionStorage.removeItem('_vendor_redirected_to_auth');
   

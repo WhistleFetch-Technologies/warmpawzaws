@@ -18,12 +18,7 @@ import { Hono } from 'hono';
 import { sendSMS } from '../../utils/sms-service';
 import { query, select, insert, update } from '../../database/rds-connection';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../handler/base-handler-enhanced';
-import {
-  getOrCreateCognitoUser,
-  authenticateCognitoUser,
-  verifyCognitoToken,
-  CognitoTokens
-} from '../../utils/cognito-client';
+import { CognitoTokens } from '../../utils/cognito-client';
 
 import {
   SendOtpRequestSchema,
@@ -32,7 +27,8 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
 import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
-import { generateUATJWTToken } from '../../utils/jwt-generator';
+import { issueAuthTokensAfterOtp } from '../../lib/services/auth/vendor-otp-success-payload';
+import { consumeVendorPortalCodeAndBuildPayload } from '../../lib/services/admin/vendor-portal-session-service';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
 import { processReferralSignup, processVendorReferralForCustomerSignup } from 'src/lib/services/referral-service';
 import {
@@ -1116,85 +1112,22 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.warn(`[AUTH] ⚠️ Generated fallback userData for role: ${role}`);
       }
 
-      // Get or create Cognito user
-
       let cognitoTokens: CognitoTokens;
-      // UAT MODE: Generate proper JWT tokens (not just strings)
-      // Token expiry set to 24h so post-OTP redirect and first API calls succeed (was 60s → caused 401 and redirect back to login)
-      //const { generateUATJWTToken } = await import('../utils/jwt-generator');
-      if (isUATMode) {
-
-        cognitoTokens = await generateUATJWTToken({
+      try {
+        cognitoTokens = await issueAuthTokensAfterOtp({
           userId,
           phone,
           role: role as 'customer' | 'vendor' | 'admin',
-          expiresIn: 24 * 60 * 60,
         });
-        console.log('[AUTH] UAT Mode: Generated JWT tokens with 24h expiry');
-      } else {
-        // PRODUCTION MODE: Use full Cognito authentication
-        // ✅ FIX: Check if Cognito is configured, fallback to JWT if not
-        const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID ||
-          process.env.COGNITO_VENDOR_POOL_ID ||
-          process.env.COGNITO_CUSTOMER_POOL_ID ||
-          '';
-
-        if (!cognitoUserPoolId) {
-          // Cognito not configured - use JWT tokens as fallback (same as UAT mode)
-          console.warn(`[AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
-          cognitoTokens = await generateUATJWTToken({
-            userId,
-            phone,
-            role: role as 'customer' | 'vendor' | 'admin',
-            expiresIn: 24 * 60 * 60, // 24 hours
-          });
-          console.log('[AUTH] Production Mode: Generated JWT tokens (Cognito fallback)');
-        } else {
-          // Cognito is configured - use it
-          try {
-
-            // ✅ FIX: Add timeout protection for Cognito operations (8 seconds max)
-            // This prevents Lambda timeout if Cognito is slow or unresponsive
-            const COGNITO_TIMEOUT_MS = 8000; // 8 seconds
-
-            const cognitoAuthPromise = (async () => {
-              const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
-              const tokens = await authenticateCognitoUser(phone);
-              return tokens;
-            })();
-
-            const cognitoTimeout = new Promise<CognitoTokens>((_, reject) =>
-              setTimeout(() => reject(new Error('Cognito authentication timeout after 8 seconds')), COGNITO_TIMEOUT_MS)
-            );
-
-            cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
-          } catch (cognitoError: any) {
-            console.error('[AUTH] Production Mode: Cognito authentication failed:', cognitoError);
-
-            // ✅ FIX: If Cognito fails, fallback to JWT tokens instead of returning 503
-            // This ensures the endpoint works even if Cognito has issues
-            console.warn(`[AUTH] Production Mode: Cognito failed, falling back to JWT tokens`);
-            try {
-              cognitoTokens = await generateUATJWTToken({
-                userId,
-                phone,
-                role: role as 'customer' | 'vendor' | 'admin',
-                expiresIn: 24 * 60 * 60, // 24 hours
-              });
-              console.log('[AUTH] Production Mode: Generated JWT tokens (Cognito fallback after error)');
-            } catch (jwtError: any) {
-              console.error('[AUTH] Production Mode: JWT fallback also failed:', jwtError);
-              // Only return 503 if both Cognito and JWT fail
-              return this.error(
-                'Authentication service temporarily unavailable. Please try again.',
-                503,
-                'SERVICE_UNAVAILABLE',
-                { details: 'Authentication service error' },
-                context.requestId
-              );
-            }
-          }
-        }
+      } catch (jwtError: any) {
+        console.error('[AUTH] Token issuance failed:', jwtError);
+        return this.error(
+          'Authentication service temporarily unavailable. Please try again.',
+          503,
+          'SERVICE_UNAVAILABLE',
+          { details: jwtError?.message || 'Authentication service error' },
+          context.requestId
+        );
       }
 
       // Determine if user is new or existing using state management
@@ -1353,6 +1286,52 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
         message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
         error: errorMessage
       }, statusCode);
+    }
+  });
+
+  /** Exchange admin-issued one-time code for verify-otp-shaped vendor session (vendor-web bootstrap). */
+  app.post('/auth/vendor-portal-session', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const code = typeof body?.code === 'string' ? body.code.trim() : '';
+      const requestId =
+        c.req.header('x-request-id') ||
+        c.req.header('X-Request-Id') ||
+        `req-${Date.now()}`;
+
+      const out = await consumeVendorPortalCodeAndBuildPayload({ code, requestId });
+      if (!out.ok) {
+        return c.json(
+          {
+            success: false,
+            error: { code: out.errorCode || 'UNAUTHORIZED', message: out.error },
+            meta: { timestamp: new Date().toISOString(), requestId, version: 'v1' },
+          },
+          out.status as 400 | 401 | 403 | 404 | 500
+        );
+      }
+
+      return c.json(
+        {
+          success: true,
+          data: out.successBody,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId,
+            version: 'v1',
+          },
+        },
+        200
+      );
+    } catch (error: any) {
+      console.error('[AUTH] vendor-portal-session error:', error);
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: error?.message || 'Internal Server Error' },
+        },
+        500
+      );
     }
   });
 

@@ -452,6 +452,7 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       // These flags are cleared on hard refresh, allowing us to detect it
       sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
       sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true'); // ✅ FIX: Added for better detection
+      sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
       console.log('✅ [Vendor Session] sessionStorage flags set after login');
       
       // ✅ FIX: Use onboarding_status from verify-otp response directly (no separate API call needed)

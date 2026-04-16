@@ -3,10 +3,18 @@
  * Uses API Gateway (Lambda backend)
  */
 
+import {
+  getOpenVendorPortalBaseUrl,
+  normalizeConfiguredVendorWebUrl,
+  resolveVendorPortalOriginForLoopbackAdmin,
+} from './open-vendor-portal-base';
+
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
   environment?: string;
+  /** Optional override for “Open vendor portal” target (deploy may inject via runtime-config). */
+  vendorWebUrl?: string;
 };
 
 declare global {
@@ -113,6 +121,30 @@ export function getApiBaseUrl(): string {
 
   const normalized = normalizeDevApiBaseUrl((raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, ''));
   return normalized || getApiGatewayUrl();
+}
+
+/**
+ * Base URL for vendor-web when admin uses “Open vendor portal”.
+ * Uses runtime `vendorWebUrl` when set; if admin runs on 127.0.0.1 but the API is remote (e.g. dev
+ * API Gateway), returns deployed dev vendor HTTPS — not http://127.0.0.1:3002.
+ */
+export function getVendorWebBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const cfg = getRuntimeConfig();
+    const vw = (cfg.vendorWebUrl && typeof cfg.vendorWebUrl === 'string' ? cfg.vendorWebUrl.trim() : '').replace(
+      /\/+$/,
+      ''
+    );
+    if (vw && !/localhost|127\.0\.0\.1/i.test(vw)) {
+      return normalizeConfiguredVendorWebUrl(vw);
+    }
+
+    const loopbackVendor = resolveVendorPortalOriginForLoopbackAdmin(getApiBaseUrl());
+    if (loopbackVendor !== null) {
+      return loopbackVendor;
+    }
+  }
+  return getOpenVendorPortalBaseUrl();
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

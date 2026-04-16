@@ -128,6 +128,21 @@ export default function RootLayout({
                   script.defer = false;
                   script.onload = function() { 
                     console.log('Runtime config loaded');
+                    // Open vendor portal: map admin host → vendor-web (build-time NEXT_PUBLIC often localhost)
+                    try {
+                      var h = window.location.hostname || '';
+                      window.__WARMPAWZ_RUNTIME_CONFIG__ = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+                      if (h === 'dev.admin.warmpawz.com' || h === 'dfof7mguaa0a5.cloudfront.net') {
+                        window.__WARMPAWZ_RUNTIME_CONFIG__.vendorWebUrl = 'https://dev.vendor.warmpawz.com';
+                      } else if (
+                        h === 'admin.warmpawz.com' ||
+                        h === 'dbr09zyoq9akb.cloudfront.net' ||
+                        h === 'd1y5ywletev82x.cloudfront.net' ||
+                        h === 'dg69gqp2frh39.cloudfront.net'
+                      ) {
+                        window.__WARMPAWZ_RUNTIME_CONFIG__.vendorWebUrl = 'https://vendor.warmpawz.com';
+                      }
+                    } catch (e2) {}
                     // Ensure production mode is preserved after runtime-config loads
                     // Only override if we're actually in production mode (not dev subdomain)
                     if (window.__WARMPAWZ_PROD_MODE__ && window.__WARMPAWZ_RUNTIME_CONFIG__) {

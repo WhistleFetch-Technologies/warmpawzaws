@@ -105,11 +105,13 @@ if ($DeployOnly -and (Test-Path "dist")) {
     
     Write-Host "  Running: npm run build" -ForegroundColor Gray
     $env:NODE_ENV = "production"
-    $buildOutput = npm run build 2>&1
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  ❌ Build failed!" -ForegroundColor Red
-        Write-Host $buildOutput
+    # Run via cmd so Next.js warnings on stderr do not trigger Stop on NativeCommandError
+    $buildProc = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "npm run build" `
+        -WorkingDirectory $adminWebDir `
+        -Wait -PassThru -NoNewWindow
+    if ($buildProc.ExitCode -ne 0) {
+        Write-Host "  ❌ Build failed (exit code $($buildProc.ExitCode))!" -ForegroundColor Red
         exit 1
     }
     

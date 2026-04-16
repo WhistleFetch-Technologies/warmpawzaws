@@ -3,6 +3,25 @@
 (function () {
   const defaultUatMode = true;
 
+  /** Vendor-web origin for “Open vendor portal” — must not rely on NEXT_PUBLIC (often localhost in builds). */
+  function vendorWebUrlForHost(hostname) {
+    if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname.indexOf('localhost') !== -1) {
+      return undefined;
+    }
+    if (hostname === 'dev.admin.warmpawz.com' || hostname === 'dfof7mguaa0a5.cloudfront.net') {
+      return 'https://dev.vendor.warmpawz.com';
+    }
+    if (
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'dbr09zyoq9akb.cloudfront.net' ||
+      hostname === 'd1y5ywletev82x.cloudfront.net' ||
+      hostname === 'dg69gqp2frh39.cloudfront.net'
+    ) {
+      return 'https://vendor.warmpawz.com';
+    }
+    return undefined;
+  }
+
   function normalizeLegacyDevApiUrl(u) {
     if (!u || typeof u !== 'string') return u;
     var t = u.trim().replace(/\/+$/, '');
@@ -11,6 +30,11 @@
 
   // If config is already set (e.g., by layout.tsx for production mode), preserve it
   if (window.__WARMPAWZ_RUNTIME_CONFIG__ && window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl) {
+    var preHost = window.location && window.location.hostname ? window.location.hostname : '';
+    var preVw = vendorWebUrlForHost(preHost);
+    if (preVw) {
+      window.__WARMPAWZ_RUNTIME_CONFIG__.vendorWebUrl = preVw;
+    }
     // ✅ FIX: If NEXT_PUBLIC_API_BASE_URL is set (local dev), use it instead
     if (typeof window !== 'undefined' && window.__NEXT_PUBLIC_API_BASE_URL__) {
       window.__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl = normalizeLegacyDevApiUrl(window.__NEXT_PUBLIC_API_BASE_URL__);
@@ -101,11 +125,34 @@
   // UAT mode: true for dev/local, false for production
   const uatMode = (isProdHostname && !isDevSubdomain) ? false : defaultUatMode;
 
+  const vendorWebUrl = vendorWebUrlForHost(hostname);
+
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: apiBaseUrl,
     uatMode: uatMode,
-    environment: environment
+    environment: environment,
+    ...(vendorWebUrl ? { vendorWebUrl: vendorWebUrl } : {})
   };
 
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+})();
+
+// Re-apply vendor URL after main block (in case another script replaced __WARMPAWZ_RUNTIME_CONFIG__ without vendorWebUrl)
+(function () {
+  try {
+    var h = typeof window !== 'undefined' && window.location ? window.location.hostname : '';
+    var vw;
+    if (h === 'dev.admin.warmpawz.com' || h === 'dfof7mguaa0a5.cloudfront.net') {
+      vw = 'https://dev.vendor.warmpawz.com';
+    } else if (
+      h === 'admin.warmpawz.com' ||
+      h === 'dbr09zyoq9akb.cloudfront.net' ||
+      h === 'd1y5ywletev82x.cloudfront.net' ||
+      h === 'dg69gqp2frh39.cloudfront.net'
+    ) {
+      vw = 'https://vendor.warmpawz.com';
+    }
+    if (!vw || !window.__WARMPAWZ_RUNTIME_CONFIG__) return;
+    window.__WARMPAWZ_RUNTIME_CONFIG__.vendorWebUrl = vw;
+  } catch (e) {}
 })();
