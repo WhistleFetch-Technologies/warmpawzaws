@@ -1245,7 +1245,12 @@ export function CustomerHomeWrapper({
       <BoardingVendorListView
         phone={phone}
         serviceSlug={slug}
-        onBack={() => router.push('/')}
+        onBack={() => {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, 'boarding');
+          }
+          router.push('/');
+        }}
         onNavigate={(screen, data) => {
           if (screen === 'boarding-booking') {
             setPreviousScreen('pet-boarding-vendors');
@@ -2301,7 +2306,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); goToShopFromParent(); }} onHelp={() => setCurrentScreen('support_help')} />;
   if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
   
-  if (currentScreen === 'pharmacy_store') return <PharmacyStore phone={phone} onBack={() => setCurrentScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'cart') setCurrentScreen('cart'); }} />;
+  if (currentScreen === 'pharmacy_store') return <PharmacyStore phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'cart') setCurrentScreen('cart'); }} />;
   if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={() => setCurrentScreen('pharmacy_store')} onSuccess={() => setCurrentScreen('home')} />;
 
   // Other Screens
@@ -2745,12 +2750,31 @@ export function CustomerHomeWrapper({
     petId={selectedPetId || undefined}
   />;
   // purchase-package: same as package-booking (e.g. from VetBookingRouter/GroomingBookingRouter package cards)
-  if (currentScreen === 'purchase-package') return <PackageBookingPage
-    customerPhone={phone}
-    customerId={phone}
-    petId={selectedPetId || undefined}
-    onBack={() => { setCurrentScreen(previousScreen || 'home'); setPreviousScreen(null); }}
-  />;
+  if (currentScreen === 'purchase-package') {
+    const walkSession = walkerServiceData?.walkSession ?? null;
+    return (
+      <PackageBookingPage
+        customerPhone={phone}
+        customerId={phone}
+        petId={selectedPetId || undefined}
+        walkSessionIntent={walkSession}
+        onContinueToChooseWalker={
+          walkSession
+            ? () => {
+                setPreviousScreen('purchase-package');
+                setWalkerServiceData({ pendingWalkSession: walkSession });
+                setCurrentScreen('walker');
+              }
+            : undefined
+        }
+        onBack={() => {
+          setWalkerServiceData(null);
+          setCurrentScreen(previousScreen || 'home');
+          setPreviousScreen(null);
+        }}
+      />
+    );
+  }
   // profile: map to customer-profile (e.g. from VetBookingRouter tab)
   if (currentScreen === 'profile') return (
     <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>

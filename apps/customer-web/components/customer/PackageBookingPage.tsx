@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, IndianRupee } from 'lucide-react';
+import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, IndianRupee, Dog, Footprints } from 'lucide-react';
 
 interface PackageItem {
   id: string;
@@ -51,14 +51,31 @@ interface PackageBooking {
   createdAt: string;
 }
 
+export interface WalkSessionIntent {
+  serviceId: string;
+  serviceName: string;
+  price: number;
+  duration: number;
+}
+
 interface PackageBookingPageProps {
   customerPhone: string;
   customerId: string;
   petId?: string;
   onBack?: () => void;
+  /** Single walk (30/60 min) chosen from dog walking — show summary + path back to pick a walker */
+  walkSessionIntent?: WalkSessionIntent | null;
+  onContinueToChooseWalker?: () => void;
 }
 
-export function PackageBookingPage({ customerPhone, customerId, petId, onBack }: PackageBookingPageProps) {
+export function PackageBookingPage({
+  customerPhone,
+  customerId,
+  petId,
+  onBack,
+  walkSessionIntent,
+  onContinueToChooseWalker,
+}: PackageBookingPageProps) {
   const [view, setView] = useState<'browse' | 'schedule' | 'my-packages'>('browse');
   const [packages, setPackages] = useState<PackageItem[]>([]);
   const [myPackages, setMyPackages] = useState<PackageBooking[]>([]);
@@ -235,6 +252,37 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
           {error}
+        </div>
+      )}
+
+      {walkSessionIntent && onContinueToChooseWalker && (
+        <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4 shadow-sm mb-6">
+          <div className="flex items-start gap-3">
+            <div className="w-12 h-12 rounded-xl bg-white border border-orange-100 flex items-center justify-center shrink-0">
+              <Dog className="w-7 h-7 text-orange-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-1">Dog walking</p>
+              <h2 className="text-lg font-bold text-gray-900">{walkSessionIntent.serviceName}</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                <span className="font-semibold text-orange-600">₹{walkSessionIntent.price}</span>
+                {' / walk · '}
+                {walkSessionIntent.duration} minutes
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
+                Tap below to return to dog walking and pick a walker for this session.
+              </p>
+              <button
+                type="button"
+                onClick={onContinueToChooseWalker}
+                className="mt-4 w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+              >
+                <Footprints className="w-5 h-5" />
+                Choose a walker
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

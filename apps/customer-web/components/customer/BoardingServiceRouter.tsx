@@ -330,7 +330,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <button
                 type="button"
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => router.push('/pet-boarding/vendors?service=overnight')}
+                onClick={() => router.push('/pet-boarding/vendors?service=all')}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>

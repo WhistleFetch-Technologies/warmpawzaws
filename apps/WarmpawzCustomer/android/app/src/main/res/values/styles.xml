@@ -6,7 +6,14 @@
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
 
-    <!-- Razorpay CheckoutActivity: base theme; API 35+ adds windowOptOutEdgeToEdgeEnforcement in values-v35. -->
-    <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar" />
+    <!-- Razorpay CheckoutActivity: non-translucent status bar + solid color so content lays out below system bars. -->
+    <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <!-- Solid bar (Warmpawz orange); avoids drawing checkout toolbar under status icons -->
+        <item name="android:statusBarColor">#FFF57C00</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:fitsSystemWindows">true</item>
+    </style>
 
 </resources>

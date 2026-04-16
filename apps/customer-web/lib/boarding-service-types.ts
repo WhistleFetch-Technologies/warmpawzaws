@@ -2,6 +2,7 @@
  * Pet Boarding sub-service slugs (URL ?service= values and in-app filtering).
  */
 export const BOARDING_SERVICE_SLUGS = [
+  'all',
   'overnight',
   'full-day',
   'half-day',
@@ -12,6 +13,7 @@ export const BOARDING_SERVICE_SLUGS = [
 export type BoardingServiceSlug = (typeof BOARDING_SERVICE_SLUGS)[number];
 
 export const BOARDING_SERVICE_LABELS: Record<BoardingServiceSlug, string> = {
+  all: 'All boarding centers',
   overnight: 'Overnight Boarding',
   'full-day': 'Full Day Boarding',
   'half-day': 'Half Day Boarding',
@@ -21,6 +23,7 @@ export const BOARDING_SERVICE_LABELS: Record<BoardingServiceSlug, string> = {
 
 /** Keywords to match vendor-published service names/styles to a boarding sub-type */
 export const BOARDING_SERVICE_KEYWORDS: Record<BoardingServiceSlug, string[]> = {
+  all: [],
   overnight: [
     'overnight',
     'night stay',
@@ -74,5 +77,6 @@ export function collectVendorServiceHaystack(vendor: Record<string, unknown>): s
 }
 
 export function vendorOffersBoardingSlug(vendor: Record<string, unknown>, slug: BoardingServiceSlug): boolean {
+  if (slug === 'all') return true;
   return boardingSlugMatchesText(slug, collectVendorServiceHaystack(vendor));
 }

@@ -161,10 +161,10 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
 
   // Otherwise, render the services list
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
+      {/* Orange only on the header band; neutral outer bg avoids seam and footer orange block */}
+      <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+        <div className="flex items-center gap-4">
           <button
             onClick={onBack}
             className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
@@ -175,8 +175,8 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
         </div>
       </div>
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      {/* Main Content — slight negative margin removes subpixel gap; flex-1 fills viewport below short lists */}
+      <div className="relative z-10 -mt-6 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-8 shadow-[0_-8px_30px_rgba(0,0,0,0.06)]">
         <div className="space-y-4">
           <div className="mb-4">
             <h2 className="text-lg font-bold text-slate-900 mb-2">Select Nutritionist</h2>

@@ -236,10 +236,6 @@ export function CustomerUserProfileScreen({
           />
         </View>
 
-        <View style={styles.iconSection}>
-          <Text style={styles.title}>Create Your Profile 👤</Text>
-        </View>
-
         {/* Content */}
         <View style={styles.content}>
           <Text style={styles.description}>
@@ -407,23 +403,11 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     paddingTop: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   logoImage: {
     width: 80,
     height: 80,
-  },
-  iconSection: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-  },
-  title: {
-    fontSize: typography.fontSizes['3xl'],
-    fontWeight: typography.fontWeights.bold,
-    color: colors.text,
-    textAlign: 'center',
-    lineHeight: 36,
   },
   content: {
     paddingHorizontal: spacing.md,
