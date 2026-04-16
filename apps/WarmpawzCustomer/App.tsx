@@ -63,6 +63,7 @@ import { ProductDetailScreen } from './src/screens/shop/ProductDetailScreen';
 import { OrderReturnScreen } from './src/screens/orders/OrderReturnScreen';
 import { PaymentFailureRecoveryScreen } from './src/screens/payments/PaymentFailureRecoveryScreen';
 import { ChatScreen } from './src/screens/chat/ChatScreen';
+import { CustomerChatInboxScreen } from './src/screens/chat/CustomerChatInboxScreen';
 import { SubscriptionsScreen } from './src/screens/subscriptions/SubscriptionsScreen';
 import { ProblemDiscoveryScreen } from './src/screens/services/ProblemDiscoveryScreen';
 // Batch 2: New screens
@@ -319,6 +320,24 @@ export default function App() {
                       <CustomerHomeScreen
                         {...props}
                         phone={session.phone}
+                        customerId={session.customerId}
+                        onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
+                  <Stack.Screen name="CustomerChatInbox">
+                    {(props) => (
+                      <CustomerChatInboxScreen
+                        {...props}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -538,16 +557,17 @@ export default function App() {
                     {(props) => (
                       <BookingConfirmationScreen
                         {...props}
-                        bookingData={props.route?.params?.bookingData || {}}
-                        onViewBooking={(bookingId, petId) =>
-                          handleNavigate('BookingDetail', { bookingId })
-                        }
-                        onBackToHome={() =>
-                          setSession({ ...session, navigationTarget: null })
-                        }
-                        onBack={() =>
-                          setSession({ ...session, navigationTarget: null })
-                        }
+                        bookingId={props.route?.params?.bookingId || ''}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
+                        onNavigate={handleNavigate}
                       />
                     )}
                   </Stack.Screen>
@@ -854,6 +874,13 @@ export default function App() {
                         recipientName={props.route?.params?.recipientName}
                         recipientAvatar={props.route?.params?.recipientAvatar}
                         phone={session.phone}
+                        customerName={
+                          session.customer?.full_name ||
+                          session.customer?.name ||
+                          session.customer?.displayName ||
+                          'Customer'
+                        }
+                        supportChat={props.route?.params?.type === 'support'}
                         onBack={() => {
                           if (navigationRef.canGoBack()) {
                             navigationRef.goBack();
@@ -1172,18 +1199,6 @@ export default function App() {
                         }}
                         onNavigate={handleNavigate}
                         onSuccess={(bookingId) => handleNavigate('BookingConfirmation', { bookingId })}
-                      />
-                    )}
-                  </Stack.Screen>
-                  <Stack.Screen name="BookingConfirmation">
-                    {(props) => (
-                      <BookingConfirmationScreen
-                        {...props}
-                        bookingId={props.route?.params?.bookingId || ''}
-                        phone={session.phone}
-                        customerId={session.customerId}
-                        onBack={() => handleNavigate('Home')}
-                        onNavigate={handleNavigate}
                       />
                     )}
                   </Stack.Screen>

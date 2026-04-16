@@ -227,7 +227,13 @@ export function LiveTrackingDashboardScreen({
             <View style={styles.actions}>
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => onNavigate && onNavigate('Chat', { bookingId: selectedBooking.bookingId })}
+                onPress={() =>
+                  onNavigate &&
+                  onNavigate('Chat', {
+                    bookingId: selectedBooking.bookingId,
+                    recipientName: selectedBooking.vendorName || 'Provider',
+                  })
+                }
               >
                 <Text style={styles.actionButtonIcon}>💬</Text>
                 <Text style={styles.actionButtonText}>Message</Text>

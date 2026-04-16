@@ -18,12 +18,14 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { CustomerMessagesModal } from '../chat/CustomerMessagesModal';
 
 const { width } = Dimensions.get('window');
 
 interface CustomerHomeScreenProps {
   phone: string;
-  onNavigate: (screen: string) => void;
+  customerId?: string;
+  onNavigate: (screen: string, data?: any) => void;
   onProfileClick?: () => void;
   onPetClick?: (petId: string) => void;
   onAddPet?: () => void;
@@ -47,6 +49,7 @@ interface UserData {
 
 export function CustomerHomeScreen({
   phone,
+  customerId,
   onNavigate,
   onProfileClick,
   onPetClick,
@@ -60,6 +63,7 @@ export function CustomerHomeScreen({
   const [loading, setLoading] = useState(true);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [messagesModalOpen, setMessagesModalOpen] = useState(false);
 
   // Cleanup
   useEffect(() => {
@@ -130,7 +134,19 @@ export function CustomerHomeScreen({
     );
   }
 
+  const openMessages = () => setMessagesModalOpen(true);
+
   return (
+    <View style={styles.homeRoot}>
+    <CustomerMessagesModal
+      visible={messagesModalOpen}
+      onClose={() => setMessagesModalOpen(false)}
+      phone={phone}
+      customerId={customerId}
+      customerDisplayName={userData.name || 'Customer'}
+      senderId={customerId || phone}
+      onNavigate={onNavigate}
+    />
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Section */}
       <View style={styles.header}>
@@ -159,6 +175,13 @@ export function CustomerHomeScreen({
             )}
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={openMessages}
+              style={styles.actionButton}
+              accessibilityLabel="Messages"
+            >
+              <Icon name="message-text-outline" size={20} color={colors.white} />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => onNavigate('ServiceSearch')}
               style={styles.actionButton}
@@ -346,10 +369,39 @@ export function CustomerHomeScreen({
         </View>
       </View>
     </ScrollView>
+    <TouchableOpacity
+      style={styles.chatFab}
+      onPress={openMessages}
+      activeOpacity={0.85}
+      accessibilityLabel="Open messages"
+    >
+      <Icon name="message-text" size={26} color={colors.white} />
+    </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  homeRoot: {
+    flex: 1,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  chatFab: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.xl + 8,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.backgroundSecondary,

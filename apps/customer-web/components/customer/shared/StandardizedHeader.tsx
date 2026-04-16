@@ -2,7 +2,7 @@
 
 import { 
   Heart, Plus, ChevronRight, ShoppingCart, User,
-  Dog, Cat, ArrowLeft
+  Dog, Cat, ArrowLeft, MessageSquare
 } from 'lucide-react';
 import { WalletIcon } from '../WalletIcon';
 import { PresignableImage } from '@/components/shared/PresignableImage';
@@ -134,6 +134,14 @@ export function StandardizedHeader({
               showBalance={true}
             />
           )}
+          <button
+            type="button"
+            onClick={() => onNavigate && onNavigate('booking-messages')}
+            className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+            aria-label="Messages"
+          >
+            <MessageSquare className="w-4 h-4 text-white" />
+          </button>
           <button
             onClick={() => onNavigate && onNavigate('cart')}
             className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
