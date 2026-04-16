@@ -969,6 +969,19 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
           alert('❌ CVV must be 3 digits');
           return;
         }
+        const eyDigits = newPayment.expiryYear.replace(/\D/g, '');
+        if (eyDigits.length !== 2 && eyDigits.length !== 4) {
+          alert('❌ Year must be 2 digits (YY) or 4 digits (YYYY)');
+          return;
+        }
+        const fullYear =
+          eyDigits.length === 2 ? parseInt(`20${eyDigits}`, 10) : parseInt(eyDigits, 10);
+        const minY = new Date().getFullYear();
+        const maxY = minY + 25;
+        if (Number.isNaN(fullYear) || fullYear < minY || fullYear > maxY) {
+          alert(`❌ Enter a valid expiry year (${minY}–${maxY})`);
+          return;
+        }
       } else if (newPayment.type === 'upi') {
         if (!newPayment.upiId) {
           alert('❌ Please enter UPI ID');
@@ -2153,11 +2166,12 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Year</label>
                           <input
                             type="text"
-                            placeholder="YY"
-                            maxLength={2}
+                            placeholder="YYYY"
+                            maxLength={4}
+                            inputMode="numeric"
                             value={newPayment.expiryYear}
                             onChange={(e) => {
-                              const value = e.target.value.replace(/\D/g, '');
+                              const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                               setNewPayment({ ...newPayment, expiryYear: value });
                             }}
                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"

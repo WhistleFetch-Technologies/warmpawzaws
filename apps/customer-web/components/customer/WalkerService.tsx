@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, Bike, RefreshCw } from 'lucide-react';
+import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -11,10 +11,19 @@ import { WALKING_NEEDS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
+export interface WalkerPendingWalkSession {
+  serviceId: string;
+  serviceName: string;
+  price: number;
+  duration: number;
+}
+
 interface WalkerServiceProps {
   phone: string;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
+  /** After choosing a single walk from PackageBookingPage — merge into walker booking when a walker is tapped */
+  pendingWalkSession?: WalkerPendingWalkSession | null;
 }
 
 interface ActiveWalk {
@@ -84,7 +93,46 @@ function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): bo
   return false;
 }
 
-export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps) {
+function walkerProfilePhotoUrl(w: Record<string, unknown>): string | undefined {
+  for (const key of ['photoUrl', 'photo', 'profilePhotoUrl', 'profile_photo_url'] as const) {
+    const v = w[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+/** Discover-services list card: show profile photo when API provides a URL; Dog placeholder on miss or load error. */
+function WalkerListCardHero({ walker }: { walker: Record<string, unknown> }) {
+  const url = walkerProfilePhotoUrl(walker);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
+  const showPlaceholder = !url || failed;
+  const alt =
+    String(walker.name || walker.businessName || walker.business_name || 'Pet walker').trim() ||
+    'Walker profile';
+
+  return (
+    <div className="h-48 bg-gradient-to-br from-orange-100 to-amber-100 relative overflow-hidden">
+      {url && !failed ? (
+        <img
+          src={url}
+          alt={alt}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {showPlaceholder ? (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Dog className="w-16 h-16 text-orange-400 opacity-30" aria-hidden />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
   const walkingNeeds = useProblemGridByRole('walker');
   const [loading, setLoading] = useState(true);
   const [walkers, setWalkers] = useState<any[]>([]);
@@ -296,49 +344,46 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   }, [searchQuery, loadWalkers]);
 
   const handleWalkerSelect = (walker: any) => {
-    onNavigate?.('walker-booking', { vendorId: walker.id || walker.vendorId, serviceType: 'walking', serviceStyle: 'at_home' });
+    const vid = walker.id || walker.vendorId;
+    const walkerPayload = {
+      id: vid,
+      name: walker.name || walker.businessName || 'Walker',
+      ...walker,
+    };
+    const base = {
+      vendorId: vid,
+      serviceType: 'walking' as const,
+      serviceStyle: 'at_home' as const,
+    };
+    if (pendingWalkSession) {
+      onNavigate?.('walker-booking', {
+        ...base,
+        walker: walkerPayload,
+        serviceId: pendingWalkSession.serviceId,
+        serviceName: pendingWalkSession.serviceName,
+        price: pendingWalkSession.price,
+        duration: pendingWalkSession.duration,
+      });
+      return;
+    }
+    onNavigate?.('walker-booking', base);
   };
 
   const walkersSectionRef = useRef<HTMLDivElement>(null);
+  const pendingScrollDoneRef = useRef(false);
 
-  /** When exactly one walker is listed (or we have a "book again" walker), package cards can open booking directly. */
-  const vendorIdForQuickBook = (() => {
-    if (previousWalker?.id) return String(previousWalker.id);
-    if (walkers.length === 1) {
-      const w = walkers[0];
-      const id = w?.id ?? w?.vendorId;
-      return id != null && id !== '' ? String(id) : undefined;
-    }
-    return undefined;
-  })();
-
-  const openWalkBookingFromPackage = (opts: {
-    serviceId: string;
-    serviceName: string;
-    duration: number;
-    price: number;
-  }) => {
-    const vid = vendorIdForQuickBook;
-    if (!vid) {
-      walkersSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      toast.info('Select a walker below to book this package.');
+  useEffect(() => {
+    if (!pendingWalkSession) {
+      pendingScrollDoneRef.current = false;
       return;
     }
-    const walkerRow = walkers.find((w) => String(w.id || w.vendorId) === vid);
-    const walkerPayload = walkerRow
-      ? { id: vid, name: walkerRow.name || walkerRow.businessName || 'Walker', ...walkerRow }
-      : { id: vid, name: previousWalker?.name || 'Walker', ...previousWalker };
-    onNavigate?.('walker-booking', {
-      vendorId: vid,
-      walker: walkerPayload,
-      serviceType: 'walking',
-      serviceStyle: 'at_home',
-      serviceId: opts.serviceId,
-      serviceName: opts.serviceName,
-      price: opts.price,
-      duration: opts.duration,
-    });
-  };
+    if (pendingScrollDoneRef.current) return;
+    pendingScrollDoneRef.current = true;
+    const t = window.setTimeout(() => {
+      walkersSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [pendingWalkSession]);
 
   const handleWeeklyWalkPackage = () => {
     onNavigate?.('purchase-package');
@@ -595,7 +640,17 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
           </div>
         </div>
 
-        {/* Walk Packages — tappable: opens booking when a walker is unambiguous, else scrolls to walker list */}
+        {pendingWalkSession && (
+          <Card className="p-4 mb-4 border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50">
+            <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-1">Selected walk</p>
+            <p className="font-bold text-gray-900">{pendingWalkSession.serviceName}</p>
+            <p className="text-sm text-gray-600 mt-1">
+              ₹{pendingWalkSession.price} · {pendingWalkSession.duration} min — choose a walker below to continue.
+            </p>
+          </Card>
+        )}
+
+        {/* Walk Packages — single walks open Service Packages with details; weekly opens the same browse flow */}
         <div>
           <h2 className="font-bold text-gray-900 mb-4">Walk Packages</h2>
           <div className="space-y-3">
@@ -639,13 +694,16 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                 className="p-4 hover:shadow-md transition-shadow cursor-pointer focus-visible:outline focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
                 onClick={() => {
                   if (pkg.kind === 'weekly') handleWeeklyWalkPackage();
-                  else
-                    openWalkBookingFromPackage({
-                      serviceId: pkg.serviceId,
-                      serviceName: pkg.serviceName,
-                      duration: pkg.duration,
-                      price: pkg.priceValue,
+                  else if (pkg.kind === 'walk') {
+                    onNavigate?.('purchase-package', {
+                      walkSession: {
+                        serviceId: pkg.serviceId,
+                        serviceName: pkg.serviceName,
+                        price: pkg.priceValue,
+                        duration: pkg.duration,
+                      },
                     });
+                  }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -695,12 +753,9 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => handleWalkerSelect(walker)}
                 >
-                  {/* Walker Image */}
-                  <div className="h-48 bg-gradient-to-br from-orange-100 to-amber-100 relative">
-                    <div className="absolute inset-0 flex items-center justify-center text-6xl">
-                      <Bike className="w-16 h-16 text-orange-400 opacity-30" />
-                    </div>
-                    <div className="absolute top-3 right-3 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                  <div className="relative">
+                    <WalkerListCardHero walker={walker as Record<string, unknown>} />
+                    <div className="absolute top-3 right-3 z-10 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
                       <Star className="w-3 h-3 fill-white" />
                       {walker.rating || 4.5}
                     </div>

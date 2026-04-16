@@ -70,6 +70,7 @@ export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'cart',
   'wallet',
   'home',
+  'boarding',
   'rewards-loyalty',
   'referral-system',
   'support_help',

@@ -13,12 +13,21 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
 type StepType = 'select' | 'walkers' | 'confirm';
+
+function walkerProfilePhotoUrl(walker: Record<string, unknown>): string | undefined {
+  for (const key of ['photoUrl', 'photo', 'profilePhotoUrl', 'profile_photo_url'] as const) {
+    const v = walker[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
 
 interface WalkerServiceScreenProps {
   phone: string;
@@ -375,12 +384,16 @@ export function WalkerServiceScreen({
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
         <ScrollView style={styles.walkerList}>
-          {walkers.map((walker) => (
+          {walkers.map((walker, index) => {
+            const photoUri = walkerProfilePhotoUrl(walker as Record<string, unknown>);
+            const rowKey = String(walker.id ?? walker.vendorId ?? '');
+            return (
             <TouchableOpacity
-              key={walker.id}
+              key={rowKey ? rowKey : `walker-row-${index}`}
               style={styles.walkerCard}
               onPress={() => handleWalkerSelect(walker)}
             >
+              <WalkerListThumb uri={photoUri} />
               <View style={styles.walkerInfo}>
                 <Text style={styles.walkerName}>{walker.name}</Text>
                 {walker.rating && (
@@ -401,7 +414,8 @@ export function WalkerServiceScreen({
               </View>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </ScrollView>
       )}
     </View>
@@ -646,6 +660,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.gray['200'],
+    gap: spacing.sm,
+  },
+  walkerThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.gray['100'],
+  },
+  walkerThumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walkerThumbEmoji: {
+    fontSize: 28,
   },
   walkerInfo: {
     flex: 1,
@@ -720,4 +748,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+
+function WalkerListThumb({ uri }: { uri?: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [uri]);
+  if (uri && !failed) {
+    return (
+      <Image
+        source={{ uri }}
+        style={styles.walkerThumb}
+        onError={() => setFailed(true)}
+        accessibilityIgnoresInvertColors
+      />
+    );
+  }
+  return (
+    <View style={[styles.walkerThumb, styles.walkerThumbPlaceholder]}>
+      <Text style={styles.walkerThumbEmoji}>🐕</Text>
+    </View>
+  );
+}
 

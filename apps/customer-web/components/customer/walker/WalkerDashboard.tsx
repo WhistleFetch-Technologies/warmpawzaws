@@ -16,6 +16,7 @@ export function WalkerDashboard({ phone, onBack, onNavigate, data }: WalkerDashb
       phone={phone}
       onBack={onBack}
       onNavigate={onNavigate}
+      pendingWalkSession={data?.pendingWalkSession}
     />
   );
 }

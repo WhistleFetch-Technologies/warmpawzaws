@@ -413,6 +413,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleWalkerNavigate = (screen: string, data?: any) => {
     setWalkerServiceData(data);
     if (screen === 'walker-booking') navigateToScreen('walker-booking');
+    else if (screen === 'purchase-package') navigateToScreen('package-booking');
   };
 
   const handleAccountNavigate = (path: string) => {
@@ -958,13 +959,30 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     onBack={handleBack}
   />;
 
-  // Package Booking
-  if (currentScreen === 'package-booking') return <PackageBookingPage
-    customerPhone={phone}
-    customerId={phone}
-    petId={selectedPetId || undefined}
-    onBack={handleBack}
-  />;
+  // Package Booking (includes purchase-package from WalkerService via same screen + walkerServiceData)
+  if (currentScreen === 'package-booking') {
+    const walkSession = walkerServiceData?.walkSession ?? null;
+    return (
+      <PackageBookingPage
+        customerPhone={phone}
+        customerId={phone}
+        petId={selectedPetId || undefined}
+        walkSessionIntent={walkSession}
+        onContinueToChooseWalker={
+          walkSession
+            ? () => {
+                setWalkerServiceData({ pendingWalkSession: walkSession });
+                navigateToScreen('walker');
+              }
+            : undefined
+        }
+        onBack={() => {
+          setWalkerServiceData(null);
+          handleBack();
+        }}
+      />
+    );
+  }
 
   // Emergency Booking
   if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
