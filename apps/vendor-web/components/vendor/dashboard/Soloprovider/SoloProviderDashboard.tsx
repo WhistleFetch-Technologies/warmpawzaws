@@ -48,6 +48,7 @@ import {
   Shield,
   Badge,
   Navigation,
+  Footprints,
   Map,
   Radio,
   icons
@@ -784,7 +785,12 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         </div>
 
         {/* Additional Capabilities Section - hidden for pharmacy */}
-        {!isPharmacy && (capabilities.progress_tracking || capabilities.distance_pricing || capabilities.counseling || hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
+        {!isPharmacy &&
+          (capabilities.progress_tracking ||
+            isWalker ||
+            capabilities.distance_pricing ||
+            capabilities.counseling ||
+            hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
@@ -799,13 +805,31 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   <span className="text-xs font-medium text-gray-900">Pet policies</span>
                 </button>
               )}
-              {capabilities.progress_tracking && (
+              {(capabilities.progress_tracking || isWalker) && (
                 <button
-                  onClick={() => router.push('/training/progress')}
+                  type="button"
+                  onClick={() => {
+                    if (isWalker) {
+                      router.push('/bookings');
+                    } else {
+                      router.push('/training/progress');
+                    }
+                  }}
                   className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                  title={
+                    isWalker
+                      ? 'Open Bookings to start a walk (customer OTP), live GPS tracking, and end session when finished'
+                      : 'Training and program progress'
+                  }
                 >
-                  <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Progress</span>
+                  {isWalker ? (
+                    <Footprints className="w-6 h-6 text-green-600 mb-1" />
+                  ) : (
+                    <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
+                  )}
+                  <span className="text-xs font-medium text-gray-900">
+                    {isWalker ? 'Walk sessions' : 'Progress'}
+                  </span>
                 </button>
               )}
 

@@ -1161,8 +1161,13 @@ export function VendorLandingPage({
         return (
           <NutritionistMealManager
             vendorId={vendorId}
-
+            vendorData={vendorData}
+            vendorName={vendorData?.fullName || vendorData?.businessName}
             onBack={() => setShowNutritionistMealManager(false)}
+            onNavigateToProgressTracking={() => {
+              setShowNutritionistMealManager(false);
+              setShowProgressTracking(true);
+            }}
           />
         );
       }
@@ -1327,10 +1332,23 @@ export function VendorLandingPage({
 
       // ✅ FIX: Progress Tracking Dashboard
       if (showProgressTracking) {
+        const progressRoleType: 'trainer' | 'behaviorist' | 'nutritionist' = hasVendorRole(
+          vendorData,
+          ['nutritionist', 'pet_nutritionist', 'nutritionist_center']
+        )
+          ? 'nutritionist'
+          : hasVendorRole(vendorData, [
+              'pet_behaviorist',
+              'behaviorist_solo',
+              'behaviorist_center',
+              'behaviorist',
+            ])
+            ? 'behaviorist'
+            : 'trainer';
         return (
           <ProgressTrackingDashboard
             vendorId={vendorId}
-
+            roleType={progressRoleType}
             onBack={() => setShowProgressTracking(false)}
           />
         );
@@ -1533,16 +1551,24 @@ export function VendorLandingPage({
         );
       }
 
-      // 4. Nutritionist
-      if (vendorData?.roleId === 'nutritionist') {
+      // 4. Nutritionist — meal manager shell; Progress uses shared ProgressTrackingDashboard (above)
+      if (
+        hasVendorRole(vendorData, [
+          'nutritionist',
+          'pet_nutritionist',
+          'nutritionist_center',
+        ])
+      ) {
         console.log('🥗 Rendering NutritionistMealManager');
         return (
           <NutritionistMealManager
             vendorId={vendorId}
-
+            vendorData={vendorData}
+            vendorName={vendorData?.fullName || vendorData?.businessName}
             onBack={() => {
               // Handle logout
             }}
+            onNavigateToProgressTracking={() => setShowProgressTracking(true)}
           />
         );
       }
@@ -1637,6 +1663,9 @@ export function VendorLandingPage({
         'grooming',
       ]);
 
+      /** Dog walkers: "progress" is walk sessions (OTP start / end session / GPS), not training program trackers. */
+      const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+
       return (
         <>
           <Suspense fallback={
@@ -1682,7 +1711,13 @@ export function VendorLandingPage({
                 else setShowDiagnostics(true);
               }}
               onNavigateToPricing={() => setShowPricing(true)}
-              onNavigateToProgressTracking={() => setShowProgressTracking(true)}
+              onNavigateToProgressTracking={() => {
+                if (isWalkerVendor) {
+                  setShowBookingManagement(true);
+                } else {
+                  setShowProgressTracking(true);
+                }
+              }}
               onNavigateToPackages={undefined}
               onNavigateToCustomServices={() => setShowCustomServices(true)}
               onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}

@@ -3587,7 +3587,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
       
       const progress = await query(`
-        SELECT tp.*, p.name as pet_name, c.full_name as customer_name, trp.name as program_name
+        SELECT tp.*,
+          p.name as pet_name,
+          c.full_name as customer_name,
+          trp.name as program_name,
+          trp.category as program_category,
+          trp.duration_weeks,
+          trp.sessions_per_week,
+          (COALESCE(trp.duration_weeks, 4) * COALESCE(trp.sessions_per_week, 2))::int as estimated_total_sessions
         FROM training_progress tp
         LEFT JOIN pets p ON tp.pet_id = p.id
         LEFT JOIN customers c ON tp.customer_id = c.id

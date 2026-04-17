@@ -46,6 +46,7 @@ import {
   Shield,
   Truck,
   MapPin,
+  Navigation,
   HelpCircle,
   CheckCircle2,
   User,
@@ -263,6 +264,7 @@ export function VendorDashboard({
 
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
+  const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
   /** Groomer solo/center: hide Portfolio under Additional Features (UI only; capability/backend unchanged). */
   const isGroomerVendorForPortfolioUi = hasVendorRole(vendorData, [
     'groomer',
@@ -1216,14 +1218,26 @@ export function VendorDashboard({
                   )}
                 </CapabilityGate> */}
 
-                {/* Progress Tracking */}
-                {onNavigateToProgressTracking && capabilities.progress_tracking && (
+                {/* Progress: training programs vs walk sessions (dog walkers use bookings / OTP / GPS) */}
+                {onNavigateToProgressTracking &&
+                  (capabilities.progress_tracking || isWalkerVendor) && (
                   <button
                     onClick={onNavigateToProgressTracking}
                     className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                    title={
+                      isWalkerVendor
+                        ? 'Start walks with customer OTP, live tracking, and end session when done'
+                        : 'Training and program progress'
+                    }
                   >
-                    <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
-                    <span className="text-xs font-medium text-gray-900">Progress</span>
+                    {isWalkerVendor ? (
+                      <Navigation className="w-6 h-6 text-green-600 mb-1" />
+                    ) : (
+                      <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
+                    )}
+                    <span className="text-xs font-medium text-gray-900">
+                      {isWalkerVendor ? 'Walk sessions' : 'Progress'}
+                    </span>
                   </button>
                 )}
 

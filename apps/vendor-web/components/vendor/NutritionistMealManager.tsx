@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Edit, Trash2, Save, Clock, Package, AlertCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Plus,
+  Edit,
+  Trash2,
+  Save,
+  Clock,
+  Package,
+  AlertCircle,
+  BarChart3,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -10,13 +20,20 @@ interface NutritionistMealManagerProps {
   vendorName?: string;
   vendorData?: any;
   onBack?: () => void;
+  /** Opens the shared training / program progress screen (same as trainer dashboard). */
+  onNavigateToProgressTracking?: () => void;
 }
 
 const DIET_TYPES = ['Non-Veg', 'Veg', 'Egg'];
 const SUITABLE_FOR = ['Puppy', 'Adult', 'Senior'];
 const PET_TYPES = ['Dog', 'Cat'];
 
-export function NutritionistMealManager({ vendorId, vendorName, onBack }: NutritionistMealManagerProps) {
+export function NutritionistMealManager({
+  vendorId,
+  vendorName,
+  onBack,
+  onNavigateToProgressTracking,
+}: NutritionistMealManagerProps) {
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,23 +215,41 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+          <div className="flex items-center gap-4 flex-wrap">
+            <button
+              type="button"
+              onClick={() => onBack?.()}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+            >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="flex-1">
+            <div className="flex-1 min-w-[140px]">
               <h1 className="font-bold text-gray-900">Meal Products</h1>
               <p className="text-sm text-gray-600">{vendorName}</p>
             </div>
-            {activeTab === 'products' && (
-              <Button
-                onClick={() => setShowAddProduct(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Product
-              </Button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {onNavigateToProgressTracking && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onNavigateToProgressTracking}
+                  className="border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                >
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Progress
+                </Button>
+              )}
+              {activeTab === 'products' && (
+                <Button
+                  type="button"
+                  onClick={() => setShowAddProduct(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Product
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Tabs */}
