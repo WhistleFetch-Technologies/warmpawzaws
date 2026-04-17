@@ -45,6 +45,56 @@ const VENDOR_TYPES = [
   { id: 'business', name: 'Business' },
 ];
 
+const WIZARD_VENDOR_TYPE_ID_SET = new Set(VENDOR_TYPES.map((v) => v.id));
+
+/** GET /admin/roles maps config codes → display labels; wizard chips use snake_case ids. */
+const VENDOR_TYPE_DISPLAY_TO_ID: Record<string, string> = Object.fromEntries(
+  VENDOR_TYPES.map((v) => [v.name.trim().toLowerCase().replace(/\s+/g, ' '), v.id])
+);
+
+/** Legacy / alternate tokens from older admin saves or migrations → wizard ids where applicable. */
+const VENDOR_TYPE_LEGACY_TO_ID: Record<string, string> = {
+  solo_provider: 'service_provider',
+  healthcareprovider: 'healthcare_provider',
+  serviceprovider: 'service_provider',
+};
+
+/**
+ * Normalize API / DB vendorTypes into values the wizard can show (wizard ids + preserved extras e.g. `solo`).
+ */
+function normalizeVendorTypesForWizard(raw: unknown): string[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of arr) {
+    if (item == null || item === '') continue;
+    const s = String(item).trim();
+    if (!s) continue;
+
+    const lowerSpaced = s.toLowerCase().replace(/\s+/g, ' ').trim();
+    const lowerCompact = lowerSpaced.replace(/\s+/g, '');
+    let canonical =
+      VENDOR_TYPE_DISPLAY_TO_ID[lowerSpaced] ||
+      VENDOR_TYPE_LEGACY_TO_ID[lowerCompact] ||
+      (WIZARD_VENDOR_TYPE_ID_SET.has(s) ? s : null);
+
+    if (!canonical) {
+      const snake = s.replace(/\s+/g, '_').toLowerCase();
+      if (WIZARD_VENDOR_TYPE_ID_SET.has(snake)) canonical = snake;
+      else if (VENDOR_TYPE_LEGACY_TO_ID[snake]) canonical = VENDOR_TYPE_LEGACY_TO_ID[snake];
+    }
+
+    const finalToken = canonical || s;
+    const key = finalToken.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(finalToken);
+  }
+
+  return out;
+}
+
 const SERVICE_STYLES = [
   { id: 'at_center', name: 'At Center' },
   { id: 'at_home', name: 'At Home' },
@@ -138,13 +188,18 @@ export function VendorRoleWizard({ isOpen, onClose, onSuccess, editingRole }: Ve
       ? !deniedCapabilities.includes('custom_services') && !deniedCapabilities.includes('custom_packages')
       : false;
 
+    const rawVendorTypes = [
+      ...(Array.isArray(config.vendorTypes) ? config.vendorTypes : []),
+      ...(Array.isArray(editingRole.vendorTypes) ? editingRole.vendorTypes : []),
+    ];
+
     setFormData({
       name: editingRole.name || '',
       display_name: editingRole.display_name || '',
       description: editingRole.description || '',
       customer_service: editingRole.customer_service || config.customer_service || null,
       vendorConfiguration: config.vendorConfiguration || editingRole.vendorConfiguration || null,
-      vendorTypes: editingRole.vendorTypes || config.vendorTypes || [],
+      vendorTypes: normalizeVendorTypesForWizard(rawVendorTypes),
       serviceStyles: {
         solo: serviceStylesConfig.solo || [],
         business: serviceStylesConfig.business || [],
@@ -301,6 +356,8 @@ export function VendorRoleWizard({ isOpen, onClose, onSuccess, editingRole }: Ve
     try {
       setSaving(true);
 
+      const vendorTypesForApi = normalizeVendorTypesForWizard(formData.vendorTypes);
+
       const payload: any = {
         name: formData.name,
         display_name: formData.display_name,
@@ -308,7 +365,7 @@ export function VendorRoleWizard({ isOpen, onClose, onSuccess, editingRole }: Ve
         customer_service: formData.customer_service,
         vendorConfiguration: formData.vendorConfiguration,
         capabilities: formData.capabilities,
-        vendorTypes: formData.vendorTypes,
+        vendorTypes: vendorTypesForApi,
         serviceStyles: {
           solo: formData.vendorConfiguration === 'solo' ? ['at_home', 'tele', 'video_consultation'] : [],
           business: formData.vendorConfiguration === 'business' ? ['at_center', 'at_home', 'tele', 'video_consultation', 'delivery'] : [],
