@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
+import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 
 interface CustomerSession {
   phone: string;
@@ -79,12 +80,14 @@ export function CustomerApp({
   }
 
   return (
-    <CustomerHomeWrapper
-      phone={session.phone}
-      initialScreen={initialScreen}
-      petBoardingVendorId={petBoardingVendorId}
-      petBoardingServiceSlug={petBoardingServiceSlug}
-      onNavigate={handleLogoutNavigate}
-    />
+    <CustomerBookingMessagesModalProvider phone={session.phone}>
+      <CustomerHomeWrapper
+        phone={session.phone}
+        initialScreen={initialScreen}
+        petBoardingVendorId={petBoardingVendorId}
+        petBoardingServiceSlug={petBoardingServiceSlug}
+        onNavigate={handleLogoutNavigate}
+      />
+    </CustomerBookingMessagesModalProvider>
   );
 }
