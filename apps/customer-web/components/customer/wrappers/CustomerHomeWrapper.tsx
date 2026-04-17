@@ -36,6 +36,7 @@ import { BoardingServiceRouter } from '../BoardingServiceRouter';
 import { BoardingBookingRouter } from '../boarding/BoardingBookingRouter';
 import { BoardingVendorListView } from '../boarding/BoardingVendorListView';
 import { BoardingVendorProfileView } from '../boarding/BoardingVendorProfileView';
+import { HomeServiceProviderProfile, SERVICE_CONFIGS } from '../home-services';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
 import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
@@ -158,7 +159,8 @@ type ScreenType =
   | 'pet-details' 
   | 'add-pet' 
   | 'walker' 
-  | 'walker-booking' 
+  | 'walker-booking'
+  | 'walker-provider-profile'
   | 'vet'
   | 'category-mapper'
   | 'vet-booking'
@@ -705,6 +707,8 @@ export function CustomerHomeWrapper({
       setPreviousScreen(currentScreen);
       setWalkerServiceData(data ?? null);
       setCurrentScreen('purchase-package');
+    } else if (screen === 'walker-provider-profile') {
+      setCurrentScreen('walker-provider-profile');
     }
   };
 
@@ -1200,6 +1204,28 @@ export function CustomerHomeWrapper({
           }
         }}
         onViewBooking={handleViewBooking}
+      />
+    );
+  }
+  if (currentScreen === 'walker-provider-profile' && walkerServiceData?.vendorId) {
+    const vid = walkerServiceData.vendorId as string;
+    return (
+      <HomeServiceProviderProfile
+        phone={phone}
+        vendorId={vid}
+        serviceType="walker"
+        config={SERVICE_CONFIGS.walker}
+        onBack={() => setCurrentScreen('walker')}
+        onSelectService={() => {
+          setWalkerServiceData((prev: any) => ({
+            ...(prev || {}),
+            vendorId: vid,
+            serviceType: 'walking',
+            serviceStyle: 'at_home',
+          }));
+          setCurrentScreen('walker-booking');
+        }}
+        onNavigate={(screen, data) => handleWalkerNavigate(screen, data)}
       />
     );
   }
