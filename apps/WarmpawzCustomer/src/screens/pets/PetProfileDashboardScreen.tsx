@@ -74,7 +74,13 @@ export function PetProfileDashboardScreen({
       <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Pet not found</Text>
-          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onBack}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -85,7 +91,13 @@ export function PetProfileDashboardScreen({
   return (
     <ScreenShell style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{pet.name}</Text>
@@ -210,7 +222,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {
-    padding: spacing.xs,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   backButtonText: {
     fontSize: 16,

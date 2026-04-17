@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
 import { PromotionBanner } from "./shared/PromotionBanner";
 import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
 import { FeaturedProviderCard } from "./shared/FeaturedProviderCard";
@@ -26,6 +27,8 @@ interface PetSitterServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
   /** When false (e.g. “View all”), list all sitters and hide the redundant View all control. */
   hubMode?: boolean;
+  /** Set when opening full list from hub with a pre-selected sitting tile (`pet-sitter-facility` only). */
+  initialSittingOptionId?: string | null;
 }
 
 /** In-home sitting offerings (2×2 grid) — same pattern as Boarding “options”; user books via a sitter below. */
@@ -69,17 +72,26 @@ export function PetSitterServiceRouter({
   onBack,
   onNavigate,
   hubMode = true,
+  initialSittingOptionId,
 }: PetSitterServiceRouterProps) {
   const [loading, setLoading] = useState(true);
   const [sitters, setSitters] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [previousSitter, setPreviousSitter] = useState<any>(null);
+  /** Carried into `pet-sitter-booking` so the sitting flow can pre-match the vendor’s service row. */
+  const [selectedSittingOption, setSelectedSittingOption] = useState<string | null>(null);
   const featuredRef = useRef<HTMLDivElement>(null);
+  const scrollRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadSitters();
     loadPreviousSitter();
   }, []);
+
+  useEffect(() => {
+    if (hubMode) return;
+    setSelectedSittingOption(initialSittingOptionId ?? null);
+  }, [hubMode, initialSittingOptionId]);
 
   const loadPreviousSitter = async () => {
     try {
@@ -299,6 +311,7 @@ export function PetSitterServiceRouter({
     onNavigate?.("pet-sitter-booking", {
       vendorId,
       serviceType: "sitting",
+      sittingOptionId: selectedSittingOption || undefined,
     });
   };
 
@@ -308,7 +321,41 @@ export function PetSitterServiceRouter({
     : featuredSitters;
 
   const scrollToFeatured = () => {
-    featuredRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const scrollEl = scrollRootRef.current;
+    const target = featuredRef.current;
+    if (scrollEl && target) {
+      const rootRect = scrollEl.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const nextTop =
+        targetRect.top - rootRect.top + scrollEl.scrollTop - 16;
+      scrollEl.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+      return;
+    }
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleSittingOptionPress = (optionId: string) => {
+    setSelectedSittingOption(optionId);
+    if (displaySitters.length === 0) {
+      toast.info("No sitters in your area yet — browse the full list or check back soon.", {
+        duration: 4500,
+      });
+    }
+    /** Always navigate so taps reliably change screen (scroll-only felt broken on mobile / overlap cases). */
+    onNavigate?.("pet-sitter-facility", { sittingOptionId: optionId });
+  };
+
+  const handleStatClick = (index: number) => {
+    if (index === 0) {
+      onNavigate?.("pet-sitter-facility");
+      return;
+    }
+    if (displaySitters.length === 0) {
+      toast.info("No sitters to show yet — opening the full list.");
+      onNavigate?.("pet-sitter-facility");
+      return;
+    }
+    scrollToFeatured();
   };
 
   if (loading) {
@@ -339,11 +386,15 @@ export function PetSitterServiceRouter({
         serviceIcon={Home}
         iconColor="text-white"
         stats={headerStats}
+        onStatClick={handleStatClick}
         onBack={onBack}
         showBackButton
         headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
       />
-      <div className="flex-1 overflow-y-auto bg-white">
+      <div
+        ref={scrollRootRef}
+        className="relative z-[12] min-h-0 flex-1 touch-pan-y overflow-y-auto bg-white"
+      >
         <div className="bg-white px-4 pt-4">
           <div className="space-y-8">
             <PromotionBanner
@@ -352,7 +403,19 @@ export function PetSitterServiceRouter({
               onNavigate={onNavigate}
             />
 
-            <div className="rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (displaySitters.length === 0) {
+                  toast.info("We’ll show every sitter we can find on the next screen.");
+                  onNavigate?.("pet-sitter-facility");
+                  return;
+                }
+                scrollToFeatured();
+              }}
+              className="w-full rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4 text-left transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]"
+              aria-label="Jump to sitters near you"
+            >
               <div className="flex items-center gap-3">
                 <Home className="h-8 w-8 shrink-0 text-[#FF8C42]" />
                 <div>
@@ -362,9 +425,12 @@ export function PetSitterServiceRouter({
                   <p className="text-sm text-slate-600">
                     Vetted sitters for walks, feeds, and overnight stays
                   </p>
+                  <p className="mt-1 text-xs font-medium text-[#FF8C42]">
+                    Tap to see sitters
+                  </p>
                 </div>
               </div>
-            </div>
+            </button>
 
             {previousSitter && (
               <div className="space-y-3">
@@ -403,7 +469,10 @@ export function PetSitterServiceRouter({
                     </div>
                     <Button
                       className="shrink-0 bg-[#FF8C42] text-white hover:bg-[#FF7A35]"
-                      onClick={() => goBook(previousSitter.id)}
+                      onClick={() => {
+                        setSelectedSittingOption(null);
+                        goBook(previousSitter.id);
+                      }}
                     >
                       Book
                     </Button>
@@ -423,8 +492,12 @@ export function PetSitterServiceRouter({
                     <button
                       key={opt.id}
                       type="button"
-                      onClick={scrollToFeatured}
-                      className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition-all hover:shadow-md"
+                      onClick={() => handleSittingOptionPress(opt.id)}
+                      className={`group relative overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition-all hover:shadow-md ${
+                        selectedSittingOption === opt.id
+                          ? "border-[#FF8C42] ring-2 ring-[#FF8C42]/30"
+                          : "border-slate-100 bg-white"
+                      }`}
                     >
                       <div
                         className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110 ${opt.iconWrap}`}

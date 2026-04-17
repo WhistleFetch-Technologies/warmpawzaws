@@ -477,6 +477,11 @@ export function NutritionistBookingRouter({
     return 'Expert nutrition consultation';
   };
 
+  const getHeaderTitle = () =>
+    step === 'payment' && !showPaymentPage ? 'Booking Summary' : getServiceTitle();
+  const getHeaderSubtitle = () =>
+    step === 'payment' && !showPaymentPage ? 'Review before payment' : getServiceSubtitle();
+
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
@@ -498,16 +503,16 @@ export function NutritionistBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step or showing payment page */}
-      {step !== 'payment' && !showPaymentPage && (
+      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
+      {!showPaymentPage && (
         <ServiceDashboardHeader
-          serviceName={getServiceTitle()}
-          serviceSubtitle={getServiceSubtitle()}
+          serviceName={getHeaderTitle()}
+          serviceSubtitle={getHeaderSubtitle()}
           serviceIcon={Apple}
           iconColor="text-white"
           stats={dashboardStats}
           steps={getStepIndicators()}
-          onBack={onBack}
+          onBack={handleBack}
           showBackButton={true}
           headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
         />
@@ -835,8 +840,6 @@ export function NutritionistBookingRouter({
         {/* Payment Summary - Show summary first, then UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
           <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
-
             <div className="bg-white rounded-xl p-4 space-y-4">
               {/* Service */}
               <div className="flex items-center gap-3 pb-4 border-b">

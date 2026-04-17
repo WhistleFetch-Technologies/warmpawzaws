@@ -200,6 +200,13 @@ type PaymentFormState = {
   isDefault: boolean;
 };
 
+const CARD_TYPE_SELECTOR_LABELS: Record<PaymentFormState['cardType'], string> = {
+  visa: 'Visa',
+  mastercard: 'Mastercard',
+  rupay: 'RuPay',
+  amex: 'Amex',
+};
+
 /** POST only fields for the selected type so backend does not see leftover card defaults. */
 function buildPaymentMethodPostBody(np: PaymentFormState): Record<string, unknown> {
   const base: Record<string, unknown> = {
@@ -2195,18 +2202,19 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
 
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">Card Type</label>
-                        <div className="grid grid-cols-4 gap-2">
-                          {['visa', 'mastercard', 'rupay', 'amex'].map((type) => (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(['visa', 'mastercard', 'rupay', 'amex'] as const).map((type) => (
                             <button
                               key={type}
-                              onClick={() => setNewPayment({ ...newPayment, cardType: type as any })}
-                              className={`p-3 border-2 rounded-xl text-sm font-semibold capitalize transition-all ${
+                              type="button"
+                              onClick={() => setNewPayment({ ...newPayment, cardType: type })}
+                              className={`flex min-h-[3rem] items-center justify-center px-2 py-2 border-2 rounded-xl text-center text-xs sm:text-sm font-semibold leading-snug transition-all ${
                                 newPayment.cardType === type
                                   ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
                                   : 'border-gray-200 bg-white text-gray-600'
                               }`}
                             >
-                              {type}
+                              {CARD_TYPE_SELECTOR_LABELS[type]}
                             </button>
                           ))}
                         </div>

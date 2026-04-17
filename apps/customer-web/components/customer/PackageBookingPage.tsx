@@ -227,19 +227,24 @@ export function PackageBookingPage({
 
   if (loading && view === 'browse') {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex min-h-screen min-h-[100dvh] items-center justify-center cw-header-safe-top cw-header-safe-x max-w-customer mx-auto w-full bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 pb-24">
+    <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto bg-gray-50 cw-header-safe-top cw-header-safe-x pb-24">
       {/* Header */}
       <div className="bg-white rounded-xl p-4 shadow-sm mb-6">
         {onBack && (
-          <button type="button" onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-2 -ml-1" aria-label="Go back">
-            <ChevronRight className="w-5 h-5 rotate-180" />
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-2 inline-flex min-h-11 min-w-11 items-center justify-start gap-2 rounded-lg px-1 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            aria-label="Go back"
+          >
+            <ChevronRight className="h-5 w-5 shrink-0 rotate-180" />
             <span className="text-sm font-medium">Back</span>
           </button>
         )}

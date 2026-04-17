@@ -83,20 +83,47 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     }
   };
 
-  const shareReferral = () => {
-    const referralLink = `${window.location.origin}/auth?ref=${stats?.referral_code}`;
-    const shareText = `Join Warmpawz and get amazing pet care services! Use my referral code: ${stats?.referral_code}`;
-    
-    if (navigator.share) {
-      navigator.share({
-        title: 'Join Warmpawz',
-        text: shareText,
-        url: referralLink,
-      });
-    } else {
-      navigator.clipboard.writeText(`${shareText}\n${referralLink}`);
+  const shareReferral = async () => {
+    if (!stats?.referral_code) return;
+
+    const referralLink = `${window.location.origin}/auth?ref=${stats.referral_code}`;
+    const shareText = `Join Warmpawz and get amazing pet care services! Use my referral code: ${stats.referral_code}`;
+    const combinedBody = `${shareText}\n${referralLink}`;
+    const shareTitle = 'Join Warmpawz';
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    const openAndroidSendIntent = () => {
+      const intent =
+        'intent:#Intent;action=android.intent.action.SEND;type=text/plain;' +
+        `S.android.intent.extra.TEXT=${encodeURIComponent(combinedBody)};` +
+        `S.android.intent.extra.SUBJECT=${encodeURIComponent(shareTitle)};end`;
+      window.location.href = intent;
+    };
+
+    const fallbackCopy = async () => {
+      await navigator.clipboard.writeText(combinedBody);
       toast.success('Referral link copied to clipboard!');
+    };
+
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: referralLink,
+        });
+        return;
+      } catch (err) {
+        if ((err as DOMException)?.name === 'AbortError') return;
+      }
     }
+
+    if (isAndroid) {
+      openAndroidSendIntent();
+      return;
+    }
+
+    await fallbackCopy();
   };
 
   if (!phone) {

@@ -172,7 +172,13 @@ export function PackageBookingScreen({
   return (
     <ScreenShell style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Package Booking</Text>
@@ -310,7 +316,11 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {
-    padding: spacing.xs,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   backButtonText: {
     fontSize: 16,

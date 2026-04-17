@@ -113,6 +113,8 @@ android {
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
 
 dependencies {
+    // Align with react-native-razorpay; keeps Standard Checkout on latest 1.6.x AAR from the wrapper.
+    implementation("com.razorpay:checkout:1.6.41")
     implementation("com.facebook.react:react-android")
     
     // Flipper is only for debug builds

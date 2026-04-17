@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
+import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -825,6 +825,15 @@ export function VetBookingRouter({
     if (selectedServiceType === 'tele') return 'Book a video consultation';
     return 'Book your veterinary service';
   };
+
+  const getHeaderTitle = () =>
+    step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home'
+      ? 'Booking Summary'
+      : getServiceTitle();
+  const getHeaderSubtitle = () =>
+    step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home'
+      ? 'Review before payment'
+      : getServiceSubtitle();
   
   const dashboardStats = [
     { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
@@ -853,11 +862,11 @@ export function VetBookingRouter({
 
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-gray-50">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
-      {step !== 'payment' && (
+      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
+      {!(step === 'payment' && showPaymentPage) && (
         <ServiceDashboardHeader
-          serviceName={getServiceTitle()}
-          serviceSubtitle={getServiceSubtitle()}
+          serviceName={getHeaderTitle()}
+          serviceSubtitle={getHeaderSubtitle()}
           serviceIcon={Stethoscope}
           iconColor="text-white"
           stats={dashboardStats}
@@ -1262,18 +1271,6 @@ export function VetBookingRouter({
         {/* Payment Summary - Using UniversalPaymentPage (only for at_center services, at_home goes directly to UniversalPaymentPage) */}
         {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
           <div className="space-y-4 cw-scroll-pad-tabbar -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-gray-900 hover:bg-gray-200 active:bg-gray-300 transition-colors"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-6 h-6" />
-              </button>
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
-            </div>
-            
             <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
               {/* Service(s) - multi-service or single with fallbacks */}
               {allSelectedServices && allSelectedServices.length > 0 ? (

@@ -9,9 +9,9 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
  * React Native host activity. In-app safe areas use the JS `ScreenShell` component and `SafeAreaProvider`.
  *
  * **Razorpay standard checkout:** `RazorpayCheckout.open()` starts `com.razorpay.CheckoutActivity`.
- * That UI is not a React child, so JS `ScreenShell` does not apply. The app manifest overrides
- * that activity’s theme (`AppTheme.RazorpayCheckout`) and API 35+ opts out of default edge-to-edge
- * so the toolbar clears the status bar (see `AndroidManifest.xml`, `values-v35/styles.xml`).
+ * That UI is not a React child, so JS `ScreenShell` does not apply. The manifest applies
+ * `AppTheme.RazorpayCheckout`: opaque status/nav, `windowLayoutInDisplayCutoutMode=never` (notch),
+ * and on API 35+ `windowOptOutEdgeToEdgeEnforcement` so the orange merchant header clears system UI.
  */
 class MainActivity : ReactActivity() {
 

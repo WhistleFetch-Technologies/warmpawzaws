@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3003",
+    "dev": "node scripts/start-dev.cjs",
     "dev:prod": "node scripts/dev-prod.js",
     "build": "next build",
     "start": "next start -p 3003",

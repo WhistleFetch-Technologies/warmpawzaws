@@ -836,6 +836,9 @@ export function UniversalBookingRouter({
     if (step === 'summary') {
       return { title: 'Booking Summary', subtitle: 'Review & optionally switch to package', icon: Package };
     }
+    if (step === 'payment' && !showPaymentPage) {
+      return { title: 'Booking Summary', subtitle: 'Review before payment', icon: Package };
+    }
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
@@ -854,7 +857,7 @@ export function UniversalBookingRouter({
 
   // Phase 1: Step indicators include summary (staff skipped)
   const getStepIndicators = (): StepInfo[] | undefined => {
-    if (showPaymentPage || step === 'confirmation') return undefined;
+    if (showPaymentPage || step === 'confirmation' || step === 'payment') return undefined;
     
     const stepLabels = ['Service', 'Details', 'Summary', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
@@ -1335,8 +1338,6 @@ export function UniversalBookingRouter({
         {/* Payment Summary - Using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
           <div className="space-y-4 cw-scroll-pad-tabbar -mx-4 cw-header-safe-x sm:-mx-6">
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
-            
             <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
               {/* ✅ Updated: Show all selected services */}
               {(() => {
