@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS vendor_payment_rules (
 CREATE INDEX IF NOT EXISTS idx_vendor_payment_rules_active ON vendor_payment_rules(is_active);
 CREATE INDEX IF NOT EXISTS idx_vendor_payment_rules_priority ON vendor_payment_rules(priority DESC);
 
--- Vendor refund tiers (053) - minimal columns; later migrations may add more
+-- Vendor refund tiers — align with Admin Finance cancellation/refund policy (see migrations 536–542, 553)
 CREATE TABLE IF NOT EXISTS vendor_refund_tiers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -119,8 +119,18 @@ CREATE TABLE IF NOT EXISTS vendor_refund_tiers (
     cancellation_fee NUMERIC(10, 2) DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
     tier_level INTEGER DEFAULT 0,
+    cancelled_by TEXT NOT NULL DEFAULT 'pet_parent',
+    max_partial_refund_percentage NUMERIC(5, 2),
+    service_category TEXT,
+    service_format TEXT,
+    cancellation_window TEXT,
+    vendor_cancellation_reason TEXT,
+    hours_operator TEXT,
+    hours_threshold NUMERIC(10, 2),
+    policy_extensions JSONB DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT chk_vendor_refund_tiers_cancelled_by CHECK (cancelled_by IN ('pet_parent', 'provider'))
 );
 CREATE INDEX IF NOT EXISTS idx_vendor_refund_tiers_active ON vendor_refund_tiers(is_active);
 CREATE INDEX IF NOT EXISTS idx_vendor_refund_tiers_level ON vendor_refund_tiers(tier_level ASC);
