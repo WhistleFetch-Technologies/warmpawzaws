@@ -102,6 +102,7 @@ import { WishlistScreen } from './src/screens/shop/WishlistScreen';
 import { OrderInvoiceScreen } from './src/screens/orders/OrderInvoiceScreen';
 // Phase 3: AI Chatbot
 import { AIChatbotScreen } from './src/screens/ai-chatbot/AIChatbotScreen';
+import { SupportTicketThreadScreen } from './src/screens/support/SupportTicketThreadScreen';
 
 // Import theme
 import { colors } from './src/theme/colors';
@@ -1232,6 +1233,21 @@ export default function App() {
                         customerId={session.customerId}
                         onBack={() => handleNavigate('HelpSupport')}
                         onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
+                  <Stack.Screen name="SupportTicketThread">
+                    {(props) => (
+                      <SupportTicketThreadScreen
+                        ticketId={props.route?.params?.ticketId || ''}
+                        customerId={session.customerId}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('AIChatbot');
+                          }
+                        }}
                       />
                     )}
                   </Stack.Screen>

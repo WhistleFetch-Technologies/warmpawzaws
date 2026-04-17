@@ -108,6 +108,7 @@ export function AIChatbotScreen({
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [supportTicketId, setSupportTicketId] = useState<string | null>(null);
   const [mode, setMode] = useState<'chat' | 'symptoms' | 'booking'>('chat');
   const scrollViewRef = useRef<ScrollView>(null);
   const lastBookingUrlRef = useRef<string | null>(null);
@@ -269,11 +270,15 @@ export function AIChatbotScreen({
           content: response.response || "I'm here to help!",
           timestamp: new Date().toISOString(),
           intent: response.intent,
-          suggestedActions: ['Create Ticket', 'Contact Support'],
           requiresAgent: response.requiresAgent,
         };
         
         setMessages(prev => [...prev, botMessage]);
+
+        const tid = response.ticketId ? String(response.ticketId) : '';
+        if (tid) {
+          setSupportTicketId(tid);
+        }
         
         // Check if agent handoff is needed
         if (response.requiresAgent) {
@@ -312,13 +317,16 @@ export function AIChatbotScreen({
         .map(m => `${m.type}: ${m.content}`)
         .join('\n');
       
-      const response = await AIChatbotApi.escalateToAgent({
+      const response: any = await AIChatbotApi.escalateToAgent({
         conversationId: convId,
         customerId,
         customerPhone: phone,
         reason: 'User requested human agent',
         conversationHistory,
       });
+      if (response?.ticketId) {
+        setSupportTicketId(String(response.ticketId));
+      }
       
       const systemMessage: Message = {
         id: `system-${Date.now()}`,
@@ -440,6 +448,17 @@ export function AIChatbotScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        {supportTicketId && onNavigate ? (
+          <TouchableOpacity
+            style={styles.threadBanner}
+            onPress={() => onNavigate('SupportTicketThread', { ticketId: supportTicketId })}
+          >
+            <Text style={styles.threadBannerText}>
+              Open your support conversation (ticket #{supportTicketId.slice(0, 8)}…)
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Messages */}
         <ScrollView
@@ -567,6 +586,21 @@ const styles = StyleSheet.create({
   },
   modeButtonTextActive: {
     color: colors.white,
+  },
+  threadBanner: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: colors.primary + '18',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  threadBannerText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.primaryDark,
+    fontWeight: typography.fontWeights.semibold,
+    textAlign: 'center',
   },
   messagesContainer: {
     flex: 1,

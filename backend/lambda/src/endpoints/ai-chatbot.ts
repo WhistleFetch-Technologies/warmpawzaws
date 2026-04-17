@@ -82,6 +82,128 @@ function normalizeCustomerBookingUrl(serviceType: string, bookingQuery: string):
   return q ? `/search?q=${q}` : `/search`;
 }
 
+function supportCategoryForIntent(intent: string): string {
+  const i = String(intent || '').toLowerCase();
+  if (i === 'shopping' || i === 'vendor_payouts') return 'billing';
+  if (
+    i === 'booking' ||
+    i === 'symptoms' ||
+    i === 'vendor_bookings' ||
+    i === 'vendor_services' ||
+    i === 'service'
+  ) {
+    return 'service';
+  }
+  return 'general';
+}
+
+async function linkAiConversationRowsToTicket(
+  conversationId: string,
+  ticketId: string,
+  escalationReason?: string
+): Promise<void> {
+  const reason = escalationReason || 'Escalated';
+  await query(
+    `UPDATE ai_chatbot_conversations SET
+       escalation_ticket_id = $1::uuid,
+       escalated_to_agent = true,
+       escalation_reason = COALESCE(escalation_reason, $2::text),
+       updated_at = NOW()
+     WHERE conversation_id = $3
+       AND (
+         escalation_ticket_id IS NULL
+         OR escalation_ticket_id::text = $1::text
+       )`,
+    [ticketId, reason, conversationId]
+  ).catch(() => undefined);
+}
+
+async function findOpenEscalationTicketForConversation(
+  conversationId: string
+): Promise<string | null> {
+  const r = await query(
+    `SELECT id::text AS id FROM support_tickets
+     WHERE status IN ('open', 'in_progress')
+       AND COALESCE(metadata->>'ai_conversation_id','') = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [conversationId]
+  ).catch(() => ({ rows: [] as { id: string }[] }));
+  const id = r.rows?.[0]?.id;
+  return id ? String(id) : null;
+}
+
+type EnsureEscalationTicketArgs = {
+  conversationId: string;
+  customerId?: string | null;
+  customerPhone?: string | null;
+  vendorId?: string | null;
+  subject: string;
+  message: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  intent?: string;
+  confidence?: number;
+  escalationReason?: string;
+};
+
+/**
+ * One open ticket per AI conversation (metadata.ai_conversation_id); links all transcript rows.
+ */
+async function ensureEscalationTicket(
+  args: EnsureEscalationTicketArgs
+): Promise<{ ticketId: string; created: boolean }> {
+  const existingId = await findOpenEscalationTicketForConversation(args.conversationId);
+  if (existingId) {
+    await linkAiConversationRowsToTicket(
+      args.conversationId,
+      existingId,
+      args.escalationReason
+    );
+    if (args.priority === 'high') {
+      await update(
+        'support_tickets',
+        { id: existingId },
+        {
+          priority: 'high',
+          last_updated_at: new Date().toISOString(),
+        }
+      ).catch(() => undefined);
+    }
+    return { ticketId: existingId, created: false };
+  }
+
+  const metadata: Record<string, unknown> = {
+    ai_conversation_id: args.conversationId,
+    last_intent: args.intent ?? null,
+    last_confidence: args.confidence ?? null,
+    attachments: [],
+  };
+  if (args.vendorId) {
+    metadata.vendor_id = args.vendorId;
+  }
+
+  const ticket = await insert('support_tickets', {
+    ticket_number: generateSupportTicketNumber(),
+    customer_id: args.customerId || null,
+    customer_phone: args.customerPhone || null,
+    vendor_id: args.vendorId || null,
+    subject: args.subject,
+    message: args.message,
+    source: 'ai_chatbot',
+    status: 'open',
+    priority: args.priority,
+    category: supportCategoryForIntent(args.intent || 'general'),
+    metadata,
+    created_at: new Date().toISOString(),
+  });
+
+  const ticketId = ticket[0]?.id ? String(ticket[0].id) : '';
+  if (ticketId) {
+    await linkAiConversationRowsToTicket(args.conversationId, ticketId, args.escalationReason);
+  }
+  return { ticketId, created: true };
+}
+
 function formatChatPreviousTurns(contextObj: Record<string, unknown>): string {
   const pm = contextObj.previousMessages;
   if (!Array.isArray(pm) || pm.length === 0) return '';
@@ -615,9 +737,11 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
       let requiresAgent = false;
       let usedBedrock = false;
 
-      // Try AWS Bedrock with retry
+      // Try AWS Bedrock with retry. If invoke succeeds, we must set usedBedrock=true even when
+      // JSON.parse fails — otherwise the rule fallback overwrites the model output (e.g. canned "hi").
+      let bedrockCompletion: string | null = null;
       try {
-        const completion = await withRetry(
+        bedrockCompletion = await withRetry(
           () =>
             invokeBedrock(message, systemPrompt, {
               maxTokens: bedrockOpts.maxTokens,
@@ -630,34 +754,35 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
             retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
           }
         );
+      } catch (err: any) {
+        console.error('Bedrock invocation failed:', err);
+      }
 
-        // Extract JSON from response
+      if (bedrockCompletion != null) {
+        usedBedrock = true;
         try {
-          const jsonMatch = completion.match(/\{[\s\S]*\}/);
+          const jsonMatch = bedrockCompletion.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
-            responseText = parsed.response || completion;
+            responseText = parsed.response || bedrockCompletion;
             intent = parsed.intent || 'general';
-            confidence = parsed.confidence || 0.8;
-            suggestedActions = parsed.suggestedActions || [];
-            requiresAgent = parsed.requiresAgent || false;
+            confidence = parsed.confidence ?? 0.8;
+            suggestedActions = Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : [];
+            requiresAgent = !!parsed.requiresAgent;
           } else {
-            responseText = completion;
+            responseText = bedrockCompletion;
             intent = 'general';
             confidence = 0.7;
           }
-          usedBedrock = true;
         } catch (e) {
           console.warn('Failed to parse JSON from AI response', e);
-          responseText = completion;
+          responseText = bedrockCompletion;
+          intent = 'general';
+          confidence = 0.7;
         }
-      } catch (err: any) {
-        console.error('Bedrock invocation failed:', err);
-        // Fallback to rule-based responses
-        usedBedrock = false;
       }
 
-      // Fallback to rule-based responses if Bedrock failed
+      // Fallback to rule-based responses only when Bedrock did not return a completion
       if (!usedBedrock) {
         const lowerMessage = message.toLowerCase();
 
@@ -808,26 +933,28 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         console.warn('Failed to save conversation', e);
       }
 
-      // Check if agent handoff is needed
+      let escalationTicketId: string | undefined;
+      let escalationTicketCreated = false;
       if (requiresAgent || confidence < 0.7) {
-        // Create support ticket for agent handoff
         try {
-          await insert('support_tickets', {
-            ticket_number: generateSupportTicketNumber(),
-            customer_id: !isVendorSession ? customerId || null : null,
-            customer_phone: !isVendorSession ? customerPhone || null : null,
+          const ensured = await ensureEscalationTicket({
+            conversationId: currentConversationId,
+            customerId: !isVendorSession ? customerId || null : null,
+            customerPhone: !isVendorSession ? customerPhone || null : null,
+            vendorId: isVendorSession && effectiveVendorId ? effectiveVendorId : null,
             subject: `AI Chatbot Handoff - ${intent}`,
             message: `User: ${message}\n\nAI Response: ${responseText}\n\nIntent: ${intent}, Confidence: ${confidence}${effectiveVendorId ? `\nVendorId: ${effectiveVendorId}` : ''}`,
-            source: 'ai_chatbot',
-            status: 'open',
             priority: 'medium',
-            metadata: { attachments: [] },
-            created_at: new Date().toISOString(),
-          }).catch(() => {
-            // Graceful fallback
+            intent,
+            confidence,
+            escalationReason: requiresAgent ? 'Bot flagged requiresAgent' : 'Low confidence handoff',
           });
+          if (ensured.ticketId) {
+            escalationTicketId = ensured.ticketId;
+            escalationTicketCreated = ensured.created;
+          }
         } catch (e) {
-          console.warn('Failed to create support ticket', e);
+          console.warn('Failed to create/link escalation ticket', e);
         }
       }
 
@@ -840,6 +967,8 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         suggestedActions,
         requiresAgent,
         usedBedrock,
+        ticketId: escalationTicketId,
+        escalationTicketCreated,
       });
     } catch (error: any) {
       console.error('Error in AI chatbot:', error);
@@ -1109,46 +1238,34 @@ OUTPUT FORMAT (JSON only):
    */
   app.post("/ai-chatbot/escalate-to-agent", async (c) => {
     try {
-      const { conversationId, customerId, customerPhone, reason, conversationHistory } = await c.req.json();
+      const {
+        conversationId,
+        customerId,
+        customerPhone,
+        reason,
+        conversationHistory,
+        vendorId: vendorIdBody,
+      } = await c.req.json();
 
       if (!conversationId) {
         return c.json({ error: 'conversationId is required' }, 400);
       }
 
-      // Create support ticket
-      const ticket = await insert('support_tickets', {
-        ticket_number: generateSupportTicketNumber(),
-        customer_id: customerId || null,
-        customer_phone: customerPhone || null,
+      const ensured = await ensureEscalationTicket({
+        conversationId,
+        customerId: customerId || null,
+        customerPhone: customerPhone || null,
+        vendorId: typeof vendorIdBody === 'string' && vendorIdBody ? vendorIdBody : null,
         subject: `AI Chatbot Escalation - ${reason || 'User Request'}`,
         message: `Conversation ID: ${conversationId}\n\nReason: ${reason || 'User requested human agent'}\n\nConversation History:\n${conversationHistory || 'N/A'}`,
-        source: 'ai_chatbot',
-        status: 'open',
         priority: 'high',
-        metadata: { attachments: [] },
-        created_at: new Date().toISOString(),
+        escalationReason: reason || 'User Request',
       });
-
-      // Update conversation
-      try {
-        await update('ai_chatbot_conversations',
-          { conversation_id: conversationId },
-          {
-            escalated_to_agent: true,
-            escalation_reason: reason || 'User Request',
-            escalation_ticket_id: ticket[0]?.id || null,
-            updated_at: new Date().toISOString(),
-          }
-        ).catch(() => {
-          // Graceful fallback
-        });
-      } catch (e) {
-        console.warn('Failed to update conversation', e);
-      }
 
       return c.json({
         success: true,
-        ticketId: ticket[0]?.id,
+        ticketId: ensured.ticketId,
+        ticketCreated: ensured.created,
         message: 'Your conversation has been escalated to a support agent. They will contact you shortly.',
       });
     } catch (error: any) {

@@ -1,15 +1,31 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Search, HelpCircle, MessageCircle, Phone, Mail, FileText, ChevronRight, Send, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Search,
+  HelpCircle,
+  MessageCircle,
+  Phone,
+  Mail,
+  FileText,
+  ChevronRight,
+  RefreshCw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, supportCrmApi } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 import { getSupportPhoneLabel, getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import {
+  SupportTicketDetailView,
+  SupportTicketStatusBadge,
+  type SupportTicketDetailBundle,
+  type SupportTicketResponseRow,
+} from '@/components/customer/support';
 
 interface Ticket {
   id: string;
@@ -41,6 +57,11 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loadingTickets, setLoadingTickets] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [ticketDetail, setTicketDetail] = useState<SupportTicketDetailBundle | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
 
   // Deep-link from home "Live chat" (sessionStorage or prop)
   useEffect(() => {
@@ -94,23 +115,63 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'open': return 'bg-yellow-100 text-yellow-700';
-      case 'in_progress': return 'bg-blue-100 text-blue-700';
-      case 'resolved': return 'bg-green-100 text-green-700';
-      case 'closed': return 'bg-gray-100 text-gray-600';
-      default: return 'bg-gray-100 text-gray-600';
+  const loadTicketDetail = useCallback(async (ticketId: string) => {
+    if (!ticketId.trim()) return;
+    setLoadingDetail(true);
+    try {
+      const res = (await supportCrmApi.getTicket(ticketId)) as {
+        success?: boolean;
+        ticket?: Record<string, unknown>;
+        responses?: SupportTicketResponseRow[];
+      };
+      if (res?.success && res.ticket) {
+        const raw = res.responses || [];
+        const visible = raw.filter((r) => !r.is_internal);
+        setTicketDetail({ ticket: res.ticket, responses: visible });
+      } else {
+        setTicketDetail(null);
+        toast.error('Could not load this ticket.');
+      }
+    } catch (error) {
+      console.error('Error loading ticket detail:', error);
+      toast.error('Could not load ticket.');
+      setTicketDetail(null);
+    } finally {
+      setLoadingDetail(false);
     }
-  };
+  }, []);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'open': return <AlertCircle className="w-4 h-4" />;
-      case 'in_progress': return <Clock className="w-4 h-4" />;
-      case 'resolved': return <CheckCircle className="w-4 h-4" />;
-      case 'closed': return <CheckCircle className="w-4 h-4" />;
-      default: return <Clock className="w-4 h-4" />;
+  useEffect(() => {
+    if (activeTab !== 'tickets' || !selectedTicketId) {
+      return;
+    }
+    void loadTicketDetail(selectedTicketId);
+  }, [activeTab, selectedTicketId, loadTicketDetail]);
+
+  const refreshOpenTicket = useCallback(() => {
+    if (selectedTicketId) {
+      void loadTicketDetail(selectedTicketId);
+    }
+  }, [selectedTicketId, loadTicketDetail]);
+
+  const handleSendReply = async () => {
+    if (!selectedTicketId || !replyText.trim()) return;
+    setSendingReply(true);
+    try {
+      await supportCrmApi.respondToTicket(selectedTicketId, {
+        message: replyText.trim(),
+        responderId: getResolvedCustomerId() || undefined,
+        responderType: 'customer',
+      });
+      toast.success('Message sent');
+      setReplyText('');
+      await loadTicketDetail(selectedTicketId);
+      await loadTickets();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to send';
+      toast.error(msg);
+    } finally {
+      setSendingReply(false);
     }
   };
 
@@ -223,7 +284,11 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
           <div className="flex">
             <button
               type="button"
-              onClick={() => setActiveTab('faq')}
+              onClick={() => {
+                setSelectedTicketId(null);
+                setTicketDetail(null);
+                setActiveTab('faq');
+              }}
               className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'faq'
                   ? 'border-[#FF8C42] text-[#FF8C42]'
@@ -234,7 +299,11 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('contact')}
+              onClick={() => {
+                setSelectedTicketId(null);
+                setTicketDetail(null);
+                setActiveTab('contact');
+              }}
               className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'contact'
                   ? 'border-[#FF8C42] text-[#FF8C42]'
@@ -420,79 +489,105 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
 
         {activeTab === 'tickets' && (
           <div className="space-y-4">
-            {/* Refresh and Create buttons */}
-            <div className="flex gap-2">
-              <Button
-                onClick={loadTickets}
-                variant="outline"
-                size="sm"
-                disabled={loadingTickets}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingTickets ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveTab('contact');
-                  setShowContactForm(true);
+            {selectedTicketId ? (
+              <SupportTicketDetailView
+                loadingInitial={loadingDetail && !ticketDetail}
+                detail={ticketDetail}
+                replyText={replyText}
+                onReplyTextChange={setReplyText}
+                sendingReply={sendingReply}
+                onSendReply={() => void handleSendReply()}
+                onMessagesRefresh={refreshOpenTicket}
+                onBack={() => {
+                  setSelectedTicketId(null);
+                  setTicketDetail(null);
+                  setReplyText('');
                 }}
-                size="sm"
-                className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
-              >
-                Create New Ticket
-              </Button>
-            </div>
+              />
+            ) : (
+              <>
+                {/* Refresh and Create buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => void loadTickets()}
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingTickets}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loadingTickets ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setActiveTab('contact');
+                      setShowContactForm(true);
+                    }}
+                    size="sm"
+                    className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
+                  >
+                    Create New Ticket
+                  </Button>
+                </div>
 
-            {/* Loading state */}
-            {loadingTickets && (
-              <Card className="p-8 text-center">
-                <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-gray-500">Loading your tickets...</p>
-              </Card>
-            )}
-
-            {/* Empty state */}
-            {!loadingTickets && tickets.length === 0 && (
-              <Card className="p-8 text-center">
-                <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 mb-2">No support tickets yet</p>
-                <p className="text-sm text-gray-400">Create a ticket if you need help</p>
-              </Card>
-            )}
-
-            {/* Tickets list */}
-            {!loadingTickets && tickets.length > 0 && (
-              <div className="space-y-3">
-                {tickets.map((ticket) => (
-                  <Card key={ticket.id} className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
-                            {getStatusIcon(ticket.status)}
-                            {ticket.status.replace('_', ' ')}
-                          </span>
-                          {ticket.ticket_number && (
-                            <span className="text-xs text-gray-400">{ticket.ticket_number}</span>
-                          )}
-                        </div>
-                        <h4 className="font-medium text-gray-900 truncate">{ticket.subject}</h4>
-                        {ticket.message && (
-                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ticket.message}</p>
-                        )}
-                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                          <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
-                          {ticket.category && (
-                            <span className="capitalize">{ticket.category}</span>
-                          )}
-                        </div>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
-                    </div>
+                {/* Loading state */}
+                {loadingTickets && (
+                  <Card className="p-8 text-center">
+                    <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading your tickets...</p>
                   </Card>
-                ))}
-              </div>
+                )}
+
+                {/* Empty state */}
+                {!loadingTickets && tickets.length === 0 && (
+                  <Card className="p-8 text-center">
+                    <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 mb-2">No support tickets yet</p>
+                    <p className="text-sm text-gray-400">Create a ticket if you need help</p>
+                  </Card>
+                )}
+
+                {/* Tickets list */}
+                {!loadingTickets && tickets.length > 0 && (
+                  <div className="space-y-3">
+                    {tickets.map((ticket) => (
+                      <button
+                        key={ticket.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTicketId(ticket.id);
+                          setTicketDetail(null);
+                          setReplyText('');
+                        }}
+                        className="w-full text-left"
+                      >
+                        <Card className="p-4 transition-shadow hover:shadow-md cursor-pointer active:scale-[0.99]">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <SupportTicketStatusBadge status={ticket.status} />
+                                {ticket.ticket_number && (
+                                  <span className="text-xs text-gray-400">{ticket.ticket_number}</span>
+                                )}
+                              </div>
+                              <h4 className="font-medium text-gray-900 truncate">{ticket.subject}</h4>
+                              {ticket.message && (
+                                <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ticket.message}</p>
+                              )}
+                              <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+                                {ticket.category && <span className="capitalize">{ticket.category}</span>}
+                              </div>
+                              <p className="text-xs text-[#FF8C42] mt-2 font-medium">Tap to open and reply</p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0 mt-1" />
+                          </div>
+                        </Card>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

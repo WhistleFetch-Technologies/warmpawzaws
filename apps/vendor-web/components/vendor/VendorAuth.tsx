@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
-import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import {
   PlatformLegalPolicyDialog,
@@ -752,6 +752,9 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                   autoFocus
                 />
               </div>
+              <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+                We currently onboard and support vendors in <span className="font-medium text-gray-600">India only</span> (+91).
+              </p>
             </div>
 
             {/* Referral Code (optional) */}

@@ -22,6 +22,7 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { generateSupportTicketNumber } from '../../../utils/support-ticket-number';
 import { isValidUUID } from '../../../types/entities';
+import { invokeBedrock } from '../../../utils/bedrock-client';
 
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
@@ -225,18 +226,37 @@ export function registerSupportCrmEndpoints(app: Hono) {
         [ticketId]
       ).catch(() => ({ rows: [] }));
 
-      // Get related AI chatbot conversation if exists
-      let aiConversation = null;
-      if (ticket.source === 'ai_chatbot' && ticket.escalation_ticket_id) {
+      // Bot transcript: link is on ai_chatbot_conversations.escalation_ticket_id (not support_tickets)
+      let aiConversation: unknown[] | null = null;
+      const meta = ticket.metadata as Record<string, unknown> | undefined;
+      const metaConvId =
+        meta && typeof meta.ai_conversation_id === 'string'
+          ? meta.ai_conversation_id
+          : meta && typeof meta.aiConversationId === 'string'
+            ? meta.aiConversationId
+            : null;
+      const shouldLoadAi =
+        ticket.source === 'ai_chatbot' || !!metaConvId;
+      if (shouldLoadAi) {
         try {
-          const conversations = await query(
-            `SELECT * FROM ai_chatbot_conversations 
-             WHERE escalation_ticket_id = $1 
+          const byTicket = await query(
+            `SELECT * FROM ai_chatbot_conversations
+             WHERE escalation_ticket_id::text = $1
              ORDER BY created_at ASC`,
             [ticketId]
           );
-          if (conversations.rows && conversations.rows.length > 0) {
-            aiConversation = conversations.rows;
+          if (byTicket.rows?.length) {
+            aiConversation = byTicket.rows;
+          } else if (metaConvId) {
+            const byConv = await query(
+              `SELECT * FROM ai_chatbot_conversations
+               WHERE conversation_id = $1
+               ORDER BY created_at ASC`,
+              [metaConvId]
+            );
+            if (byConv.rows?.length) {
+              aiConversation = byConv.rows;
+            }
           }
         } catch (e) {
           console.warn('Failed to fetch AI conversation', e);
@@ -1260,10 +1280,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
       `, [staffId]);
       
       if (existing.rows.length > 0) {
-        // Update existing - use user_id if column exists, otherwise use staff_id
+        // Admin agents: user_id = admins.id, staff_id must be NULL (not a staff FK duplicate of admin id).
         const updated = await query(`
           UPDATE support_agents 
           SET user_id = COALESCE(user_id, $1),
+              staff_id = NULL,
               role = COALESCE($2, role),
               max_concurrent_tickets = COALESCE($3, max_concurrent_tickets),
               specialties = COALESCE($4, specialties),
@@ -1274,10 +1295,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
         
         return c.json({ success: true, agent: updated.rows[0], message: 'Agent updated' });
       } else {
-        // Create new - try to use user_id column if it exists, otherwise use staff_id
+        // Create new admin-backed agent: user_id only — staff_id NULL (avoids staff_id FK to staff(id)).
         const created = await query(`
           INSERT INTO support_agents (user_id, staff_id, role, max_concurrent_tickets, specialties, is_active)
-          VALUES ($1, $1, $2, $3, $4, true)
+          VALUES ($1, NULL, $2, $3, $4, true)
           RETURNING *
         `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general']]);
         
@@ -1329,11 +1350,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const { agentId } = c.req.param();
 
       const result = await query(`
-        UPDATE support_agents SET is_active = false WHERE id = $1 OR staff_id = $1 RETURNING staff_id
+        UPDATE support_agents SET is_active = false WHERE id = $1 OR staff_id = $1 OR user_id = $1 RETURNING staff_id
       `, [agentId]);
 
-      if (result.rows.length > 0) {
-        await query('UPDATE staff SET can_handle_support = false WHERE id = $1', [result.rows[0].staff_id]);
+      const deactivatedStaffId = result.rows[0]?.staff_id;
+      if (deactivatedStaffId) {
+        await query('UPDATE staff SET can_handle_support = false WHERE id = $1', [deactivatedStaffId]);
       }
 
       return c.json({ success: true, message: 'Agent deactivated' });
@@ -1572,6 +1594,93 @@ export function registerSupportCrmEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error deleting escalation rule:', error);
       return c.json({ error: error.message || 'Failed to delete rule' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/tickets/:ticketId/suggest-reply
+   * Bedrock-assisted draft replies for agents (does not post to customer).
+   */
+  app.post("/support/tickets/:ticketId/suggest-reply", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      const tickets = await select('support_tickets', { id: ticketId });
+      if (tickets.length === 0) {
+        return c.json({ error: 'Support ticket not found' }, 404);
+      }
+      const ticket = tickets[0] as Record<string, unknown>;
+      const responses = await query(
+        `SELECT responder_type, message, created_at
+         FROM support_ticket_responses
+         WHERE ticket_id = $1
+         ORDER BY created_at ASC`,
+        [ticketId]
+      ).catch(() => ({ rows: [] as { responder_type?: string; message?: string }[] }));
+
+      const aiRows = await query(
+        `SELECT user_message, bot_response, intent, created_at
+         FROM ai_chatbot_conversations
+         WHERE escalation_ticket_id::text = $1
+         ORDER BY created_at ASC
+         LIMIT 40`,
+        [ticketId]
+      ).catch(() => ({ rows: [] as { user_message?: string; bot_response?: string }[] }));
+
+      const thread = (responses.rows || [])
+        .map((r) => `${r.responder_type || 'user'}: ${r.message || ''}`)
+        .join('\n');
+      const aiBit = (aiRows.rows || [])
+        .map((r) => `User: ${r.user_message || ''}\nBot: ${r.bot_response || ''}`)
+        .join('\n---\n');
+
+      const systemPrompt = `You help Warmpawz support agents draft replies. Output ONLY valid JSON: {"suggestions":["...","..."]} with 2-4 short, professional strings the agent can copy or edit. No medical diagnosis, no legal promises, no fabricated refunds.`;
+
+      const userPrompt = `Ticket subject: ${ticket.subject || ''}
+Initial message:
+${ticket.message || ''}
+
+Bot transcript (if any):
+${aiBit || '(none)'}
+
+Ticket thread:
+${thread || '(no replies yet)'}`;
+
+      const raw = await invokeBedrock(userPrompt, systemPrompt, {
+        maxTokens: 512,
+        temperature: 0.35,
+        topP: 0.9,
+      });
+
+      let suggestions: string[] = [];
+      try {
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (m) {
+          const p = JSON.parse(m[0]) as { suggestions?: unknown };
+          if (Array.isArray(p.suggestions)) {
+            suggestions = p.suggestions
+              .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+              .map((s) => s.trim())
+              .slice(0, 5);
+          }
+        }
+      } catch {
+        /* fall through */
+      }
+      if (suggestions.length === 0) {
+        suggestions = raw
+          .split(/\n+/)
+          .map((s) => s.replace(/^[-*]\s*/, '').trim())
+          .filter((s) => s.length > 8)
+          .slice(0, 4);
+      }
+
+      return c.json({ success: true, suggestions });
+    } catch (error: any) {
+      console.error('Error suggesting reply:', error);
+      return c.json(
+        { error: error.message || 'Failed to suggest reply', suggestions: [] as string[] },
+        500
+      );
     }
   });
 
